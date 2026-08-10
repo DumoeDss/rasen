@@ -119,3 +119,48 @@ This is distinct from parent `archive-and-validate-defects` task 7.3, which is a
 3. The manifest partitioner is complete and disjoint (`143/142/142`, 427 unique files), but its timing model is stale for at least one unweighted Store-v2 journey: a single passing six-test file took 173.309 seconds locally.
 4. The selected Store-finalization hung-child cases passed 3/3, so current evidence favors runner duration/weight imbalance over a demonstrated assertion failure; it remains insufficient to identify a single root cause for all three shards.
 5. Focused child suites and mocked platform cases cannot close the portfolio full-suite gate or native post-push Windows/POSIX CI tasks.
+
+## Merged-tree focused overlap gate
+
+### Scope and tree admission
+
+- Verdict for this gate: **PASS**
+- Verification role: independent verifier; not the merge or evidence-commit author
+- Merged HEAD: `7135149c2382300fcaf1a879e327d89c3ab1e94d`
+- Merged tree: `6e82665da14d53df13411fd565dca9e3157b857f`
+- Merge parents: `8950cf3e88ae27aaec37aed43509edd3dd36a268` and `3576334019bf64d196088aee28a78a9b6c16ccf6`
+- Merge subject: `Merge remote-tracking branch 'origin/dev/0.1.7' into fix/archive-transaction-recovery-follow-up`
+- Pre-gate tracked worktree and index: clean
+- Pre-gate untracked state: `.rasen/**` only
+- Post-gate tracked product/test worktree and index: clean
+- `VITEST_FILE_PARTITION`: explicitly cleared and confirmed unset for the focused run
+
+The merge diff was inspected against both parents. Against the first parent it contains the base workspace apply/module/journey integration and associated artifacts (19 files, 5,452 insertions, 13 deletions). Against the second parent it contains the portfolio product/test/evidence side (121 files, 27,999 insertions, 1,865 deletions). No uncommitted product or test delta was admitted to the gate.
+
+### Build
+
+- Command: `pnpm run build`
+- Started: `2026-08-10T11:39:39.2537980+08:00`
+- Ended: `2026-08-10T11:40:00.6242374+08:00`
+- Duration: `21.370 s`
+- Exit code: `0`
+- Result: **PASS**
+
+### Merged-overlap focused suite
+
+- Environment: `VITEST_MAX_WORKERS=2`; `VITEST_FILE_PARTITION` unset
+- Command: `pnpm exec vitest run test/core/store/workspace-apply.test.ts test/core/store/workspace-atomic-write.test.ts test/commands/store-v2-workspace-journey.test.ts test/core/store/finalization-association.test.ts test/core/store-planning/finalize-scope.test.ts test/core/store/workspace-windows-paths.test.ts test/core/store/workspace-identity.test.ts --reporter=dot`
+- Started: `2026-08-10T11:40:12.4018268+08:00`
+- Ended: `2026-08-10T11:44:54.4036930+08:00`
+- Command duration: `282.002 s`
+- Vitest duration: `279.89 s`
+- Result: **PASS** — 7 test files passed; 135 tests passed; 0 failed; 0 skipped; exit 0.
+
+This selection exercises the merge boundary between the base branch's workspace apply/module/journey work and the portfolio's atomic persistence, Store finalization association/admission, planning scope, Windows path handling, and workspace identity contracts. The merged tree passed that focused overlap boundary without an isolated failure or retry.
+
+### Evidence boundary and task disposition
+
+This is a merged-tree focused gate only. It does not replace the repository full suite, the GitHub Actions test matrix, native POSIX evidence, or a recorded passing GitHub Windows job. The earlier unsharded and three-shard timeout history remains valid and is not converted to green by this focused result.
+
+- `fix-store-finalization-admission` task 7.3 remains unchecked because the full portfolio test gate did not complete.
+- Parent `archive-and-validate-defects` task 8.7 remains unchecked because no passing GitHub Windows CI job was recorded.
