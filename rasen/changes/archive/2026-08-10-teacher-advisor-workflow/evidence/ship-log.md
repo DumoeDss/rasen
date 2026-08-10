@@ -72,3 +72,9 @@ Tree: `9ba81cf68d32dc027f7a7f835dce91878c19dc3e`.
 ## Delivery
 
 Status: committed locally. Delivery is deferred to the portfolio/parent level.
+
+## Archive
+**Date:** 2026-08-10T11:50:27.573Z
+**Ship commit:** 3899aa893a1a264027625e0482893e6c11abab78
+**Outcome:** archived at E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code-wt-teacher-advisor\rasen\changes\archive\2026-08-10-teacher-advisor-workflow
+**Transaction:** 6acd2d1c-5e1b-4ee8-923e-d95f68ac1592
