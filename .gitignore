@@ -145,8 +145,10 @@ vite.config.ts.timestamp-*
 
 
 # Claude
-.claude/
-CLAUDE.md
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/architecture-index/
 .DS_Store
 
 # Pnpm
