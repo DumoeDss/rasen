@@ -342,4 +342,3 @@ The executor SHALL durably bind the exact provider tuple, opaque ProcessRef, can
 - **WHEN** the canonical Action/attempt, stable Session, request, provider tuple, ProcessRef, hosted receipt, quarantine, or phase differs across durable stores
 - **THEN** recovery SHALL fail closed with a typed identity or event-gap outcome
 - **AND** no advice, unavailable continuation, authority release, or reservation release SHALL be inferred from the conflicting records
-

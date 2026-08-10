@@ -726,6 +726,10 @@
           "name": "审查",
           "description": "合入前结合完整代码库上下文审查 PR，按严重程度标记审查问题并循环修复"
         },
+        "teacher-advisor": {
+          "name": "教师顾问",
+          "description": "只读顾问代理，在实现过程中返回结构化建议（plan | correction | stop）"
+        },
         "workflow-author": {
           "name": "工作流编写",
           "description": "通过分阶段处理和独立审查，安全地编写可安装工作流与流水线"

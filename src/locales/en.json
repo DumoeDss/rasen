@@ -726,6 +726,10 @@
           "name": "Review",
           "description": "Pre-landing PR review with full codebase context, severity-tagged findings, and a fix loop"
         },
+        "teacher-advisor": {
+          "name": "Teacher Advisor",
+          "description": "Read-only advisory agent that returns structured advice (plan | correction | stop) during implementation"
+        },
         "workflow-author": {
           "name": "Workflow Author",
           "description": "Author installable workflows and pipelines safely, staged and independently reviewed"
