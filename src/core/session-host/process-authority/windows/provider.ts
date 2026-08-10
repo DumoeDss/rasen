@@ -126,6 +126,18 @@ export interface WindowsAuthorityNativeTransport {
     reason: string,
     context: AuthorityOperationContext
   ): Promise<unknown>;
+  /** Control on the already-authenticated frame-preserving runtime endpoint. */
+  hasResidentRuntime?(reference: WindowsPrivateAuthorityReference): boolean;
+  terminateResident?(
+    reference: WindowsPrivateAuthorityReference,
+    intent: AuthorityTerminationIntent,
+    context: AuthorityOperationContext
+  ): Promise<unknown>;
+  abortResident?(
+    reference: WindowsPrivateAuthorityReference,
+    reason: string,
+    context: AuthorityOperationContext
+  ): Promise<unknown>;
 }
 
 export interface WindowsAuthorityRuntimeOpener {
@@ -134,6 +146,9 @@ export interface WindowsAuthorityRuntimeOpener {
 
 export interface WindowsProcessAuthorityProviderBundle {
   readonly provider: ProcessAuthorityProvider;
+  readonly availability:
+    | { readonly state: 'available' }
+    | { readonly state: 'authority-unavailable'; readonly diagnostic: string };
   readonly publishAuthority: ReturnType<typeof createWindowsAuthorityPublicationPublisher>;
   openRuntime(reference: ProcessAuthorityReference): ProviderBackedProcessRuntime;
 }
@@ -143,6 +158,8 @@ export interface WindowsProcessAuthorityProviderBundleOptions {
   readonly runtimeOpener: WindowsAuthorityRuntimeOpener;
   readonly ledger: WindowsAuthorityPublicationLedger;
   readonly artifactIdentity: WindowsAuthorityExpectedArtifactIdentity;
+  /** Trusted assembly fact; injected conformance adapters default to available. */
+  readonly runtimeAvailable?: boolean;
 }
 
 export interface WindowsProcessAuthorityProductionOptions {
@@ -298,6 +315,15 @@ function captureTransport(
     attemptGraceful: transport.attemptGraceful.bind(transport),
     terminate: transport.terminate.bind(transport),
     abort: transport.abort.bind(transport),
+    ...(typeof transport.hasResidentRuntime === 'function'
+      ? { hasResidentRuntime: transport.hasResidentRuntime.bind(transport) }
+      : {}),
+    ...(typeof transport.terminateResident === 'function'
+      ? { terminateResident: transport.terminateResident.bind(transport) }
+      : {}),
+    ...(typeof transport.abortResident === 'function'
+      ? { abortResident: transport.abortResident.bind(transport) }
+      : {}),
   });
 }
 
@@ -520,7 +546,13 @@ function createBundle(
     !options ||
     typeof options !== 'object' ||
     Array.isArray(options) ||
-    !exactKeys(options, ['transport', 'runtimeOpener', 'ledger', 'artifactIdentity'])
+    !exactKeys(options, [
+      'transport',
+      'runtimeOpener',
+      'ledger',
+      'artifactIdentity',
+      ...(options.runtimeAvailable === undefined ? [] : ['runtimeAvailable']),
+    ])
   ) {
     throw new TypeError('Windows process-authority provider options are malformed.');
   }
@@ -666,6 +698,9 @@ function createBundle(
     ): Promise<ProviderObservation> {
       const decoded = decodeForProvider(reference);
       if (!decoded) return retainedObservation('authority-unavailable', 'reference-invalid');
+      if (transport.hasResidentRuntime?.(decoded) === true) {
+        return Object.freeze({ state: 'live' });
+      }
       const classification = await reopen(decoded, context);
       if (classification.disposition === 'retained') {
         return classificationOutcome(classification, context.phase);
@@ -690,6 +725,15 @@ function createBundle(
     ): Promise<ProviderControlOutcome> {
       const decoded = decodeForProvider(reference);
       if (!decoded) return retainedObservation('authority-unavailable', 'reference-invalid');
+      if (
+        transport.hasResidentRuntime?.(decoded) === true &&
+        transport.terminateResident !== undefined
+      ) {
+        return mapWindowsNativeControlOutcome(
+          await transport.terminateResident(decoded, intent, context),
+          context.phase
+        );
+      }
       const classification = await reopen(decoded, context);
       if (classification.disposition === 'retained') {
         return classificationOutcome(classification, context.phase);
@@ -712,6 +756,15 @@ function createBundle(
     ): Promise<ProviderControlOutcome> {
       const decoded = decodeForProvider(reference);
       if (!decoded) return retainedObservation('authority-unavailable', 'reference-invalid');
+      if (
+        transport.hasResidentRuntime?.(decoded) === true &&
+        transport.abortResident !== undefined
+      ) {
+        return mapWindowsNativeControlOutcome(
+          await transport.abortResident(decoded, reason, context),
+          context.phase
+        );
+      }
       const classification = await reopen(decoded, context);
       if (classification.disposition === 'retained') {
         return classificationOutcome(classification, context.phase);
@@ -728,6 +781,12 @@ function createBundle(
 
   return Object.freeze({
     provider,
+    availability: options.runtimeAvailable === false
+      ? Object.freeze({
+          state: 'authority-unavailable' as const,
+          diagnostic: 'Windows process-authority runtime bridge is unavailable.',
+        })
+      : Object.freeze({ state: 'available' as const }),
     publishAuthority,
     openRuntime(reference: ProcessAuthorityReference): ProviderBackedProcessRuntime {
       const decoded = decodeProcessAuthorityReferenceForDispatch(String(reference), descriptor);
@@ -862,8 +921,10 @@ export function createWindowsProcessAuthorityProviderBundle(
     WindowsProcessAuthorityProviderBundleOptions,
     'transport' | 'runtimeOpener' | 'artifactIdentity'
   >;
+  let runtimeAvailable = false;
   try {
     assembly = createWindowsNativeAssembly(runtimeRoot);
+    runtimeAvailable = true;
   } catch {
     assembly = unavailableNativeAssembly();
   }
@@ -872,5 +933,6 @@ export function createWindowsProcessAuthorityProviderBundle(
     runtimeOpener: assembly.runtimeOpener,
     ledger,
     artifactIdentity: assembly.artifactIdentity,
+    runtimeAvailable,
   });
 }

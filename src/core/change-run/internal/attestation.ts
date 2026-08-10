@@ -14,6 +14,7 @@ import type {
   EvidenceRef,
   RunAction,
 } from '../contracts.js';
+import type { ConsultationStepSubmission } from '../consultation-contracts.js';
 import type { CanonicalRunRecord } from './record.js';
 import { verifyActorRef } from './actors.js';
 import { canonicalJson } from './identity.js';
@@ -430,4 +431,130 @@ export function verifyAttestedCompletion(
       'Infrastructure observation is bound to another Adapter artifact.'
     );
   }
+}
+
+/**
+ * Verify a non-terminal CONSULT result against the same frozen Action trust
+ * root as an ordinary completion. The claim is distinct so a signed terminal
+ * completion cannot be replayed as a consultation (or vice versa).
+ */
+export function verifyAttestedConsultationSubmission(
+  record: CanonicalRunRecord,
+  action: RunAction,
+  request: ConsultationStepSubmission,
+  read: (ref: EvidenceRef) => Uint8Array
+): void {
+  const completionAuthority = action.completionAuthority;
+  const authority = completionAuthority?.attestationAuthority;
+  if (completionAuthority === undefined || authority === undefined) {
+    throw new AttestationError(
+      'attestation_authority_missing',
+      'Legacy or unsigned Action cannot submit a consultation.'
+    );
+  }
+  if (
+    request.runId !== record.runId ||
+    request.actionId !== action.actionId ||
+    request.invocationId !== action.invocationId
+  ) {
+    throw new AttestationError(
+      'attestation_completion_mismatch',
+      'Consultation submission does not address the exact canonical Action.'
+    );
+  }
+  validateAttestationAuthority(authority);
+  verifyActorRef(request.actor);
+  if (canonicalJson(request.actor) !== canonicalJson(completionAuthority.actor)) {
+    throw new AttestationError(
+      'attestation_completion_mismatch',
+      'Consultation actor does not match the Action authority.'
+    );
+  }
+  if (request.evidence.length !== 1) {
+    throw new AttestationError(
+      'attestation_completion_mismatch',
+      'Authenticated consultation requires exactly one question evidence object.'
+    );
+  }
+  const evidence = request.evidence[0]!;
+  const evidenceBytes = read(evidence);
+  verifyAttestedEvidence(evidence, evidenceBytes, authority);
+  assertEvidenceUse(
+    evidence,
+    completionAuthority.observations.domainActionResult,
+    'Consultation question evidence'
+  );
+  verifyEvidenceBinding(evidence, {
+    planningSpaceId: record.change.planningSpaceId,
+    changeInstanceId: record.change.instanceId,
+    projectId: record.change.projectId,
+    changeId: record.change.changeId,
+    runId: record.runId,
+    actionId: action.actionId,
+    schema: evidence.binding.schema,
+    treeDigest: action.expectedBeforeWorkspace.treeDigest as Digest,
+  });
+  const actorAttestation = request.actorAttestation;
+  const actorBytes = read(actorAttestation);
+  verifyAttestedEvidence(actorAttestation, actorBytes, authority);
+  assertEvidenceUse(
+    actorAttestation,
+    completionAuthority.actorAttestation,
+    'Consultation actor attestation'
+  );
+  verifyEvidenceBinding(actorAttestation, {
+    planningSpaceId: record.change.planningSpaceId,
+    changeInstanceId: record.change.instanceId,
+    projectId: record.change.projectId,
+    changeId: record.change.changeId,
+    runId: record.runId,
+    actionId: action.actionId,
+    schema: actorAttestation.binding.schema,
+    treeDigest: action.expectedBeforeWorkspace.treeDigest as Digest,
+  });
+  const claim = buildConsultationClaim(record, action, request, evidence);
+  if (!Buffer.from(actorBytes).equals(Buffer.from(canonicalJson(claim), 'utf8'))) {
+    throw new AttestationError(
+      'attestation_claim_mismatch',
+      'Actor attestation is not the exact canonical consultation claim.'
+    );
+  }
+}
+
+/** Canonical signed claim for one non-terminal consultation step. */
+export function buildConsultationClaim(
+  record: CanonicalRunRecord,
+  action: RunAction,
+  request: ConsultationStepSubmission,
+  evidence: EvidenceRef
+) {
+  const authority = action.completionAuthority?.attestationAuthority;
+  if (authority === undefined) {
+    throw new AttestationError(
+      'attestation_authority_missing',
+      'Consultation claim construction requires a frozen attestation authority.'
+    );
+  }
+  return {
+    format: 'teacher-consultation-claim/1',
+    authorityDigest: computeAttestationAuthorityDigest(authority),
+    binding: {
+      planningSpaceId: record.change.planningSpaceId,
+      changeInstanceId: record.change.instanceId,
+      projectId: record.change.projectId,
+      changeId: record.change.changeId,
+      runId: record.runId,
+      actionId: action.actionId,
+      expectedTreeDigest: action.expectedBeforeWorkspace.treeDigest,
+      expectedRecordVersion: request.expectedRecordVersion,
+    },
+    actor: request.actor,
+    consultation: {
+      requestId: request.requestId,
+      resultDigest: request.resultDigest,
+      stableSessionId: request.stableSessionId,
+      question: request.question,
+      evidence: { question: evidence.evidenceDigest },
+    },
+  };
 }

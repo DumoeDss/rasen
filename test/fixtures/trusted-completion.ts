@@ -14,6 +14,7 @@ import {
 import {
   createTrustedExecutionAdapterCatalog,
   provisionTrustedExecutionAdapterCatalog,
+  provisionTrustedExecutionAdapterCredentials,
   type TrustedExecutionAdapterCatalog,
   type TrustedExecutionAdapterDescriptor,
 } from '../../src/core/pipeline-registry/trusted-execution-adapters.js';
@@ -140,6 +141,20 @@ export async function provisionTestTrustedExecutionAdaptersForPipeline(
   );
   const catalog = trustedCatalogForBindings(discoveryProfile.capabilities);
   provisionTrustedExecutionAdapterCatalog(hostStateRoot, catalog.descriptors);
+}
+
+/** Test-host installation of the module-local private half. */
+export function provisionTestTrustedExecutionAdapterCredentials(
+  hostStateRoot: string,
+  descriptors: readonly TrustedExecutionAdapterDescriptor[]
+): void {
+  provisionTrustedExecutionAdapterCredentials(
+    hostStateRoot,
+    descriptors.map((descriptor) => ({
+      descriptor,
+      privateKey: pair.privateKey,
+    }))
+  );
 }
 
 export function createTestTrustedCompletionProducer(

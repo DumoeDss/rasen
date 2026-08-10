@@ -17,7 +17,14 @@ import {
 } from '../contracts.js';
 import type { CanonicalRunRecord } from './record.js';
 import {
+  decodeConsultationStepSubmission,
+  type ConsultationContentLimits,
+  type ConsultationStepSubmission,
+} from '../consultation-contracts.js';
+import { parseConsultableLeafReturn } from '../../worker-contracts.js';
+import {
   buildCompletionClaim,
+  buildConsultationClaim,
   computeAttestationAuthorityDigest,
   computeAttestedEvidenceRefDigest,
   evidenceProofMessage,
@@ -66,6 +73,27 @@ export interface AttestedCompletionSubmission {
   }>[];
 }
 
+export interface TrustedConsultationInput {
+  readonly change: ChangeRef;
+  readonly record: CanonicalRunRecord;
+  readonly action: RunAction;
+  /** Exact settled SessionHost result body selected for consultable parsing. */
+  readonly result: string;
+  /** SessionHost SHA-256, accepted as raw hex or canonical sha256-prefixed form. */
+  readonly resultDigest: string;
+  readonly stableSessionId: string;
+  readonly requestId: string;
+  readonly limits: ConsultationContentLimits;
+}
+
+export interface AttestedConsultationSubmission {
+  readonly consultation: ConsultationStepSubmission;
+  readonly uploads: readonly Readonly<{
+    contentDigest: Digest;
+    contentBase64: string;
+  }>[];
+}
+
 export interface TrustedCompletionProducer {
   readonly adapter: Readonly<{
     id: string;
@@ -76,6 +104,9 @@ export interface TrustedCompletionProducer {
   attestCompletion(
     input: TrustedCompletionInput
   ): AttestedCompletionSubmission;
+  attestConsultation(
+    input: TrustedConsultationInput
+  ): AttestedConsultationSubmission;
 }
 
 export class TrustedCompletionProducerError extends Error {
@@ -104,6 +135,12 @@ export function createUnavailableTrustedCompletionProducer(input: Readonly<{
     adapter: Object.freeze({ ...input.adapter }),
     authority: Object.freeze(structuredClone(input.authority)),
     attestCompletion(): AttestedCompletionSubmission {
+      throw new TrustedCompletionProducerError(
+        'attestation_signer_unavailable',
+        'The frozen Action authority remains verifiable, but its trusted signer is unavailable.'
+      );
+    },
+    attestConsultation(): AttestedConsultationSubmission {
       throw new TrustedCompletionProducerError(
         'attestation_signer_unavailable',
         'The frozen Action authority remains verifiable, but its trusted signer is unavailable.'
@@ -194,28 +231,35 @@ export function createTrustedCompletionProducer(input: Readonly<{
   const adapter = Object.freeze({ ...input.adapter });
   const authority = Object.freeze(structuredClone(input.authority));
 
+  const assertFrozenInput = (
+    request: Readonly<{ record: CanonicalRunRecord; action: RunAction }>
+  ): NonNullable<RunAction['completionAuthority']> => {
+    const frozen = request.action.completionAuthority;
+    if (
+      frozen?.attestationAuthority === undefined ||
+      canonicalJson(frozen.attestationAuthority) !== canonicalJson(authority) ||
+      request.action.capability.artifact.id !== adapter.id ||
+      request.action.capability.artifact.version !== adapter.version ||
+      request.action.capability.artifact.contentDigest !== adapter.contentDigest ||
+      request.record.runId !== request.action.runId ||
+      canonicalJson(request.record.actions[request.action.actionId]?.action) !==
+        canonicalJson(request.action)
+    ) {
+      throw new TrustedCompletionProducerError(
+        'attestation_input_mismatch',
+        'Trusted producer input does not match its exact frozen Adapter/Action.'
+      );
+    }
+    return frozen;
+  };
+
   return Object.freeze({
     adapter,
     authority,
     attestCompletion(
       request: TrustedCompletionInput
     ): AttestedCompletionSubmission {
-      const frozen = request.action.completionAuthority;
-      if (
-        frozen?.attestationAuthority === undefined ||
-        canonicalJson(frozen.attestationAuthority) !== canonicalJson(authority) ||
-        request.action.capability.artifact.id !== adapter.id ||
-        request.action.capability.artifact.version !== adapter.version ||
-        request.action.capability.artifact.contentDigest !== adapter.contentDigest ||
-        request.record.runId !== request.action.runId ||
-        canonicalJson(request.record.actions[request.action.actionId]?.action) !==
-          canonicalJson(request.action)
-      ) {
-        throw new TrustedCompletionProducerError(
-          'attestation_input_mismatch',
-          'Trusted producer input does not match its exact frozen Adapter/Action.'
-        );
-      }
+      const frozen = assertFrozenInput(request);
       const use = request.completion.kind === 'domain-action-result'
         ? frozen.observations.domainActionResult
         : request.completion.kind === 'effect-observation'
@@ -277,6 +321,118 @@ export function createTrustedCompletionProducer(input: Readonly<{
           Object.freeze({
             contentDigest: evidence.contentDigest as Digest,
             contentBase64: Buffer.from(request.evidenceContent).toString('base64'),
+          }),
+          Object.freeze({
+            contentDigest: actorAttestation.contentDigest as Digest,
+            contentBase64: actorBytes.toString('base64'),
+          }),
+        ]),
+      });
+    },
+    attestConsultation(
+      request: TrustedConsultationInput
+    ): AttestedConsultationSubmission {
+      const frozen = assertFrozenInput(request);
+      if (
+        request.action.kind !== 'agent' ||
+        request.action.agent.consultation?.eligible !== true
+      ) {
+        throw new TrustedCompletionProducerError(
+          'attestation_input_mismatch',
+          'Only a frozen consultation-eligible agent Action can attest CONSULT.'
+        );
+      }
+      const parsed = parseConsultableLeafReturn(request.result);
+      if (parsed.status !== 'CONSULT') {
+        throw new TrustedCompletionProducerError(
+          'attestation_input_mismatch',
+          'The selected consultable worker step is terminal, not CONSULT.'
+        );
+      }
+      const resultBytes = Buffer.from(request.result, 'utf8');
+      const computedResultDigest = computeEvidenceContentDigest(resultBytes);
+      const suppliedResultDigest = request.resultDigest.startsWith('sha256:')
+        ? request.resultDigest
+        : `sha256:${request.resultDigest}`;
+      if (suppliedResultDigest !== computedResultDigest) {
+        throw new TrustedCompletionProducerError(
+          'attestation_input_mismatch',
+          'SessionHost result bytes do not match the settled result digest.'
+        );
+      }
+      const use = frozen.observations.domainActionResult;
+      const binding = {
+        planningSpaceId: request.record.change.planningSpaceId,
+        changeInstanceId: request.record.change.instanceId,
+        projectId: request.record.change.projectId,
+        changeId: request.record.change.changeId,
+        runId: request.record.runId,
+        actionId: request.action.actionId,
+        treeDigest: request.action.expectedBeforeWorkspace.treeDigest,
+        schema: use.schema,
+      };
+      const evidence = buildSignedRef(input.privateKey, authority, {
+        content: resultBytes,
+        mediaType: use.mediaType,
+        observationKind: use.observationKind,
+        producer: use.producer,
+        binding,
+      });
+      const question = {
+        problemSummary: parsed.problemSummary,
+        question: parsed.question,
+        attemptedApproaches: parsed.attemptedApproaches,
+        constraints: parsed.constraints,
+        evidencePointers: parsed.evidencePointers,
+      };
+      const preliminary: ConsultationStepSubmission = {
+        format: 'teacher-consultation/submission/1',
+        runId: request.record.runId,
+        actionId: request.action.actionId as never,
+        invocationId: request.action.invocationId as never,
+        expectedRecordVersion: request.record.recordVersion as never,
+        stableSessionId: request.stableSessionId,
+        requestId: request.requestId,
+        resultDigest: computedResultDigest,
+        question,
+        actor: frozen.actor,
+        actorAttestation: evidence,
+        evidence: [evidence],
+      };
+      const claim = buildConsultationClaim(
+        request.record,
+        request.action,
+        preliminary,
+        evidence
+      );
+      const actorBytes = Buffer.from(canonicalJson(claim), 'utf8');
+      const attestationUse = frozen.actorAttestation;
+      const actorAttestation = buildSignedRef(input.privateKey, authority, {
+        content: actorBytes,
+        mediaType: attestationUse.mediaType,
+        observationKind: attestationUse.observationKind,
+        producer: attestationUse.producer,
+        binding: {
+          planningSpaceId: request.record.change.planningSpaceId,
+          changeInstanceId: request.record.change.instanceId,
+          projectId: request.record.change.projectId,
+          changeId: request.record.change.changeId,
+          runId: request.record.runId,
+          actionId: request.action.actionId,
+          treeDigest: request.action.expectedBeforeWorkspace.treeDigest,
+          schema: attestationUse.schema,
+        },
+      });
+      const consultation = decodeConsultationStepSubmission(
+        { ...preliminary, actorAttestation },
+        request.limits
+      );
+      return Object.freeze({
+        consultation,
+        uploads: Object.freeze([
+          Object.freeze({
+            contentDigest: evidence.contentDigest as Digest,
+            contentBase64: resultBytes.toString('base64'),
           }),
           Object.freeze({
             contentDigest: actorAttestation.contentDigest as Digest,

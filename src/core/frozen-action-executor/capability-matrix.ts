@@ -37,6 +37,8 @@ export interface BackendDeclaration {
   /** Present only when the backend makes a scope-empty proof claim. */
   readonly scopeEmptyProof?: boolean;
   readonly usageAttribution: boolean;
+  /** Exact durable multi-turn wake support for one stable hosted Session. */
+  readonly continuableTurns: boolean;
   /**
    * Human label for the cancel terminal this backend produces, surfaced
    * before start so an operator cannot be surprised by it after a failure.
@@ -55,6 +57,7 @@ export const IN_TOOL_DECLARATION: BackendDeclaration = Object.freeze({
   durable: false,
   headlessDriver: false,
   usageAttribution: true,
+  continuableTurns: false,
   cancelTerminalLabel: 'launcher-disappeared / execution-lost',
 });
 
@@ -72,6 +75,7 @@ export const HOSTED_BEST_EFFORT_DECLARATION: BackendDeclaration = Object.freeze(
   exactCancel: false,
   scopeEmptyProof: false,
   usageAttribution: true,
+  continuableTurns: true,
   cancelTerminalLabel: 'cancelled / emptiness-unproven',
 });
 
@@ -330,6 +334,8 @@ export interface ResolveBackendSelectionOptions {
    * origin).
    */
   readonly explicitDefault?: ExecutionBackendId;
+  /** Require exact stable-Session continuation for an eligible source Action. */
+  readonly requiresContinuableTurns?: boolean;
 }
 
 /**
@@ -367,6 +373,14 @@ export function resolveBackendSelection(
         requested: 'hosted',
       };
     }
+    if (options.requiresContinuableTurns && !cell.declaration.continuableTurns) {
+      return {
+        kind: 'authority-unavailable',
+        reason: 'hosted-tier-unavailable',
+        message: 'consultation-continuation-unavailable: selected backend cannot continue an exact stable Session.',
+        requested: 'hosted',
+      };
+    }
     const origin: BackendSelectionOrigin =
       requested === 'hosted'
         ? { kind: 'explicit-request', backend: 'hosted' }
@@ -383,6 +397,14 @@ export function resolveBackendSelection(
         kind: 'authority-unavailable',
         reason: 'unsupported-platform',
         message: `The current platform ${host} has no declared in-tool backend.`,
+        requested: 'in-tool',
+      };
+    }
+    if (options.requiresContinuableTurns) {
+      return {
+        kind: 'authority-unavailable',
+        reason: 'hosted-tier-unavailable',
+        message: 'consultation-continuation-unavailable: in-tool execution does not own a durable continuable Session.',
         requested: 'in-tool',
       };
     }

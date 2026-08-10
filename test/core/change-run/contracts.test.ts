@@ -12,10 +12,16 @@ import {
   decodeWorkspaceRevision,
   deriveReceiptDisposition,
   type ChangePipelineRuntime,
+  type ChangeRunReceiptContinuationAuthority,
   type CompleteRunAction,
   type ExactChangeRunRef,
   type ResumeChangePipeline,
 } from '../../../src/core/change-run/index.js';
+
+const NO_CONTINUATION_AUTHORITY: ChangeRunReceiptContinuationAuthority = {
+  source: 'canonical-record',
+  resolveContinuationLimits: () => undefined,
+};
 
 const ids = {
   planningSpaceId: `planning-space:${'1'.repeat(64)}`,
@@ -395,7 +401,7 @@ describe('closed change-run codecs', () => {
         disposition: 'reused',
         view: view(),
         actions: [action],
-      })
+      }, NO_CONTINUATION_AUTHORITY)
     ).toThrowError(expect.objectContaining({ code: 'invalid_run_invariant' }));
 
     expect(
@@ -404,7 +410,7 @@ describe('closed change-run codecs', () => {
         disposition: 'advanced',
         view: view(),
         actions: [action],
-      }).actions
+      }, NO_CONTINUATION_AUTHORITY).actions
     ).toHaveLength(1);
   });
 

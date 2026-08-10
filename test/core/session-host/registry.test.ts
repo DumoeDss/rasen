@@ -10,7 +10,19 @@ import {
   createSessionHostRegistry,
   prunedRequestIdMayExist,
 } from '../../../src/core/session-host/registry.js';
-import type { HostedSessionRecord } from '../../../src/core/session-host/contracts.js';
+import {
+  toSessionHostView,
+  type HostedSessionRecord,
+} from '../../../src/core/session-host/contracts.js';
+import {
+  PROCESS_AUTHORITY_COMMON_CONTRACT_VERSION,
+  RECURSIVE_PROCESS_SCOPE_CAPABILITY_ID,
+  RECURSIVE_PROCESS_SCOPE_SEMANTICS,
+} from '../../../src/core/session-host/process-authority/index.js';
+import {
+  createProviderAuthorityReference,
+  encodeProcessAuthorityReference,
+} from '../../../src/core/session-host/process-authority/reference-codec.js';
 
 const roots: string[] = [];
 
@@ -40,6 +52,49 @@ function record(cwd: string, sessionId = randomUUID()): HostedSessionRecord {
   };
 }
 
+function exactTeacherAttempt(sessionId: string, requestId: string) {
+  const provider = {
+    providerId: 'test.exact-teacher',
+    capabilityId: RECURSIVE_PROCESS_SCOPE_CAPABILITY_ID,
+    protocolVersion: 1,
+  } as const;
+  const processRef = encodeProcessAuthorityReference(
+    {
+      ...provider,
+      commonContractVersion: PROCESS_AUTHORITY_COMMON_CONTRACT_VERSION,
+      providerReferenceVersion: 1,
+      semantics: RECURSIVE_PROCESS_SCOPE_SEMANTICS,
+    },
+    createProviderAuthorityReference(1, Buffer.from('teacher-authority-0001'))
+  );
+  return {
+    processRef,
+    facts: {
+      schema: 'rasen-exact-teacher-session-attempt/1',
+      recordVersion: 1,
+      attemptId: 'teacher-attempt-0001',
+      provider,
+      processRef,
+      runId: 'run-0001',
+      actionId: 'teacher-action-0001',
+      invocationId: 'teacher-invocation-0001',
+      attempt: 1,
+      stableSessionId: sessionId,
+      requestId,
+      journalRevision: 7,
+      phase: 'result-quarantined',
+      baselineIdentity: 'manifest:baseline',
+      hostedReceipt: {
+        stableSessionId: sessionId,
+        requestId,
+        resultRef: 'sha256:result-object-0001',
+        resultDigest: 'a'.repeat(64),
+      },
+      quarantineIdentity: `quarantine:sha256:${'a'.repeat(64)}`,
+    },
+  } as const;
+}
+
 function rewriteValidDocument(
   registryPath: string,
   mutate: (payload: Record<string, any>) => void
@@ -52,6 +107,151 @@ function rewriteValidDocument(
 }
 
 describe('durable hosted Session registry', () => {
+  it('round-trips exact Teacher restart-union facts without projecting authority details', async () => {
+    const root = tempRoot();
+    const cwd = path.join(root, 'checkout');
+    fs.mkdirSync(cwd);
+    const stateDir = path.join(root, 'state');
+    const requestId = randomUUID();
+    const original = record(cwd);
+    const exact = exactTeacherAttempt(original.sessionId, requestId);
+    const exactRecord = {
+      ...original,
+      requests: [{
+        requestId,
+        inputDigest: 'b'.repeat(64),
+        generation: 1,
+        state: 'settled' as const,
+        preparedAt: original.createdAt,
+        sentAt: original.createdAt,
+        settledAt: original.createdAt,
+        resultRef: exact.facts.hostedReceipt.resultRef,
+        resultDigest: exact.facts.hostedReceipt.resultDigest,
+      }],
+      process: {
+        generation: 1,
+        ownerToken: 'teacher-owner-token',
+        runtimeRef: exact.processRef,
+        preparedAt: original.createdAt,
+      },
+      exactTeacherAttempt: exact.facts,
+    } as HostedSessionRecord;
+
+    const first = createSessionHostRegistry({ stateDir });
+    await first.create(exactRecord);
+    const restarted = createSessionHostRegistry({ stateDir });
+    await restarted.load();
+
+    expect(restarted.get(original.sessionId)).toEqual({
+      ...exactRecord,
+      revision: 0,
+    });
+    expect(toSessionHostView(restarted.get(original.sessionId)!))
+      .not.toHaveProperty('exactTeacherAttempt');
+    expect(JSON.stringify(toSessionHostView(restarted.get(original.sessionId)!)))
+      .not.toContain('rasen-process-authority/1:');
+    const bytes = fs.readFileSync(restarted.paths.registryPath, 'utf8');
+    expect(bytes).not.toMatch(/\bpid\b|processName|nativeHandle|resultBody/i);
+  });
+
+  it('keeps exact Teacher provider and canonical attempt identity immutable', async () => {
+    const root = tempRoot();
+    const cwd = path.join(root, 'checkout');
+    fs.mkdirSync(cwd);
+    const requestId = randomUUID();
+    const original = record(cwd);
+    const exact = exactTeacherAttempt(original.sessionId, requestId);
+    const registry = createSessionHostRegistry({ stateDir: path.join(root, 'state') });
+    await registry.create({
+      ...original,
+      requests: [{
+        requestId,
+        inputDigest: 'b'.repeat(64),
+        generation: 1,
+        state: 'settled',
+        preparedAt: original.createdAt,
+        resultRef: exact.facts.hostedReceipt.resultRef,
+        resultDigest: exact.facts.hostedReceipt.resultDigest,
+      }],
+      process: {
+        generation: 1,
+        ownerToken: 'teacher-owner-token',
+        runtimeRef: exact.processRef,
+        preparedAt: original.createdAt,
+      },
+      exactTeacherAttempt: exact.facts,
+    });
+
+    await expect(registry.update(original.sessionId, 1, (current) => ({
+      ...current,
+      exactTeacherAttempt: {
+        ...current.exactTeacherAttempt!,
+        runId: 'forged-run',
+      },
+    }))).rejects.toThrow(/immutable|identity/i);
+    expect(registry.get(original.sessionId)?.exactTeacherAttempt?.runId).toBe('run-0001');
+  });
+
+  it('preserves unknown, future, and crossed exact-authority bytes while failing closed', async () => {
+    const root = tempRoot();
+    const cwd = path.join(root, 'checkout');
+    fs.mkdirSync(cwd);
+    const stateDir = path.join(root, 'state');
+    const requestId = randomUUID();
+    const original = record(cwd);
+    const exact = exactTeacherAttempt(original.sessionId, requestId);
+    const registry = createSessionHostRegistry({ stateDir });
+    await registry.create({
+      ...original,
+      requests: [{
+        requestId,
+        inputDigest: 'b'.repeat(64),
+        generation: 1,
+        state: 'settled',
+        preparedAt: original.createdAt,
+        resultRef: exact.facts.hostedReceipt.resultRef,
+        resultDigest: exact.facts.hostedReceipt.resultDigest,
+      }],
+      process: {
+        generation: 1,
+        ownerToken: 'teacher-owner-token',
+        runtimeRef: exact.processRef,
+        preparedAt: original.createdAt,
+      },
+      exactTeacherAttempt: exact.facts,
+    });
+    const validBytes = fs.readFileSync(registry.paths.registryPath, 'utf8');
+    const mutations: Array<(facts: Record<string, any>, session: Record<string, any>) => void> = [
+      (facts) => { facts.futureAuthority = 'must-fail'; },
+      (facts) => { facts.phase = 'future-authority-phase'; },
+      (facts) => { facts.stableSessionId = randomUUID(); },
+      (facts) => { facts.requestId = randomUUID(); },
+      (facts) => { facts.provider.protocolVersion += 1; },
+      (facts) => { facts.hostedReceipt.resultDigest = 'c'.repeat(64); },
+      (facts) => { facts.quarantineIdentity = `quarantine:sha256:${'d'.repeat(64)}`; },
+      (facts, session) => {
+        facts.processRef = facts.processRef.replace(
+          'rasen-process-authority/1:',
+          'rasen-process-authority/2:'
+        );
+        session.process.runtimeRef = facts.processRef;
+      },
+    ];
+
+    for (const mutate of mutations) {
+      fs.writeFileSync(registry.paths.registryPath, validBytes, 'utf8');
+      rewriteValidDocument(registry.paths.registryPath, (payload) => {
+        const session = payload.sessions[original.sessionId];
+        mutate(session.exactTeacherAttempt, session);
+      });
+      const authoredBytes = fs.readFileSync(registry.paths.registryPath, 'utf8');
+      await expect(createSessionHostRegistry({ stateDir }).load()).rejects.toMatchObject({
+        code: 'registry-corrupt',
+      });
+      expect(fs.readFileSync(registry.paths.registryPath, 'utf8')).toBe(authoredBytes);
+    }
+  });
+
   it('publishes owner-only canonical records and returns deep copies', async () => {
     const root = tempRoot();
     const cwd = path.join(root, 'checkout');

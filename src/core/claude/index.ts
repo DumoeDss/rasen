@@ -43,10 +43,13 @@ export {
 } from './identity.js';
 export {
   LEAF_RETURN_SCHEMA,
+  CONSULTABLE_LEAF_RETURN_SCHEMA,
   EVALUATE_GATE_SCHEMA,
   parseLeafReturn,
+  parseConsultableLeafReturn,
   parseEvaluateGate,
   type LeafReturn,
+  type ConsultableLeafReturn,
   type EvaluateGateResult,
   type WorkerContract,
   type WorkerContractResult,

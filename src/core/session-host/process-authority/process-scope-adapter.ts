@@ -85,7 +85,13 @@ export function mapProcessAuthorityObservation(
   if (outcome.state === 'prepared-inert' || outcome.state === 'published-inert') {
     return { state: 'prepared', controllable: true };
   }
-  if (isExactScopeEmptyReceipt(outcome)) return { state: 'closed', controllable: false };
+  if (isExactScopeEmptyReceipt(outcome)) {
+    return {
+      state: 'closed',
+      controllable: false,
+      exactScopeEmptyReceipt: outcome,
+    };
+  }
   if (outcome.state === 'ordering-conflict') {
     return { state: 'uncertain', controllable: false, diagnostic: outcome.diagnostic };
   }
@@ -106,6 +112,7 @@ export function mapProcessAuthorityControlOutcome(
       state: 'closed',
       gracefulAttempted,
       forced: true,
+      exactScopeEmptyReceipt: outcome,
     };
   }
   if (outcome.state === 'live' || outcome.state === 'root-exited') {
@@ -185,6 +192,7 @@ export function createProviderBackedProcessScope(
           if (published.state !== 'published-inert') {
             throw authorityError('authority-persist-failed', published);
           }
+          await input.onExactAuthorityPhase?.('authority-published-inert', ref);
           let runtime: ProviderBackedProcessRuntime;
           try {
             runtime = options.openRuntime(prepared.reference);
@@ -225,6 +233,7 @@ export function createProviderBackedProcessScope(
             }
             throw authorityError('process-authority-uncertain', reconciled);
           }
+          await input.onExactAuthorityPhase?.('activated', ref);
           const rootExited = activation.state === 'root-exited'
             ? Promise.resolve<BackendRootExit>({
                 state: 'root-exited',
@@ -237,11 +246,17 @@ export function createProviderBackedProcessScope(
                 }
                 return { state: 'root-exited', code: outcome.code, signal: outcome.signal };
               });
-          const closed = runtime.exactScopeEmpty.then((outcome): ScopeEmptyReceipt => {
-            if (!isExactScopeEmptyReceipt(outcome)) {
+          const closed = runtime.exactScopeEmpty.then(async (outcome): Promise<ScopeEmptyReceipt> => {
+            // A runtime frame is only a wakeup. It is deliberately unable to
+            // mint the coordinator's WeakSet-backed authority receipt.
+            if (outcome.state !== 'exact-scope-empty') {
               throw authorityError('process-termination-unobserved', outcome);
             }
-            return { state: 'scope-empty' };
+            const authenticated = await options.coordinator.inspect(prepared.reference);
+            if (!isExactScopeEmptyReceipt(authenticated)) {
+              throw authorityError('process-termination-unobserved', authenticated);
+            }
+            return { state: 'scope-empty', exactScopeEmptyReceipt: authenticated };
           });
           return Object.freeze({
             ref,

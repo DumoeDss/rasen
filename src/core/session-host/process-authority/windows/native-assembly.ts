@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
+import { PassThrough, Writable, type Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 
 import type { ProviderBackedProcessRuntime } from '../process-scope-adapter.js';
@@ -487,7 +488,7 @@ function probeArguments(
 
 function controlArguments(
   reference: WindowsPrivateAuthorityReference,
-  verb: 'inspect' | 'abort' | 'terminate',
+  verb: 'inspect' | 'abort' | 'terminate' | 'bridge',
   deadlineMs: number,
   graceMs = 0
 ): string[] {
@@ -503,6 +504,323 @@ function controlArguments(
   ];
   if (verb === 'terminate') arguments_.push('--grace-ms', String(graceMs));
   return arguments_;
+}
+
+const RUNTIME_FRAME_HEADER_BYTES = 12;
+const RUNTIME_MAX_FRAME_BYTES = 1024 * 1024;
+const RUNTIME_FRAME = Object.freeze({
+  activate: 0x03,
+  abort: 0x05,
+  terminate: 0x06,
+  input: 0x07,
+  closeInput: 0x08,
+  runtimeReady: 0x82,
+  activated: 0x83,
+  output: 0x85,
+  errorOutput: 0x86,
+  event: 0x87,
+  rootExited: 0x88,
+  exactScopeEmpty: 0x89,
+  failure: 0xff,
+});
+
+function runtimeFrame(kind: number, payload = Buffer.alloc(0)): Buffer {
+  if (payload.byteLength > RUNTIME_MAX_FRAME_BYTES) {
+    throw new TypeError('Windows process-authority runtime frame exceeds its bound.');
+  }
+  const header = Buffer.alloc(RUNTIME_FRAME_HEADER_BYTES);
+  header.write('RWA1', 0, 'ascii');
+  header.writeUInt16BE(1, 4);
+  header[6] = kind;
+  header[7] = 0;
+  header.writeUInt32BE(payload.byteLength, 8);
+  return Buffer.concat([header, payload]);
+}
+
+export interface WindowsAuthorityRuntimeTestChild {
+  readonly stdin: Writable;
+  readonly stdout: Readable;
+  readonly stderr: Readable;
+  kill(signal?: NodeJS.Signals): boolean;
+  once(event: 'error', listener: (error: Error) => void): this;
+  once(event: 'close', listener: (code: number | null) => void): this;
+}
+
+export interface WindowsAuthorityRuntimeTestController {
+  readonly runtime: ProviderBackedProcessRuntime;
+  activate(context: AuthorityOperationContext): Promise<unknown>;
+  terminate(
+    intent: AuthorityTerminationIntent,
+    context: AuthorityOperationContext
+  ): Promise<unknown>;
+  abort(context: AuthorityOperationContext): Promise<unknown>;
+}
+
+function runtimeControllerForChild(
+  child: WindowsAuthorityRuntimeTestChild,
+  remove: () => void
+): WindowsAuthorityRuntimeTestController {
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  let pending = Buffer.alloc(0);
+  let diagnosticBytes = 0;
+  const diagnostics: Buffer[] = [];
+  let readySettled = false;
+  let activatedSettled = false;
+  let rootSettled = false;
+  let emptySettled = false;
+  let failed = false;
+  let readyResolve!: () => void;
+  let readyReject!: (reason: unknown) => void;
+  const ready = new Promise<void>((resolve, reject) => {
+    readyResolve = resolve;
+    readyReject = reject;
+  });
+  let activatedResolve!: () => void;
+  let activatedReject!: (reason: unknown) => void;
+  const activated = new Promise<void>((resolve, reject) => {
+    activatedResolve = resolve;
+    activatedReject = reject;
+  });
+  let rootResolve!: (value: { state: 'root-exited'; code: number; signal: null }) => void;
+  let rootReject!: (reason: unknown) => void;
+  const rootExited = new Promise<{ state: 'root-exited'; code: number; signal: null }>(
+    (resolve, reject) => {
+      rootResolve = resolve;
+      rootReject = reject;
+    }
+  );
+  let emptyResolve!: (value: { state: 'exact-scope-empty' }) => void;
+  let emptyReject!: (reason: unknown) => void;
+  const exactScopeEmpty = new Promise<{ state: 'exact-scope-empty' }>(
+    (resolve, reject) => {
+      emptyResolve = resolve;
+      emptyReject = reject;
+    }
+  );
+
+  const fail = (reason: unknown): void => {
+    if (failed) return;
+    failed = true;
+    remove();
+    const error = reason instanceof Error
+      ? reason
+      : new Error('Windows runtime bridge lost exact protocol authority.');
+    if (!readySettled) {
+      readySettled = true;
+      readyReject(error);
+    }
+    if (!activatedSettled) {
+      activatedSettled = true;
+      activatedReject(error);
+    }
+    if (!rootSettled) {
+      rootSettled = true;
+      rootReject(error);
+    }
+    if (!emptySettled) {
+      emptySettled = true;
+      emptyReject(error);
+    }
+    child.stdin.destroy();
+    stdout.destroy(error);
+    stderr.destroy(error);
+  };
+
+  child.stderr.on('data', (chunk: Buffer) => {
+    if (diagnosticBytes >= MAX_DIAGNOSTIC_BYTES) return;
+    const bounded = Buffer.from(chunk).subarray(0, MAX_DIAGNOSTIC_BYTES - diagnosticBytes);
+    diagnosticBytes += bounded.byteLength;
+    diagnostics.push(bounded);
+  });
+  child.stdout.on('data', (chunk: Buffer) => {
+    pending = Buffer.concat([pending, chunk]);
+    try {
+      while (pending.byteLength >= RUNTIME_FRAME_HEADER_BYTES) {
+        if (
+          pending.subarray(0, 4).toString('ascii') !== 'RWA1' ||
+          pending.readUInt16BE(4) !== 1 ||
+          pending[7] !== 0
+        ) {
+          throw new TypeError('Windows runtime frame header is malformed.');
+        }
+        const length = pending.readUInt32BE(8);
+        if (length > RUNTIME_MAX_FRAME_BYTES) {
+          throw new TypeError('Windows runtime frame exceeds its bound.');
+        }
+        if (pending.byteLength < RUNTIME_FRAME_HEADER_BYTES + length) break;
+        const kind = pending[6]!;
+        const payload = pending.subarray(
+          RUNTIME_FRAME_HEADER_BYTES,
+          RUNTIME_FRAME_HEADER_BYTES + length
+        );
+        pending = pending.subarray(RUNTIME_FRAME_HEADER_BYTES + length);
+        if (!readySettled) {
+          if (kind !== RUNTIME_FRAME.runtimeReady || payload.byteLength !== 0) {
+            throw new TypeError('Windows runtime did not establish its exact bridge.');
+          }
+          readySettled = true;
+          readyResolve();
+          continue;
+        }
+        if (kind === RUNTIME_FRAME.activated) {
+          if (payload.byteLength !== 4 || activatedSettled) {
+            throw new TypeError('Windows runtime activation frame is malformed or duplicated.');
+          }
+          activatedSettled = true;
+          activatedResolve();
+        } else if (kind === RUNTIME_FRAME.output) {
+          stdout.write(payload);
+        } else if (kind === RUNTIME_FRAME.errorOutput) {
+          stderr.write(payload);
+        } else if (kind === RUNTIME_FRAME.event) {
+          // Events remain provider-private diagnostics. Exact terminal authority
+          // comes only from the dedicated terminal frames below.
+        } else if (kind === RUNTIME_FRAME.rootExited) {
+          if (payload.byteLength !== 5 || payload[0] !== ROOT_STATUS_CODE_ONLY || rootSettled) {
+            throw new TypeError('Windows runtime root-exit frame is malformed or duplicated.');
+          }
+          rootSettled = true;
+          rootResolve({
+            state: 'root-exited',
+            code: payload.readUInt32BE(1),
+            signal: null,
+          });
+        } else if (kind === RUNTIME_FRAME.exactScopeEmpty) {
+          if (payload.byteLength !== OBSERVATION_BYTES || emptySettled) {
+            throw new TypeError('Windows runtime exact-empty frame is malformed or duplicated.');
+          }
+          if (!rootSettled) {
+            rootSettled = true;
+            rootReject(new Error(
+              'Windows runtime reached exact empty without a root-exit observation.'
+            ));
+          }
+          emptySettled = true;
+          emptyResolve({ state: 'exact-scope-empty' });
+          remove();
+          stdout.end();
+          stderr.end();
+        } else if (kind === RUNTIME_FRAME.failure) {
+          throw new Error('Windows authority runtime reported a typed failure.');
+        } else {
+          throw new TypeError('Windows runtime frame kind is unexpected.');
+        }
+      }
+    } catch (error) {
+      child.kill();
+      fail(error);
+    }
+  });
+  child.once('error', fail);
+  child.once('close', (code) => {
+    if (
+      code !== 0 ||
+      pending.byteLength !== 0 ||
+      !readySettled ||
+      !rootSettled ||
+      !emptySettled
+    ) {
+      const diagnostic = boundedDiagnostic(
+        Buffer.concat(diagnostics).toString('utf8')
+      );
+      fail(new Error(
+        `Windows runtime bridge closed without exact terminal proof${
+          diagnostic.length === 0 ? '' : ` (${diagnostic})`
+        }.`
+      ));
+    }
+  });
+
+  const input = new Writable({
+    write(chunk, _encoding, callback) {
+      child.stdin.write(runtimeFrame(RUNTIME_FRAME.input, Buffer.from(chunk)), callback);
+    },
+    final(callback) {
+      child.stdin.write(runtimeFrame(RUNTIME_FRAME.closeInput), callback);
+    },
+  });
+  return Object.freeze({
+    runtime: Object.freeze({
+      stdin: input,
+      stdout,
+      stderr,
+      rootExited: rootExited as ProviderBackedProcessRuntime['rootExited'],
+      exactScopeEmpty: exactScopeEmpty as ProviderBackedProcessRuntime['exactScopeEmpty'],
+    }),
+    async activate(context: AuthorityOperationContext) {
+      if (context.signal.aborted) return controlLoss();
+      await ready;
+      if (context.signal.aborted) return controlLoss();
+      await new Promise<void>((resolve, reject) => {
+        child.stdin.write(runtimeFrame(RUNTIME_FRAME.activate), (error) => {
+          if (error) reject(error);
+          else resolve();
+        });
+      });
+      await activated;
+      return { state: 'live' };
+    },
+    async terminate(
+      intent: AuthorityTerminationIntent,
+      context: AuthorityOperationContext
+    ) {
+      if (context.signal.aborted) return controlLoss();
+      const payload = Buffer.alloc(8);
+      payload.writeUInt32BE(boundedMilliseconds(intent.graceMs, 'the graceful interval'), 0);
+      payload.writeUInt32BE(boundedMilliseconds(
+        Math.max(1, Math.trunc(context.deadline - performance.now())),
+        'the termination deadline'
+      ), 4);
+      await new Promise<void>((resolve, reject) => {
+        child.stdin.write(runtimeFrame(RUNTIME_FRAME.terminate, payload), (error) => {
+          if (error) reject(error);
+          else resolve();
+        });
+      });
+      await exactScopeEmpty;
+      return { state: 'exact-scope-empty' };
+    },
+    async abort(context: AuthorityOperationContext) {
+      if (context.signal.aborted) return controlLoss();
+      const payload = Buffer.alloc(8);
+      payload.writeUInt32BE(0, 0);
+      payload.writeUInt32BE(boundedMilliseconds(
+        Math.max(1, Math.trunc(context.deadline - performance.now())),
+        'the abort deadline'
+      ), 4);
+      await new Promise<void>((resolve, reject) => {
+        child.stdin.write(runtimeFrame(RUNTIME_FRAME.abort, payload), (error) => {
+          if (error) reject(error);
+          else resolve();
+        });
+      });
+      await exactScopeEmpty;
+      return { state: 'exact-scope-empty' };
+    },
+  });
+}
+
+function openFramePreservingRuntime(
+  artifact: WindowsProcessAuthorityResolvedArtifact,
+  reference: WindowsPrivateAuthorityReference,
+  remove: () => void
+): WindowsAuthorityRuntimeTestController {
+  return runtimeControllerForChild(
+    spawn(
+      artifact.helperPath,
+      controlArguments(reference, 'bridge', 0xff_ff_ff_ff),
+      { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true }
+    ),
+    remove
+  );
+}
+
+/** @internal Deterministic frame bridge seam; absent from the Windows public index. */
+export function openWindowsAuthorityRuntimeControllerForTesting(
+  child: WindowsAuthorityRuntimeTestChild
+): WindowsAuthorityRuntimeTestController {
+  return runtimeControllerForChild(child, () => undefined);
 }
 
 /**
@@ -603,6 +921,9 @@ function assemble(
   runtimeRoot: string,
   artifact: WindowsProcessAuthorityResolvedArtifact
 ): WindowsAuthorityNativeAssembly {
+  const runtimeControllers = new Map<string, WindowsAuthorityRuntimeTestController>();
+  const runtimeKey = (reference: WindowsPrivateAuthorityReference): string =>
+    `${reference.scopeId}:${reference.generation}`;
   const transport: WindowsAuthorityNativeTransport = Object.freeze({
     async prepare(
       request: WindowsAuthorityNativePrepareRequest,
@@ -652,12 +973,14 @@ function assemble(
       if (completed.code !== 0) return controlLoss();
       return toIdentityProbe(parseProbeFields(completed.stdout));
     },
-    async activate() {
-      // Activation is inseparable from the runtime bridge in this helper: the
-      // only verb that sends an `Activate` frame is `control --verb run`, which
-      // also opens the bridge and then streams the workload on its own stdio.
-      // Refused for the reason recorded on `openRuntime`.
-      return { state: 'authority-unavailable', diagnosticCode: 'control-unavailable' };
+    async activate(
+      reference: WindowsPrivateAuthorityReference,
+      context: AuthorityOperationContext
+    ) {
+      const controller = runtimeControllers.get(runtimeKey(reference));
+      return controller === undefined
+        ? { state: 'control-loss', diagnosticCode: 'native-transport-lost' }
+        : controller.activate(context);
     },
     async inspect(
       reference: WindowsPrivateAuthorityReference,
@@ -710,26 +1033,42 @@ function assemble(
       );
       return run.code === 0 ? terminalOutcome(run.stdout) : controlFailureOutcome(run.diagnostic);
     },
+    hasResidentRuntime(reference: WindowsPrivateAuthorityReference) {
+      return runtimeControllers.has(runtimeKey(reference));
+    },
+    async terminateResident(
+      reference: WindowsPrivateAuthorityReference,
+      intent: AuthorityTerminationIntent,
+      context: AuthorityOperationContext
+    ) {
+      const controller = runtimeControllers.get(runtimeKey(reference));
+      return controller === undefined
+        ? { state: 'control-loss', diagnosticCode: 'native-transport-lost' }
+        : controller.terminate(intent, context);
+    },
+    async abortResident(
+      reference: WindowsPrivateAuthorityReference,
+      _reason: string,
+      context: AuthorityOperationContext
+    ) {
+      const controller = runtimeControllers.get(runtimeKey(reference));
+      return controller === undefined
+        ? { state: 'control-loss', diagnosticCode: 'native-transport-lost' }
+        : controller.abort(context);
+    },
   });
   const runtimeOpener: WindowsAuthorityRuntimeOpener = Object.freeze({
-    open(): ProviderBackedProcessRuntime {
-      // Not approximated, on purpose. `control --verb run` writes the workload's
-      // output straight onto the helper's own stdout and stderr and prints its
-      // receipt lines onto the same two streams. A bridge over it would have to
-      // recover `RWA1-OBSERVATION` and `root-exited` from bytes the workload can
-      // also write, so a workload that printed either could forge an
-      // exact-scope-empty or a root-exit observation - the one failure the
-      // Record-must-not-lie invariant forbids outright. The verb also never
-      // forwards standard input, so the bridge could not be exact even if the
-      // receipts were safe.
-      //
-      // What the crate needs is the Linux sibling's shape: a verb that copies
-      // protocol frames verbatim between the endpoint and its own stdio, leaving
-      // the de-multiplexing to this layer.
-      throw new TypeError(
-        'Windows process-authority native runtime bridge is unavailable: the helper has no ' +
-        'frame-preserving runtime verb.'
-      );
+    open(reference: WindowsPrivateAuthorityReference): ProviderBackedProcessRuntime {
+      const key = runtimeKey(reference);
+      if (runtimeControllers.has(key)) {
+        throw new TypeError('Windows process-authority runtime bridge is already open.');
+      }
+      let controller!: WindowsAuthorityRuntimeTestController;
+      controller = openFramePreservingRuntime(artifact, reference, () => {
+        if (runtimeControllers.get(key) === controller) runtimeControllers.delete(key);
+      });
+      runtimeControllers.set(key, controller);
+      return controller.runtime;
     },
   });
   return Object.freeze({

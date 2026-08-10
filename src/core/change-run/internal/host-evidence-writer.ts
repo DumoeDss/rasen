@@ -3,9 +3,13 @@ import type {
   EvidenceRef,
   RunId,
 } from '../contracts.js';
+import type { ConsultationStepSubmission } from '../consultation-contracts.js';
 import { verifyCompletion } from './completion.js';
 import { computeEvidenceContentDigest, type BoundedEvidenceStore } from './evidence.js';
-import { verifyAttestedCompletion } from './attestation.js';
+import {
+  verifyAttestedCompletion,
+  verifyAttestedConsultationSubmission,
+} from './attestation.js';
 import type { RunStore } from './run-store.js';
 
 export interface CompletionEvidenceUpload {
@@ -17,6 +21,11 @@ export interface HostEvidenceWriter {
   /** Verify the complete signed set in memory, then publish all objects. */
   readonly publishCompletion: (
     completion: CompleteRunAction,
+    uploads: readonly CompletionEvidenceUpload[]
+  ) => void;
+  /** Verify and publish one signed non-terminal CONSULT submission. */
+  readonly publishConsultation: (
+    consultation: ConsultationStepSubmission,
     uploads: readonly CompletionEvidenceUpload[]
   ) => void;
 }
@@ -123,6 +132,83 @@ export function createHostEvidenceWriter(input: Readonly<{
         }
         return bytes;
       });
+      for (const ref of refs) {
+        input.evidenceStore.stageClaimed(ref, byDigest.get(ref.contentDigest)!);
+      }
+    },
+    publishConsultation(
+      consultation: ConsultationStepSubmission,
+      uploads: readonly CompletionEvidenceUpload[]
+    ): void {
+      const record = input.runStore.load(input.runId);
+      const committed = record.actions[consultation.actionId];
+      if (committed === undefined) {
+        throw new HostEvidenceWriterError(
+          'completion_upload_invalid',
+          'Consultation upload names an Action that is not admitted.'
+        );
+      }
+
+      const byDigest = new Map<string, Uint8Array>();
+      for (const upload of uploads) {
+        const bytes = decodeCanonicalBase64(upload.contentBase64);
+        const digest = computeEvidenceContentDigest(bytes);
+        if (digest !== upload.contentDigest) {
+          throw new HostEvidenceWriterError(
+            'completion_upload_invalid',
+            `Consultation upload digest mismatch for ${upload.contentDigest}.`
+          );
+        }
+        const existing = byDigest.get(digest);
+        if (
+          existing !== undefined &&
+          !Buffer.from(existing).equals(Buffer.from(bytes))
+        ) {
+          throw new HostEvidenceWriterError(
+            'completion_upload_invalid',
+            `Consultation upload ${digest} has conflicting bytes.`
+          );
+        }
+        byDigest.set(digest, bytes);
+      }
+
+      const refs: readonly EvidenceRef[] = [
+        consultation.actorAttestation,
+        ...consultation.evidence,
+      ];
+      const required = new Set(refs.map((ref) => ref.contentDigest));
+      for (const ref of refs) {
+        if (!byDigest.has(ref.contentDigest)) {
+          throw new HostEvidenceWriterError(
+            'completion_upload_missing',
+            `Consultation EvidenceRef ${ref.evidenceDigest} has no upload.`
+          );
+        }
+      }
+      for (const digest of byDigest.keys()) {
+        if (!required.has(digest)) {
+          throw new HostEvidenceWriterError(
+            'completion_upload_orphaned',
+            `Consultation upload ${digest} is not referenced by the signed submission.`
+          );
+        }
+      }
+
+      verifyAttestedConsultationSubmission(
+        record,
+        committed.action,
+        consultation,
+        (ref) => {
+          const bytes = byDigest.get(ref.contentDigest);
+          if (bytes === undefined) {
+            throw new HostEvidenceWriterError(
+              'completion_upload_missing',
+              `Consultation EvidenceRef ${ref.evidenceDigest} has no upload.`
+            );
+          }
+          return bytes;
+        }
+      );
       for (const ref of refs) {
         input.evidenceStore.stageClaimed(ref, byDigest.get(ref.contentDigest)!);
       }

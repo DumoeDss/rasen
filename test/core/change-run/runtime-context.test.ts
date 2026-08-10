@@ -45,6 +45,21 @@ const BUG_FIX = {
   ],
 } as const;
 
+const WRITE_ONLY = {
+  version: 1,
+  name: 'write-only-fixture',
+  description: 'single ungated writer fixture',
+  stages: [
+    {
+      id: 'apply',
+      skill: 'rasen-apply-change',
+      role: 'implementer',
+      requires: [],
+      gate: false,
+    },
+  ],
+} as const;
+
 function git(cwd: string, args: readonly string[]): void {
   execFileSync('git', args, { cwd, stdio: 'ignore' });
 }
@@ -121,6 +136,89 @@ function profileFor(
           handoffTokenLimit: 'default', reuseRoundLimit: 'default',
         },
       })),
+    },
+  });
+}
+
+function writeOnlyProfile() {
+  return createRuntimeExecutionProfile({
+    sourceRevision: {
+      layer: 'package',
+      kind: 'pipeline-yaml',
+      sourceId: 'package:write-only-fixture',
+      authoredContentDigest: `sha256:${'1'.repeat(64)}`,
+      semanticDigest: `sha256:${'2'.repeat(64)}`,
+    },
+    capabilities: [
+      {
+        nodeId: 'stage:apply',
+        authoredCapability: {
+          id: 'skill:rasen-apply-change',
+          version: 'legacy',
+        },
+        contract: {
+          id: 'rasen-apply-change',
+          version: '1',
+          digest: `sha256:${'3'.repeat(64)}`,
+        },
+        actionKind: 'agent',
+        resultContract: {
+          id: 'rasen-apply-change-result',
+          version: '1',
+          digest: `sha256:${'4'.repeat(64)}`,
+        },
+        evidenceContract: {
+          id: 'rasen-apply-change-evidence',
+          version: '1',
+          digest: `sha256:${'5'.repeat(64)}`,
+        },
+        recovery: 'suspend-if-ambiguous',
+        workspace: { access: 'write', resources: ['worktree'] },
+        effects: [
+          {
+            slot: 'workspace',
+            kind: 'workspace',
+            resource: 'worktree',
+            recovery: 'suspend-if-ambiguous',
+          },
+        ],
+        adapter: {
+          id: 'adapter:rasen-apply-change',
+          version: '1',
+          contentDigest: `sha256:${'6'.repeat(64)}`,
+          attestationAuthority: TEST_ATTESTATION_AUTHORITY,
+        },
+      },
+    ],
+    policy: {
+      format: 'effective-run-policy/1',
+      maxAttempts: 3,
+      maxActions: 8,
+      stages: [
+        {
+          nodeId: 'stage:apply',
+          role: 'implementer',
+          model: 'default',
+          effort: 'default',
+          runtime: 'codex',
+          sandbox: 'workspace-write',
+          gate: false,
+          sessionReuse: 'never',
+          handoffTokenLimit: 10_000,
+          reuseRoundLimit: 1,
+          provenance: {
+            role: 'stage',
+            model: 'default',
+            effort: 'default',
+            runtime: 'stage',
+            sandbox: 'stage',
+            gate: 'stage',
+            sessionReuse: 'default',
+            handoffTokenLimit: 'default',
+            reuseRoundLimit: 'default',
+          },
+        },
+      ],
     },
   });
 }
@@ -209,6 +307,126 @@ describe('prepareRuntimeContext (launch wiring, real fs + git)', () => {
     expect(ctx.plan.planDigest).not.toBe(`sha256:${prepared.value.digests.plan}`);
     expect(ctx.plan.executionProfile).toEqual(profile);
     expect(ctx.store.loadPlan?.(runId)).toEqual(ctx.plan);
+  });
+
+  it('shares the default production reservation registry across RuntimeContexts', async () => {
+    const prepared = EcpDefinitionModule.prepare(
+      WRITE_ONLY,
+      createCapabilityCatalogSnapshot([])
+    );
+    if (!prepared.ok) throw prepared.error;
+    const profile = writeOnlyProfile();
+    const planningSpaceId = derivePlanningSpaceId(
+      'shared-registry-fixture-home'
+    ) as PlanningSpaceId;
+    const physical: PhysicalIdentity = {
+      format: 'physical-identity/1',
+      platform: 'posix',
+      device: 11n,
+      fileIndex: 12n,
+      birthIdentity: 13n,
+    };
+    const workspaceInstanceId = deriveWorkspaceInstanceId(
+      planningSpaceId,
+      physical
+    ) as WorkspaceInstanceId;
+    const firstChangeInstanceId = deriveChangeInstanceId(
+      planningSpaceId,
+      'first-change',
+      physical
+    ) as ChangeInstanceId;
+    const secondChangeInstanceId = deriveChangeInstanceId(
+      planningSpaceId,
+      'second-change',
+      physical
+    ) as ChangeInstanceId;
+    const firstRunId = deriveRunId(
+      planningSpaceId,
+      firstChangeInstanceId,
+      'first-change',
+      'first-launch'
+    ) as RunId;
+    const secondRunId = deriveRunId(
+      planningSpaceId,
+      secondChangeInstanceId,
+      'second-change',
+      'second-launch'
+    ) as RunId;
+    const contextFor = (
+      runId: RunId,
+      changeId: string,
+      changeInstanceId: ChangeInstanceId,
+      launch: string
+    ) =>
+      prepareRuntimeContext({
+        projectRoot: repo,
+        prepared: prepared.value,
+        profile,
+        runId,
+        planningSpaceId,
+        workspaceInstanceId,
+        changeInstanceId,
+        changeId,
+        projectId: 'project-fixture',
+        launchRequestDigest: branded(
+          `sha256:${launch.repeat(64).slice(0, 64)}`
+        ) as Digest,
+        storeRoot,
+      });
+    const first = contextFor(
+      firstRunId,
+      'first-change',
+      firstChangeInstanceId,
+      'a'
+    );
+    const second = contextFor(
+      secondRunId,
+      'second-change',
+      secondChangeInstanceId,
+      'b'
+    );
+
+    const firstReceipt = await first.facade.start(
+      {
+        change: { projectRoot: repo, changeId: 'first-change' },
+        pipeline: WRITE_ONLY.name,
+        launchRequestId: branded('first-launch') as never,
+      },
+      { deliveryMode: 'grant' }
+    );
+    expect(firstReceipt.actions).toHaveLength(1);
+    const secondReceipt = await second.facade.start(
+      {
+        change: { projectRoot: repo, changeId: 'second-change' },
+        pipeline: WRITE_ONLY.name,
+        launchRequestId: branded('second-launch') as never,
+      },
+      { deliveryMode: 'grant' }
+    );
+    expect(secondReceipt.actions).toEqual([]);
+    expect(secondReceipt.view.status).toBe('waiting');
+    expect(secondReceipt.view.sections[0]).toMatchObject({
+      waits: [
+        {
+          kind: 'workspace-reservation',
+          workspaceInstanceId,
+        },
+      ],
+    });
+
+    const firstRecord = first.store.load(firstRunId);
+    await first.facade.control(
+      {
+        format: 'change-run-control/1',
+        ref: {
+          change: { projectRoot: repo, changeId: 'first-change' },
+          runId: firstRunId,
+        },
+        expectedRecordVersion: firstRecord.recordVersion,
+        command: { kind: 'cancel', reason: 'fixture cleanup' },
+      },
+      { deliveryMode: 'grant' }
+    );
   });
 
   it('uses the persisted public execution profile when the host catalog rotates', async () => {

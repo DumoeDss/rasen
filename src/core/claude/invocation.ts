@@ -47,6 +47,8 @@ export const CLAUDE_LEAF_DENIED_TOOLS = [
 const CONTRACT_INSTRUCTIONS: Record<WorkerContract, string> = {
   leaf:
     'Return a JSON object matching the leaf contract: status is DONE or HANDOFF; summary and handoffReason are optional strings.',
+  'consultable-leaf':
+    'Return a JSON object matching the consultable leaf contract: status is DONE, HANDOFF, or CONSULT. CONSULT requires problemSummary, question, attemptedApproaches, constraints, and evidencePointers and must not include runtime authority fields.',
   evaluate:
     'Return a JSON object matching the evaluate contract: satisfied is boolean and gaps is an array of strings; summary is optional.',
 };

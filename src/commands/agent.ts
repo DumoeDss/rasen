@@ -341,8 +341,12 @@ export class AgentCommand {
     if (options.runtime !== 'claude') {
       return invalid('--runtime must be "claude".');
     }
-    if (rawContract !== 'leaf' && rawContract !== 'evaluate') {
-      return invalid('--contract must be "leaf" or "evaluate".');
+    if (
+      rawContract !== 'leaf' &&
+      rawContract !== 'consultable-leaf' &&
+      rawContract !== 'evaluate'
+    ) {
+      return invalid('--contract must be "leaf", "consultable-leaf", or "evaluate".');
     }
     const contract = rawContract as WorkerContract;
     if (options.sandbox !== 'read-only' && options.sandbox !== 'workspace-write') {

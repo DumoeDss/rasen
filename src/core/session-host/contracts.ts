@@ -1,6 +1,141 @@
+import type { ExactScopeEmptyReceipt } from './process-authority/coordinator.js';
+
 export const HOST_REGISTRY_SCHEMA = 'rasen-session-host-registry/2' as const;
 export const LEGACY_HOST_REGISTRY_SCHEMA = 'rasen-session-host-registry/1' as const;
 export const HOST_EVENT_SCHEMA = 'rasen-session-host-event/1' as const;
+export const EXACT_TEACHER_SESSION_ATTEMPT_SCHEMA =
+  'rasen-exact-teacher-session-attempt/1' as const;
+
+export const EXACT_TEACHER_ATTEMPT_PHASES = Object.freeze([
+  'canonical-preflight',
+  'baseline-stable',
+  'authority-prepared-inert',
+  'authority-published-inert',
+  'activated',
+  'request-sent',
+  'result-quarantined',
+  'hosted-receipt-verified',
+  'retirement-pending',
+  'exact-scope-empty',
+  'final-observation-stable',
+  'advice-validated',
+  'canonical-settled',
+] as const);
+
+export type ExactTeacherAttemptPhase = (typeof EXACT_TEACHER_ATTEMPT_PHASES)[number];
+
+export interface ExactTeacherProviderTuple {
+  readonly providerId: string;
+  readonly capabilityId: string;
+  readonly protocolVersion: number;
+}
+
+export interface ExactTeacherHostedReceiptIdentity {
+  readonly stableSessionId: string;
+  readonly requestId: string;
+  readonly resultRef: string;
+  readonly resultDigest: string;
+}
+
+/**
+ * Domain-owned restart facts for the dedicated exact Teacher lane. The full
+ * ProcessRef is durable control authority, so this value is intentionally
+ * retained in the private registry Record and omitted from SessionHostView.
+ */
+export interface ExactTeacherSessionAttemptFacts {
+  readonly schema: typeof EXACT_TEACHER_SESSION_ATTEMPT_SCHEMA;
+  readonly recordVersion: 1;
+  readonly attemptId: string;
+  readonly provider: ExactTeacherProviderTuple;
+  readonly processRef: string;
+  readonly runId: string;
+  readonly actionId: string;
+  readonly invocationId: string;
+  readonly attempt: number;
+  readonly stableSessionId: string;
+  readonly requestId: string;
+  readonly journalRevision: number;
+  readonly phase: ExactTeacherAttemptPhase;
+  readonly baselineIdentity?: string;
+  readonly hostedReceipt?: ExactTeacherHostedReceiptIdentity;
+  readonly quarantineIdentity?: string;
+}
+
+export interface ExactTeacherAttemptSeed {
+  readonly attemptId: string;
+  readonly provider: ExactTeacherProviderTuple;
+  readonly runId: string;
+  readonly actionId: string;
+  readonly invocationId: string;
+  readonly attempt: number;
+  readonly stableSessionId: string;
+  readonly requestId: string;
+}
+
+export interface ExactTeacherAttemptPhaseCommit {
+  readonly processRef?: string;
+  readonly baselineIdentity?: string;
+  readonly hostedReceipt?: ExactTeacherHostedReceiptIdentity;
+  readonly quarantineIdentity?: string;
+  /** Host-only: journal first, then project atomically with process facts. */
+  readonly deferSessionProjection?: boolean;
+}
+
+export interface ExactTeacherAttemptPhaseCommitter {
+  commit(
+    seed: ExactTeacherAttemptSeed,
+    phase: ExactTeacherAttemptPhase,
+    facts?: ExactTeacherAttemptPhaseCommit
+  ): Promise<void>;
+  load(attemptId: string): ExactTeacherSessionAttemptFacts | undefined;
+  loadRecovery(
+    attemptId: string
+  ): Promise<ExactTeacherAttemptRecoverySnapshot | undefined>;
+}
+
+export type ExactTeacherAttemptRecoveryLoadFailureReason =
+  | 'authority-identity-mismatch'
+  | 'durable-frontier-conflict'
+  | 'durable-journal-malformed'
+  | 'durable-session-state-unavailable';
+
+/**
+ * Bounded fail-closed result from joining the two private durable recovery
+ * stores. It intentionally carries no underlying diagnostic or authority
+ * facts because the Module may summarize the reason for a public caller.
+ */
+export class ExactTeacherAttemptRecoveryLoadError extends Error {
+  readonly reason: ExactTeacherAttemptRecoveryLoadFailureReason;
+
+  constructor(reason: ExactTeacherAttemptRecoveryLoadFailureReason) {
+    super(`Exact Teacher durable recovery retained: ${reason}.`);
+    this.name = 'ExactTeacherAttemptRecoveryLoadError';
+    this.reason = reason;
+  }
+}
+
+/** Private restart-union snapshot; never projected through SessionHostView. */
+export interface ExactTeacherAttemptRecoverySnapshot {
+  readonly journal: Readonly<{
+    schema: 'rasen-exact-teacher-attempt-journal/1';
+    recordVersion: 1;
+    revision: number;
+    attemptId: string;
+    provider: ExactTeacherProviderTuple;
+    processRef?: string;
+    runId: string;
+    actionId: string;
+    invocationId: string;
+    attempt: number;
+    stableSessionId: string;
+    requestId: string;
+    baselineIdentity?: string;
+    hostedReceipt?: ExactTeacherHostedReceiptIdentity;
+    quarantineIdentity?: string;
+    phase: ExactTeacherAttemptPhase;
+  }>;
+  readonly session?: HostedSessionRecord;
+}
 
 export const HOST_FAILURE_CODES = [
   'invalid-input',
@@ -47,6 +182,21 @@ export type HostedRequestState =
   | 'settled'
   | 'cancelled'
   | 'ambiguous';
+
+export type HostedSessionSandbox = 'read-only' | 'workspace-write';
+
+/**
+ * Server-resolved reuse authority. It is persisted on first admission and
+ * must match every subsequent turn addressed to the stable Session.
+ */
+export interface HostedSessionAuthority {
+  invocationId: string;
+  role: string;
+  workspaceInstanceId: string;
+  backend: 'hosted';
+  handoffTokensUsed: number;
+  reuseRoundsServed: number;
+}
 
 export interface HostedRequestRecord {
   requestId: string;
@@ -107,6 +257,12 @@ export interface HostedSessionRecord {
   backendSessionId?: string;
   cwd: string;
   cwdDigest: string;
+  /** Frozen server-owned turn bounds for this stable Session. */
+  turnLimits?: TurnLimits;
+  /** Defaults to workspace-write only when decoding a pre-authority record. */
+  sandbox?: HostedSessionSandbox;
+  /** Absent only for legacy/generic hosted-session callers. */
+  authority?: HostedSessionAuthority;
   hostState: HostedSessionState;
   generation: number;
   /** Monotonic lifecycle CAS, independent of backend process generation. */
@@ -121,6 +277,8 @@ export interface HostedSessionRecord {
    */
   prunedRequestFilter?: string;
   process?: HostedProcessFacts;
+  /** Private restart-union facts for the separate exact Teacher host only. */
+  exactTeacherAttempt?: ExactTeacherSessionAttemptFacts;
   /**
    * Survives the clearing of `process`: the honest terminal a declared
    * best-effort scope reached, kept permanently on the released record.
@@ -136,6 +294,10 @@ export interface SessionHostView {
   backendVersion?: string;
   backendSessionId?: string;
   cwd: string;
+  /** Present for Sessions created by a runtime that freezes hosted bounds. */
+  turnLimits?: TurnLimits;
+  sandbox: HostedSessionSandbox;
+  authority?: HostedSessionAuthority;
   hostState: HostedSessionState;
   state: CompatibleSessionState;
   generation: number;
@@ -166,15 +328,54 @@ export interface TurnLimits {
   maxDiagnosticBytes?: number;
 }
 
+/**
+ * Durable, server-minted evidence for one hosted execute request. Verification
+ * always re-reads the registry and the content-addressed result store; this
+ * object is not self-authorizing merely because a caller can serialize it.
+ */
+export interface HostedTurnReceipt {
+  readonly format: 'rasen-session-host-turn-receipt/1';
+  readonly stableSessionId: string;
+  readonly backend: string;
+  readonly backendSessionId?: string;
+  readonly requestId: string;
+  readonly requestState: HostedRequestState;
+  readonly cwd: string;
+  readonly cwdDigest: string;
+  readonly sandbox: HostedSessionSandbox;
+  readonly authority?: HostedSessionAuthority;
+  readonly resultRef?: string;
+  readonly resultDigest?: string;
+  readonly result?: string;
+  readonly replayed: boolean;
+}
+
 export type SessionHostCommand =
   | {
       op: 'execute';
       requestId: string;
       sessionId?: string;
+      /**
+       * Server-derived stable identity for a fresh frozen Action. Unlike
+       * `sessionId`, this may create the Session when absent and reopens the
+       * same durable Session when the Action grant is recovered.
+       */
+      newSessionId?: string;
       backend: string;
       cwd: string;
       input: string;
       limits: TurnLimits;
+      /** Frozen by the server from the granted Action, never from worker output. */
+      sandbox?: HostedSessionSandbox;
+      /** Frozen by the server from canonical Run/Action authority. */
+      authority?: Omit<HostedSessionAuthority, 'handoffTokensUsed' | 'reuseRoundsServed'>;
+      /** Server-computed continuation handoff usage added after settlement. */
+      handoffTokens?: number;
+      /** Dedicated exact-Teacher Module coordination; never accepted from HTTP. */
+      exactTeacherAttempt?: Readonly<{
+        mode: 'prepare-only' | 'send-prepared';
+        seed: ExactTeacherAttemptSeed;
+      }>;
     }
   | { op: 'cancel'; sessionId: string; reason: string }
   | { op: 'restart'; sessionId: string }
@@ -188,6 +389,10 @@ export type SessionHostOutcome =
       requestId?: string;
       result?: string;
       resultDigest?: string;
+      resultRef?: string;
+      receipt?: HostedTurnReceipt;
+      /** Trusted exact-Teacher callers only; never projected by SessionHostView. */
+      exactScopeEmptyReceipt?: ExactScopeEmptyReceipt;
       replayed?: boolean;
     }
   | {
@@ -197,6 +402,7 @@ export type SessionHostOutcome =
       message: string;
       session?: SessionHostView;
       requestId?: string;
+      receipt?: HostedTurnReceipt;
     };
 
 export interface SessionRecoveryReport {
@@ -217,6 +423,8 @@ export interface SessionHost {
   dispatch(command: SessionHostCommand): Promise<SessionHostOutcome>;
   inspect(sessionId: string): SessionHostView | undefined;
   list(filter?: SessionHostFilter): SessionHostView[];
+  /** Verify a receipt against durable registry facts and CAS result bytes. */
+  verifyTurnReceipt(receipt: HostedTurnReceipt): boolean;
   reconcileOnStart(): Promise<SessionRecoveryReport>;
   shutdown(reason: 'daemon-stop' | 'server-shutdown'): Promise<void>;
 }
@@ -277,10 +485,15 @@ export function validateSessionHostCommand(
       'op',
       'requestId',
       'sessionId',
+      'newSessionId',
       'backend',
       'cwd',
       'input',
       'limits',
+      'sandbox',
+      'authority',
+      'handoffTokens',
+      'exactTeacherAttempt',
     ]);
     if (Object.keys(command).some((key) => !allowed.has(key))) {
       return invalid('Execute command contains an unsupported field.');
@@ -294,6 +507,16 @@ export function validateSessionHostCommand(
     ) {
       return invalid('sessionId must be a UUID when provided.');
     }
+    if (
+      command.newSessionId !== undefined &&
+      (typeof command.newSessionId !== 'string' ||
+        !UUID_PATTERN.test(command.newSessionId))
+    ) {
+      return invalid('newSessionId must be a UUID when provided.');
+    }
+    if (command.sessionId !== undefined && command.newSessionId !== undefined) {
+      return invalid('sessionId and newSessionId are mutually exclusive.');
+    }
     if (typeof command.backend !== 'string' || !/^[a-z][a-z0-9-]{0,31}$/.test(command.backend)) {
       return invalid('backend must be a named backend id.');
     }
@@ -302,6 +525,100 @@ export function validateSessionHostCommand(
     }
     if (typeof command.input !== 'string' || command.input.length === 0) {
       return invalid('input must be a non-empty string.');
+    }
+    if (
+      command.sandbox !== undefined &&
+      command.sandbox !== 'read-only' &&
+      command.sandbox !== 'workspace-write'
+    ) {
+      return invalid('sandbox must be read-only or workspace-write.');
+    }
+    if (command.authority !== undefined) {
+      const authority = command.authority as Record<string, unknown>;
+      const allowedAuthorityKeys = new Set([
+        'invocationId',
+        'role',
+        'workspaceInstanceId',
+        'backend',
+      ]);
+      if (
+        typeof authority !== 'object' ||
+        authority === null ||
+        Array.isArray(authority) ||
+        Object.keys(authority).some((key) => !allowedAuthorityKeys.has(key)) ||
+        typeof authority.invocationId !== 'string' ||
+        authority.invocationId.length === 0 ||
+        typeof authority.role !== 'string' ||
+        authority.role.length === 0 ||
+        typeof authority.workspaceInstanceId !== 'string' ||
+        authority.workspaceInstanceId.length === 0 ||
+        authority.backend !== 'hosted'
+      ) {
+        return invalid('authority must be the exact hosted invocation/role/workspace tuple.');
+      }
+    }
+    if (
+      command.handoffTokens !== undefined &&
+      (!Number.isSafeInteger(command.handoffTokens) || Number(command.handoffTokens) < 0)
+    ) {
+      return invalid('handoffTokens must be a non-negative safe integer.');
+    }
+    if (command.exactTeacherAttempt !== undefined) {
+      const control = command.exactTeacherAttempt as Record<string, unknown>;
+      const seed = control.seed as Record<string, unknown> | undefined;
+      const provider = seed?.provider as Record<string, unknown> | undefined;
+      const allowedControl = new Set(['mode', 'seed']);
+      const allowedSeed = new Set([
+        'attemptId',
+        'provider',
+        'runId',
+        'actionId',
+        'invocationId',
+        'attempt',
+        'stableSessionId',
+        'requestId',
+      ]);
+      const allowedProvider = new Set([
+        'providerId',
+        'capabilityId',
+        'protocolVersion',
+      ]);
+      if (
+        typeof control !== 'object' ||
+        control === null ||
+        Array.isArray(control) ||
+        Object.keys(control).some((key) => !allowedControl.has(key)) ||
+        (control.mode !== 'prepare-only' && control.mode !== 'send-prepared') ||
+        typeof seed !== 'object' ||
+        seed === null ||
+        Array.isArray(seed) ||
+        Object.keys(seed).some((key) => !allowedSeed.has(key)) ||
+        typeof seed.attemptId !== 'string' ||
+        seed.attemptId.length === 0 ||
+        typeof seed.runId !== 'string' ||
+        seed.runId.length === 0 ||
+        typeof seed.actionId !== 'string' ||
+        seed.actionId.length === 0 ||
+        typeof seed.invocationId !== 'string' ||
+        seed.invocationId.length === 0 ||
+        !Number.isSafeInteger(seed.attempt) ||
+        Number(seed.attempt) <= 0 ||
+        seed.stableSessionId !== command.newSessionId &&
+          seed.stableSessionId !== command.sessionId ||
+        seed.requestId !== command.requestId ||
+        typeof provider !== 'object' ||
+        provider === null ||
+        Array.isArray(provider) ||
+        Object.keys(provider).some((key) => !allowedProvider.has(key)) ||
+        typeof provider.providerId !== 'string' ||
+        provider.providerId.length === 0 ||
+        typeof provider.capabilityId !== 'string' ||
+        provider.capabilityId.length === 0 ||
+        !Number.isSafeInteger(provider.protocolVersion) ||
+        Number(provider.protocolVersion) <= 0
+      ) {
+        return invalid('exactTeacherAttempt must be one exact server-derived attempt seed.');
+      }
     }
     const limits = command.limits as Record<string, unknown> | undefined;
     const allowedLimitKeys = new Set([
@@ -409,6 +726,9 @@ export function toSessionHostView(record: HostedSessionRecord): SessionHostView 
     ...(record.backendVersion ? { backendVersion: record.backendVersion } : {}),
     ...(record.backendSessionId ? { backendSessionId: record.backendSessionId } : {}),
     cwd: record.cwd,
+    ...(record.turnLimits ? { turnLimits: { ...record.turnLimits } } : {}),
+    sandbox: record.sandbox ?? 'workspace-write',
+    ...(record.authority ? { authority: { ...record.authority } } : {}),
     hostState: record.hostState,
     state: projectHostedCompatibilityState(record.hostState),
     generation: record.generation,

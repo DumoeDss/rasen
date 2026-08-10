@@ -41,12 +41,26 @@ import { createSessionHostRegistry } from '../session-host/registry.js';
 import { createClaudeSessionBackend } from '../session-host/claude-backend.js';
 import { createSessionHostOwnership } from '../session-host/ownership.js';
 import { createHostedProcessScope } from '../session-host/process-capsule/hosted-process-scope.js';
-import type { SessionHost, SessionHostCommand } from '../session-host/contracts.js';
+import type {
+  ExactTeacherAttemptPhaseCommitter,
+  SessionHost,
+  SessionHostCommand,
+} from '../session-host/contracts.js';
+import {
+  createExactTeacherAttemptJournal,
+  createExactTeacherAttemptPersistence,
+  type ExactTeacherAuthorityPolicy,
+  type TrustedCompletionProducerResolver,
+} from '../frozen-action-executor/index.js';
+import type { WorkspaceReservationRegistry } from '../change-run/internal/reservations.js';
 import {
   handleHostedSessionDispatch,
   hostedSessionToWire,
 } from './hosted-sessions.js';
-import { handleFrozenActionDispatch } from './frozen-action-executor.js';
+import {
+  handleFrozenActionContinuation,
+  handleFrozenActionDispatch,
+} from './frozen-action-executor.js';
 import { createChangeSubmitter } from './submit.js';
 import { createSpaceCreator } from './create-space.js';
 import {
@@ -202,6 +216,22 @@ export interface ManagementRouterOptions {
   sessionHostOverride?: SessionHost;
   /** Test-only parent data directory for the durable hosted registry. */
   sessionHostStateDir?: string;
+  /** Server-owned exact Teacher provider policy; never accepted from HTTP. */
+  exactTeacherAuthorityPolicy?: ExactTeacherAuthorityPolicy;
+  /** Test-only exact Teacher host override. Production constructs a separate host. */
+  exactTeacherSessionHostOverride?: SessionHost;
+  /** Test-only phase committer paired with the exact Teacher host override. */
+  exactTeacherAttemptCommitterOverride?: ExactTeacherAttemptPhaseCommitter;
+  /** Dedicated durable registry root for the exact Teacher lane. */
+  exactTeacherSessionHostStateDir?: string;
+  /** Daemon-owned signer lookup; never accepted from an HTTP request body. */
+  frozenActionProducerResolver?: TrustedCompletionProducerResolver;
+  /** Daemon-owned RunStore root used by frozen Action execution. */
+  frozenActionStoreRoot?: string;
+  /** Test-only deterministic observer for exact Teacher workspace fencing. */
+  frozenActionWorkspaceObserver?: (cwd: string) => string;
+  /** Optional daemon-scoped override shared by every reopened Run context. */
+  workspaceReservationRegistry?: WorkspaceReservationRegistry;
   /** Test/daemon override for native runtime homes and the Rasen machine-data directory. */
   audit?: AuditManagementOptions;
   /**
@@ -217,6 +247,7 @@ export interface ManagementRouterHandle {
   handle: (req: http.IncomingMessage, res: http.ServerResponse, pathname: string) => Promise<void>;
   supervisor: SessionSupervisor;
   sessionHost: SessionHost;
+  exactTeacherSessionHost?: SessionHost;
   shutdownPathChooser: () => Promise<void>;
 }
 
@@ -253,6 +284,7 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/themes',
   '/api/v1/themes/import',
   '/api/v1/frozen-action-executor/dispatch',
+  '/api/v1/frozen-action-executor/continue',
 ]);
 
 const SESSION_ID_PATH_PREFIX = '/api/v1/sessions/';
@@ -453,6 +485,7 @@ function isMethodAdmitted(pathname: string, method: string | undefined): boolean
   if (pathname === '/api/v1/hosted-sessions') return method === 'GET';
   if (pathname === '/api/v1/hosted-sessions/execute') return method === 'POST';
   if (pathname === '/api/v1/frozen-action-executor/dispatch') return method === 'POST';
+  if (pathname === '/api/v1/frozen-action-executor/continue') return method === 'POST';
   if (pathname === '/api/v1/pipelines') {
     return method === 'GET' || method === 'POST';
   }
@@ -657,6 +690,65 @@ export function createManagementRouter(
         }),
       ],
     });
+  const exactTeacherAuthority = options.exactTeacherAuthorityPolicy?.resolve();
+  let exactTeacherSessionHost = exactTeacherAuthority?.state === 'available'
+    ? options.exactTeacherSessionHostOverride
+    : undefined;
+  let exactTeacherAttemptCommitter = exactTeacherAuthority?.state === 'available'
+    ? options.exactTeacherAttemptCommitterOverride
+    : undefined;
+  if (
+    exactTeacherSessionHost === undefined &&
+    exactTeacherAttemptCommitter !== undefined
+  ) {
+    throw new TypeError(
+      'An exact Teacher attempt committer override requires its paired SessionHost override.'
+    );
+  }
+  if (
+    exactTeacherSessionHost === undefined &&
+    exactTeacherAuthority?.state === 'available'
+  ) {
+    const stateDir = options.exactTeacherSessionHostStateDir ??
+      (sessionHostRegistry === undefined
+        ? undefined
+        : path.join(sessionHostRegistry.paths.root, 'exact-teacher'));
+    if (stateDir === undefined) {
+      throw new TypeError(
+        'The available exact Teacher lane requires a dedicated SessionHost state directory.'
+      );
+    }
+    const registry = createSessionHostRegistry({ stateDir });
+    exactTeacherAttemptCommitter = createExactTeacherAttemptPersistence({
+      journal: createExactTeacherAttemptJournal({
+        root: path.join(stateDir, 'attempt-journal'),
+      }),
+      sessionRegistry: registry,
+    });
+    const processScope = exactTeacherAuthority.lane.processScope;
+    exactTeacherSessionHost = createSessionHost({
+      registry,
+      ownership: createSessionHostOwnership({
+        stateDir: path.join(registry.paths.root, 'owners'),
+      }),
+      processScope,
+      exactRetirementAuthority: 'coordinator-authenticated',
+      exactTeacherAttemptCommitter,
+      backends: [
+        createClaudeSessionBackend({
+          processScope,
+          ...(options.resolveAgentCliOverride
+            ? { resolveBinary: options.resolveAgentCliOverride }
+            : {}),
+        }),
+      ],
+    });
+  }
+  if (exactTeacherSessionHost === sessionHost) {
+    throw new TypeError(
+      'The exact Teacher SessionHost must be separate from the ordinary/source SessionHost.'
+    );
+  }
 
   // Resolves a request's optional `space` selector to a planning-space root
   // (design D2): an explicit selector resolves through the machine registries,
@@ -1330,8 +1422,70 @@ export function createManagementRouter(
       }
       const result = await handleFrozenActionDispatch({
         host: sessionHost,
+        ...(exactTeacherSessionHost === undefined
+          ? {}
+          : { exactTeacherHost: exactTeacherSessionHost }),
+        ...(options.exactTeacherAuthorityPolicy === undefined
+          ? {}
+          : { exactTeacherAuthorityPolicy: options.exactTeacherAuthorityPolicy }),
+        ...(exactTeacherAttemptCommitter === undefined
+          ? {}
+          : { exactTeacherAttemptCommitter }),
         hostPlatform: process.platform,
         body: body.value,
+        ...(options.frozenActionStoreRoot === undefined
+          ? {}
+          : { storeRoot: options.frozenActionStoreRoot }),
+        ...(options.frozenActionProducerResolver === undefined
+          ? {}
+          : { producerFor: options.frozenActionProducerResolver }),
+        ...(options.workspaceReservationRegistry === undefined
+          ? {}
+          : { reservationRegistry: options.workspaceReservationRegistry }),
+        ...(options.frozenActionWorkspaceObserver === undefined
+          ? {}
+          : { workspaceObserver: options.frozenActionWorkspaceObserver }),
+      });
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, result.status, result.result);
+      return;
+    }
+
+    if (pathname === '/api/v1/frozen-action-executor/continue' && req.method === 'POST') {
+      const body = await readJsonBody(req, MAX_HOSTED_BODY_BYTES);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      const result = await handleFrozenActionContinuation({
+        host: sessionHost,
+        ...(exactTeacherSessionHost === undefined
+          ? {}
+          : { exactTeacherHost: exactTeacherSessionHost }),
+        ...(options.exactTeacherAuthorityPolicy === undefined
+          ? {}
+          : { exactTeacherAuthorityPolicy: options.exactTeacherAuthorityPolicy }),
+        ...(exactTeacherAttemptCommitter === undefined
+          ? {}
+          : { exactTeacherAttemptCommitter }),
+        hostPlatform: process.platform,
+        body: body.value,
+        ...(options.frozenActionStoreRoot === undefined
+          ? {}
+          : { storeRoot: options.frozenActionStoreRoot }),
+        ...(options.frozenActionProducerResolver === undefined
+          ? {}
+          : { producerFor: options.frozenActionProducerResolver }),
+        ...(options.workspaceReservationRegistry === undefined
+          ? {}
+          : { reservationRegistry: options.workspaceReservationRegistry }),
+        ...(options.frozenActionWorkspaceObserver === undefined
+          ? {}
+          : { workspaceObserver: options.frozenActionWorkspaceObserver }),
       });
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
@@ -1595,5 +1749,11 @@ export function createManagementRouter(
     }
   };
 
-  return { handle, supervisor, sessionHost, shutdownPathChooser: pathChooser.shutdown };
+  return {
+    handle,
+    supervisor,
+    sessionHost,
+    ...(exactTeacherSessionHost === undefined ? {} : { exactTeacherSessionHost }),
+    shutdownPathChooser: pathChooser.shutdown,
+  };
 }

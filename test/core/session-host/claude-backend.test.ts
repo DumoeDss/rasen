@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { spawn as spawnProcess, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -132,11 +133,17 @@ const limits = {
 };
 
 function openInput(
-  overrides: { limits?: typeof limits; resumeSessionId?: string } = {}
+  overrides: {
+    cwd?: string;
+    limits?: typeof limits;
+    resumeSessionId?: string;
+    sandbox?: 'read-only' | 'workspace-write';
+  } = {}
 ): BackendOpenInput {
   return {
-    cwd: process.cwd(),
+    cwd: overrides.cwd ?? process.cwd(),
     limits: overrides.limits ?? limits,
+    sandbox: overrides.sandbox ?? 'workspace-write',
     ...(overrides.resumeSessionId ? { resumeSessionId: overrides.resumeSessionId } : {}),
     signal: new AbortController().signal,
   };
@@ -241,7 +248,7 @@ describe('Claude resident Session backend', () => {
 
     expect(spawn).toHaveBeenCalledWith(
       'C:\\Tools\\claude.exe',
-      CLAUDE_SESSION_STREAM_ARGS,
+      [...CLAUDE_SESSION_STREAM_ARGS, '--permission-mode', 'acceptEdits'],
       expect.objectContaining({
         cwd: expect.any(String),
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -266,6 +273,8 @@ describe('Claude resident Session backend', () => {
     const transport = await backend.open(openInput({ resumeSessionId: 'claude-exact' }));
     expect(spawn.mock.calls[0][1]).toEqual([
       ...CLAUDE_SESSION_STREAM_ARGS,
+      '--permission-mode',
+      'acceptEdits',
       '--resume',
       'claude-exact',
     ]);
@@ -290,6 +299,83 @@ describe('Claude resident Session backend', () => {
       { type: 'result', sessionId: 'claude-exact', content: 'two' },
     ]);
     expect(spawn).toHaveBeenCalledTimes(1);
+  });
+
+  it('maps a read-only hosted Session to Claude plan permission before spawn', async () => {
+    const child = fakeChild();
+    const spawn = vi.fn(() => child);
+    const backend = createClaudeSessionBackend({
+      resolveBinary: async () => '/opt/claude',
+      verifyProtocol: async () => ({ ok: true, version: '2.1.220' }),
+      spawn,
+      terminateTree: async () => undefined,
+    });
+    await backend.open(openInput({ sandbox: 'read-only' }));
+    expect(spawn.mock.calls[0][1]).toEqual([
+      ...CLAUDE_SESSION_STREAM_ARGS,
+      '--permission-mode',
+      'plan',
+    ]);
+  });
+
+  it('runs a real read-only Teacher mutation attempt and leaves the workspace bytes unchanged', async () => {
+    const workspace = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'rasen-teacher-read-only-')
+    );
+    const factsRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'rasen-teacher-read-only-facts-')
+    );
+    const target = path.join(workspace, 'protected.txt');
+    fs.writeFileSync(target, 'canonical-before', 'utf8');
+    fs.writeFileSync(
+      path.join(workspace, '.rasen-session-fixture.json'),
+      JSON.stringify({
+        script: 'attempt-workspace-mutation',
+        outputRoot: factsRoot,
+        mutationTarget: 'protected.txt',
+      }),
+      'utf8'
+    );
+    const fixture = path.resolve(
+      'test/fixtures/session-host',
+      process.platform === 'win32' ? 'replay-claude.cmd' : 'replay-claude.sh'
+    );
+    if (process.platform !== 'win32') fs.chmodSync(fixture, 0o700);
+    const backend = createClaudeSessionBackend({
+      resolveBinary: async () => fixture,
+      killGraceMs: 100,
+    });
+    const transport = await backend.open(
+      openInput({ cwd: workspace, sandbox: 'read-only' })
+    );
+    const events = [];
+    for await (const event of transport.send({
+      requestId: crypto.randomUUID(),
+      input: 'Attempt to modify protected.txt, then advise.',
+      limits,
+    })) {
+      events.push(event);
+    }
+    await transport.terminate('mutation-attempt-complete');
+
+    expect(events).toContainEqual({
+      type: 'result',
+      sessionId: 'fixture-backend-session-1',
+      content: 'mutation-blocked',
+    });
+    expect(fs.readFileSync(target, 'utf8')).toBe('canonical-before');
+    const facts = fs
+      .readFileSync(path.join(factsRoot, 'facts.ndjson'), 'utf8')
+      .trim()
+      .split(/\r?\n/u)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(facts).toContainEqual(
+      expect.objectContaining({
+        type: 'mutation-attempt',
+        permissionMode: 'plan',
+        blocked: true,
+      })
+    );
   });
 
   it('forwards a duplicate same-identity init so the production path rejects it', async () => {

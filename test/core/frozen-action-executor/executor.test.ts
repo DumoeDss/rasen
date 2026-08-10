@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { dispatchGrantedAction } from '../../../src/core/frozen-action-executor/executor.js';
+import {
+  dispatchGrantedAction,
+  dispatchGrantedContinuation,
+} from '../../../src/core/frozen-action-executor/executor.js';
 import {
   buildExecutionCapabilityMatrix,
   type HostedBackendSeam,
@@ -16,6 +19,7 @@ import {
   recordIds,
   recordRevision,
 } from '../change-run/record-fixture.js';
+import { buildGrantedConsultationFixture } from '../change-run/consultation-fixture.js';
 
 const runRef: ExactChangeRunRef = {
   change: { projectRoot: '/root', changeId: 'fixture-change' },
@@ -245,5 +249,137 @@ describe('driver-face parity - every face consumes the same result', () => {
     // equal results: no duplicated Run/Session truth.
     expect(JSON.stringify(cli)).toBe(JSON.stringify(api));
     expect(cli.kind).toBe('executed');
+  });
+});
+
+describe('executor dispatch - exact consultation continuation', () => {
+  it('wakes only the exact hosted source Session with runtime-owned advice input', async () => {
+    const fixture = buildGrantedConsultationFixture();
+    const matrix = buildExecutionCapabilityMatrix({ hostPlatform: 'linux' });
+    const calls: Array<{
+      sessionId?: string;
+      requestId?: string;
+      input: string;
+    }> = [];
+    const backend: HostedBackendSeam = {
+      kind: 'hosted',
+      inspectSession(sessionId) {
+        return sessionId === fixture.grant.stableSessionId
+          ? {
+              sandbox: fixture.sourceAction.agent.sandbox,
+              authority: {
+                invocationId: fixture.sourceAction.invocationId,
+                role: fixture.sourceAction.agent.role,
+                workspaceInstanceId: fixture.record.workspaceInstanceId,
+                backend: 'hosted',
+                handoffTokensUsed: 0,
+                reuseRoundsServed: 0,
+              },
+            }
+          : undefined;
+      },
+      async executeTurn(input) {
+        calls.push({
+          ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
+          ...(input.requestId === undefined ? {} : { requestId: input.requestId }),
+          input: input.input,
+        });
+        return {
+          turn: {
+            ok: true,
+            status: 'succeeded',
+            hostedTurn: {
+              stableSessionId: input.sessionId!,
+              requestId: input.requestId!,
+              result: '{"status":"DONE"}',
+              resultDigest: `sha256:${'a'.repeat(64)}`,
+              replayed: false,
+              cwd: '/root',
+            },
+          },
+          daemonAlive: true,
+        };
+      },
+    };
+    const result = await dispatchGrantedContinuation({
+      grant: fixture.grant,
+      record: fixture.record,
+      matrix,
+      backends: { hosted: backend },
+    });
+    expect(result.kind).toBe('executed');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.sessionId).toBe(fixture.grant.stableSessionId);
+    expect(calls[0]?.requestId).toBe(fixture.grant.requestId);
+    expect(JSON.parse(calls[0]!.input)).toEqual(fixture.grant.input);
+  });
+
+  it('rejects stale, cross-Session, and caller-substituted grants before backend work', async () => {
+    const fixture = buildGrantedConsultationFixture();
+    const matrix = buildExecutionCapabilityMatrix({ hostPlatform: 'linux' });
+    let calls = 0;
+    const backend: HostedBackendSeam = {
+      kind: 'hosted',
+      async executeTurn() {
+        calls += 1;
+        return { turn: { ok: true, status: 'succeeded' }, daemonAlive: true };
+      },
+    };
+    const variants = [
+      { ...fixture.grant, expectedRecordVersion: 0 as never },
+      {
+        ...fixture.grant,
+        stableSessionId: '99999999-9999-9999-9999-999999999999',
+      },
+      {
+        ...fixture.grant,
+        input: {
+          ...fixture.grant.input,
+          detail: 'caller-substituted notification text',
+        } as never,
+      },
+    ];
+    for (const grant of variants) {
+      const result = await dispatchGrantedContinuation({
+        grant,
+        record: fixture.record,
+        matrix,
+        backends: { hosted: backend },
+      });
+      expect(result.kind).toBe('rejected');
+    }
+    expect(calls).toBe(0);
+  });
+
+  it('refuses an in-tool continuation without silently driving either backend', async () => {
+    const fixture = buildGrantedConsultationFixture();
+    const matrix = buildExecutionCapabilityMatrix({ hostPlatform: 'linux' });
+    let hostedCalls = 0;
+    let inToolCalls = 0;
+    const result = await dispatchGrantedContinuation({
+      grant: fixture.grant,
+      record: fixture.record,
+      matrix,
+      requestedBackend: 'in-tool',
+      backends: {
+        hosted: {
+          kind: 'hosted',
+          async executeTurn() {
+            hostedCalls += 1;
+            return { turn: { ok: true, status: 'succeeded' }, daemonAlive: true };
+          },
+        },
+        'in-tool': {
+          kind: 'in-tool',
+          async executeTurn() {
+            inToolCalls += 1;
+            return { turn: { ok: true, status: 'succeeded' }, launcherAlive: true };
+          },
+        },
+      },
+    });
+    expect(result.kind).toBe('authority-unavailable');
+    expect(hostedCalls).toBe(0);
+    expect(inToolCalls).toBe(0);
   });
 });

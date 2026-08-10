@@ -30,6 +30,38 @@ import { deriveWorkspaceRevision } from './workspace.js';
 import { createChangePipelineRuntime } from './facade-runtime.js';
 import type { ChangePipelineRuntime } from '../facade.js';
 import type { JsonValue, NodeId, RunAction } from '../contracts.js';
+import * as path from 'node:path';
+import {
+  createFilesystemWorkspaceReservationRegistry,
+  createWorkspaceReservationRegistry,
+  type WorkspaceReservationRegistry,
+} from './reservations.js';
+import type { HostedTurnReceipt } from '../../session-host/contracts.js';
+
+const SERVICE_RESERVATIONS = new Map<string, WorkspaceReservationRegistry>();
+
+/** Daemon/runtime-service scoped registry shared by every RunStore instance. */
+export function runtimeServiceReservationRegistry(
+  storeRoot: string
+): WorkspaceReservationRegistry {
+  const resolved = path.resolve(storeRoot);
+  const key = process.platform === 'win32'
+    ? resolved.toLocaleLowerCase('en-US')
+    : resolved;
+  let registry = SERVICE_RESERVATIONS.get(key);
+  if (registry === undefined) {
+    const store = createFilesystemRunStore(resolved);
+    registry = createFilesystemWorkspaceReservationRegistry({
+      storeRoot: resolved,
+      loadRecords: () =>
+        store
+          .list()
+          .map((summary) => store.load(summary.runId)),
+    });
+    SERVICE_RESERVATIONS.set(key, registry);
+  }
+  return registry;
+}
 
 export interface RuntimeContextInput {
   readonly projectRoot: string;
@@ -53,6 +85,9 @@ export interface RuntimeContextInput {
    * archived Run reports `sourceState: 'archived'`.
    */
   readonly resolveSourceState?: (record: CanonicalRunRecord) => 'active' | 'archived' | 'missing';
+  /** Override only for tests or an explicitly wider runtime-service scope. */
+  readonly reservationRegistry?: WorkspaceReservationRegistry;
+  readonly verifyHostedTurnReceipt?: (receipt: HostedTurnReceipt) => boolean;
 }
 
 export interface RuntimeContext {
@@ -62,6 +97,13 @@ export interface RuntimeContext {
   readonly initialRecord: CanonicalRunRecord;
   readonly evidenceStore: BoundedEvidenceStore;
   readonly hostEvidenceWriter: HostEvidenceWriter;
+}
+
+export interface StoredRuntimeContextInput {
+  readonly storeRoot: string;
+  readonly runId: RunId;
+  readonly reservationRegistry?: WorkspaceReservationRegistry;
+  readonly verifyHostedTurnReceipt?: (receipt: HostedTurnReceipt) => boolean;
 }
 
 const DEFAULT_LIMITS: CanonicalRecordLimits = Object.freeze({
@@ -206,6 +248,9 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
     }
     const capability = capabilityByPath.get(hierarchicalPath);
     const stage = stageByPath.get(hierarchicalPath);
+    const consultationBinding = profile.consultations?.find(
+      (binding) => binding.sourceProfilePath === hierarchicalPath
+    );
     if (capability === undefined || stage === undefined) {
       throw new Error(`No capability/policy binding for ${hierarchicalPath}`);
     }
@@ -215,6 +260,9 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
         stage: stage as never,
         executionProfileDigest: profile.profileDigest,
         policyDigest: profile.policyDigest,
+        ...(consultationBinding === undefined
+          ? {}
+          : { consultationBinding }),
       },
       {
         runId: plan.runId,
@@ -235,8 +283,12 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
     store,
     plan,
     initialRecord,
+    executionProfile: profile,
     evidenceStore,
     buildAction,
+    reservationRegistry:
+      input.reservationRegistry ?? runtimeServiceReservationRegistry(input.storeRoot),
+    verifyHostedTurnReceipt: input.verifyHostedTurnReceipt,
     resolveSourceState: input.resolveSourceState,
   });
 
@@ -246,6 +298,103 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
     evidenceStore,
   });
 
+  return Object.freeze({
+    plan,
+    facade,
+    store,
+    initialRecord,
+    evidenceStore,
+    hostEvidenceWriter,
+  });
+}
+
+/**
+ * Reopen the exact persisted RuntimePlan/Profile/Record for daemon-owned
+ * execution. This is the production restart path used by the consultation
+ * driver; it never reconstructs authority from an HTTP body.
+ */
+export function openStoredRuntimeContext(
+  input: StoredRuntimeContextInput
+): RuntimeContext {
+  const store = createFilesystemRunStore(input.storeRoot);
+  const initialRecord = store.load(input.runId);
+  const frozenPlan = store.loadPlan?.(input.runId);
+  if (frozenPlan === null || frozenPlan === undefined) {
+    throw new Error('Persisted Run has no frozen RuntimePlan.');
+  }
+  const plan = openRuntimePlan(frozenPlan);
+  if (plan.runId !== input.runId || plan.executionProfile === undefined) {
+    throw new Error('Persisted RuntimePlan does not match the requested Run.');
+  }
+  const profile = openRuntimeExecutionProfile(plan.executionProfile);
+  const capabilityByPath = new Map(
+    profile.capabilities.map((binding) => [binding.nodeId, binding] as const)
+  );
+  const stageByPath = new Map(
+    profile.policy.stages.map((stage) => [stage.nodeId, stage] as const)
+  );
+  const buildAction = (descriptor: {
+    nodeId: string;
+    occurrence: number;
+    admissionKind: 'agent' | 'command' | 'host';
+    profilePath?: string;
+    input?: JsonValue;
+  }): RunAction => {
+    const hierarchicalPath =
+      descriptor.profilePath ??
+      plan.nodes.find((entry) => entry.nodeId === descriptor.nodeId)?.hierarchicalPath;
+    if (hierarchicalPath === undefined) {
+      throw new Error(`No persisted plan path for ${descriptor.nodeId}.`);
+    }
+    const capability = capabilityByPath.get(hierarchicalPath);
+    const stage = stageByPath.get(hierarchicalPath);
+    const consultationBinding = profile.consultations?.find(
+      (binding) => binding.sourceProfilePath === hierarchicalPath
+    );
+    if (capability === undefined || stage === undefined) {
+      throw new Error(`No persisted capability/policy binding for ${hierarchicalPath}.`);
+    }
+    const head = store.load(input.runId);
+    return buildAgentAction(
+      {
+        capability,
+        stage: stage as never,
+        executionProfileDigest: profile.profileDigest,
+        policyDigest: profile.policyDigest,
+        ...(consultationBinding === undefined ? {} : { consultationBinding }),
+      },
+      {
+        runId: plan.runId,
+        nodeId: descriptor.nodeId as NodeId,
+        occurrence: descriptor.occurrence,
+        attemptOrdinal: 0,
+        expectedBeforeWorkspace: head.currentWorkspaceRevision,
+      },
+      { input: (descriptor.input ?? {}) as never }
+    );
+  };
+  const evidenceStore = createFilesystemEvidenceStore(input.storeRoot, plan.runId, {
+    maxRunBytes: 64 * 1024 * 1024,
+    maxEntries: 64,
+  });
+  const facade = createChangePipelineRuntime({
+    store,
+    plan,
+    initialRecord,
+    executionProfile: profile,
+    evidenceStore,
+    buildAction,
+    reservationRegistry:
+      input.reservationRegistry ?? runtimeServiceReservationRegistry(input.storeRoot),
+    ...(input.verifyHostedTurnReceipt === undefined
+      ? {}
+      : { verifyHostedTurnReceipt: input.verifyHostedTurnReceipt }),
+  });
+  const hostEvidenceWriter = createHostEvidenceWriter({
+    runId: plan.runId,
+    runStore: store,
+    evidenceStore,
+  });
   return Object.freeze({
     plan,
     facade,

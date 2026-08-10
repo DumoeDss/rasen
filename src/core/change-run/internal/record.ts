@@ -8,6 +8,7 @@ import {
   decodeWorkspaceRevision,
   type ActorRef,
   type ChangeInstanceId,
+  type ChangeRunReceiptContinuationAuthority,
   type Digest,
   type EvidenceRef,
   type JsonValue,
@@ -20,6 +21,17 @@ import {
   type WorkspaceRevision,
 } from '../contracts.js';
 import { domainDigest } from './identity.js';
+import {
+  CommittedConsultationZodSchema,
+  type CommittedConsultation,
+} from './consultation-lifecycle.js';
+import {
+  decodeConsultationQuestion,
+  decodeTeacherConsultationAdvice,
+  decodeTeacherConsultationResume,
+  decodeTeacherConsultationUnavailable,
+} from '../consultation-contracts.js';
+import { RuntimeConsultationBindingZodSchema } from '../../pipeline-registry/execution-plan-internal.js';
 import {
   CanonicalWaitError,
   decodeCanonicalWait,
@@ -85,8 +97,8 @@ export interface CommittedInfrastructureObservation {
 export interface CommittedAction {
   readonly action: RunAction;
   readonly attemptOrdinal: number;
-  readonly deliveryState: 'admitted_undelivered' | 'granted' | 'closed';
-  readonly state: 'active' | 'blocked' | 'closed';
+  readonly deliveryState: 'admitted_undelivered' | 'granted' | 'paused' | 'closed';
+  readonly state: 'active' | 'consultation-paused' | 'blocked' | 'closed';
   readonly effects: readonly CommittedEffect[];
   readonly result?: CommittedDomainResult;
   readonly infrastructure?: CommittedInfrastructureObservation;
@@ -106,6 +118,64 @@ export type CommittedTransition =
       }>)
   | (TransitionBase &
       Readonly<{ kind: 'ActionGranted'; actionId: string }>)
+  | (TransitionBase &
+      Readonly<{
+        kind: 'ConsultationRequested';
+        consultationId: string;
+        sourceActionId: string;
+        ordinal: number;
+      }>)
+  | (TransitionBase &
+      Readonly<{
+        kind: 'ConsultationTeacherLinked';
+        consultationId: string;
+        teacherActionId: string;
+        teacherAttempt: number;
+      }>)
+  | (TransitionBase &
+      Readonly<{
+        kind: 'ConsultationAdviceCommitted';
+        consultationId: string;
+        teacherActionId: string;
+        decision: 'plan' | 'correction' | 'stop';
+      }>)
+  | (TransitionBase &
+      Readonly<{
+        kind: 'ConsultationTeacherAttemptFailed';
+        consultationId: string;
+        teacherActionId: string;
+        exhausted: boolean;
+      }>)
+  | (TransitionBase &
+      Readonly<{
+        kind: 'ConsultationContinuationGranted';
+        consultationId: string;
+        requestId: string;
+      }>)
+  | (TransitionBase &
+      Readonly<{
+        kind: 'ConsultationContinuationSettled';
+        consultationId: string;
+        requestId: string;
+      }>)
+  | (TransitionBase &
+      Readonly<{
+        kind: 'ConsultationUnavailable';
+        consultationId: string;
+        reason: string;
+      }>)
+  | (TransitionBase &
+      Readonly<{
+        kind: 'ConsultationContinuationAmbiguous';
+        consultationId: string;
+        requestId: string;
+      }>)
+  | (TransitionBase &
+      Readonly<{
+        kind: 'ConsultationClosed';
+        consultationId: string;
+        reason: string;
+      }>)
   | (TransitionBase &
       Readonly<{
         kind: 'ActionResultCommitted';
@@ -217,7 +287,51 @@ export interface CanonicalRunRecord {
   readonly actions: Readonly<Record<string, CommittedAction>>;
   readonly waits: readonly CanonicalWait[];
   readonly inputs: Readonly<Record<string, JsonValue>>;
+  readonly consultations?: Readonly<Record<string, CommittedConsultation>>;
   readonly terminal?: RunTerminalOutcome;
+}
+
+/**
+ * Snapshot the independently decoded canonical Record as receipt grant-limit
+ * authority. The resolver binds limits to the exact Run revision, workspace,
+ * consultation, and source Action; a receipt's projected `entry.limits` is
+ * never consulted here.
+ */
+export function createCanonicalReceiptContinuationAuthority(
+  record: CanonicalRunRecord
+): ChangeRunReceiptContinuationAuthority {
+  const limitsByConsultation = new Map<string, Readonly<{
+    sourceActionId: string;
+    limits: CommittedConsultation['binding']['limits'];
+  }>>(
+    Object.values(record.consultations ?? {}).map((consultation) => [
+      consultation.consultationId,
+      Object.freeze({
+        sourceActionId: consultation.source.actionId,
+        limits: Object.freeze({ ...consultation.binding.limits }),
+      }),
+    ] as const)
+  );
+  return Object.freeze({
+    source: 'canonical-record' as const,
+    resolveContinuationLimits(
+      query: Parameters<
+        ChangeRunReceiptContinuationAuthority['resolveContinuationLimits']
+      >[0]
+    ) {
+      if (
+        query.runId !== record.runId ||
+        query.recordVersion !== record.recordVersion ||
+        query.workspaceInstanceId !== record.workspaceInstanceId
+      ) {
+        return undefined;
+      }
+      const authority = limitsByConsultation.get(query.consultationId);
+      return authority?.sourceActionId === query.sourceActionId
+        ? authority.limits
+        : undefined;
+    },
+  });
 }
 
 /**
@@ -280,6 +394,9 @@ const AttemptIdSchema = identity('attempt');
 const EffectIdSchema = identity('effect');
 const WaitIdSchema = identity('wait');
 const NodeIdSchema = identity('node');
+const UuidShape = z
+  .string()
+  .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 
 const TerminalSchema = z.discriminatedUnion('kind', [
   z.strictObject({
@@ -315,6 +432,64 @@ const TransitionSchema = z.discriminatedUnion('kind', [
     ...TransitionOrdinal,
     kind: z.literal('ActionGranted'),
     actionId: ActionIdSchema,
+  }),
+  z.strictObject({
+    ...TransitionOrdinal,
+    kind: z.literal('ConsultationRequested'),
+    consultationId: identity('consultation'),
+    sourceActionId: ActionIdSchema,
+    ordinal: SafeIntegerSchema.min(1),
+  }),
+  z.strictObject({
+    ...TransitionOrdinal,
+    kind: z.literal('ConsultationTeacherLinked'),
+    consultationId: identity('consultation'),
+    teacherActionId: ActionIdSchema,
+    teacherAttempt: SafeIntegerSchema.min(1),
+  }),
+  z.strictObject({
+    ...TransitionOrdinal,
+    kind: z.literal('ConsultationAdviceCommitted'),
+    consultationId: identity('consultation'),
+    teacherActionId: ActionIdSchema,
+    decision: z.enum(['plan', 'correction', 'stop']),
+  }),
+  z.strictObject({
+    ...TransitionOrdinal,
+    kind: z.literal('ConsultationTeacherAttemptFailed'),
+    consultationId: identity('consultation'),
+    teacherActionId: ActionIdSchema,
+    exhausted: z.boolean(),
+  }),
+  z.strictObject({
+    ...TransitionOrdinal,
+    kind: z.literal('ConsultationContinuationGranted'),
+    consultationId: identity('consultation'),
+    requestId: UuidShape,
+  }),
+  z.strictObject({
+    ...TransitionOrdinal,
+    kind: z.literal('ConsultationContinuationSettled'),
+    consultationId: identity('consultation'),
+    requestId: UuidShape,
+  }),
+  z.strictObject({
+    ...TransitionOrdinal,
+    kind: z.literal('ConsultationUnavailable'),
+    consultationId: identity('consultation'),
+    reason: z.string().min(1).max(256),
+  }),
+  z.strictObject({
+    ...TransitionOrdinal,
+    kind: z.literal('ConsultationContinuationAmbiguous'),
+    consultationId: identity('consultation'),
+    requestId: UuidShape,
+  }),
+  z.strictObject({
+    ...TransitionOrdinal,
+    kind: z.literal('ConsultationClosed'),
+    consultationId: identity('consultation'),
+    reason: z.string().min(1).max(256),
   }),
   z.strictObject({
     ...TransitionOrdinal,
@@ -439,8 +614,8 @@ const InfrastructureSchema = z.strictObject({
 const CommittedActionSchema = z.strictObject({
   action: z.unknown(),
   attemptOrdinal: SafeIntegerSchema,
-  deliveryState: z.enum(['admitted_undelivered', 'granted', 'closed']),
-  state: z.enum(['active', 'blocked', 'closed']),
+  deliveryState: z.enum(['admitted_undelivered', 'granted', 'paused', 'closed']),
+  state: z.enum(['active', 'consultation-paused', 'blocked', 'closed']),
   effects: z.array(EffectSchema).max(64),
   result: ResultSchema.optional(),
   infrastructure: InfrastructureSchema.optional(),
@@ -500,6 +675,7 @@ const RecordSchema = z.strictObject({
   actions: z.record(z.string(), z.unknown()),
   waits: z.array(z.unknown()).max(10_000),
   inputs: z.record(z.string(), z.json()),
+  consultations: z.record(z.string(), z.unknown()).optional(),
   terminal: TerminalSchema.optional(),
 });
 
@@ -596,6 +772,120 @@ function parseCommittedAction(value: unknown): CommittedAction {
   } as unknown as CommittedAction;
 }
 
+function parseCommittedConsultation(value: unknown): CommittedConsultation {
+  const parsed = CommittedConsultationZodSchema.safeParse(value);
+  if (!parsed.success) {
+    const parsedIssues = issues(parsed.error);
+    throw new CanonicalRecordError(
+      'invalid_record_contract',
+      parsedIssues.join('; '),
+      parsedIssues
+    );
+  }
+  const bindingResult = RuntimeConsultationBindingZodSchema.safeParse(
+    parsed.data.binding
+  );
+  if (!bindingResult.success) {
+    const parsedIssues = issues(bindingResult.error);
+    throw new CanonicalRecordError(
+      'invalid_record_contract',
+      parsedIssues.join('; '),
+      parsedIssues
+    );
+  }
+  const binding = bindingResult.data;
+  const question = decodeConsultationQuestion(
+    parsed.data.source.question,
+    binding.limits
+  );
+  const actor = decodeActorRef(parsed.data.source.actor);
+  const actorAttestation = decodeEvidenceRef(
+    parsed.data.source.actorAttestation
+  );
+  const evidence = parseEvidence(parsed.data.source.evidence);
+  const teacherAdvice =
+    parsed.data.teacher.advice === undefined
+      ? undefined
+      : decodeTeacherConsultationAdvice(
+          parsed.data.teacher.advice,
+          binding.limits
+        );
+  const continuationInput = (() => {
+    if (parsed.data.continuation === undefined) return undefined;
+    if (
+      parsed.data.continuation.input !== null &&
+      typeof parsed.data.continuation.input === 'object' &&
+      'contract' in parsed.data.continuation.input &&
+      (parsed.data.continuation.input as { contract?: unknown }).contract ===
+        'teacher-consultation/resume/1'
+    ) {
+      return decodeTeacherConsultationResume(
+        parsed.data.continuation.input,
+        binding.limits
+      );
+    }
+    return decodeTeacherConsultationUnavailable(
+      parsed.data.continuation.input
+    );
+  })();
+  return {
+    ...parsed.data,
+    consultationId: parsed.data.consultationId as CommittedConsultation['consultationId'],
+    binding,
+    source: {
+      ...parsed.data.source,
+      actionId: parsed.data.source.actionId as CommittedConsultation['source']['actionId'],
+      invocationId: parsed.data.source.invocationId as CommittedConsultation['source']['invocationId'],
+      attemptId: parsed.data.source.attemptId as CommittedConsultation['source']['attemptId'],
+      expectedRecordVersion: parsed.data.source.expectedRecordVersion as CommittedConsultation['source']['expectedRecordVersion'],
+      resultDigest: parsed.data.source.resultDigest as Digest,
+      question,
+      questionDigest: parsed.data.source.questionDigest as Digest,
+      actor,
+      actorAttestation,
+      evidence,
+    },
+    teacher: {
+      ...parsed.data.teacher,
+      ...(parsed.data.teacher.actionId === undefined
+        ? {}
+        : { actionId: parsed.data.teacher.actionId as CommittedConsultation['source']['actionId'] }),
+      ...(parsed.data.teacher.invocationId === undefined
+        ? {}
+        : { invocationId: parsed.data.teacher.invocationId as CommittedConsultation['source']['invocationId'] }),
+      ...(parsed.data.teacher.attemptId === undefined
+        ? {}
+        : { attemptId: parsed.data.teacher.attemptId as CommittedConsultation['source']['attemptId'] }),
+      ...(parsed.data.teacher.actor === undefined
+        ? {}
+        : { actor: decodeActorRef(parsed.data.teacher.actor) }),
+      ...(teacherAdvice === undefined ? {} : { advice: teacherAdvice }),
+      ...(parsed.data.teacher.adviceDigest === undefined
+        ? {}
+        : { adviceDigest: parsed.data.teacher.adviceDigest as Digest }),
+      ...(parsed.data.teacher.actorAttestation === undefined
+        ? {}
+        : { actorAttestation: decodeEvidenceRef(parsed.data.teacher.actorAttestation) }),
+      ...(parsed.data.teacher.evidence === undefined
+        ? {}
+        : { evidence: parseEvidence(parsed.data.teacher.evidence) }),
+    },
+    ...(parsed.data.continuation === undefined || continuationInput === undefined
+      ? {}
+      : {
+          continuation: {
+            ...parsed.data.continuation,
+            expectedRecordVersion: parsed.data.continuation.expectedRecordVersion as NonNullable<CommittedConsultation['continuation']>['expectedRecordVersion'],
+            input: continuationInput,
+            inputDigest: parsed.data.continuation.inputDigest as Digest,
+            ...(parsed.data.continuation.resultDigest === undefined
+              ? {}
+              : { resultDigest: parsed.data.continuation.resultDigest as Digest }),
+          },
+        }),
+  } as CommittedConsultation;
+}
+
 function assertSortedUnique(values: readonly string[], label: string): void {
   for (let index = 1; index < values.length; index += 1) {
     if (values[index - 1]! >= values[index]!) {
@@ -648,13 +938,18 @@ function assertActionInvariants(
       'Committed effect slots must exactly match the frozen Action.'
     );
   }
-  if (
-    (committed.state === 'active') !==
-    (committed.deliveryState !== 'closed')
-  ) {
+  const deliveryMatchesState =
+    (committed.state === 'active' &&
+      (committed.deliveryState === 'admitted_undelivered' ||
+        committed.deliveryState === 'granted')) ||
+    (committed.state === 'consultation-paused' &&
+      committed.deliveryState === 'paused') ||
+    ((committed.state === 'blocked' || committed.state === 'closed') &&
+      committed.deliveryState === 'closed');
+  if (!deliveryMatchesState) {
     throw new CanonicalRecordError(
       'invalid_record_invariant',
-      'Only active Actions may remain deliverable.'
+      'Action execution state and delivery state are inconsistent.'
     );
   }
   if (
@@ -765,6 +1060,65 @@ function assertRecordInvariants(record: CanonicalRunRecord): void {
       );
     }
   }
+  const consultations = record.consultations ?? {};
+  assertSortedUnique(Object.keys(consultations), 'consultations');
+  const ordinalGroups = new Map<string, number[]>();
+  for (const [key, consultation] of Object.entries(consultations)) {
+    if (key !== consultation.consultationId) {
+      throw new CanonicalRecordError(
+        'invalid_record_invariant',
+        'Canonical consultation map key must equal the embedded ConsultationId.'
+      );
+    }
+    const source = record.actions[consultation.source.actionId];
+    if (
+      source === undefined ||
+      source.action.invocationId !== consultation.source.invocationId ||
+      source.action.attemptId !== consultation.source.attemptId ||
+      source.action.kind !== 'agent'
+    ) {
+      throw new CanonicalRecordError(
+        'invalid_record_invariant',
+        'Canonical consultation must reference the exact source agent Action.'
+      );
+    }
+    const teacherActionId = consultation.teacher.actionId;
+    if (
+      teacherActionId !== undefined &&
+      (record.actions[teacherActionId] === undefined ||
+        record.actions[teacherActionId]!.action.invocationId !==
+          consultation.teacher.invocationId)
+    ) {
+      throw new CanonicalRecordError(
+        'invalid_record_invariant',
+        'Canonical consultation Teacher identity is not linked to an admitted Action.'
+      );
+    }
+    if (
+      consultation.counters.consultations.used >
+        consultation.counters.consultations.max ||
+      consultation.counters.teacherAttempts.used >
+        consultation.counters.teacherAttempts.max
+    ) {
+      throw new CanonicalRecordError(
+        'invalid_record_invariant',
+        'Consultation counters exceed their frozen independent limits.'
+      );
+    }
+    const keyForOrdinal = consultation.source.invocationId;
+    const ordinals = ordinalGroups.get(keyForOrdinal) ?? [];
+    ordinals.push(consultation.ordinal);
+    ordinalGroups.set(keyForOrdinal, ordinals);
+  }
+  for (const ordinals of ordinalGroups.values()) {
+    ordinals.sort((left, right) => left - right);
+    if (ordinals.some((ordinal, index) => ordinal !== index + 1)) {
+      throw new CanonicalRecordError(
+        'invalid_record_invariant',
+        'Consultation ordinals must be gap-free inside one source Invocation.'
+      );
+    }
+  }
 
   const terminalStatuses = [
     'completed',
@@ -863,6 +1217,19 @@ export function decodeCanonicalRunRecord(
       .map(([key, action]) => [key, parseCommittedAction(action)] as const)
       .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
   );
+  const consultations =
+    parsed.data.consultations === undefined
+      ? undefined
+      : Object.fromEntries(
+          Object.entries(parsed.data.consultations)
+            .map(([key, consultation]) => [
+              key,
+              parseCommittedConsultation(consultation),
+            ] as const)
+            .sort(([left], [right]) =>
+              left < right ? -1 : left > right ? 1 : 0
+            )
+        );
   let waits: readonly CanonicalWait[];
   try {
     waits = parsed.data.waits.map((wait) =>
@@ -896,6 +1263,7 @@ export function decodeCanonicalRunRecord(
     previousRecordDigest: parsed.data.previousRecordDigest as Digest | null,
     transitions: parsed.data.transitions as readonly CommittedTransition[],
     actions,
+    ...(consultations === undefined ? {} : { consultations }),
     waits,
     terminal: parsed.data.terminal as RunTerminalOutcome | undefined,
   } as CanonicalRunRecord;

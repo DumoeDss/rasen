@@ -15,6 +15,7 @@ import type {
   SessionRecoveryReport,
 } from '../../../src/core/session-host/contracts.js';
 import type { ExactChangeRunRef } from '../../../src/core/change-run/contracts.js';
+import { DEFAULT_EXECUTOR_POLICY_BLOCK } from '../../../src/core/frozen-action-executor/reuse-policy.js';
 import type {
   CanonicalRunRecord,
   CommittedAction,
@@ -24,6 +25,7 @@ import {
   recordIds,
   recordRevision,
 } from '../change-run/record-fixture.js';
+import { buildGrantedConsultationFixture } from '../change-run/consultation-fixture.js';
 
 const runRef: ExactChangeRunRef = {
   change: { projectRoot: '/root', changeId: 'fixture-change' },
@@ -92,6 +94,9 @@ function stubHost(executeOutcome: SessionHostOutcome): SessionHost {
     list(): SessionHostView[] {
       return [stubSessionView()];
     },
+    verifyTurnReceipt(): boolean {
+      return false;
+    },
     async reconcileOnStart(): Promise<SessionRecoveryReport> {
       return {
         ready: true,
@@ -120,12 +125,22 @@ const settledOk: SessionHostOutcome = {
 describe('production seam - turnResultFromHostOutcome mapping', () => {
   it('a settled host turn maps to a workload outcome (default succeeded)', () => {
     const turn = turnResultFromHostOutcome(settledOk);
-    expect(turn).toEqual({ ok: true, status: 'succeeded' });
+    expect(turn).toMatchObject({
+      ok: true,
+      status: 'succeeded',
+      hostedTurn: {
+        stableSessionId: '11111111-1111-1111-1111-111111111111',
+        requestId: '11111111-1111-1111-1111-111111111111',
+        result: '{"ok":true}',
+        resultDigest: 'sha256:abc',
+        replayed: false,
+      },
+    });
   });
 
   it('a custom result interpreter maps a settled turn to failed', () => {
     const turn = turnResultFromHostOutcome(settledOk, () => 'failed');
-    expect(turn).toEqual({ ok: true, status: 'failed' });
+    expect(turn).toMatchObject({ ok: true, status: 'failed' });
   });
 
   it('turn-outcome-unknown maps to an ambiguous, unfinished turn', () => {
@@ -158,7 +173,7 @@ describe('production seam - hosted backend adapter', () => {
       limits: LIMITS,
     });
     const result = await seam.executeTurn({ action: makeRecordAction(), input: 'do work' });
-    expect(result.turn).toEqual({ ok: true, status: 'succeeded' });
+    expect(result.turn).toMatchObject({ ok: true, status: 'succeeded' });
     expect(result.daemonAlive).toBe(true);
   });
 
@@ -268,6 +283,179 @@ describe('production executor - execution-lost through the wired seam', () => {
     if (result.kind === 'executed') {
       expect(result.outcome.kind).toBe('execution-lost');
       expect(result.outcome.source).toBe('launcher-disappearance');
+    }
+  });
+});
+
+describe('production executor - consultation continuation wiring', () => {
+  it('passes the exact stable Session, deterministic request, and committed advice to SessionHost', async () => {
+    const fixture = buildGrantedConsultationFixture();
+    const commands: SessionHostCommand[] = [];
+    const host: SessionHost = {
+      ...stubHost(settledOk),
+      inspect(sessionId): SessionHostView | undefined {
+        if (sessionId !== fixture.grant.stableSessionId) return undefined;
+        return {
+          ...stubSessionView(),
+          sessionId,
+          sandbox: fixture.sourceAction.agent.sandbox,
+          authority: {
+            invocationId: fixture.sourceAction.invocationId,
+            role: fixture.sourceAction.agent.role,
+            workspaceInstanceId: fixture.record.workspaceInstanceId,
+            backend: 'hosted',
+            handoffTokensUsed: 0,
+            reuseRoundsServed: 0,
+          },
+        };
+      },
+      async dispatch(command: SessionHostCommand): Promise<SessionHostOutcome> {
+        commands.push(command);
+        if (command.op !== 'execute') {
+          return {
+            ok: false,
+            op: command.op,
+            code: 'invalid-input',
+            message: 'expected execute',
+          };
+        }
+        return {
+          ok: true,
+          op: 'execute',
+          session: {
+            ...stubSessionView(),
+            sessionId: command.sessionId!,
+            currentRequest: {
+              requestId: command.requestId,
+              state: 'settled',
+              generation: 1,
+              resultDigest: `sha256:${'b'.repeat(64)}`,
+            },
+          },
+          requestId: command.requestId,
+          result: '{"status":"DONE"}',
+          resultDigest: `sha256:${'b'.repeat(64)}`,
+        };
+      },
+    };
+    const executor = createProductionExecutor({
+      hostPlatform: 'linux',
+      host,
+      hostedSeamOptions: { cwd: '/root', backend: 'claude', limits: LIMITS },
+    });
+    const result = await executor.dispatchContinuation({
+      grant: fixture.grant,
+      record: fixture.record,
+    });
+    expect(result.kind).toBe('executed');
+    expect(commands).toHaveLength(1);
+    const command = commands[0];
+    expect(command?.op).toBe('execute');
+    if (command?.op !== 'execute') return;
+    expect(command.sessionId).toBe(fixture.grant.stableSessionId);
+    expect(command.requestId).toBe(fixture.grant.requestId);
+    expect(JSON.parse(command.input)).toEqual(fixture.grant.input);
+    expect(fixture.grant.requestId).not.toBe(actionExecuteRequestId(fixture.sourceAction));
+    if (result.kind === 'executed') {
+      expect(result.outcome.hostedTurn).toMatchObject({
+        stableSessionId: fixture.grant.stableSessionId,
+        requestId: fixture.grant.requestId,
+        requestState: 'settled',
+      });
+    }
+  });
+
+  it('rejects a new continuation at the persisted reuse limit but permits exact settled-request replay', async () => {
+    const fixture = buildGrantedConsultationFixture();
+    let exactReplay = false;
+    let dispatches = 0;
+    const host: SessionHost = {
+      ...stubHost(settledOk),
+      inspect(sessionId): SessionHostView | undefined {
+        if (sessionId !== fixture.grant.stableSessionId) return undefined;
+        return {
+          ...stubSessionView(),
+          sessionId,
+          sandbox: fixture.sourceAction.agent.sandbox,
+          authority: {
+            invocationId: fixture.sourceAction.invocationId,
+            role: fixture.sourceAction.agent.role,
+            workspaceInstanceId: fixture.record.workspaceInstanceId,
+            backend: 'hosted',
+            handoffTokensUsed: 0,
+            reuseRoundsServed:
+              DEFAULT_EXECUTOR_POLICY_BLOCK.defaultReuseRoundLimit,
+          },
+          ...(exactReplay
+            ? {
+                currentRequest: {
+                  requestId: fixture.grant.requestId,
+                  state: 'settled' as const,
+                  generation: 1,
+                },
+              }
+            : {}),
+        };
+      },
+      async dispatch(command: SessionHostCommand): Promise<SessionHostOutcome> {
+        dispatches += 1;
+        if (command.op !== 'execute') {
+          return {
+            ok: false,
+            op: command.op,
+            code: 'invalid-input',
+            message: 'expected execute',
+          };
+        }
+        return {
+          ok: true,
+          op: 'execute',
+          session: {
+            ...stubSessionView(),
+            sessionId: command.sessionId!,
+            currentRequest: {
+              requestId: command.requestId,
+              state: 'settled',
+              generation: 1,
+              resultDigest: `sha256:${'c'.repeat(64)}`,
+            },
+          },
+          requestId: command.requestId,
+          result: '{"status":"DONE"}',
+          resultDigest: `sha256:${'c'.repeat(64)}`,
+          replayed: true,
+        };
+      },
+    };
+    const executor = createProductionExecutor({
+      hostPlatform: 'linux',
+      host,
+      hostedSeamOptions: { cwd: '/root', backend: 'claude', limits: LIMITS },
+    });
+
+    const fresh = await executor.dispatchContinuation({
+      grant: fixture.grant,
+      record: fixture.record,
+    });
+    expect(fresh).toMatchObject({
+      kind: 'rejected',
+      code: 'receipt_conflict',
+      message: expect.stringMatching(/reuse.*not permitted/i),
+    });
+    expect(dispatches).toBe(0);
+
+    exactReplay = true;
+    const replay = await executor.dispatchContinuation({
+      grant: fixture.grant,
+      record: fixture.record,
+    });
+    expect(replay.kind).toBe('executed');
+    expect(dispatches).toBe(1);
+    if (replay.kind === 'executed') {
+      expect(replay.outcome.hostedTurn).toMatchObject({
+        requestId: fixture.grant.requestId,
+        replayed: true,
+      });
     }
   });
 });

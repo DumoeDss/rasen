@@ -17,6 +17,7 @@ export {
   type ChangeRunContractErrorCode,
   type ChangeRunControlRequest,
   type ChangeRunReceipt,
+  type ChangeRunReceiptContinuationAuthority,
   type ChangeRunReceiptDisposition,
   type ChangeRunView,
   type ChangeRunViewSection,
@@ -41,6 +42,58 @@ export {
 } from './contracts.js';
 
 export {
+  createCanonicalReceiptContinuationAuthority,
+} from './internal/record.js';
+
+export {
+  CONSULTATION_SERVER_LIMITS,
+  CONSULTATION_QUESTION_JSON_SCHEMA,
+  CONSULTATION_STEP_SUBMISSION_JSON_SCHEMA,
+  AGENT_CONTINUATION_GRANT_JSON_SCHEMA,
+  CONSULTATION_CONTINUATION_SETTLEMENT_JSON_SCHEMA,
+  TEACHER_INVOCATION_JSON_SCHEMA,
+  TEACHER_ADVICE_JSON_SCHEMA,
+  TEACHER_RESUME_JSON_SCHEMA,
+  TEACHER_UNAVAILABLE_JSON_SCHEMA,
+  ConsultationQuestionZodSchema,
+  TeacherConsultationInvocationZodSchema,
+  TeacherConsultationAdviceZodSchema,
+  TeacherConsultationResumeZodSchema,
+  TeacherConsultationUnavailableZodSchema,
+  ConsultationStepSubmissionZodSchema,
+  AgentContinuationGrantZodSchema,
+  ConsultationContinuationSettlementZodSchema,
+  ConsultationTeacherFailureSettlementZodSchema,
+  decodeConsultationQuestion,
+  decodeConsultationStepSubmission,
+  decodeAgentContinuationGrant,
+  decodeConsultationContinuationSettlement,
+  decodeConsultationTeacherFailureSettlement,
+  decodeTeacherConsultationInvocation,
+  decodeTeacherConsultationAdvice,
+  decodeTeacherConsultationResume,
+  decodeTeacherConsultationUnavailable,
+  deriveConsultationId,
+  deriveFreshStepRequestId,
+  deriveContinuationRequestId,
+  digestTeacherConsultationAdvice,
+  digestContinuationInput,
+  type AgentContinuationGrant,
+  type ConsultationContentLimits,
+  type ConsultationContinuationInput,
+  type ConsultationContinuationSettlement,
+  type ConsultationTeacherFailureSettlement,
+  type ConsultationId,
+  type ConsultationQuestion,
+  type ConsultationStepSubmission,
+  type ContinuationRequestId,
+  type TeacherConsultationAdvice,
+  type TeacherConsultationInvocation,
+  type TeacherConsultationResume,
+  type TeacherConsultationUnavailable,
+} from './consultation-contracts.js';
+
+export {
   ChangeRunRuntimeError,
   exactChangeRunRef,
   type ChangePipelineRuntime,
@@ -52,8 +105,11 @@ export {
 
 export {
   prepareRuntimeContext,
+  openStoredRuntimeContext,
+  runtimeServiceReservationRegistry,
   type RuntimeContext,
   type RuntimeContextInput,
+  type StoredRuntimeContextInput,
 } from './internal/runtime-context.js';
 
 export {

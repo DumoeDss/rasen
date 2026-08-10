@@ -36,6 +36,7 @@ describe('execution capability matrix - computation and content', () => {
       expect(cell?.declaration.scopeEmptyProof).toBe(false);
       expect(cell?.declaration.durable).toBe(true);
       expect(cell?.declaration.headlessDriver).toBe(true);
+      expect(cell?.declaration.continuableTurns).toBe(true);
       expect(cell?.declaration.cancelTerminalLabel).toBe('cancelled / emptiness-unproven');
     }
     expect(HOSTED_BEST_EFFORT_DECLARATION.exactCancel).toBe(false);
@@ -48,6 +49,7 @@ describe('execution capability matrix - computation and content', () => {
       const cell = queryCapabilityCell(matrix, os, 'in-tool');
       expect(cell?.declaration.durable).toBe(false);
       expect(cell?.declaration.headlessDriver).toBe(false);
+      expect(cell?.declaration.continuableTurns).toBe(false);
       // No exact-termination claim: the fields are absent, not false-as-claim.
       expect(cell?.declaration.exactCancel).toBeUndefined();
       expect(cell?.declaration.scopeEmptyProof).toBeUndefined();
@@ -177,6 +179,25 @@ describe('never-silently-reroute (authority-unavailable never becomes in-tool)',
     const matrix = buildExecutionCapabilityMatrix({ hostPlatform: 'linux' });
     const selection = resolveBackendSelection({ matrix });
     expect(selection.kind).toBe('authority-unavailable');
+  });
+
+  it('refuses an uncontinuable consultation route without rerouting', () => {
+    const matrix = buildExecutionCapabilityMatrix({ hostPlatform: 'linux' });
+    const inTool = resolveBackendSelection({
+      matrix,
+      requested: 'in-tool',
+      requiresContinuableTurns: true,
+    });
+    expect(inTool).toMatchObject({ kind: 'authority-unavailable' });
+    if (inTool.kind === 'authority-unavailable') {
+      expect(inTool.message).toContain('consultation-continuation-unavailable');
+    }
+    const hosted = resolveBackendSelection({
+      matrix,
+      requested: 'hosted',
+      requiresContinuableTurns: true,
+    });
+    expect(hosted).toMatchObject({ kind: 'selected', backend: 'hosted' });
   });
 
   it('a platform with only in-tool declares the headless boundary (hosted unavailable)', () => {

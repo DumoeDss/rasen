@@ -579,12 +579,8 @@ fn control(options: &Options) -> io::Result<()> {
     let grace_ms = options.number("grace-ms", 0)?;
     let verb = options.one("verb")?.to_owned();
 
-    let client = ControlEndpointClient::connect(
-        &scope,
-        guardian_process_id,
-        guardian_birth,
-        &owner,
-    )?;
+    let client =
+        ControlEndpointClient::connect(&scope, guardian_process_id, guardian_birth, &owner)?;
     let mut stream = PipeStream::overlapped(client.raw())?;
 
     write_frame(
@@ -686,10 +682,88 @@ fn control(options: &Options) -> io::Result<()> {
             }
         }
         "run" => run_workload(&mut stream, deadline),
+        "bridge" => bridge_runtime(&mut stream, client.raw()),
         other => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!("unknown verb {other}"),
         )),
+    }
+}
+
+/// Frame-preserving production runtime bridge.
+///
+/// Unlike `run`, this verb never writes workload bytes or authority receipts as
+/// text. It forwards only the closed RWA1 frame vocabulary. The controller-side
+/// adapter therefore demultiplexes `Output`/`ErrorOutput` from `RootExited` and
+/// `ExactScopeEmpty` by authenticated frame kind; a workload printing receipt-
+/// looking bytes remains only an `Output` payload.
+fn bridge_runtime(endpoint_reader: &mut PipeStream, handle: Handle) -> io::Result<()> {
+    let mut endpoint_writer = PipeStream::overlapped(handle)?;
+    write_frame(
+        &mut endpoint_writer,
+        &Frame {
+            kind: FrameKind::OpenRuntime,
+            payload: Vec::new(),
+        },
+    )?;
+    let ready = expect_frame(endpoint_reader)?;
+    if ready.kind != FrameKind::RuntimeReady || !ready.payload.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "the guardian did not open the frame-preserving runtime bridge",
+        ));
+    }
+    write_frame(&mut io::stdout().lock(), &ready)?;
+
+    // Input owns a distinct overlapped context on the same authenticated pipe,
+    // so it cannot block authority events travelling in the other direction.
+    std::thread::spawn(move || {
+        let mut input = io::stdin().lock();
+        while let Ok(Some(frame)) = read_frame(&mut input) {
+            if !matches!(
+                frame.kind,
+                FrameKind::Activate
+                    | FrameKind::Inspect
+                    | FrameKind::Abort
+                    | FrameKind::Terminate
+                    | FrameKind::Input
+                    | FrameKind::CloseInput
+            ) {
+                // Closed controller vocabulary: never forward control/outcome
+                // kinds from standard input into the authority.
+                break;
+            }
+            if write_frame(&mut endpoint_writer, &frame).is_err() {
+                break;
+            }
+        }
+    });
+
+    let mut output = io::stdout().lock();
+    loop {
+        let frame = expect_frame(endpoint_reader)?;
+        match frame.kind {
+            FrameKind::Activated
+            | FrameKind::Output
+            | FrameKind::ErrorOutput
+            | FrameKind::Event
+            | FrameKind::RootExited
+            | FrameKind::ExactScopeEmpty
+            | FrameKind::Failure => {
+                let terminal =
+                    matches!(frame.kind, FrameKind::ExactScopeEmpty | FrameKind::Failure);
+                write_frame(&mut output, &frame)?;
+                if terminal {
+                    return Ok(());
+                }
+            }
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "the guardian emitted an unexpected runtime frame",
+                ))
+            }
+        }
     }
 }
 

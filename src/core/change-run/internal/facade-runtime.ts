@@ -10,6 +10,15 @@ import type {
   RunAction,
 } from '../contracts.js';
 import {
+  decodeConsultationContinuationSettlement,
+  decodeConsultationTeacherFailureSettlement,
+  deriveFreshStepRequestId,
+  type AgentContinuationGrant,
+  type ConsultationContinuationSettlement,
+  type ConsultationStepSubmission,
+  type ConsultationTeacherFailureSettlement,
+} from '../consultation-contracts.js';
+import {
   ChangeRunRuntimeError,
   type ChangePipelineRuntime,
   type RuntimeMutationContext,
@@ -30,10 +39,14 @@ import {
   verifyCompletion,
 } from './completion.js';
 import { type EvidenceStore } from './evidence.js';
-import { verifyAttestedCompletion } from './attestation.js';
+import {
+  verifyAttestedCompletion,
+  verifyAttestedConsultationSubmission,
+} from './attestation.js';
 import { createCanonicalWait, type CanonicalWait } from './waits.js';
 import { deriveInvocationId } from './identity.js';
 import type { WorkspaceReservationRegistry } from './reservations.js';
+import type { HostedTurnReceipt } from '../../session-host/contracts.js';
 import { validateReviewCycleCompletion, projectReviewCycleProgress } from './review-cycle-runtime.js';
 import {
   projectGoalCycleDomainSnapshot,
@@ -48,11 +61,18 @@ import {
   reduceBoundedLoopLifecycle,
   strategyTriggerForAction,
 } from './bounded-loop-lifecycle.js';
+import {
+  classifyConsultationRequest,
+  commitTeacherAdvice,
+  continuationGrantFromCommitted,
+} from './consultation-lifecycle.js';
+import type { RuntimeExecutionProfile } from '../../pipeline-registry/execution-plan-internal.js';
 
 export interface RuntimeDeps {
   readonly store: RunStore;
   readonly plan: RuntimePlan;
   readonly initialRecord: CanonicalRunRecord;
+  readonly executionProfile?: RuntimeExecutionProfile;
   /**
    * Run-scoped immutable evidence bytes. Observation mutation requires this
    * verifier seam; omitting it keeps legacy/domain-only fixtures inspectable
@@ -99,6 +119,11 @@ export interface RuntimeDeps {
    */
   readonly reservationRegistry?: WorkspaceReservationRegistry;
   /**
+   * Server-owned verification of a hosted receipt against the durable
+   * SessionHost registry and content-addressed result bytes.
+   */
+  readonly verifyHostedTurnReceipt?: (receipt: HostedTurnReceipt) => boolean;
+  /**
    * Optional callback that resolves the association registry's authoritative
    * source state for a Run's ChangeInstance (M2). When provided, the facade
    * passes the resolved state to `projectRunView`, so `pipeline status` on an
@@ -141,7 +166,8 @@ function receipt(
   disposition: ChangeRunReceipt['disposition'],
   actions: readonly RunAction[],
   resolveSourceState?: (record: CanonicalRunRecord) => 'active' | 'archived' | 'missing',
-  plan?: RuntimePlan
+  plan?: RuntimePlan,
+  continuationGrants: readonly AgentContinuationGrant[] = []
 ): ChangeRunReceipt {
   const sourceState = resolveSourceState?.(record) ?? 'active';
   return Object.freeze({
@@ -149,6 +175,9 @@ function receipt(
     disposition,
     view: projectRunView(record, sourceState, plan),
     actions: Object.freeze([...actions]),
+    ...(continuationGrants.length === 0
+      ? {}
+      : { continuationGrants: Object.freeze([...continuationGrants]) }),
   }) as ChangeRunReceipt;
 }
 
@@ -196,6 +225,50 @@ function capabilityUnavailableWait(
  * through the canonical commit path.
  */
 export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRuntime {
+  const releaseTerminalReservations = (record: CanonicalRunRecord): void => {
+    if (record.terminal === undefined || deps.reservationRegistry === undefined) {
+      return;
+    }
+    for (const actionId of Object.keys(record.actions)) {
+      deps.reservationRegistry.release(
+        deps.plan.runId,
+        actionId as ActionId
+      );
+    }
+  };
+  const consultationBindingForAction = (action: RunAction) => {
+    if (deps.executionProfile === undefined || action.kind !== 'agent') {
+      return undefined;
+    }
+    return deps.executionProfile.consultations?.find((binding) => {
+      const capability = deps.executionProfile!.capabilities.find(
+        (candidate) => candidate.nodeId === binding.sourceProfilePath
+      );
+      const stage = deps.executionProfile!.policy.stages.find(
+        (candidate) => candidate.nodeId === binding.sourceProfilePath
+      );
+      return (
+        capability !== undefined &&
+        stage !== undefined &&
+        action.executionProfileDigest === deps.executionProfile!.profileDigest &&
+        action.capability.id === capability.authoredCapability.id &&
+        action.capability.authoredVersion === capability.authoredCapability.version &&
+        action.capability.contractDigest === capability.contract.digest &&
+        action.capability.artifact.contentDigest === capability.adapter.contentDigest &&
+        action.resultContractDigest === capability.resultContract.digest &&
+        action.evidenceContractDigest === capability.evidenceContract.digest &&
+        action.agent.role === stage.role &&
+        action.agent.model === stage.model &&
+        action.agent.runtime === stage.runtime &&
+        action.agent.sandbox === stage.sandbox &&
+        action.agent.consultation?.sourceProfilePath ===
+          binding.sourceProfilePath &&
+        action.agent.consultation.teacherProfilePath ===
+          binding.teacherProfilePath &&
+        JSON.stringify(action.workspace) === JSON.stringify(capability.workspace)
+      );
+    });
+  };
   /**
    * Collect the stimuli that settle a reconciler candidate batch against
    * `workingRecord`, WITHOUT applying them. `complete` uses this to fold the
@@ -213,9 +286,14 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
     candidates: readonly ReconcilerNextAction[],
     deliveryMode: 'grant' | 'defer',
     incomingResumingWaitIds: ReadonlySet<string> = new Set()
-  ): { readonly stimuli: readonly RunStimulus[]; readonly granted: readonly RunAction[] } => {
+  ): {
+    readonly stimuli: readonly RunStimulus[];
+    readonly granted: readonly RunAction[];
+    readonly continuationIds: readonly string[];
+  } => {
     const stimuli: RunStimulus[] = [];
     const grantedActions: RunAction[] = [];
+    const continuationIds: string[] = [];
     const blockedIntents: Array<{
       readonly nodeId: string;
       readonly invocationId: string;
@@ -258,18 +336,44 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
           // only signal that another Run holds the workspace lease.
           if (
             deps.reservationRegistry !== undefined &&
-            (candidate.access === 'read' || candidate.access === 'write')
+            (action.workspace.access === 'read' ||
+              action.workspace.access === 'write')
           ) {
-            const conflict = deps.reservationRegistry.reserve({
+            const reservation = {
               workspaceInstanceId: workingRecord.workspaceInstanceId,
               runId: deps.plan.runId,
               actionId: action.actionId as ActionId,
               attemptId: action.attemptId as AttemptId,
-              access: candidate.access,
+              access: action.workspace.access,
               recordDigest: digestCanonicalRunRecord(workingRecord),
               recordVersion: workingRecord.recordVersion,
               state: 'pending',
-            });
+            } as const;
+            const consultation =
+              candidate.consultationTeacher === undefined
+                ? undefined
+                : workingRecord.consultations?.[
+                    candidate.consultationTeacher.consultationId
+                  ];
+            const source =
+              consultation === undefined
+                ? undefined
+                : workingRecord.actions[consultation.source.actionId];
+            const conflict =
+              consultation !== undefined &&
+              source !== undefined &&
+              action.workspace.access === 'read'
+                ? deps.reservationRegistry.reserveConsultationRead(
+                    { ...reservation, access: 'read' },
+                    {
+                      runId: deps.plan.runId,
+                      actionId: consultation.source.actionId,
+                      consultationId: consultation.consultationId,
+                      canonicallyPaused:
+                        source.state === 'consultation-paused',
+                    }
+                  )
+                : deps.reservationRegistry.reserve(reservation);
             if (conflict !== null) {
               // The registry rejected the reservation; the candidate stays
               // un-admitted and enters the blocked-intent wait below. Discard
@@ -280,7 +384,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
                 nodeId: candidate.nodeId,
                 invocationId: action.invocationId,
                 occurrence: candidate.occurrence,
-                access: candidate.access,
+                access: action.workspace.access,
               });
               break;
             }
@@ -300,11 +404,28 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
             attemptOrdinal: 0,
             deliveryMode,
           });
+          if (candidate.consultationTeacher !== undefined) {
+            stimuli.push({
+              kind: 'link-consultation-teacher',
+              consultationId:
+                candidate.consultationTeacher.consultationId,
+              teacherActionId: action.actionId,
+            });
+          }
           if (deliveryMode === 'grant') {
             grantedActions.push(action);
           }
           break;
         }
+        case 'continue-consultation':
+          if (!candidate.alreadyGranted) {
+            stimuli.push({
+              kind: 'grant-consultation-continuation',
+              consultationId: candidate.consultationId,
+            });
+          }
+          continuationIds.push(candidate.consultationId);
+          break;
         case 'await-gate': {
           const wait = createCanonicalWait(deps.plan.runId, {
             kind: 'gate',
@@ -417,7 +538,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
       }
     }
 
-    return { stimuli, granted: grantedActions };
+    return { stimuli, granted: grantedActions, continuationIds };
   };
 
   /**
@@ -437,7 +558,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
    * they do not grant executable actions) so HTTP/CLI receipts never carry
    * non-admit actions.
    *
-   * deliveryMode semantics (��5.6): `grant` commits admits as `granted` and
+   * deliveryMode semantics (§5.6): `grant` commits admits as `granted` and
    * returns them; `defer` commits admits as `admitted_undelivered` (the
    * management/browser path) and returns `actions: []`. Both modes commit
    * all durable waits and terminal transitions.
@@ -446,16 +567,33 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
     record: CanonicalRunRecord,
     candidates: readonly ReconcilerNextAction[],
     deliveryMode: 'grant' | 'defer'
-  ): { record: CanonicalRunRecord; granted: readonly RunAction[] } => {
+  ): {
+    record: CanonicalRunRecord;
+    granted: readonly RunAction[];
+    continuationGrants: readonly AgentContinuationGrant[];
+  } => {
     const collected = collectSettleStimuli(record, candidates, deliveryMode);
     if (collected.stimuli.length === 0) {
-      return { record, granted: [] };
+      const continuationGrants = collected.continuationIds.map((id) =>
+        continuationGrantFromCommitted(record, record.consultations![id]!)
+      );
+      return { record, granted: [], continuationGrants };
     }
     const result = reduceCandidateBatch(record, collected.stimuli);
     if (!result.ok) {
       throw new Error(`facade settle failed: ${result.failure.message}`);
     }
-    return { record: result.record, granted: collected.granted };
+    const continuationGrants = collected.continuationIds.map((id) =>
+      continuationGrantFromCommitted(
+        result.record,
+        result.record.consultations![id]!
+      )
+    );
+    return {
+      record: result.record,
+      granted: collected.granted,
+      continuationGrants,
+    };
   };
 
   return {
@@ -478,7 +616,14 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
       // (management API, operations) can project the review-cycle section
       // without access to the launch context (Major-2).
       deps.store.writePlan?.(deps.plan.runId, deps.plan);
-      return asPromise(receipt(settled.record, 'created', settled.granted, deps.resolveSourceState, deps.plan));
+      return asPromise(receipt(
+        settled.record,
+        'created',
+        settled.granted,
+        deps.resolveSourceState,
+        deps.plan,
+        settled.continuationGrants
+      ));
     },
     resume(_request, context: RuntimeMutationContext) {
       const record = deps.store.load(deps.plan.runId);
@@ -503,7 +648,393 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
               ? 'waiting'
               : 'advanced';
       return asPromise(
-        receipt(settled.record, disposition, settled.granted, deps.resolveSourceState, deps.plan)
+        receipt(
+          settled.record,
+          disposition,
+          settled.granted,
+          deps.resolveSourceState,
+          deps.plan,
+          settled.continuationGrants
+        )
+      );
+    },
+    consult(
+      request: ConsultationStepSubmission,
+      context: RuntimeMutationContext
+    ) {
+      const record = deps.store.load(deps.plan.runId);
+      deps.assertMutationAllowed?.(record);
+      if (request.runId !== record.runId) {
+        throw new ChangeRunRuntimeError(
+          'invalid_run_request',
+          'Consultation submission must address the exact current Run revision.',
+          projectRunView(record, deps.resolveSourceState?.(record) ?? 'active', deps.plan)
+        );
+      }
+      const source = record.actions[request.actionId];
+      if (source === undefined) {
+        throw new Error('facade consult failed: source Action is not admitted.');
+      }
+      const binding = consultationBindingForAction(source.action);
+      if (binding === undefined) {
+        throw new Error(
+          'facade consult failed: source Action has no exact frozen consultation binding.'
+        );
+      }
+      if (deps.evidenceStore === undefined) {
+        throw new Error(
+          'facade consult failed: no persistent EvidenceStore is bound to this Run.'
+        );
+      }
+      verifyAttestedConsultationSubmission(
+        record,
+        source.action,
+        request,
+        (ref) => deps.evidenceStore!.read(ref)
+      );
+      const classified = classifyConsultationRequest({
+        record,
+        source,
+        binding,
+        submission: request,
+      });
+      if (classified.kind === 'conflict') {
+        throw new Error(`facade consult failed: ${classified.message}`);
+      }
+      if (classified.kind === 'duplicate') {
+        const linkedTeacher = classified.consultation.teacher.actionId === undefined
+          ? undefined
+          : record.actions[classified.consultation.teacher.actionId];
+        // The consultation commit and Teacher grant are atomic, but delivery
+        // acknowledgement is not. Replaying the exact signed CONSULT recovers
+        // the canonical already-granted Teacher Action; its deterministic
+        // Action/request identities prevent a second execution.
+        if (
+          context.deliveryMode === 'grant' &&
+          classified.consultation.state === 'teacher-active' &&
+          linkedTeacher?.state === 'active' &&
+          linkedTeacher.deliveryState === 'granted'
+        ) {
+          return asPromise(
+            receipt(
+              record,
+              'advanced',
+              [linkedTeacher.action],
+              deps.resolveSourceState,
+              deps.plan
+            )
+          );
+        }
+        return asPromise(
+          receipt(record, 'idempotent', [], deps.resolveSourceState, deps.plan)
+        );
+      }
+      if (request.expectedRecordVersion !== record.recordVersion) {
+        throw new ChangeRunRuntimeError(
+          'record_version_conflict',
+          'Consultation submission must address the exact current Run revision.',
+          projectRunView(
+            record,
+            deps.resolveSourceState?.(record) ?? 'active',
+            deps.plan
+          )
+        );
+      }
+      const requestStimulus: RunStimulus = {
+        kind: 'request-consultation',
+        consultation: classified.consultation,
+      };
+      const intermediate = reduceCanonicalRunRecord(record, requestStimulus);
+      if (!intermediate.ok) {
+        throw new Error(`facade consult failed: ${intermediate.failure.message}`);
+      }
+      const reconciled = reconcile(deps.plan, intermediate.record);
+      if (!reconciled.ok) {
+        throw new Error(`facade consult reconcile failed: ${reconciled.failure.message}`);
+      }
+      const collected = collectSettleStimuli(
+        intermediate.record,
+        reconciled.actions,
+        context.deliveryMode
+      );
+      const reduced = reduceCandidateBatch(record, [
+        requestStimulus,
+        ...collected.stimuli,
+      ]);
+      if (!reduced.ok) {
+        throw new Error(`facade consult settle failed: ${reduced.failure.message}`);
+      }
+      deps.store.commit(deps.plan.runId, reduced.record);
+      const continuationGrants = collected.continuationIds.map((id) =>
+        continuationGrantFromCommitted(
+          reduced.record,
+          reduced.record.consultations![id]!
+        )
+      );
+      return asPromise(
+        receipt(
+          reduced.record,
+          'advanced',
+          collected.granted,
+          deps.resolveSourceState,
+          deps.plan,
+          continuationGrants
+        )
+      );
+    },
+    settleConsultationTeacherFailure(
+      request: ConsultationTeacherFailureSettlement,
+      context: RuntimeMutationContext
+    ) {
+      const settlement = decodeConsultationTeacherFailureSettlement(request);
+      const record = deps.store.load(deps.plan.runId);
+      deps.assertMutationAllowed?.(record);
+      if (settlement.runId !== record.runId) {
+        throw new ChangeRunRuntimeError(
+          'invalid_run_request',
+          'Teacher execution settlement must address the exact current Run.',
+          projectRunView(record, deps.resolveSourceState?.(record) ?? 'active', deps.plan)
+        );
+      }
+      if (
+        record.transitions.some(
+          (transition) =>
+            transition.kind === 'ConsultationTeacherAttemptFailed' &&
+            transition.consultationId === settlement.consultationId &&
+            transition.teacherActionId === settlement.teacherActionId
+        )
+      ) {
+        return asPromise(
+          receipt(record, 'idempotent', [], deps.resolveSourceState, deps.plan)
+        );
+      }
+      const consultation = record.consultations?.[settlement.consultationId];
+      const teacher = record.actions[settlement.teacherActionId];
+      if (
+        consultation === undefined ||
+        consultation.state !== 'teacher-active' ||
+        consultation.teacher.actionId !== settlement.teacherActionId ||
+        teacher?.state !== 'active' ||
+        teacher.action.kind !== 'agent'
+      ) {
+        throw new Error(
+          'facade Teacher failure failed: settlement does not address the exact active Teacher attempt.'
+        );
+      }
+      if (settlement.expectedRecordVersion !== record.recordVersion) {
+        throw new ChangeRunRuntimeError(
+          'record_version_conflict',
+          'Teacher execution settlement must address the exact current Run revision.',
+          projectRunView(record, deps.resolveSourceState?.(record) ?? 'active', deps.plan)
+        );
+      }
+      if (settlement.receipt !== undefined) {
+        const authority = settlement.receipt.authority;
+        if (
+          deps.verifyHostedTurnReceipt?.(settlement.receipt) !== true ||
+          settlement.receipt.requestId !==
+            deriveFreshStepRequestId(
+              record.runId,
+              teacher.action.actionId as ActionId,
+              teacher.action.attemptId as AttemptId
+            ) ||
+          settlement.receipt.sandbox !== teacher.action.agent.sandbox ||
+          authority?.invocationId !== teacher.action.invocationId ||
+          authority.role !== teacher.action.agent.role ||
+          authority.workspaceInstanceId !== record.workspaceInstanceId
+        ) {
+          throw new Error(
+            'facade Teacher failure failed: executor receipt is not the exact durable Teacher turn.'
+          );
+        }
+      }
+      if (settlement.recovery !== undefined) {
+        verifyCompletionAuthority(
+          settlement.recovery,
+          record,
+          teacher.action,
+          deps.evidenceStore
+        );
+        if (
+          settlement.outcome !== 'execution-lost' ||
+          settlement.recovery.kind !== 'infrastructure-observation' ||
+          settlement.recovery.status !== 'infrastructure_failed' ||
+          settlement.recovery.error.code !== 'teacher-execution-lost' ||
+          settlement.recovery.error.retryable !== true ||
+          settlement.recovery.error.adapterArtifactDigest !==
+            teacher.action.capability.artifact.contentDigest
+        ) {
+          throw new Error(
+            'facade Teacher failure failed: recovery fact is not the exact active Teacher execution loss.'
+          );
+        }
+      }
+      const failureStimulus: RunStimulus = {
+        kind: 'fail-consultation-teacher',
+        consultationId: settlement.consultationId,
+        teacherActionId: settlement.teacherActionId,
+        detail: `${settlement.outcome}: ${settlement.detail}`,
+      };
+      const intermediate = reduceCanonicalRunRecord(record, failureStimulus);
+      if (!intermediate.ok) {
+        throw new Error(`facade Teacher failure failed: ${intermediate.failure.message}`);
+      }
+      deps.reservationRegistry?.release(
+        deps.plan.runId,
+        settlement.teacherActionId as ActionId
+      );
+      const reconciled = reconcile(deps.plan, intermediate.record);
+      if (!reconciled.ok) {
+        deps.store.commit(deps.plan.runId, intermediate.record);
+        throw new Error(
+          `facade Teacher failure reconcile failed: ${reconciled.failure.message}`
+        );
+      }
+      const collected = collectSettleStimuli(
+        intermediate.record,
+        reconciled.actions,
+        context.deliveryMode
+      );
+      const reduced = reduceCandidateBatch(record, [
+        failureStimulus,
+        ...collected.stimuli,
+      ]);
+      if (!reduced.ok) {
+        deps.store.commit(deps.plan.runId, intermediate.record);
+        throw new Error(
+          `facade Teacher failure settle failed: ${reduced.failure.message}`
+        );
+      }
+      deps.store.commit(deps.plan.runId, reduced.record);
+      const continuationGrants = collected.continuationIds.map((id) =>
+        continuationGrantFromCommitted(
+          reduced.record,
+          reduced.record.consultations![id]!
+        )
+      );
+      return asPromise(
+        receipt(
+          reduced.record,
+          'advanced',
+          collected.granted,
+          deps.resolveSourceState,
+          deps.plan,
+          continuationGrants
+        )
+      );
+    },
+    settleConsultationContinuation(
+      request: ConsultationContinuationSettlement,
+      _context: RuntimeMutationContext
+    ) {
+      const settlement = decodeConsultationContinuationSettlement(request);
+      const record = deps.store.load(deps.plan.runId);
+      deps.assertMutationAllowed?.(record);
+      if (settlement.runId !== record.runId) {
+        throw new ChangeRunRuntimeError(
+          'invalid_run_request',
+          'Continuation settlement must address the exact current Run revision.',
+          projectRunView(record, deps.resolveSourceState?.(record) ?? 'active', deps.plan)
+        );
+      }
+      const consultation = record.consultations?.[settlement.consultationId];
+      const sourceAction = consultation === undefined
+        ? undefined
+        : record.actions[consultation.source.actionId]?.action;
+      if (
+        consultation === undefined ||
+        sourceAction?.kind !== 'agent' ||
+        consultation.source.actionId !== settlement.sourceActionId ||
+        consultation.continuation?.requestId !== settlement.requestId ||
+        settlement.receipt.stableSessionId !== consultation.source.stableSessionId ||
+        settlement.receipt.requestId !== settlement.requestId ||
+        settlement.receipt.backend !== 'claude' && settlement.receipt.backend !== 'hosted' ||
+        settlement.receipt.sandbox !== sourceAction.agent.sandbox ||
+        settlement.receipt.authority?.invocationId !== sourceAction.invocationId ||
+        settlement.receipt.authority.role !== sourceAction.agent.role ||
+        settlement.receipt.authority.workspaceInstanceId !== record.workspaceInstanceId ||
+        deps.verifyHostedTurnReceipt?.(settlement.receipt) !== true
+      ) {
+        throw new Error(
+          'facade continuation failed: hosted receipt does not match durable canonical Session/Action authority.'
+        );
+      }
+      const settledResultDigest = settlement.receipt.resultDigest === undefined
+        ? undefined
+        : (`sha256:${settlement.receipt.resultDigest}` as Digest);
+      const ambiguousDetail =
+        settlement.detail ??
+        'SessionHost sent the continuation but could not prove its terminal outcome.';
+      const duplicate =
+        settlement.expectedRecordVersion ===
+          consultation.continuation.expectedRecordVersion &&
+        ((settlement.outcome === 'settled' &&
+          consultation.state === 'continued' &&
+          consultation.continuation?.state === 'settled' &&
+          consultation.continuation.resultDigest === settledResultDigest) ||
+        (settlement.outcome === 'ambiguous' &&
+          consultation.state === 'continuation-outcome-unknown' &&
+          consultation.continuation?.state === 'ambiguous' &&
+          consultation.failure?.detail === ambiguousDetail));
+      if (duplicate) {
+        return asPromise(
+          receipt(record, 'idempotent', [], deps.resolveSourceState, deps.plan)
+        );
+      }
+      if (
+        consultation.state === 'continued' ||
+        consultation.state === 'continuation-outcome-unknown'
+      ) {
+        throw new Error(
+          'facade continuation failed: terminal settlement replay does not exactly match the canonical settlement.'
+        );
+      }
+      if (settlement.expectedRecordVersion !== record.recordVersion) {
+        throw new ChangeRunRuntimeError(
+          'record_version_conflict',
+          'Continuation settlement must address the exact current Run revision.',
+          projectRunView(
+            record,
+            deps.resolveSourceState?.(record) ?? 'active',
+            deps.plan
+          )
+        );
+      }
+      const stimulus: RunStimulus =
+        settlement.outcome === 'settled'
+          ? {
+              kind: 'settle-consultation-continuation',
+              consultationId: settlement.consultationId,
+              resultDigest:
+                settledResultDigest ??
+                (() => {
+                  throw new Error(
+                    'facade continuation failed: settled result requires resultDigest.'
+                  );
+                })(),
+            }
+          : {
+              kind: 'mark-consultation-continuation-ambiguous',
+              consultationId: settlement.consultationId,
+              detail: ambiguousDetail,
+            };
+      const reduced = reduceCanonicalRunRecord(record, stimulus);
+      if (!reduced.ok) {
+        throw new Error(
+          `facade continuation failed: ${reduced.failure.message}`
+        );
+      }
+      if (reduced.record !== record) {
+        deps.store.commit(deps.plan.runId, reduced.record);
+      }
+      return asPromise(
+        receipt(
+          reduced.record,
+          reduced.record === record ? 'idempotent' : 'advanced',
+          [],
+          deps.resolveSourceState,
+          deps.plan
+        )
       );
     },
     complete(request: CompleteRunAction, context: RuntimeMutationContext) {
@@ -617,12 +1148,44 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         actor: request.actor,
         actorAttestation: request.actorAttestation,
       };
+      const activeTeacherConsultation = Object.values(
+        record.consultations ?? {}
+      ).find(
+        (consultation) =>
+          consultation.state === 'teacher-active' &&
+          consultation.teacher.actionId === request.actionId
+      );
+      const consultationStimulus: RunStimulus | undefined =
+        activeTeacherConsultation === undefined
+          ? undefined
+          : request.status === 'succeeded'
+            ? {
+                kind: 'commit-consultation-advice',
+                consultation: commitTeacherAdvice({
+                  consultation: activeTeacherConsultation,
+                  teacherAction: committed.action,
+                  result: request.result,
+                  actor: request.actor,
+                  actorAttestation: request.actorAttestation,
+                  evidence: request.evidence,
+                }),
+              }
+            : {
+                kind: 'fail-consultation-teacher',
+                consultationId: activeTeacherConsultation.consultationId,
+                teacherActionId: request.actionId,
+                detail: `Teacher attempt settled with domain status ${request.status}.`,
+              };
+      const completionStimuli: readonly RunStimulus[] =
+        consultationStimulus === undefined
+          ? [commitStimulus]
+          : [commitStimulus, consultationStimulus];
       // Apply the commit to an intermediate Record purely to discover the
       // candidate batch the completion unblocks; the final write folds the
       // commit stimulus and the settle stimuli into ONE reduceCandidateBatch
       // over the original Record so the store's head+1 invariant holds (the
       // whole completion + settle is one Record revision, per design §5.6).
-      const intermediate = reduceCanonicalRunRecord(record, commitStimulus);
+      const intermediate = reduceCandidateBatch(record, completionStimuli);
       if (!intermediate.ok) {
         throw new Error(`facade complete failed: ${intermediate.failure.message}`);
       }
@@ -656,8 +1219,8 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
       // Fold the commit + settle into one batch over the ORIGINAL Record.
       const batchStimuli =
         collected.stimuli.length === 0
-          ? [commitStimulus]
-          : [commitStimulus, ...collected.stimuli];
+          ? completionStimuli
+          : [...completionStimuli, ...collected.stimuli];
       const result = reduceCandidateBatch(record, batchStimuli);
       if (!result.ok) {
         // If the combined batch fails (a typed invariant the separate steps
@@ -722,6 +1285,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         }
       }
       deps.store.commit(deps.plan.runId, finalRecord);
+      releaseTerminalReservations(finalRecord);
       const disposition: ChangeRunReceipt['disposition'] =
         finalRecord.terminal !== undefined
           ? 'terminal'
@@ -730,7 +1294,20 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
             : finalRecord.waits.length > 0
               ? 'waiting'
               : 'advanced';
-      return asPromise(receipt(finalRecord, disposition, collected.granted, deps.resolveSourceState, deps.plan));
+      const continuationGrants = collected.continuationIds.map((id) =>
+        continuationGrantFromCommitted(
+          finalRecord,
+          finalRecord.consultations![id]!
+        )
+      );
+      return asPromise(receipt(
+        finalRecord,
+        disposition,
+        collected.granted,
+        deps.resolveSourceState,
+        deps.plan,
+        continuationGrants
+      ));
     },
     inspect(_ref: ExactChangeRunRef) {
       const record = deps.store.load(deps.plan.runId);
@@ -771,6 +1348,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
       let collected: ReturnType<typeof collectSettleStimuli> = {
         stimuli: [],
         granted: [],
+        continuationIds: [],
       };
       if (intermediate.record.terminal === undefined) {
         const reconciled = reconcile(deps.plan, intermediate.record);
@@ -794,6 +1372,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         throw new Error(`facade control settle failed: ${result.failure.message}`);
       }
       deps.store.commit(deps.plan.runId, result.record);
+      releaseTerminalReservations(result.record);
       const disposition: ChangeRunReceipt['disposition'] =
         result.record.terminal !== undefined
           ? 'terminal'
@@ -806,7 +1385,13 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
           disposition,
           collected.granted,
           deps.resolveSourceState,
-          deps.plan
+          deps.plan,
+          collected.continuationIds.map((id) =>
+            continuationGrantFromCommitted(
+              result.record,
+              result.record.consultations![id]!
+            )
+          )
         )
       );
     },

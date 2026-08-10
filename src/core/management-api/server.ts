@@ -18,6 +18,9 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createRouter as createConfigRouter } from '../config-api/router.js';
+import { getGlobalDataDir } from '../global-config.js';
+import { createTrustedExecutionAdapterProducerResolver } from '../pipeline-registry/trusted-execution-adapters.js';
+import { createProductionExactTeacherAuthorityPolicy } from '../frozen-action-executor/index.js';
 import { resolveProjectHome, type ProjectHome } from '../project-home.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import {
@@ -31,6 +34,8 @@ export interface StartManagementServerOptions {
   context: ManagementApiContext;
   /** Ephemeral (OS-assigned) when omitted or 0. */
   port?: number;
+  /** Test/embedded-host override; production uses the Rasen machine-data root. */
+  hostStateRoot?: string;
   /** Test/daemon-only overrides for the sessions supervisor (design D1's injectable resolver, task 3.3's fixture CLI override). */
   sessions?: ManagementRouterOptions;
 }
@@ -92,12 +97,31 @@ export function startManagementServer(
   // handles its own paths, now including the sessions route group. The
   // server owns the dispatch.
   const configHandler = createConfigRouter(context);
+  const hostStateRoot = options.hostStateRoot ?? getGlobalDataDir();
+  const sessions: ManagementRouterOptions = {
+    ...options.sessions,
+    exactTeacherAuthorityPolicy:
+      options.sessions?.exactTeacherAuthorityPolicy ??
+      createProductionExactTeacherAuthorityPolicy({
+        hostPlatform: process.platform,
+        hostStateRoot,
+      }),
+    exactTeacherSessionHostStateDir:
+      options.sessions?.exactTeacherSessionHostStateDir ??
+      path.join(hostStateRoot, 'exact-teacher-session-host'),
+    frozenActionProducerResolver:
+      options.sessions?.frozenActionProducerResolver ??
+      createTrustedExecutionAdapterProducerResolver(hostStateRoot),
+    frozenActionStoreRoot:
+      options.sessions?.frozenActionStoreRoot ?? path.join(hostStateRoot, 'runs'),
+  };
   const {
     handle: managementHandler,
     supervisor,
     sessionHost,
+    exactTeacherSessionHost,
     shutdownPathChooser,
-  } = createManagementRouter(context, resolveHomeForRoot, options.sessions);
+  } = createManagementRouter(context, resolveHomeForRoot, sessions);
 
   const handler = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
     const pathname = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;
@@ -184,6 +208,9 @@ export function startManagementServer(
       await Promise.all([
         supervisor.shutdownAll('server-shutdown'),
         sessionHost.shutdown('server-shutdown'),
+        ...(exactTeacherSessionHost === undefined
+          ? []
+          : [exactTeacherSessionHost.shutdown('server-shutdown')]),
         shutdownPathChooser(),
       ]);
 
@@ -215,6 +242,18 @@ export function startManagementServer(
       throw new Error(
         `Hosted Session registry reconciliation failed${recovery.diagnostics.length ? `: ${recovery.diagnostics.join('; ')}` : '.'}`
       );
+    }
+    if (exactTeacherSessionHost !== undefined) {
+      const exactRecovery = await exactTeacherSessionHost.reconcileOnStart();
+      if (!exactRecovery.ready) {
+        throw new Error(
+          `Exact Teacher Session registry reconciliation failed${
+            exactRecovery.diagnostics.length
+              ? `: ${exactRecovery.diagnostics.join('; ')}`
+              : '.'
+          }`
+        );
+      }
     }
     return new Promise((resolve, reject) => {
       const onError = (error: Error) => reject(error);
