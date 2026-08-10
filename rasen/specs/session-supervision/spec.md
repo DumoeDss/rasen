@@ -96,7 +96,8 @@ All durable pipeline and workspace state produced by a supervised Session SHALL 
 - **THEN** no Run action, Record phase, gate, review verdict, or trusted completion changes until an authoritative execution path separately validates and commits it
 
 ### Requirement: Foreground server shutdown reaps its sessions
-Session reaping SHALL be bound to the process that owns the supervisor. The resident daemon owns supervision by default: its clean shutdown (stop command, interrupt, or termination signal) SHALL terminate all live supervised sessions via the tree-kill path with termination reason `server-shutdown` before exiting — while the exit of any consumer (such as `rasen ui` or its terminal) SHALL NOT reap the daemon's sessions. When supervision runs in a self-hosted foreground server (`rasen ui --no-daemon`), that process is the owner and SHALL reap its live sessions on clean exit exactly as the pre-residency behavior did. A force-killed owner can still orphan sessions; this SHALL remain documented rather than masked, with agent-written run-state files persisting for manual resume.
+
+Session reaping SHALL be bound to the process that owns each management session lane. The resident daemon owns supervision by default: its clean shutdown (stop command, interrupt, or termination signal) SHALL terminate all live reusable/supervised sessions, ordinary hosted Sessions, and exact-Teacher Sessions through their owning lifecycle paths with termination reason `server-shutdown` before exiting, and SHALL report failure if any present owner does not produce a successful bounded drain. The exit of any consumer (such as `rasen ui` or its terminal) SHALL NOT reap the daemon's sessions. When supervision runs in a self-hosted foreground server (`rasen ui --no-daemon`), that process is the owner and SHALL reap its live sessions on clean exit exactly as the pre-residency behavior did. A force-killed owner can still orphan sessions; this SHALL remain documented rather than masked, with durable session and agent-written run-state files persisting for recovery or manual resume.
 
 #### Scenario: Clean shutdown leaves no orphaned session processes
 - **WHEN** the process owning the supervisor shuts down cleanly while sessions are running
@@ -105,6 +106,16 @@ Session reaping SHALL be bound to the process that owns the supervisor. The resi
 #### Scenario: Consumer exit does not reap daemon sessions
 - **WHEN** sessions run under the resident daemon and a consumer that adopted or spawned it exits
 - **THEN** the sessions continue running and remain visible in the sessions listing
+
+#### Scenario: Clean shutdown drains every present management lane
+- **WHEN** reusable sessions, ordinary hosted Sessions, and an exact-Teacher Session are all owned by one management server during clean shutdown
+- **THEN** the server SHALL invoke and await each lane's owning bounded shutdown path before reporting a clean stop
+- **AND** the reusable owner SHALL remain the sole owner of supervisor shutdown while ordinary and exact SessionHosts retain their distinct lifecycle authority
+
+#### Scenario: One failed drain does not skip the other owners
+- **WHEN** any reusable, ordinary hosted, exact-Teacher, or auxiliary shutdown path times out, rejects, or retains unresolved authority
+- **THEN** every other present owner SHALL still be asked to drain and its outcome SHALL be observed
+- **AND** the server SHALL report shutdown failure while preserving the durable state required to reconcile the unresolved lane
 
 ### Requirement: Concurrent supervised sessions are capped
 The server SHALL enforce a maximum number of concurrently live supervised sessions (default 3). A launch request beyond the cap SHALL be rejected with 409 `busy` without spawning; the slot SHALL be released only when a session's child process has actually closed, never merely when a response was sent. This cap SHALL be independent of the change-submission subprocess slot.
