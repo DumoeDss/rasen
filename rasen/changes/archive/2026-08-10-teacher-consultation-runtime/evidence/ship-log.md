@@ -87,3 +87,9 @@ native and bridge content did not change after the last native pass.
 ## Delivery
 
 Status: committed locally. Delivery is deferred to the portfolio/parent level.
+
+## Archive
+**Date:** 2026-08-10T05:53:38.801Z
+**Ship commit:** 3c595019098b5d1e443f57a5982a3fd56c6c9faa
+**Outcome:** archived at E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code-wt-teacher-advisor\rasen\changes\archive\2026-08-10-teacher-consultation-runtime
+**Transaction:** c8b44bea-de60-497c-88e7-420eec7cedee

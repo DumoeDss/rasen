@@ -1,0 +1,38 @@
+{
+  "change": "teacher-consultation-runtime",
+  "archivedAt": "2026-08-10T05:53:38.801Z",
+  "codeCommit": "f6d6854c3bf8fe0496306bd3e7f21a227848a77f",
+  "planningBranch": "feat/teacher-advisor-workflow",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/platform-verification.md",
+      "sha256": "a5c7dbb9f6a575c93813e510c5d59e11f9e9bffa0035b82cd0e39d98274dc3f2"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "f22d6bbe3ad54481af9b8558d17ff2a31b2a3a42c8e0800185109d97b0ba2982"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "3759740a44e7b478587fbdb5fc52f9d8fcffd45f355259c8122d70909fcc67b1"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [
+    {
+      "file": "handoff/fixer-2.md",
+      "outcome": "absorbed"
+    },
+    {
+      "file": "handoff/implementer-1.md",
+      "outcome": "absorbed"
+    }
+  ],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}
