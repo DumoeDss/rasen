@@ -10,7 +10,7 @@ import {
   MAX_REQUIREMENT_TEXT_LENGTH,
   VALIDATION_MESSAGES
 } from './constants.js';
-import { parseDeltaSpec, normalizeRequirementName, extractRequirementsSection } from '../parsers/requirement-blocks.js';
+import { parseDeltaSpec, normalizeRequirementName, extractRequirementsSection, type RequirementBlock } from '../parsers/requirement-blocks.js';
 import { findMainSpecStructureIssues } from '../parsers/spec-structure.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 
@@ -111,8 +111,14 @@ export class Validator {
    * - REMOVED: names only; no scenario/description required
    * - RENAMED: pairs well-formed
    * - No duplicates within sections; no cross-section conflicts per spec
+   * - B2/B3: MODIFIED blocks preserve all baseline scenarios from the main spec
+   *   (ERROR under --strict, WARNING otherwise). All failing requirements are
+   *   collected and reported in a single pass.
+   *
+   * @param mainSpecsDir When provided, enables scenario-preservation checks
+   *                     against the permanent spec baseline.
    */
-  async validateChangeDeltaSpecs(changeDir: string): Promise<ValidationReport> {
+  async validateChangeDeltaSpecs(changeDir: string, mainSpecsDir?: string): Promise<ValidationReport> {
     const issues: ValidationIssue[] = [];
     const specsDir = path.join(changeDir, 'specs');
     let totalDeltas = 0;
@@ -192,6 +198,42 @@ export class Validator {
           const scenarioCount = this.countScenarios(block.raw);
           if (scenarioCount < 1) {
             issues.push({ level: 'ERROR', path: entryPath, message: `MODIFIED "${block.name}" must include at least one scenario` });
+          }
+        }
+
+        // B2/B3: scenario-preservation check against the permanent spec
+        // baseline. Collect ALL failing requirements (not just the first) and
+        // report in one pass. ERROR under --strict, WARNING otherwise.
+        if (mainSpecsDir && plan.modified.length > 0) {
+          const mainSpecFile = path.join(mainSpecsDir, entryPath);
+          let mainContent: string | undefined;
+          try {
+            mainContent = await fs.readFile(mainSpecFile, 'utf-8');
+          } catch {
+            // No main spec to compare against — skip silently
+          }
+          if (mainContent !== undefined) {
+            const mainParts = extractRequirementsSection(mainContent);
+            const mainReqMap = new Map<string, RequirementBlock>();
+            for (const mainBlock of mainParts.bodyBlocks) {
+              mainReqMap.set(normalizeRequirementName(mainBlock.name), mainBlock);
+            }
+            const level: ValidationLevel = this.strictMode ? 'ERROR' : 'WARNING';
+            for (const modBlock of plan.modified) {
+              const key = normalizeRequirementName(modBlock.name);
+              const mainBlock = mainReqMap.get(key);
+              if (!mainBlock) continue;
+              const mainScenarioNames = this.parseScenarioNames(mainBlock.raw);
+              const modScenarioNames = new Set(this.parseScenarioNames(modBlock.raw));
+              const missingScenarios = mainScenarioNames.filter(s => !modScenarioNames.has(s));
+              if (missingScenarios.length > 0) {
+                issues.push({
+                  level,
+                  path: entryPath,
+                  message: `MODIFIED "${modBlock.name}" would drop scenario(s) from the permanent spec: ${missingScenarios.map(s => `"${s}"`).join(', ')}. Include them in the MODIFIED block or explicitly remove the requirement.`,
+                });
+              }
+            }
           }
         }
 
@@ -512,6 +554,23 @@ export class Validator {
   private countScenarios(blockRaw: string): number {
     const matches = blockRaw.match(/^####\s+/gm);
     return matches ? matches.length : 0;
+  }
+
+  /**
+   * Extract scenario names from a requirement block's raw text.
+   * Used by the B2/B3 scenario-preservation check to compare baseline
+   * scenarios against those present in a MODIFIED delta block.
+   */
+  private parseScenarioNames(requirementRaw: string): string[] {
+    const lines = requirementRaw.replace(/\r\n?/g, '\n').split('\n');
+    const names: string[] = [];
+    for (const line of lines) {
+      const match = line.match(/^####\s*Scenario:\s*(.+)\s*$/);
+      if (match) {
+        names.push(match[1].trim());
+      }
+    }
+    return names;
   }
 
   private formatSectionList(sections: string[]): string {

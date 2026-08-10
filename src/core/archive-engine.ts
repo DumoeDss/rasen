@@ -45,6 +45,49 @@ export const ARCHIVE_CONTROL_FILENAMES = new Set([
 ]);
 export const ARCHIVE_PLAN_TOKEN_PREFIX = 'archive-v1';
 
+/**
+ * The message emitted by {@link createArchivePlan} when a `pr` + `on-merge`
+ * change lacks explicit merge confirmation. Used by the apply-time
+ * `mergeConfirmed` assertion (B1) to identify and filter the timing blocker.
+ */
+export const MERGE_TIMING_BLOCKER_MESSAGE =
+  'A recorded PR delivery requires explicit merge confirmation.';
+
+/**
+ * Options that govern apply-time assertions on an immutable stored plan.
+ * These do NOT alter the plan itself — they filter the blocker list at
+ * apply/inspect time so the stored plan stays byte-identical.
+ */
+export interface ApplyArchiveOptions {
+  /**
+   * When true, the apply path treats the on-merge timing blocker as cleared
+   * by an operator assertion (CLI `--yes` at the apply step). The stored
+   * plan's `timing.override` field is not consulted or mutated.
+   */
+  mergeConfirmed?: boolean;
+}
+
+function isMergeTimingBlocker(blocker: ArchiveBlocker): boolean {
+  return (
+    blocker.operation === 'timing' &&
+    blocker.message === MERGE_TIMING_BLOCKER_MESSAGE
+  );
+}
+
+/**
+ * Compute the blockers that remain after apply-time assertions filter the
+ * stored plan's immutable blocker list. Exposed for inspect/apply paths and
+ * for tests that need to assert the filter discriminates.
+ */
+export function applicableArchiveBlockers(
+  plan: ArchivePlan,
+  options: ApplyArchiveOptions = {}
+): ArchiveBlocker[] {
+  return options.mergeConfirmed
+    ? plan.blockers.filter(blocker => !isMergeTimingBlocker(blocker))
+    : plan.blockers;
+}
+
 export type ArchiveBlockerOperation =
   | 'source-lstat'
   | 'source-inventory'
@@ -1129,23 +1172,115 @@ export async function resolveArchiveSidecar(
     blockers.push(blocker('sidecar-validate', sidecarPath, error));
   }
   const root = isPlainRecord(parsed) ? parsed : undefined;
-  if (
-    !root ||
-    !hasOnlyKeys(root, ['schemaVersion', 'change', 'handoff', 'probes']) ||
-    root.schemaVersion !== 1 ||
-    root.change !== change ||
-    !isPlainRecord(root.handoff) ||
-    !hasOnlyKeys(root.handoff, ['complete', 'decisions']) ||
-    root.handoff.complete !== true ||
-    !Array.isArray(root.handoff.decisions) ||
-    !Array.isArray(root.probes)
-  ) {
+  // B4: emit a distinct, field-naming blocker per failure mode instead of a
+  // generic restatement. Each blocker names the offending key and the received
+  // value so the operator knows exactly what to fix.
+  if (!root) {
     blockers.push({
       operation: 'sidecar-validate',
       path: sidecarPath,
-      message:
-        'Archive input must be schemaVersion 1, bound to this change, and contain complete handoff decisions plus probes.',
+      message: 'Archive input must be a JSON object.',
     });
+  } else {
+    const ACCEPTED_ROOT_KEYS = ['schemaVersion', 'change', 'handoff', 'probes'];
+    const unexpectedKeys = Object.keys(root).filter(
+      key => !ACCEPTED_ROOT_KEYS.includes(key)
+    );
+    if (unexpectedKeys.length > 0) {
+      blockers.push({
+        operation: 'sidecar-validate',
+        path: sidecarPath,
+        message: `Unexpected key(s) in archive input: ${unexpectedKeys.map(k => `"${k}"`).join(', ')}. Accepted keys are: ${ACCEPTED_ROOT_KEYS.join(', ')}.`,
+      });
+    }
+    if (root.schemaVersion === undefined) {
+      blockers.push({
+        operation: 'sidecar-validate',
+        path: sidecarPath,
+        message: 'Archive input is missing the "schemaVersion" key.',
+      });
+    } else if (root.schemaVersion !== 1) {
+      blockers.push({
+        operation: 'sidecar-validate',
+        path: sidecarPath,
+        message: `Archive input schemaVersion must be 1, but received ${JSON.stringify(root.schemaVersion)}.`,
+      });
+    }
+    if (root.change === undefined) {
+      blockers.push({
+        operation: 'sidecar-validate',
+        path: sidecarPath,
+        message: 'Archive input is missing the "change" key.',
+      });
+    } else if (root.change !== change) {
+      blockers.push({
+        operation: 'sidecar-validate',
+        path: sidecarPath,
+        message: `Archive input change must be "${change}", but received "${root.change}".`,
+      });
+    }
+    // Handoff completeness checks
+    if (root.handoff !== undefined) {
+      if (!isPlainRecord(root.handoff)) {
+        blockers.push({
+          operation: 'sidecar-validate',
+          path: sidecarPath,
+          message: 'Archive input handoff must be an object with "complete" and "decisions".',
+        });
+      } else {
+        const ACCEPTED_HANDOFF_KEYS = ['complete', 'decisions'];
+        const unexpectedHandoffKeys = Object.keys(root.handoff).filter(
+          key => !ACCEPTED_HANDOFF_KEYS.includes(key)
+        );
+        if (unexpectedHandoffKeys.length > 0) {
+          blockers.push({
+            operation: 'sidecar-validate',
+            path: sidecarPath,
+            message: `Unexpected key(s) in handoff: ${unexpectedHandoffKeys.map(k => `"${k}"`).join(', ')}. Accepted keys are: ${ACCEPTED_HANDOFF_KEYS.join(', ')}.`,
+          });
+        }
+        if (root.handoff.complete === undefined) {
+          blockers.push({
+            operation: 'sidecar-validate',
+            path: sidecarPath,
+            message: 'Archive input is missing the "handoff.complete" key.',
+          });
+        } else if (root.handoff.complete !== true) {
+          blockers.push({
+            operation: 'sidecar-validate',
+            path: sidecarPath,
+            message: `Archive input handoff.complete must be true, but received ${JSON.stringify(root.handoff.complete)}.`,
+          });
+        }
+        if (!Array.isArray(root.handoff.decisions)) {
+          blockers.push({
+            operation: 'sidecar-validate',
+            path: sidecarPath,
+            message: 'Archive input handoff.decisions must be an array.',
+          });
+        }
+      }
+    } else {
+      blockers.push({
+        operation: 'sidecar-validate',
+        path: sidecarPath,
+        message: 'Archive input is missing the "handoff" key.',
+      });
+    }
+    if (root.probes !== undefined && !Array.isArray(root.probes)) {
+      blockers.push({
+        operation: 'sidecar-validate',
+        path: sidecarPath,
+        message: 'Archive input probes must be an array.',
+      });
+    }
+    if (root.probes === undefined) {
+      blockers.push({
+        operation: 'sidecar-validate',
+        path: sidecarPath,
+        message: 'Archive input is missing the "probes" key.',
+      });
+    }
   }
 
   const decisions: ArchiveHandoffDecision[] = [];
@@ -1590,8 +1725,30 @@ export async function createArchivePlan(
     blockers.push({
       operation: 'timing',
       path: input.activePath,
-      message: 'A recorded PR delivery requires explicit merge confirmation.',
+      message: MERGE_TIMING_BLOCKER_MESSAGE,
     });
+  }
+
+  // B6: plan-time reserved ship-log heading rejection. The archive finalize
+  // step appends a "## Archive" section to the ship log; a pre-existing
+  // heading of that name would collide at apply time. Reject at plan time so
+  // the operator never receives a false-recoverable token.
+  if (input.shipLog?.source) {
+    try {
+      const shipLogContent = await adapters.fs.readFile(input.shipLog.source, 'utf8');
+      if (/^## Archive\s*$/im.test(shipLogContent)) {
+        blockers.push({
+          operation: 'evidence',
+          path: input.shipLog.source,
+          message:
+            'Ship log already contains a reserved "## Archive" heading. Remove or rename it before archiving — the archive step appends its own "## Archive" section.',
+        });
+      }
+    } catch (error) {
+      if (errorCode(error) !== 'ENOENT') {
+        blockers.push(blocker('evidence', input.shipLog.source, error));
+      }
+    }
   }
 
   const discoveredInputs =
@@ -3364,7 +3521,8 @@ async function revalidateArchiveProbes(
  */
 export async function applyArchive(
   plan: ArchivePlan,
-  adapters: ArchiveEngineAdapters = defaultArchiveEngineAdapters
+  adapters: ArchiveEngineAdapters = defaultArchiveEngineAdapters,
+  options: ApplyArchiveOptions = {}
 ): Promise<ArchiveApplyResult> {
   if (!planIdentityValid(plan, adapters)) {
     return {
@@ -3388,7 +3546,16 @@ export async function applyArchive(
       ],
     };
   }
-  if (!plan.complete || plan.blockers.length > 0) {
+  // B1: apply-time merge confirmation filters the timing blocker from the
+  // stored plan's immutable blocker list. The stored plan stays byte-identical;
+  // the assertion is an operator declaration about the outside world.
+  // The check uses the filtered blocker list (not plan.complete) because
+  // plan.complete was computed at plan time and is false when the timing
+  // blocker exists — even though all other preconditions are met. Every
+  // precondition failure (source/target/cleaner) also pushes a blocker, so
+  // an empty filtered list guarantees the plan is applicable.
+  const blockers = applicableArchiveBlockers(plan, options);
+  if (blockers.length > 0) {
     return {
       status: 'blocked',
       transactionId: plan.transactionId,
@@ -3401,7 +3568,7 @@ export async function applyArchive(
       totals: { added: 0, modified: 0, removed: 0, renamed: 0 },
       ephemeraDiscarded: [],
       ephemeraPreserved: plan.cleaner.effectivePreserve,
-      blockers: plan.blockers,
+      blockers,
     };
   }
 

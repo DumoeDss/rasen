@@ -8,9 +8,11 @@ import {
   applyArchive,
   createArchiveIntentTemplate,
   createArchivePlan,
+  defaultArchiveEngineAdapters,
   loadStoredArchivePlan,
   persistArchivePlan,
   resolveArchiveSidecar,
+  type ApplyArchiveOptions,
   type ArchiveApplyResult,
   type ArchiveIntentV1,
   type ArchivePlan,
@@ -326,7 +328,9 @@ export class ArchiveCommand {
         options.applyPlan!,
         getGlobalDataDir()
       );
-      const result = await this.applyPlannedArchive(plan);
+      const result = await this.applyPlannedArchive(plan, {
+        mergeConfirmed: !!options.yes,
+      });
       if (result.status !== 'complete') {
         if (!result.manualRecoveryAction) {
           result.recoveryCommand =
@@ -387,8 +391,11 @@ export class ArchiveCommand {
     process.exitCode = 1;
   }
 
-  protected applyPlannedArchive(plan: ArchivePlan): Promise<ArchiveApplyResult> {
-    return applyArchive(plan);
+  protected applyPlannedArchive(
+    plan: ArchivePlan,
+    options?: ApplyArchiveOptions
+  ): Promise<ArchiveApplyResult> {
+    return applyArchive(plan, defaultArchiveEngineAdapters, options);
   }
 
   private async failHuman(message: string, abort = true): Promise<null> {
@@ -524,7 +531,7 @@ export class ArchiveCommand {
     ) {
       const message = `Change '${changeName}' shipped via a pull request under on-merge archive timing; the CLI cannot verify the merge itself.`;
       const fix =
-        'Use the archive skill (/rasen-archive-change), which checks the PR merge state, or rerun with --yes after confirming the merge yourself.';
+        'Use the archive skill (/rasen-archive-change), which checks the PR merge state, or apply the saved plan with --yes after confirming the merge yourself.';
       if (!json && !options.dryRun) {
         console.log(chalk.yellow(`\nWarning: ${message}`));
         console.log(chalk.yellow(fix));
