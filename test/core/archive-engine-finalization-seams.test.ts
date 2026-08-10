@@ -38,6 +38,7 @@ import {
   deriveWorktreeInstanceId,
   changeInstanceDigestPrefix,
 } from '../../src/core/store/planning-identity.js';
+import { resolveStorePlanningLayoutV2Path } from '../../src/core/store/planning-layout-v2.js';
 
 const STORE_UID = '6f7d4d70-3d2c-4a37-9f8a-0f4c1b2e3d55';
 const PROJECT = 'app-a';
@@ -172,7 +173,11 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
   beforeEach(async () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), 'rasen-archive-seams-'));
     active = path.join(root, 'rasen', 'changes', CHANGE);
-    archiveParent = path.join(root, 'rasen', 'changes', 'archive');
+    archiveParent = resolveStorePlanningLayoutV2Path(root, {
+      kind: 'archive-line',
+      projectId: PROJECT,
+      targetLineId: LINE,
+    });
     ephemera = path.join(root, '.rasen', 'changes', CHANGE, 'ephemera');
     await fs.mkdir(path.join(active, 'evidence'), { recursive: true });
     await fs.mkdir(ephemera, { recursive: true });
@@ -244,10 +249,14 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
 
   async function plan(withFinalization: boolean) {
     const sidecar = await resolveArchiveSidecar(active, root, CHANGE);
-    const destination = path.join(
-      archiveParent,
-      `${DATE}-${CHANGE}--${changeInstanceDigestPrefix(INSTANCE)}`
-    );
+    const destination = resolveStorePlanningLayoutV2Path(root, {
+      kind: 'archive-entry',
+      projectId: PROJECT,
+      targetLineId: LINE,
+      changeId: CHANGE,
+      archiveDate: DATE,
+      changeInstanceId: INSTANCE,
+    });
     return createArchivePlan({
       change: CHANGE,
       planningRoot: root,
@@ -394,7 +403,8 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
           temporaryIdentity
         );
       },
-      finalizeArchiveAssociation: async () => {
+      finalizeArchiveAssociation: async ({ requireComplete }) => {
+        if (requireComplete === true) return;
         // The active source still exists at this point, which is the whole
         // reason the phase sits inside the transaction rather than after it.
         order.push(`association(sourcePresent=${await exists(active)})`);

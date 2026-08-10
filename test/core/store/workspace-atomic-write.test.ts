@@ -240,8 +240,13 @@ describe('atomic workspace coordination recovery', () => {
     const target = temporaryTarget();
     fs.writeFileSync(target, previous);
     await retainClaim(target, intended);
-    fs.unlinkSync(target);
+    const original = await readAtomicWorkspaceSnapshot(target);
+    fs.renameSync(target, `${target}.displaced`);
     fs.writeFileSync(target, previous);
+    const replacement = await readAtomicWorkspaceSnapshot(target);
+    expect(original.identity).toBeDefined();
+    expect(replacement.identity).toBeDefined();
+    expect(replacement.identity).not.toEqual(original.identity);
     const before = carrierBytes(target);
 
     await expect(atomicWorkspaceWriteText(target, intended)).rejects.toMatchObject({
@@ -862,6 +867,7 @@ describe('directory durability fault policy', () => {
     const realOpen = fs.promises.open.bind(fs.promises) as OpenFile;
     const realRealpath = fs.promises.realpath.bind(fs.promises);
     let toleratedFault = false;
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
     vi.spyOn(fs.promises, 'open').mockImplementation(async (candidate, flags, mode) => {
       if (sameExistingPath(candidate, directory)) {
         toleratedFault = true;

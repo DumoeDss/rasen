@@ -1018,7 +1018,13 @@ describe('project-registry', () => {
       );
 
       const claimants = await findProjectIdentityClaimants(entry.projectId, { globalDataDir });
-      expect(claimants.map(claimant => claimant.path).sort()).toEqual([lower, upper].sort());
+      const canonicalFixturesRoot = fs.realpathSync.native(fixturesRoot);
+      expect(claimants.map(claimant => claimant.path).sort()).toEqual(
+        [
+          path.join(canonicalFixturesRoot, path.basename(lower)),
+          path.join(canonicalFixturesRoot, path.basename(upper)),
+        ].sort()
+      );
     });
   });
 
