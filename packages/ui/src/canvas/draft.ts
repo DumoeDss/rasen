@@ -18,6 +18,7 @@ import type {
   WireBoundedLoopLifecyclePolicyV1,
   WireBoundedLoopNode,
   WireCompositeDeclaration,
+  WireConsultationBinding,
   WireDefinitionArtifact,
   WireDefinitionConnection,
   WireDefinitionNode,
@@ -1233,6 +1234,112 @@ export function isDirty(draft: WirePipelineDefinition, loaded: WirePipelineDefin
   return !deepEqual(draft, loaded);
 }
 
+// ===== Consultation binding draft helpers =====
+
+/** Reads the consultations array from a v1 or v2 definition, defaulting to empty. */
+function readConsultations(def: WirePipelineDefinition): WireConsultationBinding[] {
+  return Array.isArray(def.consultations) ? def.consultations : [];
+}
+
+/** Writes the consultations array onto a new immutable copy of the definition. */
+function writeConsultations<T extends WirePipelineDefinition>(
+  def: T,
+  consultations: WireConsultationBinding[]
+): T {
+  const next = { ...def } as T;
+  if (consultations.length === 0) {
+    delete (next as Record<string, unknown>).consultations;
+  } else {
+    (next as unknown as { consultations: WireConsultationBinding[] }).consultations = consultations;
+  }
+  return next;
+}
+
+/**
+ * Partial consultation binding edit. Every field is optional — the patcher
+ * merges only the named fields, preserving the rest of the binding verbatim.
+ */
+export interface ConsultationBindingPatch {
+  teacherSkill?: string;
+  maxConsultationsPerInvocation?: number;
+  maxTeacherAttemptsPerConsultation?: number;
+  limits?: Partial<WireConsultationBinding['limits']> | null;
+}
+
+/**
+ * Appends a new consultation binding to the pipeline-level `consultations`
+ * array. If a binding for the same `sourceStage` already exists, it is
+ * replaced (one binding per source stage). Handles both v1 and v2 definitions.
+ */
+export function addConsultationBinding<T extends WirePipelineDefinition>(
+  def: T,
+  binding: WireConsultationBinding
+): T {
+  const existing = readConsultations(def);
+  const filtered = existing.filter((b) => b.sourceStage !== binding.sourceStage);
+  return writeConsultations(def, [...filtered, binding]);
+}
+
+/**
+ * Patches a consultation binding by `sourceStage` id, preserving unpatched
+ * fields. When `limits` is `null`, clears the limits sub-object; when an
+ * object, merges its keys into the existing limits. When the binding does not
+ * exist, returns the definition unchanged.
+ */
+export function updateConsultationBinding<T extends WirePipelineDefinition>(
+  def: T,
+  sourceStage: string,
+  patch: ConsultationBindingPatch
+): T {
+  const existing = readConsultations(def);
+  let found = false;
+  const next = existing.map((b) => {
+    if (b.sourceStage !== sourceStage) return b;
+    found = true;
+    const merged: WireConsultationBinding = { ...b };
+    if (patch.teacherSkill !== undefined) merged.teacherSkill = patch.teacherSkill;
+    if (patch.maxConsultationsPerInvocation !== undefined) {
+      merged.maxConsultationsPerInvocation = patch.maxConsultationsPerInvocation;
+    }
+    if (patch.maxTeacherAttemptsPerConsultation !== undefined) {
+      merged.maxTeacherAttemptsPerConsultation = patch.maxTeacherAttemptsPerConsultation;
+    }
+    if (patch.limits === null) {
+      delete merged.limits;
+    } else if (patch.limits !== undefined) {
+      merged.limits = { ...(b.limits ?? {}), ...patch.limits };
+    }
+    return merged;
+  });
+  if (!found) return def;
+  return writeConsultations(def, next);
+}
+
+/**
+ * Removes the consultation binding whose `sourceStage` matches, if any.
+ * When no binding exists, returns the definition unchanged.
+ */
+export function removeConsultationBinding<T extends WirePipelineDefinition>(
+  def: T,
+  sourceStage: string
+): T {
+  const existing = readConsultations(def);
+  const filtered = existing.filter((b) => b.sourceStage !== sourceStage);
+  if (filtered.length === existing.length) return def;
+  return writeConsultations(def, filtered);
+}
+
+/**
+ * Returns the consultation binding whose `sourceStage` matches the given stage
+ * id, or `undefined` when no binding exists for that stage.
+ */
+export function getConsultationBindingForStage(
+  def: WirePipelineDefinition,
+  stageId: string
+): WireConsultationBinding | undefined {
+  return readConsultations(def).find((b) => b.sourceStage === stageId);
+}
+
 /** A validation issue mapped onto a concrete draft stage. */
 export interface IssueTarget {
   stageIndex: number;
@@ -1276,6 +1383,12 @@ export type DefinitionIssueTarget =
       declarationId: string;
       index: number;
       id: string;
+      field?: string;
+    }
+  | {
+      kind: 'consultation';
+      index: number;
+      sourceStage: string;
       field?: string;
     };
 
@@ -1325,7 +1438,23 @@ export function definitionIssuePathTarget(
   if (isV1Definition(def)) {
     const stages = Array.isArray(def.stages) ? def.stages : [];
     const target = issuePathTarget(path, stages.length);
-    if (!target) return null;
+    if (!target) {
+      // Consultation diagnostic: /consultations/<index>/<field>
+      const consultationMatch = /^\/consultations\/(\d+)(?:\/(.+))?$/.exec(path);
+      if (consultationMatch) {
+        const index = Number(consultationMatch[1]);
+        const consultations = Array.isArray(def.consultations) ? def.consultations : [];
+        const sourceStage = consultations[index]?.sourceStage;
+        if (!sourceStage) return null;
+        return {
+          kind: 'consultation',
+          index,
+          sourceStage,
+          ...(consultationMatch[2] ? { field: consultationMatch[2] } : {}),
+        };
+      }
+      return null;
+    }
     const id = stages[target.stageIndex]?.id;
     if (!id) return null;
     return {
@@ -1339,6 +1468,20 @@ export function definitionIssuePathTarget(
   if (!segments || segments.length === 0) return null;
   const field = (tail: readonly string[]) =>
     tail.length > 0 ? { field: tail.join('/') } : {};
+
+  // Consultation diagnostic: /consultations/<index>/<field>
+  if (segments[0] === 'consultations') {
+    const index = arrayIndex(segments[1], (def.consultations ?? []).length);
+    if (index === null) return null;
+    const sourceStage = def.consultations?.[index]?.sourceStage;
+    if (!sourceStage) return null;
+    return {
+      kind: 'consultation',
+      index,
+      sourceStage,
+      ...field(segments.slice(2)),
+    };
+  }
 
   const definitionFields = new Set([
     'version',
