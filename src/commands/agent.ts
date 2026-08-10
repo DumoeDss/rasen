@@ -351,10 +351,19 @@ export class AgentCommand {
     if (options.runtime !== 'claude' && options.runtime !== 'codex') {
       return invalid('--runtime must be "claude" or "codex".');
     }
-    if (rawContract !== 'leaf' && rawContract !== 'evaluate') {
-      return invalid('--contract must be "leaf" or "evaluate".');
+    if (
+      rawContract !== 'leaf' &&
+      rawContract !== 'consultable-leaf' &&
+      rawContract !== 'evaluate'
+    ) {
+      return invalid('--contract must be "leaf", "consultable-leaf", or "evaluate".');
     }
     const contract = rawContract as WorkerContract;
+    if (options.runtime === 'codex' && contract === 'consultable-leaf') {
+      return invalid(
+        'Codex does not provide the stable hosted continuation authority required by --contract consultable-leaf.'
+      );
+    }
     if (options.sandbox !== 'read-only' && options.sandbox !== 'workspace-write') {
       return invalid('--sandbox must be "read-only" or "workspace-write".');
     }

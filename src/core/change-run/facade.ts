@@ -10,6 +10,11 @@ import type {
   Digest,
   RunId,
 } from './contracts.js';
+import type {
+  ConsultationContinuationSettlement,
+  ConsultationTeacherFailureSettlement,
+  ConsultationStepSubmission,
+} from './consultation-contracts.js';
 
 export interface RuntimeMutationContext {
   readonly deliveryMode: 'grant' | 'defer';
@@ -37,6 +42,18 @@ export interface ChangePipelineRuntime {
   ): Promise<ChangeRunReceipt>;
   complete(
     request: CompleteRunAction,
+    context: RuntimeMutationContext
+  ): Promise<ChangeRunReceipt>;
+  consult(
+    request: ConsultationStepSubmission,
+    context: RuntimeMutationContext
+  ): Promise<ChangeRunReceipt>;
+  settleConsultationContinuation(
+    request: ConsultationContinuationSettlement,
+    context: RuntimeMutationContext
+  ): Promise<ChangeRunReceipt>;
+  settleConsultationTeacherFailure(
+    request: ConsultationTeacherFailureSettlement,
     context: RuntimeMutationContext
   ): Promise<ChangeRunReceipt>;
   inspect(ref: ExactChangeRunRef): Promise<ChangeRunView>;

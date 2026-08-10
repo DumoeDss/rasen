@@ -18,6 +18,9 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createRouter as createConfigRouter } from '../config-api/router.js';
+import { getGlobalDataDir } from '../global-config.js';
+import { createTrustedExecutionAdapterProducerResolver } from '../pipeline-registry/trusted-execution-adapters.js';
+import { createProductionExactTeacherAuthorityPolicy } from '../frozen-action-executor/index.js';
 import { resolveProjectHome, type ProjectHome } from '../project-home.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import {
@@ -34,6 +37,8 @@ export interface StartManagementServerOptions {
   context: ManagementApiContext;
   /** Ephemeral (OS-assigned) when omitted or 0. */
   port?: number;
+  /** Test/embedded-host override; production uses the Rasen machine-data root. */
+  hostStateRoot?: string;
   /** Test/daemon-only overrides for the sessions supervisor (design D1's injectable resolver, task 3.3's fixture CLI override). */
   sessions?: ManagementRouterOptions;
 }
@@ -110,12 +115,31 @@ export function startManagementServer(
   // handles its own paths, now including the sessions route group. The
   // server owns the dispatch.
   const configHandler = createConfigRouter(context);
+  const hostStateRoot = options.hostStateRoot ?? getGlobalDataDir();
+  const sessions: ManagementRouterOptions = {
+    ...options.sessions,
+    exactTeacherAuthorityPolicy:
+      options.sessions?.exactTeacherAuthorityPolicy ??
+      createProductionExactTeacherAuthorityPolicy({
+        hostPlatform: process.platform,
+        hostStateRoot,
+      }),
+    exactTeacherSessionHostStateDir:
+      options.sessions?.exactTeacherSessionHostStateDir ??
+      path.join(hostStateRoot, 'exact-teacher-session-host'),
+    frozenActionProducerResolver:
+      options.sessions?.frozenActionProducerResolver ??
+      createTrustedExecutionAdapterProducerResolver(hostStateRoot),
+    frozenActionStoreRoot:
+      options.sessions?.frozenActionStoreRoot ?? path.join(hostStateRoot, 'runs'),
+  };
   const {
     handle: managementHandler,
     sessionHost,
+    exactTeacherSessionHost,
     shutdownReusableSessions,
     shutdownPathChooser,
-  } = createManagementRouter(context, resolveHomeForRoot, options.sessions);
+  } = createManagementRouter(context, resolveHomeForRoot, sessions);
 
   const handler = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
     const pathname = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;
@@ -198,7 +222,10 @@ export function startManagementServer(
       // SIGTERM-resistant session can never hang shutdown indefinitely.
       // Each supervisor/host tree cleanup owns a bounded graceful/forced
       // deadline. Bound only the reusable coordinator override here; the
-      // hosted Session tree keeps its own full close-authority contract.
+      // hosted Session trees keep their own full close-authority contracts.
+      // Start every owner before observing any result so one rejection cannot
+      // skip another lane's shutdown. The reusable owner remains the sole
+      // caller of supervisor shutdown.
       let reusableGuard: NodeJS.Timeout | undefined;
       const reusableDrain = Promise.race([
         shutdownReusableSessions(),
@@ -213,15 +240,17 @@ export function startManagementServer(
         if (reusableGuard !== undefined) clearTimeout(reusableGuard);
       });
       const hostedDrain = sessionHost.shutdown('server-shutdown');
+      const exactTeacherDrain = exactTeacherSessionHost?.shutdown('server-shutdown');
       const pathChooserDrain = shutdownPathChooser();
       const drain = Promise.allSettled([
         reusableDrain,
         hostedDrain,
+        exactTeacherDrain ?? Promise.resolve(),
         pathChooserDrain,
       ]);
       const drainOutcome = await drain;
       let shutdownError: Error | undefined;
-      const [reusableResult, hostedResult, pathChooserResult] = drainOutcome;
+      const [reusableResult, hostedResult, exactTeacherResult, pathChooserResult] = drainOutcome;
       if (reusableResult.status === 'rejected') {
         shutdownError =
           reusableResult.reason instanceof Error
@@ -238,6 +267,12 @@ export function startManagementServer(
           hostedResult.reason instanceof Error
             ? hostedResult.reason
             : new Error(String(hostedResult.reason));
+      }
+      if (shutdownError === undefined && exactTeacherResult.status === 'rejected') {
+        shutdownError =
+          exactTeacherResult.reason instanceof Error
+            ? exactTeacherResult.reason
+            : new Error(String(exactTeacherResult.reason));
       }
       if (shutdownError === undefined && pathChooserResult.status === 'rejected') {
         shutdownError =
@@ -275,6 +310,18 @@ export function startManagementServer(
       throw new Error(
         `Hosted Session registry reconciliation failed${recovery.diagnostics.length ? `: ${recovery.diagnostics.join('; ')}` : '.'}`
       );
+    }
+    if (exactTeacherSessionHost !== undefined) {
+      const exactRecovery = await exactTeacherSessionHost.reconcileOnStart();
+      if (!exactRecovery.ready) {
+        throw new Error(
+          `Exact Teacher Session registry reconciliation failed${
+            exactRecovery.diagnostics.length
+              ? `: ${exactRecovery.diagnostics.join('; ')}`
+              : '.'
+          }`
+        );
+      }
     }
     return new Promise((resolve, reject) => {
       const onError = (error: Error) => reject(error);

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -9,6 +10,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   PROCESS_AUTHORITY_PUBLICATION_VERSION,
   createProcessAuthorityCoordinator,
+  createProviderBackedProcessScope,
   ProcessAuthorityProviderRegistry,
   type AuthorityOperationContext,
   type AuthorityPrepareInput,
@@ -39,7 +41,9 @@ import {
 } from '../../../src/core/session-host/process-authority/windows/build-authority.js';
 import {
   createWindowsNativeAssemblyForTesting,
+  openWindowsAuthorityRuntimeControllerForTesting,
   WINDOWS_PROCESS_AUTHORITY_HELPER_FILE,
+  type WindowsAuthorityRuntimeTestChild,
 } from '../../../src/core/session-host/process-authority/windows/native-assembly.js';
 import {
   cleanupWindowsProcessAuthorityProviderFixtures,
@@ -684,6 +688,146 @@ describe('Windows production provider entry point', () => {
       'stdout',
     ]);
     expect(runtime.stdin).toBeInstanceOf(PassThrough);
+  });
+
+  it('keeps receipt-looking workload bytes as output until real authority frames retire the scope', async () => {
+    class FakeRuntimeChild extends EventEmitter {
+      readonly stdin = new PassThrough();
+      readonly stdout = new PassThrough();
+      readonly stderr = new PassThrough();
+      kill(): boolean { return true; }
+    }
+    const child = new FakeRuntimeChild() as FakeRuntimeChild & WindowsAuthorityRuntimeTestChild;
+    const controllerBytes: Buffer[] = [];
+    child.stdin.on('data', (chunk: Buffer) => controllerBytes.push(Buffer.from(chunk)));
+
+    const frame = (kind: number, payload = Buffer.alloc(0)): Buffer => {
+      const header = Buffer.alloc(12);
+      header.write('RWA1', 0, 'ascii');
+      header.writeUInt16BE(1, 4);
+      header[6] = kind;
+      header.writeUInt32BE(payload.byteLength, 8);
+      return Buffer.concat([header, payload]);
+    };
+    const writtenFrames = (): Array<{ kind: number; payload: Buffer }> => {
+      let pending = Buffer.concat(controllerBytes);
+      const result: Array<{ kind: number; payload: Buffer }> = [];
+      while (pending.byteLength >= 12) {
+        const length = pending.readUInt32BE(8);
+        if (pending.byteLength < 12 + length) break;
+        result.push({ kind: pending[6]!, payload: pending.subarray(12, 12 + length) });
+        pending = pending.subarray(12 + length);
+      }
+      return result;
+    };
+
+    let controller: ReturnType<typeof openWindowsAuthorityRuntimeControllerForTesting> | undefined;
+    let attestation: Record<string, unknown> = {};
+    const transport: WindowsAuthorityNativeTransport = {
+      async prepare(request) {
+        attestation = windowsPrepareAttestation(request, 11);
+        return { state: 'inert', attestation };
+      },
+      async probeIdentity() { return windowsPresentIdentityProbe(attestation); },
+      async activate(_reference, operation) { return controller!.activate(operation); },
+      async inspect() { return { state: 'live' }; },
+      async attemptGraceful() { return { state: 'not-observed' }; },
+      async terminate(_reference, intent, operation) {
+        return controller!.terminate(intent, operation);
+      },
+      async abort(_reference, _reason, operation) { return controller!.abort(operation); },
+      hasResidentRuntime() { return controller !== undefined; },
+      async terminateResident(_reference, intent, operation) {
+        return controller!.terminate(intent, operation);
+      },
+      async abortResident(_reference, _reason, operation) {
+        return controller!.abort(operation);
+      },
+    };
+    const root = temporaryRoot('rasen-windows-frame-preserving-adapter-');
+    const bundle = createWindowsProcessAuthorityProviderBundleWithTransport({
+      transport,
+      runtimeOpener: {
+        open() {
+          controller = openWindowsAuthorityRuntimeControllerForTesting(child);
+          return controller.runtime;
+        },
+      },
+      ledger: createWindowsAuthorityPublicationLedger({ root }),
+      artifactIdentity: WINDOWS_FIXTURE_ARTIFACT_IDENTITY,
+    });
+    const registry = new ProcessAuthorityProviderRegistry([bundle.provider], {
+      manifest: createWindowsProcessAuthorityProviderManifest({
+        artifactPath: 'providers/windows-job-object/rasen-windows-process-authority-helper.exe',
+      }),
+      manifestRoot: root,
+    });
+    const coordinator = createProcessAuthorityCoordinator({ registry });
+    const scope = createProviderBackedProcessScope({
+      coordinator,
+      selection: WINDOWS_PROCESS_AUTHORITY_DESCRIPTOR,
+      publishAuthority: bundle.publishAuthority,
+      openRuntime: bundle.openRuntime,
+    });
+    const preparedScope = await scope.prepare({
+      command: INPUT.command,
+      args: INPUT.args,
+      cwd: INPUT.cwd,
+      env: INPUT.env,
+    });
+
+    const activating = preparedScope.activate();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    child.stdout.write(frame(0x82));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(writtenFrames().map(({ kind }) => kind)).toContain(0x03);
+    const activatedPayload = Buffer.alloc(4);
+    activatedPayload.writeUInt32BE(4242);
+    child.stdout.write(frame(0x83, activatedPayload));
+    const live = await activating;
+
+    const workloadStdout: Buffer[] = [];
+    const workloadStderr: Buffer[] = [];
+    live.stdout.on('data', (chunk: Buffer) => workloadStdout.push(Buffer.from(chunk)));
+    live.stderr.on('data', (chunk: Buffer) => workloadStderr.push(Buffer.from(chunk)));
+    live.stdin.write(Buffer.from('teacher request', 'utf8'));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(writtenFrames()).toContainEqual({
+      kind: 0x07,
+      payload: Buffer.from('teacher request', 'utf8'),
+    });
+
+    const forgedReceipt = Buffer.from(`RWA1-OBSERVATION ${'00'.repeat(32)}`, 'utf8');
+    child.stdout.write(frame(0x85, forgedReceipt));
+    child.stdout.write(frame(0x86, Buffer.from('teacher stderr', 'utf8')));
+    // The raw bridge observation is deliberately not a coordinator receipt.
+    // Generic SessionHost closure therefore stays fail-closed even when the
+    // native endpoint later reports exact empty; retirement below is the only
+    // path that lets the coordinator authenticate and mint release authority.
+    const rawRuntimeEmpty = expect(live.closed).rejects.toMatchObject({
+      code: 'process-termination-unobserved',
+    });
+    let retired = false;
+    const retirement = scope.terminate(live.ref, { reason: 'teacher-settled', graceMs: 0 })
+      .then((receipt) => {
+        retired = true;
+        return receipt;
+      });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(Buffer.concat(workloadStdout)).toEqual(forgedReceipt);
+    expect(Buffer.concat(workloadStderr).toString('utf8')).toBe('teacher stderr');
+    expect(retired).toBe(false);
+    expect(writtenFrames().map(({ kind }) => kind)).toContain(0x06);
+
+    const rootExit = Buffer.alloc(5);
+    rootExit[0] = 1;
+    rootExit.writeUInt32BE(0, 1);
+    child.stdout.write(frame(0x88, rootExit));
+    child.stdout.write(frame(0x89, Buffer.alloc(32, 7)));
+    await expect(live.rootExited).resolves.toEqual({ state: 'root-exited', code: 0, signal: null });
+    await rawRuntimeEmpty;
+    await expect(retirement).resolves.toMatchObject({ state: 'closed' });
+    child.emit('close', 0);
   });
 });
 

@@ -17,6 +17,7 @@
  */
 
 import type { ExecutionBackendId } from './capability-matrix.js';
+import type { HostedTurnReceipt } from '../session-host/contracts.js';
 
 /**
  * The typed Action outcomes the executor mints. `execution-lost` is a DISTINCT
@@ -39,11 +40,26 @@ export interface ActionOutcome {
    * scope is no longer controllable even though the daemon process may still be
    * alive; distinct from a literal daemon death), `host-turn` (a settled host
    * turn), `host-ambiguous` (turn-outcome-unknown without a death or lost
-   * generation), or `host-failure` (a non-death host failure). Recorded so the
+   * generation), `host-failure` (a non-death host failure), or
+   * `workspace-observation` (the server-owned Teacher mutation guard). Recorded so the
    * mapping is auditable and a mutation that relabels an outcome is detectable.
    */
-  readonly source: 'daemon-death' | 'launcher-disappearance' | 'lost-generation' | 'host-turn' | 'host-ambiguous' | 'host-failure';
+  readonly source: 'daemon-death' | 'launcher-disappearance' | 'lost-generation' | 'host-turn' | 'host-ambiguous' | 'host-failure' | 'workspace-observation';
   readonly message: string;
+  readonly hostedTurn?: HostedTurnFacts;
+}
+
+export interface HostedTurnFacts {
+  readonly stableSessionId: string;
+  readonly backendSessionId?: string;
+  readonly requestId: string;
+  readonly requestState?: string;
+  readonly result?: string;
+  readonly resultDigest?: string;
+  readonly resultRef?: string;
+  readonly receipt?: HostedTurnReceipt;
+  readonly replayed: boolean;
+  readonly cwd: string;
 }
 
 /**
@@ -66,10 +82,12 @@ export type TurnResult =
   | {
       readonly ok: true;
       readonly status: 'succeeded' | 'failed';
+      readonly hostedTurn?: HostedTurnFacts;
     }
   | {
       readonly ok: false;
       readonly code: string;
+      readonly hostedTurn?: HostedTurnFacts;
       /**
        * True when the host could not determine the turn's outcome
        * (`turn-outcome-unknown` or an equivalent ambiguous code). Distinct from
@@ -98,9 +116,16 @@ export interface ReconcileActionOutcomeOptions {
 function deathOutcome(
   backend: ExecutionBackendId,
   source: ActionOutcome['source'],
-  message: string
+  message: string,
+  hostedTurn?: HostedTurnFacts
 ): ActionOutcome {
-  return { kind: 'execution-lost', backend, source, message };
+  return {
+    kind: 'execution-lost',
+    backend,
+    source,
+    message,
+    ...(hostedTurn === undefined ? {} : { hostedTurn }),
+  };
 }
 
 /**
@@ -160,6 +185,9 @@ export function reconcileActionOutcome(
       backend,
       source: 'host-turn',
       message: `The host settled the turn with status ${turn.status}.`,
+      ...(turn.hostedTurn === undefined
+        ? {}
+        : { hostedTurn: turn.hostedTurn }),
     };
   }
 
@@ -173,7 +201,8 @@ export function reconcileActionOutcome(
     return deathOutcome(
       backend,
       'lost-generation',
-      `The host reported ${turn.code} for an unfinished request on a lost generation; the hosted scope is no longer controllable (the daemon process may still be alive). The in-flight Action is execution-lost.`
+      `The host reported ${turn.code} for an unfinished request on a lost generation; the hosted scope is no longer controllable (the daemon process may still be alive). The in-flight Action is execution-lost.`,
+      turn.hostedTurn
     );
   }
 
@@ -183,6 +212,7 @@ export function reconcileActionOutcome(
     backend,
     source: turn.ambiguous ? 'host-ambiguous' : 'host-failure',
     message: `The host reported ${turn.code}${turn.ambiguous ? ' (ambiguous)' : ''} without an owning-process death; the turn is uncertain, not execution-lost.`,
+    ...(turn.hostedTurn === undefined ? {} : { hostedTurn: turn.hostedTurn }),
   };
 }
 

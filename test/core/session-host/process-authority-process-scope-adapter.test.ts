@@ -9,6 +9,7 @@ import {
   createProcessAuthorityCoordinator,
   createProcessAuthorityPublicationAcknowledgement,
   createProviderBackedProcessScope,
+  isExactScopeEmptyReceipt,
   type AuthorityOperationContext,
   type ProcessAuthorityLifecycleOutcome,
   type ProcessAuthorityProvider,
@@ -186,6 +187,25 @@ describe('opt-in provider-backed ProcessScope compatibility', () => {
     value.provider.control = { state: 'exact-scope-empty' };
     const receipt = await value.scope.terminate(live.ref, { reason: 'close', graceMs: 0 });
     expect(receipt).toMatchObject({ state: 'closed', gracefulAttempted: true });
+    expect(isExactScopeEmptyReceipt(receipt.exactScopeEmptyReceipt)).toBe(true);
+    expect(receipt.exactScopeEmptyReceipt?.reference).toBe(String(live.ref));
+  });
+
+  it('treats the runtime empty frame only as a wakeup and re-authenticates through the coordinator', async () => {
+    const value = fixture();
+    const prepared = await value.scope.prepare({ command: 'fixture', args: [], cwd: '.', env: {} });
+    const live = await prepared.activate();
+    value.provider.observation = { state: 'exact-scope-empty' };
+
+    value.exactScopeEmpty.resolve({
+      state: 'exact-scope-empty',
+      reference: String(live.ref) as never,
+    });
+    const receipt = await live.closed;
+
+    expect(receipt.state).toBe('scope-empty');
+    expect(isExactScopeEmptyReceipt(receipt.exactScopeEmptyReceipt)).toBe(true);
+    expect(receipt.exactScopeEmptyReceipt?.reference).toBe(String(live.ref));
   });
 
   it('maps null/null root status to retained uncertainty instead of legacy root exit', async () => {

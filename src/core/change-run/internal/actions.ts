@@ -17,6 +17,7 @@ import {
 import type {
   RuntimeCapabilityBinding,
   EffectiveRunPolicy,
+  RuntimeConsultationBinding,
 } from '../../pipeline-registry/execution-plan-internal.js';
 import {
   deriveActionId,
@@ -59,6 +60,7 @@ export interface ActionBuildContext {
   readonly stage: Extract<EffectiveRunPolicy['stages'][number], unknown>;
   readonly executionProfileDigest: Digest;
   readonly policyDigest: Digest;
+  readonly consultationBinding?: RuntimeConsultationBinding;
 }
 
 export interface ActionIdentity {
@@ -321,6 +323,21 @@ export function buildAgentAction(
       runtime: stage.runtime,
       sandbox: stage.sandbox,
       input: input.input,
+      ...(ctx.consultationBinding === undefined
+        ? {}
+        : {
+            consultation: {
+              eligible: true as const,
+              sourceProfilePath:
+                ctx.consultationBinding.sourceProfilePath,
+              teacherProfilePath:
+                ctx.consultationBinding.teacherProfilePath,
+              bindingDigest: domainDigest(
+                'teacher-consultation/binding/1',
+                ctx.consultationBinding
+              ),
+            },
+          }),
       session: {
         reuse: stage.sessionReuse,
         // ECP-5 (D9): carry the authored scope through verbatim. Spread so an

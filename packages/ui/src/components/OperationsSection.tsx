@@ -19,12 +19,14 @@ import type {
 import {
   getBoundedLoopLifecycleSections,
   getChoiceSection,
+  getConsultationSection,
   getGoalSection,
   getParallelSection,
   getReviewCycleSection,
   getRootDagSection,
   getUnsupportedBoundedLoopLifecycleSections,
 } from '../api/types.js';
+import { ConsultationObservabilityPanel } from './ConsultationObservabilityPanel.js';
 import { useT } from '../i18n/store.js';
 
 /** The translator signature `useT()` returns, threaded into leaf renderers. */
@@ -972,6 +974,7 @@ function RunDetailBody({
   const unsupportedLoopLifecycles = getUnsupportedBoundedLoopLifecycleSections(view);
   const parallel = getParallelSection(view);
   const choice = getChoiceSection(view);
+  const consultation = getConsultationSection(view);
   const isOther = view.workspace.scope === 'other';
   const runIdShort = shortId(view.runId);
 
@@ -1160,6 +1163,7 @@ function RunDetailBody({
       {goal && <GoalSection section={goal} t={t} />}
       {parallel && <ParallelSection section={parallel} t={t} />}
       {choice && <ChoiceSection section={choice} t={t} />}
+      {consultation && <ConsultationObservabilityPanel section={consultation} />}
 
       {/* Drift — definition/capability/policy/workspace/source comparison. The
           facet names are localized; the observer's verdict on each

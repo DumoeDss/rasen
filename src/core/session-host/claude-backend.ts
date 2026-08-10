@@ -17,6 +17,7 @@ import type {
   BackendTurn,
   BackendTurnStream,
 } from './backend.js';
+import type { ExactScopeEmptyReceipt } from './process-authority/coordinator.js';
 import { createHostedProcessScope } from './process-capsule/hosted-process-scope.js';
 import {
   isDeclaredUnprovenReceipt,
@@ -228,6 +229,8 @@ class ClaudeResidentTransport implements AgentSessionTransport {
   private closeError?: unknown;
   /** Honest terminal observed on the scope's own close; exact tier leaves it unset. */
   private scopeTerminal?: DeclaredUnprovenReceipt;
+  /** Authenticated exact-tier proof; retained as the original minted object. */
+  private exactScopeEmptyReceipt?: ExactScopeEmptyReceipt;
 
   constructor(
     private readonly live: LiveProcessScope,
@@ -282,6 +285,9 @@ class ClaudeResidentTransport implements AgentSessionTransport {
       // here; the exact tier settles a proven scope-empty receipt and records
       // nothing, exactly as before.
       if (isDeclaredUnprovenReceipt(receipt)) this.scopeTerminal = receipt;
+      if ('exactScopeEmptyReceipt' in receipt && receipt.exactScopeEmptyReceipt) {
+        this.exactScopeEmptyReceipt = receipt.exactScopeEmptyReceipt;
+      }
       this.close();
     }, (error) => this.close(error));
   }
@@ -328,12 +334,23 @@ class ClaudeResidentTransport implements AgentSessionTransport {
 
   async terminate(reason: string): Promise<BackendTermination> {
     void reason;
-    if (this.closedState) return { closed: true, cancelledBeforeWork: false };
+    if (this.closedState) {
+      return {
+        closed: true,
+        cancelledBeforeWork: false,
+        ...(this.exactScopeEmptyReceipt
+          ? { exactScopeEmptyReceipt: this.exactScopeEmptyReceipt }
+          : {}),
+      };
+    }
     this.live.stdin.destroy();
     const receipt = await this.processScope.terminate(this.runtimeRef, {
       reason,
       graceMs: this.killGraceMs,
     });
+    if (receipt.exactScopeEmptyReceipt) {
+      this.exactScopeEmptyReceipt = receipt.exactScopeEmptyReceipt;
+    }
     // Declaration-gated: an exact-tier scope still closes only on a proven
     // scope-empty receipt. A declared best-effort scope also closes on its
     // honest declared-unproven terminal, which is terminal by design. The
@@ -344,6 +361,9 @@ class ClaudeResidentTransport implements AgentSessionTransport {
       cancelledBeforeWork: false,
       ...(receipt.state === 'declared-unproven' && receipt.unproven
         ? { unproven: receipt.unproven }
+        : {}),
+      ...(receipt.exactScopeEmptyReceipt
+        ? { exactScopeEmptyReceipt: receipt.exactScopeEmptyReceipt }
         : {}),
     };
   }
@@ -407,9 +427,13 @@ class ClaudeResidentTransport implements AgentSessionTransport {
         )
       );
     }
-    // Exact tier resolves `undefined` exactly as it always did: only a declared
-    // scope's honest terminal changes what this promise carries.
-    this.resolveClosed(this.scopeTerminal ? { unproven: this.scopeTerminal } : undefined);
+    const closure = {
+      ...(this.scopeTerminal ? { unproven: this.scopeTerminal } : {}),
+      ...(this.exactScopeEmptyReceipt
+        ? { exactScopeEmptyReceipt: this.exactScopeEmptyReceipt }
+        : {}),
+    };
+    this.resolveClosed(Object.keys(closure).length === 0 ? undefined : closure);
   }
 }
 
@@ -472,6 +496,8 @@ export function createClaudeSessionBackend(
       const cwd = fs.realpathSync.native(input.cwd);
       const args = [
         ...CLAUDE_SESSION_STREAM_ARGS,
+        '--permission-mode',
+        input.sandbox === 'read-only' ? 'plan' : 'acceptEdits',
         ...(input.resumeSessionId ? ['--resume', input.resumeSessionId] : []),
       ];
       const preparedSpawn = prepareAgentCliSpawn(binary, args, process.platform, env);
@@ -497,6 +523,9 @@ export function createClaudeSessionBackend(
             ? { windowsVerbatimArguments: true }
             : {}),
           signal: input.signal,
+          ...(input.onExactAuthorityPhase === undefined
+            ? {}
+            : { onExactAuthorityPhase: input.onExactAuthorityPhase }),
         });
       } catch (error) {
         throw new ClaudeSessionBackendError(

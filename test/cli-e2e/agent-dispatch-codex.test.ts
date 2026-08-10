@@ -178,6 +178,32 @@ describe('rasen agent dispatch --runtime codex', () => {
     });
   });
 
+  it('rejects consultable-leaf before Codex binary resolution or spawn', async () => {
+    const marker = path.join(cwd, 'must-not-spawn.marker');
+    const result = await runCLI([
+      'agent', 'dispatch', '--runtime', 'codex',
+      '--prompt-file', prompt('success', `MARKER_FILE=${marker}`),
+      '--contract', 'consultable-leaf', '--sandbox', 'read-only', '--cwd', cwd,
+      '--timeout-ms', '5000', '--json',
+    ], {
+      env: { RASEN_CODEX_BIN: path.join(cwd, 'missing-codex-runtime.exe') },
+      timeoutMs: 20_000,
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toBe('');
+    expect(receipt(result.stdout)).toMatchObject({
+      ok: false,
+      runtime: 'codex',
+      contract: 'consultable-leaf',
+      failure: {
+        kind: 'invalid-input',
+        message: expect.stringMatching(/stable hosted continuation authority/i),
+      },
+    });
+    expect(fs.existsSync(marker)).toBe(false);
+  });
+
   it.each([
     ['missing-thread', 'thread-id-missing'],
     ['missing-last', 'last-message-missing'],

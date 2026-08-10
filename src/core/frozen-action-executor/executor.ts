@@ -24,6 +24,12 @@ import type {
   WorkspaceRevision,
 } from '../change-run/contracts.js';
 import type { CanonicalRunRecord } from '../change-run/internal/record.js';
+import type { AgentContinuationGrant } from '../change-run/consultation-contracts.js';
+import {
+  deriveContinuationRequestId,
+  digestContinuationInput,
+} from '../change-run/consultation-contracts.js';
+import { canonicalJson } from '../change-run/internal/identity.js';
 import {
   type BackendSelection,
   type ExecutionBackendId,
@@ -41,6 +47,7 @@ import {
   validateGrantedAction,
   type InFlightDispatchLedger,
 } from './authority.js';
+import { decideReuse, resolveReusePolicy } from './reuse-policy.js';
 
 /**
  * The hosted-backend seam. The executor drives one turn and reads the owning
@@ -49,10 +56,38 @@ import {
  */
 export interface HostedBackendSeam {
   readonly kind: 'hosted';
-  executeTurn(input: Readonly<{ action: RunAction; input: string }>): Promise<{
+  executeTurn(input: Readonly<{
+    action: RunAction;
+    input: string;
+    sessionId?: string;
+    requestId?: string;
+    sandbox: 'read-only' | 'workspace-write';
+    authority?: Readonly<{
+      invocationId: string;
+      role: string;
+      workspaceInstanceId: string;
+      backend: 'hosted';
+    }>;
+    handoffTokens?: number;
+  }>): Promise<{
     readonly turn: TurnResult | undefined;
     readonly daemonAlive: boolean;
   }>;
+  inspectSession?(sessionId: string): Readonly<{
+    sandbox: 'read-only' | 'workspace-write';
+    currentRequest?: Readonly<{
+      requestId: string;
+      state: 'prepared' | 'sent' | 'settled' | 'cancelled' | 'ambiguous';
+    }>;
+    authority?: Readonly<{
+      invocationId: string;
+      role: string;
+      workspaceInstanceId: string;
+      backend: 'hosted';
+      handoffTokensUsed: number;
+      reuseRoundsServed: number;
+    }>;
+  }> | undefined;
 }
 
 /**
@@ -85,6 +120,8 @@ export interface DispatchGrantedActionOptions {
   readonly backends: ExecutorBackends;
   readonly requestedBackend?: ExecutionBackendId;
   readonly explicitDefaultBackend?: ExecutionBackendId;
+  /** True only for Actions whose frozen profile path is consultation-eligible. */
+  readonly requiresContinuableTurns?: boolean;
   readonly inFlight?: InFlightDispatchLedger;
   /**
    * The input the backend turn executes. The executor does not interpret it;
@@ -105,6 +142,15 @@ export type ExecutionDispatchResult =
       readonly selection: BackendSelection;
       readonly outcome: ActionOutcome;
     };
+
+export interface DispatchContinuationOptions {
+  readonly grant: AgentContinuationGrant;
+  readonly record: CanonicalRunRecord;
+  readonly matrix: ExecutionCapabilityMatrix;
+  readonly backends: ExecutorBackends;
+  readonly requestedBackend?: ExecutionBackendId;
+  readonly explicitDefaultBackend?: ExecutionBackendId;
+}
 
 function livenessFor(
   backend: ExecutorBackendSeam,
@@ -145,6 +191,10 @@ export async function dispatchGrantedAction(
     matrix: options.matrix,
     requested: options.requestedBackend,
     explicitDefault: options.explicitDefaultBackend,
+    requiresContinuableTurns:
+      options.requiresContinuableTurns ??
+      (options.grantedAction.kind === 'agent' &&
+        options.grantedAction.agent.consultation?.eligible === true),
   });
   if (selection.kind !== 'selected') {
     return { kind: 'authority-unavailable', selection };
@@ -169,11 +219,168 @@ export async function dispatchGrantedAction(
   const turn = await backend.executeTurn({
     action: options.grantedAction,
     input: options.turnInput,
+    sandbox:
+      options.grantedAction.kind === 'agent' &&
+      options.grantedAction.agent.sandbox === 'read-only'
+        ? 'read-only'
+        : 'workspace-write',
+    ...(options.grantedAction.kind === 'agent'
+      ? {
+          authority: {
+            invocationId: options.grantedAction.invocationId,
+            role: options.grantedAction.agent.role,
+            workspaceInstanceId: options.record.workspaceInstanceId,
+            backend: 'hosted' as const,
+          },
+        }
+      : {}),
   });
   const liveness = livenessFor(backend, turn);
   const outcome = reconcileActionOutcome({ liveness, turn: turn.turn });
 
   return { kind: 'executed', backend: selection.backend, selection, outcome };
+}
+
+/** Wake the exact hosted source Session from one canonical continuation grant. */
+export async function dispatchGrantedContinuation(
+  options: DispatchContinuationOptions
+): Promise<ExecutionDispatchResult> {
+  const { grant, record } = options;
+  const consultation = record.consultations?.[grant.consultationId];
+  const source = record.actions[grant.sourceActionId];
+  const sourceAction = source?.action;
+  const inputDigest = digestContinuationInput(grant.input);
+  if (
+    grant.format !== 'teacher-consultation/continuation-grant/1' ||
+    grant.runId !== record.runId ||
+    grant.expectedRecordVersion !== record.recordVersion ||
+    source === undefined ||
+    sourceAction === undefined ||
+    source.state !== 'consultation-paused' ||
+    sourceAction.kind !== 'agent' ||
+    sourceAction.invocationId !== grant.sourceInvocationId ||
+    sourceAction.attemptId !== grant.sourceAttemptId ||
+    consultation === undefined ||
+    consultation.state !== 'continuation-granted' ||
+    consultation.source.stableSessionId !== grant.stableSessionId ||
+    consultation.continuation?.requestId !== grant.requestId ||
+    grant.inputDigest !== inputDigest ||
+    grant.requestId !==
+      deriveContinuationRequestId(grant.consultationId, inputDigest) ||
+    grant.role !== sourceAction.agent.role ||
+    grant.workspaceInstanceId !== record.workspaceInstanceId
+  ) {
+    return {
+      kind: 'rejected',
+      code: 'receipt_conflict',
+      message:
+        'Continuation grant does not match the exact canonical source Action, Session, input, or Record revision.',
+    };
+  }
+  const selection = resolveBackendSelection({
+    matrix: options.matrix,
+    requested: options.requestedBackend ?? 'hosted',
+    explicitDefault: options.explicitDefaultBackend,
+    requiresContinuableTurns: true,
+  });
+  if (selection.kind !== 'selected') {
+    return { kind: 'authority-unavailable', selection };
+  }
+  if (selection.backend !== 'hosted') {
+    return {
+      kind: 'authority-unavailable',
+      selection: {
+        kind: 'authority-unavailable',
+        reason: 'hosted-tier-unavailable',
+        message:
+          'consultation-continuation-unavailable: continuation requires hosted execution.',
+        requested: selection.backend,
+      },
+    };
+  }
+  const authority = {
+    invocationId: sourceAction.invocationId,
+    role: sourceAction.agent.role,
+    workspaceInstanceId: record.workspaceInstanceId,
+    backend: 'hosted' as const,
+  };
+  const backend = options.backends.hosted;
+  if (backend === undefined) {
+    return {
+      kind: 'authority-unavailable',
+      selection: {
+        kind: 'authority-unavailable',
+        reason: 'hosted-tier-unavailable',
+        message: 'No hosted Session backend is wired for continuation.',
+        requested: 'hosted',
+      },
+    };
+  }
+  const established = backend.inspectSession?.(grant.stableSessionId);
+  if (
+    established?.authority === undefined ||
+    established.sandbox !==
+      (sourceAction.agent.sandbox === 'read-only' ? 'read-only' : 'workspace-write')
+  ) {
+    return {
+      kind: 'rejected',
+      code: 'receipt_conflict',
+      message:
+        'Continuation Session has no exact persisted sandbox/reuse authority facts.',
+    };
+  }
+  const exactRequestReplay =
+    established.currentRequest?.requestId === grant.requestId;
+  if (!exactRequestReplay) {
+    const reuse = decideReuse({
+      policy: resolveReusePolicy({ authored: sourceAction.agent.session }),
+      established: established.authority,
+      requested: authority,
+      handoffTokensUsed: established.authority.handoffTokensUsed,
+      reuseRoundsServed: established.authority.reuseRoundsServed,
+    });
+    if (reuse.kind !== 'permitted') {
+      return {
+        kind: 'rejected',
+        code: 'receipt_conflict',
+        message: `Continuation Session reuse is not permitted: ${reuse.message}`,
+      };
+    }
+  }
+  const serializedInput = canonicalJson(grant.input);
+  const turn = await backend.executeTurn({
+    action: sourceAction,
+    input: serializedInput,
+    sessionId: grant.stableSessionId,
+    requestId: grant.requestId,
+    sandbox:
+      sourceAction.agent.sandbox === 'read-only' ? 'read-only' : 'workspace-write',
+    authority,
+    handoffTokens: Math.ceil(Buffer.byteLength(serializedInput, 'utf8') / 4),
+  });
+  if (
+    turn.turn?.ok === true &&
+    (turn.turn.hostedTurn === undefined ||
+      turn.turn.hostedTurn.stableSessionId !== grant.stableSessionId ||
+      turn.turn.hostedTurn.requestId !== grant.requestId)
+  ) {
+    return {
+      kind: 'rejected',
+      code: 'receipt_conflict',
+      message:
+        'Hosted continuation settlement does not attest the exact granted Session and request identity.',
+    };
+  }
+  const outcome = reconcileActionOutcome({
+    liveness: { backend: 'hosted', daemonAlive: turn.daemonAlive },
+    turn: turn.turn,
+  });
+  return {
+    kind: 'executed',
+    backend: 'hosted',
+    selection,
+    outcome,
+  };
 }
 
 /**

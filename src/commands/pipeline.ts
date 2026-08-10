@@ -102,6 +102,7 @@ import {
   resolveDiscoveryReconcilerSupportProfile,
   resolveRuntimeExecutionProfile,
 } from '../core/pipeline-registry/profile-resolver.js';
+import type { ConsultationBindingYaml } from '../core/pipeline-registry/types.js';
 import {
   prepareRuntimeContext,
   decodeCompletion,
@@ -780,7 +781,10 @@ export class PipelineCommand {
       resolveDiscoveryReconcilerSupportProfile(
         resolution.prepared,
         registry.catalog,
-        registry.trustedExecutionAdapters
+        registry.trustedExecutionAdapters,
+        resolution.prepared.authoredVersion === 1
+          ? (resolution.prepared.authoredSource as { consultations?: readonly ConsultationBindingYaml[] }).consultations
+          : undefined
       )
     );
 
@@ -1363,7 +1367,10 @@ export class PipelineCommand {
           host,
           roleRuntimeOverrides,
         },
-        registry.trustedExecutionAdapters
+        registry.trustedExecutionAdapters,
+        prepared.authoredVersion === 1
+          ? (prepared.authoredSource as { consultations?: readonly ConsultationBindingYaml[] }).consultations
+          : undefined
       );
     if (effectiveFrozenPlan === undefined) {
       rejectUnsupportedNewRun(analyzeReconcilerSupport(prepared, profile));

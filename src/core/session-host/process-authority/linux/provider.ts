@@ -177,6 +177,9 @@ export interface LinuxBrokerPreparationDeliveryRecovery {
 
 export interface LinuxProcessAuthorityProviderBundle {
   readonly provider: ProcessAuthorityProvider;
+  readonly availability:
+    | { readonly state: 'available' }
+    | { readonly state: 'authority-unavailable'; readonly diagnostic: string };
   readonly publishAuthority: ReturnType<typeof createLinuxAuthorityPublicationPublisher>;
   readonly preparationDeliveryRecovery?: LinuxBrokerPreparationDeliveryRecovery;
   openRuntime(reference: ProcessAuthorityReference): ProviderBackedProcessRuntime;
@@ -188,6 +191,8 @@ export interface LinuxProcessAuthorityProviderBundleOptions {
   readonly ledger: LinuxAuthorityPublicationLedger;
   readonly artifactIdentity: LinuxAuthorityExpectedArtifactIdentity;
   readonly deliveryLedger?: LinuxBrokerPreparationDeliveryLedger;
+  /** Trusted assembly fact; test adapters default to available. */
+  readonly runtimeAvailable?: boolean;
 }
 
 export interface LinuxProcessAuthorityProductionOptions {
@@ -475,6 +480,7 @@ function createBundle(
     !exactKeys(options, [
       'transport', 'runtimeOpener', 'ledger', 'artifactIdentity',
       ...(options.deliveryLedger === undefined ? [] : ['deliveryLedger']),
+      ...(options.runtimeAvailable === undefined ? [] : ['runtimeAvailable']),
     ])
   ) {
     throw new TypeError('Linux process-authority provider options are malformed.');
@@ -874,6 +880,12 @@ function createBundle(
 
   return Object.freeze({
     provider,
+    availability: options.runtimeAvailable === false
+      ? Object.freeze({
+          state: 'authority-unavailable' as const,
+          diagnostic: 'Linux process-authority runtime bridge is unavailable.',
+        })
+      : Object.freeze({ state: 'available' as const }),
     publishAuthority,
     ...(preparationDeliveryRecovery === undefined ? {} : { preparationDeliveryRecovery }),
     openRuntime(reference: ProcessAuthorityReference): ProviderBackedProcessRuntime {
@@ -1036,16 +1048,19 @@ function productionBundle(
     ? undefined
     : createLinuxBrokerPreparationDeliveryLedger({ root: deliveryRoot });
   let assembly = unavailableNativeAssembly();
+  let runtimeAvailable = false;
   let durablePreparationDeliveryAvailable = false;
   if (mode === 'user-pidns') {
     try {
       assembly = createLinuxPrimaryNativeAssembly(runtimeRoot);
+      runtimeAvailable = true;
     } catch {
       assembly = unavailableNativeAssembly();
     }
   } else {
     try {
       assembly = createLinuxBrokerNativeAssembly(runtimeRoot);
+      runtimeAvailable = true;
       durablePreparationDeliveryAvailable = true;
     } catch {
       assembly = unavailableNativeAssembly();
@@ -1064,6 +1079,7 @@ function productionBundle(
         ? {}
         : { deliveryLedger }),
       artifactIdentity: assembly.artifactIdentity,
+      runtimeAvailable,
     }
   );
 }

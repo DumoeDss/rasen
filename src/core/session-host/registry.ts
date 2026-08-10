@@ -5,12 +5,17 @@ import * as path from 'node:path';
 import { getGlobalDataDir } from '../global-config.js';
 import { isNodeErrorCode } from '../file-state.js';
 import {
+  EXACT_TEACHER_ATTEMPT_PHASES,
+  EXACT_TEACHER_SESSION_ATTEMPT_SCHEMA,
   HOST_REGISTRY_SCHEMA,
   LEGACY_HOST_REGISTRY_SCHEMA,
+  type ExactTeacherHostedReceiptIdentity,
+  type ExactTeacherSessionAttemptFacts,
   type HostedRequestRecord,
   type HostedSessionRecord,
   type HostedSessionState,
 } from './contracts.js';
+import { decodeProcessAuthorityReferenceForDispatch } from './process-authority/reference-codec.js';
 
 const fsp = fs.promises;
 const LEASE_SCHEMA = 1;
@@ -85,6 +90,10 @@ export interface SessionHostRegistry {
   load(): Promise<void>;
   get(sessionId: string): HostedSessionRecord | undefined;
   list(): HostedSessionRecord[];
+  /** Publish bounded UTF-8 result bytes before a request is marked settled. */
+  putResult(result: string): Promise<{ resultDigest: string; resultRef: string }>;
+  /** Read and digest-verify one content-addressed result object. */
+  readResult(resultRef: string, resultDigest: string, maxBytes?: number): string;
   create(record: HostedSessionRecord): Promise<HostedSessionRecord>;
   update(
     sessionId: string,
@@ -152,6 +161,9 @@ const SESSION_KEYS = new Set([
   'backendSessionId',
   'cwd',
   'cwdDigest',
+  'turnLimits',
+  'sandbox',
+  'authority',
   'hostState',
   'generation',
   'revision',
@@ -160,9 +172,19 @@ const SESSION_KEYS = new Set([
   'requests',
   'prunedRequestFilter',
   'process',
+  'exactTeacherAttempt',
   'processTerminal',
   'recoveryReason',
   'retirementReason',
+]);
+
+const AUTHORITY_KEYS = new Set([
+  'invocationId',
+  'role',
+  'workspaceInstanceId',
+  'backend',
+  'handoffTokensUsed',
+  'reuseRoundsServed',
 ]);
 
 const PROCESS_KEYS = new Set([
@@ -183,6 +205,42 @@ const PROCESS_TERMINAL_KEYS = new Set([
   'recordedAt',
 ]);
 const PROCESS_TERMINAL_OUTCOMES = new Set(['cancelled', 'completed', 'never-activated']);
+const EXACT_TEACHER_ATTEMPT_KEYS = new Set([
+  'schema',
+  'recordVersion',
+  'attemptId',
+  'provider',
+  'processRef',
+  'runId',
+  'actionId',
+  'invocationId',
+  'attempt',
+  'stableSessionId',
+  'requestId',
+  'journalRevision',
+  'phase',
+  'baselineIdentity',
+  'hostedReceipt',
+  'quarantineIdentity',
+]);
+const EXACT_TEACHER_PROVIDER_KEYS = new Set([
+  'providerId',
+  'capabilityId',
+  'protocolVersion',
+]);
+const EXACT_TEACHER_RECEIPT_KEYS = new Set([
+  'stableSessionId',
+  'requestId',
+  'resultRef',
+  'resultDigest',
+]);
+const EXACT_TEACHER_PHASES = new Set<string>(EXACT_TEACHER_ATTEMPT_PHASES);
+const EXACT_TEACHER_BASELINE_PHASE = EXACT_TEACHER_ATTEMPT_PHASES.indexOf(
+  'baseline-stable'
+);
+const EXACT_TEACHER_RESULT_PHASE = EXACT_TEACHER_ATTEMPT_PHASES.indexOf(
+  'result-quarantined'
+);
 const LEGACY_PROCESS_KEYS = new Set([
   'generation',
   'rootPid',
@@ -213,6 +271,197 @@ function parseRequest(value: unknown): HostedRequestRecord {
     throw new Error('invalid request shape');
   }
   return request as HostedRequestRecord;
+}
+
+function boundedExactTeacherText(value: unknown, maximum = 512): value is string {
+  return typeof value === 'string' &&
+    value.length > 0 &&
+    !/[\u0000-\u001f\u007f]/u.test(value) &&
+    Buffer.byteLength(value, 'utf8') <= maximum;
+}
+
+function parseExactTeacherAttempt(
+  value: unknown,
+  record: Pick<HostedSessionRecord, 'sessionId' | 'process'>,
+  requests: readonly HostedRequestRecord[]
+): ExactTeacherSessionAttemptFacts {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('exact Teacher attempt facts must be an object');
+  }
+  const facts = value as Partial<ExactTeacherSessionAttemptFacts>;
+  const provider = facts.provider as unknown as Record<string, unknown> | undefined;
+  const phaseIndex = EXACT_TEACHER_ATTEMPT_PHASES.indexOf(facts.phase as never);
+  if (
+    Object.keys(facts).some((key) => !EXACT_TEACHER_ATTEMPT_KEYS.has(key)) ||
+    facts.schema !== EXACT_TEACHER_SESSION_ATTEMPT_SCHEMA ||
+    facts.recordVersion !== 1 ||
+    !boundedExactTeacherText(facts.attemptId) ||
+    typeof provider !== 'object' ||
+    provider === null ||
+    Array.isArray(provider) ||
+    Object.keys(provider).length !== EXACT_TEACHER_PROVIDER_KEYS.size ||
+    Object.keys(provider).some((key) => !EXACT_TEACHER_PROVIDER_KEYS.has(key)) ||
+    !boundedExactTeacherText(provider.providerId) ||
+    !boundedExactTeacherText(provider.capabilityId) ||
+    !Number.isSafeInteger(provider.protocolVersion) ||
+    Number(provider.protocolVersion) <= 0 ||
+    !boundedExactTeacherText(facts.processRef, 32 * 1024) ||
+    !boundedExactTeacherText(facts.runId) ||
+    !boundedExactTeacherText(facts.actionId) ||
+    !boundedExactTeacherText(facts.invocationId) ||
+    !Number.isSafeInteger(facts.attempt) ||
+    Number(facts.attempt) <= 0 ||
+    facts.stableSessionId !== record.sessionId ||
+    !boundedExactTeacherText(facts.requestId) ||
+    !Number.isSafeInteger(facts.journalRevision) ||
+    Number(facts.journalRevision) <= 0 ||
+    !EXACT_TEACHER_PHASES.has(String(facts.phase)) ||
+    phaseIndex < 0 ||
+    (facts.baselineIdentity === undefined) ===
+      (phaseIndex >= EXACT_TEACHER_BASELINE_PHASE) ||
+    (facts.baselineIdentity !== undefined &&
+      !boundedExactTeacherText(facts.baselineIdentity))
+  ) {
+    throw new Error('invalid exact Teacher attempt facts');
+  }
+  const reference = decodeProcessAuthorityReferenceForDispatch(facts.processRef);
+  if (
+    reference.state !== 'dispatchable' ||
+    reference.selection.providerId !== provider.providerId ||
+    reference.selection.capabilityId !== provider.capabilityId ||
+    reference.selection.protocolVersion !== provider.protocolVersion ||
+    (record.process !== undefined && record.process.runtimeRef !== facts.processRef)
+  ) {
+    throw new Error('exact Teacher authority identity differs');
+  }
+  const matchingRequests = requests.filter((request) => request.requestId === facts.requestId);
+  if (matchingRequests.length !== 1) {
+    throw new Error('exact Teacher request identity differs');
+  }
+  const hostedReceipt = facts.hostedReceipt as unknown;
+  const receiptRequired = phaseIndex >= EXACT_TEACHER_RESULT_PHASE;
+  if ((hostedReceipt === undefined) === receiptRequired) {
+    throw new Error('exact Teacher hosted receipt phase differs');
+  }
+  if (hostedReceipt !== undefined) {
+    if (
+      typeof hostedReceipt !== 'object' ||
+      hostedReceipt === null ||
+      Array.isArray(hostedReceipt) ||
+      Object.keys(hostedReceipt).length !== EXACT_TEACHER_RECEIPT_KEYS.size ||
+      Object.keys(hostedReceipt).some((key) => !EXACT_TEACHER_RECEIPT_KEYS.has(key))
+    ) {
+      throw new Error('invalid exact Teacher hosted receipt identity');
+    }
+    const receipt = hostedReceipt as Partial<ExactTeacherHostedReceiptIdentity>;
+    const request = matchingRequests[0]!;
+    if (
+      receipt.stableSessionId !== facts.stableSessionId ||
+      receipt.requestId !== facts.requestId ||
+      !boundedExactTeacherText(receipt.resultRef) ||
+      typeof receipt.resultDigest !== 'string' ||
+      !/^[a-f0-9]{64}$/u.test(receipt.resultDigest) ||
+      request.state !== 'settled' ||
+      request.resultRef !== receipt.resultRef ||
+      request.resultDigest !== receipt.resultDigest
+    ) {
+      throw new Error('exact Teacher hosted receipt identity differs');
+    }
+  }
+  if (
+    (facts.quarantineIdentity === undefined) === receiptRequired ||
+    (facts.quarantineIdentity !== undefined &&
+      !/^quarantine:sha256:[a-f0-9]{64}$/u.test(facts.quarantineIdentity)) ||
+    (hostedReceipt !== undefined &&
+      facts.quarantineIdentity !==
+        `quarantine:sha256:${
+          (hostedReceipt as Partial<ExactTeacherHostedReceiptIdentity>).resultDigest
+        }`)
+  ) {
+    throw new Error('exact Teacher quarantine identity phase differs');
+  }
+  return facts as ExactTeacherSessionAttemptFacts;
+}
+
+function sameExactTeacherAttemptIdentity(
+  left: ExactTeacherSessionAttemptFacts,
+  right: ExactTeacherSessionAttemptFacts
+): boolean {
+  return left.schema === right.schema &&
+    left.recordVersion === right.recordVersion &&
+    left.attemptId === right.attemptId &&
+    left.provider.providerId === right.provider.providerId &&
+    left.provider.capabilityId === right.provider.capabilityId &&
+    left.provider.protocolVersion === right.provider.protocolVersion &&
+    left.processRef === right.processRef &&
+    left.runId === right.runId &&
+    left.actionId === right.actionId &&
+    left.invocationId === right.invocationId &&
+    left.attempt === right.attempt &&
+    left.stableSessionId === right.stableSessionId &&
+    left.requestId === right.requestId;
+}
+
+function assertExactTeacherAttemptMutation(
+  current: ExactTeacherSessionAttemptFacts | undefined,
+  requested: ExactTeacherSessionAttemptFacts | undefined
+): void {
+  if (current === undefined) return;
+  if (requested === undefined || !sameExactTeacherAttemptIdentity(current, requested)) {
+    throw new Error('exact Teacher attempt authority identity is immutable');
+  }
+  if (
+    current.journalRevision === requested.journalRevision &&
+    current.phase === requested.phase &&
+    current.baselineIdentity === requested.baselineIdentity &&
+    JSON.stringify(current.hostedReceipt) === JSON.stringify(requested.hostedReceipt) &&
+    current.quarantineIdentity === requested.quarantineIdentity
+  ) {
+    return;
+  }
+  const currentPhase = EXACT_TEACHER_ATTEMPT_PHASES.indexOf(current.phase);
+  const requestedPhase = EXACT_TEACHER_ATTEMPT_PHASES.indexOf(requested.phase);
+  if (
+    requested.journalRevision !== current.journalRevision + 1 ||
+    requestedPhase !== currentPhase + 1 ||
+    (current.baselineIdentity !== undefined &&
+      current.baselineIdentity !== requested.baselineIdentity) ||
+    (current.hostedReceipt !== undefined &&
+      JSON.stringify(current.hostedReceipt) !== JSON.stringify(requested.hostedReceipt)) ||
+    (current.quarantineIdentity !== undefined &&
+      current.quarantineIdentity !== requested.quarantineIdentity)
+  ) {
+    throw new Error('exact Teacher attempt journal frontier is non-monotonic');
+  }
+}
+
+function isPersistedTurnLimits(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const limits = value as Record<string, unknown>;
+  const required = ['timeoutMs', 'maxInputBytes', 'maxOutputBytes'];
+  const optional = [
+    'initTimeoutMs',
+    'noOutputTimeoutMs',
+    'overallTimeoutMs',
+    'maxLineBytes',
+    'maxDiagnosticBytes',
+  ];
+  if (
+    Object.keys(limits).some(
+      (key) => !required.includes(key) && !optional.includes(key)
+    )
+  ) {
+    return false;
+  }
+  return [...required, ...optional].every((key) => {
+    const candidate = limits[key];
+    return (
+      candidate === undefined ||
+      (Number.isSafeInteger(candidate) && Number(candidate) > 0)
+    );
+  });
 }
 
 function sameCanonicalPath(left: string, right: string, platform: NodeJS.Platform): boolean {
@@ -274,6 +523,41 @@ function parseSession(
       throw new Error('invalid pruned request filter');
     }
   }
+  if (
+    record.sandbox !== undefined &&
+    record.sandbox !== 'read-only' &&
+    record.sandbox !== 'workspace-write'
+  ) {
+    throw new Error('invalid session sandbox');
+  }
+  if (
+    record.turnLimits !== undefined &&
+    !isPersistedTurnLimits(record.turnLimits)
+  ) {
+    throw new Error('invalid session turn limits');
+  }
+  if (record.authority !== undefined) {
+    const authority = record.authority as unknown as Record<string, unknown>;
+    if (
+      typeof authority !== 'object' ||
+      authority === null ||
+      Array.isArray(authority) ||
+      Object.keys(authority).some((field) => !AUTHORITY_KEYS.has(field)) ||
+      typeof authority.invocationId !== 'string' ||
+      !authority.invocationId ||
+      typeof authority.role !== 'string' ||
+      !authority.role ||
+      typeof authority.workspaceInstanceId !== 'string' ||
+      !authority.workspaceInstanceId ||
+      authority.backend !== 'hosted' ||
+      !Number.isSafeInteger(authority.handoffTokensUsed) ||
+      Number(authority.handoffTokensUsed) < 0 ||
+      !Number.isSafeInteger(authority.reuseRoundsServed) ||
+      Number(authority.reuseRoundsServed) < 0
+    ) {
+      throw new Error('invalid session authority');
+    }
+  }
   const cwdStat = cwdIdentity.stat(record.cwd);
   if (!cwdStat.isDirectory()) throw new Error('session cwd is not a directory');
   const canonical = cwdIdentity.realpath(record.cwd);
@@ -307,7 +591,7 @@ function parseSession(
       !Number.isInteger(processFacts.generation) ||
       processFacts.generation !== record.generation ||
       typeof processFacts.runtimeRef !== 'string' ||
-      !/^rasen-process-scope\/1:[A-Za-z0-9_-]{16,4096}$/.test(processFacts.runtimeRef) ||
+      !/^(?:rasen-process-scope\/1:[A-Za-z0-9_-]{16,4096}|rasen-process-authority\/1:[A-Za-z0-9_-]{16,32768})$/.test(processFacts.runtimeRef) ||
       (processFacts.displayPid !== undefined &&
         (!Number.isInteger(processFacts.displayPid) || Number(processFacts.displayPid) <= 0)) ||
       typeof processFacts.ownerToken !== 'string' ||
@@ -333,6 +617,15 @@ function parseSession(
       }
     }
   }
+  const exactTeacherAttempt = record.exactTeacherAttempt === undefined
+    ? undefined
+    : parseExactTeacherAttempt(record.exactTeacherAttempt, record as HostedSessionRecord, requests);
+  if (
+    exactTeacherAttempt === undefined &&
+    record.process?.runtimeRef.startsWith('rasen-process-authority/')
+  ) {
+    throw new Error('exact Teacher process authority has no restart-union facts');
+  }
   if (record.processTerminal !== undefined) {
     const terminal = record.processTerminal as unknown as Record<string, unknown>;
     if (
@@ -352,7 +645,12 @@ function parseSession(
       throw new Error('invalid process terminal');
     }
   }
-  return { ...(record as HostedSessionRecord), revision: record.revision ?? 0, requests };
+  return {
+    ...(record as HostedSessionRecord),
+    revision: record.revision ?? 0,
+    requests,
+    ...(exactTeacherAttempt === undefined ? {} : { exactTeacherAttempt }),
+  };
 }
 
 function parseDocument(
@@ -523,6 +821,7 @@ export function createSessionHostRegistry(
   const registryPath = path.join(root, 'registry.json');
   const leasePath = path.join(root, 'registry.writer.lock');
   const paths = { root, registryPath, leasePath };
+  const resultRoot = path.join(root, 'results', 'sha256');
   let current = documentFor({ schema: HOST_REGISTRY_SCHEMA, generation: 0, sessions: {} });
   let sameInstanceMutationTail: Promise<void> = Promise.resolve();
 
@@ -719,6 +1018,103 @@ export function createSessionHostRegistry(
     }
   }
 
+  function resolveResultObject(resultRef: string, resultDigest: string): string {
+    const match = /^host-result:sha256:([0-9a-f]{64})$/.exec(resultRef);
+    if (match === null || match[1] !== resultDigest) {
+      throw new SessionHostRegistryError(
+        'registry-corrupt',
+        'Hosted result reference does not match its recorded digest.'
+      );
+    }
+    return path.join(resultRoot, match[1]);
+  }
+
+  function readResult(
+    resultRef: string,
+    resultDigest: string,
+    maxBytes = 8 * 1024 * 1024
+  ): string {
+    const objectPath = resolveResultObject(resultRef, resultDigest);
+    let bytes: Buffer;
+    try {
+      const stat = fs.statSync(objectPath);
+      if (!stat.isFile() || stat.size > maxBytes) {
+        throw new Error('result object is absent, non-regular, or oversized');
+      }
+      bytes = fs.readFileSync(objectPath);
+    } catch (error) {
+      throw new SessionHostRegistryError(
+        'registry-corrupt',
+        `Hosted result bytes are unavailable (${(error as NodeJS.ErrnoException).code ?? 'invalid'}).`,
+        { cause: error }
+      );
+    }
+    const result = bytes.toString('utf8');
+    if (
+      !Buffer.from(result, 'utf8').equals(bytes) ||
+      digestSessionHostText(result) !== resultDigest
+    ) {
+      throw new SessionHostRegistryError(
+        'registry-corrupt',
+        'Hosted result bytes failed UTF-8 or digest verification.'
+      );
+    }
+    return result;
+  }
+
+  async function putResult(
+    result: string
+  ): Promise<{ resultDigest: string; resultRef: string }> {
+    const resultDigest = digestSessionHostText(result);
+    const resultRef = `host-result:sha256:${resultDigest}`;
+    const objectPath = resolveResultObject(resultRef, resultDigest);
+    await fsp.mkdir(resultRoot, { recursive: true, mode: 0o700 });
+    await fsp.chmod(resultRoot, 0o700).catch(() => undefined);
+    try {
+      const existing = readResult(resultRef, resultDigest);
+      if (existing !== result) {
+        throw new SessionHostRegistryError(
+          'registry-corrupt',
+          'Hosted result digest collision has conflicting bytes.'
+        );
+      }
+      return { resultDigest, resultRef };
+    } catch (error) {
+      if (
+        error instanceof SessionHostRegistryError &&
+        error.code === 'registry-corrupt' &&
+        fs.existsSync(objectPath)
+      ) {
+        throw error;
+      }
+    }
+    const candidate = `${objectPath}.${process.pid}.${randomBytes(8).toString('hex')}.candidate`;
+    const handle = await fsp.open(candidate, 'wx', 0o600);
+    let published = false;
+    try {
+      await handle.writeFile(result, 'utf8');
+      await handle.sync();
+      await handle.close();
+      try {
+        await fsp.rename(candidate, objectPath);
+        published = true;
+      } catch (error) {
+        if (!isNodeErrorCode(error, 'EEXIST')) throw error;
+      }
+    } finally {
+      await handle.close().catch(() => undefined);
+      if (!published) await fsp.unlink(candidate).catch(() => undefined);
+    }
+    const verified = readResult(resultRef, resultDigest);
+    if (verified !== result) {
+      throw new SessionHostRegistryError(
+        'registry-corrupt',
+        'Hosted result publication did not preserve the exact bytes.'
+      );
+    }
+    return { resultDigest, resultRef };
+  }
+
   return {
     paths,
     load,
@@ -729,6 +1125,8 @@ export function createSessionHostRegistry(
     list() {
       return Object.values(current.sessions).map(clone);
     },
+    putResult,
+    readResult,
     create(record) {
       return mutateDocument((disk) => {
         if (disk.sessions[record.sessionId]) {
@@ -770,6 +1168,10 @@ export function createSessionHostRegistry(
           );
         }
         const requested = pruneSettledRequests(mutate(clone(existing)));
+        assertExactTeacherAttemptMutation(
+          existing.exactTeacherAttempt,
+          requested.exactTeacherAttempt
+        );
         requested.revision = (existing.revision ?? 0) + 1;
         const normalized = parseSession(
           requested,

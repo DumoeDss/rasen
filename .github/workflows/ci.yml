@@ -58,11 +58,25 @@ jobs:
             vitest_partition: ''
           - os: macos-latest
             shell: bash
-            label: macos-bash
+            label: macos-bash-shard-1
             node: '20.19.0'
-            vitest_workers: 4
-            timeout_minutes: 15
-            vitest_partition: ''
+            vitest_workers: 2
+            timeout_minutes: 20
+            vitest_partition: '1/3'
+          - os: macos-latest
+            shell: bash
+            label: macos-bash-shard-2
+            node: '20.19.0'
+            vitest_workers: 2
+            timeout_minutes: 20
+            vitest_partition: '2/3'
+          - os: macos-latest
+            shell: bash
+            label: macos-bash-shard-3
+            node: '20.19.0'
+            vitest_workers: 2
+            timeout_minutes: 20
+            vitest_partition: '3/3'
           - os: windows-latest
             shell: pwsh
             label: windows-pwsh-shard-1

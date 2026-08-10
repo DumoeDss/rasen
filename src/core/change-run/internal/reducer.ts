@@ -36,6 +36,16 @@ import {
   decodeCanonicalWait,
   type CanonicalWait,
 } from './waits.js';
+import {
+  CommittedConsultationZodSchema,
+  closeConsultationsForSource,
+  failTeacherAttempt,
+  grantContinuation,
+  linkTeacherAction,
+  markContinuationAmbiguous,
+  settleContinuation,
+  type CommittedConsultation,
+} from './consultation-lifecycle.js';
 
 export type RunStimulus =
   | Readonly<{
@@ -45,6 +55,39 @@ export type RunStimulus =
       deliveryMode: 'grant' | 'defer';
     }>
   | Readonly<{ kind: 'grant-action'; actionId: string }>
+  | Readonly<{
+      kind: 'request-consultation';
+      consultation: CommittedConsultation;
+    }>
+  | Readonly<{
+      kind: 'link-consultation-teacher';
+      consultationId: string;
+      teacherActionId: string;
+    }>
+  | Readonly<{
+      kind: 'commit-consultation-advice';
+      consultation: CommittedConsultation;
+    }>
+  | Readonly<{
+      kind: 'fail-consultation-teacher';
+      consultationId: string;
+      teacherActionId: string;
+      detail: string;
+    }>
+  | Readonly<{
+      kind: 'grant-consultation-continuation';
+      consultationId: string;
+    }>
+  | Readonly<{
+      kind: 'settle-consultation-continuation';
+      consultationId: string;
+      resultDigest: Digest;
+    }>
+  | Readonly<{
+      kind: 'mark-consultation-continuation-ambiguous';
+      consultationId: string;
+      detail: string;
+    }>
   | Readonly<{
       kind: 'commit-action-result';
       actionId: string;
@@ -116,6 +159,8 @@ export type RunReductionFailureCode =
   | 'terminal_record'
   | 'illegal_transition'
   | 'action_not_active'
+  | 'consultation_identity_conflict'
+  | 'consultation_not_active'
   | 'effect_identity_conflict'
   | 'wait_identity_conflict'
   | 'control_not_allowed'
@@ -146,6 +191,39 @@ const StimulusSchema = z.discriminatedUnion('kind', [
   z.strictObject({
     kind: z.literal('grant-action'),
     actionId: identity('action'),
+  }),
+  z.strictObject({
+    kind: z.literal('request-consultation'),
+    consultation: CommittedConsultationZodSchema,
+  }),
+  z.strictObject({
+    kind: z.literal('fail-consultation-teacher'),
+    consultationId: identity('consultation'),
+    teacherActionId: identity('action'),
+    detail: z.string().min(1).max(4096),
+  }),
+  z.strictObject({
+    kind: z.literal('link-consultation-teacher'),
+    consultationId: identity('consultation'),
+    teacherActionId: identity('action'),
+  }),
+  z.strictObject({
+    kind: z.literal('commit-consultation-advice'),
+    consultation: CommittedConsultationZodSchema,
+  }),
+  z.strictObject({
+    kind: z.literal('grant-consultation-continuation'),
+    consultationId: identity('consultation'),
+  }),
+  z.strictObject({
+    kind: z.literal('settle-consultation-continuation'),
+    consultationId: identity('consultation'),
+    resultDigest: DigestSchema,
+  }),
+  z.strictObject({
+    kind: z.literal('mark-consultation-continuation-ambiguous'),
+    consultationId: identity('consultation'),
+    detail: z.string().min(1).max(4096),
   }),
   z.strictObject({
     kind: z.literal('commit-action-result'),
@@ -261,6 +339,12 @@ export function decodeRunStimulus(
         ...stimulus,
         action: decodeRunAction(stimulus.action),
       } as RunStimulus;
+    case 'request-consultation':
+    case 'commit-consultation-advice':
+      return {
+        ...stimulus,
+        consultation: stimulus.consultation as unknown as CommittedConsultation,
+      };
     case 'await-gate': {
       const wait = decodeCanonicalWait(stimulus.wait, record.runId);
       if (wait.kind !== 'gate') {
@@ -353,6 +437,7 @@ interface RecordDelta {
   readonly actions?: CanonicalRunRecord['actions'];
   readonly waits?: readonly CanonicalWait[];
   readonly currentWorkspaceRevision?: WorkspaceRevision;
+  readonly consultations?: CanonicalRunRecord['consultations'];
   readonly terminal?: RunTerminalOutcome;
   readonly status?: CanonicalRunRecord['status'];
 }
@@ -389,6 +474,9 @@ function commit(
     waits,
     currentWorkspaceRevision:
       delta.currentWorkspaceRevision ?? record.currentWorkspaceRevision,
+    ...(delta.consultations === undefined && record.consultations === undefined
+      ? {}
+      : { consultations: delta.consultations ?? record.consultations }),
     ...(terminal === undefined ? { terminal: undefined } : { terminal }),
   });
 }
@@ -433,6 +521,24 @@ function terminate(
     ok: true,
     record: commit(record, [terminalTransition(terminal)], {
       actions: closeCommittedActions(record.actions),
+      consultations:
+        record.consultations === undefined
+          ? undefined
+          : Object.fromEntries(
+              Object.entries(record.consultations).map(([key, consultation]) => [
+                key,
+                consultation.state === 'closed'
+                  ? consultation
+                  : {
+                      ...consultation,
+                      state: 'closed' as const,
+                      failure: {
+                        code: 'source-terminal' as const,
+                        detail: 'The Run reached a terminal state.',
+                      },
+                    },
+              ])
+            ),
       waits: [],
       terminal,
       status: terminal.kind,
@@ -699,6 +805,337 @@ export function reduceCanonicalRunRecord(
         ),
       };
     }
+    case 'request-consultation': {
+      const consultation = stimulus.consultation;
+      const existing = record.consultations?.[consultation.consultationId];
+      if (existing !== undefined) {
+        return JSON.stringify(existing) === JSON.stringify(consultation)
+          ? { ok: true, record }
+          : failure(
+              'consultation_identity_conflict',
+              'ConsultationId was reused with a different canonical payload.'
+            );
+      }
+      const source = record.actions[consultation.source.actionId];
+      if (
+        source === undefined ||
+        source.state !== 'active' ||
+        source.action.invocationId !== consultation.source.invocationId ||
+        source.action.attemptId !== consultation.source.attemptId
+      ) {
+        return failure(
+          'consultation_not_active',
+          'Consultation request must pause the exact active source Action.'
+        );
+      }
+      const transitions: TransitionWithoutOrdinal[] = [
+        {
+          kind: 'ConsultationRequested',
+          consultationId: consultation.consultationId,
+          sourceActionId: consultation.source.actionId,
+          ordinal: consultation.ordinal,
+        },
+      ];
+      if (consultation.state === 'unavailable') {
+        transitions.push({
+          kind: 'ConsultationUnavailable',
+          consultationId: consultation.consultationId,
+          reason:
+            consultation.failure?.code ?? 'consultation-limit-exhausted',
+        });
+      }
+      const capacity = reserveTransitionCapacity(record, transitions.length);
+      if (capacity !== null) return capacity;
+      return {
+        ok: true,
+        record: commit(record, transitions, {
+          actions: replaceAction(record, source.action.actionId, {
+            ...source,
+            state: 'consultation-paused',
+            deliveryState: 'paused',
+          }),
+          consultations: {
+            ...(record.consultations ?? {}),
+            [consultation.consultationId]: consultation,
+          },
+        }),
+      };
+    }
+    case 'link-consultation-teacher': {
+      const consultation = record.consultations?.[stimulus.consultationId];
+      const teacherAction = record.actions[stimulus.teacherActionId]?.action;
+      if (consultation === undefined || teacherAction === undefined) {
+        return failure(
+          'consultation_not_active',
+          'Teacher linkage requires the requested consultation and admitted Teacher Action.'
+        );
+      }
+      let linked: CommittedConsultation;
+      try {
+        linked = linkTeacherAction(consultation, teacherAction);
+      } catch (error) {
+        return failure(
+          'consultation_identity_conflict',
+          error instanceof Error ? error.message : 'Invalid Teacher linkage.'
+        );
+      }
+      const capacity = reserveTransitionCapacity(record, 1);
+      if (capacity !== null) return capacity;
+      return {
+        ok: true,
+        record: commit(
+          record,
+          [
+            {
+              kind: 'ConsultationTeacherLinked',
+              consultationId: linked.consultationId,
+              teacherActionId: teacherAction.actionId,
+              teacherAttempt: linked.teacher.attemptOrdinal,
+            },
+          ],
+          {
+            consultations: {
+              ...(record.consultations ?? {}),
+              [linked.consultationId]: linked,
+            },
+          }
+        ),
+      };
+    }
+    case 'commit-consultation-advice': {
+      const next = stimulus.consultation;
+      const current = record.consultations?.[next.consultationId];
+      if (
+        current === undefined ||
+        current.state !== 'teacher-active' ||
+        next.state !== 'advice-committed' ||
+        current.teacher.actionId !== next.teacher.actionId ||
+        current.source.actionId !== next.source.actionId ||
+        JSON.stringify(current.binding) !== JSON.stringify(next.binding)
+      ) {
+        return failure(
+          'consultation_identity_conflict',
+          'Advice settlement does not advance the exact active Teacher consultation.'
+        );
+      }
+      const capacity = reserveTransitionCapacity(record, 1);
+      if (capacity !== null) return capacity;
+      return {
+        ok: true,
+        record: commit(
+          record,
+          [
+            {
+              kind: 'ConsultationAdviceCommitted',
+              consultationId: next.consultationId,
+              teacherActionId: next.teacher.actionId!,
+              decision: next.teacher.advice!.decision,
+            },
+          ],
+          {
+            consultations: {
+              ...(record.consultations ?? {}),
+              [next.consultationId]: next,
+            },
+          }
+        ),
+      };
+    }
+    case 'fail-consultation-teacher': {
+      const current = record.consultations?.[stimulus.consultationId];
+      if (
+        current === undefined ||
+        current.state !== 'teacher-active' ||
+        current.teacher.actionId !== stimulus.teacherActionId
+      ) {
+        return failure(
+          'consultation_identity_conflict',
+          'Teacher failure must address the exact active consultation attempt.'
+        );
+      }
+      let failed: CommittedConsultation;
+      try {
+        failed = failTeacherAttempt(current, stimulus.detail);
+      } catch (error) {
+        return failure(
+          'consultation_identity_conflict',
+          error instanceof Error ? error.message : 'Invalid Teacher attempt failure.'
+        );
+      }
+      const capacity = reserveTransitionCapacity(record, failed.state === 'unavailable' ? 2 : 1);
+      if (capacity !== null) return capacity;
+      const transitions: TransitionWithoutOrdinal[] = [
+        {
+          kind: 'ConsultationTeacherAttemptFailed',
+          consultationId: current.consultationId,
+          teacherActionId: stimulus.teacherActionId,
+          exhausted: failed.state === 'unavailable',
+        },
+      ];
+      if (failed.state === 'unavailable') {
+        transitions.push({
+          kind: 'ConsultationUnavailable',
+          consultationId: failed.consultationId,
+          reason: 'teacher-attempt-limit-exhausted',
+        });
+      }
+      const failedTeacherAction = record.actions[stimulus.teacherActionId]!;
+      return {
+        ok: true,
+        record: commit(record, transitions, {
+          actions: replaceAction(
+            record,
+            stimulus.teacherActionId,
+            {
+              ...failedTeacherAction,
+              state: 'blocked',
+              deliveryState: 'closed',
+            }
+          ),
+          consultations: {
+            ...(record.consultations ?? {}),
+            [failed.consultationId]: failed,
+          },
+        }),
+      };
+    }
+    case 'grant-consultation-continuation': {
+      const current = record.consultations?.[stimulus.consultationId];
+      if (
+        current === undefined ||
+        (current.state !== 'advice-committed' && current.state !== 'unavailable')
+      ) {
+        return failure(
+          'consultation_not_active',
+          'Continuation grant requires committed advice or bounded unavailability.'
+        );
+      }
+      let granted: ReturnType<typeof grantContinuation>;
+      try {
+        granted = grantContinuation({ record, consultation: current });
+      } catch (error) {
+        return failure(
+          'consultation_identity_conflict',
+          error instanceof Error ? error.message : 'Invalid continuation grant.'
+        );
+      }
+      const capacity = reserveTransitionCapacity(record, 1);
+      if (capacity !== null) return capacity;
+      return {
+        ok: true,
+        record: commit(
+          record,
+          [
+            {
+              kind: 'ConsultationContinuationGranted',
+              consultationId: current.consultationId,
+              requestId: granted.grant.requestId,
+            },
+          ],
+          {
+            consultations: {
+              ...(record.consultations ?? {}),
+              [current.consultationId]: granted.consultation,
+            },
+          }
+        ),
+      };
+    }
+    case 'settle-consultation-continuation': {
+      const current = record.consultations?.[stimulus.consultationId];
+      if (current?.state === 'continued') {
+        return current.continuation?.resultDigest === stimulus.resultDigest
+          ? { ok: true, record }
+          : failure(
+              'consultation_identity_conflict',
+              'Settled continuation identity conflicts with a different result digest.'
+            );
+      }
+      if (current === undefined) {
+        return failure('consultation_not_active', 'Consultation is absent.');
+      }
+      const source = record.actions[current.source.actionId];
+      if (source === undefined || source.state !== 'consultation-paused') {
+        return failure(
+          'consultation_not_active',
+          'Continuation settlement requires the exact paused source Action.'
+        );
+      }
+      let settled: CommittedConsultation;
+      try {
+        settled = settleContinuation(current, stimulus.resultDigest);
+      } catch (error) {
+        return failure(
+          'consultation_identity_conflict',
+          error instanceof Error ? error.message : 'Invalid continuation settlement.'
+        );
+      }
+      const capacity = reserveTransitionCapacity(record, 1);
+      if (capacity !== null) return capacity;
+      return {
+        ok: true,
+        record: commit(
+          record,
+          [
+            {
+              kind: 'ConsultationContinuationSettled',
+              consultationId: current.consultationId,
+              requestId: current.continuation!.requestId,
+            },
+          ],
+          {
+            actions: replaceAction(record, source.action.actionId, {
+              ...source,
+              state: 'active',
+              deliveryState: 'granted',
+            }),
+            consultations: {
+              ...(record.consultations ?? {}),
+              [current.consultationId]: settled,
+            },
+          }
+        ),
+      };
+    }
+    case 'mark-consultation-continuation-ambiguous': {
+      const current = record.consultations?.[stimulus.consultationId];
+      if (current?.state === 'continuation-outcome-unknown') {
+        return { ok: true, record };
+      }
+      if (current === undefined) {
+        return failure('consultation_not_active', 'Consultation is absent.');
+      }
+      let ambiguous: CommittedConsultation;
+      try {
+        ambiguous = markContinuationAmbiguous(current, stimulus.detail);
+      } catch (error) {
+        return failure(
+          'consultation_identity_conflict',
+          error instanceof Error ? error.message : 'Invalid ambiguous continuation.'
+        );
+      }
+      const capacity = reserveTransitionCapacity(record, 1);
+      if (capacity !== null) return capacity;
+      return {
+        ok: true,
+        record: commit(
+          record,
+          [
+            {
+              kind: 'ConsultationContinuationAmbiguous',
+              consultationId: current.consultationId,
+              requestId: current.continuation!.requestId,
+            },
+          ],
+          {
+            consultations: {
+              ...(record.consultations ?? {}),
+              [current.consultationId]: ambiguous,
+            },
+          }
+        ),
+      };
+    }
     case 'observe-effect': {
       const capacity = reserveTransitionCapacity(record, 1);
       if (capacity !== null) return capacity;
@@ -837,6 +1274,10 @@ export function reduceCanonicalRunRecord(
           {
             actions: replaceAction(record, stimulus.actionId, nextAction),
             waits,
+            consultations: closeConsultationsForSource(
+              record.consultations,
+              stimulus.actionId
+            ),
           }
         ),
       };
@@ -1265,13 +1706,44 @@ export function reduceCandidateBatch(
   }
   // Collapse the intermediate revision chain into one candidate revision over
   // the original base. Transitions/actions/waits/counters/status/terminal are
-  // the final accumulated values; only the version pointer is re-rooted.
+  // the final accumulated values; only the version pointer is re-rooted. A
+  // continuation grant created inside the intermediate chain must bind that
+  // same collapsed head, not the temporary per-stimulus revision where the
+  // grant happened.
+  const committedRecordVersion = ((base.recordVersion as number) + 1) as CanonicalRunRecord['recordVersion'];
+  const grantedConsultationIds = new Set(
+    working.transitions
+      .slice(base.transitions.length)
+      .filter(
+        (transition): transition is Extract<CommittedTransition, { kind: 'ConsultationContinuationGranted' }> =>
+          transition.kind === 'ConsultationContinuationGranted'
+      )
+      .map((transition) => transition.consultationId)
+  );
+  const consultations =
+    working.consultations === undefined
+      ? undefined
+      : Object.fromEntries(
+          Object.entries(working.consultations).map(([id, consultation]) => [
+            id,
+            grantedConsultationIds.has(id) && consultation.continuation !== undefined
+              ? {
+                  ...consultation,
+                  continuation: {
+                    ...consultation.continuation,
+                    expectedRecordVersion: committedRecordVersion,
+                  },
+                }
+              : consultation,
+          ])
+        );
   return {
     ok: true,
     record: decodeCanonicalRunRecord({
       ...working,
-      recordVersion: (base.recordVersion as number) + 1,
+      recordVersion: committedRecordVersion,
       previousRecordDigest: digestCanonicalRunRecord(base),
+      ...(consultations === undefined ? {} : { consultations }),
     }),
   };
 }

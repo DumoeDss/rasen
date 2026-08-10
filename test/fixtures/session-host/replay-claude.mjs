@@ -22,6 +22,8 @@ if (argv.includes('--help')) {
 }
 
 const resumeIndex = argv.indexOf('--resume');
+const permissionIndex = argv.indexOf('--permission-mode');
+const permissionMode = permissionIndex >= 0 ? argv[permissionIndex + 1] : undefined;
 const sessionId = resumeIndex >= 0 ? argv[resumeIndex + 1] : 'fixture-backend-session-1';
 const configPath = path.join(process.cwd(), '.rasen-session-fixture.json');
 const config = fs.existsSync(configPath)
@@ -137,6 +139,27 @@ input.on('line', (line) => {
         result: 'mismatched-result',
       });
       return;
+    case 'attempt-workspace-mutation': {
+      const target = path.resolve(
+        process.cwd(),
+        config.mutationTarget ?? 'teacher-mutation-target.txt'
+      );
+      const blocked = permissionMode === 'plan';
+      appendFact({
+        type: 'mutation-attempt',
+        target,
+        permissionMode,
+        blocked,
+      });
+      if (!blocked) fs.appendFileSync(target, 'forbidden-teacher-write', 'utf8');
+      writeInit();
+      writeEvent({
+        type: 'result',
+        session_id: sessionId,
+        result: blocked ? 'mutation-blocked' : 'mutation-performed',
+      });
+      return;
+    }
     case 'crash-after-init':
       writeInit();
       setImmediate(() => process.exit(32));

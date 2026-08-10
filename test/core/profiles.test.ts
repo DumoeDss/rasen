@@ -92,10 +92,10 @@ describe('profiles', () => {
   });
 
   describe('ALL_EXPERTS / QUALITY_FLOOR_EXPERTS', () => {
-    it('ALL_EXPERTS matches every surviving built-in expert id (12)', () => {
+    it('ALL_EXPERTS matches every surviving built-in expert id (13)', () => {
       const expected = getExpertSkillDefinitions().map((expert) => expert.id);
       expect([...ALL_EXPERTS].sort()).toEqual(expected.sort());
-      expect(ALL_EXPERTS).toHaveLength(12);
+      expect(ALL_EXPERTS).toHaveLength(13);
     });
 
     it('QUALITY_FLOOR_EXPERTS is the five quality-floor identities and a subset of ALL_EXPERTS', () => {

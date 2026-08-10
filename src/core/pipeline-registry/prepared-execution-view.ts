@@ -29,6 +29,7 @@ import {
 } from './stage-overrides.js';
 import type {
   AgentRuntime,
+  ConsultationBindingYaml,
   PipelineYaml,
   Stage,
   StageRole,
@@ -439,7 +440,14 @@ export function projectPreparedPipelineExecutionView(
   }
   const support = analyzeReconcilerSupport(
     prepared,
-    resolveDiscoveryReconcilerSupportProfile(prepared, catalog)
+    resolveDiscoveryReconcilerSupportProfile(
+      prepared,
+      catalog,
+      undefined,
+      prepared.authoredVersion === 1
+        ? (prepared.authoredSource as { consultations?: readonly ConsultationBindingYaml[] }).consultations
+        : undefined
+    )
   );
   const authored = prepared.authoredSource;
   const stages = prepared.authoredVersion === 2

@@ -1,4 +1,10 @@
 import { z } from 'zod';
+import {
+  AgentContinuationGrantZodSchema,
+  decodeAgentContinuationGrant,
+  type AgentContinuationGrant,
+  type ConsultationContentLimits,
+} from './consultation-contracts.js';
 
 export type Brand<T, Name extends string> = T & { readonly __brand: Name };
 export type Digest = Brand<string, 'Digest'>;
@@ -55,6 +61,9 @@ const EffectIdSchema = identity('effect');
 const ActionIdSchema = identity('action');
 const WaitIdSchema = identity('wait');
 const SafeIntegerSchema = z.number().int().nonnegative().safe();
+const UuidShape = z
+  .string()
+  .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 const JsonValueSchema = z.json();
 
 const WorkspaceRevisionSchema = z.strictObject({
@@ -283,6 +292,14 @@ const RunActionSchema = z.discriminatedUnion('kind', [
       runtime: z.string().min(1).max(128),
       sandbox: z.string().min(1).max(128),
       input: JsonValueSchema,
+      consultation: z
+        .strictObject({
+          eligible: z.literal(true),
+          sourceProfilePath: z.string().min(1).max(1024),
+          teacherProfilePath: z.string().min(1).max(1024),
+          bindingDigest: DigestSchema,
+        })
+        .optional(),
       session: z.strictObject({
         reuse: z.enum(['never', 'same-invocation']),
         /**
@@ -598,7 +615,7 @@ const RunActionViewSchema = z.strictObject({
   invocationId: InvocationIdSchema,
   attemptId: AttemptIdSchema,
   nodeId: NodeIdSchema,
-  deliveryState: z.enum(['admitted_undelivered', 'granted', 'closed']),
+  deliveryState: z.enum(['admitted_undelivered', 'granted', 'paused', 'closed']),
   capability: z.strictObject({
     id: z.string().min(1).max(256),
     contractVersion: z.string().min(1).max(128),
@@ -749,11 +766,85 @@ const BoundedLoopLifecycleViewSectionSchema = z.strictObject({
 export type BoundedLoopLifecycleViewSection = Readonly<
   z.infer<typeof BoundedLoopLifecycleViewSectionSchema>
 >;
+
+const ConsultationViewSectionSchema = z.strictObject({
+  kind: z.literal('consultation'),
+  version: z.literal(1),
+  entries: z.array(
+    z.strictObject({
+      consultationId: identity('consultation'),
+      ordinal: SafeIntegerSchema.min(1),
+      state: z.enum([
+        'requested',
+        'teacher-active',
+        'advice-committed',
+        'continuation-granted',
+        'continued',
+        'unavailable',
+        'continuation-outcome-unknown',
+        'closed',
+      ]),
+      source: z.strictObject({
+        actionId: ActionIdSchema,
+        invocationId: InvocationIdSchema,
+        attemptId: AttemptIdSchema,
+        occurrence: SafeIntegerSchema,
+        stableSessionId: UuidShape,
+        model: z.string().min(1).max(256),
+        runtime: z.string().min(1).max(128),
+        questionDigest: DigestSchema,
+        evidenceDigests: z.array(DigestSchema).max(64),
+      }),
+      teacher: z.strictObject({
+        actionId: ActionIdSchema.optional(),
+        invocationId: InvocationIdSchema.optional(),
+        attemptId: AttemptIdSchema.optional(),
+        model: z.string().min(1).max(256).optional(),
+        runtime: z.string().min(1).max(128).optional(),
+        adviceDecision: z.enum(['plan', 'correction', 'stop']).optional(),
+        adviceDigest: DigestSchema.optional(),
+        evidenceDigests: z.array(DigestSchema).max(64),
+      }),
+      counters: z.strictObject({
+        consultations: UsedMaxSchema,
+        teacherAttempts: UsedMaxSchema,
+      }),
+      limits: z.strictObject({
+        maxQuestionBytes: z.number().int().positive().safe(),
+        maxAdviceBytes: z.number().int().positive().safe(),
+        maxAttemptedApproaches: z.number().int().positive().safe(),
+        maxConstraints: z.number().int().positive().safe(),
+        maxEvidencePointers: z.number().int().positive().safe(),
+        maxAdviceSteps: z.number().int().positive().safe(),
+        maxCautions: z.number().int().positive().safe(),
+        maxEvidenceNotes: z.number().int().positive().safe(),
+      }),
+      continuation: z
+        .strictObject({
+          requestId: UuidShape,
+          inputDigest: DigestSchema,
+          state: z.enum(['granted', 'settled', 'ambiguous']),
+        })
+        .optional(),
+      failure: z
+        .strictObject({
+          code: z.string().min(1).max(256),
+          detail: z.string().min(1).max(4096).optional(),
+        })
+        .optional(),
+    })
+  ),
+});
+
+export type ConsultationViewSection = Readonly<
+  z.infer<typeof ConsultationViewSectionSchema>
+>;
 export type ChangeRunViewSection =
   | RootDagViewSection
   | ReviewCycleViewSection
   | GoalViewSection
   | BoundedLoopLifecycleViewSection
+  | ConsultationViewSection
   | Readonly<Record<string, unknown>>;
 
 const DriftStateSchema = z.enum(['unchanged', 'changed', 'unavailable']);
@@ -824,12 +915,33 @@ const ChangeRunReceiptCoreSchema = z.strictObject({
   ]),
   view: z.unknown(),
   actions: z.array(RunActionSchema),
+  continuationGrants: z.array(z.unknown()).optional(),
 });
 
 export interface ChangeRunReceipt
-  extends Omit<z.infer<typeof ChangeRunReceiptCoreSchema>, 'view' | 'actions'> {
+  extends Omit<
+    z.infer<typeof ChangeRunReceiptCoreSchema>,
+    'view' | 'actions' | 'continuationGrants'
+  > {
   readonly view: ChangeRunView;
   readonly actions: readonly RunAction[];
+  readonly continuationGrants?: readonly AgentContinuationGrant[];
+}
+
+/**
+ * Canonical authority required to decode continuation grants carried by a
+ * receipt. Receipt views and grants share one caller-controlled wire envelope,
+ * so neither may supply the frozen limits used to decode the other.
+ */
+export interface ChangeRunReceiptContinuationAuthority {
+  readonly source: 'canonical-record';
+  resolveContinuationLimits(query: Readonly<{
+    runId: RunId;
+    recordVersion: RecordVersion;
+    workspaceInstanceId: WorkspaceInstanceId;
+    consultationId: string;
+    sourceActionId: ActionId;
+  }>): ConsultationContentLimits | undefined;
 }
 
 export interface ReceiptDispositionFacts {
@@ -1139,6 +1251,16 @@ export function decodeChangeRunView(value: unknown): ChangeRunView {
     ) {
       return decode(BoundedLoopLifecycleViewSectionSchema, section);
     }
+    if (
+      section !== null &&
+      typeof section === 'object' &&
+      'kind' in section &&
+      (section as { kind?: unknown }).kind === 'consultation' &&
+      'version' in section &&
+      (section as { version?: unknown }).version === 1
+    ) {
+      return decode(ConsultationViewSectionSchema, section);
+    }
     const additive = z
       .object({
         kind: z.string().min(1),
@@ -1163,7 +1285,26 @@ export function decodeChangeRunView(value: unknown): ChangeRunView {
   return deepFreeze({ ...core, sections });
 }
 
-export function decodeChangeRunReceipt(value: unknown): ChangeRunReceipt {
+function sameConsultationLimits(
+  left: ConsultationContentLimits,
+  right: ConsultationContentLimits
+): boolean {
+  return (
+    left.maxQuestionBytes === right.maxQuestionBytes &&
+    left.maxAdviceBytes === right.maxAdviceBytes &&
+    left.maxAttemptedApproaches === right.maxAttemptedApproaches &&
+    left.maxConstraints === right.maxConstraints &&
+    left.maxEvidencePointers === right.maxEvidencePointers &&
+    left.maxAdviceSteps === right.maxAdviceSteps &&
+    left.maxCautions === right.maxCautions &&
+    left.maxEvidenceNotes === right.maxEvidenceNotes
+  );
+}
+
+export function decodeChangeRunReceipt(
+  value: unknown,
+  continuationAuthority: ChangeRunReceiptContinuationAuthority
+): ChangeRunReceipt {
   assertMajor(
     value,
     'change-run-receipt/1',
@@ -1215,5 +1356,74 @@ export function decodeChangeRunReceipt(value: unknown): ChangeRunReceipt {
       );
     }
   }
-  return deepFreeze({ ...core, view, actions });
+  const { continuationGrants: rawContinuationGrants, ...receiptCore } = core;
+  const consultationSection = view.sections.find(
+    (section): section is ConsultationViewSection =>
+      section.kind === 'consultation' && section.version === 1
+  );
+  const continuationGrants = rawContinuationGrants?.map((item) => {
+    const grantShape = decode(AgentContinuationGrantZodSchema, item);
+    const entry = consultationSection?.entries.find(
+      (candidate) => candidate.consultationId === grantShape.consultationId
+    );
+    if (entry === undefined) {
+      throw new ChangeRunContractError(
+        'invalid_run_invariant',
+        'Continuation receipt grant has no matching canonical consultation view.'
+      );
+    }
+    const limits = continuationAuthority.resolveContinuationLimits({
+      runId: view.runId as RunId,
+      recordVersion: view.recordVersion as RecordVersion,
+      workspaceInstanceId: view.workspace.instanceId as WorkspaceInstanceId,
+      consultationId: grantShape.consultationId,
+      sourceActionId: grantShape.sourceActionId as ActionId,
+    });
+    if (limits === undefined) {
+      throw new ChangeRunContractError(
+        'invalid_run_invariant',
+        'Continuation receipt grant has no independently verified canonical frozen-limit authority.'
+      );
+    }
+    if (!sameConsultationLimits(entry.limits, limits)) {
+      throw new ChangeRunContractError(
+        'invalid_run_invariant',
+        'Continuation receipt view limits do not match canonical frozen-limit authority.'
+      );
+    }
+    return decodeAgentContinuationGrant(item, limits);
+  });
+  for (const grant of continuationGrants ?? []) {
+    const entry = consultationSection?.entries.find(
+      (candidate) => candidate.consultationId === grant.consultationId
+    );
+    if (
+      grant.runId !== view.runId ||
+      grant.workspaceInstanceId !== view.workspace.instanceId ||
+      grant.expectedRecordVersion !== view.recordVersion ||
+      entry === undefined ||
+      entry.state !== 'continuation-granted' ||
+      entry.source.actionId !== grant.sourceActionId ||
+      entry.source.invocationId !== grant.sourceInvocationId ||
+      entry.source.attemptId !== grant.sourceAttemptId ||
+      entry.source.stableSessionId !== grant.stableSessionId ||
+      entry.continuation?.requestId !== grant.requestId ||
+      entry.continuation.inputDigest !== grant.inputDigest
+    ) {
+      throw new ChangeRunContractError(
+        'invalid_run_invariant',
+        'Continuation receipt grant does not match its canonical consultation view.'
+      );
+    }
+  }
+  return deepFreeze({
+    ...receiptCore,
+    view,
+    actions,
+    ...(continuationGrants === undefined
+      ? {}
+      : {
+          continuationGrants,
+        }),
+  });
 }

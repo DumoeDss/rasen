@@ -6,19 +6,26 @@ import type {
   WireBoundedLoopNode,
   WireCompositeDeclaration,
   WireCompositeRefNode,
+  WireConsultationBinding,
   WireDefinitionNode,
   WireFanOutNode,
   WireGateNode,
   WireJoinNode,
+  WirePipelineDefinition,
   WirePipelineDefinitionV2,
 } from '../api/types.js';
 import {
+  getConsultationBindingForStage,
   isV2EditableNodeKind,
   type AtomicStageExecutionPatch,
   type BoundedLoopContractPatch,
+  type ConsultationBindingPatch,
   type ParallelContractPatch,
   type ParallelMemberPatch,
 } from './draft.js';
+import {
+  ConsultationBindingEditor,
+} from './ConsultationBindingEditor.js';
 import {
   IntegerContractField,
   type IntegerContractDraftError,
@@ -51,6 +58,7 @@ export function V2NodePanel({
   node,
   catalog,
   definition,
+  fullDefinition,
   fieldIssues,
   draftErrors = {},
   focusedField = null,
@@ -63,12 +71,16 @@ export function V2NodePanel({
   onParallelMemberPatch,
   onParallelContractPatch,
   onDeleteParallelPair,
+  onConsultationAdd,
+  onConsultationPatch,
+  onConsultationRemove,
   onInvalidChange,
   onClose,
 }: {
   node: WireDefinitionNode;
   catalog: PipelineCatalogResponse | null;
   definition?: WirePipelineDefinitionV2 | null;
+  fullDefinition?: WirePipelineDefinition | null;
   fieldIssues: Record<string, 'error' | 'warning'>;
   draftErrors?: Readonly<Record<string, IntegerContractDraftError>>;
   focusedField?: string | null;
@@ -88,6 +100,12 @@ export function V2NodePanel({
   ) => void;
   onParallelContractPatch?: (fanOutId: string, patch: ParallelContractPatch) => void;
   onDeleteParallelPair?: (fanOutId: string) => void;
+  onConsultationAdd?: (binding: WireConsultationBinding) => void;
+  onConsultationPatch?: (
+    sourceStage: string,
+    patch: ConsultationBindingPatch
+  ) => void;
+  onConsultationRemove?: (sourceStage: string) => void;
   onInvalidChange?: (
     field: string,
     error: IntegerContractDraftError | null
@@ -179,14 +197,34 @@ export function V2NodePanel({
           </label>
 
           {node.kind === 'AtomicStage' && (
-            <V2ExecutionEditor
-              node={node as WireAtomicStageNode}
-              catalog={catalog}
-              fieldIssues={fieldIssues}
-              capabilityTestId="v2-node-panel-capability"
-              onCapabilityPatch={(capability) => onPatch({ capability })}
-              onExecutionPatch={(patch) => onAtomicExecutionPatch?.(patch)}
-            />
+            <>
+              <V2ExecutionEditor
+                node={node as WireAtomicStageNode}
+                catalog={catalog}
+                fieldIssues={fieldIssues}
+                capabilityTestId="v2-node-panel-capability"
+                onCapabilityPatch={(capability) => onPatch({ capability })}
+                onExecutionPatch={(patch) => onAtomicExecutionPatch?.(patch)}
+              />
+              {fullDefinition && (
+                <ConsultationBindingEditor
+                  stageId={node.id}
+                  definition={fullDefinition}
+                  catalog={catalog}
+                  binding={getConsultationBindingForStage(fullDefinition, node.id)}
+                  draftErrors={draftErrors}
+                  resetKey={`${fullDefinition.name ?? ''}\0${node.id}`}
+                  onInvalidChange={onInvalidChange}
+                  onAddBinding={(binding) => onConsultationAdd?.(binding)}
+                  onPatchBinding={(sourceStage, patch) =>
+                    onConsultationPatch?.(sourceStage, patch)
+                  }
+                  onRemoveBinding={(sourceStage) =>
+                    onConsultationRemove?.(sourceStage)
+                  }
+                />
+              )}
+            </>
           )}
 
           {(node.kind === 'Gate' || node.kind === 'Choice') && (

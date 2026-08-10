@@ -25,6 +25,7 @@ import type {
   PipelineSaveResponse,
   PipelineValidationIssue,
   ThresholdValue,
+  WireConsultationBinding,
   WireDefinitionNode,
   WireDefinitionPreparation,
   WirePipelineDefinition,
@@ -71,6 +72,7 @@ import {
   updateBodyStageExecution,
   updateAtomicStageExecution,
   updateBoundedLoopContract,
+  updateConsultationBinding,
   updateDeclaration,
   updateDefinitionContracts,
   updateGateDisposition,
@@ -83,6 +85,8 @@ import {
   v2ConnectionIdFor,
   v2NodeIdFor,
   wouldCreateCycle,
+  addConsultationBinding,
+  removeConsultationBinding,
   type V2EditableNodeKind,
   type DefinitionIssueTarget,
 } from './draft.js';
@@ -1190,6 +1194,33 @@ export function PipelineCanvasPage() {
     markDraftChanged();
   }
 
+  function patchConsultationAdd(binding: WireConsultationBinding) {
+    if (!draft) return;
+    const nextDraft = addConsultationBinding(draft, binding);
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
+    markDraftChanged();
+  }
+
+  function patchConsultationUpdate(
+    sourceStage: string,
+    patch: Parameters<typeof updateConsultationBinding>[2]
+  ) {
+    if (!draft) return;
+    const nextDraft = updateConsultationBinding(draft, sourceStage, patch);
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
+    markDraftChanged();
+  }
+
+  function patchConsultationRemove(sourceStage: string) {
+    if (!draft) return;
+    const nextDraft = removeConsultationBinding(draft, sourceStage);
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
+    markDraftChanged();
+  }
+
   function editParallelMembers(fanOutId: string, memberIds: readonly string[]) {
     if (!draft || draft.version !== 2) return;
     try {
@@ -2055,6 +2086,7 @@ export function PipelineCanvasPage() {
             node={selectedV2Node}
             catalog={catalog}
             definition={draft?.version === 2 ? draft : null}
+            fullDefinition={draft ?? null}
             fieldIssues={selectedV2NodeFieldIssues}
             draftErrors={authoringDraftErrors}
             focusedField={selectedRootFocusedField}
@@ -2068,6 +2100,13 @@ export function PipelineCanvasPage() {
             }
             onBoundedLoopPatch={(patch) =>
               patchBoundedLoop(selectedV2Node.id, patch)
+            }
+            onConsultationAdd={(binding) => patchConsultationAdd(binding)}
+            onConsultationPatch={(sourceStage, patch) =>
+              patchConsultationUpdate(sourceStage, patch)
+            }
+            onConsultationRemove={(sourceStage) =>
+              patchConsultationRemove(sourceStage)
             }
             onParallelMembers={editParallelMembers}
             onParallelMemberPatch={editParallelMember}

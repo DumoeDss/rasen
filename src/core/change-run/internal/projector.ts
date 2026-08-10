@@ -229,6 +229,77 @@ function buildSections(
   record: CanonicalRunRecord
 ): readonly unknown[] {
   const sections: unknown[] = [root];
+  if (record.consultations !== undefined) {
+    const entries = Object.values(record.consultations)
+      .sort((left, right) =>
+        left.consultationId < right.consultationId ? -1 : 1
+      )
+      .map((consultation) => ({
+        consultationId: consultation.consultationId,
+        ordinal: consultation.ordinal,
+        state: consultation.state,
+        source: {
+          actionId: consultation.source.actionId,
+          invocationId: consultation.source.invocationId,
+          attemptId: consultation.source.attemptId,
+          occurrence: consultation.source.occurrence,
+          stableSessionId: consultation.source.stableSessionId,
+          model: consultation.source.model,
+          runtime: consultation.source.runtime,
+          questionDigest: consultation.source.questionDigest,
+          evidenceDigests: consultation.source.evidence.map(
+            (evidence) => evidence.evidenceDigest
+          ),
+        },
+        teacher: {
+          ...(consultation.teacher.actionId === undefined
+            ? {}
+            : { actionId: consultation.teacher.actionId }),
+          ...(consultation.teacher.invocationId === undefined
+            ? {}
+            : { invocationId: consultation.teacher.invocationId }),
+          ...(consultation.teacher.attemptId === undefined
+            ? {}
+            : { attemptId: consultation.teacher.attemptId }),
+          ...(consultation.teacher.model === undefined
+            ? {}
+            : { model: consultation.teacher.model }),
+          ...(consultation.teacher.runtime === undefined
+            ? {}
+            : { runtime: consultation.teacher.runtime }),
+          ...(consultation.teacher.advice === undefined
+            ? {}
+            : { adviceDecision: consultation.teacher.advice.decision }),
+          ...(consultation.teacher.adviceDigest === undefined
+            ? {}
+            : { adviceDigest: consultation.teacher.adviceDigest }),
+          evidenceDigests: (consultation.teacher.evidence ?? []).map(
+            (evidence) => evidence.evidenceDigest
+          ),
+        },
+        counters: consultation.counters,
+        limits: consultation.binding.limits,
+        ...(consultation.continuation === undefined
+          ? {}
+          : {
+              continuation: {
+                requestId: consultation.continuation.requestId,
+                inputDigest: consultation.continuation.inputDigest,
+                state: consultation.continuation.state,
+              },
+            }),
+        ...(consultation.failure === undefined
+          ? {}
+          : { failure: consultation.failure }),
+      }));
+    if (entries.length > 0) {
+      sections.push({
+        kind: 'consultation',
+        version: 1,
+        entries,
+      });
+    }
+  }
   if (plan !== undefined) {
     const loops = plan.nodes.filter(
       (node): node is RuntimePlanBoundedLoopNode => node.kind === 'bounded-loop'

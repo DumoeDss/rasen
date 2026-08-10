@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 
 import {
+  backendClosureExactScopeEmptyReceipt,
   backendClosureTerminal,
   createAgentSessionBackendRegistry,
   type AgentSessionBackend,
@@ -10,13 +11,21 @@ import {
   type BackendTermination,
 } from './backend.js';
 import {
+  isExactScopeEmptyReceipt,
+  type ExactScopeEmptyReceipt,
+} from './process-authority/coordinator.js';
+import {
   canTransitionHostedSession,
   sanitizeHostDiagnostic,
   toSessionHostView,
   validateSessionHostCommand,
+  type ExactTeacherAttemptPhaseCommitter,
+  type ExactTeacherAttemptSeed,
+  type ExactTeacherSessionAttemptFacts,
   type HostedProcessTerminal,
   type HostedRequestRecord,
   type HostedSessionRecord,
+  type HostedTurnReceipt,
   type SessionHost,
   type SessionHostCommand,
   type SessionHostFailureCode,
@@ -55,6 +64,10 @@ export interface CreateSessionHostOptions {
   now?: () => Date;
   ownership?: SessionHostOwnership;
   processScope?: ProcessScope;
+  /** Dedicated exact Teacher lane only; ordinary/source hosts omit this. */
+  exactRetirementAuthority?: 'coordinator-authenticated';
+  /** Shared durable journal/registry phase committer for the exact lane. */
+  exactTeacherAttemptCommitter?: ExactTeacherAttemptPhaseCommitter;
 }
 
 interface LiveTransport {
@@ -304,6 +317,8 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
   const now = options.now ?? (() => new Date());
   const ownership = options.ownership ?? noSessionHostOwnership;
   const processScope = options.processScope ?? createHostedProcessScope();
+  const exactRetirementRequired =
+    options.exactRetirementAuthority === 'coordinator-authenticated';
   const transports = new Map<string, LiveTransport>();
   const retainedPrepared = new Map<
     string,
@@ -312,7 +327,6 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
   const inFlightOpens = new Map<Promise<void>, AbortController>();
   const activeSessions = new Set<string>();
   const cancelledSessions = new Set<string>();
-  const ephemeralResults = new Map<string, string>();
   const pendingTerminals = new Map<string, HostedProcessTerminal>();
   let ready = false;
   let draining = false;
@@ -322,6 +336,39 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
     generation: record.generation,
     revision: record.revision ?? 0,
   });
+
+  function authenticatedExactReceipt(
+    ref: ProcessRef,
+    value: ExactScopeEmptyReceipt | undefined
+  ): ExactScopeEmptyReceipt | undefined {
+    return isExactScopeEmptyReceipt(value) && String(value.reference) === String(ref)
+      ? value
+      : undefined;
+  }
+
+  function releaseDecision(
+    receipt: Parameters<typeof receiptAuthorizesRelease>[0] & {
+      exactScopeEmptyReceipt?: ExactScopeEmptyReceipt;
+    },
+    declared: boolean,
+    ref: ProcessRef
+  ): { authorized: boolean; exactScopeEmptyReceipt?: ExactScopeEmptyReceipt } {
+    const exactScopeEmptyReceipt = authenticatedExactReceipt(
+      ref,
+      receipt.exactScopeEmptyReceipt
+    );
+    if (!exactRetirementRequired) {
+      return {
+        authorized: receiptAuthorizesRelease(receipt, declared),
+        ...(exactScopeEmptyReceipt ? { exactScopeEmptyReceipt } : {}),
+      };
+    }
+    return {
+      authorized:
+        !declared && receipt.state === 'closed' && exactScopeEmptyReceipt !== undefined,
+      ...(exactScopeEmptyReceipt ? { exactScopeEmptyReceipt } : {}),
+    };
+  }
   async function updateLatest(
     sessionId: string,
     mutate: (current: HostedSessionRecord) => HostedSessionRecord,
@@ -356,6 +403,53 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
       .map(toSessionHostView);
   }
 
+  function turnReceipt(
+    record: HostedSessionRecord,
+    requestId: string,
+    replayed: boolean,
+    includeSettledBody = true
+  ): HostedTurnReceipt | undefined {
+    const request = latestRequest(record, requestId);
+    if (request === undefined) return undefined;
+    let result: string | undefined;
+    if (
+      includeSettledBody &&
+      request.state === 'settled' &&
+      request.resultRef !== undefined &&
+      request.resultDigest !== undefined
+    ) {
+      try {
+        result = registry.readResult(request.resultRef, request.resultDigest);
+      } catch {
+        return undefined;
+      }
+    }
+    return Object.freeze({
+      format: 'rasen-session-host-turn-receipt/1',
+      stableSessionId: record.sessionId,
+      backend: record.backend,
+      ...(record.backendSessionId ? { backendSessionId: record.backendSessionId } : {}),
+      requestId,
+      requestState: request.state,
+      cwd: record.cwd,
+      cwdDigest: record.cwdDigest,
+      sandbox: record.sandbox ?? 'workspace-write',
+      ...(record.authority ? { authority: { ...record.authority } } : {}),
+      ...(request.resultRef ? { resultRef: request.resultRef } : {}),
+      ...(request.resultDigest ? { resultDigest: request.resultDigest } : {}),
+      ...(result === undefined ? {} : { result }),
+      replayed,
+    });
+  }
+
+  function verifyTurnReceipt(receipt: HostedTurnReceipt): boolean {
+    if (receipt.format !== 'rasen-session-host-turn-receipt/1') return false;
+    const record = registry.get(receipt.stableSessionId);
+    if (record === undefined) return false;
+    const canonical = turnReceipt(record, receipt.requestId, receipt.replayed);
+    return canonical !== undefined && JSON.stringify(canonical) === JSON.stringify(receipt);
+  }
+
   function failure(
     op: SessionHostCommand['op'],
     code: SessionHostFailureCode,
@@ -363,6 +457,9 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
     record?: HostedSessionRecord,
     requestId?: string
   ): SessionHostOutcome {
+    const receipt = record && requestId
+      ? turnReceipt(record, requestId, false, false)
+      : undefined;
     return {
       ok: false,
       op,
@@ -370,6 +467,7 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
       message: sanitizeHostDiagnostic(message, 1024),
       ...(record ? { session: toSessionHostView(record) } : {}),
       ...(requestId ? { requestId } : {}),
+      ...(receipt ? { receipt } : {}),
     };
   }
 
@@ -424,7 +522,8 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
     backend: AgentSessionBackend,
     record: HostedSessionRecord,
     limits: TurnLimits,
-    resumeSessionId?: string
+    resumeSessionId?: string,
+    exactAttempt?: ExactTeacherAttemptSeed
   ): Promise<{ transport: AgentSessionTransport; record: HostedSessionRecord }> {
     let finishOpen!: () => void;
     const openFinished = new Promise<void>((resolve) => { finishOpen = resolve; });
@@ -434,6 +533,7 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
     let prepared: Awaited<ReturnType<AgentSessionBackend['prepare']>> | undefined;
     let transport: AgentSessionTransport | undefined;
     let authorityRecord: HostedSessionRecord | undefined;
+    let preparedExactFacts: ExactTeacherSessionAttemptFacts | undefined;
     let live: LiveTransport | undefined;
     let preparedTermination: Awaited<ReturnType<NonNullable<typeof prepared>['abort']>> | undefined;
     try {
@@ -442,9 +542,53 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
       prepared = await backend.prepare({
         cwd: record.cwd,
         limits,
+        sandbox: record.sandbox ?? 'workspace-write',
         signal: openController.signal,
         ...(resumeSessionId ? { resumeSessionId } : {}),
+        ...(exactAttempt === undefined || options.exactTeacherAttemptCommitter === undefined
+          ? {}
+          : {
+              onExactAuthorityPhase: async (phase, processRef) => {
+                await options.exactTeacherAttemptCommitter!.commit(
+                  exactAttempt,
+                  phase,
+                  { processRef: String(processRef) }
+                );
+              },
+            }),
       });
+      if (exactAttempt !== undefined) {
+        if (
+          !exactRetirementRequired ||
+          options.exactTeacherAttemptCommitter === undefined
+        ) {
+          throw new ProcessScopeError(
+            'authority-persist-failed',
+            'Exact Teacher attempt persistence is unavailable.',
+            undefined,
+            'prepare'
+          );
+        }
+        await options.exactTeacherAttemptCommitter.commit(
+          exactAttempt,
+          'authority-prepared-inert',
+          {
+            processRef: String(prepared.runtimeRef),
+            deferSessionProjection: true,
+          }
+        );
+        preparedExactFacts = options.exactTeacherAttemptCommitter.load(
+          exactAttempt.attemptId
+        );
+        if (preparedExactFacts === undefined) {
+          throw new ProcessScopeError(
+            'authority-persist-failed',
+            'Exact Teacher prepared authority journal reread failed.',
+            undefined,
+            'prepare'
+          );
+        }
+      }
       authorityRecord = await registry.update(record.sessionId, expected(record), (current) => {
         current.process = {
           generation: current.generation,
@@ -462,6 +606,9 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
               }
             : {}),
         };
+        if (preparedExactFacts !== undefined) {
+          current.exactTeacherAttempt = preparedExactFacts;
+        }
         current.updatedAt = timestamp();
         return current;
       });
@@ -487,7 +634,11 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
           gracefulAttempted: false,
           forced: false,
         }));
-        if (!receiptAuthorizesRelease(preparedTermination, prepared.declaration !== undefined)) {
+        if (!releaseDecision(
+          preparedTermination,
+          prepared.declaration !== undefined,
+          prepared.runtimeRef
+        ).authorized) {
           await markCloseUnobserved(record.sessionId, 'shutdown-close-unobserved');
           throw new ProcessScopeError(
             'process-termination-unobserved',
@@ -499,6 +650,19 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
       // This is the sole activation site. The opaque capability is already
       // durably published under generation/revision CAS before backend work.
       transport = await prepared.activate();
+      if (exactAttempt !== undefined) {
+        await options.exactTeacherAttemptCommitter!.commit(
+          exactAttempt,
+          'authority-published-inert',
+          { processRef: String(prepared.runtimeRef) }
+        );
+        await options.exactTeacherAttemptCommitter!.commit(
+          exactAttempt,
+          'activated',
+          { processRef: String(prepared.runtimeRef) }
+        );
+        authorityRecord = registry.get(record.sessionId) ?? authorityRecord;
+      }
       if (transport.runtimeRef !== prepared.runtimeRef) {
         throw new ProcessScopeError(
           'containment-breach',
@@ -570,7 +734,11 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
           gracefulAttempted: false,
           forced: false,
         }));
-        if (!receiptAuthorizesRelease(preparedTermination, prepared.declaration !== undefined)) {
+        if (!releaseDecision(
+          preparedTermination,
+          prepared.declaration !== undefined,
+          prepared.runtimeRef
+        ).authorized) {
           retainedPrepared.set(String(prepared.runtimeRef), {
             sessionId: record.sessionId,
             prepared,
@@ -619,10 +787,21 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
     const attempt = (async () => {
       try {
         const termination = await live.transport.terminate(reason);
-        if (!termination.closed) {
+        const exactScopeEmptyReceipt = authenticatedExactReceipt(
+          live.transport.runtimeRef,
+          termination.exactScopeEmptyReceipt
+        );
+        if (
+          !termination.closed ||
+          (exactRetirementRequired && exactScopeEmptyReceipt === undefined)
+        ) {
           live.closing = false;
           live.termination = undefined;
-          return termination;
+          return {
+            ...termination,
+            closed: false,
+            exactScopeEmptyReceipt: undefined,
+          };
         }
         // The live-close route is the production-normal one: cancelling a
         // RUNNING declared session must leave the honest terminal on the
@@ -630,7 +809,10 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
         // the caller's own CAS runs against an unbumped record.
         if (termination.unproven) noteProcessTerminal(sessionId, termination.unproven);
         await detachLive(sessionId, live);
-        return termination;
+        return {
+          ...termination,
+          ...(exactScopeEmptyReceipt ? { exactScopeEmptyReceipt } : {}),
+        };
       } catch (error) {
         live.closing = false;
         live.termination = undefined;
@@ -696,9 +878,12 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
   async function closeDurableProcess(
     record: HostedSessionRecord,
     reason: string
-  ): Promise<'closed' | 'live-or-uncertain'> {
+  ): Promise<
+    | { state: 'closed'; exactScopeEmptyReceipt?: ExactScopeEmptyReceipt }
+    | { state: 'live-or-uncertain' }
+  > {
     const facts = record.process;
-    if (!facts) return 'closed';
+    if (!facts) return { state: 'closed' };
     const ref = asProcessRef(facts.runtimeRef);
     // Declaration-gated release. The pre-start declaration on the Record is the
     // sole authority for releasing from a declared-unproven terminal; an
@@ -706,18 +891,34 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
     const declared = facts.declaration !== undefined;
     const observation = await processScope.inspect(ref);
     if (observation.state === 'foreign' || observation.state === 'uncertain') {
-      return 'live-or-uncertain';
+      return { state: 'live-or-uncertain' };
     }
+    let exactScopeEmptyReceipt: ExactScopeEmptyReceipt | undefined;
     if (observation.state === 'declared-unproven') {
-      if (!declared) return 'live-or-uncertain';
+      if (!declared) return { state: 'live-or-uncertain' };
       noteProcessTerminal(record.sessionId, observation.terminal);
     }
     if (observation.controllable) {
       const receipt = await processScope.terminate(ref, { reason, graceMs: 5_000 });
-      if (!receiptAuthorizesRelease(receipt, declared)) return 'live-or-uncertain';
+      const release = releaseDecision(receipt, declared, ref);
+      if (!release.authorized) return { state: 'live-or-uncertain' };
+      exactScopeEmptyReceipt = release.exactScopeEmptyReceipt;
       if (receipt.state === 'declared-unproven' && receipt.unproven) {
         noteProcessTerminal(record.sessionId, receipt.unproven);
       }
+    } else {
+      const release = releaseDecision(
+        observation.state === 'closed'
+          ? {
+              state: 'closed',
+              exactScopeEmptyReceipt: observation.exactScopeEmptyReceipt,
+            }
+          : { state: 'declared-unproven' },
+        declared,
+        ref
+      );
+      if (!release.authorized) return { state: 'live-or-uncertain' };
+      exactScopeEmptyReceipt = release.exactScopeEmptyReceipt;
     }
     const localPrepared = retainedPrepared.get(String(ref));
     if (localPrepared) {
@@ -727,7 +928,12 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
     const released = await ownership.reapStaleOwner(record.sessionId, {
       ownerToken: facts.ownerToken,
     });
-    return released === 'live-or-uncertain' ? 'live-or-uncertain' : 'closed';
+    return released === 'live-or-uncertain'
+      ? { state: 'live-or-uncertain' }
+      : {
+          state: 'closed',
+          ...(exactScopeEmptyReceipt ? { exactScopeEmptyReceipt } : {}),
+        };
   }
 
   async function observeTransportClose(
@@ -736,11 +942,42 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
     closure?: unknown
   ): Promise<void> {
     if (live.closing || transports.get(sessionId) !== live) return;
+    // A transport may close immediately after emitting its terminal result.
+    // Result CAS publication is intentionally durable and therefore slower
+    // than the old in-memory handoff; let that active turn finish settlement
+    // before classifying the same accepted request as ambiguous.
+    while (
+      activeSessions.has(sessionId) &&
+      !live.closing &&
+      transports.get(sessionId) === live
+    ) {
+      const current = registry.get(sessionId);
+      const request = current === undefined
+        ? undefined
+        : currentGenerationRequest(current);
+      if (
+        current === undefined ||
+        request === undefined ||
+        (request.state !== 'prepared' && request.state !== 'sent')
+      ) {
+        break;
+      }
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    if (live.closing || transports.get(sessionId) !== live) return;
     // Natural completion of a declared scope carries its honest terminal on the
     // transport's own close. Written inline rather than staged: this route owns
     // the CAS that clears the process facts, so the terminal lands atomically
     // with them instead of waiting for a flush that no dispatch will run.
     const terminal = backendClosureTerminal(closure);
+    const closureExactReceipt = authenticatedExactReceipt(
+      live.transport.runtimeRef,
+      backendClosureExactScopeEmptyReceipt(closure)
+    );
+    if (exactRetirementRequired && closureExactReceipt === undefined) {
+      await markCloseUnobserved(sessionId, 'exact-retirement-receipt-unavailable');
+      return;
+    }
     await detachLive(sessionId, live).catch(() => undefined);
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const record = registry.get(sessionId);
@@ -792,6 +1029,20 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
   }
 
   async function execute(command: Extract<SessionHostCommand, { op: 'execute' }>): Promise<SessionHostOutcome> {
+    const exactAttempt = command.exactTeacherAttempt;
+    if (
+      exactAttempt !== undefined &&
+      (!exactRetirementRequired ||
+        options.exactTeacherAttemptCommitter === undefined)
+    ) {
+      return failure(
+        'execute',
+        'invalid-input',
+        'Exact Teacher phase coordination is unavailable on this SessionHost.',
+        undefined,
+        command.requestId
+      );
+    }
     const backend = backends.get(command.backend);
     if (!backend) {
       return failure('execute', 'unsupported-backend', `Unsupported hosted Session backend "${command.backend}".`, undefined, command.requestId);
@@ -804,18 +1055,26 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
       return failure('execute', mapped.code, mapped.message, undefined, command.requestId);
     }
     const inputDigest = digestSessionHostText(command.input);
-    let record: HostedSessionRecord;
-    let transport: AgentSessionTransport;
+    let record: HostedSessionRecord | undefined;
+    let transport: AgentSessionTransport | undefined;
     let sent = false;
+    let resumePreparedExact = false;
 
-    if (command.sessionId) {
-      const existing = registry.get(command.sessionId);
-      if (!existing) {
-        return failure('execute', 'session-not-found', `Hosted Session ${command.sessionId} was not found.`, undefined, command.requestId);
-      }
-      if (existing.hostState === 'retired' || existing.hostState === 'retiring') {
-        return failure('execute', 'session-retired', 'Hosted Session is permanently retired.', existing, command.requestId);
-      }
+    const requestedSessionId = command.sessionId ?? command.newSessionId;
+    const existing =
+      requestedSessionId === undefined
+        ? undefined
+        : registry.get(requestedSessionId);
+    if (command.sessionId !== undefined && existing === undefined) {
+      return failure(
+        'execute',
+        'session-not-found',
+        `Hosted Session ${command.sessionId} was not found.`,
+        undefined,
+        command.requestId
+      );
+    }
+    if (existing !== undefined) {
       if (existing.hostState === 'failed') {
         return failure('execute', 'session-failed', 'Hosted Session has no safe recovery path.', existing, command.requestId);
       }
@@ -824,6 +1083,49 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
       }
       if (existing.backend !== command.backend) {
         return failure('execute', 'invalid-input', 'Backend cannot change for an existing hosted Session.', existing, command.requestId);
+      }
+      if ((existing.sandbox ?? 'workspace-write') !== (command.sandbox ?? 'workspace-write')) {
+        return failure(
+          'execute',
+          'invalid-input',
+          'Hosted Session sandbox authority cannot change across turns.',
+          existing,
+          command.requestId
+        );
+      }
+      if (
+        existing.turnLimits !== undefined &&
+        (existing.turnLimits.maxInputBytes !== command.limits.maxInputBytes ||
+          existing.turnLimits.maxOutputBytes !== command.limits.maxOutputBytes ||
+          existing.turnLimits.maxLineBytes !== command.limits.maxLineBytes ||
+          existing.turnLimits.maxDiagnosticBytes !== command.limits.maxDiagnosticBytes)
+      ) {
+        return failure(
+          'execute',
+          'invalid-input',
+          'Hosted Session byte-level turn limits cannot change across turns.',
+          existing,
+          command.requestId
+        );
+      }
+      const existingAuthority = existing.authority;
+      const commandAuthority = command.authority;
+      if (
+        (existingAuthority === undefined) !== (commandAuthority === undefined) ||
+        (existingAuthority !== undefined &&
+          commandAuthority !== undefined &&
+          (existingAuthority.invocationId !== commandAuthority.invocationId ||
+            existingAuthority.role !== commandAuthority.role ||
+            existingAuthority.workspaceInstanceId !== commandAuthority.workspaceInstanceId ||
+            existingAuthority.backend !== commandAuthority.backend))
+      ) {
+        return failure(
+          'execute',
+          'invalid-input',
+          'Hosted Session reuse authority does not match the persisted invocation/role/workspace/backend tuple.',
+          existing,
+          command.requestId
+        );
       }
       if (!samePath(existing.cwd, canonicalCwd)) {
         return failure('execute', 'cwd-mismatch', 'Hosted Session is bound to a different canonical working directory.', existing, command.requestId);
@@ -834,23 +1136,62 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
           return failure('execute', 'invalid-input', 'requestId was already used for different input.', existing, command.requestId);
         }
         if (prior.state === 'settled') {
-          const result = ephemeralResults.get(`${existing.sessionId}:${command.requestId}`);
+          let result: string;
+          try {
+            if (prior.resultRef === undefined || prior.resultDigest === undefined) {
+              throw new SessionHostRegistryError(
+                'registry-corrupt',
+                'Settled hosted request has no durable result identity.'
+              );
+            }
+            result = registry.readResult(prior.resultRef, prior.resultDigest);
+          } catch (error) {
+            const mapped = mapFailure(error);
+            return failure('execute', mapped.code, mapped.message, existing, command.requestId);
+          }
+          const receipt = turnReceipt(existing, command.requestId, true);
           return {
             ok: true,
             op: 'execute',
             session: toSessionHostView(existing),
             requestId: command.requestId,
-            ...(result ? { result } : {}),
+            result,
             ...(prior.resultDigest ? { resultDigest: prior.resultDigest } : {}),
+            ...(prior.resultRef ? { resultRef: prior.resultRef } : {}),
+            ...(receipt ? { receipt } : {}),
             replayed: true,
           };
         }
-        if (prior.state === 'prepared' || prior.state === 'sent') {
-          return failure('execute', 'session-busy', 'Hosted Session request is already in progress.', existing, command.requestId);
+        if (existing.hostState === 'retired' || existing.hostState === 'retiring') {
+          return failure('execute', 'session-retired', 'Hosted Session is permanently retired.', existing, command.requestId);
         }
-        return failure('execute', 'turn-outcome-unknown', 'The retained request has no safely replayable outcome.', existing, command.requestId);
+        if (
+          prior.state === 'prepared' &&
+          exactAttempt?.mode === 'send-prepared'
+        ) {
+          const live = transports.get(existing.sessionId);
+          if (live === undefined || activeSessions.has(existing.sessionId)) {
+            return failure(
+              'execute',
+              'session-busy',
+              'Exact Teacher prepared transport is unavailable or busy.',
+              existing,
+              command.requestId
+            );
+          }
+          record = existing;
+          transport = live.transport;
+          resumePreparedExact = true;
+        } else if (prior.state === 'prepared' || prior.state === 'sent') {
+          return failure('execute', 'session-busy', 'Hosted Session request is already in progress.', existing, command.requestId);
+        } else {
+          return failure('execute', 'turn-outcome-unknown', 'The retained request has no safely replayable outcome.', existing, command.requestId);
+        }
       }
-      if (prunedRequestIdMayExist(existing, command.requestId)) {
+      if (existing.hostState === 'retired' || existing.hostState === 'retiring') {
+        return failure('execute', 'session-retired', 'Hosted Session is permanently retired.', existing, command.requestId);
+      }
+      if (!resumePreparedExact && prunedRequestIdMayExist(existing, command.requestId)) {
         return failure(
           'execute',
           'turn-outcome-unknown',
@@ -859,12 +1200,15 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
           command.requestId
         );
       }
-      if (activeSessions.has(existing.sessionId) || activeRequest(existing)) {
+      if (!resumePreparedExact && (activeSessions.has(existing.sessionId) || activeRequest(existing))) {
         return failure('execute', 'session-busy', 'Hosted Session already has an unfinished request.', existing, command.requestId);
       }
 
-      const live = transports.get(existing.sessionId);
-      if (live) {
+      const live = resumePreparedExact ? undefined : transports.get(existing.sessionId);
+      if (resumePreparedExact) {
+        // The exact Module already durably prepared this same request and
+        // transport; send continues below without creating another request.
+      } else if (live) {
         record = await registry.update(existing.sessionId, expected(existing), (current) => {
           transition(current, 'active');
           current.requests.push({
@@ -897,7 +1241,13 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
           return current;
         });
         try {
-          ({ transport, record } = await openTransport(backend, record, command.limits, existing.backendSessionId));
+          ({ transport, record } = await openTransport(
+            backend,
+            record,
+            command.limits,
+            existing.backendSessionId,
+            exactAttempt?.seed
+          ));
         } catch (error) {
           const failed = await persistFailure(record, command.requestId, error, false);
           const mapped = mapFailure(error);
@@ -905,7 +1255,7 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
         }
       }
     } else {
-      const sessionId = uuid();
+      const sessionId = command.newSessionId ?? uuid();
       const createdAt = timestamp();
       record = await registry.create({
         sessionId,
@@ -913,6 +1263,17 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
         ...(backend.version ? { backendVersion: backend.version } : {}),
         cwd: canonicalCwd,
         cwdDigest: digestSessionHostText(canonicalCwd),
+        turnLimits: { ...command.limits },
+        sandbox: command.sandbox ?? 'workspace-write',
+        ...(command.authority
+          ? {
+              authority: {
+                ...command.authority,
+                handoffTokensUsed: 0,
+                reuseRoundsServed: 0,
+              },
+            }
+          : {}),
         hostState: 'starting',
         generation: 1,
         createdAt,
@@ -928,12 +1289,36 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
         ],
       });
       try {
-        ({ transport, record } = await openTransport(backend, record, command.limits));
+        ({ transport, record } = await openTransport(
+          backend,
+          record,
+          command.limits,
+          undefined,
+          exactAttempt?.seed
+        ));
       } catch (error) {
         const failed = await persistFailure(record, command.requestId, error, false);
         const mapped = mapFailure(error);
         return failure('execute', mapped.code, mapped.message, failed, command.requestId);
       }
+    }
+
+    if (record === undefined || transport === undefined) {
+      return failure(
+        'execute',
+        'session-failed',
+        'Hosted Session preparation did not produce one durable transport.',
+        record,
+        command.requestId
+      );
+    }
+    if (exactAttempt?.mode === 'prepare-only') {
+      return {
+        ok: true,
+        op: 'execute',
+        session: toSessionHostView(record),
+        requestId: command.requestId,
+      };
     }
 
     activeSessions.add(record.sessionId);
@@ -983,21 +1368,32 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
         expectedBackendSessionId: record.backendSessionId,
         maxDiagnosticBytes: command.limits.maxDiagnosticBytes ?? 1024,
       });
-      const resultDigest = digestSessionHostText(reduced.result);
+      // Publish exact bounded result bytes before the registry can claim the
+      // request settled. A crash between these writes may leave an orphan CAS
+      // object, never a settled request whose body vanished.
+      const { resultDigest, resultRef } = await registry.putResult(reduced.result);
       record = await registry.update(record.sessionId, expected(record), (current) => {
         const request = latestRequest(current, command.requestId)!;
         request.state = 'settled';
         request.settledAt = timestamp();
         request.resultDigest = resultDigest;
-        request.resultRef = `host-result:sha256:${resultDigest}`;
+        request.resultRef = resultRef;
         if (reduced.diagnostics) request.diagnostic = 'bounded-backend-diagnostics';
         current.backendSessionId = reduced.backendSessionId;
         current.hostState = 'idle';
         current.updatedAt = timestamp();
         current.recoveryReason = undefined;
+        if (command.sessionId !== undefined && current.authority !== undefined) {
+          current.authority = {
+            ...current.authority,
+            handoffTokensUsed:
+              current.authority.handoffTokensUsed + (command.handoffTokens ?? 0),
+            reuseRoundsServed: current.authority.reuseRoundsServed + 1,
+          };
+        }
         return current;
       });
-      ephemeralResults.set(`${record.sessionId}:${command.requestId}`, reduced.result);
+      const receipt = turnReceipt(record, command.requestId, false);
       return {
         ok: true,
         op: 'execute',
@@ -1005,8 +1401,20 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
         requestId: command.requestId,
         result: reduced.result,
         resultDigest,
+        resultRef,
+        ...(receipt ? { receipt } : {}),
       };
     } catch (error) {
+      const caughtRecord = record;
+      if (caughtRecord === undefined) {
+        return failure(
+          'execute',
+          'session-failed',
+          'Hosted Session failed before durable preparation.',
+          undefined,
+          command.requestId
+        );
+      }
       const live = transports.get(record.sessionId);
       if (live) {
         const termination = await closeLive(record.sessionId, live, 'turn-failed').catch(
@@ -1023,7 +1431,7 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
             current.recoveryReason = 'process-close-unobserved';
             current.updatedAt = timestamp();
             return current;
-          }).catch(() => registry.get(record.sessionId) ?? record);
+          }).catch(() => registry.get(caughtRecord.sessionId) ?? caughtRecord);
           const request = latestRequest(interrupted, command.requestId);
           const mapped = cancelledSessions.has(record.sessionId) &&
             (request?.state === 'sent' || request?.state === 'ambiguous')
@@ -1059,7 +1467,10 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
     }
     const live = transports.get(record.sessionId);
     if (!live) {
-      if (record.process && await closeDurableProcess(record, command.reason) !== 'closed') {
+      if (
+        record.process &&
+        (await closeDurableProcess(record, command.reason)).state !== 'closed'
+      ) {
         return failure(
           'cancel',
           'session-busy',
@@ -1154,7 +1565,10 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
     if (activeSessions.has(record.sessionId) || transports.has(record.sessionId)) {
       return failure('restart', 'session-busy', 'Hosted Session still has a live owner.', record);
     }
-    if (record.process && await closeDurableProcess(record, 'restart-stale-scope') !== 'closed') {
+    if (
+      record.process &&
+      (await closeDurableProcess(record, 'restart-stale-scope')).state !== 'closed'
+    ) {
       return failure(
         'restart',
         'session-busy',
@@ -1222,21 +1636,22 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
 
   async function retire(command: Extract<SessionHostCommand, { op: 'retire' }>): Promise<SessionHostOutcome> {
     let record = registry.get(command.sessionId);
+    let exactScopeEmptyReceipt: ExactScopeEmptyReceipt | undefined;
     if (!record) return failure('retire', 'session-not-found', 'Hosted Session was not found.');
     if (record.hostState === 'retired') {
       return { ok: true, op: 'retire', session: toSessionHostView(record) };
     }
-    if (
-      !transports.has(record.sessionId) &&
-      record.process &&
-      await closeDurableProcess(record, 'retire-stale-scope') !== 'closed'
-    ) {
-      return failure(
-        'retire',
-        'session-busy',
-        'Hosted Session has a surviving process-tree owner that must close before retirement.',
-        record
-      );
+    if (!transports.has(record.sessionId) && record.process) {
+      const durableClose = await closeDurableProcess(record, 'retire-stale-scope');
+      if (durableClose.state !== 'closed') {
+        return failure(
+          'retire',
+          'session-busy',
+          'Hosted Session has a surviving process-tree owner that must close before retirement.',
+          record
+        );
+      }
+      exactScopeEmptyReceipt = durableClose.exactScopeEmptyReceipt;
     }
     cancelledSessions.add(record.sessionId);
     try {
@@ -1267,6 +1682,7 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
             registry.get(record.sessionId) ?? record
           );
         }
+        exactScopeEmptyReceipt = termination.exactScopeEmptyReceipt;
       }
       record = await updateLatest(record.sessionId, (current) => {
         if (current.hostState === 'retired') return current;
@@ -1286,7 +1702,12 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
         current.updatedAt = timestamp();
         return current;
       });
-      return { ok: true, op: 'retire', session: toSessionHostView(record) };
+      return {
+        ok: true,
+        op: 'retire',
+        session: toSessionHostView(record),
+        ...(exactScopeEmptyReceipt ? { exactScopeEmptyReceipt } : {}),
+      };
     } finally {
       if (!activeSessions.has(record.sessionId)) cancelledSessions.delete(record.sessionId);
     }
@@ -1335,9 +1756,9 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
         if (original.hostState === 'retired') continue;
         const staleOwner = original.process
           ? await closeDurableProcess(original, 'daemon-reconcile-stale-scope')
-          : 'closed';
-        const survivingOwner = staleOwner === 'live-or-uncertain';
-        if (original.process && staleOwner === 'closed') {
+          : { state: 'closed' as const };
+        const survivingOwner = staleOwner.state === 'live-or-uncertain';
+        if (original.process && staleOwner.state === 'closed') {
           report.diagnostics.push(
             `Hosted Session ${original.sessionId} exact stale process-tree owner was reaped.`
           );
@@ -1443,7 +1864,11 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
         gracefulAttempted: false,
         forced: false,
       }));
-      if (!receiptAuthorizesRelease(receipt, retained.prepared.declaration !== undefined)) {
+      if (!releaseDecision(
+        receipt,
+        retained.prepared.declaration !== undefined,
+        retained.prepared.runtimeRef
+      ).authorized) {
         return false;
       }
       retainedPrepared.delete(ref);
@@ -1517,5 +1942,5 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
     }
   }
 
-  return { dispatch, inspect, list, reconcileOnStart, shutdown };
+  return { dispatch, inspect, list, verifyTurnReceipt, reconcileOnStart, shutdown };
 }

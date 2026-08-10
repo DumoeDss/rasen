@@ -701,7 +701,7 @@ describe('durable backend-neutral SessionHost', () => {
     expect(tracked.state.releases).toBe(1);
   });
 
-  it('clears exact process facts when a close observer loses CAS to valid settlement', async () => {
+  it('defers an immediate close observer until valid settlement and then clears process facts', async () => {
     const { cwd, stateDir } = tempRoot();
     const baseRegistry = createSessionHostRegistry({ stateDir });
     let observerRead!: () => void;
@@ -715,6 +715,9 @@ describe('durable backend-neutral SessionHost', () => {
       get: (sessionId) => baseRegistry.get(sessionId),
       list: () => baseRegistry.list(),
       create: (record) => baseRegistry.create(record),
+      putResult: (result) => baseRegistry.putResult(result),
+      readResult: (resultRef, resultDigest) =>
+        baseRegistry.readResult(resultRef, resultDigest),
       async update(sessionId, expectedRevision, mutate) {
         const before = baseRegistry.get(sessionId);
         const projected = before ? mutate(structuredClone(before)) : undefined;
@@ -760,13 +763,11 @@ describe('durable backend-neutral SessionHost', () => {
     const pending = host.dispatch({
       op: 'execute', requestId: randomUUID(), backend: 'replay', cwd, input: 'settles-before-close-cas', limits,
     });
+    const settled = await pending;
     await observerReadPromise;
-    for (let attempt = 0; attempt < 100 && baseRegistry.list()[0]?.requests[0]?.state !== 'settled'; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 2));
-    }
     expect(baseRegistry.list()[0]?.requests[0]?.state).toBe('settled');
     releaseObserver();
-    await expect(pending).resolves.toMatchObject({
+    expect(settled).toMatchObject({
       ok: true, session: { hostState: 'idle', currentRequest: { state: 'settled' } },
     });
     for (let attempt = 0; attempt < 100 && host.list()[0]?.pid !== undefined; attempt += 1) {
@@ -1302,6 +1303,45 @@ describe('durable backend-neutral SessionHost', () => {
         limits,
       })
     ).resolves.toMatchObject({ ok: false, code: 'session-retired' });
+  });
+
+  it('replays the same settled request after retirement without reopening or resending', async () => {
+    const { cwd, stateDir } = tempRoot();
+    const backend = new ReplayBackend();
+    const host = createSessionHost({
+      registry: createSessionHostRegistry({ stateDir }),
+      backends: [backend],
+    });
+    await host.reconcileOnStart();
+    const requestId = randomUUID();
+    const command = {
+      op: 'execute' as const,
+      requestId,
+      backend: 'replay',
+      cwd,
+      input: 'durable-quarantine',
+      limits,
+    };
+    const settled = await host.dispatch(command);
+    if (!settled.ok) throw new Error('expected settled Session fixture');
+    await expect(host.dispatch({
+      op: 'retire',
+      sessionId: settled.session.sessionId,
+      reason: 'exact-result-quarantined',
+    })).resolves.toMatchObject({ ok: true, session: { hostState: 'retired' } });
+
+    await expect(host.dispatch({
+      ...command,
+      sessionId: settled.session.sessionId,
+    })).resolves.toMatchObject({
+      ok: true,
+      requestId,
+      result: 'result:durable-quarantine',
+      replayed: true,
+      receipt: { requestState: 'settled', replayed: true },
+    });
+    expect(backend.opens).toHaveLength(1);
+    expect(backend.transports[0]?.inputs).toEqual(['durable-quarantine']);
   });
 
   it('classifies a durable sent turn ambiguous on startup and never replays it', async () => {

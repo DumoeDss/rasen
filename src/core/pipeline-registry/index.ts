@@ -261,13 +261,17 @@ export { mapLegacySkillId } from './legacy-skill.js';
 
 export {
   createTrustedExecutionAdapterCatalog,
+  createTrustedExecutionAdapterProducerResolver,
   loadTrustedExecutionAdapterCatalog,
   provisionTrustedExecutionAdapterCatalog,
+  provisionTrustedExecutionAdapterCredentials,
   resolveTrustedExecutionAdapterAuthority,
   trustedExecutionAdapterCatalogPath,
+  trustedExecutionAdapterCredentialPath,
   TrustedExecutionAdapterError,
   PACKAGE_UNAVAILABLE_AUTHORITY,
   type TrustedExecutionAdapterCatalog,
+  type TrustedExecutionAdapterCredentialInput,
   type TrustedExecutionAdapterDescriptor,
 } from './trusted-execution-adapters.js';
 

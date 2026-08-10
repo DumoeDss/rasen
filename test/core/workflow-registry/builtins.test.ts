@@ -73,17 +73,18 @@ describe('built-in workflow catalog', () => {
     )).not.toBe(propose.digest);
   });
 
-  it('folds the 12 surviving experts into the built-in catalog as kind:expert members', () => {
+  it('folds the 13 surviving experts into the built-in catalog as kind:expert members', () => {
     const workflowIds = new Set(getBuiltInWorkflowDefinitions().map((definition) => definition.id));
     const experts = getBuiltInExpertDefinitions();
 
-    expect(experts).toHaveLength(12);
+    expect(experts).toHaveLength(13);
     expect(experts.every((expert) => expert.kind === 'expert')).toBe(true);
     expect(experts.every((expert) => expert.source === 'built-in')).toBe(true);
     expect(experts.some((expert) => workflowIds.has(expert.id))).toBe(false);
     expect(experts.map((expert) => expert.id)).toEqual([
       'benchmark', 'careful', 'chrome-use', 'codex', 'cso', 'design-consultation',
-      'design-review', 'investigate', 'office-hours', 'qa', 'review', 'workflow-author',
+      'design-review', 'investigate', 'office-hours', 'qa', 'review', 'teacher-advisor',
+      'workflow-author',
     ]);
     expect(experts.find((expert) => expert.id === 'workflow-author')?.files.map((file) => file.path))
       .toEqual(expect.arrayContaining([

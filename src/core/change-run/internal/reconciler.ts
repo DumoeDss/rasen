@@ -32,7 +32,9 @@ import {
   createCanonicalWait,
   type CanonicalWait,
 } from './waits.js';
-import { deriveInvocationId } from './identity.js';
+import { deriveInvocationId, deriveNodeId } from './identity.js';
+import { teacherInvocationForRun } from './consultation-lifecycle.js';
+import type { TeacherConsultationInvocation } from '../consultation-contracts.js';
 import { taskLoopActionInput } from './task-loop.js';
 
 export type ReconcilerAdmissionKind = 'agent' | 'command' | 'host';
@@ -72,6 +74,7 @@ export type ReconcilerNextAction =
         }>;
         taskLoop?: JsonValue;
         fanOutCondition?: Readonly<{ fanOutPath: string }>;
+        teacherConsultation?: TeacherConsultationInvocation;
       }>;
       /**
        * The profile path for this admit's capability binding. Set for
@@ -84,6 +87,14 @@ export type ReconcilerNextAction =
         actionId: string;
         trigger: string;
       }>;
+      readonly consultationTeacher?: Readonly<{
+        consultationId: string;
+      }>;
+    }>
+  | Readonly<{
+      kind: 'continue-consultation';
+      consultationId: string;
+      alreadyGranted: boolean;
     }>
   | Readonly<{
       kind: 'await-gate';
@@ -192,6 +203,16 @@ export function reconcile(
 
   if (record.terminal !== undefined) {
     return { ok: true, classification: 'terminal', actions: [] };
+  }
+
+  const consultationCandidates = consultationReconcileCandidates(record);
+  if (consultationCandidates !== null) {
+    return {
+      ok: true,
+      classification:
+        consultationCandidates.length > 0 ? 'running' : 'waiting',
+      actions: consultationCandidates,
+    };
   }
 
   // Pass 1: every node's terminal action state is determined solely by the
@@ -1331,6 +1352,71 @@ function occurrenceForBoundedLoop(
   return invocations.size;
 }
 
+/**
+ * Consultation is a runtime-owned sidecar lifecycle, not a Definition node.
+ * While one source Action is paused it takes precedence over ordinary DAG
+ * reconciliation: ECP admits the exact frozen Teacher or projects the exact
+ * source continuation, without creating a LEAD Action or advancing a loop.
+ */
+function consultationReconcileCandidates(
+  record: CanonicalRunRecord
+): readonly ReconcilerNextAction[] | null {
+  const open = Object.values(record.consultations ?? {})
+    .filter(
+      (consultation) =>
+        consultation.state !== 'continued' && consultation.state !== 'closed'
+    )
+    .sort((left, right) =>
+      left.consultationId < right.consultationId ? -1 : 1
+    );
+  if (open.length === 0) return null;
+  const next = open[0]!;
+  if (next.state === 'requested') {
+    return [
+      {
+        kind: 'admit',
+        nodeId: deriveNodeId(
+          record.runId,
+          `consultation/${next.consultationId}/teacher`
+        ),
+        occurrence: next.teacher.attemptOrdinal,
+        admissionKind: 'agent',
+        // Reservation admission reads the built Action's frozen workspace
+        // authority; this field remains a conservative display hint.
+        access: 'read',
+        profilePath: next.binding.teacherProfilePath,
+        input: {
+          teacherConsultation: teacherInvocationForRun(record.runId, next),
+        },
+        consultationTeacher: {
+          consultationId: next.consultationId,
+        },
+      },
+    ];
+  }
+  if (next.state === 'advice-committed' || next.state === 'unavailable') {
+    return [
+      {
+        kind: 'continue-consultation',
+        consultationId: next.consultationId,
+        alreadyGranted: false,
+      },
+    ];
+  }
+  if (next.state === 'continuation-granted') {
+    return [
+      {
+        kind: 'continue-consultation',
+        consultationId: next.consultationId,
+        alreadyGranted: true,
+      },
+    ];
+  }
+  // Teacher-active and continuation-outcome-unknown are durable wait points.
+  // The latter deliberately emits no replay grant.
+  return [];
+}
+
 function effectiveActionResult(
   record: CanonicalRunRecord,
   node: RuntimePlanAtomicNode
@@ -1341,7 +1427,11 @@ function effectiveActionResult(
     }>
   | null {
   const actions = actionsForNode(record, node.nodeId);
-  const active = actions.find((committed) => committed.state === 'active');
+  const active = actions.find(
+    (committed) =>
+      committed.state === 'active' ||
+      committed.state === 'consultation-paused'
+  );
   if (active !== undefined) {
     return { status: 'active' };
   }

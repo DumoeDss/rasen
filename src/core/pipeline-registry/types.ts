@@ -18,6 +18,7 @@ import {
   type DetectedHostRuntime,
   type DispatchRuntime,
 } from '../runtime-adapters.js';
+import { CONSULTATION_SERVER_LIMITS } from '../change-run/consultation-contracts.js';
 
 export type { ThresholdValue };
 
@@ -420,6 +421,88 @@ function coerceLegacyVetGates(raw: unknown): unknown {
 }
 
 /**
+ * Optional content limits for a consultation binding. Each field is
+ * individually optional and defaults to the corresponding server maximum
+ * from {@link CONSULTATION_SERVER_LIMITS} when omitted at resolve time.
+ * Values exceeding server maxima are rejected at parse time.
+ */
+const ConsultationContentLimitsYamlSchema = z
+  .strictObject({
+    maxQuestionBytes: z
+      .number()
+      .int()
+      .positive()
+      .max(CONSULTATION_SERVER_LIMITS.maxQuestionBytes)
+      .optional(),
+    maxAdviceBytes: z
+      .number()
+      .int()
+      .positive()
+      .max(CONSULTATION_SERVER_LIMITS.maxAdviceBytes)
+      .optional(),
+    maxAttemptedApproaches: z
+      .number()
+      .int()
+      .positive()
+      .max(CONSULTATION_SERVER_LIMITS.maxAttemptedApproaches)
+      .optional(),
+    maxConstraints: z
+      .number()
+      .int()
+      .positive()
+      .max(CONSULTATION_SERVER_LIMITS.maxConstraints)
+      .optional(),
+    maxEvidencePointers: z
+      .number()
+      .int()
+      .positive()
+      .max(CONSULTATION_SERVER_LIMITS.maxEvidencePointers)
+      .optional(),
+    maxAdviceSteps: z
+      .number()
+      .int()
+      .positive()
+      .max(CONSULTATION_SERVER_LIMITS.maxAdviceSteps)
+      .optional(),
+    maxCautions: z
+      .number()
+      .int()
+      .positive()
+      .max(CONSULTATION_SERVER_LIMITS.maxCautions)
+      .optional(),
+    maxEvidenceNotes: z
+      .number()
+      .int()
+      .positive()
+      .max(CONSULTATION_SERVER_LIMITS.maxEvidenceNotes)
+      .optional(),
+  });
+
+/**
+ * A consultation binding in the pipeline YAML. Each entry maps a source stage
+ * (by stage id) to a Teacher capability and declares per-invocation /
+ * per-consultation limits. The resolver translates this into a
+ * {@link RuntimeConsultationBinding} with resolved hierarchical paths.
+ */
+export const ConsultationBindingYamlSchema = z.strictObject({
+  sourceStage: z.string().min(1),
+  teacherSkill: z.string().min(1),
+  maxConsultationsPerInvocation: z
+    .number()
+    .int()
+    .positive()
+    .max(CONSULTATION_SERVER_LIMITS.maxConsultationsPerInvocation),
+  maxTeacherAttemptsPerConsultation: z
+    .number()
+    .int()
+    .positive()
+    .max(CONSULTATION_SERVER_LIMITS.maxTeacherAttemptsPerConsultation),
+  limits: ConsultationContentLimitsYamlSchema.optional(),
+});
+
+export type ConsultationBindingYaml = z.infer<typeof ConsultationBindingYamlSchema>;
+
+/**
  * Full pipeline YAML structure.
  */
 export const PIPELINE_DEFINITION_VERSION = 1 as const;
@@ -442,21 +525,48 @@ export const PipelineDefinitionVersionSchema = z
   })
   .default(PIPELINE_DEFINITION_VERSION);
 
-export const PipelineYamlSchema = z.preprocess(coerceLegacyVetGates, z.object({
-  version: PipelineDefinitionVersionSchema,
-  name: z.string().min(1, { error: 'Pipeline name is required' }),
-  description: z.string().optional(),
-  agents: PipelineAgentRuntimeOverridesSchema.optional(),
-  handoff: HandoffConfigSchema.optional(),
-  reuse: ReuseConfigSchema.optional(),
-  // Records provenance: `composed` means autopilot-assembled and activates the
-  // hard quality floor; `ui` means Canvas-authored and carries no extra policy.
-  // Absent means no recorded assembly origin.
-  origin: z.enum(['composed', 'ui']).optional().describe(
-    "Records how a pipeline was assembled: 'composed' by the autopilot LEAD, 'ui' by the management UI's Canvas; absent means no recorded assembly origin. Only 'composed' activates the required reviewer-role stage and review-cycle loop quality floor."
-  ),
-  stages: z.array(StageSchema).min(1, { error: 'At least one stage required' }),
-}));
+const PipelineYamlObjectSchema = z
+  .object({
+    version: PipelineDefinitionVersionSchema,
+    name: z.string().min(1, { error: 'Pipeline name is required' }),
+    description: z.string().optional(),
+    agents: PipelineAgentRuntimeOverridesSchema.optional(),
+    handoff: HandoffConfigSchema.optional(),
+    reuse: ReuseConfigSchema.optional(),
+    // Records provenance: `composed` means autopilot-assembled and activates the
+    // hard quality floor; `ui` means Canvas-authored and carries no extra policy.
+    // Absent means no recorded assembly origin.
+    origin: z.enum(['composed', 'ui']).optional().describe(
+      "Records how a pipeline was assembled: 'composed' by the autopilot LEAD, 'ui' by the management UI's Canvas; absent means no recorded assembly origin. Only 'composed' activates the required reviewer-role stage and review-cycle loop quality floor."
+    ),
+    stages: z.array(StageSchema).min(1, { error: 'At least one stage required' }),
+    /**
+     * Optional consultation bindings. When present, the profile resolver adds
+     * Teacher capability bindings and consultation entries to the execution
+     * profile. When absent, the profile is byte-identical to before this field
+     * existed.
+     */
+    consultations: z.array(ConsultationBindingYamlSchema).optional(),
+  })
+  .superRefine((pipeline, ctx) => {
+    if (pipeline.consultations === undefined) return;
+    const standardStageIds = new Set(
+      pipeline.stages
+        .filter((stage) => stage.kind === 'standard')
+        .map((stage) => stage.id)
+    );
+    for (const consultation of pipeline.consultations) {
+      if (!standardStageIds.has(consultation.sourceStage)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['consultations'],
+          message: `consultation sourceStage "${consultation.sourceStage}" does not match any standard stage id in this pipeline`,
+        });
+      }
+    }
+  });
+
+export const PipelineYamlSchema = z.preprocess(coerceLegacyVetGates, PipelineYamlObjectSchema);
 
 // Derived TypeScript types
 export type StageLoop = z.infer<typeof StageLoopSchema>;

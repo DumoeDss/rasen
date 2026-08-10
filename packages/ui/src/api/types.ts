@@ -1243,6 +1243,37 @@ export interface WirePipelineDefinitionStage {
 }
 
 /**
+ * Optional content limits for a consultation binding. Each field is individually
+ * optional and defaults to the corresponding server maximum at resolve time.
+ * Mirrors `ConsultationContentLimitsYamlSchema` from
+ * `src/core/pipeline-registry/types.ts`.
+ */
+export interface WireConsultationContentLimits {
+  maxQuestionBytes?: number;
+  maxAdviceBytes?: number;
+  maxAttemptedApproaches?: number;
+  maxConstraints?: number;
+  maxEvidencePointers?: number;
+  maxAdviceSteps?: number;
+  maxCautions?: number;
+  maxEvidenceNotes?: number;
+}
+
+/**
+ * A consultation binding in the pipeline YAML. Each entry maps a source stage
+ * (by stage id) to a Teacher capability and declares per-invocation /
+ * per-consultation limits. Mirrors `ConsultationBindingYamlSchema` from
+ * `src/core/pipeline-registry/types.ts`.
+ */
+export interface WireConsultationBinding {
+  sourceStage: string;
+  teacherSkill: string;
+  maxConsultationsPerInvocation: number;
+  maxTeacherAttemptsPerConsultation: number;
+  limits?: WireConsultationContentLimits;
+}
+
+/**
  * A pipeline's full declared definition (mirrors `WirePipelineDefinition` =
  * `PipelineYaml`) — the JSON projection of the loader's own accepted schema.
  * Round-tripping this value through a future `save` and back through `detail`
@@ -1259,6 +1290,12 @@ export interface WirePipelineDefinitionV1 {
   /** Marks a machine-assembled pipeline: `'composed'` (autopilot LEAD) or `'ui'` (this canvas' future editor). Absent = human-authored. */
   origin?: 'composed' | 'ui';
   stages: WirePipelineDefinitionStage[];
+  /**
+   * Optional consultation bindings (mirrors `PipelineYamlSchema.consultations`
+   * from child 3). When present, the profile resolver adds Teacher capability
+   * bindings and consultation entries to the execution profile.
+   */
+  consultations?: WireConsultationBinding[];
 }
 
 export interface WireDefinitionPort {
@@ -1476,6 +1513,12 @@ export interface WirePipelineDefinitionV2 {
   declarations: WireCompositeDeclaration[];
   root: WireDefinitionGraph;
   limits?: WireDefinitionLimits;
+  /**
+   * Optional consultation bindings. Authored extension field preserved
+   * losslessly by the server's Definition v2 round-trip; typed here so the
+   * Canvas reads and edits it type-safely.
+   */
+  consultations?: WireConsultationBinding[];
   /** Authored extension fields are retained losslessly even when unexposed. */
   [key: string]: any;
 }
@@ -1883,6 +1926,88 @@ export interface ChoiceViewSection {
   branches: readonly ChoiceBranchView[];
 }
 
+/** Used/max counters carried by a consultation entry. */
+export interface ConsultationUsedMax {
+  used: number;
+  max: number;
+}
+
+/**
+ * A consultation entry projected from the canonical Record-backed view.
+ * Mirrors `ConsultationViewSectionSchema.entries` from
+ * `src/core/change-run/contracts.ts`. Renders projection facts only — no
+ * advice bodies, question content, or evidence content.
+ */
+export interface ConsultationViewEntry {
+  consultationId: string;
+  ordinal: number;
+  state:
+    | 'requested'
+    | 'teacher-active'
+    | 'advice-committed'
+    | 'continuation-granted'
+    | 'continued'
+    | 'unavailable'
+    | 'continuation-outcome-unknown'
+    | 'closed';
+  source: {
+    actionId: string;
+    invocationId: string;
+    attemptId: string;
+    occurrence: number;
+    stableSessionId: string;
+    model: string;
+    runtime: string;
+    questionDigest: string;
+    evidenceDigests: readonly string[];
+  };
+  teacher: {
+    actionId?: string;
+    invocationId?: string;
+    attemptId?: string;
+    model?: string;
+    runtime?: string;
+    adviceDecision?: 'plan' | 'correction' | 'stop';
+    adviceDigest?: string;
+    evidenceDigests: readonly string[];
+  };
+  counters: {
+    consultations: ConsultationUsedMax;
+    teacherAttempts: ConsultationUsedMax;
+  };
+  limits: {
+    maxQuestionBytes: number;
+    maxAdviceBytes: number;
+    maxAttemptedApproaches: number;
+    maxConstraints: number;
+    maxEvidencePointers: number;
+    maxAdviceSteps: number;
+    maxCautions: number;
+    maxEvidenceNotes: number;
+  };
+  continuation?: {
+    requestId: string;
+    inputDigest: string;
+    state: 'granted' | 'settled' | 'ambiguous';
+  };
+  failure?: {
+    code: string;
+    detail?: string;
+  };
+}
+
+/**
+ * A consultation/1 section projected from a Run whose pipeline has consultation
+ * bindings. Mirrors `ConsultationViewSectionSchema` from
+ * `src/core/change-run/contracts.ts`. The UI CONSUMES this — it never derives
+ * consultation state, counters, or continuation authority client-side.
+ */
+export interface ConsultationViewSection {
+  kind: 'consultation';
+  version: 1;
+  entries: readonly ConsultationViewEntry[];
+}
+
 /** An additive unknown section (tolerated, not rendered by name). */
 export interface AdditiveViewSection {
   kind: string;
@@ -1897,6 +2022,7 @@ export type ChangeRunViewSection =
   | BoundedLoopLifecycleViewSection
   | ParallelViewSection
   | ChoiceViewSection
+  | ConsultationViewSection
   | AdditiveViewSection;
 
 /** Drift state reported by the server's comparison-only DriftObserver. */
@@ -2016,6 +2142,22 @@ export function getChoiceSection(view: ChangeRunView): ChoiceViewSection | null 
   for (const section of view.sections) {
     if (section.kind === 'choice' && section.version === 1) {
       return section as ChoiceViewSection;
+    }
+  }
+  return null;
+}
+
+/**
+ * Extracts the consultation/1 section from a ChangeRunView. Returns null when
+ * the view has no consultation section (Runs whose pipeline has no consultation
+ * bindings, or views projected without the plan — e.g. the management API).
+ */
+export function getConsultationSection(
+  view: ChangeRunView
+): ConsultationViewSection | null {
+  for (const section of view.sections) {
+    if (section.kind === 'consultation' && section.version === 1) {
+      return section as ConsultationViewSection;
     }
   }
   return null;

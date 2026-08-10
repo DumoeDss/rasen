@@ -26,6 +26,7 @@ import type {
   TurnLimits,
 } from '../session-host/contracts.js';
 import type { RunAction } from '../change-run/contracts.js';
+import { deriveFreshStepRequestId } from '../change-run/consultation-contracts.js';
 import {
   buildExecutionCapabilityMatrix,
   type ExecutionCapabilityMatrix,
@@ -34,6 +35,8 @@ import {
 import type { TurnResult } from './action-outcome.js';
 import {
   dispatchGrantedAction,
+  dispatchGrantedContinuation,
+  type DispatchContinuationOptions,
   type ExecutionDispatchResult,
   type ExecutorBackends,
   type HostedBackendSeam,
@@ -55,9 +58,54 @@ export function turnResultFromHostOutcome(
 ): TurnResult {
   if (outcome.ok) {
     const status = interpretResultStatus?.(outcome.result) ?? 'succeeded';
-    return { ok: true, status };
+    return {
+      ok: true,
+      status,
+      ...(outcome.requestId === undefined
+        ? {}
+        : {
+            hostedTurn: {
+              stableSessionId: outcome.session.sessionId,
+              ...(outcome.session.backendSessionId === undefined
+                ? {}
+                : { backendSessionId: outcome.session.backendSessionId }),
+              requestId: outcome.requestId,
+              requestState: outcome.session.currentRequest?.state,
+              ...(outcome.result === undefined ? {} : { result: outcome.result }),
+              ...(outcome.resultDigest === undefined
+                ? {}
+                : { resultDigest: outcome.resultDigest }),
+              ...(outcome.resultRef === undefined ? {} : { resultRef: outcome.resultRef }),
+              ...(outcome.receipt === undefined ? {} : { receipt: outcome.receipt }),
+              replayed: outcome.replayed ?? false,
+              cwd: outcome.session.cwd,
+            },
+          }),
+    };
   }
   const ambiguous = outcome.code === 'turn-outcome-unknown';
+  const hostedTurn = outcome.receipt === undefined
+    ? undefined
+    : {
+        stableSessionId: outcome.receipt.stableSessionId,
+        ...(outcome.receipt.backendSessionId === undefined
+          ? {}
+          : { backendSessionId: outcome.receipt.backendSessionId }),
+        requestId: outcome.receipt.requestId,
+        requestState: outcome.receipt.requestState,
+        ...(outcome.receipt.result === undefined
+          ? {}
+          : { result: outcome.receipt.result }),
+        ...(outcome.receipt.resultDigest === undefined
+          ? {}
+          : { resultDigest: outcome.receipt.resultDigest }),
+        ...(outcome.receipt.resultRef === undefined
+          ? {}
+          : { resultRef: outcome.receipt.resultRef }),
+        receipt: outcome.receipt,
+        replayed: outcome.receipt.replayed,
+        cwd: outcome.receipt.cwd,
+      };
   return {
     ok: false,
     code: outcome.code,
@@ -65,6 +113,7 @@ export function turnResultFromHostOutcome(
     // turn-outcome-unknown means the request's outcome is unknown -> its
     // commitment is unfinished; a definitive host failure is not unfinished.
     requestUnfinished: ambiguous,
+    ...(hostedTurn === undefined ? {} : { hostedTurn }),
   };
 }
 
@@ -103,23 +152,61 @@ export function createHostedBackendSeamFromSessionHost(
   const daemonAlive = options.daemonAlive ?? true;
   return {
     kind: 'hosted' as const,
-    async executeTurn(input: Readonly<{ action: RunAction; input: string }>) {
+    async executeTurn(input: Readonly<{
+      action: RunAction;
+      input: string;
+      sessionId?: string;
+      requestId?: string;
+      sandbox: 'read-only' | 'workspace-write';
+      authority?: Readonly<{
+        invocationId: string;
+        role: string;
+        workspaceInstanceId: string;
+        backend: 'hosted';
+      }>;
+      handoffTokens?: number;
+    }>) {
       // The requestId binds this turn in the host registry. It is derived from
       // the frozen Action identity so a replay re-derives the same id and the
       // host's idempotent-settled path applies.
-      const requestId = actionExecuteRequestId(input.action);
+      const requestId = input.requestId ?? actionExecuteRequestId(input.action);
       const outcome = await host.dispatch({
         op: 'execute',
         requestId,
+        ...(input.sessionId === undefined
+          ? { newSessionId: requestId }
+          : { sessionId: input.sessionId }),
         backend: options.backend,
         cwd: options.cwd,
         input: input.input,
         limits: options.limits,
+        sandbox: input.sandbox,
+        ...(input.authority ? { authority: input.authority } : {}),
+        ...(input.handoffTokens === undefined
+          ? {}
+          : { handoffTokens: input.handoffTokens }),
       });
       return {
         turn: turnResultFromHostOutcome(outcome, options.interpretResultStatus),
         daemonAlive,
       };
+    },
+    inspectSession(sessionId: string) {
+      const view = host.inspect(sessionId);
+      return view === undefined
+        ? undefined
+        : {
+            sandbox: view.sandbox,
+            ...(view.currentRequest
+              ? {
+                  currentRequest: {
+                    requestId: view.currentRequest.requestId,
+                    state: view.currentRequest.state,
+                  },
+                }
+              : {}),
+            ...(view.authority ? { authority: view.authority } : {}),
+          };
     },
   };
 }
@@ -160,13 +247,11 @@ export function createInToolBackendSeamFromLauncherLiveness(
  * action within a Run.)
  */
 export function actionExecuteRequestId(action: RunAction): string {
-  const seed = `${action.runId}:${action.actionId}:${action.attemptId}`;
-  let hash = 0;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash = (Math.imul(31, hash) + seed.charCodeAt(i)) | 0;
-  }
-  const hex = Math.abs(hash).toString(16).padStart(8, '0').repeat(4).slice(0, 32);
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+  return deriveFreshStepRequestId(
+    action.runId as never,
+    action.actionId as never,
+    action.attemptId as never
+  );
 }
 
 export interface ProductionExecutorOptions {
@@ -188,6 +273,9 @@ export interface ProductionExecutor {
   readonly matrix: ExecutionCapabilityMatrix;
   readonly backends: ExecutorBackends;
   readonly dispatch: (options: Omit<DispatchGrantedActionOptions, 'matrix' | 'backends'>) => Promise<ExecutionDispatchResult>;
+  readonly dispatchContinuation: (
+    options: Omit<DispatchContinuationOptions, 'matrix' | 'backends'>
+  ) => Promise<ExecutionDispatchResult>;
 }
 
 export function createProductionExecutor(
@@ -215,6 +303,14 @@ export function createProductionExecutor(
     backends: frozenBackends,
     dispatch: (dispatchOptions: Omit<DispatchGrantedActionOptions, 'matrix' | 'backends'>) =>
       dispatchGrantedAction({
+        ...dispatchOptions,
+        matrix,
+        backends: frozenBackends,
+      }),
+    dispatchContinuation: (
+      dispatchOptions: Omit<DispatchContinuationOptions, 'matrix' | 'backends'>
+    ) =>
+      dispatchGrantedContinuation({
         ...dispatchOptions,
         matrix,
         backends: frozenBackends,

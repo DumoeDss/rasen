@@ -1,6 +1,8 @@
 import { PassThrough, type Readable, type Writable } from 'node:stream';
 import { randomBytes } from 'node:crypto';
 
+import type { ExactScopeEmptyReceipt } from './process-authority/coordinator.js';
+
 declare const processRefBrand: unique symbol;
 export type ProcessRef = string & { readonly [processRefBrand]: true };
 
@@ -13,6 +15,11 @@ export interface ProcessPrepareInput {
   env: Readonly<Record<string, string>>;
   windowsVerbatimArguments?: boolean;
   signal?: AbortSignal;
+  /** Dedicated exact-Teacher journal hook; ignored by ordinary scopes. */
+  onExactAuthorityPhase?: (
+    phase: 'authority-published-inert' | 'activated',
+    processRef: ProcessRef
+  ) => Promise<void>;
 }
 
 export interface TerminationIntent {
@@ -22,7 +29,12 @@ export interface TerminationIntent {
 
 export type ProcessObservation =
   | { state: 'prepared' | 'live' | 'root-exited'; controllable: true }
-  | { state: 'closed'; controllable: false }
+  | {
+      state: 'closed';
+      controllable: false;
+      /** Coordinator-authenticated proof, present only on provider-backed exact authority. */
+      exactScopeEmptyReceipt?: ExactScopeEmptyReceipt;
+    }
   | { state: 'foreign'; controllable: false }
   | {
       state: 'declared-unproven';
@@ -57,6 +69,8 @@ export interface BackendRootExit {
 
 export interface ScopeEmptyReceipt {
   state: 'scope-empty';
+  /** Coordinator-authenticated proof, never reconstructed from serialized shape. */
+  exactScopeEmptyReceipt?: ExactScopeEmptyReceipt;
 }
 
 /**
@@ -147,6 +161,8 @@ export interface TerminationReceipt {
   failure?: ProcessControlFailure;
   /** Present exactly when state is 'declared-unproven'. */
   unproven?: DeclaredUnprovenReceipt;
+  /** Present only when the exact provider coordinator authenticated empty. */
+  exactScopeEmptyReceipt?: ExactScopeEmptyReceipt;
 }
 
 export interface LiveProcessScope {
@@ -205,7 +221,9 @@ export class ProcessScopeError extends Error {
 }
 
 export function asProcessRef(value: string): ProcessRef {
-  if (!/^rasen-process-scope\/1:[A-Za-z0-9_-]{16,4096}$/.test(value)) {
+  if (
+    !/^(?:rasen-process-scope\/1:[A-Za-z0-9_-]{16,4096}|rasen-process-authority\/1:[A-Za-z0-9_-]{16,32768})$/.test(value)
+  ) {
     throw new ProcessScopeError('process-authority-uncertain', 'ProcessRef is malformed.');
   }
   return value as ProcessRef;

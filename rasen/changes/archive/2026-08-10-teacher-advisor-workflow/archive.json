@@ -1,0 +1,25 @@
+{
+  "change": "teacher-advisor-workflow",
+  "archivedAt": "2026-08-10T11:50:27.573Z",
+  "codeCommit": "784d96300cbca53bf86a82c937ca2bdb3c9980ef",
+  "planningBranch": "feat/teacher-advisor-workflow",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "bea2a7e44067660c8a16b7972165a615062e79c23dab63f592424aa4c16fef13"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "45f4794c1208f7f289234bf0c7845f0e047a44b55c515408be3972a4223ee14d"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}
