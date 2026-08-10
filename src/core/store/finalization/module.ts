@@ -36,6 +36,7 @@ import {
   type ArchiveApplyResult,
   type ArchiveJournal,
   type ArchiveAssociationPlan,
+  type ArchiveBlocker,
   type ArchivePlan,
   type ArchivePlanFinalization,
   type PreparedArchiveSpecAction,
@@ -171,6 +172,7 @@ interface ResolvedFinalizationContext {
   readonly catalog: StoreTargetLineCatalogV1;
   readonly projectIds: readonly string[];
   readonly executionAssociationFile: string;
+  readonly executionAssociationPresent: boolean;
 }
 export function inspectFinalizationApplyPlan(
   plan: ImmutableFinalizationPlan,
@@ -213,6 +215,47 @@ export class ChangeFinalization implements ChangeFinalizationModule {
     const request = resolveFinalizationOutcomeRequest(input.outcome);
     const context = await this.resolveContext(input);
     const blockers: FinalizationBlocker[] = [];
+    const reconciliationIssues = (input.archive.reconciliationIssues ?? []).map(
+      issue => ({
+        ...issue,
+        ...(issue.missingScenarios === undefined
+          ? {}
+          : { missingScenarios: [...issue.missingScenarios] }),
+      })
+    );
+    for (const issue of reconciliationIssues) {
+      blockers.push({
+        ...finalizationBlocker(
+          'finalization_record_invalid',
+          issue.message,
+          { target: issue.source }
+        ),
+        specReconciliationIssue: issue,
+      });
+    }
+    const associationPreparationBlocker: ArchiveBlocker | null =
+      context.executionAssociationPresent
+        ? null
+        : {
+            operation: 'association',
+            path: context.executionAssociationFile,
+            code: 'planning_execution_binding_mismatch',
+            message:
+              'The bound workspace pair has no execution association document to complete.',
+          };
+    if (associationPreparationBlocker !== null) {
+      blockers.push(
+        finalizationBlocker(
+          'planning_execution_binding_mismatch',
+          associationPreparationBlocker.message,
+          {
+            expected: context.executionAssociationFile,
+            actual: '(missing)',
+            fix: 'Restore the exact execution association document for this pair before planning finalization.',
+          }
+        )
+      );
+    }
 
     // Idempotence is decided from the published entry's own record, never from
     // "a directory with a similar name exists".
@@ -271,7 +314,8 @@ export class ChangeFinalization implements ChangeFinalizationModule {
         (input.skipSpecs === true ||
           preparedSpecSync.mode !== 'apply' ||
           input.archive.specActionCandidates.length === 0) &&
-        preparationBlockers.length === 0
+        preparationBlockers.length === 0 &&
+        reconciliationIssues.length === 0
       ) {
         throw specSkipConflict(context.changeId);
       }
@@ -395,16 +439,51 @@ export class ChangeFinalization implements ChangeFinalizationModule {
           : { ...preparedSpecSync, mode: 'passive' },
       sidecar: input.archive.sidecar,
       shipLog: input.archive.shipLog,
-      ...(input.archive.preparationBlockers === undefined
+      ...((input.archive.preparationBlockers?.length ?? 0) === 0 &&
+      associationPreparationBlocker === null
         ? {}
-        : { preparationBlockers: [...input.archive.preparationBlockers] }),
+        : {
+            preparationBlockers: [
+              ...(input.archive.preparationBlockers ?? []),
+              ...(associationPreparationBlocker === null
+                ? []
+                : [associationPreparationBlocker]),
+            ],
+          }),
       ...(input.archive.transactionId === undefined
         ? {}
         : { transactionId: input.archive.transactionId }),
       createdAt,
     });
 
+    // The archive engine retains its generic blockers as the apply gate. The
+    // finalization preview projects reconciliation blockers from the exact
+    // typed side channel above, so consume only the matching generic
+    // occurrences here rather than emitting each issue twice. Occurrences are
+    // removed one by one; equal source/capability values never deduplicate two
+    // different requirements (or two identical repeated issues).
+    const remainingReconciliationOccurrences = [...reconciliationIssues];
     for (const item of archivePlan.blockers) {
+      if (
+        associationPreparationBlocker !== null &&
+        item.operation === associationPreparationBlocker.operation &&
+        item.path === associationPreparationBlocker.path &&
+        item.code === associationPreparationBlocker.code &&
+        item.message === associationPreparationBlocker.message
+      ) {
+        continue;
+      }
+      const issueIndex = remainingReconciliationOccurrences.findIndex(
+        issue =>
+          item.operation === 'spec' &&
+          item.path === issue.source &&
+          item.code === issue.code &&
+          item.message === issue.message
+      );
+      if (issueIndex >= 0) {
+        remainingReconciliationOccurrences.splice(issueIndex, 1);
+        continue;
+      }
       blockers.push({
         ...finalizationBlocker(
           'finalization_record_invalid',
@@ -672,18 +751,22 @@ export class ChangeFinalization implements ChangeFinalizationModule {
     };
 
     // Before persistence, reject stale fresh transactions without producing a
-    // misleading recovery token. A verified terminal journal has already
-    // consumed external catalog/ref facts and is rechecked by the engine.
-    let terminalComplete = false;
+    // misleading recovery token. Once the engine has durably bound the final
+    // reservation, however, recovery authority belongs to that exact journal:
+    // re-running Store selection/catalog admission would replace the engine's
+    // retry decision with a finalization-local classifier after mutation.
+    let engineOwnedRecovery = false;
     try {
       const terminalState = await inspectArchiveJournalState(archivePlan);
-      terminalComplete = terminalState.effectivePhase === 'complete';
+      engineOwnedRecovery =
+        terminalState.effectivePhase === 'complete' ||
+        terminalState.journal?.finalReservation.state === 'owned';
     } catch (error) {
       if (!isDelegatedArchiveRecoveryError(error)) throw error;
     }
     let revalidationState: 'valid' | 'journal-invalid' = 'valid';
     let staleProgress: ProgressedStaleDisposition | null = null;
-    if (!terminalComplete) {
+    if (!engineOwnedRecovery) {
       try {
         revalidationState = await underFinalizationLocks(() =>
           this.revalidate(archivePlan, token)
@@ -722,7 +805,7 @@ export class ChangeFinalization implements ChangeFinalizationModule {
         const result =
           staleProgress?.result ??
           (await underFinalizationLocks(async () => {
-            if (!terminalComplete && revalidationState === 'valid') {
+            if (!engineOwnedRecovery && revalidationState === 'valid') {
               try {
                 await this.revalidate(archivePlan, token);
               } catch (error) {
@@ -1074,18 +1157,8 @@ export class ChangeFinalization implements ChangeFinalizationModule {
       index.execution.root,
       input.pathFlavor ?? 'native'
     );
-    if ((await this.dependencies.fs.statKind(associationFile)) !== 'file') {
-      throw finalizationRefusal(
-        'planning_execution_binding_mismatch',
-        'The bound workspace pair has no execution association document to complete.',
-        {
-          expected: associationFile,
-          actual: '(missing)',
-          target: associationFile,
-          fix: 'Restore the exact execution association document for this pair before planning finalization.',
-        }
-      );
-    }
+    const associationPresent =
+      (await this.dependencies.fs.statKind(associationFile)) === 'file';
 
     return {
       scope,
@@ -1102,6 +1175,7 @@ export class ChangeFinalization implements ChangeFinalizationModule {
       catalog,
       projectIds: await this.listProjectIds(scope, input.pathFlavor),
       executionAssociationFile: associationFile,
+      executionAssociationPresent: associationPresent,
     };
   }
 

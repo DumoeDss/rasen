@@ -5,7 +5,9 @@ import chalk from 'chalk';
 
 import { getTaskProgressForChange, formatTaskStatus } from '../utils/task-progress.js';
 import { formatLocaleMessage, getLocaleCatalog } from '../locales/index.js';
+import { canonicalJson } from './canonical-json.js';
 import {
+  ARCHIVE_MERGE_CONFIRMATION_BLOCKER_CODE,
   applyArchive,
   abortArchivePlan,
   inspectArchiveApplyPlan,
@@ -45,6 +47,7 @@ import {
   discoverDeltaSpecFiles,
   findSpecUpdates,
   SpecReconciliationError,
+  type SpecReconciliationIssue,
 } from './specs-apply.js';
 import { classifyStoreRootLayout } from './store/layout-write-guard.js';
 import {
@@ -66,6 +69,87 @@ interface ArchiveDisposition {
   readonly manualRecoveryAction?: { readonly guidance: string };
   readonly abortCommand?: string;
   readonly recoveryCommand?: string;
+}
+
+/**
+ * A Store dry-run may persist only a plan that the exact-token apply surface
+ * can actually admit. The sole merge gate is the one runtime assertion; every
+ * other blocker remains transaction-store neutral.
+ */
+export function canPersistStoreFinalizationPlan(
+  plan: ImmutableFinalizationPlan
+): boolean {
+  if (plan.alreadyComplete) return false;
+  if (plan.blockers.length === 0) return true;
+  if (plan.blockers.length !== 1) return false;
+  const [blocker] = plan.blockers;
+  return (
+    String(blocker?.code) === ARCHIVE_MERGE_CONFIRMATION_BLOCKER_CODE ||
+    blocker?.archiveBlocker?.code === ARCHIVE_MERGE_CONFIRMATION_BLOCKER_CODE
+  );
+}
+
+const FINALIZATION_PREVIEW_PRECONDITION_PREFIX =
+  'finalization-preview-v1:';
+const FINALIZATION_PREVIEW_TRANSACTION_ID_PLACEHOLDER = '<transaction-id>';
+const FINALIZATION_PREVIEW_CREATED_AT_PLACEHOLDER = '<created-at>';
+
+/**
+ * Stable admission material for the two-process management preview.
+ *
+ * Archive transaction ids, hashes, staging/journal paths, and generated archive
+ * timestamps are deliberately normalized because each CLI process creates a
+ * fresh transaction. Every other finalization and archive-plan field remains in
+ * the projection, including cleaner/sidecar authority, source identities,
+ * paths, actions, decisions, and the complete ordered blocker set. The server
+ * never reconstructs this value: inspect emits it and save validates the opaque
+ * bytes before persistence.
+ */
+export function storeFinalizationPreviewPrecondition(
+  plan: ImmutableFinalizationPlan
+): string {
+  const {
+    createdAt,
+    planId: _planId,
+    token: _token,
+    archivePlan,
+    ...finalizationDecision
+  } = plan;
+  const {
+    transactionId,
+    planHash: _planHash,
+    createdAt: archiveCreatedAt,
+    paths,
+    ...archiveDecision
+  } = archivePlan;
+  const {
+    stage: _stage,
+    journal: _journal,
+    ...stableArchivePaths
+  } = paths;
+  const projection = {
+    version: 1,
+    createdAtConsistent: createdAt === archiveCreatedAt,
+    finalization: finalizationDecision,
+    archive: { ...archiveDecision, paths: stableArchivePaths },
+  };
+  let canonical = canonicalJson(projection);
+  if (transactionId.length > 0) {
+    canonical = canonical
+      .split(transactionId)
+      .join(FINALIZATION_PREVIEW_TRANSACTION_ID_PLACEHOLDER);
+  }
+  for (const generatedAt of new Set([createdAt, archiveCreatedAt])) {
+    if (generatedAt.length > 0) {
+      canonical = canonical
+        .split(generatedAt)
+        .join(FINALIZATION_PREVIEW_CREATED_AT_PLACEHOLDER);
+    }
+  }
+  return (
+    FINALIZATION_PREVIEW_PRECONDITION_PREFIX +
+    createHash('sha256').update(canonical, 'utf8').digest('hex')
+  );
 }
 
 export function formatArchiveDispositionLine(
@@ -175,6 +259,8 @@ export interface ArchiveOptions {
   keepEphemera?: boolean;
   dryRun?: boolean;
   savePlan?: boolean;
+  /** Internal Store-finalization compare-before-persist precondition. */
+  finalizationPreviewPrecondition?: string;
   applyPlan?: string;
   abortPlan?: string;
   intentTemplate?: boolean;
@@ -351,6 +437,7 @@ interface ArchiveResult {
   journalPath?: string;
   blockers?: ArchivePlan['blockers'];
   planToken?: string;
+  previewPrecondition?: string;
   status?: ArchiveApplyResult['status'];
   result?: ArchiveApplyResult;
   recoveryCommand?: string;
@@ -515,6 +602,20 @@ export class ArchiveCommand {
       }
       throw error;
     }
+    if (
+      options.finalizationPreviewPrecondition !== undefined &&
+      (!options.dryRun || !options.savePlan)
+    ) {
+      const error = new ArchiveBlockedError(
+        'archive_option_conflict',
+        '--finalization-preview-precondition is valid only with --dry-run --save-plan.'
+      );
+      if (json) {
+        this.printJsonFailure(undefined, error.diagnostic);
+        return;
+      }
+      throw error;
+    }
     let root: ResolvedOpenSpecRoot;
     try {
       root = await resolveOpenSpecRoot({
@@ -532,6 +633,15 @@ export class ArchiveCommand {
     }
 
     const finalizationDiagnostic =
+      (options.finalizationPreviewPrecondition !== undefined &&
+      root.planningScope?.kind !== 'store-project'
+        ? {
+            severity: 'error' as const,
+            code: 'archive_option_conflict',
+            message:
+              '--finalization-preview-precondition is reserved for Store project finalization saves.',
+          }
+        : null) ??
       inapplicableFinalizationOptions(root, options) ??
       declaredOutcomeDiagnostic(root, options) ??
       (await storeFinalizationDiagnostic(root));
@@ -616,6 +726,7 @@ export class ArchiveCommand {
       options.applyPlan !== undefined,
       !!options.dryRun,
       !!options.savePlan,
+      options.finalizationPreviewPrecondition !== undefined,
       !!options.intentTemplate,
       options.intentFile !== undefined,
       !!options.skipSpecs,
@@ -742,6 +853,7 @@ export class ArchiveCommand {
       changeName !== undefined,
       !!options.dryRun,
       !!options.savePlan,
+      options.finalizationPreviewPrecondition !== undefined,
       !!options.intentTemplate,
       options.intentFile !== undefined,
       !!options.skipSpecs,
@@ -1133,6 +1245,7 @@ export class ArchiveCommand {
     }
 
     const preparationBlockers: ArchivePlan['blockers'] = [...planningBlockers];
+    const reconciliationIssues: SpecReconciliationIssue[] = [];
     let preparedSpecs: PreparedSpecActions = {
       actions: [],
       specSync: {
@@ -1154,6 +1267,7 @@ export class ArchiveCommand {
       }
     } catch (error) {
       if (error instanceof SpecReconciliationError) {
+        reconciliationIssues.push(...error.issues);
         for (const issue of error.issues) {
           preparationBlockers.push({
             operation: 'spec',
@@ -1245,6 +1359,7 @@ export class ArchiveCommand {
       specActions,
       specSync: preparedSpecs.specSync,
       preparationBlockers,
+      reconciliationIssues,
       sidecar,
       shipLog,
     } as const;
@@ -1442,6 +1557,7 @@ export class ArchiveCommand {
       readonly specActions: PreparedArchiveSpecAction[];
       readonly specSync: ArchiveSpecSyncPreparation;
       readonly preparationBlockers: ArchivePlan['blockers'];
+      readonly reconciliationIssues: readonly SpecReconciliationIssue[];
       readonly sidecar: Awaited<ReturnType<typeof resolveArchiveSidecar>>;
       readonly shipLog: ArchivePlan['shipLog'];
     },
@@ -1483,13 +1599,36 @@ export class ArchiveCommand {
         shipLog: planInputs.shipLog,
         scope: planInputs.scope,
         preparationBlockers: planInputs.preparationBlockers,
+        reconciliationIssues: planInputs.reconciliationIssues,
       },
     });
 
     if (options.dryRun) {
-      const canSave = !finalizationPlan.archivePlan.blockers.some(
-        blocker => blocker.code === 'archive_ship_log_reserved_section'
-      );
+      const canSave = canPersistStoreFinalizationPlan(finalizationPlan);
+      const previewPrecondition =
+        storeFinalizationPreviewPrecondition(finalizationPlan);
+      if (
+        options.savePlan &&
+        options.finalizationPreviewPrecondition !== undefined &&
+        options.finalizationPreviewPrecondition !== previewPrecondition
+      ) {
+        const diagnostic: ArchiveDiagnostic = {
+          severity: 'error',
+          code: 'archive_finalization_preview_changed',
+          message:
+            'The Store finalization preview changed after admission. No transaction plan was persisted.',
+          fix: 'Inspect the current finalization preview and retry only after admitting its exact identity, blockers, and archive decisions.',
+        };
+        if (json) {
+          this.printJsonFailure(root, diagnostic, finalizationPlan.archivePlan);
+          return null;
+        }
+        throw new ArchiveBlockedError(
+          diagnostic.code,
+          diagnostic.message,
+          diagnostic.fix
+        );
+      }
       const planToken =
         options.savePlan && canSave
           ? await persistArchivePlan(
@@ -1497,7 +1636,12 @@ export class ArchiveCommand {
               getGlobalDataDir()
             )
           : undefined;
-      return this.renderFinalizationDryRun(finalizationPlan, json, planToken);
+      return this.renderFinalizationDryRun(
+        finalizationPlan,
+        json,
+        planToken,
+        previewPrecondition
+      );
     }
 
     // Re-finalizing a finalized Change is not a second outcome: report the
@@ -1616,7 +1760,8 @@ export class ArchiveCommand {
   private renderFinalizationDryRun(
     plan: ImmutableFinalizationPlan,
     json: boolean,
-    planToken?: string
+    planToken: string | undefined,
+    previewPrecondition: string
   ): ArchiveResult | null {
     if (!plan.applicable) process.exitCode = 1;
     if (!json) {
@@ -1653,6 +1798,7 @@ export class ArchiveCommand {
       specsUpdated: false,
       dryRun: true,
       finalizationPlan: plan,
+      previewPrecondition,
       plan: plan.archivePlan,
       ...(planToken ? { planToken } : {}),
       transactionId: plan.archivePlan.transactionId,

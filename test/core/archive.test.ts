@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ArchiveCommand } from '../../src/core/archive.js';
+import {
+  ArchiveCommand,
+  formatArchiveAbortBlockedLines,
+} from '../../src/core/archive.js';
 import type {
   ArchiveApplyOptions,
   ArchiveApplyResult,
@@ -24,6 +27,53 @@ vi.mock('@inquirer/prompts', () => ({
   select: vi.fn(),
   confirm: vi.fn()
 }));
+
+describe('archive abort human disposition ordering', () => {
+  it('prints every blocker before durable state, association, and exact recovery', () => {
+    const lines = formatArchiveAbortBlockedLines({
+      blockers: [
+        { operation: 'journal', path: '/tx/journal.json', code: 'first', message: 'first blocker' },
+        { operation: 'source', path: '/change', code: 'second', message: 'second blocker' },
+      ],
+      effectivePhase: 'published',
+      retainedPaths: ['/tx/journal.json', '/archive/entry'],
+      associationPhase: 'pending',
+      recoveryCommand: 'rasen archive --apply-plan exact-token',
+    }, 'en');
+
+    const first = lines.findIndex(line => line.includes('first blocker'));
+    const second = lines.findIndex(line => line.includes('second blocker'));
+    const phase = lines.findIndex(line => line.includes('published'));
+    const retained = lines.findIndex(line => line.includes('/archive/entry'));
+    const association = lines.findIndex(line => /association/i.test(line));
+    const recovery = lines.findIndex(line => line.includes('exact-token'));
+    expect([first, second, phase, retained, association, recovery].every(index => index >= 0)).toBe(true);
+    expect(first).toBeLessThan(second);
+    expect(second).toBeLessThan(phase);
+    expect(phase).toBeLessThan(retained);
+    expect(retained).toBeLessThan(association);
+    expect(association).toBeLessThan(recovery);
+    expect(recovery).toBe(lines.length - 1);
+  });
+
+  it('ends with verified manual ownership guidance and invents no replay command', () => {
+    const lines = formatArchiveAbortBlockedLines({
+      blockers: [
+        { operation: 'ownership', path: '/tx/claim', code: 'ownership_unverified', message: 'ownership is unproved' },
+      ],
+      effectivePhase: 'published',
+      retainedPaths: ['/tx/claim'],
+      associationPhase: 'pending',
+      manualRecoveryAction: {
+        kind: 'manual-recovery-required',
+        guidance: 'Preserve the claim and inspect its exact identity.',
+      },
+    }, 'en');
+
+    expect(lines.at(-1)).toContain('Preserve the claim and inspect its exact identity.');
+    expect(lines.join('\n')).not.toContain('rasen archive --apply-plan');
+  });
+});
 
 describe('ArchiveCommand', () => {
   let tempDir: string;
@@ -117,6 +167,31 @@ describe('ArchiveCommand', () => {
         return super.applyPlannedArchive(plan, options);
       }
     }
+
+    it('rejects the internal finalization precondition on a standalone archive', async () => {
+      const changeName = 'standalone-precondition-misuse';
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] done\n');
+
+      await archiveCommand.execute(changeName, {
+        dryRun: true,
+        savePlan: true,
+        finalizationPreviewPrecondition: `finalization-preview-v1:${'a'.repeat(64)}`,
+        json: true,
+      });
+
+      const output = JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      );
+      expect(output.archive).toBeNull();
+      expect(output.status).toEqual([
+        expect.objectContaining({ code: 'archive_option_conflict' }),
+      ]);
+      await expect(
+        fs.access(path.join(getGlobalDataDir(), 'archive-transactions'))
+      ).rejects.toMatchObject({ code: 'ENOENT' });
+    });
 
     it('persists an incomplete direct plan before exposing token recovery', async () => {
       const changeName = 'durable-direct-recovery';

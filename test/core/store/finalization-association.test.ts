@@ -33,9 +33,12 @@ import {
 import {
   atomicWorkspaceWriteText,
   createNodeWorkspaceCoordination,
+  readAtomicWorkspaceSnapshot,
+  type AtomicWorkspaceCarrierAuthority,
 } from '../../../src/core/store/workspace/dependencies.js';
 import {
   createStoreFinalizationFixture,
+  hashTree,
   type BoundChange,
   type StoreFinalizationFixture,
 } from '../../helpers/store-finalization-fixture.js';
@@ -190,23 +193,43 @@ describe('association completion inside the transaction', () => {
     const changeBefore = fs.readFileSync(changeMetadataPath, 'utf8');
     fs.unlinkSync(associationPath);
 
-    let thrown: unknown;
-    try {
-      await f
-        .finalization()
-        .plan(f.planInput(bound, { outcome: 'abandoned', reason: 'Dropped.' }));
-    } catch (error) {
-      thrown = error;
-    }
+    const transactionBefore = hashTree(
+      path.join(f.globalDataDir, 'archive-transactions')
+    );
+    const refusedPlan = await f
+      .finalization()
+      .plan(
+        f.planInput(bound, { outcome: 'abandoned', reason: 'Dropped.' }, {
+          startPath: bound.planningWorktree,
+        })
+      );
 
-    expect(thrown).toMatchObject({
-      code: 'planning_execution_binding_mismatch',
-      expected: associationPath,
-      actual: '(missing)',
+    expect(refusedPlan.applicable).toBe(false);
+    expect(refusedPlan.association).toMatchObject({
+      noop: false,
+      executionAssociationPath: associationPath,
     });
+    expect(refusedPlan.blockers).toEqual([
+      expect.objectContaining({
+        code: 'planning_execution_binding_mismatch',
+        expected: associationPath,
+        actual: '(missing)',
+      }),
+    ]);
+    expect(refusedPlan.archivePlan.blockers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'planning_execution_binding_mismatch',
+          path: associationPath,
+        }),
+      ])
+    );
     expect(await indexEntry(bound)).toEqual(indexBefore);
     expect(fs.readFileSync(changeMetadataPath, 'utf8')).toBe(changeBefore);
     expect(fs.existsSync(bound.archiveLine)).toBe(false);
+    expect(hashTree(path.join(f.globalDataDir, 'archive-transactions'))).toEqual(
+      transactionBefore
+    );
 
     fs.writeFileSync(associationPath, associationBefore);
     const recoveredPlan = await f
@@ -275,6 +298,32 @@ describe('association completion inside the transaction', () => {
     expect(fs.readdirSync(bound.archiveLine)).toHaveLength(1);
     expect((await indexEntry(bound))?.phase).toBe('bound');
     expect(association(bound).finalizedChange).toMatchObject({ changeId: bound.changeId });
+  }, 240_000);
+
+  it('refuses live Git movement after planning before the first mutation', async () => {
+    const bound = await f.bind({
+      projectId: PROJECT,
+      targetLineId: LINE,
+      changeId: 'association-stale-after-plan',
+    });
+    const plan = await planFor(bound);
+    const transactionBefore = hashTree(
+      path.join(f.globalDataDir, 'archive-transactions')
+    );
+    fs.writeFileSync(path.join(bound.planningWorktree, 'post-plan.md'), 'moved\n');
+    f.git(bound.planningWorktree, ['add', 'post-plan.md']);
+    f.git(bound.planningWorktree, ['commit', '-m', 'move after finalization plan']);
+    const changedSource = hashTree(bound.changeDir);
+
+    await expect(
+      f.finalization().applyStoredPlan(plan.archivePlan, plan.token)
+    ).rejects.toMatchObject({ code: 'finalization_plan_stale' });
+
+    expect(hashTree(bound.changeDir)).toEqual(changedSource);
+    expect(fs.existsSync(plan.destination)).toBe(false);
+    expect(hashTree(path.join(f.globalDataDir, 'archive-transactions'))).toEqual(
+      transactionBefore
+    );
   }, 240_000);
 
   it('injected failure AFTER the phase still completes on retry, writing the same bytes', async () => {
@@ -557,7 +606,7 @@ describe('association completion inside the transaction', () => {
     expect(fs.readFileSync(indexPath, 'utf8')).toBe(before);
   }, 240_000);
 
-  it('refuses unclaimed carrier intent and publishes through an owned no-clobber claim', async () => {
+  it('resumes an exact self-contained association intent and cleans only its proved carriers', async () => {
     const target = path.join(f.globalDataDir, 'atomic-association-carrier.json');
     const intended = '{"state":"finalized"}\n';
     const digest = createHash('sha256').update(intended, 'utf8').digest('hex');
@@ -569,16 +618,14 @@ describe('association completion inside the transaction', () => {
     fs.writeFileSync(target, '{"state":"previous"}\n');
     fs.writeFileSync(exactIntent, intended);
 
-    await expect(atomicWorkspaceWriteText(target, intended)).rejects.toMatchObject({
-      code: 'workspace_atomic_write_conflict',
-      target,
-    });
-    expect(fs.readFileSync(target, 'utf8')).toBe('{"state":"previous"}\n');
-    expect(fs.readFileSync(exactIntent, 'utf8')).toBe(intended);
-
-    fs.unlinkSync(exactIntent);
     await atomicWorkspaceWriteText(target, intended);
     expect(fs.readFileSync(target, 'utf8')).toBe(intended);
+    expect(fs.existsSync(exactIntent)).toBe(false);
+    expect(
+      fs
+        .readdirSync(path.dirname(target))
+        .filter(name => name.startsWith(`.${path.basename(target)}.rasen-write-`))
+    ).toEqual([]);
 
     const next = '{"state":"next"}\n';
     const nextDigest = createHash('sha256').update(next, 'utf8').digest('hex');
@@ -593,6 +640,65 @@ describe('association completion inside the transaction', () => {
     });
     expect(fs.readFileSync(target, 'utf8')).toBe(intended);
     expect(fs.readFileSync(partialIntent, 'utf8')).toBe('{"state":');
+  });
+
+  it('never falls back to self-contained recovery when journal carrier authority disagrees', async () => {
+    const target = path.join(f.globalDataDir, 'journal-bound-association.json');
+    const beforeBytes = '{"state":"before"}\n';
+    const intended = '{"state":"finalized"}\n';
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, beforeBytes);
+    const snapshot = await readAtomicWorkspaceSnapshot(target);
+    let recorded: AtomicWorkspaceCarrierAuthority | undefined;
+
+    await expect(
+      atomicWorkspaceWriteText(target, intended, {
+        ...snapshot,
+        onPrepared: prepared => {
+          recorded = prepared;
+          return Promise.reject(
+            Object.assign(new Error('injected journal persistence failure'), {
+              code: 'EIO',
+            })
+          );
+        },
+      })
+    ).rejects.toMatchObject({ code: 'EIO' });
+    expect(recorded).toBeDefined();
+
+    const carrierPrefix = `.${path.basename(target)}.rasen-write-`;
+    const carrierBytesBefore = Object.fromEntries(
+      fs
+        .readdirSync(path.dirname(target))
+        .filter(name => name.startsWith(carrierPrefix))
+        .sort()
+        .map(name => [name, fs.readFileSync(path.join(path.dirname(target), name), 'utf8')])
+    );
+    const wrongAuthority = {
+      ...recorded!,
+      contentDigest: '0'.repeat(64),
+    };
+
+    await expect(
+      atomicWorkspaceWriteText(target, intended, {
+        ...snapshot,
+        authority: wrongAuthority,
+      })
+    ).rejects.toMatchObject({
+      code: 'workspace_atomic_write_conflict',
+      target,
+    });
+
+    expect(fs.readFileSync(target, 'utf8')).toBe(beforeBytes);
+    expect(
+      Object.fromEntries(
+        fs
+          .readdirSync(path.dirname(target))
+          .filter(name => name.startsWith(carrierPrefix))
+          .sort()
+          .map(name => [name, fs.readFileSync(path.join(path.dirname(target), name), 'utf8')])
+      )
+    ).toEqual(carrierBytesBefore);
   });
 
   it('publishes a fresh carrier without treating its own directory entries as ancestry drift', async () => {

@@ -8,20 +8,27 @@
  * array, capped at one subprocess in flight, and passes the CLI's diagnostics
  * through verbatim.
  *
- * Two CLI invocations, in this order, and the order is the point:
+ * Three CLI invocations, in this order, and the order is the point:
  *
  *   1. `archive <change> --store … --project … --target-line … --outcome … \
- *      --dry-run --save-plan --json` — READ-ONLY. It produces the same
+ *      --dry-run --json` — a non-saving inspection. It produces the same
  *      immutable finalization plan every other surface produces, and that plan
  *      names the Change's committed `changeInstanceId`.
- *   2. only if that instance equals the one in the PATH and the preview has no
+ *   2. only if that instance equals the one in the PATH and the inspection has
+ *      no blockers (except the admitted merge gate), repeat the exact scoped
+ *      command with `--save-plan` plus the inspection's opaque preview
+ *      precondition. The CLI recomputes it from the current complete plan and
+ *      refuses any drift before persistence; the server then independently
+ *      admits the saved preview and exact echoed precondition.
+ *   3. only if both previews agree with the request and have no
  *      blockers — except the sole typed merge blocker after the caller's
  *      explicit independently-verified assertion —
- *      `archive --apply-plan <token> --json --yes` — the mutation.
+ *      `archive --apply-plan <token> --json [--yes]` — the mutation. `--yes`
+ *      is present only for an explicit `mergeConfirmed: true` request.
  *
  * A path scope that disagrees with the Change's committed identity is therefore
- * refused BEFORE any mutating subprocess exists, which is what the requirement
- * asks for. The scope is never completed from a query filter, a session, a
+ * refused before save. Any admitted plan drift is refused inside save before
+ * persistence. The scope is never completed from a query filter, a session, a
  * launch project, or a previously viewed selection: every scope field is read
  * from the path and from nowhere else, and a missing one is a 400.
  */
@@ -80,6 +87,7 @@ export interface FinalizationCliBlocker {
   readonly actual?: string;
   readonly fix?: string;
   readonly archiveBlocker?: Readonly<Record<string, unknown>>;
+  readonly specReconciliationIssue?: Readonly<Record<string, unknown>>;
 }
 
 export interface FinalizationCliDisposition {
@@ -205,8 +213,9 @@ export function finalizationOptions(
  * three CLI consumers. There is no second command builder behind the route.
  */
 export interface FinalizationCliArgv {
-  readonly preview: string[];
-  apply(planToken: string): string[];
+  readonly inspect: string[];
+  save(previewPrecondition: string): string[];
+  apply(planToken: string, mergeConfirmed: boolean): string[];
 }
 
 export function createFinalizationCliArgv(
@@ -214,22 +223,34 @@ export function createFinalizationCliArgv(
   changeId: string,
   finalizationArgv: readonly string[]
 ): FinalizationCliArgv {
+  const preview = [
+    'archive',
+    changeId,
+    '--store',
+    scope.storeUid,
+    '--project',
+    scope.projectId,
+    '--target-line',
+    scope.targetLineId,
+    ...finalizationArgv,
+    '--dry-run',
+  ];
   return {
-    preview: [
-      'archive',
-      changeId,
-      '--store',
-      scope.storeUid,
-      '--project',
-      scope.projectId,
-      '--target-line',
-      scope.targetLineId,
-      ...finalizationArgv,
-      '--dry-run',
+    inspect: [...preview, '--json'],
+    save: previewPrecondition => [
+      ...preview,
       '--save-plan',
+      '--finalization-preview-precondition',
+      previewPrecondition,
       '--json',
     ],
-    apply: planToken => ['archive', '--apply-plan', planToken, '--json', '--yes'],
+    apply: (planToken, mergeConfirmed) => [
+      'archive',
+      '--apply-plan',
+      planToken,
+      '--json',
+      ...(mergeConfirmed ? ['--yes'] : []),
+    ],
   };
 }
 
@@ -321,6 +342,9 @@ function decodeFinalizationBlockers(
       return null;
     }
     const archiveBlocker = asRecord(blocker.archiveBlocker);
+    const specReconciliationIssue = asRecord(
+      blocker.specReconciliationIssue
+    );
     blockers.push({
       code: blocker.code,
       message: blocker.message,
@@ -330,6 +354,9 @@ function decodeFinalizationBlockers(
       ...(typeof blocker.actual === 'string' ? { actual: blocker.actual } : {}),
       ...(typeof blocker.fix === 'string' ? { fix: blocker.fix } : {}),
       ...(archiveBlocker === null ? {} : { archiveBlocker }),
+      ...(specReconciliationIssue === null
+        ? {}
+        : { specReconciliationIssue }),
     });
   }
   return blockers;
@@ -443,18 +470,225 @@ function cliDiagnostic(
   };
 }
 
+function hasIndependentPreviewDiagnostic(
+  payload: Record<string, unknown> | null
+): boolean {
+  if (payload === null) return false;
+  if (Object.prototype.hasOwnProperty.call(payload, 'status')) return true;
+  const archive = asRecord(payload.archive);
+  return (
+    archive !== null &&
+    Object.prototype.hasOwnProperty.call(archive, 'finalization')
+  );
+}
+
+interface AdmittedFinalizationPreview {
+  readonly plan: Record<string, unknown>;
+  readonly planToken: string | null;
+  readonly previewPrecondition: string;
+  readonly inspection: FinalizationPreviewBlockerInspection;
+}
+
+type FinalizationPreviewAdmission =
+  | { readonly ok: true; readonly preview: AdmittedFinalizationPreview }
+  | { readonly ok: false; readonly result: FinalizeResult };
+
+/**
+ * One admission boundary shared by the non-saving inspection and the saved
+ * preview. Neither phase reconstructs a plan: it admits only the CLI JSON it
+ * just received, and the caller applies only the saved phase's exact token.
+ */
+function admitFinalizationPreview(
+  run: CliRun,
+  payload: Record<string, unknown> | null,
+  scope: FinalizeChangePathScope,
+  body: FinalizeChangeRequestBody,
+  phase: 'inspection' | 'saved preview',
+  requirePlanToken: boolean
+): FinalizationPreviewAdmission {
+  const archive = asRecord(payload?.archive);
+  const plan = asRecord(archive?.finalizationPlan);
+  const previewPrecondition = archive?.previewPrecondition;
+  const inspection = inspectFinalizationPreviewBlockers(
+    plan?.blockers,
+    body.mergeConfirmed
+  );
+  if (
+    archive === null ||
+    plan === null ||
+    typeof plan.changeInstanceId !== 'string' ||
+    typeof previewPrecondition !== 'string' ||
+    !/^finalization-preview-v1:[0-9a-f]{64}$/u.test(previewPrecondition) ||
+    inspection === null
+  ) {
+    if (run.exitCode !== 0) {
+      const diagnostic = cliDiagnostic(payload, run.stderr);
+      return {
+        ok: false,
+        result: {
+          ok: false,
+          status:
+            diagnostic.code === 'archive_finalization_preview_changed'
+              ? 409
+              : 422,
+          code: diagnostic.code,
+          message: diagnostic.message,
+          ...(run.exitCode === null ? {} : { cliExitCode: run.exitCode }),
+          stderr: run.stderr,
+          ...(diagnostic.finalization === undefined
+            ? {}
+            : { finalization: diagnostic.finalization }),
+        },
+      };
+    }
+    return {
+      ok: false,
+      result: {
+        ok: false,
+        status: 500,
+        code: 'cli_protocol_error',
+        message: `The CLI ${phase} output could not be read: ${run.stdout || '(empty)'}`,
+      },
+    };
+  }
+
+  // A blocked preview has one exact protocol: the preview itself plus exit 1.
+  // Any separate status/finalization diagnostic is an independent failure and
+  // wins before identity or merge admission; a parseable plan never suppresses
+  // a second CLI failure carried alongside it.
+  if (hasIndependentPreviewDiagnostic(payload)) {
+    const diagnostic = cliDiagnostic(payload, run.stderr);
+    return {
+      ok: false,
+      result: {
+        ok: false,
+        status: 422,
+        code: diagnostic.code,
+        message: diagnostic.message,
+        ...(run.exitCode === null ? {} : { cliExitCode: run.exitCode }),
+        stderr: run.stderr,
+        ...(diagnostic.finalization === undefined
+          ? {}
+          : { finalization: diagnostic.finalization }),
+      },
+    };
+  }
+
+  if (plan.changeInstanceId !== scope.changeInstanceId) {
+    return {
+      ok: false,
+      result: {
+        ok: false,
+        status: 409,
+        code: 'change_identity_mismatch',
+        message: `The path names Change instance '${scope.changeInstanceId}', but Change '${String(body.changeId)}' in ${scope.projectId}/${scope.targetLineId} is committed as '${plan.changeInstanceId}'. Nothing was finalized and no file was modified.`,
+      },
+    };
+  }
+
+  const blockers = inspection.blockers;
+  const soleMergeBlocker = isSoleMergeConfirmationBlocker(blockers);
+  const mergeBlockerAdmitted =
+    inspection.mergeBlockerAdmitted && run.exitCode === 1;
+  if (inspection.mergeBlockerAdmitted && run.exitCode !== 1) {
+    if (run.exitCode !== 0) {
+      const diagnostic = cliDiagnostic(payload, run.stderr);
+      return {
+        ok: false,
+        result: {
+          ok: false,
+          status: 422,
+          code: diagnostic.code,
+          message: diagnostic.message,
+          ...(run.exitCode === null ? {} : { cliExitCode: run.exitCode }),
+          stderr: run.stderr,
+          ...(diagnostic.finalization === undefined
+            ? {}
+            : { finalization: diagnostic.finalization }),
+        },
+      };
+    }
+    return {
+      ok: false,
+      result: {
+        ok: false,
+        status: 500,
+        code: 'cli_protocol_error',
+        message: `The CLI ${phase} returned a blocked finalization preview with exit 0; the expected blocked-preview exit is 1.`,
+      },
+    };
+  }
+  if (blockers.length > 0 && !mergeBlockerAdmitted) {
+    const first = blockers[0]!;
+    return {
+      ok: false,
+      result: {
+        ok: false,
+        status: 422,
+        code: blockerArchiveCode(first) ?? first.code,
+        message:
+          soleMergeBlocker && body.mergeConfirmed !== true
+            ? `${first.message} Set mergeConfirmed to true only after independently verifying the recorded PR merge.`
+            : first.message,
+        ...(run.exitCode === null ? {} : { cliExitCode: run.exitCode }),
+        stderr: run.stderr,
+        finalization: { status: 'blocked', blockers },
+      },
+    };
+  }
+
+  if (run.exitCode !== 0 && !mergeBlockerAdmitted) {
+    const diagnostic = cliDiagnostic(payload, run.stderr);
+    return {
+      ok: false,
+      result: {
+        ok: false,
+        status: 422,
+        code: diagnostic.code,
+        message: diagnostic.message,
+        ...(run.exitCode === null ? {} : { cliExitCode: run.exitCode }),
+        stderr: run.stderr,
+        ...(diagnostic.finalization === undefined
+          ? {}
+          : { finalization: diagnostic.finalization }),
+      },
+    };
+  }
+
+  const planToken =
+    typeof archive.planToken === 'string' ? archive.planToken : null;
+  if (requirePlanToken && planToken === null) {
+    return {
+      ok: false,
+      result: {
+        ok: false,
+        status: 500,
+        code: 'cli_protocol_error',
+        message: `The CLI ${phase} did not return the exact saved plan token.`,
+      },
+    };
+  }
+  return {
+    ok: true,
+    preview: { plan, planToken, previewPrecondition, inspection },
+  };
+}
+
 /**
  * Builds the finalization bridge closed over one server's context and its own
  * cap-1 concurrency state, exactly as the change-submission bridge does.
  */
+export interface ChangeFinalizerOptions {
+  readonly timeoutMs?: number;
+  readonly killGraceMs?: number;
+  /** Constructor-only subprocess seam; never populated from HTTP or config. */
+  readonly cliEntryOverride?: string;
+  readonly cwdOverride?: string;
+}
+
 export function createChangeFinalizer(
   context: Pick<ManagementApiContext, 'launchProjectRoot'>,
-  options: {
-    timeoutMs?: number;
-    killGraceMs?: number;
-    cliEntryOverride?: string;
-    cwdOverride?: string;
-  } = {}
+  options: ChangeFinalizerOptions = {}
 ): (
   scope: FinalizeChangePathScope,
   body: FinalizeChangeRequestBody
@@ -530,116 +764,76 @@ export function createChangeFinalizer(
     inFlight = true;
     try {
       const argv = createFinalizationCliArgv(scope, body.changeId, finalization.argv);
-      // ---- 1. read-only preview -------------------------------------------
-      const preview = await runCli(cliEntry, cwd, argv.preview, timeoutMs, killGraceMs);
-      if (preview.timedOut) {
+      // ---- 1. non-saving inspection ---------------------------------------
+      const inspected = await runCli(
+        cliEntry,
+        cwd,
+        argv.inspect,
+        timeoutMs,
+        killGraceMs
+      );
+      if (inspected.timedOut) {
         return {
           ok: false,
           status: 504,
           code: 'cli_timeout',
-          message: 'The CLI subprocess timed out while planning the finalization.',
+          message: 'The CLI subprocess timed out during finalization inspection.',
         };
       }
-      // A blocked saved preview is still a structured plan response. Parse it
-      // before using the process exit code so the one runtime-satisfiable merge
-      // assertion can be evaluated without weakening any other blocker.
-      const previewPayload = parseJsonPayload(preview.stdout);
-      const archive = asRecord(previewPayload?.archive);
-      const plan = asRecord(archive?.finalizationPlan);
-      const previewInspection = inspectFinalizationPreviewBlockers(
-        plan?.blockers,
-        body.mergeConfirmed
+      const inspectionAdmission = admitFinalizationPreview(
+        inspected,
+        parseJsonPayload(inspected.stdout),
+        scope,
+        body,
+        'inspection',
+        false
       );
+      if (!inspectionAdmission.ok) return inspectionAdmission.result;
+
+      // ---- 2. save exact plan after admission -----------------------------
+      const saved = await runCli(
+        cliEntry,
+        cwd,
+        argv.save(inspectionAdmission.preview.previewPrecondition),
+        timeoutMs,
+        killGraceMs
+      );
+      if (saved.timedOut) {
+        return {
+          ok: false,
+          status: 504,
+          code: 'cli_timeout',
+          message: 'The CLI subprocess timed out while saving the finalization plan.',
+        };
+      }
+      const savedAdmission = admitFinalizationPreview(
+        saved,
+        parseJsonPayload(saved.stdout),
+        scope,
+        body,
+        'saved preview',
+        true
+      );
+      if (!savedAdmission.ok) return savedAdmission.result;
       if (
-        archive === null ||
-        typeof archive.planToken !== 'string' ||
-        plan === null ||
-        typeof plan.changeInstanceId !== 'string' ||
-        previewInspection === null
+        savedAdmission.preview.previewPrecondition !==
+        inspectionAdmission.preview.previewPrecondition
       ) {
-        if (preview.exitCode !== 0) {
-          const diagnostic = cliDiagnostic(previewPayload, preview.stderr);
-          return {
-            ok: false,
-            status: 422,
-            code: diagnostic.code,
-            message: diagnostic.message,
-            ...(preview.exitCode === null
-              ? {}
-              : { cliExitCode: preview.exitCode }),
-            stderr: preview.stderr,
-            ...(diagnostic.finalization === undefined
-              ? {}
-              : { finalization: diagnostic.finalization }),
-          };
-        }
         return {
           ok: false,
           status: 500,
           code: 'cli_protocol_error',
-          message: `The CLI planned the finalization but its output could not be read: ${preview.stdout || '(empty)'}`,
-        };
-      }
-      // The path's scope is checked against the Change's COMMITTED identity,
-      // and a disagreement stops here — before any mutating subprocess exists.
-      if (plan.changeInstanceId !== scope.changeInstanceId) {
-        return {
-          ok: false,
-          status: 409,
-          code: 'change_identity_mismatch',
-          message: `The path names Change instance '${scope.changeInstanceId}', but Change '${body.changeId}' in ${scope.projectId}/${scope.targetLineId} is committed as '${plan.changeInstanceId}'. Nothing was finalized and no file was modified.`,
-        };
-      }
-
-      const previewBlockers = previewInspection.blockers;
-      const soleMergeBlocker =
-        isSoleMergeConfirmationBlocker(previewBlockers);
-      const mergeBlockerAdmitted =
-        previewInspection.mergeBlockerAdmitted &&
-        preview.exitCode !== null;
-      if (previewBlockers.length > 0 && !mergeBlockerAdmitted) {
-        const first = previewBlockers[0]!;
-        const disposition: FinalizationCliDisposition = {
-          status: 'blocked',
-          blockers: previewBlockers,
-        };
-        return {
-          ok: false,
-          status: 422,
-          code: blockerArchiveCode(first) ?? first.code,
           message:
-            soleMergeBlocker && body.mergeConfirmed !== true
-              ? `${first.message} Set mergeConfirmed to true only after independently verifying the recorded PR merge.`
-              : first.message,
-          ...(preview.exitCode === null
-            ? {}
-            : { cliExitCode: preview.exitCode }),
-          stderr: preview.stderr,
-          finalization: disposition,
+            'The CLI saved preview did not echo the exact admitted finalization precondition.',
         };
       }
-      if (preview.exitCode !== 0 && !mergeBlockerAdmitted) {
-        const diagnostic = cliDiagnostic(previewPayload, preview.stderr);
-        return {
-          ok: false,
-          status: 422,
-          code: diagnostic.code,
-          message: diagnostic.message,
-          ...(preview.exitCode === null
-            ? {}
-            : { cliExitCode: preview.exitCode }),
-          stderr: preview.stderr,
-          ...(diagnostic.finalization === undefined
-            ? {}
-            : { finalization: diagnostic.finalization }),
-        };
-      }
+      const savedPlanToken = savedAdmission.preview.planToken!;
 
-      // ---- 2. the mutation --------------------------------------------------
+      // ---- 3. apply only the exact saved token -----------------------------
       const applied = await runCli(
         cliEntry,
         cwd,
-        argv.apply(archive.planToken),
+        argv.apply(savedPlanToken, body.mergeConfirmed === true),
         timeoutMs,
         killGraceMs
       );

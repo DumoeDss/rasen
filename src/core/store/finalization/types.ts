@@ -24,6 +24,7 @@ import type {
   ArchiveV2IdentityPreimages,
   ArchiveV2RecordDraft,
 } from '../../archive-accounting-v2.js';
+import type { SpecReconciliationIssue } from '../../specs-apply.js';
 import type { StorePlanningPathFlavor } from '../planning-layout-v2.js';
 
 // -----------------------------------------------------------------------------
@@ -88,6 +89,8 @@ export interface FinalizationArchivePreparation {
   readonly shipLog: ArchivePlan['shipLog'];
   readonly scope: ArchivePlan['scope'];
   readonly preparationBlockers?: readonly ArchiveBlocker[];
+  /** Exact typed reconciliation diagnostics, preserved alongside engine blockers. */
+  readonly reconciliationIssues?: readonly SpecReconciliationIssue[];
   readonly transactionId?: string;
   readonly createdAt?: string;
 }
@@ -124,6 +127,7 @@ export interface FinalizationBlocker {
   readonly actual?: string;
   readonly fix?: string;
   readonly archiveBlocker?: ArchiveBlocker;
+  readonly specReconciliationIssue?: SpecReconciliationIssue;
 }
 
 export interface FinalizationApplyInspection {

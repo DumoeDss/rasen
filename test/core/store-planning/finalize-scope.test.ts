@@ -35,6 +35,7 @@ import {
   type VerifiedChangeInstanceId,
 } from '../../../src/core/store/planning-foundation.js';
 import { resolveStorePlanningLayoutV2Path } from '../../../src/core/store/planning-layout-v2.js';
+import { hashTree } from '../../helpers/store-finalization-fixture.js';
 
 const STORE_UID = '123e4567-e89b-42d3-a456-426614174000';
 const PROJECT = 'project-a';
@@ -374,6 +375,40 @@ describe('the three authority refusals, exactly as project mutation states them'
     // project the marker names: an unknown project never resolves to the
     // nearest available one.
     expect(codeOf(thrown)).toBe('planning_selection_conflict');
+  });
+
+  it('refuses normalized registry/config drift for finalization without touching any planning or transaction bytes', async () => {
+    const roots = storeFixture();
+    write(
+      path.join(roots.projectRoot, 'rasen', 'config.yaml'),
+      `schema: spec-driven\nprojectId: drifted-project\nstore:\n  uid: ${STORE_UID}\n  id: team-store\n`
+    );
+    const fixtureRoot = path.dirname(roots.storeRoot);
+    write(
+      path.join(fixtureRoot, 'machine-data', 'archive-transactions', 'sentinel.json'),
+      '{"owned":"elsewhere"}\n'
+    );
+    write(
+      path.join(roots.storeRoot, 'rasen', 'projects', PROJECT, 'specs', 'alpha', 'spec.md'),
+      '# alpha\n'
+    );
+    const before = hashTree(fixtureRoot);
+
+    let thrown: unknown;
+    try {
+      await resolver(roots).open({
+        intent: 'finalize-change',
+        startPath: roots.projectRoot,
+        selection: { project: PROJECT, targetLine: LINE },
+        change: { changeId: CHANGE },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(codeOf(thrown)).toBe('planning_selection_conflict');
+    expect((thrown as Error).message).toContain('drifted-project');
+    expect(hashTree(fixtureRoot)).toEqual(before);
   });
 
   it('refuses a Change frozen against a different target line before any address', async () => {

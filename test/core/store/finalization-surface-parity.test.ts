@@ -172,7 +172,7 @@ describe('direct, bulk, in-ship and API produce one finalization plan', () => {
     // 4. API — the argv the management route's bridge spawns.
     const options = finalizationOptions({ outcome: 'landed', commit });
     expect(options.ok).toBe(true);
-    const api = createFinalizationCliArgv(
+    const apiArgv = createFinalizationCliArgv(
       {
         storeUid: f.storeId,
         projectId: PROJECT,
@@ -181,7 +181,32 @@ describe('direct, bulk, in-ship and API produce one finalization plan', () => {
       },
       CHANGE,
       (options as { argv: string[] }).argv
-    ).preview;
+    );
+    const inspected = await runCLI(apiArgv.inspect, {
+      cwd: bound.executionWorktree,
+      env: f.env,
+    });
+    expect(inspected.exitCode, inspected.stderr).toBe(0);
+    const inspectedArchive = JSON.parse(inspected.stdout).archive as {
+      previewPrecondition: string;
+    };
+    const api = apiArgv.save(inspectedArchive.previewPrecondition);
+    expect(apiArgv.inspect).not.toContain('--save-plan');
+    expect(api).toContain('--save-plan');
+    expect(api).toContain('--finalization-preview-precondition');
+    expect(apiArgv.apply('exact-token', false)).toEqual([
+      'archive',
+      '--apply-plan',
+      'exact-token',
+      '--json',
+    ]);
+    expect(apiArgv.apply('exact-token', true)).toEqual([
+      'archive',
+      '--apply-plan',
+      'exact-token',
+      '--json',
+      '--yes',
+    ]);
 
     const surfaces = [
       ['direct', direct],

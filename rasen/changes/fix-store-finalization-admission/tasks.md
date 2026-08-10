@@ -1,0 +1,50 @@
+## 1. Lock Management Admission Regressions Red
+
+- [x] 1.1 Extend `test/core/management-api/store-finalize-api.test.ts` with a real loopback request whose path `changeInstanceId` disagrees with the unsaved CLI inspection; snapshot the complete `archive-transactions` tree and project trees before the request and prove the identity refusal creates no plan, journal, tombstone, archive entry, or other byte change.
+- [x] 1.2 Add real loopback/real-CLI cases for `mergeConfirmed` omitted, `false`, sole-blocker `true`, and `true` with a second blocker; assert the complete HTTP blocker arrays and exact transaction-store inventory for every case before changing production orchestration.
+- [x] 1.3 Add a real Store fixture whose valid HTTP finalization reaches a child-process apply failure (for example the existing malformed-unrelated-index association boundary); assert the HTTP envelope preserves nested status, all blockers in order, and the exact recovery disposition rather than only exercising `decodeFinalizationDisposition()`.
+- [x] 1.4 If abort-required and manual-only shapes cannot be produced deterministically by the real fixture, add one bounded CLI fixture under `test/fixtures/management-api/` and the minimal dependency-injected router/server option needed to run it as an actual child process behind the actual loopback route; cover exact `abortCommand` and complete `manualRecoveryAction` without weakening the real-CLI case.
+
+## 2. Split Inspect, Save, and Apply
+
+- [x] 2.1 Refactor `createFinalizationCliArgv()` in `src/core/management-api/finalize.ts` to expose non-saving `inspect`, post-admission `save`, and exact-token `apply` argv; add `--yes` to apply only for explicit `mergeConfirmed: true`, and update surface-parity assertions that consume the exported argv contract.
+- [x] 2.2 Change `createChangeFinalizer()` to parse and admit the unsaved inspection before invoking save, then parse and re-admit the saved response and apply only its returned token; share one identity/blocker admission function across both previews without reconstructing plan data.
+- [x] 2.3 Preserve the existing timeout, cap-one concurrency, protocol-error, and non-zero-exit behavior independently for inspect, save, and apply, and make diagnostics name the phase that timed out or returned unreadable output.
+- [x] 2.4 Turn the red identity and four-case merge HTTP matrix green and prove no refusal path invokes a later phase or changes transaction-store bytes.
+- [x] 2.5 Centralize Store finalization save eligibility in `src/core/archive.ts`: persist only a blocker-free preview or the sole typed merge-confirmation blocker, and return no token/store entry for an association, reconciliation, selection, task, or second blocker.
+
+## 3. Preserve Typed Reconciliation Blockers
+
+- [x] 3.1 Add red Store-finalization spec-sync cases with at least two `SpecReconciliationIssue` objects sharing a source/capability but naming different requirements; assert deep equality and occurrence order through the immutable finalization preview, including `code`, `source`, `capability`, `requirement`, `missingScenarios`, and `message`.
+- [x] 3.2 Retain the exact reconciliation issue array in archive preparation and thread it through `FinalizationArchivePreparation` and `FinalizationBlocker` in `src/core/archive.ts` and `src/core/store/finalization/{types,module}.ts`, while keeping the archive engine's generic blockers as its existing apply gate.
+- [x] 3.3 Extend management blocker decoding to retain the nested typed issue object without flattening or source/capability deduplication; prove CLI JSON and HTTP `error.finalization.blockers` carry the same complete array.
+- [x] 3.4 Make `finalization_spec_skip_conflict` depend only on an intentional `--skip-specs` or `specSync.mode: skip` with otherwise successful preparation; keep every preparation issue when failed reconciliation yields zero actions, and retain the existing intentional-skip regressions.
+
+## 4. Close Association, Selection, and Recovery Boundaries
+
+- [x] 4.1 Audit `assertIndexEntryAgrees()` so association/index agreement compares only immutable pair identity; strengthen the ordinary-commits regression and a post-plan ref/head movement regression to prove live Git is still checked against the frozen plan before mutation.
+- [x] 4.2 Make planning derive and freeze `executionAssociationPath` for every non-noop pair and project an absent document as a `planning_execution_binding_mismatch` blocker into both finalization and archive applicability before any save or mutation; assert the expected path plus transaction/project byte equality.
+- [x] 4.3 Replace the obsolete `test/core/store/finalization-association.test.ts` expectation that an exact unclaimed intent is refused: prove the workspace child's self-contained exact target/bytes/before-state recovery succeeds and removes only revalidated carriers.
+- [x] 4.4 Add a finalization association regression in which recorded journal authority disagrees but a self-contained claim would otherwise qualify; prove the journal-bound call never falls back and retains every unproved carrier. Exercise only the shared workspace writer and do not add a finalization carrier parser or directory-sync allowlist.
+- [x] 4.5 Add a focused Store-finalization selection regression for canonical main-first resolution plus normalized registry/config drift or conflicting canonical aliases; require the established `planning_selection_conflict`/registry conflict and byte-identical registry, config, transaction store, specs, and active Change, without editing registry or StorePlanning source.
+- [x] 4.6 Verify stored Store apply/abort continues to delegate to `withStoredArchivePlanOperation()`, `applyArchive()`, and `abortArchivePlan()`; add projection-level coverage for cleaner ownership, retained paths, abort/retry status, and plan-derived operands, and introduce no parallel classifier in finalization.
+
+## 5. Make Human Abort Disposition Actionable
+
+- [x] 5.1 Add red human-rendering cases in `test/core/archive.test.ts` with multiple blockers, effective phase, retained paths, pending association, exact recovery, and manual-only ownership guidance; assert relative line order and that no blocker is truncated.
+- [x] 5.2 Route standalone and Store abort refusals through the shared blocker-first formatter in `src/core/archive.ts`: blockers, phase/retained paths, association guidance, then exact recovery or manual disposition; never synthesize replay advice for a manual ownership/integrity action.
+
+## 6. Focused Verification and Review Gates
+
+- [x] 6.1 Run the red-to-green focused suite: `pnpm exec vitest run test/core/management-api/store-finalize-api.test.ts test/core/store/finalization-association.test.ts test/core/store/finalization-spec-sync.test.ts test/core/store/finalization-plan-token.test.ts test/core/archive.test.ts --reporter=dot`, plus any smallest existing finalization selection/surface-parity file touched by the implementation.
+- [x] 6.2 Run `pnpm exec tsc --noEmit`, then focused ESLint over only the owned production/test/fixture files; fix the root cause of any failure before widening the gate.
+- [x] 6.3 Run `node bin/rasen.js validate fix-store-finalization-admission --type change --strict --no-interactive` and confirm all three delta specs preserve complete canonical scenario inventories.
+- [x] 6.4 Strict-decode every changed text file as UTF-8, run `git diff --check`, and verify the product diff stays within the design's touched set with no edits to `specs-apply.ts`, `archive-engine.ts`, registry, StorePlanning, or workspace dependency sources.
+- [x] 6.5 Obtain non-author review of CCR-4 through CCR-6, FAR-1 through FAR-3, SCR-1, and the dependency-boundary assertions; do not mark the parent findings resolved until the reviewer confirms the real HTTP/child-process and zero-write evidence.
+
+## 7. Native Platform and Integration Evidence
+
+- [ ] 7.1 Record a native Windows run of the focused HTTP/finalization suite proving child-process disposition fidelity, exact NTFS-safe claim identity, association path handling, and the explicit directory durability behavior consumed from the workspace child.
+- [ ] 7.2 Record a native POSIX CI run of the same path/claim/finalization coverage, including journal-bound no-fallback and genuine directory/I/O failures remaining visible; mocked platform tuples do not substitute for this evidence.
+- [ ] 7.3 After integration with the four dependency children, run the repository's full test/build gate once and verify Store finalization still consumes canonical registry selection, exact archive cleaner/abort authority, and the reviewed workspace persistence implementation.
+- [ ] 7.4 Keep external Windows/POSIX CI tasks unchecked until post-commit jobs execute the committed child delta; do not represent local mocks, pre-child jobs, or workflow inclusion alone as passing native evidence.

@@ -33,6 +33,8 @@ export interface StartManagementServerOptions {
   port?: number;
   /** Test/daemon-only overrides for the sessions supervisor (design D1's injectable resolver, task 3.3's fixture CLI override). */
   sessions?: ManagementRouterOptions;
+  /** Constructor-only bounded finalization subprocess seam; never HTTP/config controlled. */
+  finalizer?: ManagementRouterOptions['finalizer'];
 }
 
 export interface ManagementServerHandle {
@@ -97,7 +99,12 @@ export function startManagementServer(
     handle: managementHandler,
     supervisor,
     shutdownPathChooser,
-  } = createManagementRouter(context, resolveHomeForRoot, options.sessions);
+  } = createManagementRouter(context, resolveHomeForRoot, {
+    ...(options.sessions ?? {}),
+    ...(options.finalizer === undefined
+      ? {}
+      : { finalizer: options.finalizer }),
+  });
 
   const handler = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
     const pathname = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;

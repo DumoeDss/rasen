@@ -26,6 +26,7 @@ import {
   type ChangeFinalizationError,
 } from '../../../src/core/store/finalization/index.js';
 import type { PreparedArchiveSpecAction } from '../../../src/core/archive-engine.js';
+import type { SpecReconciliationIssue } from '../../../src/core/specs-apply.js';
 import {
   createStoreFinalizationFixture,
   hashTree,
@@ -449,6 +450,65 @@ describe('a real finalization against real delta specs', () => {
     expect(
       (plan.recordDraft as unknown as { specSync: unknown }).specSync
     ).toEqual({ applied: true, actions: [] });
+  }, 180_000);
+
+  it('preserves every typed reconciliation issue in occurrence order without capability deduplication', async () => {
+    const bound = await f.bind({
+      projectId: PROJECT,
+      targetLineId: LINE,
+      changeId: 'typed-reconciliation-blockers',
+    });
+    const source = path.join(bound.changeDir, 'specs', 'alpha', 'spec.md');
+    const issues: SpecReconciliationIssue[] = [
+      {
+        code: 'spec_modified_scenarios_missing',
+        source,
+        capability: 'alpha',
+        requirement: 'First Rule',
+        missingScenarios: ['First scenario'],
+        message: 'First Rule is missing First scenario.',
+      },
+      {
+        code: 'spec_modified_scenarios_missing',
+        source,
+        capability: 'alpha',
+        requirement: 'Second Rule',
+        missingScenarios: ['Second A', 'Second B'],
+        message: 'Second Rule is missing two scenarios.',
+      },
+    ];
+    const archive = f.preparation(bound, {
+      hasDeltaSpecs: true,
+      specActionCandidates: [],
+      specSync: { mode: 'no-deltas', deltaSources: [source] },
+      preparationBlockers: issues.map(issue => ({
+        operation: 'spec',
+        path: issue.source,
+        code: issue.code,
+        message: issue.message,
+      })),
+      reconciliationIssues: issues,
+    } as unknown as Parameters<StoreFinalizationFixture['preparation']>[1]);
+
+    const plan = await f.finalization().plan(
+      f.planInput(
+        bound,
+        { outcome: 'landed', commit: f.refOid(bound.executionWorktree, 'HEAD') },
+        { archive }
+      )
+    );
+
+    expect(plan.applicable).toBe(false);
+    expect(
+      (plan.blockers as readonly Record<string, unknown>[]).flatMap(blocker =>
+        blocker.specReconciliationIssue === undefined
+          ? []
+          : [blocker.specReconciliationIssue]
+      )
+    ).toEqual(issues);
+    expect(plan.blockers.map(blocker => blocker.code)).not.toContain(
+      'finalization_spec_skip_conflict'
+    );
   }, 180_000);
 
   it('refuses --skip-specs on a landed Change that carries deltas', async () => {

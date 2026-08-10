@@ -28,6 +28,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { canPersistStoreFinalizationPlan } from '../../../src/core/archive.js';
 
 import {
   finalizationLockKeys,
@@ -99,6 +100,7 @@ describe('the finalization plan identifier', () => {
       .plan(f.planInput(bound, { outcome: 'abandoned', reason: 'Dropped.' }));
 
     expect(second.planId).toBe(first.planId);
+    expect(canPersistStoreFinalizationPlan(first)).toBe(true);
     // …and the two runs are genuinely separate transactions, so the identifier
     // is not "the same because nothing was recomputed".
     expect(second.archivePlan.transactionId).not.toBe(first.archivePlan.transactionId);
@@ -181,6 +183,7 @@ describe('the finalization plan identifier', () => {
         }),
       }),
     ]);
+    expect(canPersistStoreFinalizationPlan(plan)).toBe(true);
     expect(
       inspectFinalizationApplyPlan(plan, { mergeConfirmed: true })
     ).toEqual({
@@ -226,6 +229,28 @@ describe('the finalization plan identifier', () => {
     });
     expect(refusedAbort.manualRecoveryAction).toBeUndefined();
   }, 240_000);
+
+  it('refuses Store plan persistence when a merge gate has any second blocker', async () => {
+    const bound = await f.bind({
+      projectId: PROJECT_A,
+      targetLineId: LINE_02,
+      changeId: 'stored-merge-with-second-blocker',
+    });
+    const plan = await f.finalization().plan(
+      f.planInput(bound, { outcome: 'abandoned', reason: 'Dropped.' }, {
+        archive: f.preparation(bound, {
+          timing: { mode: 'on-merge', deliveryMode: 'pr', override: false },
+          tasks: { total: 1, completed: 0, override: false },
+        }),
+      })
+    );
+
+    expect(plan.blockers).toHaveLength(2);
+    expect(canPersistStoreFinalizationPlan(plan)).toBe(false);
+    expect(
+      inspectFinalizationApplyPlan(plan, { mergeConfirmed: true }).applicable
+    ).toBe(false);
+  }, 180_000);
 
   it('preserves merge confirmation in a recoverable replay command and advances on retry', async () => {
     const bound = await f.bind({
@@ -534,13 +559,14 @@ describe('the finalization plan identifier', () => {
     const plan = await f
       .finalization()
       .plan(f.planInput(bound, { outcome: 'abandoned', reason: 'Dropped.' }));
-    const remove = defaultArchiveEngineAdapters.fs.rm;
+    const lstat = defaultArchiveEngineAdapters.fs.lstat;
     let cleanupRefused = false;
-    const removeSpy = vi
-      .spyOn(defaultArchiveEngineAdapters.fs, 'rm')
-      .mockImplementation(async (targetPath, options) => {
+    const lstatSpy = vi
+      .spyOn(defaultArchiveEngineAdapters.fs, 'lstat')
+      .mockImplementation(async targetPath => {
         if (
           targetPath === plan.archivePlan.paths.stage &&
+          !fs.existsSync(bound.changeDir) &&
           cleanupRefused === false
         ) {
           cleanupRefused = true;
@@ -548,7 +574,7 @@ describe('the finalization plan identifier', () => {
           (failure as NodeJS.ErrnoException).code = 'EACCES';
           throw failure;
         }
-        return remove(targetPath, options);
+        return lstat(targetPath);
       });
 
     let failed;
@@ -557,7 +583,7 @@ describe('the finalization plan identifier', () => {
         .finalization()
         .applyStoredPlan(plan.archivePlan, plan.token);
     } finally {
-      removeSpy.mockRestore();
+      lstatSpy.mockRestore();
     }
 
     expect(failed).toMatchObject({
@@ -759,7 +785,7 @@ describe('revalidation invalidates rather than repairs', () => {
    * The ref is REWOUND rather than advanced: a fast-forward leaves the record's
    * claim true, so advancing it would not test the property.
    */
-  it('APPLY-PLAN (no token) re-proves reachability and refuses a commit the code ref no longer contains', async () => {
+  it('APPLY-PLAN (no token) re-proves code-ref identity and refuses a commit the ref no longer contains', async () => {
     const bound = await f.bind({
       projectId: PROJECT_A,
       targetLineId: LINE_02,
@@ -795,8 +821,11 @@ describe('revalidation invalidates rather than repairs', () => {
       thrown = error;
     }
     expect(codeOf(thrown)).toBe('finalization_plan_stale');
-    expect((thrown as Error).message).toContain(`reachability of ${commit}`);
-    expect((thrown as Error).message).toContain('refs/heads/release/0.2');
+    expect((thrown as Error).message).toContain(
+      'the target line code ref refs/heads/release/0.2'
+    );
+    expect((thrown as Error).message).toContain(`expected: ${commit}`);
+    expect((thrown as Error).message).toContain(`actual: ${before}`);
     // Nothing was published, and — because a landed outcome is the only one
     // that writes specs — nothing was synchronized either.
     expect(fs.existsSync(plan.destination)).toBe(false);
@@ -1087,7 +1116,7 @@ describe('revalidating the successor a superseded record names', () => {
     const retry = await f
       .finalization()
       .applyStoredPlan(plan.archivePlan, plan.token);
-    expect(retry).toMatchObject({
+    expect(retry, JSON.stringify(retry, null, 2)).toMatchObject({
       status: 'complete',
       associationPhase: 'applied',
     });
