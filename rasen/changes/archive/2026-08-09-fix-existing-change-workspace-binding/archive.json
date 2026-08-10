@@ -1,0 +1,29 @@
+{
+  "change": "fix-existing-change-workspace-binding",
+  "archivedAt": "2026-08-09T23:01:08.818Z",
+  "codeCommit": "95f26f4c0268654aefe876d312e93c5098c7daf0",
+  "planningBranch": "fix/existing-change-workspace-binding",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/review-cycle-report.md",
+      "sha256": "bf4f5f2bc3de2fdb6e267de395513f0ad4943ce7ca48e803d06d9a6b4469c694"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "9a822c2d0f2cd3c45517311cf3462415e7ac880b7c1f5273ccc576cd980b5899"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "ae5c84a7614abd82e243c66db8123b34c39c7b2c7a40e0669b534de1ad3c5195"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

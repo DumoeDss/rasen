@@ -24,7 +24,12 @@
  */
 import { parseStoreMetadataState } from '../foundation.js';
 import {
+  assertCarrierAgreesWithScope,
+  assertPairAgrees,
   digestOf,
+  executionAssociationPath,
+  planningMarkerPath,
+  readBindingFact,
   serializeBindingFact,
   surveyWorktree,
   type BindingFact,
@@ -73,7 +78,8 @@ function stale(
 export async function revalidateWorkspacePlan(
   dependencies: StoreWorkspaceDependencies,
   plan: ImmutableWorkspacePlan,
-  token: WorkspacePlanToken
+  token: WorkspacePlanToken,
+  existing: WorkspaceIndexEntry | null = null
 ): Promise<{ readonly planning: WorktreeFacts; readonly execution: WorktreeFacts }> {
   const flavor = plan.pathFlavor;
 
@@ -147,7 +153,7 @@ export async function revalidateWorkspacePlan(
     facts.push(live);
     if (side.disposition === 'create') {
       // Idempotence: a destination this apply already created carries the
-      // planned ref, and re-applying must complete rather than refuse.
+      // planned ref and its identity still agrees with the recorded apply.
       if (live.exists && live.ref !== side.ref) {
         stale(
           `The planned ${side.side} destination ${side.root}`,
@@ -156,10 +162,37 @@ export async function revalidateWorkspacePlan(
           side.root
         );
       }
+      const recordedIdentity =
+        side.side === 'planning'
+          ? existing?.planning.worktreeInstanceId
+          : existing?.execution.worktreeInstanceId;
+      if (
+        recordedIdentity !== undefined &&
+        recordedIdentity.length > 0 &&
+        live.worktreeInstanceId !== recordedIdentity
+      ) {
+        stale(
+          `The identity of the created ${side.side} worktree ${side.root}`,
+          recordedIdentity,
+          live.worktreeInstanceId ?? '(unknown)',
+          side.root
+        );
+      }
       continue;
     }
     if (!live.exists) {
       stale(`The reused ${side.side} worktree ${side.root}`, side.ref, '(absent)', side.root);
+    }
+    if (
+      side.worktreeInstanceId !== undefined &&
+      live.worktreeInstanceId !== side.worktreeInstanceId
+    ) {
+      stale(
+        `The identity of the reused ${side.side} worktree ${side.root}`,
+        side.worktreeInstanceId,
+        live.worktreeInstanceId ?? '(unknown)',
+        side.root
+      );
     }
     if (live.ref !== side.ref) {
       stale(
@@ -177,6 +210,41 @@ export async function revalidateWorkspacePlan(
         side.root
       );
     }
+  }
+
+  if (plan.changeInstanceId !== undefined) {
+    const markerPath = planningMarkerPath(plan.planning.root, flavor);
+    const associationPath = executionAssociationPath(plan.execution.root, flavor);
+    const [marker, association] = await Promise.all([
+      readBindingFact(dependencies, markerPath),
+      readBindingFact(dependencies, associationPath),
+    ]);
+    if (marker !== null) assertCarrierAgreesWithScope(marker.fact, plan.scope, markerPath);
+    if (association !== null) {
+      assertCarrierAgreesWithScope(association.fact, plan.scope, associationPath);
+    }
+
+    const expectedMarker: BindingFact = {
+      version: 1,
+      storeUid: plan.scope.storeUid,
+      storeId: plan.scope.storeId,
+      projectId: plan.scope.projectId,
+      targetLineId: plan.scope.targetLineId,
+      executionRoot: plan.execution.root,
+    };
+    const expectedAssociation: BindingFact = {
+      ...expectedMarker,
+      planningWorktree: plan.planning.root,
+    };
+    assertPairAgrees({
+      marker: marker?.fact ?? expectedMarker,
+      markerPath,
+      association: association?.fact ?? expectedAssociation,
+      associationPath,
+      planningRoot: plan.planning.root,
+      executionRoot: plan.execution.root,
+      flavor,
+    });
   }
 
   return { planning: facts[0] as WorktreeFacts, execution: facts[1] as WorktreeFacts };
@@ -212,14 +280,14 @@ export async function applyWorkspacePlan(
     );
   }
 
-  await revalidateWorkspacePlan(dependencies, plan, token);
-
-  const at = dependencies.now().toISOString();
   const existing = await readWorkspaceIndexEntry(
     coordination,
     plan.scope.planningScopeId,
     plan.changeId
   );
+  await revalidateWorkspacePlan(dependencies, plan, token, existing);
+
+  const at = dependencies.now().toISOString();
   const created: string[] = [];
   const reused: string[] = [];
 

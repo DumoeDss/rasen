@@ -20,7 +20,9 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  deriveChangeInstanceId,
   derivePlanningScopeId,
+  deriveWorkspacePairId,
   getGlobalDataDir,
   parseProjectId,
   parseTargetLineId,
@@ -211,6 +213,275 @@ describe('Store v2 workspace CLI journey', () => {
   afterEach(() => {
     cleanupTempPath(tempDir);
   });
+
+  it('binds, previews finalization, retries, and cleans up an existing Change pair', async () => {
+    const changeId = 'already-created';
+    const planningScopeId = derivePlanningScopeId({
+      storeUid,
+      projectId: parseProjectId(PROJECT_A),
+      targetLineId: parseTargetLineId(LINE_02),
+    });
+    const instanceSeed = 'e'.repeat(32);
+    const changeInstanceId = deriveChangeInstanceId({ planningScopeId, instanceSeed });
+    const changeDir = path.join(
+      storeRoot,
+      'rasen',
+      'projects',
+      PROJECT_A,
+      'changes',
+      changeId
+    );
+    const changeMetadataPath = path.join(changeDir, '.openspec.yaml');
+    write(
+      changeMetadataPath,
+      [
+        'schema: spec-driven',
+        'identity:',
+        '  version: 2',
+        `  instanceSeed: ${JSON.stringify(instanceSeed)}`,
+        `  instanceId: ${JSON.stringify(changeInstanceId)}`,
+        `  storeUid: ${JSON.stringify(storeUid)}`,
+        `  projectId: ${JSON.stringify(PROJECT_A)}`,
+        `  targetLineId: ${JSON.stringify(LINE_02)}`,
+        '',
+      ].join('\n')
+    );
+    write(path.join(changeDir, 'proposal.md'), '## Why\n\nAlready created before workspace apply.\n');
+    runGit(storeRoot, ['add', '.']);
+    runGit(storeRoot, ['commit', '-m', 'seed existing Change']);
+    runGit(storeRoot, ['branch', '-f', 'release/0.2', 'HEAD']);
+    const changeMetadataBefore = fs.readFileSync(changeMetadataPath);
+
+    const planningWorktree = path.join(tempDir, 'store-planning-existing');
+    const executionWorktree = path.join(tempDir, 'app-a-existing');
+    const selectors = [
+      '--store',
+      STORE_ID,
+      '--project',
+      PROJECT_A,
+      '--target-line',
+      LINE_02,
+    ];
+    const plan = parseJson(
+      expectOk(
+        await runCLI(
+          [
+            'store',
+            'workspace',
+            'plan',
+            ...selectors,
+            '--change',
+            changeId,
+            '--planning-worktree',
+            planningWorktree,
+            '--execution-worktree',
+            executionWorktree,
+            '--existing-change',
+            '--json',
+          ],
+          { cwd: storeRoot, env }
+        )
+      )
+    );
+    expect(plan).toMatchObject({
+      applicable: true,
+      intent: 'existing-change',
+      changeInstanceId,
+    });
+
+    const applied = parseJson(
+      expectOk(
+        await runCLI(
+          ['store', 'workspace', 'apply', '--apply-plan', plan.planId, '--json'],
+          { cwd: storeRoot, env }
+        )
+      )
+    );
+    expect(applied).toMatchObject({ bindingState: 'bound', changeInstanceId });
+    expect(applied.workspacePairId).toBe(
+      deriveWorkspacePairId({
+        changeInstanceId,
+        planningWorktreeInstanceId: applied.planning.worktreeInstanceId,
+        executionWorktreeInstanceId: applied.execution.worktreeInstanceId,
+      })
+    );
+
+    const shown = parseJson(
+      expectOk(
+        await runCLI(
+          [
+            'store',
+            'workspace',
+            'show',
+            ...selectors,
+            '--change',
+            changeId,
+            '--json',
+          ],
+          { cwd: executionWorktree, env }
+        )
+      )
+    );
+    expect(shown).toMatchObject({
+      bindingState: 'bound',
+      changeInstanceId,
+      workspacePairId: applied.workspacePairId,
+    });
+    expect(shown.workspacePairId).toBe(
+      deriveWorkspacePairId({
+        changeInstanceId,
+        planningWorktreeInstanceId: shown.planning.worktreeInstanceId,
+        executionWorktreeInstanceId: shown.execution.worktreeInstanceId,
+      })
+    );
+
+    const retry = parseJson(
+      expectOk(
+        await runCLI(
+          ['store', 'workspace', 'apply', '--apply-plan', plan.planId, '--json'],
+          { cwd: storeRoot, env }
+        )
+      )
+    );
+    expect(retry).toMatchObject({
+      bindingState: 'bound',
+      changeInstanceId,
+      workspacePairId: applied.workspacePairId,
+      created: [],
+    });
+    expect(runGit(storeRoot, ['worktree', 'list']).trim().split('\n')).toHaveLength(2);
+    expect(runGit(projectARoot, ['worktree', 'list']).trim().split('\n')).toHaveLength(2);
+
+    const archivePreview = parseJson(
+      expectOk(
+        await runCLI(
+          [
+            'archive',
+            changeId,
+            ...selectors,
+            '--outcome',
+            'abandoned',
+            '--reason',
+            'Preview existing-change finalization eligibility.',
+            '--dry-run',
+            '--json',
+          ],
+          { cwd: executionWorktree, env }
+        )
+      )
+    ).archive.finalizationPlan;
+    expect(archivePreview.blockers.map((blocker: { code: string }) => blocker.code)).not.toContain(
+      'workspace_pair_unavailable'
+    );
+
+    const unrelatedChange = 'unrelated-spike';
+    const unrelatedPlanning = path.join(tempDir, 'store-planning-unrelated');
+    const unrelatedExecution = path.join(tempDir, 'app-b-unrelated');
+    const unrelatedSelectors = [
+      '--store',
+      STORE_ID,
+      '--project',
+      PROJECT_B,
+      '--target-line',
+      LINE_02,
+    ];
+    const unrelatedPlan = parseJson(
+      expectOk(
+        await runCLI(
+          [
+            'store',
+            'workspace',
+            'plan',
+            ...unrelatedSelectors,
+            '--change',
+            unrelatedChange,
+            '--planning-worktree',
+            unrelatedPlanning,
+            '--execution-worktree',
+            unrelatedExecution,
+            '--json',
+          ],
+          { cwd: storeRoot, env }
+        )
+      )
+    );
+    expectOk(
+      await runCLI(
+        ['store', 'workspace', 'apply', '--apply-plan', unrelatedPlan.planId, '--json'],
+        { cwd: storeRoot, env }
+      )
+    );
+    const unrelatedScopeId = derivePlanningScopeId({
+      storeUid,
+      projectId: parseProjectId(PROJECT_B),
+      targetLineId: parseTargetLineId(LINE_02),
+    });
+    const unrelatedIndexPath = path.join(
+      globalDataDir,
+      'planning-workspaces',
+      'index',
+      `${unrelatedScopeId}.json`
+    );
+    const unrelatedIndexBefore = fs.readFileSync(unrelatedIndexPath);
+
+    const cleanupPlan = parseJson(
+      expectOk(
+        await runCLI(
+          [
+            'store',
+            'workspace',
+            'cleanup',
+            ...selectors,
+            '--change',
+            changeId,
+            '--json',
+          ],
+          { cwd: storeRoot, env }
+        )
+      )
+    );
+    expect(cleanupPlan.applicable, JSON.stringify(cleanupPlan.blockers)).toBe(true);
+    const cleaned = parseJson(
+      expectOk(
+        await runCLI(
+          ['store', 'workspace', 'cleanup', '--apply-plan', cleanupPlan.planId, '--json'],
+          { cwd: storeRoot, env }
+        )
+      )
+    );
+    expect(cleaned.phase).toBe('complete');
+    expect([...cleaned.removed].sort()).toEqual(
+      [executionWorktree, planningWorktree].sort()
+    );
+    expect(cleaned.indexEntryRemoved).toBe(true);
+    expect(fs.existsSync(planningWorktree)).toBe(false);
+    expect(fs.existsSync(executionWorktree)).toBe(false);
+    expect(fs.existsSync(unrelatedPlanning)).toBe(true);
+    expect(fs.existsSync(unrelatedExecution)).toBe(true);
+    expect(fs.readFileSync(unrelatedIndexPath).equals(unrelatedIndexBefore)).toBe(true);
+
+    const cleanedIndexPath = path.join(
+      globalDataDir,
+      'planning-workspaces',
+      'index',
+      `${planningScopeId}.json`
+    );
+    const cleanedEntries = fs.existsSync(cleanedIndexPath)
+      ? JSON.parse(fs.readFileSync(cleanedIndexPath, 'utf8')).entries
+      : [];
+    expect(
+      cleanedEntries.some((entry: { changeId: string }) => entry.changeId === changeId)
+    ).toBe(false);
+    expect(fs.readFileSync(changeMetadataPath).equals(changeMetadataBefore)).toBe(true);
+    expect(runGit(storeRoot, ['show-ref', '--verify', `refs/heads/change/${LINE_02}/${PROJECT_A}/${changeId}`])).not.toBe('');
+    expect(runGit(projectARoot, ['show-ref', '--verify', `refs/heads/change/${LINE_02}/${PROJECT_A}/${changeId}`])).not.toBe('');
+    expect(runGit(storeRoot, ['symbolic-ref', '--quiet', 'HEAD']).trim()).toBe('refs/heads/main');
+    expect(runGit(projectARoot, ['symbolic-ref', '--quiet', 'HEAD']).trim()).toBe(
+      'refs/heads/main'
+    );
+    expect(runGit(storeRoot, ['status', '--porcelain'])).toBe('');
+    expect(runGit(projectARoot, ['status', '--porcelain'])).toBe('');
+  }, 240_000);
 
   it('authors a line, prepares a pair, binds a Change, reports it, and refuses an unsafe cleanup', async () => {
     // ---- target lines ---------------------------------------------------

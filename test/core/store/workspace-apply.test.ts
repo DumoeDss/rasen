@@ -15,6 +15,8 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { StoreError } from '../../../src/core/store/errors.js';
+import { deriveWorkspacePairId } from '../../../src/core/store/planning-identity.js';
+import { serializeBindingFact } from '../../../src/core/store/workspace/binding.js';
 import type { StoreWorkspaceDependencies } from '../../../src/core/store/workspace/dependencies.js';
 import { StoreWorkspace } from '../../../src/core/store/workspace/module.js';
 import {
@@ -82,6 +84,22 @@ describe('applying a workspace plan', () => {
     const built = await f.workspace().plan(input());
     expect(built.applicable, JSON.stringify(built.blockers)).toBe(true);
     return built;
+  }
+
+  async function existingChangePlan(): Promise<{
+    readonly built: ImmutableWorkspacePlan;
+    readonly changeInstanceId: string;
+  }> {
+    const seeded = f.seedChange({
+      root: f.storeRoot,
+      projectId: PROJECT,
+      targetLineId: LINE,
+      changeId: CHANGE,
+    });
+    const built = await f.workspace().plan(input({ intent: 'existing-change' }));
+    expect(built.applicable, JSON.stringify(built.blockers)).toBe(true);
+    expect(built.changeInstanceId).toBe(seeded.instanceId);
+    return { built, changeInstanceId: seeded.instanceId };
   }
 
   async function indexEntry(): Promise<WorkspaceIndexEntry | null> {
@@ -204,6 +222,229 @@ describe('applying a workspace plan', () => {
     // Exactly one linked worktree per repository, not two.
     expect(f.git(f.storeRoot, ['worktree', 'list']).trim().split('\n')).toHaveLength(2);
     expect(f.git(f.projectRoot(PROJECT), ['worktree', 'list']).trim().split('\n')).toHaveLength(2);
+  });
+
+  it('completes an existing Change with one canonical, retry-stable pair identity', async () => {
+    const { built, changeInstanceId } = await existingChangePlan();
+
+    const first = await f.workspace().apply(built.token!);
+    const firstEntry = await indexEntry();
+
+    expect(first.bindingState).toBe('bound');
+    expect(first.changeInstanceId).toBe(changeInstanceId);
+    expect(first.workspacePairId).toBeDefined();
+    expect(firstEntry).toMatchObject({
+      phase: 'bound',
+      changeInstanceId,
+      workspacePairId: first.workspacePairId,
+    });
+    expect(first.workspacePairId).toBe(
+      deriveWorkspacePairId({
+        changeInstanceId,
+        planningWorktreeInstanceId: firstEntry!.planning.worktreeInstanceId,
+        executionWorktreeInstanceId: firstEntry!.execution.worktreeInstanceId,
+      })
+    );
+
+    const described = await f.workspace().describe({
+      store: f.storeId,
+      project: PROJECT,
+      targetLine: LINE,
+      changeId: CHANGE,
+      startPath: executionWorktree,
+      globalDataDir: f.globalDataDir,
+    });
+    expect(described).toMatchObject({
+      bindingState: 'bound',
+      changeInstanceId,
+      workspacePairId: first.workspacePairId,
+    });
+
+    const markerBefore = fs.readFileSync(
+      path.join(planningWorktree, '.rasen', 'planning-line.json')
+    );
+    const associationBefore = fs.readFileSync(
+      path.join(executionWorktree, '.rasen', 'planning-binding.json')
+    );
+    const again = await f.workspace().apply(built.token!);
+    const againEntry = await indexEntry();
+
+    expect(again.bindingState).toBe('bound');
+    expect(again.changeInstanceId).toBe(changeInstanceId);
+    expect(again.workspacePairId).toBe(first.workspacePairId);
+    expect(againEntry?.changeInstanceId).toBe(changeInstanceId);
+    expect(againEntry?.workspacePairId).toBe(first.workspacePairId);
+    expect(again.created).toEqual([]);
+    expect([...again.reused].sort()).toEqual([executionWorktree, planningWorktree].sort());
+    expect(f.git(f.storeRoot, ['worktree', 'list']).trim().split('\n')).toHaveLength(2);
+    expect(f.git(f.projectRoot(PROJECT), ['worktree', 'list']).trim().split('\n')).toHaveLength(2);
+    expect(
+      fs.readFileSync(path.join(planningWorktree, '.rasen', 'planning-line.json')).equals(markerBefore)
+    ).toBe(true);
+    expect(
+      fs
+        .readFileSync(path.join(executionWorktree, '.rasen', 'planning-binding.json'))
+        .equals(associationBefore)
+    ).toBe(true);
+  });
+
+  it('keeps an existing Change prepared when completion cannot derive the execution identity', async () => {
+    const { built, changeInstanceId } = await existingChangePlan();
+    const associationPath = path.join(
+      executionWorktree,
+      '.rasen',
+      'planning-binding.json'
+    );
+    let executionIdentityUnavailable = false;
+    const unavailable: StoreWorkspaceDependencies = {
+      ...f.dependencies,
+      fs: {
+        ...f.dependencies.fs,
+        writeText: async (target, content) => {
+          await f.dependencies.fs.writeText(target, content);
+          if (path.resolve(target) === path.resolve(associationPath)) {
+            executionIdentityUnavailable = true;
+          }
+        },
+      },
+      git: {
+        ...f.dependencies.git,
+        repositoryPaths: async (root) =>
+          executionIdentityUnavailable && path.resolve(root) === path.resolve(executionWorktree)
+            ? null
+            : f.dependencies.git.repositoryPaths(root),
+      },
+    };
+
+    const result = await workspaceWith(unavailable).apply(built.token!);
+    const entry = await indexEntry();
+
+    expect(result.bindingState).toBe('prepared');
+    expect(result.changeInstanceId).toBe(changeInstanceId);
+    expect(result.workspacePairId).toBeUndefined();
+    expect(entry).toMatchObject({
+      phase: 'prepared',
+      changeInstanceId,
+      execution: { root: executionWorktree, worktreeInstanceId: '' },
+    });
+    expect(entry?.workspacePairId).toBeUndefined();
+  });
+
+  it('refuses originally-created worktree identity drift on retry without rewriting binding state', async () => {
+    const { built } = await existingChangePlan();
+    expect(built.execution.disposition).toBe('create');
+    const first = await f.workspace().apply(built.token!);
+    expect(first.bindingState).toBe('bound');
+
+    const markerPath = path.join(planningWorktree, '.rasen', 'planning-line.json');
+    const associationPath = path.join(
+      executionWorktree,
+      '.rasen',
+      'planning-binding.json'
+    );
+    const indexPath = path.join(
+      f.globalDataDir,
+      'planning-workspaces',
+      'index',
+      `${f.planningScopeId(PROJECT, LINE)}.json`
+    );
+    const markerBefore = fs.readFileSync(markerPath);
+    const associationBefore = fs.readFileSync(associationPath);
+    const indexBefore = fs.readFileSync(indexPath);
+    expect((await indexEntry())?.execution.worktreeInstanceId).not.toBe('');
+
+    f.git(f.projectRoot(PROJECT), ['worktree', 'remove', '--force', executionWorktree]);
+    f.git(f.projectRoot(PROJECT), [
+      'clone',
+      '--quiet',
+      '--branch',
+      `change/${LINE}/${PROJECT}/${CHANGE}`,
+      f.projectRoot(PROJECT),
+      executionWorktree,
+    ]);
+    expect(f.git(executionWorktree, ['symbolic-ref', '--quiet', 'HEAD']).trim()).toBe(BRANCH);
+    fs.mkdirSync(path.dirname(associationPath), { recursive: true });
+    fs.writeFileSync(associationPath, associationBefore);
+
+    const error = await f.workspace().apply(built.token!).catch((raised: unknown) => raised);
+
+    expect(codeOf(error)).toBe('workspace_plan_stale');
+    expect((error as StoreError).diagnostic.message).toContain(
+      'identity of the created execution'
+    );
+    expect(fs.readFileSync(markerPath).equals(markerBefore)).toBe(true);
+    expect(fs.readFileSync(associationPath).equals(associationBefore)).toBe(true);
+    expect(fs.readFileSync(indexPath).equals(indexBefore)).toBe(true);
+  });
+
+  it('refuses reused-worktree identity drift before writing the prepared carriers', async () => {
+    const preparedPlan = await plan();
+    await f.workspace().apply(preparedPlan.token!);
+    const { built } = await existingChangePlan();
+    expect(built.execution.disposition).toBe('reuse');
+    const frozenIdentity = built.execution.worktreeInstanceId;
+    const markerPath = path.join(planningWorktree, '.rasen', 'planning-line.json');
+    const markerBefore = fs.readFileSync(markerPath);
+    const indexPath = path.join(
+      f.globalDataDir,
+      'planning-workspaces',
+      'index',
+      `${f.planningScopeId(PROJECT, LINE)}.json`
+    );
+    const indexBefore = fs.readFileSync(indexPath);
+
+    f.git(f.projectRoot(PROJECT), ['worktree', 'remove', '--force', executionWorktree]);
+    f.git(f.projectRoot(PROJECT), [
+      'clone',
+      '--quiet',
+      '--branch',
+      `change/${LINE}/${PROJECT}/${CHANGE}`,
+      f.projectRoot(PROJECT),
+      executionWorktree,
+    ]);
+
+    const error = await f.workspace().apply(built.token!).catch((raised: unknown) => raised);
+
+    expect(codeOf(error)).toBe('workspace_plan_stale');
+    expect((error as StoreError).diagnostic.message).toContain('identity of the reused execution');
+    expect((error as StoreError).diagnostic.message).toContain(frozenIdentity);
+    expect(fs.existsSync(path.join(executionWorktree, '.rasen', 'planning-binding.json'))).toBe(
+      false
+    );
+    expect(fs.readFileSync(markerPath).equals(markerBefore)).toBe(true);
+    expect(fs.readFileSync(indexPath).equals(indexBefore)).toBe(true);
+  });
+
+  it('refuses a reused marker target-line disagreement without rewriting either carrier', async () => {
+    const preparedPlan = await plan();
+    await f.workspace().apply(preparedPlan.token!);
+    const { built } = await existingChangePlan();
+    const markerPath = path.join(planningWorktree, '.rasen', 'planning-line.json');
+    const associationPath = path.join(
+      executionWorktree,
+      '.rasen',
+      'planning-binding.json'
+    );
+    f.write(
+      markerPath,
+      serializeBindingFact({
+        version: 1,
+        storeUid: f.storeUid,
+        storeId: f.storeId,
+        projectId: PROJECT,
+        targetLineId: 'line-0.3',
+        executionRoot: executionWorktree,
+      })
+    );
+    const markerBefore = fs.readFileSync(markerPath);
+    const associationBefore = fs.readFileSync(associationPath);
+
+    const error = await f.workspace().apply(built.token!).catch((raised: unknown) => raised);
+
+    expect(codeOf(error)).toBe('workspace_marker_conflict');
+    expect((error as StoreError).diagnostic.message).toContain('line-0.3');
+    expect(fs.readFileSync(markerPath).equals(markerBefore)).toBe(true);
+    expect(fs.readFileSync(associationPath).equals(associationBefore)).toBe(true);
   });
 
   // ---- injected failures -------------------------------------------------
