@@ -26,3 +26,9 @@
 
 - Local child commit only; no push, PR, merge, deployment, or archive action was performed.
 - Delivery is deferred to the portfolio/parent level after all decomposed children complete.
+
+## Archive
+**Date:** 2026-08-10T06:00:03.625Z
+**Ship commit:** 43c7e88fb2cacb584754bfbee7bdedf28114131d
+**Outcome:** archived at E:\wt\rasen-archive-follow-up\rasen\changes\archive\2026-08-10-fix-project-registry-alias-safety
+**Transaction:** 92e38fce-3552-4334-9564-66413c43686a
