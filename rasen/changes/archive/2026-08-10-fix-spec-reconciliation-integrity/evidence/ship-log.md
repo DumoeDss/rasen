@@ -33,3 +33,9 @@ reported by the shipper handoff rather than self-stamped into this file.
 - No push, PR creation, merge, deployment, or archive was performed.
 - Delivery is deferred to the single portfolio/parent-level ship after all decomposed children are complete.
 - Remote Windows CI must run against the portfolio-delivered commit before task 4.3 can be completed.
+
+## Archive
+**Date:** 2026-08-10T05:48:52.506Z
+**Ship commit:** e82149fe441742b17e88499db7af573d8a69e2a3
+**Outcome:** archived at E:\wt\rasen-archive-follow-up\rasen\changes\archive\2026-08-10-fix-spec-reconciliation-integrity
+**Transaction:** 031e05d4-0cbd-4c61-a26f-8db0ae95f2b0
