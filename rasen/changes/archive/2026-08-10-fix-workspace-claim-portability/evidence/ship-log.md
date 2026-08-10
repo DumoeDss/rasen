@@ -33,3 +33,9 @@
 ## Outstanding Evidence
 
 - Task 4.3 remains unchecked until a real Windows CI job and a real POSIX CI job record the exact directory-open/sync behavior and large-identity evidence.
+
+## Archive
+**Date:** 2026-08-10T06:03:34.599Z
+**Ship commit:** bf6bdbb77fbe23acdc2f6e8868286c5162bf37c6
+**Outcome:** archived at E:\wt\rasen-archive-follow-up\rasen\changes\archive\2026-08-10-fix-workspace-claim-portability
+**Transaction:** 75294233-006f-4949-9d7f-a2cc7195a2d7
