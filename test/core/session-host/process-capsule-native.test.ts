@@ -10,13 +10,18 @@ import { asProcessRef, type ProcessRef } from '../../../src/core/session-host/pr
 const roots: string[] = [];
 const exactPids = new Set<number>();
 
-function alive(pid: number): boolean {
+function processProbe(pid: number): { alive: boolean; errorCode?: string } {
   try {
     process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
+    return { alive: true };
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return { alive: false, ...(code ? { errorCode: code } : {}) };
   }
+}
+
+function alive(pid: number): boolean {
+  return processProbe(pid).alive;
 }
 
 async function waitFor(predicate: () => boolean, timeoutMs = 10_000): Promise<void> {
@@ -41,10 +46,12 @@ function launch(root: string, descendant = false) {
   const facts = path.join(root, 'facts.json');
   const marker = path.join(root, 'activated');
   const script = descendant
-    ? `const{spawn}=require('node:child_process'),fs=require('node:fs');fs.writeFileSync(${JSON.stringify(marker)},'1');const d=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore',windowsHide:true});d.unref();fs.writeFileSync(${JSON.stringify(facts)},JSON.stringify({root:process.pid,descendant:d.pid}));setInterval(()=>{},1000);`
+    ? `const{spawn}=require('node:child_process'),fs=require('node:fs');fs.writeFileSync(${JSON.stringify(marker)},'1');const d=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore',windowsHide:true});d.unref();d.once('error',e=>{console.error('descendant spawn failed: '+(e&&e.code||'unknown'));process.exit(72)});d.once('spawn',()=>fs.writeFileSync(${JSON.stringify(facts)},JSON.stringify({root:process.pid,descendant:d.pid})));setInterval(()=>{},1000);`
     : `const fs=require('node:fs');fs.writeFileSync(${JSON.stringify(marker)},'1');fs.writeFileSync(${JSON.stringify(facts)},JSON.stringify({root:process.pid}));process.stdin.pipe(process.stdout);setInterval(()=>{},1000);`;
+  // Node 20.19 bundles libuv 1.46, whose Windows spawn path rejects an
+  // absent PATH even when the executable is absolute (libuv c97017dd).
   const env = Object.fromEntries(
-    ['SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'HOME', 'USERPROFILE']
+    ['SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'HOME', 'USERPROFILE', 'PATH']
       .map((key) => [key, process.env[key]])
       .filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
   );
@@ -118,9 +125,15 @@ describe('source-built native ProcessCapsule', () => {
     const scope = createNativeProcessScope({ onControllerSpawn: (pid) => { controllerPid = pid; exactPids.add(pid); } });
     const prepared = await scope.prepare(input);
     const live = await prepared.activate();
+    let diagnostic = '';
+    live.stderr.on('data', (chunk) => { diagnostic += chunk.toString('utf8'); });
     await Promise.race([
       waitFor(() => fs.existsSync(input.facts)),
-      live.closed.then((receipt) => { throw new Error(`scope closed before facts: ${JSON.stringify(receipt)}`); }),
+      live.closed.then((receipt) => {
+        throw new Error(
+          `scope closed before facts: ${JSON.stringify(receipt)} ${diagnostic.slice(0, 512)}`,
+        );
+      }),
     ]);
     const facts = JSON.parse(fs.readFileSync(input.facts, 'utf8')) as { root: number; descendant: number };
     exactPids.add(facts.root); exactPids.add(facts.descendant);
@@ -144,7 +157,7 @@ describe('source-built native ProcessCapsule', () => {
   it.runIf(process.platform === 'win32')('detects an inherited Job-handle mutation with the controller-death oracle', async () => {
     async function runOracle(
       mode: '--controller' | '--controller-test-duplicate-job-handle',
-    ): Promise<boolean> {
+    ) {
       const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-native-capsule-job-mutation-'));
       roots.push(root);
       const input = launch(root, true);
@@ -156,7 +169,16 @@ describe('source-built native ProcessCapsule', () => {
       const prepared = await scope.prepare(input);
       exactPids.add(prepared.displayPid);
       const live = await prepared.activate();
-      await waitFor(() => fs.existsSync(input.facts));
+      let diagnostic = '';
+      live.stderr.on('data', (chunk) => { diagnostic += chunk.toString('utf8'); });
+      await Promise.race([
+        waitFor(() => fs.existsSync(input.facts)),
+        live.rootExited.then((exit) => {
+          throw new Error(
+            `backend root exited before descendant spawn: ${JSON.stringify(exit)} ${diagnostic.slice(0, 512)}`,
+          );
+        }),
+      ]);
       const facts = JSON.parse(fs.readFileSync(input.facts, 'utf8')) as { root: number; descendant: number };
       exactPids.add(facts.root);
       exactPids.add(facts.descendant);
@@ -167,6 +189,9 @@ describe('source-built native ProcessCapsule', () => {
         phase: 'scope-empty',
       });
       const contained = await becomesTrue(() => !alive(facts.root) && !alive(facts.descendant), 750);
+      const observation = await scope.inspect(live.ref);
+      const rootProbe = processProbe(facts.root);
+      const descendantProbe = processProbe(facts.descendant);
       if (!contained && alive(prepared.displayPid)) {
         process.kill(prepared.displayPid, 'SIGKILL');
         await becomesTrue(() => !alive(facts.root) && !alive(facts.descendant), 2_000);
@@ -174,11 +199,19 @@ describe('source-built native ProcessCapsule', () => {
       exactPids.delete(prepared.displayPid);
       exactPids.delete(facts.root);
       exactPids.delete(facts.descendant);
-      return contained;
+      return {
+        contained,
+        observation,
+        rootProbe,
+        descendantProbe,
+        diagnostic: diagnostic.slice(0, 512),
+      };
     }
 
-    await expect(runOracle('--controller')).resolves.toBe(true);
-    await expect(runOracle('--controller-test-duplicate-job-handle')).resolves.toBe(false);
+    const control = await runOracle('--controller');
+    expect(control.contained, JSON.stringify(control)).toBe(true);
+    const mutation = await runOracle('--controller-test-duplicate-job-handle');
+    expect(mutation.contained, JSON.stringify(mutation)).toBe(false);
   }, 30_000);
 
   it.runIf(process.platform === 'win32')('detects activation-before-publish with the inertness oracle', async () => {

@@ -104,6 +104,7 @@ export {
 } from './facade.js';
 
 export {
+  StoredRuntimeContextError,
   prepareRuntimeContext,
   openStoredRuntimeContext,
   runtimeServiceReservationRegistry,

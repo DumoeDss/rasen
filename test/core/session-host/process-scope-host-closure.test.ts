@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawn as spawnChild } from 'node:child_process';
 import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -61,7 +62,16 @@ describe('ProcessScope authority after backend-root exit', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-scope-natural-empty-'));
     roots.push(root);
     const marker = path.join(root, 'root-ran');
+    let replacementProbeSpawned = false;
+    const spawnProcess = ((command, args, options) => {
+      if (args?.[0] === '--inspect') {
+        replacementProbeSpawned = true;
+        throw new Error('closed local authority must not launch a replacement probe');
+      }
+      return spawnChild(command, args, options);
+    }) as typeof spawnChild;
     const scope = createNativeProcessScope({
+      spawn: spawnProcess,
       onControllerSpawn(pid) { exactPids.add(pid); },
     });
     const prepared = await scope.prepare({
@@ -80,6 +90,7 @@ describe('ProcessScope authority after backend-root exit', () => {
     await expect(scope.inspect(live.ref)).resolves.toEqual({
       state: 'closed', controllable: false,
     });
+    expect(replacementProbeSpawned).toBe(false);
     expect(fs.existsSync(marker)).toBe(true);
     exactPids.delete(prepared.displayPid!);
   }, 30_000);
@@ -88,13 +99,18 @@ describe('ProcessScope authority after backend-root exit', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-scope-root-exit-'));
     roots.push(root);
     const factsPath = path.join(root, 'facts.json');
+    const descendantScript = [
+      "if (typeof process.send !== 'function') process.exit(70);",
+      'setInterval(() => {}, 1000);',
+      "process.send('ready', () => process.disconnect());",
+    ].join('');
     const script = [
       "const { spawn } = require('node:child_process');",
       "const fs = require('node:fs');",
-      "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: process.platform === 'win32', stdio: 'ignore', windowsHide: true });",
+      `const child = spawn(process.execPath, ['-e', ${JSON.stringify(descendantScript)}], { detached: process.platform === 'win32', stdio: ['ignore', 'ignore', 'ignore', 'ipc'], windowsHide: true });`,
       'child.unref();',
-      `fs.writeFileSync(${JSON.stringify(factsPath)}, JSON.stringify({ root: process.pid, descendant: child.pid }));`,
-      'process.exit(23);',
+      "child.once('error', (error) => { console.error('descendant spawn failed: ' + (error && error.code || 'unknown')); process.exit(72); });",
+      `child.once('message', (message) => { if (message !== 'ready') process.exit(71); fs.writeFileSync(${JSON.stringify(factsPath)}, JSON.stringify({ root: process.pid, descendant: child.pid })); process.exit(23); });`,
     ].join('');
     const scope = createNativeProcessScope({
       onControllerSpawn(pid) { exactPids.add(pid); },
@@ -103,14 +119,22 @@ describe('ProcessScope authority after backend-root exit', () => {
       command: process.execPath,
       args: ['-e', script],
       cwd: root,
+      // Node 20.19/libuv 1.46 needs PATH to spawn the descendant even though
+      // process.execPath is absolute; libuv c97017dd fixed that later.
       env: Object.fromEntries(
-        ['SystemRoot', 'WINDIR', 'TMP', 'TEMP', 'HOME', 'USERPROFILE']
+        ['SystemRoot', 'WINDIR', 'TMP', 'TEMP', 'HOME', 'USERPROFILE', 'PATH']
           .flatMap((key) => process.env[key] ? [[key, process.env[key]!]] : []),
       ),
     });
     exactPids.add(prepared.displayPid!);
     const live = await prepared.activate();
-    await waitFor(() => fs.existsSync(factsPath));
+    let diagnostic = '';
+    live.stderr.on('data', (chunk) => { diagnostic += chunk.toString('utf8'); });
+    const rootExit = await live.rootExited;
+    expect(rootExit, `backend stderr: ${diagnostic.slice(0, 512)}`).toMatchObject({
+      state: 'root-exited',
+      code: 23,
+    });
     const facts = JSON.parse(fs.readFileSync(factsPath, 'utf8')) as {
       root: number;
       descendant: number;
@@ -118,10 +142,6 @@ describe('ProcessScope authority after backend-root exit', () => {
     exactPids.add(facts.root);
     exactPids.add(facts.descendant);
 
-    await expect(live.rootExited).resolves.toMatchObject({
-      state: 'root-exited',
-      code: 23,
-    });
     await expect(Promise.race([
       live.closed.then(() => 'scope-empty'),
       new Promise<string>((resolve) => setTimeout(() => resolve('still-live'), 150)),

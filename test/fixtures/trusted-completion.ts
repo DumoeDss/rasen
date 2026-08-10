@@ -114,32 +114,36 @@ export function withTestAttestationAuthority(
 export async function provisionTestTrustedExecutionAdaptersForPipeline(
   projectRoot: string,
   hostStateRoot: string,
-  pipelineName: string
+  pipelineName: string | readonly string[]
 ): Promise<void> {
   const registry = await freezeProductionPreparedPipelineRegistry(projectRoot, {
     reporter: false,
   });
-  const execution = await registry.selectForExecution(pipelineName, {
-    reporter: false,
-  });
-  const prepared = execution.resolution.prepared;
-  const sourceRevision = {
-    layer: execution.resolution.source,
-    kind: 'pipeline-yaml' as const,
-    sourceId: `${execution.resolution.source}:${prepared.definition.name}`,
-    authoredContentDigest: `sha256:${prepared.digests.source}` as Digest,
-    semanticDigest: `sha256:${prepared.digests.source}` as Digest,
-  };
-  const discoveryProfile = resolveRuntimeExecutionProfile(
-    prepared,
-    registry.catalog,
-    [],
-    sourceRevision,
-    { maxAttempts: 3, maxActions: 64 },
-    undefined,
-    undefined
-  );
-  const catalog = trustedCatalogForBindings(discoveryProfile.capabilities);
+  const bindings: RuntimeCapabilityBinding[] = [];
+  for (const name of typeof pipelineName === 'string' ? [pipelineName] : pipelineName) {
+    const execution = await registry.selectForExecution(name, {
+      reporter: false,
+    });
+    const prepared = execution.resolution.prepared;
+    const sourceRevision = {
+      layer: execution.resolution.source,
+      kind: 'pipeline-yaml' as const,
+      sourceId: `${execution.resolution.source}:${prepared.definition.name}`,
+      authoredContentDigest: `sha256:${prepared.digests.source}` as Digest,
+      semanticDigest: `sha256:${prepared.digests.source}` as Digest,
+    };
+    const discoveryProfile = resolveRuntimeExecutionProfile(
+      prepared,
+      registry.catalog,
+      [],
+      sourceRevision,
+      { maxAttempts: 3, maxActions: 64 },
+      undefined,
+      undefined
+    );
+    bindings.push(...discoveryProfile.capabilities);
+  }
+  const catalog = trustedCatalogForBindings(bindings);
   provisionTrustedExecutionAdapterCatalog(hostStateRoot, catalog.descriptors);
 }
 

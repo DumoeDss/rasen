@@ -92,4 +92,3 @@ The implementer context compacted while the first runtime integration step was i
 - `record.ts` transition evidence intentionally stores evidence digests, while the wait/control contract stores full `EvidenceRef` objects.
 - Infrastructure retry/resume behavior must remain unchanged; human-required waits must never become ordinary resumable waits.
 - Authored v1 normalization must remain compatibility-only and must not mutate authored source or create strategy capability requirements.
-

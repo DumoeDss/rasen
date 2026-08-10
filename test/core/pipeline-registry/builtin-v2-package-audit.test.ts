@@ -26,8 +26,8 @@ const AUTO_DECOMPOSE_GIT_BLOB =
   '6f306544010a8950508f1223acfca5d62de407f5';
 
 const EXACT_CAPABILITY_PINS = {
-  'skill:rasen-apply-change': 'sha256:a4559817d3de2f554890a24d53e4a26827086a0e0f51371213be1db4686c0e8f',
-  'skill:rasen-archive-change': 'sha256:1bda9aaba614276d832d5cf50e422aa3e71292d05aee9f0e3c0a36a4942dcb67',
+  'skill:rasen-apply-change': 'sha256:5f1665c92086b87a024161e9205bf27f89158b91fa69b144e48eb433865b6368',
+  'skill:rasen-archive-change': 'sha256:76c36f451797c28fc0c5b78ccdd83cc2a26f194564f86c5f509841fb5b98b178',
   'skill:rasen-benchmark': 'sha256:de4886394ef59b50e82cd36b85edbd6525359b8bd0f166f664836bf6c62c5844',
   'skill:rasen-cso': 'sha256:d0cd6e299998b3c4608bfad49d0c830ae6a7cbd62d15506b62741706430472bb',
   'skill:rasen-design-review': 'sha256:c754f0ce59670186ceab07c6ba648f330d5d28a1cc0ab40283b1fbb735a543f2',
@@ -36,13 +36,13 @@ const EXACT_CAPABILITY_PINS = {
   'skill:rasen-goal-plan': 'sha256:2c24bd2b0f8661f24bf94553aa15926ace8fa36c71900953e5a68c8c34606ce2',
   'skill:rasen-goal-report': 'sha256:f881d6f5379f1c8e1a4508eac7c25078a5fc69c0c3b1b2dee2fe9a72cf46bf35',
   'skill:rasen-office-hours-command': 'sha256:887b1f2c918539a1e087d257ad75458d38a38f5f83fbe66f584d54bf539c5ff3',
-  'skill:rasen-propose': 'sha256:aa8454b78bfc16f9606f7c6db132e642d8189a743934583643b35ce5f74477d4',
-  'skill:rasen-qa': 'sha256:5b5054c0e1626c2d0afb1c0a343567fa759d2c6a2bef869dbfad770521bf7081',
-  'skill:rasen-retain': 'sha256:09cb7888f4d6240f4181b4e4bbaafa0c3d6d1c499004bc617395750a8d7721e7',
-  'skill:rasen-review': 'sha256:be24b6d38f17e9068cd7dd114cf2239c464af01c4b3ad13f746371b6efe16ffd',
+  'skill:rasen-propose': 'sha256:f7948291bd23ca25d1856a828f62261698207025d1f8dd0929455fbc52ca41e0',
+  'skill:rasen-qa': 'sha256:a922a0bae2a70d3c7713dcc75f204e2a3c12cb68c23746d632f7eea53390601b',
+  'skill:rasen-retain': 'sha256:4b28b97d4cefc2e3b9fed896439e5360d1697d7da39df109f9f3d6d06b2d8bd4',
+  'skill:rasen-review': 'sha256:06a80842145868a2ffb43b9017225ec15c06b0b946e490c8daa6cb7a68b8e049',
   'skill:rasen-review-fix': 'sha256:737e61418515fb67d0bdf46626f80b0e0c418a38d7b931b9bf69d320a520cad0',
-  'skill:rasen-review-cycle': 'sha256:982739146524b2359637c37564890799aa700905baf67f4825fcfc93e2b73427',
-  'skill:rasen-ship': 'sha256:9614107d356f7d4f9ecc5e3108638f249b1298861592ded8912d422627cc6529',
+  'skill:rasen-review-cycle': 'sha256:e5af856986fb791a4200a9fdb3eabddce3d7e49cb0b0c13ace0f74bed171c1f5',
+  'skill:rasen-ship': 'sha256:a2c069c2051ba9957df1f9cffea17f3ed93683a8ed5f7b29f5cf443a90e47450',
 } as const;
 
 function authoredDefinition(name: string): Record<string, unknown> {

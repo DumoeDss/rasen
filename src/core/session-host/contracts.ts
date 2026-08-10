@@ -294,6 +294,8 @@ export interface SessionHostView {
   backendVersion?: string;
   backendSessionId?: string;
   cwd: string;
+  /** Digest of the registry-owned canonical cwd, used for authority correlation. */
+  cwdDigest: string;
   /** Present for Sessions created by a runtime that freezes hosted bounds. */
   turnLimits?: TurnLimits;
   sandbox: HostedSessionSandbox;
@@ -726,6 +728,7 @@ export function toSessionHostView(record: HostedSessionRecord): SessionHostView 
     ...(record.backendVersion ? { backendVersion: record.backendVersion } : {}),
     ...(record.backendSessionId ? { backendSessionId: record.backendSessionId } : {}),
     cwd: record.cwd,
+    cwdDigest: record.cwdDigest,
     ...(record.turnLimits ? { turnLimits: { ...record.turnLimits } } : {}),
     sandbox: record.sandbox ?? 'workspace-write',
     ...(record.authority ? { authority: { ...record.authority } } : {}),

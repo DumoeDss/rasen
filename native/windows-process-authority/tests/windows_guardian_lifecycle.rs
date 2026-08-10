@@ -92,7 +92,12 @@ fn state_root(tag: &str) -> PathBuf {
         win::current_process_id()
     ));
     let _ = std::fs::remove_dir_all(&base);
-    std::fs::create_dir_all(&base).expect("state root");
+    // Leave the leaf absent so the production provider creates it and pins its owner to the
+    // current user SID. An elevated Hosted Runner can assign a directory created by this test
+    // process to the Administrators group, which the provider must continue to reject as an
+    // already-existing root with foreign ownership.
+    std::fs::create_dir_all(base.parent().expect("state root parent"))
+        .expect("state root parent");
     base
 }
 
@@ -559,7 +564,7 @@ fn every_declared_foreign_item_that_this_suite_reaches_is_named_in_the_declared_
         DECLARED_FOREIGN_ITEMS.as_slice(),
         "the declared-item list is not sorted, which makes review diffs unreliable"
     );
-    assert_eq!(DECLARED_FOREIGN_ITEMS.len(), 56);
+    assert_eq!(DECLARED_FOREIGN_ITEMS.len(), 58);
     let mut stdout = std::io::stdout();
     writeln!(stdout, "declared foreign items: {}", DECLARED_FOREIGN_ITEMS.len()).expect("write");
     // Stated rather than left silent: this row executes no binary at all, so it binds source

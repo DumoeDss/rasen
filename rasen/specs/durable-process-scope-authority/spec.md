@@ -1,7 +1,8 @@
 # durable-process-scope-authority Specification
 
 ## Purpose
-TBD - created by archiving change ecp-native-process-capsule-closure. Update Purpose after archive.
+Define the opaque, platform-specific process-scope authority used to prepare, activate, observe, and close an entire hosted Session process tree without relying on reusable numeric process identifiers.
+
 ## Requirements
 ### Requirement: Durable Sessions use one opaque exact process-scope authority
 
@@ -288,4 +289,3 @@ The common foundation and the ECP-8 three-OS acceptance matrix are unchanged.
 
 - **WHEN** the foundation and this integration closure are review-clean and ECP-8 begins release assurance
 - **THEN** ECP-8 runs real `setsid()` escape, owner-death/recovery, exact natural-empty, exact terminate, authority-unavailable and unrelated-process-survival oracles on each claimed operating system
-

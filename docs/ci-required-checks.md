@@ -45,3 +45,31 @@ Mark these checks as required in branch protection for each protected branch:
 ## Why this matters
 
 PR #88 targeted `dev/0.1.5`, but CI only triggered on `main`. The GitHub status rollup showed only the Docs site check, giving a false "clean" signal — the full matrix (Linux/macOS/Windows × Node 20/24), root build/test/lint, and UI build never ran. Expanding the trigger and documenting the required-checks set ensures every PR to a release branch gets the same quality gate as `main`.
+
+## Catching the whitespace check before it reaches CI
+
+The `Lint & Type Check` job runs `git diff --check "${BASE_SHA}...HEAD"` over the
+pull request's whole diff. Two local guards mirror it so the failure does not
+have to be discovered one CI cycle at a time:
+
+| Guard | When it runs | What it does |
+|---|---|---|
+| `.githooks/pre-commit` | every `git commit` | Runs `git diff --cached --check` — git's own staged whitespace check, so the local rules and `core.whitespace` configuration cannot drift from CI's — then ESLint over the staged in-scope sources. |
+| `rasen archive` preflight | before the change is staged, copied, or hashed | Reports every offending `file:line` in the change's text artifacts and blocks. It never rewrites content: the archive engine preserves bytes and records an evidence sha256 on purpose. |
+
+`pnpm install` arms the hook by pointing `core.hooksPath` at `.githooks/`.
+Installation is a silent no-op outside a git work tree, under `CI`, when
+`RASEN_SKIP_GIT_HOOKS` is set, and when a different hooks path is already
+configured. Run it by hand with `pnpm hooks:install`.
+
+Escape hatches, both explicit:
+
+- `git commit --no-verify` skips the hook for one commit.
+- `rasen archive --no-whitespace-check` skips the preflight, and the archive
+  output records that the guard was disabled.
+
+The usual source of these errors is a file authored **outside** the repository —
+an evidence report or handoff document written into the artifact store and later
+copied in — which has never been subject to this gate. A line ending in two
+spaces is a Markdown hard break; either drop the trailing spaces or replace them
+with a trailing backslash, which renders identically without the whitespace.

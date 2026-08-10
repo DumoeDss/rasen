@@ -1,7 +1,7 @@
 # Review remediation — Round 4
 
-Date: 2026-08-03  
-Scope: ECP-6 Child 4 only  
+Date: 2026-08-03\
+Scope: ECP-6 Child 4 only\
 Result: implementation and focused verification complete; ready for independent re-review
 
 ## Outcome

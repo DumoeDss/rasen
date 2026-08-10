@@ -42,6 +42,7 @@ import {
   decodeWorkspaceRevision,
   deriveFreshStepRequestId,
   openStoredRuntimeContext,
+  StoredRuntimeContextError,
   type AgentContinuationGrant,
   type ExactChangeRunRef,
   type RunAction,
@@ -164,6 +165,9 @@ function participatesInConsultation(
 function consultationDriverFailure(error: unknown): FrozenActionDispatchResult {
   if (error instanceof TrustedCompletionProducerError) {
     return { ok: false, status: 503, code: error.code, message: error.message };
+  }
+  if (error instanceof StoredRuntimeContextError) {
+    return { ok: false, status: 409, code: error.code, message: error.message };
   }
   return {
     ok: false,
@@ -365,6 +369,7 @@ function createManagementExactTeacherAttemptModule(input: Readonly<{
     context.runtime ??= openStoredRuntimeContext({
       storeRoot: input.storeRoot,
       runId: context.record.runId,
+      sourceSessionHost: input.host,
       ...(input.reservationRegistry === undefined
         ? {}
         : { reservationRegistry: input.reservationRegistry }),
@@ -1674,6 +1679,7 @@ export async function handleFrozenActionDispatch(input: Readonly<{
       runtime = openStoredRuntimeContext({
         storeRoot,
         runId: record.runId,
+        sourceSessionHost: input.host,
         ...(input.reservationRegistry === undefined
           ? {}
           : { reservationRegistry: input.reservationRegistry }),
@@ -1889,6 +1895,7 @@ export async function handleFrozenActionContinuation(input: Readonly<{
     const runtime = openStoredRuntimeContext({
       storeRoot,
       runId: record.runId,
+      sourceSessionHost: input.host,
       ...(input.reservationRegistry === undefined
         ? {}
         : { reservationRegistry: input.reservationRegistry }),

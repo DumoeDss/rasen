@@ -61,6 +61,12 @@ import {
   handleFrozenActionContinuation,
   handleFrozenActionDispatch,
 } from './frozen-action-executor.js';
+import {
+  createReusableSessionService,
+  reusableSessionHttpStatus,
+  type ReusableSessionOwnerShutdownResult,
+  type ReusableSessionService,
+} from './reusable-session-api.js';
 import { createChangeSubmitter } from './submit.js';
 import { createSpaceCreator } from './create-space.js';
 import {
@@ -78,7 +84,12 @@ import {
   handleThresholdSchemeMutation,
 } from './threshold-schemes.js';
 import { createPipelineSubmitter } from './pipeline-submit.js';
-import type { LaunchSessionRequest, StatusResponse, SubmitChangeRequest } from './wire-types.js';
+import {
+  REUSABLE_SESSION_API_SCHEMA,
+  type LaunchSessionRequest,
+  type StatusResponse,
+  type SubmitChangeRequest,
+} from './wire-types.js';
 import {
   installTheme,
   listImportedThemes,
@@ -92,6 +103,7 @@ import {
   type AuditManagementOptions,
 } from '../token-audit/management.js';
 import { hasRuntimeCapability } from '../runtime-adapters.js';
+import { getGlobalDataDir } from '../global-config.js';
 
 /**
  * Extended resolution for the runs endpoints, which additionally accept a
@@ -241,6 +253,10 @@ export interface ManagementRouterOptions {
    * canned receipt.
    */
   runControlSpawner?: RunControlSpawner;
+  /** Test/daemon override captured once for every Run list/detail/control request. */
+  runsRoot?: string;
+  /** Test-only replacement for the durable reusable-session service. */
+  reusableSessionService?: ReusableSessionService;
 }
 
 export interface ManagementRouterHandle {
@@ -248,12 +264,15 @@ export interface ManagementRouterHandle {
   supervisor: SessionSupervisor;
   sessionHost: SessionHost;
   exactTeacherSessionHost?: SessionHost;
+  reusableSessionService: ReusableSessionService;
+  shutdownReusableSessions: () => Promise<ReusableSessionOwnerShutdownResult>;
   shutdownPathChooser: () => Promise<void>;
 }
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
 const MAX_BODY_BYTES = 64 * 1024;
 const MAX_HOSTED_BODY_BYTES = 2 * 1024 * 1024 + 16 * 1024;
+const MAX_REUSABLE_SESSION_BODY_BYTES = 2 * 1024 * 1024;
 
 /** The management endpoints with no path parameter, canonical (no trailing slash) form. */
 const MANAGEMENT_PATHS = new Set([
@@ -264,6 +283,10 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/sessions',
   '/api/v1/hosted-sessions',
   '/api/v1/hosted-sessions/execute',
+  '/api/v1/reusable-sessions',
+  '/api/v1/reusable-sessions/wake',
+  '/api/v1/reusable-sessions/retire',
+  '/api/v1/reusable-sessions/touch-policy',
   '/api/v1/spaces',
   '/api/v1/spaces/worktrees',
   '/api/v1/local-paths',
@@ -444,6 +467,14 @@ function isMethodAdmitted(pathname: string, method: string | undefined): boolean
   if (pathname === '/api/v1/audits/import') return method === 'POST';
   const hostedSession = matchHostedSessionPath(pathname);
   if (hostedSession) return hostedSession.operation ? method === 'POST' : method === 'GET';
+  if (pathname === '/api/v1/reusable-sessions') return method === 'GET';
+  if (
+    pathname === '/api/v1/reusable-sessions/wake'
+    || pathname === '/api/v1/reusable-sessions/retire'
+    || pathname === '/api/v1/reusable-sessions/touch-policy'
+  ) {
+    return method === 'POST';
+  }
   if (matchSessionIdPath(pathname) !== null) {
     return method === 'GET' || method === 'DELETE';
   }
@@ -571,6 +602,13 @@ function readJsonBody(
     req.on('error', () => {
       finish({ ok: false, status: 400, code: 'bad_request', message: 'Failed to read the request body.' });
     });
+    req.on('aborted', () => {
+      finish({ ok: false, status: 400, code: 'bad_request', message: 'The request body was aborted.' });
+    });
+    req.on('close', () => {
+      if (req.complete) return;
+      finish({ ok: false, status: 400, code: 'bad_request', message: 'The request body closed before completion.' });
+    });
   });
 }
 
@@ -608,6 +646,22 @@ function sendError(res: http.ServerResponse, status: number, code: string, messa
   sendJson(res, status, { error: { code, message, ...(fix ? { fix } : {}) } });
 }
 
+function sendReusableSessionError(
+  res: http.ServerResponse,
+  status: number,
+  operation: 'wake' | 'list' | 'retire' | 'touch-policy',
+  code: string,
+  message: string
+): void {
+  sendJson(res, status, {
+    schema: REUSABLE_SESSION_API_SCHEMA,
+    ok: false,
+    operation,
+    code,
+    message,
+  });
+}
+
 function isAuthorized(req: http.IncomingMessage, token: string): boolean {
   const header = req.headers['authorization'];
   if (!header || Array.isArray(header)) return false;
@@ -629,6 +683,7 @@ export function createManagementRouter(
   resolveHomeForRoot: (root: string | null) => Promise<ProjectHome | null>,
   options: ManagementRouterOptions = {}
 ): ManagementRouterHandle {
+  const runsRoot = options.runsRoot ?? path.join(getGlobalDataDir(), 'runs');
   // One submitter per server instance (design D3's cap-1 concurrency is
   // per-server state, closed over here rather than module-scoped).
   const submitChange = createChangeSubmitter(context);
@@ -749,6 +804,9 @@ export function createManagementRouter(
       'The exact Teacher SessionHost must be separate from the ordinary/source SessionHost.'
     );
   }
+  const reusableSessionService =
+    options.reusableSessionService
+    ?? createReusableSessionService({ supervisor, runsRoot });
 
   // Resolves a request's optional `space` selector to a planning-space root
   // (design D2): an explicit selector resolves through the machine registries,
@@ -1568,6 +1626,81 @@ export function createManagementRouter(
       return;
     }
 
+    if (pathname === '/api/v1/reusable-sessions' && req.method === 'GET') {
+      const queryKeys = [...url.searchParams.keys()];
+      if (
+        queryKeys.some((key) => key !== 'runId' && key !== 'scope')
+        || url.searchParams.getAll('runId').length > 1
+        || url.searchParams.getAll('scope').length > 1
+      ) {
+        sendReusableSessionError(
+          res,
+          400,
+          'list',
+          'invalid_request',
+          'Reusable-session list accepts only one runId or scope=all.'
+        );
+        return;
+      }
+      const runId = url.searchParams.get('runId') ?? undefined;
+      const rawScope = url.searchParams.get('scope') ?? undefined;
+      if (rawScope !== undefined && rawScope !== 'all') {
+        sendReusableSessionError(
+          res,
+          400,
+          'list',
+          'invalid_request',
+          'Reusable-session scope must be all.'
+        );
+        return;
+      }
+      const result = await reusableSessionService.list({
+        ...(runId !== undefined ? { runId } : {}),
+        ...(rawScope === 'all' ? { scope: 'all' as const } : {}),
+      });
+      sendJson(res, reusableSessionHttpStatus(result), result);
+      return;
+    }
+
+    if (
+      (
+        pathname === '/api/v1/reusable-sessions/wake'
+        || pathname === '/api/v1/reusable-sessions/retire'
+        || pathname === '/api/v1/reusable-sessions/touch-policy'
+      )
+      && req.method === 'POST'
+    ) {
+      const body = await readJsonBody(
+        req,
+        MAX_REUSABLE_SESSION_BODY_BYTES
+      );
+      if (!body.ok) {
+        const operation =
+          pathname.endsWith('/wake')
+            ? 'wake'
+            : pathname.endsWith('/retire')
+              ? 'retire'
+              : 'touch-policy';
+        sendReusableSessionError(
+          res,
+          body.status,
+          operation,
+          body.code,
+          body.message
+        );
+        req.destroy();
+        return;
+      }
+      const result =
+        pathname === '/api/v1/reusable-sessions/wake'
+          ? await reusableSessionService.wake(body.value)
+          : pathname === '/api/v1/reusable-sessions/retire'
+            ? await reusableSessionService.retire(body.value)
+            : await reusableSessionService.updateTouchPolicy(body.value);
+      sendJson(res, reusableSessionHttpStatus(result), result);
+      return;
+    }
+
     if (pathname === '/api/v1/sessions' && req.method === 'GET') {
       // A `space` selector filters the listing to that space (design D3); an
       // omitted selector returns every session (compat), so — unlike the
@@ -1658,7 +1791,8 @@ export function createManagementRouter(
         space.root,
         home,
         body.value,
-        runControlSpawner
+        runControlSpawner,
+        { runsRoot }
       );
       if (!result.ok) {
         res.writeHead(result.status, JSON_HEADERS);
@@ -1692,7 +1826,13 @@ export function createManagementRouter(
         return;
       }
       const home = space.root ? await resolveHomeForRoot(space.root) : null;
-      const result = await handleRunDetail(runDetail.changeId, runDetail.runId, space.root, home);
+      const result = await handleRunDetail(
+        runDetail.changeId,
+        runDetail.runId,
+        space.root,
+        home,
+        runsRoot
+      );
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
         return;
@@ -1724,6 +1864,7 @@ export function createManagementRouter(
           ...(cursor !== undefined ? { cursor } : {}),
           ...(limit !== undefined && Number.isFinite(limit) ? { limit } : {}),
           planningSpaceId: space.planningSpaceId,
+          runsRoot,
         });
         sendJson(res, 200, runsResponse);
         return;
@@ -1743,6 +1884,8 @@ export function createManagementRouter(
       const runsResponse = await handleRuns(space.root, home, {
         ...(cursor !== undefined ? { cursor } : {}),
         ...(limit !== undefined && Number.isFinite(limit) ? { limit } : {}),
+        ...(space.planningSpaceId ? { planningSpaceId: space.planningSpaceId } : {}),
+        runsRoot,
       });
       sendJson(res, 200, runsResponse);
       return;
@@ -1754,6 +1897,8 @@ export function createManagementRouter(
     supervisor,
     sessionHost,
     ...(exactTeacherSessionHost === undefined ? {} : { exactTeacherSessionHost }),
+    reusableSessionService,
+    shutdownReusableSessions: () => reusableSessionService.ownerShutdown(),
     shutdownPathChooser: pathChooser.shutdown,
   };
 }

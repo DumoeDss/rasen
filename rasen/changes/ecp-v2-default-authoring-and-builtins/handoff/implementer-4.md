@@ -40,4 +40,3 @@ The five Major findings in `review-report.md` are implemented and locally verifi
 ## Next owner
 
 The LEAD can send this remediation delta through the next independent review cycle. Keep task 9.5 open until the parent PR has Windows and normal Linux/macOS CI evidence. Parent delivery owns commits, PR operations, archive, and any machine run-state mutation.
-

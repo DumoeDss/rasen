@@ -57,6 +57,27 @@ export {
 } from './rollout.js';
 export { buildCodexWorkerRecord, type BuildCodexWorkerRecordOptions } from './identity.js';
 export {
+  codexFailureReceipt,
+  parseCodexLastMessage,
+  type CodexDispatchFailureKind,
+  type CodexDispatchReceipt,
+  type CodexFailureReceipt,
+  type CodexSuccessReceipt,
+} from './result.js';
+export { runCodexExec, type RunCodexExecOptions } from './runner.js';
+export {
+  claimCodexThreadWriter,
+  bindCodexThreadCwd,
+  bindCodexThreadState,
+  getCodexThreadSandbox,
+  isCodexThreadWriterClaimed,
+  CodexThreadBusyError,
+  CodexThreadCwdMismatchError,
+  CodexThreadStateError,
+  type CodexThreadStateOptions,
+  type CodexThreadWriterClaim,
+} from './thread-state.js';
+export {
   resolveCodexConfigPath,
   inspectCodexProjectConfig,
   reconcileCodexProjectConfig,

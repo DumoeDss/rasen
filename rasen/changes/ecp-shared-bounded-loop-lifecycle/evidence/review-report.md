@@ -1,9 +1,9 @@
 # Pre-Landing Review: ecp-shared-bounded-loop-lifecycle
 
-Base: `origin/dev/0.2.0@a1306828a23b2c4adc0db81f92b09498a5e92710`  
-Branch: `wip/ecp-shared-bounded-loop-lifecycle-resume`  
-Reviewed HEAD: `050fc84332b26a75a07f441efd6b235842f89e1e` plus the implementer-4 working-tree delta  
-Mode: dispatched, report-only, independent verifier  
+Base: `origin/dev/0.2.0@a1306828a23b2c4adc0db81f92b09498a5e92710`\
+Branch: `wip/ecp-shared-bounded-loop-lifecycle-resume`\
+Reviewed HEAD: `050fc84332b26a75a07f441efd6b235842f89e1e` plus the implementer-4 working-tree delta\
+Mode: dispatched, report-only, independent verifier\
 Greptile: skipped because no PR exists
 
 ## Outcome
@@ -31,8 +31,8 @@ No independent maintainability, security, or UI-design finding was found beyond 
 
 ### Blocker 1: the generic Goal ship guard rejects the required research exhausted-report completion path
 
-**Classification:** `[Blocker][ASK]`  
-**Files:** `src/core/change-run/internal/facade-runtime.ts:561-590`, `src/core/change-run/internal/goal-cycle.ts:567-578`, `src/core/change-run/internal/reconciler.ts:267-285`  
+**Classification:** `[Blocker][ASK]`\
+**Files:** `src/core/change-run/internal/facade-runtime.ts:561-590`, `src/core/change-run/internal/goal-cycle.ts:567-578`, `src/core/change-run/internal/reconciler.ts:267-285`\
 **Requirement:** `specs/executable-goal-loop/spec.md:51-55`; `design.md` D2/D7 research-tail contract
 
 The lifecycle reducer and reconciler intentionally treat an `exit` disposition as loop completion, add the loop node to the succeeded set, and allow its authored tail. After that tail completes, however, `facade-runtime.ts` applies `assertGoalCycleMayShip` to every completed Record containing a GoalCycle bounded loop. `assertGoalCycleMayShip` rejects every goal state whose domain outcome is not `satisfied`.
@@ -47,8 +47,8 @@ Required resolution:
 
 ### Blocker 2: failed or resumed-blocked strategy actions never advance the strategy-attempt counter
 
-**Classification:** `[Blocker][ASK]`  
-**Files:** `src/core/change-run/internal/bounded-loop-lifecycle.ts:741-752,820-822`, `src/core/change-run/internal/reconciler.ts:777-795`, `src/core/change-run/internal/reducer.ts:1052-1079`  
+**Classification:** `[Blocker][ASK]`\
+**Files:** `src/core/change-run/internal/bounded-loop-lifecycle.ts:741-752,820-822`, `src/core/change-run/internal/reconciler.ts:777-795`, `src/core/change-run/internal/reducer.ts:1052-1079`\
 **Requirement:** `specs/ecp-bounded-loop-lifecycle/spec.md:71-83,103-115`; tasks 3.1-3.4
 
 `applyDisposition` counts only strategy actions whose result status is `succeeded`. Consequently:

@@ -110,6 +110,7 @@ describe('built-in workflow catalog', () => {
     expect(byId.get('goal-plan')).toBe('internal');
     expect(byId.get('goal-iterate')).toBe('internal');
     expect(byId.get('goal-judge')).toBe('internal');
+    expect(byId.get('task-loop')).toBe('internal');
     expect(byId.get('goal-report')).toBe('internal');
     expect(byId.get('review-fix')).toBe('internal');
     expect(byId.get('retain-command')).toBe('internal');
@@ -183,8 +184,8 @@ describe('built-in workflow catalog', () => {
     });
     expect(byId.get('auto-command')?.requires).toEqual({
       workflows: ['retain-command'],
-      skills: ['rasen-review'],
-      pipelines: ['small-feature', 'full-feature', 'bug-fix', 'auto-decompose'],
+      skills: ['rasen-review', 'rasen-task-loop'],
+      pipelines: ['small-feature', 'full-feature', 'bug-fix', 'auto-decompose', 'task-loop'],
       schemas: [],
     });
     expect(byId.get('goal-command')?.requires).toEqual({

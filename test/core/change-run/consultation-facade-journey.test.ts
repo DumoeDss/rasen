@@ -22,6 +22,7 @@ import type {
   ExactTeacherAttemptSeed,
   HostedTurnReceipt,
   SessionHost,
+  SessionHostView,
 } from '../../../src/core/session-host/contracts.js';
 import {
   deriveContinuationRequestId,
@@ -33,13 +34,17 @@ import {
 import { buildAgentAction } from '../../../src/core/change-run/internal/actions.js';
 import {
   createCanonicalReceiptContinuationAuthority,
+  decodeCanonicalRunRecord,
   digestCanonicalRunRecord,
 } from '../../../src/core/change-run/internal/record.js';
 import { createBoundedEvidenceStore } from '../../../src/core/change-run/internal/evidence.js';
 import { createFilesystemEvidenceStore } from '../../../src/core/change-run/internal/evidence-store-fs.js';
 import { createChangePipelineRuntime } from '../../../src/core/change-run/internal/facade-runtime.js';
 import { createHostEvidenceWriter } from '../../../src/core/change-run/internal/host-evidence-writer.js';
-import { canonicalJson } from '../../../src/core/change-run/internal/identity.js';
+import {
+  canonicalJson,
+  digestLaunchIntent,
+} from '../../../src/core/change-run/internal/identity.js';
 import { createInMemoryRunStore } from '../../../src/core/change-run/internal/run-store.js';
 import { createFilesystemRunStore } from '../../../src/core/change-run/internal/run-store-fs.js';
 import {
@@ -47,7 +52,11 @@ import {
   type RuntimePlan,
 } from '../../../src/core/change-run/internal/runtime-plan.js';
 import { createWorkspaceReservationRegistry } from '../../../src/core/change-run/internal/reservations.js';
-import { runtimeServiceReservationRegistry } from '../../../src/core/change-run/internal/runtime-context.js';
+import {
+  openStoredRuntimeContext,
+  runtimeServiceReservationRegistry,
+  StoredRuntimeContextError,
+} from '../../../src/core/change-run/internal/runtime-context.js';
 import type {
   AgentSessionBackend,
   AgentSessionTransport,
@@ -57,7 +66,10 @@ import type {
   BackendTurn,
 } from '../../../src/core/session-host/backend.js';
 import { createSessionHost } from '../../../src/core/session-host/host.js';
-import { createSessionHostRegistry } from '../../../src/core/session-host/registry.js';
+import {
+  createSessionHostRegistry,
+  digestSessionHostText,
+} from '../../../src/core/session-host/registry.js';
 import type { ProcessScope } from '../../../src/core/session-host/process-scope.js';
 import {
   createProcessAuthorityCoordinator,
@@ -321,16 +333,203 @@ function runtimePlan(
   });
 }
 
+const TASK_LOOP_WORK_PATH = 'declaration:task-loop/node:work';
+const TASK_LOOP_JUDGE_PATH = 'declaration:task-loop/node:judge';
+const TASK_LOOP_INPUT = Object.freeze({
+  taskLoop: {
+    format: 'task-loop-input/1',
+    goal: 'Finish the consulted implementation safely.',
+    artifactTargets: ['README.md'],
+    bar: [{
+      id: 'focused-check',
+      criterion: 'The focused check passes.',
+      evidenceHint: 'Run the focused consultation restart journey.',
+    }],
+    constraints: ['Preserve canonical source Session authority.'],
+  },
+  gatePolicy: { effective: 'off', source: 'flag' },
+}) as Readonly<Record<string, JsonValue>>;
+
+function taskLoopExecutionProfile(): RuntimeExecutionProfile {
+  const sourceCapability = {
+    ...capability('source'),
+    nodeId: TASK_LOOP_WORK_PATH,
+  };
+  const judgeCapability = {
+    ...capability('source'),
+    nodeId: TASK_LOOP_JUDGE_PATH,
+    authoredCapability: { id: 'skill:task-loop-judge', version: '1' },
+    workspace: { access: 'read' as const, resources: ['worktree'] },
+  };
+  const shipCapability = {
+    ...capability('source'),
+    nodeId: 'root/ship',
+    authoredCapability: { id: 'skill:ship', version: '1' },
+  };
+  const archiveCapability = {
+    ...capability('source'),
+    nodeId: 'root/archive',
+    authoredCapability: { id: 'skill:archive', version: '1' },
+  };
+  const strategyCapability = {
+    ...capability('source'),
+    nodeId: 'loop-strategy',
+    authoredCapability: { id: 'skill:loop-strategy', version: '1' },
+  };
+  const teacherCapability = {
+    ...capability('teacher'),
+    nodeId: 'teacher',
+  };
+  const sourceStage = {
+    ...stage('source'),
+    nodeId: TASK_LOOP_WORK_PATH,
+    runtime: 'claude',
+    sessionReuse: 'same-invocation' as const,
+  };
+  return createRuntimeExecutionProfile({
+    sourceRevision: {
+      layer: 'package',
+      kind: 'pipeline-yaml',
+      sourceId: 'package:task-loop-consultation-fixture',
+      authoredContentDigest: digest('a'),
+      semanticDigest: digest('b'),
+    },
+    capabilities: [
+      sourceCapability,
+      judgeCapability,
+      shipCapability,
+      archiveCapability,
+      strategyCapability,
+      teacherCapability,
+    ],
+    policy: {
+      format: 'effective-run-policy/1',
+      maxAttempts: 16,
+      maxActions: 32,
+      stages: [
+        sourceStage,
+        {
+          ...stage('source'),
+          nodeId: TASK_LOOP_JUDGE_PATH,
+          role: 'reviewer',
+          runtime: 'codex',
+          sandbox: 'read-only' as const,
+          sessionReuse: 'never' as const,
+        },
+        { ...stage('source'), nodeId: 'root/ship', role: 'shipper' },
+        { ...stage('source'), nodeId: 'root/archive', role: 'shipper' },
+        { ...stage('source'), nodeId: 'loop-strategy', role: 'implementer' },
+        { ...stage('teacher'), nodeId: 'teacher', runtime: 'claude' },
+      ],
+    },
+    consultations: [{
+      ...consultationBinding,
+      sourceProfilePath: TASK_LOOP_WORK_PATH,
+      teacherProfilePath: 'teacher',
+    }],
+  });
+}
+
+function taskLoopRuntimePlan(profile: RuntimeExecutionProfile): RuntimePlan {
+  return createRuntimePlan({
+    runId: RUN_ID,
+    pipeline: 'task-loop',
+    planDigest: digest('c'),
+    profileDigest: profile.profileDigest,
+    sourceRevisionDigest: profile.sourceRevision.semanticDigest,
+    capabilityDigest: profile.capabilityProfileDigest,
+    policyDigest: profile.policyDigest,
+    executionProfile: profile,
+    implicitFinishOutcome: 'task-loop-completed',
+    nodes: [
+      {
+        kind: 'bounded-loop',
+        hierarchicalPath: 'root/iterate',
+        requires: [],
+        limits: { maxIterations: 2, maxActions: 8, budget: 8 },
+        lifecycle: {
+          version: 1,
+          thresholds: { stallIterations: 2, sameBlockerAttempts: 2 },
+          strategy: {
+            maxAttempts: 1,
+            requireMaterialChange: true,
+            capability: { id: 'skill:loop-strategy', version: '1' },
+          },
+          exits: {
+            iterationLimit: { action: 'strategy' },
+            actionLimit: { action: 'fail', outcome: 'action-limit' },
+            budgetLimit: { action: 'fail', outcome: 'budget-limit' },
+            stalled: { action: 'strategy' },
+            blocked: { action: 'strategy' },
+            strategyExhausted: { action: 'fail', outcome: 'strategy-exhausted' },
+          },
+        },
+        strategyProfilePath: 'loop-strategy',
+        body: {
+          kind: 'goal-cycle',
+          variant: 'evaluate',
+          phases: [
+            {
+              phase: 'work',
+              profilePath: TASK_LOOP_WORK_PATH,
+              admissionKind: 'agent',
+              workspace: { access: 'write' },
+            },
+            {
+              phase: 'judge',
+              profilePath: TASK_LOOP_JUDGE_PATH,
+              admissionKind: 'agent',
+              workspace: { access: 'read' },
+            },
+          ],
+        },
+        outcomes: { clean: 'satisfied', exhausted: 'task_loop_exhausted' },
+      },
+      {
+        kind: 'atomic',
+        hierarchicalPath: 'root/ship',
+        profilePath: 'root/ship',
+        requires: ['root/iterate'],
+        admissionKind: 'agent',
+        workspace: { access: 'write' },
+      },
+      {
+        kind: 'atomic',
+        hierarchicalPath: 'root/archive',
+        profilePath: 'root/archive',
+        requires: ['root/ship'],
+        admissionKind: 'agent',
+        workspace: { access: 'write' },
+      },
+    ],
+  });
+}
+
 function fixture(
   options: Readonly<{
     boundedLoop?: boolean;
+    taskLoop?: boolean;
     verifyHostedTurnReceipt?: (receipt: HostedTurnReceipt) => boolean;
     storeRoot?: string;
   }> = {}
 ) {
-  const profile = executionProfile();
-  const plan = runtimePlan(profile, options.boundedLoop ?? false);
-  const initialRecord = startRecord(plan);
+  const profile = options.taskLoop === true
+    ? taskLoopExecutionProfile()
+    : executionProfile();
+  const plan = options.taskLoop === true
+    ? taskLoopRuntimePlan(profile)
+    : runtimePlan(profile, options.boundedLoop ?? false);
+  const initialRecord = options.taskLoop === true
+    ? decodeCanonicalRunRecord({
+        ...startRecord(plan),
+        launchRequestDigest: digestLaunchIntent({
+          pipeline: plan.pipeline,
+          engine: 'reconciler',
+          inputs: TASK_LOOP_INPUT,
+        }),
+        inputs: TASK_LOOP_INPUT,
+      })
+    : startRecord(plan);
   const store =
     options.storeRoot === undefined
       ? createInMemoryRunStore()
@@ -413,16 +612,28 @@ function fixture(
     reservations,
     writer,
     makeRuntime,
+    taskLoop: options.taskLoop === true,
   };
 }
 
-async function startAndConsult(fx: ReturnType<typeof fixture>) {
+async function startAndConsult(
+  fx: ReturnType<typeof fixture>,
+  projectRoot = '/root'
+) {
   const runtime = fx.makeRuntime();
+  const launchRequestDigest = fx.taskLoop
+    ? digestLaunchIntent({
+        pipeline: fx.plan.pipeline,
+        engine: 'reconciler',
+        inputs: TASK_LOOP_INPUT,
+      })
+    : undefined;
   const started = await runtime.start(
     {
-      change: { projectRoot: '/root', changeId: 'fixture-change' },
+      change: { projectRoot, changeId: 'fixture-change' },
       pipeline: fx.plan.pipeline,
       launchRequestId: branded(`launch:${'1'.repeat(64)}`),
+      ...(fx.taskLoop ? { inputs: TASK_LOOP_INPUT, launchRequestDigest } : {}),
     },
     { deliveryMode: 'grant' }
   );
@@ -438,7 +649,7 @@ async function startAndConsult(fx: ReturnType<typeof fixture>) {
   const submission = createTestTrustedCompletionProducer(
     sourceAction
   ).attestConsultation({
-    change: { projectRoot: '/root', changeId: 'fixture-change' },
+    change: { projectRoot, changeId: 'fixture-change' },
     record: fx.store.load(fx.plan.runId),
     action: sourceAction,
     result,
@@ -1605,6 +1816,233 @@ describe('attested Teacher consultation Facade journey', () => {
     });
     expect(fx.reservations.snapshot('workspace-instance:' + '3'.repeat(64)))
       .toHaveLength(1);
+  });
+
+  it('reopens a task-loop consultation from daemon-owned Session authority after restart', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-task-loop-consultation-reopen-'));
+    const projectRoot = path.join(root, 'worktree');
+    const storeRoot = path.join(root, 'runs');
+    fs.mkdirSync(projectRoot, { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, 'tracked.txt'), 'before\n', 'utf8');
+    execFileSync('git', ['init'], { cwd: projectRoot, stdio: 'ignore' });
+    execFileSync('git', ['config', 'user.email', 'teacher-test@example.invalid'], {
+      cwd: projectRoot,
+      stdio: 'ignore',
+    });
+    execFileSync('git', ['config', 'user.name', 'Teacher Test'], {
+      cwd: projectRoot,
+      stdio: 'ignore',
+    });
+    execFileSync('git', ['add', 'tracked.txt'], { cwd: projectRoot, stdio: 'ignore' });
+    execFileSync('git', ['commit', '-m', 'fixture'], { cwd: projectRoot, stdio: 'ignore' });
+
+    try {
+      const fx = fixture({ taskLoop: true, storeRoot });
+      const { sourceAction, consulted } = await startAndConsult(fx, projectRoot);
+      if (sourceAction.kind !== 'agent') throw new Error('expected task-loop source agent');
+      const canonicalRoot = fs.realpathSync.native(projectRoot);
+      const recordBeforeRestart = fx.store.load(fx.plan.runId);
+      const sourceSession: SessionHostView = {
+        sessionId: SOURCE_SESSION_ID,
+        backend: sourceAction.agent.runtime,
+        cwd: canonicalRoot,
+        cwdDigest: digestSessionHostText(canonicalRoot),
+        sandbox: sourceAction.agent.sandbox,
+        authority: {
+          invocationId: sourceAction.invocationId,
+          role: sourceAction.agent.role,
+          workspaceInstanceId: recordBeforeRestart.workspaceInstanceId,
+          backend: 'hosted',
+          handoffTokensUsed: 0,
+          reuseRoundsServed: 0,
+        },
+        hostState: 'idle',
+        state: 'idle',
+        generation: 1,
+        createdAt: '2026-08-10T00:00:00.000Z',
+        updatedAt: '2026-08-10T00:00:00.000Z',
+      };
+      const daemonSourceHost = {
+        inspect: (sessionId: string) =>
+          sessionId === SOURCE_SESSION_ID ? sourceSession : undefined,
+        list: () => [sourceSession],
+      };
+
+      const reopened = openStoredRuntimeContext({
+        storeRoot,
+        runId: fx.plan.runId,
+        sourceSessionHost: daemonSourceHost,
+      });
+      const resumed = await reopened.facade.resume(
+        {
+          change: { projectRoot, changeId: 'fixture-change' },
+          runId: fx.plan.runId,
+        },
+        { deliveryMode: 'grant' }
+      );
+      expect(resumed.actions).toEqual([]);
+      expect(resumed.view.sections).toContainEqual(
+        expect.objectContaining({ kind: 'task-loop' })
+      );
+      const recordAfterRestart = fx.store.load(fx.plan.runId);
+      expect(recordAfterRestart.counters).toEqual(recordBeforeRestart.counters);
+      expect(recordAfterRestart.transitions).toEqual(recordBeforeRestart.transitions);
+      expect(recordAfterRestart.actions[consulted.actions[0]!.actionId]).toMatchObject({
+        state: 'active',
+      });
+      const teacherAction = consulted.actions[0]!;
+      const consultationId = Object.keys(recordAfterRestart.consultations ?? {})[0]!;
+      const advice = {
+        contract: 'teacher-consultation/advice/1' as const,
+        consultationId,
+        teacherAttempt: 1,
+        decision: 'plan' as const,
+        rationale: 'Continue only through the recovered source Session.',
+        steps: ['Resume the paused source Session.'],
+        cautions: [],
+        evidenceNotes: [],
+      };
+      const teacherCompletion = createTestTrustedCompletionProducer(teacherAction).attestCompletion({
+        change: { projectRoot, changeId: 'fixture-change' },
+        record: recordAfterRestart,
+        action: teacherAction,
+        completion: {
+          kind: 'domain-action-result',
+          status: 'succeeded',
+          result: advice,
+        },
+        evidenceContent: Buffer.from(JSON.stringify(advice), 'utf8'),
+      });
+      fx.writer.publishCompletion(teacherCompletion.completion, teacherCompletion.uploads);
+      const advised = await reopened.facade.complete(teacherCompletion.completion, {
+        deliveryMode: 'grant',
+      });
+      expect(advised.continuationGrants).toHaveLength(1);
+      expect(
+        fs.existsSync(path.join(
+          canonicalRoot,
+          'rasen',
+          'changes',
+          'fixture-change',
+          'evidence',
+          'task-loop-report.md'
+        ))
+      ).toBe(true);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed on missing or mismatched daemon Session authority before advice commitment, report, or Record mutation', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-task-loop-authority-guard-'));
+    const projectRoot = path.join(root, 'worktree');
+    const storeRoot = path.join(root, 'runs');
+    fs.mkdirSync(projectRoot, { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, 'tracked.txt'), 'before\n', 'utf8');
+    execFileSync('git', ['init'], { cwd: projectRoot, stdio: 'ignore' });
+    execFileSync('git', ['config', 'user.email', 'teacher-test@example.invalid'], {
+      cwd: projectRoot,
+      stdio: 'ignore',
+    });
+    execFileSync('git', ['config', 'user.name', 'Teacher Test'], {
+      cwd: projectRoot,
+      stdio: 'ignore',
+    });
+    execFileSync('git', ['add', 'tracked.txt'], { cwd: projectRoot, stdio: 'ignore' });
+    execFileSync('git', ['commit', '-m', 'fixture'], { cwd: projectRoot, stdio: 'ignore' });
+
+    try {
+      const fx = fixture({ taskLoop: true, storeRoot });
+      const { sourceAction } = await startAndConsult(fx, projectRoot);
+      if (sourceAction.kind !== 'agent') throw new Error('expected task-loop source agent');
+      const canonicalRoot = fs.realpathSync.native(projectRoot);
+      const recordBeforeRestart = fx.store.load(fx.plan.runId);
+      const digestBefore = digestCanonicalRunRecord(recordBeforeRestart);
+      const reportPath = path.join(
+        canonicalRoot,
+        'rasen',
+        'changes',
+        'fixture-change',
+        'evidence',
+        'task-loop-report.md'
+      );
+      expect(fs.existsSync(reportPath)).toBe(false);
+
+      // Missing authority: no daemon-owned SessionHost is supplied. A stored
+      // reopen must fail closed instead of trusting any caller-derived cwd.
+      // StoredRuntimeContextInput carries no cwd field, so request-supplied
+      // workspace can never reach the trusted observer.
+      const reopenedMissing = openStoredRuntimeContext({
+        storeRoot,
+        runId: fx.plan.runId,
+      });
+      let caughtMissing: unknown;
+      try {
+        await reopenedMissing.facade.resume(
+          { change: { projectRoot, changeId: 'fixture-change' }, runId: fx.plan.runId },
+          { deliveryMode: 'grant' }
+        );
+      } catch (error) {
+        caughtMissing = error;
+      }
+      expect(caughtMissing).toBeInstanceOf(StoredRuntimeContextError);
+      expect((caughtMissing as StoredRuntimeContextError).code).toBe(
+        'task_loop_workspace_authority_unavailable'
+      );
+      expect(digestCanonicalRunRecord(fx.store.load(fx.plan.runId))).toBe(digestBefore);
+      expect(fs.existsSync(reportPath)).toBe(false);
+
+      // Mismatched authority: the daemon SessionHost returns a Session whose
+      // recorded cwd digest disagrees with its own cwd (workspace drift).
+      // Reopen must fail closed rather than let a caller repair the drift.
+      const driftedSession: SessionHostView = {
+        sessionId: SOURCE_SESSION_ID,
+        backend: sourceAction.agent.runtime,
+        cwd: canonicalRoot,
+        cwdDigest: digestSessionHostText(path.join(canonicalRoot, 'drifted-cwd')),
+        sandbox: sourceAction.agent.sandbox,
+        authority: {
+          invocationId: sourceAction.invocationId,
+          role: sourceAction.agent.role,
+          workspaceInstanceId: recordBeforeRestart.workspaceInstanceId,
+          backend: 'hosted',
+          handoffTokensUsed: 0,
+          reuseRoundsServed: 0,
+        },
+        hostState: 'idle',
+        state: 'idle',
+        generation: 1,
+        createdAt: '2026-08-10T00:00:00.000Z',
+        updatedAt: '2026-08-10T00:00:00.000Z',
+      };
+      const driftedHost = {
+        inspect: (sessionId: string) =>
+          sessionId === SOURCE_SESSION_ID ? driftedSession : undefined,
+        list: () => [driftedSession],
+      };
+      const reopenedDrifted = openStoredRuntimeContext({
+        storeRoot,
+        runId: fx.plan.runId,
+        sourceSessionHost: driftedHost,
+      });
+      let caughtDrifted: unknown;
+      try {
+        await reopenedDrifted.facade.resume(
+          { change: { projectRoot, changeId: 'fixture-change' }, runId: fx.plan.runId },
+          { deliveryMode: 'grant' }
+        );
+      } catch (error) {
+        caughtDrifted = error;
+      }
+      expect(caughtDrifted).toBeInstanceOf(StoredRuntimeContextError);
+      expect((caughtDrifted as StoredRuntimeContextError).code).toBe(
+        'task_loop_workspace_authority_mismatch'
+      );
+      expect(digestCanonicalRunRecord(fx.store.load(fx.plan.runId))).toBe(digestBefore);
+      expect(fs.existsSync(reportPath)).toBe(false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('keeps BoundedLoop progress and strategy accounting independent from consultation transitions', async () => {

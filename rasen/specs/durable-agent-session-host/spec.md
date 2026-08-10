@@ -1,7 +1,8 @@
 # durable-agent-session-host Specification
 
 ## Purpose
-TBD - created by archiving change ecp-durable-agent-session-host. Update Purpose after archive.
+Define stable, recoverable hosted agent Sessions whose bounded turns, exact ownership, durable lifecycle state, and process generations remain safe across caller and daemon replacement.
+
 ## Requirements
 ### Requirement: A hosted agent Session keeps one stable identity across bounded turns
 Rasen SHALL let a caller create a hosted agent Session, submit a bounded first turn, and later wake that exact Session for additional bounded turns. Rasen SHALL mint a stable Session id distinct from the backend's Session id and process id; replacement drivers and replacement backend process generations SHALL continue addressing the stable Rasen Session id. At least one production backend SHALL execute through a resident bidirectional stream-json process, while backend-specific flags and event shapes remain hidden behind the host lifecycle contract.
@@ -184,4 +185,3 @@ The repository SHALL provide deterministic protocol/process fixtures that exerci
 #### Scenario: Network absence does not skip correctness gates
 - **WHEN** tests run without backend credentials or network access
 - **THEN** all registry, protocol, recovery, single-flight, cwd, and process-tree correctness gates still execute against deterministic fixtures
-

@@ -276,4 +276,3 @@ Recovered inert-phase conformance SHALL establish `prepared-inert` before public
 - **WHEN** the platform-neutral deterministic fixture runs the same conformance suite
 - **THEN** its fixture publisher returns the exact canonical acknowledgement
 - **AND** the shared assertions do not special-case platform identity or storage
-

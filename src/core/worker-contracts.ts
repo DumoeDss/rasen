@@ -13,10 +13,13 @@ export const LEAF_RETURN_SCHEMA = {
   type: 'object',
   properties: {
     status: { type: 'string', enum: ['DONE', 'HANDOFF'] },
-    summary: { type: 'string' },
-    handoffReason: { type: 'string' },
+    summary: { type: ['string', 'null'] },
+    handoffReason: { type: ['string', 'null'] },
   },
-  required: ['status'],
+  // Codex structured output requires every declared object property to be
+  // listed in `required`. Nullable values retain the runtime-neutral
+  // contract's optional-field semantics at the provider boundary.
+  required: ['status', 'summary', 'handoffReason'],
   additionalProperties: false,
 } as const;
 
@@ -26,9 +29,9 @@ export const EVALUATE_GATE_SCHEMA = {
   properties: {
     satisfied: { type: 'boolean' },
     gaps: { type: 'array', items: { type: 'string' } },
-    summary: { type: 'string' },
+    summary: { type: ['string', 'null'] },
   },
-  required: ['satisfied', 'gaps'],
+  required: ['satisfied', 'gaps', 'summary'],
   additionalProperties: false,
 } as const;
 
@@ -160,7 +163,9 @@ function parseJson(text: string, contractName: string): unknown {
 }
 
 export function parseLeafReturnValue(value: unknown): LeafReturn {
-  const result = LeafReturnZodSchema.safeParse(value);
+  const result = LeafReturnZodSchema.safeParse(
+    normalizeNullableOptionalFields(value, ['summary', 'handoffReason'])
+  );
   if (!result.success) {
     throw new Error(
       `Leaf return does not conform to the DONE/HANDOFF contract: ${result.error.issues
@@ -172,7 +177,9 @@ export function parseLeafReturnValue(value: unknown): LeafReturn {
 }
 
 export function parseEvaluateGateValue(value: unknown): EvaluateGateResult {
-  const result = EvaluateGateZodSchema.safeParse(value);
+  const result = EvaluateGateZodSchema.safeParse(
+    normalizeNullableOptionalFields(value, ['summary'])
+  );
   if (!result.success) {
     throw new Error(
       `Evaluate-gate result does not conform to the {satisfied, gaps} contract: ${result.error.issues
@@ -201,6 +208,26 @@ export function parseConsultableLeafReturnValue(
     throw new Error('Consultable leaf CONSULT return exceeds the UTF-8 byte bound.');
   }
   return result.data;
+}
+
+/**
+ * Provider schemas encode optional values as required-but-nullable. Remove
+ * only those known null sentinels before applying the existing strict Zod
+ * contracts so callers continue to receive omitted optional properties.
+ * Unknown keys and non-null invalid values remain visible to strict parsing.
+ */
+function normalizeNullableOptionalFields(
+  value: unknown,
+  optionalFields: readonly string[]
+): unknown {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return value;
+  }
+  const normalized = { ...(value as Record<string, unknown>) };
+  for (const field of optionalFields) {
+    if (normalized[field] === null) delete normalized[field];
+  }
+  return normalized;
 }
 
 /** Parse JSON text as a leaf DONE/HANDOFF return. */

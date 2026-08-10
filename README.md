@@ -33,6 +33,13 @@ A loop that returns to where it started is just a circle. Rasen (螺旋, "spiral
 - **Each turn ascends.** The harness doesn't just repeat; it makes progress. `/rasen-auto` runs a LEAD that orchestrates role-isolated subagents, a review-cycle that catches its own mistakes, and handoff/relay that carries context across sessions — so every turn ends higher than it began.
 - **Until it breaks through.** `/rasen-goal` closes the spiral on a condition, not a document: drive a metric to a target, make a module rubric-clean, research until a brief is answered — repeat modify → judge until the gate is met.
 
+`task-loop` is the explicit small-task route under `/rasen-auto`. Use
+`/rasen-auto task-loop <task>` or `/rasen-auto --pipeline task-loop <task>`
+when the target and quality bar are concrete enough for a builder/fresh-critic
+loop over real artifacts. It is spec-free, resumes the same canonical Run, and
+never upgrades or falls back to a spec-driven Pipeline. Ordinary automatic
+selection continues to default to `small-feature`.
+
 Intent is where you start. The spiral is how you get there.
 
 ## See it in action
@@ -97,6 +104,16 @@ rasen update
 - **Context sensing & handoff** — `rasen agent context` measures real occupancy; `/rasen-handoff` writes a distillate checkpoint; workers self-hand-off at soft budgets, and a compact-recovery hook re-anchors on the distillate after an auto-compact, so long runs survive context limits.
 - **Prompt-cache keepalive** — `rasen agent wait` parks an idle worker on a keepalive beat instead of letting its 5-minute prompt cache expire, so a reviewer waiting on an implementer doesn't pay a full-context rewrite on its next turn. Beat length is tunable via `keepalive.beatSeconds`.
 - **Token audit** — `rasen agent audit` shows where a session's tokens actually went: per-agent spend, cache churn and its causes, with a bundled HTML viewer. Works on Claude Code transcripts and Codex rollouts, fully local — nothing is uploaded.
+
+### Spec-free task loop
+
+The built-in `task-loop` Pipeline runs only through `/rasen-auto`; it does not
+add a `rasen loop` command and it is never selected by the classifier. Its
+frozen task/bar envelope is read only from the resolved Change ephemera
+directory. Missing or changed launch input fails closed, while an interrupted
+Run resumes from its sealed canonical frontier. The runtime creates no
+proposal, design, specs, tasks, or goal-plan artifacts and never converts to a
+spec workflow when blocked, exhausted, cancelled, or unsatisfied.
 
 ## Web UI
 

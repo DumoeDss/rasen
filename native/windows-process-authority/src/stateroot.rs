@@ -82,6 +82,20 @@ pub struct TrustedStateRoot {
     owner: OwnedSid,
 }
 
+fn create_owned_leaf_directory(path: &Path, owner: &OwnedSid) -> io::Result<()> {
+    let parent = path.parent().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "directory has no parent")
+    })?;
+    fs::create_dir_all(parent)?;
+    match fs::create_dir(path) {
+        Ok(()) => win::set_file_owner_sid(&path.to_string_lossy(), owner),
+        // A concurrent creator won the race. Leave that object's owner untouched so the
+        // strict validation below decides whether it is trusted.
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
 impl TrustedStateRoot {
     /// Validate an existing trusted root: absolute, a real directory, no reparse point on any
     /// component, and owned by the expected SID.
@@ -114,8 +128,12 @@ impl TrustedStateRoot {
     /// purpose: a root that already existed is validated exactly as strictly as a fresh one.
     pub fn create_or_open(path: &str, expected_owner: &OwnedSid) -> io::Result<Self> {
         validate_absolute_windows_path(path, "trusted state root")?;
-        if fs::symlink_metadata(path).is_err() {
-            fs::create_dir_all(path)?;
+        match fs::symlink_metadata(path) {
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                create_owned_leaf_directory(Path::new(path), expected_owner)?;
+            }
+            Err(error) => return Err(error),
         }
         Self::open(path, expected_owner)
     }
@@ -136,8 +154,12 @@ impl TrustedStateRoot {
 
     pub fn create_scope_directory(&self, scope_id: &str) -> io::Result<PathBuf> {
         let directory = self.scope_directory(scope_id)?;
-        if fs::symlink_metadata(&directory).is_err() {
-            fs::create_dir_all(&directory)?;
+        match fs::symlink_metadata(&directory) {
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                create_owned_leaf_directory(&directory, &self.owner)?;
+            }
+            Err(error) => return Err(error),
         }
         reject_reparse_points_along(&directory)?;
         let owner = win::file_owner_sid(&directory.to_string_lossy())?;
@@ -167,7 +189,11 @@ impl TrustedStateRoot {
     /// actually holds.
     pub fn record_sole_handle(&self, scope_id: &str, token: &[u8; 32]) -> io::Result<()> {
         let path = self.sole_handle_path(scope_id)?;
-        write_durably(&path, crate::sha256::hex(token).as_bytes())
+        write_durably(
+            &path,
+            crate::sha256::hex(token).as_bytes(),
+            &self.owner,
+        )
     }
 
     /// Withdraw the corroboration. Called the moment the Job handle stops being solely held,
@@ -217,7 +243,7 @@ impl TrustedStateRoot {
 /// Write bytes with Decision 10's Windows durability recipe: temporary file in the same
 /// directory, flush the file handle, atomic replace with write-through, then flush a directory
 /// handle opened with backup semantics. This is not the POSIX recipe and Node cannot express it.
-pub fn write_durably(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub fn write_durably(path: &Path, bytes: &[u8], owner: &OwnedSid) -> io::Result<()> {
     use std::io::Write;
     use std::os::windows::io::AsRawHandle;
 
@@ -233,6 +259,11 @@ pub fn write_durably(path: &Path, bytes: &[u8]) -> io::Result<()> {
     ));
     {
         let mut file = std::fs::File::create(&temporary)?;
+        // Elevated Windows tokens may default new filesystem objects to the
+        // Administrators group even when the process token belongs to one user.
+        // Pin the durable record to the same owner as its trusted root before
+        // publishing it; corroboration deliberately rejects any other owner.
+        win::set_file_owner_sid(&temporary.to_string_lossy(), owner)?;
         file.write_all(bytes)?;
         file.flush()?;
         win::flush_file(file.as_raw_handle() as crate::sys::Handle)?;
@@ -270,7 +301,6 @@ mod tests {
             crate::win::current_process_id()
         ));
         let _ = fs::remove_dir_all(&base);
-        fs::create_dir_all(&base).expect("create temporary root");
         base
     }
 
@@ -305,7 +335,7 @@ mod tests {
         let root = temporary_root("owner");
         let text = root.to_string_lossy().into_owned();
         let mine = win::current_user_sid().expect("sid");
-        let opened = TrustedStateRoot::open(&text, &mine).expect("open");
+        let opened = TrustedStateRoot::create_or_open(&text, &mine).expect("create");
         assert_eq!(opened.path(), root.as_path());
 
         // The contract requires the owner to be *exactly* the expected SID. Assert that
@@ -318,7 +348,8 @@ mod tests {
             unsafe { OwnedSid::copy_from(bytes.as_ptr() as *mut std::ffi::c_void) }
                 .expect("well-known SID")
         };
-        assert!(TrustedStateRoot::open(&text, &everyone).is_err());
+        assert!(TrustedStateRoot::create_or_open(&text, &everyone).is_err());
+        TrustedStateRoot::open(&text, &mine).expect("existing root owner was changed");
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -340,6 +371,22 @@ mod tests {
         let directory = opened.create_scope_directory(scope).expect("scope dir");
         assert!(directory.starts_with(&root));
         assert!(directory.ends_with(scope));
+        let token = [7_u8; 32];
+        opened.record_sole_handle(scope, &token).expect("record");
+        let record_owner = win::file_owner_sid(
+            &opened
+                .sole_handle_path(scope)
+                .expect("sole-handle path")
+                .to_string_lossy(),
+        )
+        .expect("record owner");
+        assert!(record_owner.equals(&mine));
+        assert_eq!(
+            opened
+                .corroborate_sole_handle(scope, &token)
+                .expect("corroborate"),
+            Some(crate::sha256::hex(&token))
+        );
         assert!(opened.journal_path(scope).expect("journal").starts_with(&root));
         assert!(opened
             .terminal_record_path(scope)

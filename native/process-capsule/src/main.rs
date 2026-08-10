@@ -31,6 +31,7 @@ const ERROR: u8 = 0x86;
 const SCOPE_EMPTY: u8 = 0x87;
 const OBSERVATION: u8 = 0x88;
 const SUPERVISOR_READY: u8 = 0x90;
+const SUPERVISOR_JOB_HANDLE: u8 = 0x91;
 
 #[derive(Clone)]
 struct LaunchSpec {
@@ -214,8 +215,40 @@ fn stream_child_output<R: Read + Send + 'static>(
     });
 }
 
-fn supervisor_main() -> io::Result<()> {
+fn hold_duplicated_job_handle(leaked_job_handle: Option<u64>) -> io::Result<()> {
+    // The mutation oracle deliberately keeps this independently owned Job
+    // handle open after either EOF or a broken-pipe read from the controller.
+    // Windows may report controller death through either outcome.
+    let _retained_job_handle = leaked_job_handle
+        .ok_or_else(|| io::Error::other("duplicated Job handle was not acknowledged"))?;
+    loop {
+        thread::sleep(Duration::from_secs(60));
+    }
+}
+
+fn supervisor_main(hold_on_control_loss: bool) -> io::Result<()> {
     let mut controller_input = io::stdin().lock();
+    let leaked_job_handle = if hold_on_control_loss {
+        let (kind, payload) = read_frame(&mut controller_input)?.ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "missing duplicated Job-handle mutation",
+            )
+        })?;
+        if kind != SUPERVISOR_JOB_HANDLE || payload.len() != std::mem::size_of::<u64>() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "supervisor expected duplicated Job-handle mutation",
+            ));
+        }
+        let mut raw = [0u8; std::mem::size_of::<u64>()];
+        raw.copy_from_slice(&payload);
+        let raw = u64::from_be_bytes(raw);
+        platform::validate_duplicated_job_handle(raw)?;
+        Some(raw)
+    } else {
+        None
+    };
     let (kind, payload) = read_frame(&mut controller_input)?.ok_or_else(|| {
         io::Error::new(io::ErrorKind::UnexpectedEof, "missing supervisor prepare")
     })?;
@@ -226,7 +259,15 @@ fn supervisor_main() -> io::Result<()> {
         ));
     }
     let spec = parse_launch(&payload)?;
-    write_frame(&mut io::stdout().lock(), SUPERVISOR_READY, &[])?;
+    write_frame(
+        &mut io::stdout().lock(),
+        SUPERVISOR_READY,
+        if leaked_job_handle.is_some() {
+            &[1]
+        } else {
+            &[]
+        },
+    )?;
     let (kind, _) = read_frame(&mut controller_input)?.ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::UnexpectedEof,
@@ -301,7 +342,14 @@ fn supervisor_main() -> io::Result<()> {
     });
 
     loop {
-        match read_frame(&mut controller_input)? {
+        let command = match read_frame(&mut controller_input) {
+            Ok(command) => command,
+            Err(_error) if hold_on_control_loss => {
+                return hold_duplicated_job_handle(leaked_job_handle);
+            }
+            Err(error) => return Err(error),
+        };
+        match command {
             Some((INPUT, bytes)) => child_input.write_all(&bytes)?,
             Some((TERMINATE, _)) => {
                 let _ = child.lock().map(|mut item| item.kill());
@@ -314,6 +362,9 @@ fn supervisor_main() -> io::Result<()> {
                 ))
             }
             None => {
+                if hold_on_control_loss {
+                    return hold_duplicated_job_handle(leaked_job_handle);
+                }
                 terminate_contained_group(pid);
                 let _ = child.lock().map(|mut item| item.kill());
                 break;
@@ -342,6 +393,7 @@ struct SupervisorScope {
     output: File,
     pid: u32,
     birth: String,
+    duplicated_job_handle: Option<u64>,
     containment: Containment,
 }
 
@@ -564,7 +616,7 @@ mod platform {
         }
     }
     impl WindowsContainment {
-        pub fn is_empty(&self) -> io::Result<bool> {
+        pub fn is_empty(&mut self) -> io::Result<bool> {
             unsafe {
                 if self.job.is_null() {
                     return Ok(true);
@@ -648,6 +700,23 @@ mod platform {
         unsafe { GetCurrentProcessId() }
     }
 
+    pub fn validate_duplicated_job_handle(raw: u64) -> io::Result<()> {
+        unsafe {
+            let job = raw as usize as Handle;
+            if job.is_null() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "duplicated Job handle is null",
+                ));
+            }
+            let mut in_job = FALSE;
+            if IsProcessInJob(GetCurrentProcess(), job, &mut in_job) == FALSE || in_job == FALSE {
+                return Err(os_error("duplicated Job handle validation"));
+            }
+            Ok(())
+        }
+    }
+
     pub fn spawn_supervisor(duplicate_job: bool) -> io::Result<SupervisorScope> {
         unsafe {
             let mut attrs = SecurityAttributes {
@@ -721,7 +790,15 @@ mod platform {
 
             let exe = env::current_exe()?;
             let app = wide(exe.as_os_str());
-            let mut command = wide(OsStr::new(&format!("\"{}\" --supervisor", exe.display())));
+            let supervisor_mode = if duplicate_job {
+                "--supervisor-test-leaked-job-handle"
+            } else {
+                "--supervisor"
+            };
+            let mut command = wide(OsStr::new(&format!(
+                "\"{}\" {supervisor_mode}",
+                exe.display()
+            )));
             let mut startup: StartupInfoExW = zeroed();
             startup.startup.cb = size_of::<StartupInfoExW>() as u32;
             startup.startup.flags = STARTF_USESTDHANDLES;
@@ -756,7 +833,7 @@ mod platform {
                 TerminateProcess(info.process, 74);
                 return Err(os_error("supervisor is not in Job"));
             }
-            if duplicate_job {
+            let duplicated_job_handle = if duplicate_job {
                 let mut duplicated: Handle = null_mut();
                 if DuplicateHandle(
                     GetCurrentProcess(),
@@ -770,7 +847,10 @@ mod platform {
                 {
                     return Err(os_error("DuplicateHandle mutation"));
                 }
-            }
+                Some(duplicated as usize as u64)
+            } else {
+                None
+            };
             if ResumeThread(info.thread) == u32::MAX {
                 return Err(os_error("ResumeThread"));
             }
@@ -782,6 +862,7 @@ mod platform {
                 output: File::from_raw_handle(output_read),
                 pid: info.process_id,
                 birth,
+                duplicated_job_handle,
                 containment: Containment::Windows(WindowsContainment {
                     job,
                     process: info.process,
@@ -797,6 +878,7 @@ mod platform {
         supervisor_birth: &str,
         _reserved_pgid: u32,
         terminate: bool,
+        _allow_absent_controller: bool,
     ) -> u8 {
         unsafe {
             let process = OpenProcess(
@@ -956,7 +1038,8 @@ mod platform {
         4
     }
     impl PosixContainment {
-        pub fn is_empty(&self) -> io::Result<bool> {
+        pub fn is_empty(&mut self) -> io::Result<bool> {
+            let _ = self.child.try_wait()?;
             Ok(!process_group_exists(self.child.id()))
         }
 
@@ -1094,6 +1177,13 @@ mod platform {
         unsafe { getpid() as u32 }
     }
 
+    pub fn validate_duplicated_job_handle(_raw: u64) -> io::Result<()> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "duplicated Job-handle mutation is Windows-only",
+        ))
+    }
+
     pub fn spawn_supervisor(_duplicate_job: bool) -> io::Result<SupervisorScope> {
         let exe = env::current_exe()?;
         let mut command = Command::new(exe);
@@ -1131,6 +1221,7 @@ mod platform {
             output,
             pid,
             birth,
+            duplicated_job_handle: None,
             containment: Containment::Posix(PosixContainment { child, pidfd }),
         })
     }
@@ -1143,6 +1234,7 @@ mod platform {
         supervisor_birth: &str,
         reserved_pgid: u32,
         terminate: bool,
+        allow_absent_controller: bool,
     ) -> u8 {
         extern "C" {
             fn syscall(number: i64, ...) -> i64;
@@ -1158,8 +1250,10 @@ mod platform {
             Some(_) => {}
             None if process_exists(pid) => return 4,
             None => {
-                return if terminate && group_state == 1 {
+                return if terminate && group_state == 1 && allow_absent_controller {
                     terminate_reserved_group(supervisor_pid, supervisor_birth, reserved_pgid)
+                } else if terminate && group_state == 1 {
+                    4
                 } else {
                     group_state
                 };
@@ -1247,6 +1341,7 @@ mod platform {
         supervisor_birth: &str,
         reserved_pgid: u32,
         terminate: bool,
+        allow_absent_controller: bool,
     ) -> u8 {
         let group_state = inspect_reserved_group(supervisor_pid, supervisor_birth, reserved_pgid);
         if group_state == 3 || group_state == 4 {
@@ -1258,8 +1353,10 @@ mod platform {
             Some(_) => {}
             None if process_exists(pid) => return 4,
             None => {
-                return if terminate && group_state == 1 {
+                return if terminate && group_state == 1 && allow_absent_controller {
                     terminate_reserved_group(supervisor_pid, supervisor_birth, reserved_pgid)
+                } else if terminate && group_state == 1 {
+                    4
                 } else {
                     group_state
                 };
@@ -1315,7 +1412,7 @@ enum Containment {
     Posix(platform::PosixContainment),
 }
 impl Containment {
-    fn is_empty(&self) -> io::Result<bool> {
+    fn is_empty(&mut self) -> io::Result<bool> {
         match self {
             #[cfg(windows)]
             Self::Windows(value) => value.is_empty(),
@@ -1407,9 +1504,24 @@ fn controller_main(
         ));
     }
     let mut supervisor = platform::spawn_supervisor(duplicate_job)?;
+    if duplicate_job {
+        let raw = supervisor.duplicated_job_handle.ok_or_else(|| {
+            io::Error::other("duplicated Job-handle mutation was not established")
+        })?;
+        write_frame(
+            &mut supervisor.input,
+            SUPERVISOR_JOB_HANDLE,
+            &raw.to_be_bytes(),
+        )?;
+    }
     write_frame(&mut supervisor.input, PREPARE, &payload)?;
     let ready = read_frame(&mut supervisor.output)?;
-    if ready.as_ref().map(|item| item.0) != Some(SUPERVISOR_READY) {
+    let expected_ready_payload: &[u8] = if duplicate_job { &[1] } else { &[] };
+    if !matches!(
+        ready.as_ref(),
+        Some((kind, payload))
+            if *kind == SUPERVISOR_READY && payload.as_slice() == expected_ready_payload
+    ) {
         let _ = supervisor.containment.terminate();
         return Err(io::Error::other("supervisor readiness not observed"));
     }
@@ -1465,7 +1577,7 @@ fn controller_main(
                         let empty = containment_clone
                             .lock()
                             .map_err(|_| ())
-                            .and_then(|item| item.is_empty().map_err(|_| ()))
+                            .and_then(|mut item| item.is_empty().map_err(|_| ()))
                             .unwrap_or_else(|_| process::exit(74));
                         if empty {
                             if !scope_empty_clone.swap(true, Ordering::AcqRel) {
@@ -1530,7 +1642,7 @@ fn controller_main(
     }
 }
 
-fn probe_main(terminate: bool) -> io::Result<()> {
+fn probe_main(terminate: bool, allow_absent_controller: bool) -> io::Result<()> {
     let (kind, payload) = read_frame(&mut io::stdin().lock())?
         .ok_or_else(|| io::Error::new(io::ErrorKind::UnexpectedEof, "missing ProcessRef"))?;
     if kind != INSPECT {
@@ -1561,6 +1673,7 @@ fn probe_main(terminate: bool) -> io::Result<()> {
             supervisor_birth,
             reserved_pgid,
             terminate,
+            allow_absent_controller,
         )
     };
     write_frame(&mut io::stdout().lock(), OBSERVATION, &[state])
@@ -1572,10 +1685,24 @@ fn pipe_holder_main() -> io::Result<()> {
     }
 }
 
+fn process_birth_main(pid: &str) -> io::Result<()> {
+    let pid = pid
+        .parse::<u32>()
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "process PID is invalid"))?;
+    let birth = platform::process_birth(pid).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            "exact process birth is unavailable",
+        )
+    })?;
+    io::stdout().lock().write_all(birth.as_bytes())
+}
+
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     let result = match args.as_slice() {
-        [mode] if mode == "--supervisor" => supervisor_main(),
+        [mode] if mode == "--supervisor" => supervisor_main(false),
+        [mode] if mode == "--supervisor-test-leaked-job-handle" => supervisor_main(true),
         [mode] if mode == "--controller" => {
             controller_main(false, false, false, false, false, false)
         }
@@ -1598,8 +1725,10 @@ fn main() {
             controller_main(false, false, false, false, false, true)
         }
         [mode] if mode == "--pipe-holder" => pipe_holder_main(),
-        [mode] if mode == "--inspect" => probe_main(false),
-        [mode] if mode == "--terminate" => probe_main(true),
+        [mode, pid] if mode == "--process-birth" => process_birth_main(pid),
+        [mode] if mode == "--inspect" => probe_main(false, false),
+        [mode] if mode == "--terminate" => probe_main(true, false),
+        [mode] if mode == "--terminate-owned" => probe_main(true, true),
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "unsupported ProcessCapsule mode",

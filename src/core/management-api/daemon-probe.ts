@@ -21,8 +21,14 @@ const PROBE_TIMEOUT_MS = 700;
 
 export const DEFAULT_DAEMON_PORT = 8791;
 
+export type DaemonNoListenerReason =
+  | 'connection-refused'
+  | 'timeout'
+  | 'non-response'
+  | 'network-error';
+
 export type DaemonProbeResult =
-  | { kind: 'no-listener' }
+  | { kind: 'no-listener'; reason: DaemonNoListenerReason }
   | { kind: 'foreign' }
   | { kind: 'rasen-daemon'; version: string; pid: number };
 
@@ -60,24 +66,36 @@ export function probeDaemonPort(port: number): Promise<DaemonProbeResult> {
       (res) => {
         const daemonVersion = res.headers['x-rasen-daemon'];
         const pidHeader = res.headers['x-rasen-pid'];
-        res.destroy(); // headers are all we need; never wait for/consume the body.
         if (typeof daemonVersion !== 'string') {
           finish({ kind: 'foreign' });
+          res.destroy();
           return;
         }
         const pid = typeof pidHeader === 'string' ? Number(pidHeader) : NaN;
-        if (!Number.isInteger(pid)) {
+        if (!Number.isSafeInteger(pid) || pid <= 0) {
           finish({ kind: 'foreign' });
+          res.destroy();
           return;
         }
         finish({ kind: 'rasen-daemon', version: daemonVersion, pid });
+        res.destroy(); // headers are all we need; never wait for/consume the body.
       }
     );
     req.on('timeout', () => {
+      finish({ kind: 'no-listener', reason: 'timeout' });
       req.destroy();
     });
-    req.on('error', () => {
-      finish({ kind: 'no-listener' });
+    req.on('error', (error: NodeJS.ErrnoException) => {
+      finish({
+        kind: 'no-listener',
+        reason:
+          error.code === 'ECONNREFUSED'
+            ? 'connection-refused'
+            : 'network-error',
+      });
+    });
+    req.on('close', () => {
+      finish({ kind: 'no-listener', reason: 'non-response' });
     });
     req.end();
   });
@@ -94,13 +112,26 @@ export async function probeDaemon(
   defaultPort: number,
   stateFilePortHint: number | undefined
 ): Promise<{ port: number; result: DaemonProbeResult }> {
+  let hintedAmbiguity:
+    | { port: number; result: DaemonProbeResult }
+    | undefined;
   if (stateFilePortHint !== undefined && stateFilePortHint !== defaultPort) {
     const hinted = await probeDaemonPort(stateFilePortHint);
     if (hinted.kind !== 'no-listener') {
       return { port: stateFilePortHint, result: hinted };
     }
+    if (hinted.reason !== 'connection-refused') {
+      hintedAmbiguity = { port: stateFilePortHint, result: hinted };
+    }
   }
   const atDefault = await probeDaemonPort(defaultPort);
+  if (
+    atDefault.kind === 'no-listener'
+    && atDefault.reason === 'connection-refused'
+    && hintedAmbiguity !== undefined
+  ) {
+    return hintedAmbiguity;
+  }
   return { port: defaultPort, result: atDefault };
 }
 
@@ -124,17 +155,25 @@ export async function probeDaemon(
  * shutdown — do not "simplify" it back to matching `kill-tree.ts`'s
  * default.
  */
-export const IDENTIFIED_DAEMON_KILL_GRACE_MS = 15_000;
+export const IDENTIFIED_DAEMON_KILL_GRACE_MS = 20_000;
 
 const PORT_FREE_POLL_INTERVAL_MS = 250;
-/** 80 * 250ms = 20s — comfortably exceeds `IDENTIFIED_DAEMON_KILL_GRACE_MS` so a wedged-but-eventually-SIGKILLed daemon's port is still observed freeing within the wait window. */
-const PORT_FREE_POLL_ATTEMPTS = 80;
+export const DAEMON_PORT_FREE_OBSERVATION_MS = 25_000;
+/** 100 * 250ms = 25s, comfortably exceeding the 20s identified-daemon grace. */
+const PORT_FREE_POLL_ATTEMPTS = Math.ceil(
+  DAEMON_PORT_FREE_OBSERVATION_MS / PORT_FREE_POLL_INTERVAL_MS
+);
 
 /** Polls until nothing answers on `port`, bounded to comfortably outlast `IDENTIFIED_DAEMON_KILL_GRACE_MS`. Shared by `daemon stop`/`daemon start`'s stale-replace and `rasen ui`'s stale-replace, so the two never drift out of sync with the grace above. */
 export async function waitForDaemonPortFree(port: number): Promise<boolean> {
   for (let attempt = 0; attempt < PORT_FREE_POLL_ATTEMPTS; attempt++) {
     const probe = await probeDaemonPort(port);
-    if (probe.kind === 'no-listener') return true;
+    if (
+      probe.kind === 'no-listener'
+      && probe.reason === 'connection-refused'
+    ) {
+      return true;
+    }
     await new Promise((resolve) => setTimeout(resolve, PORT_FREE_POLL_INTERVAL_MS));
   }
   return false;

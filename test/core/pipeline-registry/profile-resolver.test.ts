@@ -434,7 +434,7 @@ describe('resolveCapabilityBindings (3.4 profile construction)', () => {
         provenance: expect.objectContaining({
           role: 'definition',
           model: 'stage',
-          effort: 'definition',
+          effort: 'stage',
           runtime: 'stage',
           sandbox: 'definition',
           gate: 'stage',

@@ -393,9 +393,12 @@
   "pipelines.threshold.feedback.write_failed": "The change was not saved. Check the active scope and server details, then try again.",
 
   "pipelines.threshold.defaults.title": "Defaults",
-  "pipelines.threshold.defaults.description": "Model defaults and keepalive lifecycle controls live here. Author ordinary handoff policy through Threshold Schemes.",
+  "pipelines.threshold.defaults.description": "Model and reasoning-effort defaults plus keepalive lifecycle controls live here. Author ordinary handoff policy through Threshold Schemes.",
   "pipelines.threshold.defaults.role": "Role",
   "pipelines.threshold.defaults.model": "Model",
+  "pipelines.effort.label": "Effort",
+  "pipelines.effort.effective": "Effective",
+  "pipelines.effort.runtime_default": "Runtime default",
   "pipelines.keepalive.lifecycle_description": "Runtime gates and the context floor control parked-worker lifecycle and cache behavior. They are independent from threshold bindings.",
   "pipelines.keepalive.runtime_description": "Allow keepalive beats under the {runtime} runtime",
   "pipelines.keepalive.context_floor_description": "Minimum context tokens required for keepalive parking",

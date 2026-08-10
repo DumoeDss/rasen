@@ -38,6 +38,12 @@ import {
   type ClaudeSandboxMode,
 } from '../core/claude/index.js';
 import {
+  codexFailureReceipt,
+  runCodexExec,
+  type CodexDispatchReceipt,
+  type CodexSandboxMode,
+} from '../core/codex/index.js';
+import {
   contextResolveOptions,
   resolveRootConfigContext,
 } from '../core/config-api/config-context.js';
@@ -62,7 +68,11 @@ import {
 } from '../core/keepalive/index.js';
 import { resolveEffectiveConfigWithMetadata } from '../core/effective-config.js';
 import { getChangeDir, resolveCurrentPlanningHomeSync } from '../core/planning-home.js';
-import type { ThresholdValue } from '../core/pipeline-registry/types.js';
+import {
+  LEAF_EFFORTS,
+  type LeafEffort,
+  type ThresholdValue,
+} from '../core/pipeline-registry/types.js';
 import type { WorkerContract } from '../core/worker-contracts.js';
 import { runAudit } from '../core/token-audit/audit.js';
 import { TranscriptFormatError } from '../core/token-audit/errors.js';
@@ -321,9 +331,9 @@ export class AgentCommand {
    * Machine-oriented Claude print bridge. Every outcome is emitted as exactly
    * one JSON receipt; child stdout/stderr remains captured inside the runner.
    */
-  async dispatch(options: AgentDispatchOptions): Promise<ClaudeDispatchReceipt | Record<string, unknown>> {
+  async dispatch(options: AgentDispatchOptions): Promise<ClaudeDispatchReceipt | CodexDispatchReceipt | Record<string, unknown>> {
     const rawContract = options.contract?.trim();
-    const emit = <T extends ClaudeDispatchReceipt | Record<string, unknown>>(receipt: T): T => {
+    const emit = <T extends ClaudeDispatchReceipt | CodexDispatchReceipt | Record<string, unknown>>(receipt: T): T => {
       console.log(JSON.stringify(receipt));
       if (!('ok' in receipt) || receipt.ok !== true) process.exitCode = 1;
       return receipt;
@@ -333,13 +343,13 @@ export class AgentCommand {
         ok: false,
         runtime: options.runtime || 'unknown',
         dispatchMode: 'exec-bridge',
-        bridge: 'claude-print',
+        bridge: options.runtime === 'codex' ? 'codex-exec' : 'claude-print',
         ...(rawContract ? { contract: rawContract } : {}),
         failure: { kind: 'invalid-input', message },
       });
 
-    if (options.runtime !== 'claude') {
-      return invalid('--runtime must be "claude".');
+    if (options.runtime !== 'claude' && options.runtime !== 'codex') {
+      return invalid('--runtime must be "claude" or "codex".');
     }
     if (
       rawContract !== 'leaf' &&
@@ -349,13 +359,21 @@ export class AgentCommand {
       return invalid('--contract must be "leaf", "consultable-leaf", or "evaluate".');
     }
     const contract = rawContract as WorkerContract;
+    if (options.runtime === 'codex' && contract === 'consultable-leaf') {
+      return invalid(
+        'Codex does not provide the stable hosted continuation authority required by --contract consultable-leaf.'
+      );
+    }
     if (options.sandbox !== 'read-only' && options.sandbox !== 'workspace-write') {
       return invalid('--sandbox must be "read-only" or "workspace-write".');
     }
     const sandbox = options.sandbox as ClaudeSandboxMode;
-    const validEfforts = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
+    const validEfforts = new Set<string>(LEAF_EFFORTS);
     if (options.effort !== undefined && !validEfforts.has(options.effort)) {
       return invalid('--effort must be low, medium, high, xhigh, or max.');
+    }
+    if (options.model !== undefined && !options.model.trim()) {
+      return invalid('--model must be a non-empty model id when provided.');
     }
     if (
       options.resume !== undefined &&
@@ -391,13 +409,20 @@ export class AgentCommand {
       return invalid(`--cwd does not exist or is unreadable: ${cwd}`);
     }
 
+    const isCodex = options.runtime === 'codex';
     const binary = resolveAgentCliBinary({
-      envVar: 'RASEN_CLAUDE_BIN',
-      binaryName: 'claude',
+      envVar: isCodex ? 'RASEN_CODEX_BIN' : 'RASEN_CLAUDE_BIN',
+      binaryName: isCodex ? 'codex' : 'claude',
     });
     if (!binary) {
-      return emit(
-        claudeFailureReceipt(
+      return emit(isCodex
+        ? codexFailureReceipt(
+          contract,
+          'runtime-unavailable',
+          'Codex CLI is unavailable. Install Codex or set RASEN_CODEX_BIN.',
+          { cwd }
+        )
+        : claudeFailureReceipt(
           contract,
           'runtime-unavailable',
           'Claude Code CLI is unavailable. Install Claude Code or set RASEN_CLAUDE_BIN.',
@@ -416,6 +441,21 @@ export class AgentCommand {
     }
 
     try {
+      if (isCodex) {
+        return emit(
+          await runCodexExec({
+            binary,
+            prompt,
+            contract,
+            sandbox: sandbox as CodexSandboxMode,
+            cwd,
+            timeoutMs,
+            ...(options.model ? { model: options.model } : {}),
+            ...(options.effort ? { effort: options.effort as LeafEffort } : {}),
+            ...(options.resume ? { resumeThreadId: options.resume } : {}),
+          })
+        );
+      }
       const invocation = buildClaudePrintInvocation({
         prompt,
         contract,

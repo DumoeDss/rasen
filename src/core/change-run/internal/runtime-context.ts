@@ -11,6 +11,7 @@ import type {
   PlanningSpaceId,
   RunId,
   WorkspaceInstanceId,
+  WorkspaceRevision,
 } from '../contracts.js';
 import type { CanonicalRecordLimits, CanonicalRunRecord } from './record.js';
 import { createCanonicalRunRecord } from './record.js';
@@ -26,17 +27,25 @@ import { lowerRuntimePlan } from './lowerer.js';
 import { openRuntimePlan, type RuntimePlan } from './runtime-plan.js';
 import { buildAgentAction } from './actions.js';
 import { observeGitWorkspace } from './workspace-git.js';
+import type { WorkspaceManifest } from './workspace.js';
 import { deriveWorkspaceRevision } from './workspace.js';
 import { createChangePipelineRuntime } from './facade-runtime.js';
 import type { ChangePipelineRuntime } from '../facade.js';
 import type { JsonValue, NodeId, RunAction } from '../contracts.js';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { WORKSPACE_DIR_NAME } from '../../config.js';
 import {
   createFilesystemWorkspaceReservationRegistry,
   createWorkspaceReservationRegistry,
   type WorkspaceReservationRegistry,
 } from './reservations.js';
-import type { HostedTurnReceipt } from '../../session-host/contracts.js';
+import type {
+  HostedTurnReceipt,
+  SessionHost,
+  SessionHostView,
+} from '../../session-host/contracts.js';
+import { digestSessionHostText } from '../../session-host/registry.js';
 
 const SERVICE_RESERVATIONS = new Map<string, WorkspaceReservationRegistry>();
 
@@ -61,6 +70,18 @@ export function runtimeServiceReservationRegistry(
     SERVICE_RESERVATIONS.set(key, registry);
   }
   return registry;
+}
+
+export class StoredRuntimeContextError extends Error {
+  constructor(
+    readonly code:
+      | 'task_loop_workspace_authority_unavailable'
+      | 'task_loop_workspace_authority_mismatch',
+    message: string
+  ) {
+    super(message);
+    this.name = 'StoredRuntimeContextError';
+  }
 }
 
 export interface RuntimeContextInput {
@@ -104,6 +125,8 @@ export interface StoredRuntimeContextInput {
   readonly runId: RunId;
   readonly reservationRegistry?: WorkspaceReservationRegistry;
   readonly verifyHostedTurnReceipt?: (receipt: HostedTurnReceipt) => boolean;
+  /** Daemon-owned ordinary/source host; never reconstructed from a request. */
+  readonly sourceSessionHost?: Pick<SessionHost, 'inspect' | 'list'>;
 }
 
 const DEFAULT_LIMITS: CanonicalRecordLimits = Object.freeze({
@@ -160,6 +183,187 @@ function deriveLimits(plan: RuntimePlan): CanonicalRecordLimits {
   });
 }
 
+interface TaskLoopWorkspaceProjection {
+  readonly evidenceDir: string;
+  readonly observeWorkspace: () => WorkspaceRevision;
+}
+
+function platformPathIdentity(value: string): string {
+  const resolved = path.resolve(value);
+  return process.platform === 'win32'
+    ? resolved.toLocaleLowerCase('en-US')
+    : resolved;
+}
+
+function canonicalProjectRoot(value: string): string {
+  if (!path.isAbsolute(value)) {
+    throw new StoredRuntimeContextError(
+      'task_loop_workspace_authority_mismatch',
+      'The daemon-owned source Session cwd is not absolute.'
+    );
+  }
+  let canonical: string;
+  try {
+    if (!fs.statSync(value).isDirectory()) throw new Error('not-directory');
+    canonical = fs.realpathSync.native(value);
+  } catch {
+    throw new StoredRuntimeContextError(
+      'task_loop_workspace_authority_unavailable',
+      'The daemon-owned source Session cwd is unavailable.'
+    );
+  }
+  if (platformPathIdentity(canonical) !== platformPathIdentity(value)) {
+    throw new StoredRuntimeContextError(
+      'task_loop_workspace_authority_mismatch',
+      'The daemon-owned source Session cwd is not canonical.'
+    );
+  }
+  return canonical;
+}
+
+function createTaskLoopWorkspaceProjection(input: Readonly<{
+  projectRoot: string;
+  changeId: string;
+  plan: RuntimePlan;
+}>): TaskLoopWorkspaceProjection {
+  const projectRoot = canonicalProjectRoot(input.projectRoot);
+  const evidenceDir = path.join(
+    projectRoot,
+    WORKSPACE_DIR_NAME,
+    'changes',
+    input.changeId,
+    'evidence'
+  );
+  const reportPath = path
+    .relative(projectRoot, path.join(evidenceDir, 'task-loop-report.md'))
+    .split(path.sep)
+    .join('/');
+  const ephemeraPrefix = `.rasen/changes/${input.changeId}/ephemera/`;
+  const omitRuntimeProjection = (manifest: WorkspaceManifest): WorkspaceManifest => {
+    if (input.plan.pipeline !== 'task-loop') return manifest;
+    const keep = (entry: { readonly path: string }) => {
+      const normalized = entry.path.split('\\').join('/');
+      return normalized !== reportPath && !normalized.startsWith(ephemeraPrefix);
+    };
+    return Object.freeze({
+      ...manifest,
+      headTree: manifest.headTree.filter(keep),
+      index: manifest.index.filter(keep),
+      trackedWorking: manifest.trackedWorking.filter(keep),
+      untracked: manifest.untracked.filter(keep),
+      symlinks: manifest.symlinks.filter(keep),
+    });
+  };
+  return Object.freeze({
+    evidenceDir,
+    observeWorkspace: () =>
+      deriveWorkspaceRevision(
+        omitRuntimeProjection(observeGitWorkspace(projectRoot))
+      ),
+  });
+}
+
+function taskLoopSourceSession(
+  record: CanonicalRunRecord,
+  host: Pick<SessionHost, 'inspect' | 'list'>
+): Readonly<{ action: RunAction; session: SessionHostView }> {
+  const liveConsultations = Object.values(record.consultations ?? {}).filter(
+    (consultation) =>
+      consultation.state !== 'continued' && consultation.state !== 'closed'
+  );
+  if (liveConsultations.length > 1) {
+    throw new StoredRuntimeContextError(
+      'task_loop_workspace_authority_mismatch',
+      'The canonical Run has ambiguous live consultation source authority.'
+    );
+  }
+  if (liveConsultations.length === 1) {
+    const consultation = liveConsultations[0]!;
+    const committed = record.actions[consultation.source.actionId];
+    const session = host.inspect(consultation.source.stableSessionId);
+    if (committed?.action.kind !== 'agent' || session === undefined) {
+      throw new StoredRuntimeContextError(
+        'task_loop_workspace_authority_unavailable',
+        'The canonical consultation source Session is unavailable.'
+      );
+    }
+    return Object.freeze({ action: committed.action, session });
+  }
+
+  const candidates = Object.values(record.actions).flatMap((source) => {
+    if (
+      source.state !== 'active' ||
+      source.action.kind !== 'agent' ||
+      source.action.agent.consultation?.eligible !== true
+    ) {
+      return [];
+    }
+    const action = source.action;
+    return host.list().filter(
+      (session) =>
+        session.authority?.invocationId === action.invocationId &&
+        session.authority.role === action.agent.role &&
+        session.authority.workspaceInstanceId === record.workspaceInstanceId &&
+        session.authority.backend === 'hosted'
+    ).map((session) => ({ action, session }));
+  });
+  if (candidates.length !== 1) {
+    throw new StoredRuntimeContextError(
+      candidates.length === 0
+        ? 'task_loop_workspace_authority_unavailable'
+        : 'task_loop_workspace_authority_mismatch',
+      candidates.length === 0
+        ? 'The task-loop source Session authority is unavailable.'
+        : 'The task-loop source Session authority is ambiguous.'
+    );
+  }
+  return Object.freeze(candidates[0]!);
+}
+
+function trustedTaskLoopProjectRoot(
+  record: CanonicalRunRecord,
+  host: Pick<SessionHost, 'inspect' | 'list'> | undefined
+): string {
+  if (host === undefined) {
+    throw new StoredRuntimeContextError(
+      'task_loop_workspace_authority_unavailable',
+      'Stored task-loop recovery requires the daemon-owned ordinary SessionHost.'
+    );
+  }
+  const { action, session } = taskLoopSourceSession(record, host);
+  if (
+    action.kind !== 'agent' ||
+    session.sessionId.length === 0 ||
+    session.authority?.invocationId !== action.invocationId ||
+    session.authority.role !== action.agent.role ||
+    session.authority.workspaceInstanceId !== record.workspaceInstanceId ||
+    session.authority.backend !== 'hosted' ||
+    session.backend !== action.agent.runtime ||
+    session.cwdDigest !== digestSessionHostText(session.cwd)
+  ) {
+    throw new StoredRuntimeContextError(
+      'task_loop_workspace_authority_mismatch',
+      'The daemon-owned source Session disagrees with canonical Action, Invocation, role, workspace, backend, cwd, or cwd digest authority.'
+    );
+  }
+  const liveConsultation = Object.values(record.consultations ?? {}).find(
+    (consultation) =>
+      consultation.state !== 'continued' && consultation.state !== 'closed'
+  );
+  if (
+    liveConsultation !== undefined &&
+    (liveConsultation.source.actionId !== action.actionId ||
+      liveConsultation.source.invocationId !== action.invocationId ||
+      liveConsultation.source.stableSessionId !== session.sessionId)
+  ) {
+    throw new StoredRuntimeContextError(
+      'task_loop_workspace_authority_mismatch',
+      'The canonical consultation and daemon-owned source Session identities disagree.'
+    );
+  }
+  return canonicalProjectRoot(session.cwd);
+}
+
 /**
  * Assemble the runtime context the CLI/management entry points drive (task
  * 10.2 launch wiring). Lowers the prepared Definition+Profile into the
@@ -192,9 +396,17 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
       'Persisted RuntimePlan has no usable frozen execution profile for this Run.'
     );
   }
-  const workspaceRevision = deriveWorkspaceRevision(
-    observeGitWorkspace(input.projectRoot)
+  const taskLoopProjection = plan.pipeline === 'task-loop'
+    ? createTaskLoopWorkspaceProjection({
+        projectRoot: input.projectRoot,
+        changeId: input.changeId,
+        plan,
+      })
+    : undefined;
+  const observeWorkspace = taskLoopProjection?.observeWorkspace ?? (() =>
+    deriveWorkspaceRevision(observeGitWorkspace(input.projectRoot))
   );
+  const workspaceRevision = observeWorkspace();
   const initialRecord = createCanonicalRunRecord({
     runId: plan.runId,
     runOrdinal: 1,
@@ -269,7 +481,8 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
         nodeId: descriptor.nodeId as NodeId,
         occurrence: descriptor.occurrence,
         attemptOrdinal: 0,
-        expectedBeforeWorkspace: workspaceRevision,
+        expectedBeforeWorkspace:
+          plan.pipeline === 'task-loop' ? observeWorkspace() : workspaceRevision,
       },
       {
         input: (descriptor.input ?? {
@@ -290,6 +503,9 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
       input.reservationRegistry ?? runtimeServiceReservationRegistry(input.storeRoot),
     verifyHostedTurnReceipt: input.verifyHostedTurnReceipt,
     resolveSourceState: input.resolveSourceState,
+    taskLoopEvidenceDir:
+      taskLoopProjection?.evidenceDir,
+    observeWorkspace: plan.pipeline === 'task-loop' ? observeWorkspace : undefined,
   });
 
   const hostEvidenceWriter = createHostEvidenceWriter({
@@ -377,6 +593,18 @@ export function openStoredRuntimeContext(
     maxRunBytes: 64 * 1024 * 1024,
     maxEntries: 64,
   });
+  const storedTaskLoopProjection = (): TaskLoopWorkspaceProjection => {
+    const head = store.load(input.runId);
+    const projectRoot = trustedTaskLoopProjectRoot(
+      head,
+      input.sourceSessionHost
+    );
+    return createTaskLoopWorkspaceProjection({
+      projectRoot,
+      changeId: head.change.changeId,
+      plan,
+    });
+  };
   const facade = createChangePipelineRuntime({
     store,
     plan,
@@ -389,6 +617,12 @@ export function openStoredRuntimeContext(
     ...(input.verifyHostedTurnReceipt === undefined
       ? {}
       : { verifyHostedTurnReceipt: input.verifyHostedTurnReceipt }),
+    ...(plan.pipeline === 'task-loop'
+      ? {
+          taskLoopEvidenceDir: () => storedTaskLoopProjection().evidenceDir,
+          observeWorkspace: () => storedTaskLoopProjection().observeWorkspace(),
+        }
+      : {}),
   });
   const hostEvidenceWriter = createHostEvidenceWriter({
     runId: plan.runId,

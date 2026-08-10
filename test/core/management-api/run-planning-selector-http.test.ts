@@ -29,6 +29,7 @@ import type {
   RunId,
   WorkspaceInstanceId,
 } from '../../../src/core/change-run/contracts.js';
+import { FileSystemUtils } from '../../../src/utils/file-system.js';
 
 const TOKEN = 'planning-selector-token';
 const branded = <T>(value: string): T => value as T;
@@ -88,6 +89,15 @@ function workspaceId(root: string, home: string): WorkspaceInstanceId {
   );
 }
 
+function legacyWorkspaceId(root: string): WorkspaceInstanceId {
+  const canonicalRoot = FileSystemUtils.canonicalizeExistingPath(root);
+  const legacyHome = `project-${createHash('sha256')
+    .update(canonicalRoot)
+    .digest('hex')
+    .slice(0, 12)}`;
+  return workspaceId(canonicalRoot, legacyHome);
+}
+
 function registryEntry(projectId: string, home: string): ProjectRegistryEntryState {
   return {
     projectId,
@@ -108,10 +118,8 @@ function publishRun(
   root: string,
   home: string,
   runId: RunId,
-  workspaceInstanceId: WorkspaceInstanceId = workspaceId(
-    root,
-    `project-${createHash('sha256').update(root).digest('hex').slice(0, 12)}`
-  )
+  runsRoot: string,
+  workspaceInstanceId: WorkspaceInstanceId = legacyWorkspaceId(root)
 ) {
   const plan = createRuntimePlan({
     runId,
@@ -165,7 +173,7 @@ function publishRun(
       limitOutcome: 'escalated',
     },
   });
-  const store = createFilesystemRunStore(path.join(getGlobalDataDir(), 'runs'));
+  const store = createFilesystemRunStore(runsRoot);
   store.create(runId, record);
   store.writePlan?.(runId, plan);
   return record;
@@ -178,6 +186,7 @@ describe('planning:<full-id> exact Run authority over real HTTP', () => {
   let originalEnv: NodeJS.ProcessEnv;
   let server: ManagementServerHandle | undefined;
   let spawnCalls: RunControlSpawnCall[];
+  let runsRoot: string;
 
   beforeEach(() => {
     base = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-planning-http-'));
@@ -190,6 +199,7 @@ describe('planning:<full-id> exact Run authority over real HTTP', () => {
     delete process.env.RASEN_HOME;
     process.env.XDG_CONFIG_HOME = path.join(base, 'config');
     process.env.XDG_DATA_HOME = path.join(base, 'data');
+    runsRoot = path.join(getGlobalDataDir(), 'runs');
     spawnCalls = [];
   });
 
@@ -216,7 +226,10 @@ describe('planning:<full-id> exact Run authority over real HTTP', () => {
         timedOut: false,
       };
     });
-    server = await startManagementServer({ context, sessions: { runControlSpawner: fake } });
+    server = await startManagementServer({
+      context,
+      sessions: { runControlSpawner: fake, runsRoot },
+    });
     return server;
   }
 
@@ -226,7 +239,7 @@ describe('planning:<full-id> exact Run authority over real HTTP', () => {
     writeRegistry({ [selectedRoot]: registryEntry('selector-project', home) });
     const planningSpaceId = derivePlanningSpaceId(home);
     const runId = branded<RunId>(`run:${'9'.repeat(64)}`);
-    const record = publishRun(selectedRoot, home, runId);
+    const record = publishRun(selectedRoot, home, runId, runsRoot);
     const h = await start();
     const selector = encodeURIComponent(`planning:${planningSpaceId}`);
 
@@ -257,7 +270,7 @@ describe('planning:<full-id> exact Run authority over real HTTP', () => {
     expect(detail.json.sections[0].allowedControls).not.toHaveLength(0);
     expect(control.status).toBe(200);
     expect(spawnCalls).toHaveLength(1);
-    expect(spawnCalls[0]!.cwd).toBe(selectedRoot);
+    expect(spawnCalls[0]!.cwd).toBe(FileSystemUtils.canonicalizeExistingPath(selectedRoot));
   });
 
   it('keeps an exact other-worktree Run read-only and rejects control without spawning', async () => {
@@ -270,6 +283,7 @@ describe('planning:<full-id> exact Run authority over real HTTP', () => {
       selectedRoot,
       home,
       runId,
+      runsRoot,
       branded<WorkspaceInstanceId>(`workspace-instance:${'f'.repeat(64)}`)
     );
     const h = await start();

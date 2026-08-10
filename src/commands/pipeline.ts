@@ -72,6 +72,8 @@ import {
   type ResolvedStageHandoffConfig,
   type HandoffConfigLayers,
   type ModelConfigLayers,
+  type EffortConfigLayers,
+  type EffortSource,
   type ModelSource,
   type RuntimeSource,
   type StageConfigOverrides,
@@ -111,14 +113,20 @@ import {
   type ChangeRunControlRequest,
   type EvidenceRef,
   type Digest,
+  type JsonValue,
 } from '../core/change-run/index.js';
 import {
+  digestLaunchIntent,
   deriveChangeInstanceId,
   derivePlanningSpaceId,
   deriveRunId,
   deriveWorkspaceInstanceId,
   readPhysicalIdentity,
 } from '../core/change-run/internal/identity.js';
+import {
+  decodeTaskLoopInput,
+  TaskLoopDomainError,
+} from '../core/change-run/internal/task-loop.js';
 import { createFilesystemRunStore } from '../core/change-run/internal/run-store-fs.js';
 import { openRuntimePlan, type RuntimePlan } from '../core/change-run/internal/runtime-plan.js';
 import {
@@ -133,6 +141,7 @@ import {
 } from '../core/change-run/internal/evidence.js';
 import {
   readBoundedJson,
+  readBoundedJsonWithinRoot,
   InputReaderError,
 } from '../core/change-run/internal/input-reader.js';
 import { getGlobalDataDir } from '../core/global-config.js';
@@ -145,6 +154,7 @@ import {
   resolveConfigStoreLayer,
   resolveHandoffThresholdLayers,
   resolveModelConfigLayers,
+  resolveEffortConfigLayers,
   resolveThresholdBindingLayers,
 } from '../core/effective-config.js';
 import { loadThresholdSchemeSnapshot } from '../core/threshold-resolver.js';
@@ -200,6 +210,52 @@ interface PipelineCommandOptions {
   shipper?: string;
   /** ECP-5 `--engine <auto|reconciler|legacy>` — wins over `runs.engine` config. */
   engine?: string;
+  /** Internal UTF-8 JSON bridge used by workflow drivers. */
+  inputFile?: string;
+}
+
+const MAX_PIPELINE_START_INPUT_BYTES = 1024 * 1024;
+
+function deepFreezeJson<T>(value: T): T {
+  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const nested of Object.values(value)) deepFreezeJson(nested);
+  }
+  return value;
+}
+
+/** Read the hidden, bounded UTF-8 launch-input bridge before launch mutation. */
+export function readPipelineStartInputs(
+  inputFile: string | undefined,
+  authorizedEphemeraRoot?: string
+): Readonly<Record<string, JsonValue>> {
+  if (inputFile === undefined) return Object.freeze({});
+  if (authorizedEphemeraRoot === undefined) {
+    throw new ChangeRunRuntimeError(
+      'invalid_run_request',
+      'Pipeline launch input requires the resolved change ephemera root.'
+    );
+  }
+  let decoded: unknown;
+  try {
+    decoded = readBoundedJsonWithinRoot(
+      authorizedEphemeraRoot,
+      path.resolve(inputFile),
+      MAX_PIPELINE_START_INPUT_BYTES
+    );
+  } catch (error) {
+    throw new ChangeRunRuntimeError(
+      'invalid_run_request',
+      `Cannot safely read pipeline launch input file: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+  if (decoded === null || typeof decoded !== 'object' || Array.isArray(decoded)) {
+    throw new ChangeRunRuntimeError(
+      'invalid_run_request',
+      'Pipeline launch input file must contain one JSON object.'
+    );
+  }
+  return deepFreezeJson(decoded as Record<string, JsonValue>);
 }
 
 /**
@@ -298,6 +354,7 @@ interface StageView {
   model: string | null;
   modelSource: ModelSource;
   effort: string | null;
+  effortSource: EffortSource;
   handoff: ResolvedStageHandoffConfig;
 }
 
@@ -669,6 +726,7 @@ export class PipelineCommand {
     const storeLayer = await requireConfigStoreLayer(projectRoot);
     const configLayers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
     const modelLayers = resolveModelConfigLayers(projectRoot, storeLayer?.storeRoot);
+    const effortLayers = resolveEffortConfigLayers(projectRoot, storeLayer?.storeRoot);
     const overrides = resolvePipelineStageOverrides(pipeline.name, {
       projectRoot,
       store: storeLayer,
@@ -686,6 +744,7 @@ export class PipelineCommand {
         host,
         overrides,
         modelLayers,
+        effortLayers,
         roleRuntimeOverrides,
       }).stages.map((stage) => [stage.id, stage])
     );
@@ -696,6 +755,7 @@ export class PipelineCommand {
         pipeline,
         configLayers,
         modelLayers,
+        effortLayers,
         overrides,
         basePolicy,
         thresholdContext,
@@ -972,6 +1032,7 @@ export class PipelineCommand {
      * pass nothing and the support failure reports no deciding source.
      */
     engineSelection?: ResolvedEnginePolicy,
+    inputs: Readonly<Record<string, JsonValue>> = Object.freeze({}),
     frozenPlan?: RuntimePlan
   ): Promise<ResolvedRuntime> {
     const root = await this.resolveRoot(options);
@@ -987,6 +1048,15 @@ export class PipelineCommand {
       pipelineName.replace(/\.ya?ml$/, ''),
       this.executionOptions(options, host)
     );
+    if (
+      pipelineName.replace(/\.ya?ml$/, '') === 'task-loop' &&
+      execution.resolution.source !== 'package'
+    ) {
+      throw new TaskLoopDomainError(
+        'task_loop_pipeline_identity',
+        'Task Loop is reserved for the exact package built-in Pipeline and cannot be shadowed by a project or user definition.'
+      );
+    }
     const prepared = execution.resolution.prepared;
     const isV2Authored = prepared.authoredVersion === 2;
     const storeLayer = await requireConfigStoreLayer(projectRoot);
@@ -994,6 +1064,7 @@ export class PipelineCommand {
       projectRoot,
       storeLayer?.storeRoot
     );
+    const effortLayers = resolveEffortConfigLayers(projectRoot, storeLayer?.storeRoot);
 
     // v2-authored definitions have no v1 PipelineYaml source — the policy
     // stages are synthesized internally by resolveRuntimeExecutionProfile
@@ -1015,6 +1086,7 @@ export class PipelineCommand {
               host,
               overrides,
               modelLayers,
+              effortLayers,
               roleRuntimeOverrides,
             }
           ).stages.map((stage) => [stage.id, stage])
@@ -1100,7 +1172,7 @@ export class PipelineCommand {
         provenance: {
           role: stage.role ? 'stage' : 'default',
           model: resolved.modelSource,
-          effort: sourceFor(stage.effort, roleDefault?.effort),
+          effort: resolved.effortSource,
           runtime: resolved.runtimeSource,
           sandbox: sourceFor(stage.sandbox, roleDefault?.sandbox),
           gate: gate.source,
@@ -1266,9 +1338,11 @@ export class PipelineCommand {
       changeId,
       launchKey
     )) as never;
-    const launchRequestDigest = `sha256:${createHash('sha256')
-      .update(launchKey)
-      .digest('hex')}` as never;
+    const launchRequestDigest = digestLaunchIntent({
+      pipeline: sourceDisplayName,
+      engine: 'reconciler',
+      inputs,
+    });
     // Every entry point (start reuse, status, resume, cancel, complete and
     // control) resumes existing meaning from the immutable plan. The current
     // trusted-adapter catalog is relevant only when this RunId is new.
@@ -1306,6 +1380,7 @@ export class PipelineCommand {
       changeId,
       projectId,
       launchRequestDigest,
+      inputs,
       storeRoot: `${home}/runs`,
       ...(effectiveFrozenPlan === undefined
         ? {}
@@ -1470,6 +1545,13 @@ export class PipelineCommand {
     // happens ahead of `resolveRuntime`, which binds the Change instance.
     const policyRoot = await this.resolveRoot(options);
     if (!policyRoot) throw new Error('No Rasen root resolved.');
+    const normalizedPipelineName = pipelineName.replace(/\.ya?ml$/, '');
+    if (options.inputFile !== undefined && normalizedPipelineName !== 'task-loop') {
+      throw new ChangeRunRuntimeError(
+        'invalid_run_request',
+        'The internal launch-input bridge is reserved for the built-in task-loop Pipeline.'
+      );
+    }
     const policyStoreLayer = await requireConfigStoreLayer(policyRoot.path);
     const engineSelection = this.resolveEnginePolicy(
       policyRoot.path,
@@ -1477,6 +1559,12 @@ export class PipelineCommand {
       options
     );
     if (engineSelection.effective === 'legacy') {
+      if (normalizedPipelineName === 'task-loop') {
+        throw new TaskLoopDomainError(
+          'task_loop_reconciler_required',
+          `Task Loop requires the reconciler engine; the ${engineSelection.source} layer selected legacy.`
+        );
+      }
       throw pipelineMessageError(
         'engineDisabledByConfig',
         { layer: engineSelection.source },
@@ -1484,6 +1572,23 @@ export class PipelineCommand {
       );
     }
 
+    const launchStateLocations = await this.resolveStateFileLocations(
+      changeId,
+      policyRoot
+    );
+    const rawInputs = readPipelineStartInputs(
+      options.inputFile,
+      launchStateLocations.ephemeraDir ?? undefined
+    );
+    const inputs: Readonly<Record<string, JsonValue>> =
+      normalizedPipelineName === 'task-loop'
+        ? Object.freeze({
+            ...rawInputs,
+            taskLoop: decodeTaskLoopInput(rawInputs.taskLoop, {
+              projectRoot: policyRoot.path,
+            }) as unknown as JsonValue,
+          })
+        : rawInputs;
     // ECP-5 (D8): the engine-ownership guard's launch seam. Runs BEFORE
     // `resolveRuntime`, which binds the Change instance in the association
     // registry, so a refusal leaves nothing behind at all.
@@ -1495,13 +1600,16 @@ export class PipelineCommand {
         pipelineName,
         options,
         undefined,
-        engineSelection
+        engineSelection,
+        inputs
       );
     const receipt = await ctx.facade.start(
       {
         change: { projectRoot, changeId },
         pipeline: resolvedPipelineName,
         launchRequestId: launchKey as never,
+        launchRequestDigest: ctx.initialRecord.launchRequestDigest,
+        inputs,
         engine: 'reconciler',
       },
       { deliveryMode: 'grant' }
@@ -1685,6 +1793,7 @@ export class PipelineCommand {
       options,
       runId,
       undefined,
+      Object.freeze({}),
       frozenPlan
     );
   }
@@ -2953,6 +3062,7 @@ export class PipelineCommand {
     const storeLayer = await requireConfigStoreLayer(projectRoot);
     const configLayers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
     const modelLayers = resolveModelConfigLayers(projectRoot, storeLayer?.storeRoot);
+    const effortLayers = resolveEffortConfigLayers(projectRoot, storeLayer?.storeRoot);
     const overrides = resolvePipelineStageOverrides(name, { projectRoot, store: storeLayer });
     const basePolicy = this.resolveBaseGatePolicy(projectRoot, storeLayer?.storeRoot);
 
@@ -3005,6 +3115,7 @@ export class PipelineCommand {
         host,
         overrides,
         modelLayers,
+        effortLayers,
       }).stages.map((stage) => [stage.id, stage])
     );
     // Effective runtime per role: family instance (project > store > global) >
@@ -3024,6 +3135,7 @@ export class PipelineCommand {
           pipeline,
           configLayers,
           modelLayers,
+          effortLayers,
           overrides,
           basePolicy,
           thresholdContext,
@@ -3047,6 +3159,7 @@ export class PipelineCommand {
     if (!overrides) return {};
     return {
       model: overrides.models.get(stage.id),
+      effort: overrides.efforts?.get(stage.id),
       handoff: overrides.handoff.get(stage.id),
       runtime: stage.role ? overrides.runtimes.get(stage.role) : undefined,
     };
@@ -3057,6 +3170,7 @@ export class PipelineCommand {
     pipeline: PipelineYaml,
     configLayers?: HandoffConfigLayers,
     modelLayers?: ModelConfigLayers,
+    effortLayers?: EffortConfigLayers,
     overrides?: PipelineStageOverrides,
     basePolicy?: ResolvedGatePolicy,
     thresholdContext?: ThresholdResolutionContext,
@@ -3069,7 +3183,8 @@ export class PipelineCommand {
       pipeline,
       modelLayers,
       stageOverrides,
-      { host }
+      { host },
+      effortLayers
     );
     const effectiveStageRuntime = executionRuntime?.runtime ?? runtime.runtime;
     // The mask needs a base policy; without one (no config context) fall back to
@@ -3104,6 +3219,7 @@ export class PipelineCommand {
       model: runtime.model ?? null,
       modelSource: runtime.modelSource,
       effort: runtime.effort ?? null,
+      effortSource: runtime.effortSource,
       handoff: resolveStageHandoffConfig(
         stage,
         pipeline,

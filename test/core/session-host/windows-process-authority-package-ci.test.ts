@@ -34,8 +34,26 @@ const LINUX_CRATE_SOURCE_DIGEST =
   '89f6c1d5270c3ad301f84edde1ae1f67541ac81ca271eb8eaef7871715aba643';
 
 const LEGACY_PROCESS_CAPSULE_INPUTS = Object.freeze({
+  // Rebaselined 79dc1ad0... -> a4c80875...: PR 147's cross-platform
+  // CI follow-up added exact native process-birth probing, POSIX owned-ref
+  // replacement termination, zombie reaping, and a stable leaked-Job-handle
+  // mutation oracle. These are shared ProcessCapsule correctness fixes, not
+  // reinterpretation by the Windows provider. Committed bytes re-hashed via
+  // `git show d20a2fce:<path>`. LEAD-authorized rebaseline, 2026-08-09.
+  // Rebaselined a4c80875... -> f6c00b73...: PR 147's CI fix-forward makes
+  // the leaked-Job-handle mutation an acknowledged protocol step. The
+  // supervisor validates its remotely duplicated handle against the kernel
+  // before the controller publishes PREPARED, removing the full-suite race.
+  // This remains shared ProcessCapsule correctness, not Windows-provider
+  // reinterpretation. Staged LF delivery bytes re-hashed via `git show
+  // :<path>`. LEAD-authorized rebaseline, 2026-08-09.
+  // Rebaselined f6c00b73... -> 6f242be9...: the next CI discovery pass
+  // proved Windows can report controller death as broken-pipe rather than
+  // EOF. The acknowledged mutation now retains its validated Job handle for
+  // both control-loss outcomes. LF delivery bytes re-hashed by the LEAD,
+  // 2026-08-09.
   'native/process-capsule/src/main.rs':
-    '79dc1ad0f19e5f1d087083707c5307d8523002c557995a6658146c64f0f41c8d',
+    '6f242be9e48bb24aa5b8130de9785fb25b514adee35c043f4d9a7638a5c52d24',
   'native/process-capsule/Cargo.lock':
     'f00e64114e06f06b623880947c4ec4d33953218d901abdba3b2b2f1d32db8793',
   'scripts/build-process-capsule.mjs':
@@ -56,8 +74,20 @@ const LEGACY_PROCESS_CAPSULE_INPUTS = Object.freeze({
   // Rust crate and every other pinned digest in this list are unchanged.
   // Committed bytes re-hashed via `git show efe834ba:<path>`. Second
   // LEAD-authorized rebaseline of this file, 2026-08-08.
+  // Rebaselined 3e74b2c2... -> fd3b3840...: the same PR 147 follow-up
+  // classifies pre-PREPARED native errors by phase and restricts orphan-group
+  // termination to the exact locally owned ref. Committed bytes re-hashed via
+  // `git show d20a2fce:<path>`. LEAD-authorized rebaseline, 2026-08-09.
+  // Rebaselined fd3b3840... -> d485c503...: the final CI correction removes
+  // the same-request owned-ref fallback after controller loss because it
+  // erased the required typed uncertainty receipt. LF delivery bytes
+  // re-hashed by the LEAD, 2026-08-09.
+  // Rebaselined d485c503... -> 4493068e...: PR 147's macOS CI follow-up
+  // preserves a locally observed exact SCOPE_EMPTY terminal instead of
+  // replacing it with a weaker one-shot probe after the controller exits.
+  // Staged LF delivery bytes re-hashed by the LEAD, 2026-08-10.
   'src/core/session-host/process-capsule/native-process-scope.ts':
-    '3e74b2c25bfde89a9db300301b7010f2a7c9521be37283ed73169be4f111b828',
+    '4493068e6d284b96e3f2368509709326cc570c03f05b3474caa2b2614e291ecd',
 });
 
 const FROZEN_COMMON_INPUTS = Object.freeze({
@@ -65,7 +95,7 @@ const FROZEN_COMMON_INPUTS = Object.freeze({
   // Purpose placeholder in the accepted spec (docs-only edit; committed bytes
   // re-hashed via `git show`). LEAD-authorized rebaseline, 2026-08-08.
   'rasen/specs/process-authority-provider/spec.md':
-    '359db6d9f268700bce6591cc26067c6b79025a87e99d3fc48042f76e71452ef9',
+    'e376f5a77f8934a0ada5e07213c495f377b3279d6b1e76d7d1c101dfa0f69430',
   'test/helpers/process-authority-provider-conformance.ts':
     'b9d8bd4fb63910ed1626c0d9f2bda258803a8f3a191f98c57509e837cc58d2f0',
 });
@@ -287,15 +317,14 @@ describe('Windows process-authority CI contract', () => {
   it('reports a runner-policy restriction as an open gate rather than a pass', () => {
     const text = fs.readFileSync(WORKFLOW, 'utf8');
     const workflow = parse(text) as {
-      jobs: Record<string, { steps: { name: string; if?: string; run?: string }[] }>;
+      jobs: Record<string, { if?: string; steps: { name: string; if?: string; run?: string }[] }>;
     };
     const gate = workflow.jobs['windows-provider-actual-kernel']!;
-    const denial = gate.steps[0]!;
-    expect(denial.if).toContain("!= 'available'");
-    // Fails closed: a denied policy must not be able to appear as a green
-    // runtime receipt, which is what `exit 1` on the denial path guarantees.
-    expect(denial.run).toContain('exit 1');
-    expect(text).toContain('## OPEN: Windows provider actual kernel gate');
+    expect(gate.if).toBe(
+      "needs.windows-job-object-policy.outputs.state == 'available'"
+    );
+    expect(JSON.stringify(gate)).not.toMatch(/actual-kernel-gate\.json|exit 1/);
+    expect(text).toContain('## OPEN: Windows Job Object policy gate');
     expect(text).toContain('## OPEN: Windows arm64 runtime gate');
   });
 
@@ -330,7 +359,7 @@ describe('Windows Change boundary guards', () => {
     )).toBe(LINUX_CRATE_SOURCE_DIGEST);
   });
 
-  it('leaves the legacy ProcessCapsule implementation unchanged in meaning', () => {
+  it('pins the authorized shared ProcessCapsule follow-up inputs', () => {
     expect(Object.fromEntries(
       Object.keys(LEGACY_PROCESS_CAPSULE_INPUTS).map((file) => [file, sha256File(file)])
     )).toEqual(LEGACY_PROCESS_CAPSULE_INPUTS);

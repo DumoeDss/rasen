@@ -1,7 +1,7 @@
 # Independent Review Report — ECP-6 Canvas v2 Authoring Parity
 
-**Date:** 2026-08-02  
-**Verdict:** `CHANGES_REQUIRED`  
+**Date:** 2026-08-02\
+**Verdict:** `CHANGES_REQUIRED`\
 **Finding counts:** Blocker 1, Major 3, Minor 1, Trivial 1 (6 total)
 
 ## Scope and baseline

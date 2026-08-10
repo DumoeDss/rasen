@@ -302,6 +302,26 @@ pub fn file_owner_sid(path: &str) -> io::Result<OwnedSid> {
     object_owner_sid_inner(None, Some(path))
 }
 
+/// Set the owner SID of a filesystem object without changing its DACL or other security fields.
+pub fn set_file_owner_sid(path: &str, owner: &OwnedSid) -> io::Result<()> {
+    let mut wide_path = wide(path);
+    let status = unsafe {
+        SetNamedSecurityInfoW(
+            wide_path.as_mut_ptr(),
+            SE_FILE_OBJECT,
+            OWNER_SECURITY_INFORMATION,
+            owner.as_ptr(),
+            null_mut(),
+            null_mut(),
+            null_mut(),
+        )
+    };
+    if status != 0 {
+        return Err(io::Error::from_raw_os_error(status as i32));
+    }
+    Ok(())
+}
+
 fn object_owner_sid_inner(handle: Option<Handle>, path: Option<&str>) -> io::Result<OwnedSid> {
     let mut owner: *mut c_void = null_mut();
     let mut descriptor: *mut c_void = null_mut();
@@ -383,6 +403,10 @@ impl OwnerOnlySecurity {
             == FALSE
         {
             return Err(last_error("InitializeSecurityDescriptor"));
+        }
+        if unsafe { SetSecurityDescriptorOwner(descriptor_ptr, this._sid.as_ptr(), FALSE) } == FALSE
+        {
+            return Err(last_error("SetSecurityDescriptorOwner"));
         }
         if unsafe { SetSecurityDescriptorDacl(descriptor_ptr, TRUE, acl_ptr, FALSE) } == FALSE {
             return Err(last_error("SetSecurityDescriptorDacl"));

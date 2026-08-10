@@ -1,7 +1,7 @@
 # Review remediation round 1: M1 workspace identity fail-open
 
-Date: 2026-08-02  
-Role: non-original-author fixer  
+Date: 2026-08-02\
+Role: non-original-author fixer\
 Scope: verifier Major M1 only
 
 ## Outcome

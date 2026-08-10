@@ -7,6 +7,28 @@ import {
 } from '../../../src/core/codex/invocation.js';
 
 describe('buildCodexExecInvocation', () => {
+  it('provides spawn-safe argv without the multiline prompt while preserving legacy argv', () => {
+    const invocation = buildCodexExecInvocation({
+      prompt: '第一行\n第二行 "quoted" & |',
+      outputLastMessagePath: '/tmp/last.json',
+      sandbox: 'read-only',
+      model: 'vendor/custom-model',
+      effort: 'max',
+    });
+    expect(invocation.args.at(-1)).toBe(invocation.prompt);
+    expect(invocation.spawnArgs).toEqual(invocation.args.slice(0, -1));
+    expect(invocation.spawnArgs.join(' ')).not.toContain('第一行');
+  });
+
+  it('omits optional generic model and effort flags when runtime defaults are selected', () => {
+    const invocation = buildCodexExecInvocation({
+      prompt: 'task',
+      outputLastMessagePath: '/tmp/last.json',
+      sandbox: 'workspace-write',
+    });
+    expect(invocation.spawnArgs).not.toContain('-m');
+    expect(invocation.spawnArgs).not.toContain('-c');
+  });
   it('assembles the full flag set for a fully-specified leaf dispatch', () => {
     const invocation = buildCodexExecInvocation({
       prompt: 'Do the task.',

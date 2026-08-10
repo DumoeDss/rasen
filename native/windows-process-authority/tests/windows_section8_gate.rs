@@ -291,7 +291,11 @@ fn state_root(tag: &str) -> PathBuf {
     let mut base = std::env::temp_dir();
     base.push(format!("rasen-wpa-s8root-{tag}-{}", win::current_process_id()));
     let _ = std::fs::remove_dir_all(&base);
-    std::fs::create_dir_all(&base).expect("state root");
+    // The production provider owns creation of the trusted leaf and explicitly pins its SID.
+    // An elevated Hosted Runner may otherwise assign this test-created directory to the
+    // Administrators group, which strict existing-root validation must reject.
+    std::fs::create_dir_all(base.parent().expect("state root parent"))
+        .expect("state root parent");
     base
 }
 

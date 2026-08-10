@@ -907,6 +907,7 @@ describe('InitCommand - profile and detection features', () => {
       'rasen-goal-iterate',
       'rasen-goal-judge',
       'rasen-goal-report',
+      'rasen-task-loop',
       'rasen-apply-change',
     ]) {
       expect(await fileExists(path.join(skillsDir, skillDir, 'SKILL.md'))).toBe(true);

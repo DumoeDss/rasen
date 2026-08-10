@@ -1,0 +1,34 @@
+{
+  "change": "codex-luna-thread-dispatch",
+  "archivedAt": "2026-08-04T03:27:15.075Z",
+  "codeCommit": "005eeaa6050ddf030c1cfea52e13670a1565773a",
+  "planningBranch": "feat/codex-luna-thread-dispatch",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/review-cycle-report.md",
+      "sha256": "72a39f4798daab8ac3fbc6f84538fb74b1aa3ea14ad586e59f6dada2388dc593"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "cc10d70e7315916a7b1426f4e3b79b6660a779189f32b21fd97cbc203177ef43"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "448f9dedbe586dbdfd119d60ef844ec042cfa12e55cba1c12fe6593529d08593"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [
+    {
+      "file": "handoff/fixer-5.md",
+      "outcome": "absorbed"
+    }
+  ],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

@@ -19,6 +19,7 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { promises as fs, readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 import { runCLI } from '../helpers/run-cli.js';
 
@@ -30,10 +31,12 @@ import { resolveRuntimeExecutionProfile } from '../../src/core/pipeline-registry
 import { lowerRuntimePlan } from '../../src/core/change-run/internal/lowerer.js';
 import { reduceCanonicalRunRecord } from '../../src/core/change-run/internal/reducer.js';
 import { decodeCanonicalRunRecord } from '../../src/core/change-run/internal/record.js';
+import { observeGitWorkspace } from '../../src/core/change-run/internal/workspace-git.js';
+import { deriveWorkspaceRevision } from '../../src/core/change-run/internal/workspace.js';
 import type { RuntimePlan } from '../../src/core/change-run/internal/runtime-plan.js';
 import type { CanonicalRunRecord } from '../../src/core/change-run/internal/record.js';
 import type { RunStimulus } from '../../src/core/change-run/internal/reducer.js';
-import type { ActionId, Digest, RunId } from '../../src/core/change-run/index.js';
+import type { Digest, EvidenceRef, RunId } from '../../src/core/change-run/index.js';
 import {
   attestTestCompletion,
   provisionTestTrustedExecutionAdaptersForPipeline,
@@ -159,23 +162,38 @@ function buildCompletionBody(
   record: CanonicalRunRecord,
   changeId: string,
   projectRoot: string,
-  actionId: string
+  actionId: string,
+  result?: (evidence: EvidenceRef) => Record<string, unknown>
 ) {
-  const committed = record.actions[actionId as ActionId];
+  const committed = record.actions[actionId];
   if (committed === undefined) {
     throw new Error(`No committed action ${actionId} exists in the Run.`);
   }
-  return attestTestCompletion({
+  const evidenceContent = new TextEncoder().encode('{"result":"ok"}');
+  const attest = (completionResult: Record<string, unknown>) => attestTestCompletion({
     change: { projectRoot, changeId },
     record,
     action: committed.action,
     completion: {
       kind: 'domain-action-result',
       status: 'succeeded',
-      result: { ok: true },
+      result: completionResult,
     },
-    evidenceContent: new TextEncoder().encode('{"result":"ok"}'),
+    evidenceContent,
   });
+  if (result === undefined) {
+    return attest({ ok: true });
+  }
+
+  // The signed evidence ref is deterministic for an Action and byte payload.
+  // Build it once so task-loop result payloads can cite its exact digest, then
+  // attest the final semantic completion (whose actor claim covers that result).
+  const preliminary = attest({ ok: true });
+  const evidence = preliminary.completion.evidence[0];
+  if (evidence === undefined) {
+    throw new Error(`Trusted completion for Action ${actionId} has no evidence ref.`);
+  }
+  return attest(result(evidence));
 }
 
 // ---------------------------------------------------------------------------
@@ -200,7 +218,7 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
     await provisionTestTrustedExecutionAdaptersForPipeline(
       testDir,
       path.join(dataDir, 'rasen'),
-      'bug-fix'
+      ['bug-fix', 'task-loop']
     );
   });
 
@@ -336,7 +354,7 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
       ['pipeline', 'complete', changeId, '--run', runId, '--from', completionFile, '--json'],
       { cwd: testDir, env, timeoutMs: 60_000 }
     );
-    expect(completeResult.exitCode).toBe(0);
+    expect(completeResult.exitCode, completeResult.stderr).toBe(0);
     const completeJson = JSON.parse(completeResult.stdout.trim());
     // The complete-time settle commits the apply-gate wait in the same
     // revision — disposition is 'waiting' (no actions granted, one wait).
@@ -376,6 +394,198 @@ describe('fresh-process simple bug-fix E2E (15.3)', () => {
     expect(root4.waits[0].kind).toBe('gate');
     expect(status4Json.view.recordVersion).toBeGreaterThan(expectedVersion);
   }, 300_000); // 5-minute timeout for multi-spawn E2E
+
+  it('drives a spec-free Task Loop through builder, fresh critic, ship, and archive', async () => {
+    const changeId = 'e2e-task-loop';
+    const changeDir = path.join(testDir, 'rasen', 'changes', changeId);
+    const evidenceDir = path.join(changeDir, 'evidence');
+    const env = { XDG_DATA_HOME: dataDir, RASEN_AGENT_RUNTIME: 'codex' };
+    execFileSync('git', ['init', '--quiet'], { cwd: testDir, windowsHide: true });
+    execFileSync('git', ['config', 'user.email', 'task-loop@example.test'], {
+      cwd: testDir,
+      windowsHide: true,
+    });
+    execFileSync('git', ['config', 'user.name', 'Task Loop Test'], {
+      cwd: testDir,
+      windowsHide: true,
+    });
+    await fs.writeFile(
+      path.join(testDir, '.gitignore'),
+      ['rasen/', '.rasen/', 'global-data/'].join('\n') + '\n',
+      'utf8'
+    );
+    await fs.mkdir(path.join(testDir, 'src'), { recursive: true });
+    await fs.writeFile(path.join(testDir, 'src', 'feature.ts'), 'export const value = 0;\n');
+    execFileSync('git', ['add', '.gitignore', 'src/feature.ts'], {
+      cwd: testDir,
+      windowsHide: true,
+    });
+    execFileSync('git', ['commit', '--quiet', '-m', 'task-loop baseline'], {
+      cwd: testDir,
+      windowsHide: true,
+    });
+    await fs.mkdir(changeDir, { recursive: true });
+
+    const ephemeraDir = path.join(
+      testDir,
+      '.rasen',
+      'changes',
+      changeId,
+      'ephemera'
+    );
+    await fs.mkdir(ephemeraDir, { recursive: true });
+    const inputFile = path.join(ephemeraDir, 'task-loop-input.json');
+    await fs.writeFile(
+      inputFile,
+      JSON.stringify({
+        taskLoop: {
+          format: 'task-loop-input/1',
+          goal: 'Make the focused result observable.',
+          artifactTargets: ['src/feature.ts'],
+          bar: [
+            {
+              id: 'focused-check',
+              criterion: 'The focused check passes.',
+              evidenceHint: 'Run pnpm exec vitest run test/feature.test.ts.',
+            },
+          ],
+          constraints: ['Do not create planning artifacts.'],
+        },
+        gatePolicy: { effective: 'off', source: 'flag' },
+      })
+    );
+
+    const start = await runCLI(
+      [
+        'pipeline',
+        'start',
+        changeId,
+        'task-loop',
+        '--input-file',
+        inputFile,
+        '--json',
+      ],
+      { cwd: testDir, env, timeoutMs: 60_000 }
+    );
+    expect(start.exitCode, start.stderr).toBe(0);
+    const runId = JSON.parse(start.stdout.trim()).runId as string;
+
+    const grantedAction = async () => {
+      const status = await runCLI(
+        ['pipeline', 'status', changeId, 'task-loop', '--json'],
+        { cwd: testDir, env, timeoutMs: 60_000 }
+      );
+      expect(status.exitCode, status.stderr).toBe(0);
+      const payload = JSON.parse(status.stdout.trim());
+      const root = payload.view.sections.find(
+        (section: { kind: string }) => section.kind === 'root-dag'
+      );
+      return root.actions.find(
+        (action: { deliveryState: string }) => action.deliveryState === 'granted'
+      ) as { actionId: string; invocationId: string; nodeId: string } | undefined;
+    };
+
+    const completeGranted = async (
+      fileName: string,
+      result: (evidence: EvidenceRef) => Record<string, unknown>
+    ) => {
+      const action = await grantedAction();
+      expect(action).toBeDefined();
+      observeAdmittedEffects(storeRoot, runId);
+      const body = buildCompletionBody(
+        loadHeadRecord(storeRoot, runId),
+        changeId,
+        testDir,
+        action!.actionId,
+        result
+      );
+      const completionFile = path.join(ephemeraDir, fileName);
+      writeFileSync(completionFile, JSON.stringify(body));
+      const completed = await runCLI(
+        [
+          'pipeline',
+          'complete',
+          changeId,
+          '--run',
+          runId,
+          '--from',
+          completionFile,
+          '--json',
+        ],
+        { cwd: testDir, env, timeoutMs: 60_000 }
+      );
+      expect(completed.exitCode, completed.stderr).toBe(0);
+      return JSON.parse(completed.stdout.trim());
+    };
+
+    const work = await grantedAction();
+    expect(work).toBeDefined();
+    const workRecord = loadHeadRecord(storeRoot, runId);
+    const admittedWork = workRecord.actions[work!.actionId]!.action;
+    const beforeTree = admittedWork.expectedBeforeWorkspace.treeDigest;
+    await fs.rm(path.join(evidenceDir, 'task-loop-report.md'), { force: true });
+    await fs.writeFile(
+      path.join(testDir, 'src', 'feature.ts'),
+      'export const value = 1;\n'
+    );
+    const afterRevision = deriveWorkspaceRevision(observeGitWorkspace(testDir));
+    await completeGranted(
+      'task-loop-work.json',
+      (evidence) => ({
+        contract: 'goal-cycle/work-result/1',
+        workDescription: 'Implemented the focused result.',
+        beforeTree,
+        afterTree: afterRevision.treeDigest,
+        delta: evidence,
+      })
+    );
+
+    const judge = await grantedAction();
+    expect(judge).toBeDefined();
+    await completeGranted(
+      'task-loop-judge.json',
+      (evidence) => ({
+        contract: 'goal-cycle/evaluate-judge/1',
+        satisfied: true,
+        gaps: [],
+        criteria: [
+          {
+            id: 'focused-check',
+            satisfied: true,
+            evidence: 'src/feature.ts: focused vitest output passed',
+            evidenceDigests: [evidence.evidenceDigest],
+          },
+        ],
+      })
+    );
+    expect(await fs.readFile(path.join(evidenceDir, 'task-loop-report.md'), 'utf8'))
+      .toContain('Contract digest: sha256:');
+
+    const ship = await grantedAction();
+    expect(ship).toBeDefined();
+    await completeGranted('task-loop-ship.json', () => ({
+      delivered: true,
+    }));
+
+    const archive = await grantedAction();
+    expect(archive).toBeDefined();
+    const archived = await completeGranted(
+      'task-loop-archive.json',
+      () => ({ archived: true })
+    );
+    expect(archived.status).toBe('completed');
+
+    for (const planningArtifact of [
+      'proposal.md',
+      'design.md',
+      'tasks.md',
+      'planning-context.md',
+      'goal-plan.md',
+    ]) {
+      await expect(fs.stat(path.join(changeDir, planningArtifact))).rejects.toThrow();
+    }
+    await expect(fs.stat(path.join(changeDir, 'specs'))).rejects.toThrow();
+  }, 300_000);
 
   it('proves the Run survives a fresh process at every lifecycle step (cross-process store integrity)', async () => {
     // This test verifies that the filesystem store is consistent across

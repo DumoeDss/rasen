@@ -252,7 +252,12 @@ class CapsuleClient {
       return;
     }
     if (kind === ERROR) {
-      this.fail(new ProcessScopeError('process-control-lost', payload.toString('utf8').slice(0, 2048)));
+      const code = this.state === 'preparing'
+        ? 'containment-prepare-failed'
+        : this.state === 'prepared'
+          ? 'activation-failed'
+          : 'process-control-lost';
+      this.fail(new ProcessScopeError(code, payload.toString('utf8').slice(0, 2048)));
       return;
     }
     this.fail(new ProcessScopeError('process-control-lost', `Unexpected ProcessCapsule frame ${kind}.`));
@@ -331,7 +336,7 @@ function helperEnvironment(source: NodeJS.ProcessEnv = process.env): NodeJS.Proc
 
 async function oneShotProbe(
   helper: ResolvedProcessCapsule,
-  operation: '--inspect' | '--terminate',
+  operation: '--inspect' | '--terminate' | '--terminate-owned',
   ref: ProcessRef,
   spawnProcess: typeof spawn,
   timeoutMs: number,
@@ -522,7 +527,10 @@ export function createNativeProcessScope(options: NativeProcessScopeOptions = {}
     },
     async inspect(ref) {
       const local = clients.get(ref);
-      if (local && local.state !== 'closed' && local.controlAvailable) {
+      if (local?.state === 'closed') {
+        return { state: 'closed', controllable: false };
+      }
+      if (local && local.controlAvailable) {
         const state = local.state === 'preparing' || local.state === 'prepared'
           ? 'prepared'
           : local.state;
@@ -534,8 +542,8 @@ export function createNativeProcessScope(options: NativeProcessScopeOptions = {}
       void intent;
       const local = clients.get(ref);
       if (local && local.state !== 'closed' && local.controlAvailable) {
-        local.send(TERMINATE);
         try {
+          local.send(TERMINATE);
           await awaitControl(
             'scope-empty',
             local.closed.promise,
@@ -560,7 +568,13 @@ export function createNativeProcessScope(options: NativeProcessScopeOptions = {}
         }
         return { state: 'closed', gracefulAttempted: true, forced: true };
       }
-      const observation = await oneShotProbe(resolve(), '--terminate', ref, spawnProcess, controlTimeoutMs);
+      const observation = await oneShotProbe(
+        resolve(),
+        local ? '--terminate-owned' : '--terminate',
+        ref,
+        spawnProcess,
+        controlTimeoutMs,
+      );
       return receiptFrom(observation);
     },
   };

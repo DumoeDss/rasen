@@ -71,4 +71,3 @@ This breaks the specified work/judge separation and authoritative-judge invarian
 - Focused registry/API validation: **70/70 passed** across `execution-validation.test.ts`, `prepared-registry.test.ts`, and `pipelines-api.test.ts`.
 - Focused built-in/loop regression matrix: **46/46 passed** across seven built-in audit/runtime/strategy files. These passes demonstrate that the five semantic gaps above are not currently covered by the existing assertions.
 - The full repository suite and remote parent-PR CI were not rerun in this successor review.
-

@@ -315,6 +315,8 @@ export interface ReconcilerListOptions {
    * state defaults to "missing" since no change directory can be checked.
    */
   planningSpaceId?: string;
+  /** Server-lifetime Run store root; avoids re-reading mutable process env per request. */
+  runsRoot?: string;
 }
 
 /**
@@ -340,12 +342,14 @@ async function discoverReconcilerRuns(
   home: ProjectHome | null,
   options: ReconcilerListOptions = {}
 ): Promise<ReconcilerListResult> {
-  let storeRoot: string;
-  try {
-    const { getGlobalDataDir } = await import('../global-config.js');
-    storeRoot = path.join(getGlobalDataDir(), 'runs');
-  } catch {
-    return { summaries: [], hasMore: false };
+  let storeRoot = options.runsRoot;
+  if (!storeRoot) {
+    try {
+      const { getGlobalDataDir } = await import('../global-config.js');
+      storeRoot = path.join(getGlobalDataDir(), 'runs');
+    } catch {
+      return { summaries: [], hasMore: false };
+    }
   }
 
   const planningFilter = options.planningSpaceId ?? null;
@@ -376,23 +380,24 @@ async function discoverReconcilerRuns(
     }
   }
 
-  // Filter: when a planningSpaceId override is set (from `planning:<id>`
-  // selector), filter by change.planningSpaceId match. Otherwise, filter by
-  // the derived WorkspaceInstanceId (linked-worktree isolation). When neither
-  // is derivable (no root, no override), all Runs are included.
-  const filtered = planningFilter
+  // A planning selector constrains the planning identity. When it also resolves
+  // to a live root, retain the normal WorkspaceInstanceId filter so a linked
+  // worktree's Runs remain read-only detail targets rather than appearing in
+  // the selected worktree's list.
+  const planningRuns = planningFilter
     ? validRuns.filter((run) => (run.record.change.planningSpaceId as string) === planningFilter)
-    : root
-      ? validRuns.filter((run) => {
-          const workspaceResolution = deriveRunWorkspaceIds(
-            root,
-            home,
-            run.record.change.changeId
-          );
-          return workspaceResolution.ok &&
-            workspaceResolution.workspaceIds.includes(run.record.workspaceInstanceId);
-        })
-      : validRuns;
+    : validRuns;
+  const filtered = root
+    ? planningRuns.filter((run) => {
+        const workspaceResolution = deriveRunWorkspaceIds(
+          root,
+          home,
+          run.record.change.changeId
+        );
+        return workspaceResolution.ok &&
+          workspaceResolution.workspaceIds.includes(run.record.workspaceInstanceId);
+      })
+    : planningRuns;
 
   // Stable-sort by runId (deterministic ordering across requests).
   filtered.sort((a, b) => (a.runId < b.runId ? -1 : a.runId > b.runId ? 1 : 0));
@@ -444,14 +449,17 @@ export async function handleRunDetail(
   changeId: string,
   runId: string,
   root: string | undefined,
-  home: ProjectHome | null
+  home: ProjectHome | null,
+  runsRoot?: string
 ): Promise<RunDetailResult> {
-  let storeRoot: string;
-  try {
-    const { getGlobalDataDir } = await import('../global-config.js');
-    storeRoot = path.join(getGlobalDataDir(), 'runs');
-  } catch {
-    return { ok: false, status: 500, code: 'run_store_unavailable', message: 'Machine data directory is not available.' };
+  let storeRoot = runsRoot;
+  if (!storeRoot) {
+    try {
+      const { getGlobalDataDir } = await import('../global-config.js');
+      storeRoot = path.join(getGlobalDataDir(), 'runs');
+    } catch {
+      return { ok: false, status: 500, code: 'run_store_unavailable', message: 'Machine data directory is not available.' };
+    }
   }
 
   if (!fs.existsSync(storeRoot)) {

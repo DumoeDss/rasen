@@ -222,8 +222,9 @@ describe('Claude resident Session backend', () => {
   it('spawns direct stream-json argv with canonical cwd and no prompt in argv or env', async () => {
     const child = fakeChild();
     const spawn = vi.fn(() => child);
+    const executable = path.resolve('test-fixtures', 'claude');
     const backend = createClaudeSessionBackend({
-      resolveBinary: async () => 'C:\\Tools\\claude.exe',
+      resolveBinary: async () => executable,
       verifyProtocol: async () => ({ ok: true, version: '2.1.220' }),
       spawn,
       env: { PATH: 'safe' },
@@ -247,7 +248,7 @@ describe('Claude resident Session backend', () => {
     ]);
 
     expect(spawn).toHaveBeenCalledWith(
-      'C:\\Tools\\claude.exe',
+      executable,
       [...CLAUDE_SESSION_STREAM_ARGS, '--permission-mode', 'acceptEdits'],
       expect.objectContaining({
         cwd: expect.any(String),

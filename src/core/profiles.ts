@@ -17,10 +17,10 @@ import { readProjectConfig } from './project-config.js';
 import {
   BUILT_IN_WORKFLOW_IDS,
   CORE_WORKFLOW_IDS,
-  INTERNAL_BUILTIN_WORKFLOW_IDS,
   filterKnownWorkflowRoots,
   getBuiltInWorkflowDefinitions,
   getExpertSkillDefinitions,
+  isInternalBuiltInWorkflowId,
   resolveEffectiveWorkflowInstallSelection,
   resolveWorkflowSelection,
   WorkflowCatalog,
@@ -70,7 +70,6 @@ export const QUALITY_FLOOR_EXPERTS: readonly string[] = [
  * surface a genuinely new built-in workflow.
  */
 export function getCurrentBuiltInWorkflowIds(): string[] {
-  const internalIds = new Set<string>(INTERNAL_BUILTIN_WORKFLOW_IDS);
   return getBuiltInWorkflowDefinitions()
     .filter(
       (definition) =>
@@ -78,7 +77,7 @@ export function getCurrentBuiltInWorkflowIds(): string[] {
         definition.kind !== 'expert' &&
         // Dependency-only built-ins are internal and non-selectable, so none
         // belongs to the persisted selectable-workflow baseline.
-        !internalIds.has(definition.id)
+        !isInternalBuiltInWorkflowId(definition.id)
     )
     .map((definition) => definition.id);
 }
@@ -162,10 +161,9 @@ export function resolvePublicWorkflowSelection(
     ? baseResult.workflows
     : [...getProfileWorkflows('full', undefined, { expertSelectionExplicit })];
   const { known, unknown } = filterKnownWorkflowRoots(catalog, base);
-  const internalIds = new Set<string>(INTERNAL_BUILTIN_WORKFLOW_IDS);
   const ids = resolveWorkflowSelection(catalog, known)
     .map((definition) => definition.id)
-    .filter((id) => !internalIds.has(id));
+    .filter((id) => !isInternalBuiltInWorkflowId(id));
   return { ids, unknown, ...(baseResult.ok ? {} : { profileWarning: baseResult.warning }) };
 }
 

@@ -1,8 +1,8 @@
 # Review Cycle: ecp-shared-bounded-loop-lifecycle
 
-Rounds: 1/3  
-Tier: A (native role-isolated fixer and non-author reviewer)  
-Status: CLEAN  
+Rounds: 1/3\
+Tier: A (native role-isolated fixer and non-author reviewer)\
+Status: CLEAN\
 Base HEAD: `050fc84332b26a75a07f441efd6b235842f89e1e`
 
 ## Final verdict

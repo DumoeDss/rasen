@@ -120,6 +120,49 @@ describe('ECP-5: engine selection policy (real CLI)', () => {
     expect(await runRecordCount()).toBe(0);
   }, 120_000);
 
+  it('refuses task-loop legacy execution with its reconciler-required diagnostic before work', async () => {
+    await fs.writeFile(configPath(), `${BASE_CONFIG}runs:\n  engine: legacy\n`);
+    const inputFile = path.join(testDir, 'task loop 输入.json');
+    await fs.writeFile(
+      inputFile,
+      JSON.stringify({
+        taskLoop: {
+          format: 'task-loop-input/1',
+          goal: 'Prove the target result.',
+          artifactTargets: ['src/feature.ts'],
+          bar: [
+            {
+              id: 'focused-check',
+              criterion: 'The focused check passes.',
+              evidenceHint: 'Run the focused test.',
+            },
+          ],
+          constraints: [],
+        },
+        gatePolicy: { effective: 'off', source: 'flag' },
+      })
+    );
+
+    const result = await runCLI(
+      [
+        'pipeline',
+        'start',
+        changeId,
+        'task-loop',
+        '--input-file',
+        inputFile,
+        '--json',
+      ],
+      { cwd: testDir, env, timeoutMs: 60_000 }
+    );
+
+    expect(result.exitCode).not.toBe(0);
+    expect(`${result.stdout}${result.stderr}`).toContain(
+      'task_loop_reconciler_required'
+    );
+    expect(await runRecordCount()).toBe(0);
+  }, 120_000);
+
   it('`--engine reconciler` overrides a configured `legacy`', async () => {
     await fs.writeFile(configPath(), `${BASE_CONFIG}runs:\n  engine: legacy\n`);
 

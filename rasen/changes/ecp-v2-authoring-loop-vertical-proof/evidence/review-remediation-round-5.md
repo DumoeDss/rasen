@@ -1,7 +1,7 @@
 # Review remediation round 5 — full-root regression repair
 
-Date: 2026-08-04  
-Role: implementer / review-loop fixer  
+Date: 2026-08-04\
+Role: implementer / review-loop fixer\
 Scope: repair and classify every failure in the independent Round 4 full-root
 run. This round does not perform the independent re-review, ship, archive, or
 mark tasks 9.8–9.10 complete.

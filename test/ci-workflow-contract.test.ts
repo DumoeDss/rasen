@@ -68,6 +68,15 @@ describe('CI workflow contract', () => {
     }
   });
 
+  it('gives both unpartitioned Linux suites enough headroom for runner variance', () => {
+    const block = jobBlock(workflowText(), 'test_matrix', 'file_placement_recovery');
+    for (const label of ['linux-bash', 'linux-bash-node24']) {
+      expect(block).toMatch(new RegExp(
+        `label: ${label}\\n(?:(?!\\n\\s+- os:)[\\s\\S])*?timeout_minutes: 20\\n`
+      ));
+    }
+  });
+
   it('partitions the discovered test manifest deterministically with exact disjoint coverage', () => {
     const manifest = listTestFiles(path.join(repositoryRoot, 'test'));
     const partitions = Array.from({ length: 8 }, (_, index) =>

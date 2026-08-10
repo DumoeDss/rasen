@@ -245,6 +245,10 @@ function npmPacklist(packageRoot: string): string[] {
   ], {
     cwd: packageRoot,
     encoding: 'utf8',
+    env: {
+      ...process.env,
+      npm_config_ignore_scripts: 'true',
+    },
   })) as Array<{ files: Array<{ path: string }> }>;
   return receipt[0]?.files.map((entry) => entry.path) ?? [];
 }
@@ -254,6 +258,27 @@ afterEach(() => {
 });
 
 describe('Linux process-authority package and CI boundary', () => {
+  it('gives Nix a dereferenced pinned Rust sysroot without inherited stdenv selectors', () => {
+    const flake = fs.readFileSync('flake.nix', 'utf8');
+    const script = fs.readFileSync(SCRIPT, 'utf8');
+    expect(flake).toContain('rust-overlay.overlays.default');
+    expect(flake).toContain('pkgs.rustPlatform.importCargoLock');
+    expect(flake).toMatch(/lockFile = \.\/native\/linux-process-authority\/Cargo\.lock;/);
+    expect(flake).toContain('rustToolchainSource = pkgs.rust-bin.stable."1.88.0".minimal');
+    expect(flake).toMatch(/pkgs\.runCommand "rust-toolchain-1\.88\.0-exact"/);
+    expect(flake).toMatch(/cp -RL "\$\{rustToolchainSource\}\/\." "\$out\/"/);
+    expect(flake).toMatch(/chmod u\+w "\$out\/bin" "\$out\/bin\/cargo" "\$out\/bin\/rustc"/);
+    expect(flake).toMatch(/wrapProgram "\$out\/bin\/cargo"[\s\S]*?--add-flags '--offline'/);
+    expect(flake).toContain('source.crates-io.replace-with=\\"vendored-sources\\"');
+    expect(flake).toContain('source.vendored-sources.directory=\\"${cargoVendor}\\"');
+    expect(flake).toMatch(/wrapProgram "\$out\/bin\/rustc" --add-flags "--sysroot \$out"/);
+    expect(flake).toMatch(/nativeBuildInputs = with pkgs; \[[\s\S]*?\brustToolchain\b[\s\S]*?\];/);
+    expect(flake).toMatch(/nativeBuildInputs = with pkgs; \[[\s\S]*?\bwhich\b[\s\S]*?\];/);
+    expect(flake).toMatch(/unset AR CC CXX LD\s+pnpm run build/s);
+    expect(script).toMatch(/build-affecting environment override is forbidden/);
+    expect(script).toMatch(/!stat\.isFile\(\) \|\| stat\.isSymbolicLink\(\)/);
+  });
+
   // Parked-provider subject (locked decision 13): the win32 refusal is the one live claim on this host.
   it.runIf(process.platform === 'win32')('refuses authoritative assembly on win32', () => {
     const item = fixture();
@@ -435,7 +460,14 @@ describe('Linux process-authority package and CI boundary', () => {
     const packageRoot = path.join(item.root, 'packlist');
     const distRoot = path.join(packageRoot, 'dist', 'native', 'linux-x64');
     fs.mkdirSync(distRoot, { recursive: true });
-    fs.copyFileSync('package.json', path.join(packageRoot, 'package.json'));
+    const packMetadata = { ...packageMetadata } as typeof packageMetadata & {
+      scripts?: Record<string, string>;
+    };
+    delete packMetadata.scripts;
+    fs.writeFileSync(
+      path.join(packageRoot, 'package.json'),
+      `${JSON.stringify(packMetadata, null, 2)}\n`
+    );
     for (const name of [
       'rasen-linux-process-authority-broker',
       'broker.key',
@@ -767,12 +799,18 @@ describe('Linux process-authority package and CI boundary', () => {
     expect(JSON.stringify(primary)).not.toMatch(/sudo|broker\.key|systemctl/i);
     expect(JSON.stringify(primary)).toMatch(/1\.88\.0|--locked|build|package/i);
     expect(JSON.stringify(primary)).not.toMatch(/linux_primary_contract/);
+    expect(JSON.stringify(primary)).toMatch(
+      /--skip primary::construction_matrix_tests::partial_construction_failure_matrix/
+    );
     expect(JSON.stringify(policy)).toMatch(/state=open|GITHUB_OUTPUT|namespace-policy/i);
-    expect(String(actualRuntime.if)).toBe('always()');
+    expect(String(actualRuntime.if)).toBe(
+      "needs.linux-primary-namespace-policy.outputs.state == 'available'"
+    );
     expect(JSON.stringify(actualRuntime)).toMatch(/linux_primary_contract/);
     expect(JSON.stringify(actualRuntime)).toMatch(
-      /state != 'available'.*actual-runtime-gate\.json.*exit 1/s
+      /primary::construction_matrix_tests::partial_construction_failure_matrix/
     );
+    expect(JSON.stringify(actualRuntime)).not.toMatch(/actual-runtime-gate\.json|exit 1/);
     expect(String(actualRuntime.name)).toMatch(/actual.*runtime.*gate/i);
     expect(JSON.stringify(windows)).toMatch(/windows-latest|--check-only|non-runtime/i);
     expect(String(broker.if)).toContain("github.event_name == 'workflow_dispatch'");

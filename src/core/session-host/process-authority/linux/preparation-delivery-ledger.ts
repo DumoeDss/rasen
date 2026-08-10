@@ -159,8 +159,8 @@ function fsyncDirectory(directory: string): void {
 
 interface DeliveryRootIdentity {
   readonly root: string;
-  readonly device: number;
-  readonly inode: number;
+  readonly device: bigint;
+  readonly inode: bigint;
 }
 
 function prepareRoot(rootValue: string): DeliveryRootIdentity {
@@ -169,10 +169,11 @@ function prepareRoot(rootValue: string): DeliveryRootIdentity {
   }
   fs.mkdirSync(rootValue, { recursive: true, mode: 0o700 });
   const root = fs.realpathSync.native(path.resolve(rootValue));
-  const stat = fs.lstatSync(root);
+  const stat = fs.lstatSync(root, { bigint: true });
+  const currentUid = process.getuid?.();
   if (!stat.isDirectory() || stat.isSymbolicLink() ||
-      (process.platform !== 'win32' && ((stat.mode & 0o077) !== 0 ||
-        (process.getuid?.() !== undefined && stat.uid !== process.getuid?.())))) {
+      (process.platform !== 'win32' && ((stat.mode & 0o077n) !== 0n ||
+        (currentUid !== undefined && stat.uid !== BigInt(currentUid))))) {
     throw new TypeError('Linux broker preparation delivery root provenance is invalid.');
   }
   return Object.freeze({ root, device: stat.dev, inode: stat.ino });
@@ -180,8 +181,8 @@ function prepareRoot(rootValue: string): DeliveryRootIdentity {
 
 export class LinuxBrokerPreparationDeliveryLedger {
   readonly #root: string;
-  readonly #rootDevice: number;
-  readonly #rootInode: number;
+  readonly #rootDevice: bigint;
+  readonly #rootInode: bigint;
 
   constructor(options: LinuxBrokerPreparationDeliveryLedgerOptions) {
     if (new.target !== LinuxBrokerPreparationDeliveryLedger || !options ||
@@ -201,11 +202,12 @@ export class LinuxBrokerPreparationDeliveryLedger {
   }
 
   #assertRootIdentity(): void {
-    const stat = fs.lstatSync(this.#root);
+    const stat = fs.lstatSync(this.#root, { bigint: true });
+    const currentUid = process.getuid?.();
     if (!stat.isDirectory() || stat.isSymbolicLink() || stat.dev !== this.#rootDevice ||
         stat.ino !== this.#rootInode || fs.realpathSync.native(this.#root) !== this.#root ||
-        (process.platform !== 'win32' && ((stat.mode & 0o077) !== 0 ||
-          (process.getuid?.() !== undefined && stat.uid !== process.getuid?.())))) {
+        (process.platform !== 'win32' && ((stat.mode & 0o077n) !== 0n ||
+          (currentUid !== undefined && stat.uid !== BigInt(currentUid))))) {
       throw new TypeError('Linux broker preparation delivery root identity changed.');
     }
   }

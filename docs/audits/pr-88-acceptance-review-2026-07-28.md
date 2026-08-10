@@ -1,10 +1,10 @@
 # PR #88 验收审查报告
 
-> PR：<https://github.com/DumoeDss/rasen/pull/88>  
-> 标题：`feat: Store/context portfolio — bootstrap, portable knowledge, and stabilization`  
-> 目标分支：`dev/0.1.5`  
-> 审查 head：`728688babeb7da98170f5d450bc0ea9b15c3ddc6`  
-> 审查时间：2026-07-27—2026-07-28（Asia/Shanghai）  
+> PR：<https://github.com/DumoeDss/rasen/pull/88>\
+> 标题：`feat: Store/context portfolio — bootstrap, portable knowledge, and stabilization`\
+> 目标分支：`dev/0.1.5`\
+> 审查 head：`728688babeb7da98170f5d450bc0ea9b15c3ddc6`\
+> 审查时间：2026-07-27—2026-07-28（Asia/Shanghai）\
 > 审查方式：PR 元数据、完整 diff、规格/任务账本、静态代码审查、独立对抗审查、隔离工作树构建与测试、最新基线三方合并验证
 
 ## 1. 结论

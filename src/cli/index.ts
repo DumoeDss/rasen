@@ -372,6 +372,7 @@ const archiveCommand = program
   .option('--store <id>', '')
   .option('--project <id>', '')
   .option('--keep-ephemera', '')
+  .option('--no-whitespace-check', '')
   .option('--dry-run', '')
   .option('--save-plan', '')
   .option('--apply-plan <token>', '')
@@ -396,7 +397,7 @@ registerHomeCommand(program);
 registerConfigCommand(program);
 registerUiCommand(program);
 registerDaemonCommand(program);
-registerSessionCommand(program);
+registerSessionCommand(program, locale);
 registerProfileCommand(program);
 registerSchemeCommand(program);
 registerKnowledgeCommand(program);
@@ -710,6 +711,7 @@ pipelineCmd
   .option('--store <id>', '')
   .option('--project <id>', '')
   .addOption(hiddenStorePathOption())
+  .addOption(new Option('--input-file <path>', '').hideHelp())
   .action(async (
     change: string,
     pipeline: string,
@@ -719,6 +721,7 @@ pipelineCmd
       store?: string;
       project?: string;
       storePath?: string;
+      inputFile?: string;
     }
   ) => {
     try {
