@@ -42,6 +42,7 @@ import {
   getOfficeHoursSkillTemplate,
   getQaSkillTemplate,
   getReviewSkillTemplate,
+  getTeacherAdvisorSkillTemplate,
   getWorkflowAuthorSkillTemplate,
 } from '../../../src/core/templates/skill-templates.js';
 import {
@@ -90,6 +91,7 @@ const EXPECTED_FUNCTION_HASHES: Record<string, string> = {
   getOfficeHoursSkillTemplate: 'e4fcb7af50b210a4b0a1ca3f9c28e657b7b12adcec937ced1d3083ae5811ac90',
   getQaSkillTemplate: 'b268c2cf7521d07116ff3c14482167b19837c4889a63586f35c50ba6cc0f4a31',
   getReviewSkillTemplate: '381c46e1c64a84ae00ae79e83a0792278295b95b06176af6e520a1f6a14065e5',
+  getTeacherAdvisorSkillTemplate: '0629736b7cbade70395df095063ad62f10b71458cdf1dccb829163958c7cd4ec',
   getWorkflowAuthorSkillTemplate: 'f20cf7cf1399af1d521d3e70ec07983a84e1f96793349c466528f0451202f729',
 };
 
@@ -132,6 +134,7 @@ const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
   'rasen-office-hours': '21b41517006dc4c935c4960057f31c95eb420a7ce181d7735fc405fbe5ced9e4',
   'rasen-qa': '3f57f82b9c3a257ee3c648e701effd240ef620ed4810b72672298fa0c378362e',
   'rasen-review': '406bc3d41285c0fcfb0b051c3b8277d7b7f17f2da069a1bfcb7074b70d4617db',
+  'rasen-teacher-advisor': '49ef06c0ced5c1fe0c804870642cd64564324a970d8c4b994571dbb03bbe5c66',
   'rasen-workflow-author': 'd96176893f008efe9bb5f8b907ab81597c37959e299d1c899714c0ef84640583',
 };
 
@@ -175,6 +178,7 @@ const GENERATED_SKILL_FACTORIES: Array<[string, () => SkillTemplate]> = [
   ['rasen-office-hours', getOfficeHoursSkillTemplate],
   ['rasen-qa', getQaSkillTemplate],
   ['rasen-review', getReviewSkillTemplate],
+  ['rasen-teacher-advisor', getTeacherAdvisorSkillTemplate],
   ['rasen-workflow-author', getWorkflowAuthorSkillTemplate],
 ];
 
@@ -278,6 +282,7 @@ describe('skill templates split parity', () => {
       getOfficeHoursSkillTemplate,
       getQaSkillTemplate,
       getReviewSkillTemplate,
+      getTeacherAdvisorSkillTemplate,
       getWorkflowAuthorSkillTemplate,
     };
 

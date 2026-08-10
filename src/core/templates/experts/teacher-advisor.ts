@@ -1,4 +1,5 @@
 import type { SkillTemplate } from '../types.js';
+import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
 
 const BODY = `
 # Teacher Advisor
@@ -90,7 +91,7 @@ export function getTeacherAdvisorSkillTemplate(): SkillTemplate {
     name: 'rasen-teacher-advisor',
     description:
       'Read-only Teacher Advisor that receives a teacher-consultation/invocation/1 and returns teacher-consultation/advice/1 — structured advice (plan | correction | stop) that never mutates the workspace',
-    instructions: BODY.trim(),
+    instructions: `${BODY.trim()}\n\n${STORE_SELECTION_GUIDANCE}`,
     metadata: { author: 'rasen', version: '1.0' },
   };
 }

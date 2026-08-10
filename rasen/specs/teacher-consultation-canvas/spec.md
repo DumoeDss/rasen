@@ -1,7 +1,7 @@
 # teacher-consultation-canvas Specification
 
 ## Purpose
-TBD - created by archiving change teacher-consultation-canvas. Update Purpose after archive.
+The Teacher Consultation Canvas capability provides pipeline Canvas authoring controls for adding, editing, and removing Teacher consultation bindings on AtomicStage nodes, consuming the pipeline consultations field shape without modifying any Definition node, graph edge, or stage execution field.
 ## Requirements
 ### Requirement: Canvas can author consultation bindings for a source stage
 

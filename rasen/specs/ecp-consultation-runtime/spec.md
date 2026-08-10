@@ -1,7 +1,7 @@
 # ecp-consultation-runtime Specification
 
 ## Purpose
-TBD - created by archiving change teacher-consultation-runtime. Update Purpose after archive.
+The ECP Consultation Runtime governs how an implementer agent pauses mid-Action to request structured advice from a read-only Teacher Advisor, enforcing frozen bindings, typed contracts, bounded limits, durable attribution, and exact continuation across all product planes.
 ## Requirements
 ### Requirement: Consultation eligibility and Teacher authority are frozen before execution
 

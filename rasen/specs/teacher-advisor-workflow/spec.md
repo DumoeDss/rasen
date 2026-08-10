@@ -1,7 +1,7 @@
 # teacher-advisor-workflow Specification
 
 ## Purpose
-TBD - created by archiving change teacher-advisor-workflow. Update Purpose after archive.
+The Teacher Advisor Workflow capability defines how pipeline YAMLs declare opt-in consultation bindings that connect eligible source stages to a read-only Teacher Advisor skill, enforce validation of binding shape and limits, and produce resolved execution profiles with Teacher capability and consultation metadata.
 ## Requirements
 ### Requirement: Pipeline definitions can declare opt-in consultation bindings
 
