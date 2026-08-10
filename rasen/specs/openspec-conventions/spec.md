@@ -280,4 +280,3 @@ Rasen SHALL reconcile a delta only from visible Markdown structure and a one-to-
 - **THEN** Rasen SHALL report the duplicate header
 - **AND** it SHALL compare every block with the immutable canonical scenario inventory and report each missing-scenario finding
 - **AND** it SHALL NOT choose any duplicate block for mutation
-

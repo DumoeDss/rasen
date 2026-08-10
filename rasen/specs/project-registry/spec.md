@@ -272,4 +272,3 @@ Every non-ensuring project-home probe SHALL use the same canonical main-entry lo
 - **WHEN** a non-ensuring home probe finds a canonical registry entry whose normalized project identity differs from the root config identity
 - **THEN** it returns no machine home from that inconsistent binding
 - **AND** it leaves config, registry, and directories unchanged
-
