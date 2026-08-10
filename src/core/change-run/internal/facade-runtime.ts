@@ -366,7 +366,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
         error instanceof Error &&
         'code' in error &&
         typeof error.code === 'string' &&
-        error.code.startsWith('task_loop_workspace_authority_')
+        error.code.startsWith('task_loop_source_authority_')
       ) {
         throw error;
       }

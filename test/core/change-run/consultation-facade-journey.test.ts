@@ -1987,7 +1987,7 @@ describe('attested Teacher consultation Facade journey', () => {
       }
       expect(caughtMissing).toBeInstanceOf(StoredRuntimeContextError);
       expect((caughtMissing as StoredRuntimeContextError).code).toBe(
-        'task_loop_workspace_authority_unavailable'
+        'task_loop_source_authority_unavailable'
       );
       expect(digestCanonicalRunRecord(fx.store.load(fx.plan.runId))).toBe(digestBefore);
       expect(fs.existsSync(reportPath)).toBe(false);
@@ -2036,7 +2036,7 @@ describe('attested Teacher consultation Facade journey', () => {
       }
       expect(caughtDrifted).toBeInstanceOf(StoredRuntimeContextError);
       expect((caughtDrifted as StoredRuntimeContextError).code).toBe(
-        'task_loop_workspace_authority_mismatch'
+        'task_loop_source_authority_mismatch'
       );
       expect(digestCanonicalRunRecord(fx.store.load(fx.plan.runId))).toBe(digestBefore);
       expect(fs.existsSync(reportPath)).toBe(false);

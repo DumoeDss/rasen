@@ -1095,12 +1095,15 @@ export function createSessionHost(options: CreateSessionHostOptions): SessionHos
       }
       if (
         existing.turnLimits !== undefined &&
-        JSON.stringify(existing.turnLimits) !== JSON.stringify(command.limits)
+        (existing.turnLimits.maxInputBytes !== command.limits.maxInputBytes ||
+          existing.turnLimits.maxOutputBytes !== command.limits.maxOutputBytes ||
+          existing.turnLimits.maxLineBytes !== command.limits.maxLineBytes ||
+          existing.turnLimits.maxDiagnosticBytes !== command.limits.maxDiagnosticBytes)
       ) {
         return failure(
           'execute',
           'invalid-input',
-          'Hosted Session turn limits cannot change across turns.',
+          'Hosted Session byte-level turn limits cannot change across turns.',
           existing,
           command.requestId
         );

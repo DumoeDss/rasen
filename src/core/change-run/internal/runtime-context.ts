@@ -75,8 +75,8 @@ export function runtimeServiceReservationRegistry(
 export class StoredRuntimeContextError extends Error {
   constructor(
     readonly code:
-      | 'task_loop_workspace_authority_unavailable'
-      | 'task_loop_workspace_authority_mismatch',
+      | 'task_loop_source_authority_unavailable'
+      | 'task_loop_source_authority_mismatch',
     message: string
   ) {
     super(message);
@@ -198,7 +198,7 @@ function platformPathIdentity(value: string): string {
 function canonicalProjectRoot(value: string): string {
   if (!path.isAbsolute(value)) {
     throw new StoredRuntimeContextError(
-      'task_loop_workspace_authority_mismatch',
+      'task_loop_source_authority_mismatch',
       'The daemon-owned source Session cwd is not absolute.'
     );
   }
@@ -208,13 +208,13 @@ function canonicalProjectRoot(value: string): string {
     canonical = fs.realpathSync.native(value);
   } catch {
     throw new StoredRuntimeContextError(
-      'task_loop_workspace_authority_unavailable',
+      'task_loop_source_authority_unavailable',
       'The daemon-owned source Session cwd is unavailable.'
     );
   }
   if (platformPathIdentity(canonical) !== platformPathIdentity(value)) {
     throw new StoredRuntimeContextError(
-      'task_loop_workspace_authority_mismatch',
+      'task_loop_source_authority_mismatch',
       'The daemon-owned source Session cwd is not canonical.'
     );
   }
@@ -273,7 +273,7 @@ function taskLoopSourceSession(
   );
   if (liveConsultations.length > 1) {
     throw new StoredRuntimeContextError(
-      'task_loop_workspace_authority_mismatch',
+      'task_loop_source_authority_mismatch',
       'The canonical Run has ambiguous live consultation source authority.'
     );
   }
@@ -283,7 +283,7 @@ function taskLoopSourceSession(
     const session = host.inspect(consultation.source.stableSessionId);
     if (committed?.action.kind !== 'agent' || session === undefined) {
       throw new StoredRuntimeContextError(
-        'task_loop_workspace_authority_unavailable',
+        'task_loop_source_authority_unavailable',
         'The canonical consultation source Session is unavailable.'
       );
     }
@@ -310,8 +310,8 @@ function taskLoopSourceSession(
   if (candidates.length !== 1) {
     throw new StoredRuntimeContextError(
       candidates.length === 0
-        ? 'task_loop_workspace_authority_unavailable'
-        : 'task_loop_workspace_authority_mismatch',
+        ? 'task_loop_source_authority_unavailable'
+        : 'task_loop_source_authority_mismatch',
       candidates.length === 0
         ? 'The task-loop source Session authority is unavailable.'
         : 'The task-loop source Session authority is ambiguous.'
@@ -326,7 +326,7 @@ function trustedTaskLoopProjectRoot(
 ): string {
   if (host === undefined) {
     throw new StoredRuntimeContextError(
-      'task_loop_workspace_authority_unavailable',
+      'task_loop_source_authority_unavailable',
       'Stored task-loop recovery requires the daemon-owned ordinary SessionHost.'
     );
   }
@@ -342,7 +342,7 @@ function trustedTaskLoopProjectRoot(
     session.cwdDigest !== digestSessionHostText(session.cwd)
   ) {
     throw new StoredRuntimeContextError(
-      'task_loop_workspace_authority_mismatch',
+      'task_loop_source_authority_mismatch',
       'The daemon-owned source Session disagrees with canonical Action, Invocation, role, workspace, backend, cwd, or cwd digest authority.'
     );
   }
@@ -357,7 +357,7 @@ function trustedTaskLoopProjectRoot(
       liveConsultation.source.stableSessionId !== session.sessionId)
   ) {
     throw new StoredRuntimeContextError(
-      'task_loop_workspace_authority_mismatch',
+      'task_loop_source_authority_mismatch',
       'The canonical consultation and daemon-owned source Session identities disagree.'
     );
   }

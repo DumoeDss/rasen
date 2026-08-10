@@ -676,21 +676,41 @@ export function createFilesystemWorkspaceReservationRegistry(
 
   // Startup/restart recovery: canonical heads are authoritative for final
   // reservations; only live, not-yet-committed pending entries are retained.
+  // Idempotent: when the recomputed entries match what is already on disk,
+  // nothing is written — bumping the revision would violate the byte-identical
+  // contract that a refused (non-mutating) path changes nothing on disk.
   withState((entries) => {
     const canonical = canonicalReservationEntries(options.loadRecords());
+    const canonicalKeySet = new Set(
+      canonical.map((entry) => entryKey(entry.runId, entry.actionId))
+    );
     const livePending = [...entries.values()].filter(
       (entry) =>
         entry.state === 'pending' &&
         processIsAlive(entry.ownerPid) &&
-        !canonical.some(
-          (expected) =>
-            expected.runId === entry.runId && expected.actionId === entry.actionId
-        )
+        !canonicalKeySet.has(entryKey(entry.runId, entry.actionId))
     );
+    // Build the replacement map and detect whether anything actually changed.
+    const replacement = new Map<string, DurableReservationEntry>();
+    for (const entry of canonical) {
+      replacement.set(entryKey(entry.runId, entry.actionId), entry);
+    }
+    for (const entry of livePending) {
+      replacement.set(entryKey(entry.runId, entry.actionId), entry);
+    }
+    let changed = entries.size !== replacement.size;
+    if (!changed) {
+      for (const [key, value] of replacement) {
+        const existing = entries.get(key);
+        if (existing === undefined || JSON.stringify(existing) !== JSON.stringify(value)) {
+          changed = true;
+          break;
+        }
+      }
+    }
     entries.clear();
-    for (const entry of canonical) entries.set(entryKey(entry.runId, entry.actionId), entry);
-    for (const entry of livePending) entries.set(entryKey(entry.runId, entry.actionId), entry);
-    return { result: undefined, changed: true };
+    for (const [key, entry] of replacement) entries.set(key, entry);
+    return { result: undefined, changed };
   });
 
   return Object.freeze({
