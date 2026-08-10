@@ -186,7 +186,13 @@ export async function createStoreFinalizationFixture(
         executionRoot: bound.executionWorktree,
         activePath: bound.changeDir,
         archiveParent: bound.archiveLine,
-        ephemeraPath: base.beside('ephemera', bound.changeId),
+        ephemeraPath: path.join(
+          bound.executionWorktree,
+          '.rasen',
+          'changes',
+          bound.changeId,
+          'ephemera'
+        ),
         date: FIXTURE_ARCHIVE_DATE,
         keepEphemera: false,
         validation: 'skipped',
@@ -245,9 +251,9 @@ export async function prepareSpecActions(
   mainSpecsDir: string,
   changeId: string
 ): Promise<PreparedArchiveSpecAction[]> {
-  const updates = await findSpecUpdates(changeDir, mainSpecsDir);
+  const discovery = await findSpecUpdates(changeDir, mainSpecsDir);
   const actions: PreparedArchiveSpecAction[] = [];
-  for (const update of updates) {
+  for (const update of discovery.updates) {
     const built = await buildUpdatedSpec(update, changeId, { silent: true });
     const source = fs.readFileSync(update.source);
     let targetPrecondition: PreparedArchiveSpecAction['targetPrecondition'] = {

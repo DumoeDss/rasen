@@ -69,16 +69,30 @@ function digestOf(content: string): string {
 
 function parseCapabilityId(capability: string): ArchiveSpecAction['capabilityId'] {
   try {
-    return parseChangeId(capability, 'capabilityId') as ArchiveSpecAction['capabilityId'];
+    const segments = capability.split('/');
+    if (
+      capability.length === 0 ||
+      capability.includes('\\') ||
+      segments.some(
+        segment =>
+          segment.length === 0 || segment === '.' || segment === '..'
+      )
+    ) {
+      throw new Error('Capability path is not canonical.');
+    }
+    for (const segment of segments) {
+      parseChangeId(segment, 'capabilityId');
+    }
+    return capability as ArchiveSpecAction['capabilityId'];
   } catch (error) {
     throw finalizationRefusal(
       'finalization_record_invalid',
-      `Spec action capability '${capability}' is not a canonical capability id.`,
+      `Spec action capability '${capability}' is not a canonical capability path.`,
       {
-        expected: 'a lowercase kebab capability id',
+        expected: 'a slash-delimited path of lowercase kebab capability ids',
         actual: capability,
         target: capability,
-        fix: 'Rename the capability directory to a canonical id and rerun.',
+        fix: 'Rename every capability directory segment to a canonical id and rerun.',
         cause: error,
       }
     );

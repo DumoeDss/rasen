@@ -74,6 +74,7 @@ const ALLOWED_EXTERNAL_IMPORTS = new Set([
   'node:child_process',
   'node:crypto',
   'node:fs',
+  'node:fs/promises',
   'node:path',
   'node:util',
   'yaml',

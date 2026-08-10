@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { parse as parseYaml } from 'yaml';
@@ -8,6 +9,9 @@ import { parse as parseYaml } from 'yaml';
 import {
   createStorePlanningResolverForTesting,
   nodeStorePlanningFileSystem,
+  productionStorePlanningDependencies,
+  type ProjectIdentityClaimantSnapshot,
+  type ProjectRegistrySnapshotEntry,
   type StorePlanningDependencies,
 } from '../../../src/core/store-planning/testing.js';
 import { PlanningScopeError } from '../../../src/core/store-planning/index.js';
@@ -15,6 +19,11 @@ import {
   deriveWorktreeInstanceId,
   parseChangeInstanceSeed,
 } from '../../../src/core/store/planning-foundation.js';
+import {
+  registerProject,
+  updateProjectRegistryState,
+} from '../../../src/core/project-registry.js';
+import { isolatedGitEnv } from '../../helpers/store-git.js';
 
 const STORE_UID = '123e4567-e89b-42d3-a456-426614174000';
 const tempRoots: string[] = [];
@@ -28,6 +37,38 @@ function temporaryRoot(): string {
 function write(filePath: string, content: string): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, 'utf8');
+}
+
+function snapshotTreeBytes(root: string): Readonly<Record<string, string>> {
+  const snapshot: Record<string, string> = {};
+  const visit = (directory: string): void => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const absolute = path.join(directory, entry.name);
+      const relative = path.relative(root, absolute);
+      if (entry.isDirectory()) {
+        snapshot[`${relative}${path.sep}`] = '<directory>';
+        visit(absolute);
+      } else {
+        snapshot[relative] = fs.readFileSync(absolute).toString('base64');
+      }
+    }
+  };
+  visit(root);
+  return snapshot;
+}
+
+function projectClaimant(
+  root: string,
+  entry: ProjectRegistrySnapshotEntry['entry'],
+  live: boolean
+): ProjectIdentityClaimantSnapshot {
+  return {
+    root,
+    entry,
+    live,
+    aliases: [{ registryPath: root, canonicalPath: root, entry, live, direct: true }],
+    fixedMetadataConflict: false,
+  };
 }
 
 function storeFixture(options: { marker?: boolean; localPlanning?: boolean } = {}): {
@@ -121,6 +162,19 @@ function resolver(
           lastSeen: '2026-08-06T00:00:00.000Z',
         },
       },
+    ],
+    findProjectIdentityClaimants: async () => [
+      projectClaimant(
+        roots.projectRoot,
+        {
+          projectId: 'project-a',
+          name: 'project-a',
+          mode: 'store',
+          home: 'project-a-home',
+          lastSeen: '2026-08-06T00:00:00.000Z',
+        },
+        true
+      ),
     ],
     findRegisteredProject: async () => null,
     sessionContextPath: () => undefined,
@@ -766,6 +820,349 @@ describe('StorePlanning.open', () => {
         selection: { project: 'project-a', targetLine: 'line-0.2' },
       })
     ).rejects.toMatchObject({ diagnostic: { code: 'split_planning_truth' } });
+  });
+
+  it('reports every project claimant and actionable pruning for duplicate identities', async () => {
+    const roots = storeFixture();
+    const missingRoot = path.join(
+      path.dirname(roots.projectRoot),
+      'missing-project-copy'
+    );
+    const entry = {
+      projectId: 'project-a',
+      name: 'project-a',
+      mode: 'store' as const,
+      home: 'project-a-home',
+      lastSeen: '2026-08-06T00:00:00.000Z',
+    };
+    const aliasEntry = {
+      ...entry,
+      projectId: entry.projectId.toUpperCase(),
+    };
+    const planning = resolver(roots, () => 'linked-worktree', {
+      snapshotProjects: async () => [
+        { root: roots.projectRoot, entry },
+        { root: missingRoot, entry: aliasEntry },
+      ],
+      findProjectIdentityClaimants: async () => [
+        projectClaimant(roots.projectRoot, entry, true),
+        projectClaimant(missingRoot, aliasEntry, false),
+      ],
+    });
+
+    let thrown: unknown;
+    try {
+      await planning.open({
+        intent: 'project-read',
+        startPath: roots.projectRoot,
+        selection: { project: 'project-a' },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(PlanningScopeError);
+    const diagnostic = (thrown as PlanningScopeError).diagnostic;
+    const message = (thrown as PlanningScopeError).message;
+    expect(message).toContain(`${roots.projectRoot} (live)`);
+    expect(message).toContain(`${missingRoot} (missing)`);
+    expect(message).toContain('Run `rasen home prune` to preview');
+    expect(message).toContain('then `rasen home prune --apply`');
+    expect(diagnostic.fix).toBe(
+      'Run rasen home prune to preview, then rasen home prune --apply and retry.'
+    );
+  });
+
+  it('refuses a canonical claimant whose live aliases conflict on fixed metadata', async () => {
+    const roots = storeFixture({ marker: false });
+    const fixtureRoot = path.dirname(roots.projectRoot);
+    const aliasRoot = path.join(temporaryRoot(), 'project-a-fixed-metadata-alias');
+    fs.symlinkSync(
+      roots.projectRoot,
+      aliasRoot,
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
+    const directEntry = {
+      projectId: 'project-a',
+      name: 'project-a',
+      mode: 'store' as const,
+      home: 'project-a-home',
+      lastSeen: '2026-08-06T00:00:00.000Z',
+    };
+    const aliasEntry = {
+      ...directEntry,
+      projectId: 'PROJECT-A',
+      name: 'project-a-alias',
+      home: 'other-project-home',
+    };
+    const planning = resolver(roots, () => 'linked-worktree', {
+      snapshotProjects: async () => [
+        { root: roots.projectRoot, entry: directEntry },
+        { root: aliasRoot, entry: aliasEntry },
+      ],
+      findProjectIdentityClaimants: async () => [{
+        root: roots.projectRoot,
+        entry: directEntry,
+        live: true,
+        aliases: [
+          {
+            registryPath: roots.projectRoot,
+            canonicalPath: roots.projectRoot,
+            entry: directEntry,
+            live: true,
+            direct: true,
+          },
+          {
+            registryPath: aliasRoot,
+            canonicalPath: roots.projectRoot,
+            entry: aliasEntry,
+            live: true,
+            direct: false,
+          },
+        ],
+        fixedMetadataConflict: true,
+      }],
+    });
+    const before = snapshotTreeBytes(fixtureRoot);
+
+    await expect(
+      planning.open({
+        intent: 'project-read',
+        startPath: roots.storeRoot,
+        selection: { project: directEntry.projectId },
+      })
+    ).rejects.toMatchObject({
+      diagnostic: {
+        code: 'planning_selection_conflict',
+        target: 'selection.project',
+        fix: expect.stringContaining('projectId or home metadata'),
+      },
+    });
+    expect(snapshotTreeBytes(fixtureRoot)).toEqual(before);
+  });
+
+  it.each([
+    ['normalized id', 'project-a'],
+    ['display name', 'friendly-project'],
+    ['absolute root', 'absolute-root'],
+  ])('rejects registry/config identity drift selected by %s without mutation', async (_kind, rawSelector) => {
+    const roots = storeFixture({ marker: false });
+    const fixtureRoot = path.dirname(roots.projectRoot);
+    const configPath = path.join(roots.projectRoot, 'rasen', 'config.yaml');
+    write(
+      configPath,
+      `schema: spec-driven\nprojectId: drifted-project\nstore:\n  uid: ${STORE_UID}\n  id: team-store\n`
+    );
+    const entry = {
+      projectId: 'PROJECT-A',
+      name: 'friendly-project',
+      mode: 'store' as const,
+      home: 'project-a-home',
+      lastSeen: '2026-08-06T00:00:00.000Z',
+    };
+    const planning = resolver(roots, () => 'linked-worktree', {
+      snapshotProjects: async () => [{ root: roots.projectRoot, entry }],
+      findProjectIdentityClaimants: async () => [
+        projectClaimant(roots.projectRoot, entry, true),
+      ],
+    });
+    const selector = rawSelector === 'absolute-root' ? roots.projectRoot : rawSelector;
+    const before = snapshotTreeBytes(fixtureRoot);
+
+    let thrown: unknown;
+    try {
+      await planning.open({
+        intent: 'project-read',
+        startPath: roots.storeRoot,
+        selection: { project: selector },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(PlanningScopeError);
+    const conflict = thrown as PlanningScopeError;
+    expect(conflict.diagnostic.code).toBe('planning_selection_conflict');
+    expect(conflict.diagnostic.target).toBe(configPath);
+    expect(conflict.message).toContain("registry identity 'PROJECT-A'");
+    expect(conflict.message).toContain("config identity 'drifted-project'");
+    expect(snapshotTreeBytes(fixtureRoot)).toEqual(before);
+  });
+
+  it.each([
+    ['normalized id', 'project-a'],
+    ['display name', 'friendly-project'],
+    ['absolute root', 'absolute-root'],
+  ])('expands a %s selector to conflicting aliases at its canonical root without mutation', async (_kind, rawSelector) => {
+    const roots = storeFixture({ marker: false });
+    const fixtureRoot = path.dirname(roots.projectRoot);
+    const aliasRoot = path.join(temporaryRoot(), 'project-a-alias');
+    fs.symlinkSync(
+      roots.projectRoot,
+      aliasRoot,
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
+    const selectedEntry = {
+      projectId: 'project-a',
+      name: 'friendly-project',
+      mode: 'store' as const,
+      home: 'project-a-home',
+      lastSeen: '2026-08-06T00:00:00.000Z',
+    };
+    const siblingEntry = {
+      ...selectedEntry,
+      projectId: 'other-project',
+      name: 'other-project',
+      home: 'other-project-home',
+    };
+    const planning = resolver(roots, () => 'linked-worktree', {
+      snapshotProjects: async () => [
+        { root: roots.projectRoot, entry: selectedEntry },
+        { root: aliasRoot, entry: siblingEntry },
+      ],
+    });
+    const selector = rawSelector === 'absolute-root' ? roots.projectRoot : rawSelector;
+    const before = snapshotTreeBytes(fixtureRoot);
+
+    let thrown: unknown;
+    try {
+      await planning.open({
+        intent: 'project-read',
+        startPath: roots.storeRoot,
+        selection: { project: selector },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(PlanningScopeError);
+    const conflict = thrown as PlanningScopeError;
+    expect(conflict.diagnostic).toMatchObject({
+      code: 'planning_selection_conflict',
+      target: 'selection.project',
+    });
+    expect(conflict.message).toContain('project-a');
+    expect(conflict.message).toContain('other-project');
+    expect(snapshotTreeBytes(fixtureRoot)).toEqual(before);
+  });
+
+  it('accepts equivalent normalized registry and config identities', async () => {
+    const roots = storeFixture({ marker: false });
+    const configPath = path.join(roots.projectRoot, 'rasen', 'config.yaml');
+    write(
+      configPath,
+      `schema: spec-driven\nprojectId: PROJECT-A\nstore:\n  uid: ${STORE_UID}\n  id: team-store\n`
+    );
+    const entry = {
+      projectId: 'project-a',
+      name: 'friendly-project',
+      mode: 'store' as const,
+      home: 'project-a-home',
+      lastSeen: '2026-08-06T00:00:00.000Z',
+    };
+    const planning = resolver(roots, () => 'linked-worktree', {
+      snapshotProjects: async () => [{ root: roots.projectRoot, entry }],
+      findProjectIdentityClaimants: async () => [
+        projectClaimant(roots.projectRoot, entry, true),
+      ],
+    });
+
+    const scope = await planning.open({
+      intent: 'project-read',
+      startPath: roots.storeRoot,
+      selection: { project: 'friendly-project' },
+    });
+
+    expect(scope.describe().kind).toBe('store-project');
+    expect(scope.describe().ref).toMatchObject({ projectId: 'project-a' });
+  });
+
+  it('unifies a legacy worktree root with its machine-registered main checkout', async () => {
+    const roots = storeFixture();
+    const mainRoot = path.join(path.dirname(roots.projectRoot), 'project-a-main');
+    fs.mkdirSync(mainRoot, { recursive: true });
+    const entry = {
+      projectId: 'project-a',
+      name: 'project-a',
+      mode: 'store' as const,
+      home: 'project-a-home',
+      lastSeen: '2026-08-06T00:00:00.000Z',
+    };
+    const planning = resolver(roots, () => 'linked-worktree', {
+      snapshotProjects: async () => [{ root: mainRoot, entry }],
+      findRegisteredProject: async () => ({ root: mainRoot, entry }),
+    });
+
+    const scope = await planning.open({
+      intent: 'project-read',
+      startPath: roots.projectRoot,
+      selection: { project: 'project-a', targetLine: 'line-0.2' },
+    });
+
+    expect(scope.describe().kind).toBe('store-project');
+    expect(scope.describe().paths['execution-root']).toBe(roots.projectRoot);
+  });
+
+  it('pierces a legacy worktree registry duplicate to its registered main checkout', async () => {
+    const root = temporaryRoot();
+    const mainRoot = path.join(root, 'registry-main');
+    const worktreeRoot = path.join(root, 'registry-linked');
+    const globalDataDir = path.join(root, 'machine-home');
+    fs.mkdirSync(mainRoot, { recursive: true });
+    const gitEnv = { ...process.env, ...isolatedGitEnv(root) };
+    execFileSync('git', ['init'], {
+      cwd: mainRoot,
+      env: gitEnv,
+      stdio: 'ignore',
+    });
+    write(path.join(mainRoot, 'README.md'), 'main\n');
+    execFileSync('git', ['add', 'README.md'], {
+      cwd: mainRoot,
+      env: gitEnv,
+      stdio: 'ignore',
+    });
+    execFileSync('git', ['commit', '-m', 'initial'], {
+      cwd: mainRoot,
+      env: gitEnv,
+      stdio: 'ignore',
+    });
+    execFileSync('git', ['worktree', 'add', worktreeRoot], {
+      cwd: mainRoot,
+      env: gitEnv,
+      stdio: 'ignore',
+    });
+
+    const main = await registerProject(
+      {
+        projectRoot: mainRoot,
+        projectId: STORE_UID,
+        mode: 'in-repo',
+      },
+      { globalDataDir }
+    );
+    const canonicalWorktree = fs.realpathSync.native(worktreeRoot);
+    await updateProjectRegistryState(
+      current => ({
+        version: 1,
+        projects: {
+          ...(current?.projects ?? {}),
+          [canonicalWorktree]: {
+            ...main.entry,
+            name: 'registry-linked',
+          },
+        },
+      }),
+      { globalDataDir }
+    );
+
+    const found =
+      await productionStorePlanningDependencies.findRegisteredProject(
+        worktreeRoot,
+        globalDataDir
+      );
+
+    expect(found?.root).toBe(main.canonicalPath);
+    expect(found?.entry.projectId).toBe(main.entry.projectId);
   });
 
   it('rejects conflicts instead of letting explicit evidence rewrite a marker', async () => {

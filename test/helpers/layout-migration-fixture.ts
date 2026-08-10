@@ -140,14 +140,14 @@ export async function createLayoutMigrationFixture(
     localPath: storeRoot,
     globalDataDir,
   });
-  execFileSync('git', ['init', '-b', 'main', storeRoot], {
+  execFileSync('git', ['-c', 'core.longpaths=true', 'init', '-b', 'main', storeRoot], {
     env: { ...process.env, ...gitEnv },
     windowsHide: true,
     stdio: 'pipe',
   });
 
   const git = (...args: string[]): string =>
-    execFileSync('git', ['-C', storeRoot, ...args], {
+    execFileSync('git', ['-c', 'core.longpaths=true', '-C', storeRoot, ...args], {
       env: { ...process.env, ...gitEnv },
       windowsHide: true,
       stdio: 'pipe',

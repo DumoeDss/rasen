@@ -38,6 +38,7 @@ import {
   deriveWorktreeInstanceId,
   changeInstanceDigestPrefix,
 } from '../../src/core/store/planning-identity.js';
+import { resolveStorePlanningLayoutV2Path } from '../../src/core/store/planning-layout-v2.js';
 
 const STORE_UID = '6f7d4d70-3d2c-4a37-9f8a-0f4c1b2e3d55';
 const PROJECT = 'app-a';
@@ -172,7 +173,11 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
   beforeEach(async () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), 'rasen-archive-seams-'));
     active = path.join(root, 'rasen', 'changes', CHANGE);
-    archiveParent = path.join(root, 'rasen', 'changes', 'archive');
+    archiveParent = resolveStorePlanningLayoutV2Path(root, {
+      kind: 'archive-line',
+      projectId: PROJECT,
+      targetLineId: LINE,
+    });
     ephemera = path.join(root, '.rasen', 'changes', CHANGE, 'ephemera');
     await fs.mkdir(path.join(active, 'evidence'), { recursive: true });
     await fs.mkdir(ephemera, { recursive: true });
@@ -220,20 +225,51 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
       },
       destination,
       association: { noop: false, planningScopeId: scopeId, changeId: CHANGE },
+      revalidation: {
+        targetLine: {
+          catalogPath: path.join(
+            root,
+            '.rasen-store',
+            'target-lines',
+            `${LINE}.yaml`
+          ),
+          catalogDigest: 'b'.repeat(64),
+          codeRef: null,
+          codeRefOid: null,
+        },
+        archive: {
+          root: archiveParent,
+          archiveDate: DATE,
+          destination,
+        },
+      },
       lockKeys: [],
     };
   }
 
   async function plan(withFinalization: boolean) {
     const sidecar = await resolveArchiveSidecar(active, root, CHANGE);
-    const destination = path.join(
-      archiveParent,
-      `${DATE}-${CHANGE}--${changeInstanceDigestPrefix(INSTANCE)}`
-    );
+    const destination = resolveStorePlanningLayoutV2Path(root, {
+      kind: 'archive-entry',
+      projectId: PROJECT,
+      targetLineId: LINE,
+      changeId: CHANGE,
+      archiveDate: DATE,
+      changeInstanceId: INSTANCE,
+    });
     return createArchivePlan({
       change: CHANGE,
       planningRoot: root,
       executionRoot: root,
+      ...(withFinalization
+        ? {
+            scope: {
+              kind: 'store-project' as const,
+              storeUid: STORE_UID,
+              projectId: PROJECT,
+            },
+          }
+        : {}),
       activePath: active,
       archiveParent,
       ephemeraPath: ephemera,
@@ -261,9 +297,13 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
         calls.push('v1-resolve');
         return defaultArchiveEngineAdapters.resolveArchiveAccounting(input);
       },
-      writeArchiveJson: async (dir, accounting) => {
+      writeArchiveJson: async (dir, accounting, temporaryIdentity) => {
         calls.push('v1-write');
-        return defaultArchiveEngineAdapters.writeArchiveJson(dir, accounting);
+        return defaultArchiveEngineAdapters.writeArchiveJson(
+          dir,
+          accounting,
+          temporaryIdentity
+        );
       },
       verifyArchiveAccounting: async (dir, accounting) => {
         calls.push('v1-verify');
@@ -273,9 +313,13 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
         calls.push('v2-resolve');
         return defaultArchiveEngineAdapters.resolveArchiveV2Accounting(input);
       },
-      writeArchiveV2Json: async (dir, prepared) => {
+      writeArchiveV2Json: async (dir, prepared, temporaryIdentity) => {
         calls.push('v2-write');
-        return defaultArchiveEngineAdapters.writeArchiveV2Json(dir, prepared);
+        return defaultArchiveEngineAdapters.writeArchiveV2Json(
+          dir,
+          prepared,
+          temporaryIdentity
+        );
       },
       verifyArchiveV2Accounting: async (dir, prepared) => {
         calls.push('v2-verify');
@@ -293,7 +337,7 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
     const { adapters, calls } = recordingAdapters();
     const archivePlan = await plan(false);
 
-    expect((await applyArchive(archivePlan, { adapters: adapters })).status).toBe('complete');
+    expect((await applyArchive(archivePlan, { adapters })).status).toBe('complete');
     expect(calls.filter(call => call.startsWith('v2-'))).toEqual([]);
     expect(calls).toContain('v1-write');
     // The association phase is not reached at all for a plan with no block.
@@ -314,7 +358,7 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
     expect(archivePlan.paths.final).toBe(
       path.join(archiveParent, `${DATE}-${CHANGE}--${changeInstanceDigestPrefix(INSTANCE)}`)
     );
-    expect((await applyArchive(archivePlan, { adapters: adapters })).status).toBe('complete');
+    expect((await applyArchive(archivePlan, { adapters })).status).toBe('complete');
     expect(calls.filter(call => call.startsWith('v1-'))).toEqual([]);
     expect(calls).toContain('v2-write');
     expect(calls).toContain('association');
@@ -351,11 +395,16 @@ describe('seams 2 and 3 — accounting dispatch and the association phase', () =
   it('orders the association phase AFTER accounting and BEFORE source removal', async () => {
     const order: string[] = [];
     const { adapters } = recordingAdapters({
-      writeArchiveV2Json: async (dir, prepared) => {
+      writeArchiveV2Json: async (dir, prepared, temporaryIdentity) => {
         order.push('accounting');
-        return defaultArchiveEngineAdapters.writeArchiveV2Json(dir, prepared);
+        return defaultArchiveEngineAdapters.writeArchiveV2Json(
+          dir,
+          prepared,
+          temporaryIdentity
+        );
       },
-      finalizeArchiveAssociation: async () => {
+      finalizeArchiveAssociation: async ({ requireComplete }) => {
+        if (requireComplete === true) return;
         // The active source still exists at this point, which is the whole
         // reason the phase sits inside the transaction rather than after it.
         order.push(`association(sourcePresent=${await exists(active)})`);

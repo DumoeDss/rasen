@@ -36,6 +36,7 @@ import { createAgentCliResolver, createSessionSupervisor, type SessionSupervisor
 import { createChangeSubmitter } from './submit.js';
 import {
   createChangeFinalizer,
+  type ChangeFinalizerOptions,
   type FinalizeChangePathScope,
   type FinalizeChangeRequestBody,
 } from './finalize.js';
@@ -100,6 +101,8 @@ export interface ManagementRouterOptions {
   sessionKillGraceMs?: number;
   /** Test/daemon override for native runtime homes and the Rasen machine-data directory. */
   audit?: AuditManagementOptions;
+  /** Constructor-only Store finalization subprocess seam for bounded tests. */
+  finalizer?: ChangeFinalizerOptions;
 }
 
 export interface ManagementRouterHandle {
@@ -488,7 +491,7 @@ export function createManagementRouter(
   // The Store change-finalization bridge, with its own cap-1 state independent
   // of change submission's. It admits only the `finalize-change` bounded-cli op
   // and mutates exclusively by spawning the CLI.
-  const finalizeChange = createChangeFinalizer(context);
+  const finalizeChange = createChangeFinalizer(context, options.finalizer);
 
   // The Store aggregate family's mutation bridge, with its own cap-1 state. It
   // admits only the three Store-scoped bounded-cli ops and, like every other
@@ -802,6 +805,9 @@ export function createManagementRouter(
               message: result.message,
               ...(result.cliExitCode !== undefined ? { cliExitCode: result.cliExitCode } : {}),
               ...(result.stderr !== undefined ? { stderr: result.stderr } : {}),
+              ...(result.finalization !== undefined
+                ? { finalization: result.finalization }
+                : {}),
             },
           })
         );

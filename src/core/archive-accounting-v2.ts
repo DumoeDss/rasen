@@ -18,15 +18,20 @@
  * longer derives from its planning scope and seed, or whose `workspacePairId`
  * no longer derives from its ordered Change/worktree triple, produces no file.
  */
-import { randomUUID } from 'node:crypto';
+import type { FileHandle } from 'node:fs/promises';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 
 import {
   ArchiveAccountingError,
+  archiveAccountingTemporaryPath,
+  accountingIdentity,
+  archiveAccountingOwnershipError,
+  sameAccountingIdentity,
   hashArchiveEvidence,
   resolveMissingEvidenceNames,
   type EvidenceEntry,
+  type ArchiveAccountingTemporaryIdentity,
 } from './archive-accounting.js';
 import { canonicalJson } from './canonical-json.js';
 import {
@@ -225,25 +230,80 @@ export async function verifyArchiveV2Accounting(
  */
 export async function writeArchiveV2Json(
   archivedDir: string,
-  prepared: PreparedArchiveV2Accounting
+  prepared: PreparedArchiveV2Accounting,
+  expectedTemporaryIdentity?: ArchiveAccountingTemporaryIdentity
 ): Promise<void> {
   const ledgerPath = path.join(archivedDir, ARCHIVE_V2_RECORD_FILENAME);
-  const tempPath = path.join(
+  const tempPath = archiveAccountingTemporaryPath(
     archivedDir,
-    `.archive.json.tmp-${process.pid}-${randomUUID()}`
+    prepared.content
   );
-  let handle: import('node:fs/promises').FileHandle | undefined;
+  let handle: FileHandle | undefined;
   try {
-    handle = await fs.open(tempPath, 'wx', 0o600);
-    await handle.writeFile(prepared.content, 'utf8');
-    await handle.sync();
-    await handle.close();
-    handle = undefined;
-    await fs.rename(tempPath, ledgerPath);
+    let temporary: string | null;
+    try {
+      const stat = await fs.lstat(tempPath);
+      if (!stat.isFile() || stat.isSymbolicLink()) {
+        throw archiveAccountingOwnershipError(
+          'the deterministic accounting intent is not a real file'
+        );
+      }
+      temporary = await fs.readFile(tempPath, 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      temporary = null;
+    }
+    if (
+      temporary !== null &&
+      (expectedTemporaryIdentity === undefined ||
+        !sameAccountingIdentity(
+          accountingIdentity(await fs.lstat(tempPath, { bigint: true })),
+          expectedTemporaryIdentity
+        ))
+    ) {
+      throw archiveAccountingOwnershipError(
+        'the deterministic accounting intent lacks matching journal identity'
+      );
+    }
+    if (temporary !== null && temporary !== prepared.content) {
+      throw archiveAccountingOwnershipError(
+        'the deterministic accounting intent contains disagreeing bytes'
+      );
+    }
+    if (temporary === null) {
+      handle = await fs.open(tempPath, 'wx', 0o600);
+      await handle.writeFile(prepared.content, 'utf8');
+      await handle.sync();
+      await handle.close();
+      handle = undefined;
+    }
+    try {
+      await fs.link(tempPath, ledgerPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      const [ledger, temporaryStat] = await Promise.all([
+        fs.lstat(ledgerPath),
+        fs.lstat(tempPath),
+      ]);
+      if (
+        !ledger.isFile() ||
+        ledger.isSymbolicLink() ||
+        !sameAccountingIdentity(
+          accountingIdentity(ledger),
+          accountingIdentity(temporaryStat)
+        )
+      ) {
+        throw archiveAccountingOwnershipError(
+          'the existing archive ledger is not the journal-owned temporary inode'
+        );
+      }
+    }
+    await verifyArchiveV2Accounting(archivedDir, prepared);
+    await fs.unlink(tempPath).catch(error => {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    });
   } catch (error) {
     await handle?.close().catch(() => undefined);
-    await fs.rm(tempPath, { force: true }).catch(() => undefined);
     throw new ArchiveAccountingError('archive-v2-write', ledgerPath, error);
   }
-  await verifyArchiveV2Accounting(archivedDir, prepared);
 }

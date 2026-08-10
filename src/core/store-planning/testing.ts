@@ -7,6 +7,7 @@ export { StorePlanningResolver as createStorePlanningResolverForTesting } from '
 export type {
   CheckoutRole,
   ProjectRegistrySnapshotEntry,
+  ProjectIdentityClaimantSnapshot,
   StorePlanningDependencies,
   StorePlanningFileSystem,
   StoreRegistrySnapshotEntry,

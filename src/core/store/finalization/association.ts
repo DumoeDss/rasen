@@ -15,12 +15,23 @@
  * until cleanup, which is child 4's plan/apply with its own preconditions.
  */
 import type { ArchivePlan } from '../../archive-engine.js';
+import { deriveWorktreeInstanceId } from '../planning-identity.js';
+import { comparablePath } from '../workspace/identity.js';
 import {
-  readWorkspaceIndexDocument,
-  writeWorkspaceIndexEntry,
+  AtomicWorkspaceWriteConflictError,
+  type AtomicWorkspaceCarrierAuthority,
+} from '../workspace/dependencies.js';
+import {
+  workspaceIndexRelativePath,
   type WorkspaceIndexEntry,
+  type WorkspacePhase,
 } from '../workspace/registry.js';
-import { parseBindingFact, serializeBindingFact } from '../workspace/binding.js';
+import {
+  executionAssociationPath as expectedExecutionAssociationPath,
+  parseBindingFact,
+  serializeBindingFact,
+  type BindingFact,
+} from '../workspace/binding.js';
 import { finalizationRefusal } from './diagnostics.js';
 import type { FinalizationDependencies } from './dependencies.js';
 
@@ -34,7 +45,14 @@ export type AssociationPhaseOutcome = 'applied' | 'no-op';
  */
 export async function completeFinalizationAssociation(
   dependencies: FinalizationDependencies,
-  plan: ArchivePlan
+  plan: ArchivePlan,
+  options: {
+    readonly requireComplete?: boolean;
+    readonly carriers?: readonly AtomicWorkspaceCarrierAuthority[];
+    readonly carrierPrepared?: (
+      authority: AtomicWorkspaceCarrierAuthority
+    ) => Promise<void>;
+  } = {}
 ): Promise<AssociationPhaseOutcome> {
   const finalization = plan.finalization;
   if (finalization === undefined) return 'no-op';
@@ -44,148 +62,448 @@ export async function completeFinalizationAssociation(
   const planningScopeId = association.planningScopeId;
   const changeId = association.changeId;
   const expected = association.expected;
-  if (planningScopeId === undefined || changeId === undefined || expected === undefined) {
+  const associationPath = association.executionAssociationPath;
+  if (
+    planningScopeId === undefined ||
+    changeId === undefined ||
+    expected === undefined ||
+    associationPath === undefined
+  ) {
     throw finalizationRefusal(
       'planning_execution_binding_mismatch',
-      'The association phase was planned as active but carries no binding facts.',
+      'The active association phase carries incomplete frozen binding facts.',
       {
-        expected: 'planning scope, Change alias, and both worktree sides',
+        expected:
+          'planning scope, Change alias, both worktree sides, and execution association path',
         actual: '(incomplete)',
         target: plan.paths.final,
-        fix: 'This is a programming error: a scope with no workspace pair must declare the phase a no-op in advance.',
+        fix: 'A scope without a workspace pair must declare this phase a no-op.',
       }
     );
   }
-
-  const coordination = dependencies.coordination(association.globalDataDir);
-  const document = await readWorkspaceIndexDocument(coordination, planningScopeId);
-  const existing = document.entries.find(entry => entry.changeId === changeId);
-
-  if (existing !== undefined) {
-    assertIndexEntryAgrees(existing, association, plan.paths.final);
+  const associationPathFlavor =
+    /^[A-Za-z]:[\\/]/u.test(expected.execution.root) ||
+    expected.execution.root.startsWith('\\\\')
+      ? 'win32'
+      : 'native';
+  const expectedAssociationPath = expectedExecutionAssociationPath(
+    expected.execution.root,
+    associationPathFlavor
+  );
+  if (
+    comparablePath(associationPath, associationPathFlavor) !==
+    comparablePath(expectedAssociationPath, associationPathFlavor)
+  ) {
+    throw bindingMismatch(
+      associationPath,
+      'executionAssociationPath',
+      expectedAssociationPath,
+      associationPath,
+      plan.paths.final
+    );
+  }
+  if (
+    typeof expected.indexPlanId !== 'string' ||
+    !WORKSPACE_PHASES.has(expected.indexPhase as WorkspacePhase)
+  ) {
+    throw bindingMismatch(
+      plan.paths.final,
+      'workspaceIndexFacts',
+      'a frozen plan id and valid workspace phase',
+      `${String(expected.indexPlanId)} / ${String(expected.indexPhase)}`,
+      plan.paths.final
+    );
+  }
+  if (
+    dependencies.fs.writeTextAtomic === undefined ||
+    dependencies.fs.readAtomicSnapshot === undefined
+  ) {
+    throw bindingMismatch(
+      associationPath,
+      'atomicPersistence',
+      'snapshot-bound crash-safe association persistence',
+      '(unavailable)',
+      plan.paths.final
+    );
   }
 
-  const at = plan.createdAt;
-  const entry: WorkspaceIndexEntry = {
-    version: 1,
-    planningScopeId,
-    storeUid: expected.storeUid,
-    storeId: expected.storeId,
-    projectId: expected.projectId,
-    targetLineId: expected.targetLineId,
-    changeId,
-    ...(association.changeInstanceId === undefined
-      ? {}
-      : { changeInstanceId: association.changeInstanceId }),
-    ...(association.workspacePairId === undefined
-      ? {}
-      : { workspacePairId: association.workspacePairId }),
-    planning: expected.planning,
-    execution: expected.execution,
-    // `planId` names the WORKSPACE plan that created the pair, not this
-    // archive transaction. Repairing an entry writes what child 4's own repair
-    // writes for an unknown plan rather than substituting a value from a
-    // different id space.
-    planId: existing?.planId ?? '',
-    // `phase` is the WORKTREE lifecycle, and its only reader in the repository
-    // is `phaseReached` in child 4's `workspace/cleanup.ts`, which reads it as
-    // a `CleanupPhase` ordinal. The terminal 'complete' there means "every side
-    // has already been removed", so writing it here would make a later
-    // `store workspace cleanup` skip both removal loops AND the reachability
-    // pre-pass, delete the index entry that named the worktrees, and report
-    // success while both worktrees survive on disk and in Git — permanently
-    // un-cleanable, because the second attempt no longer finds a pair.
-    //
-    // A finalization removes no worktree: the pair stays bound and stays
-    // cleanable. So this phase never ADVANCES the lifecycle. It preserves what
-    // is recorded, and derives a value only when repairing a missing entry —
-    // by the same rule child 4's bind path uses, since the facts this repair
-    // writes are exactly the ones that were already true on disk at plan time.
-    // Finalization's durable carriers are the execution-side `finalizedChange`
-    // block and the Archive v2 record, neither of which is this field.
-    phase:
-      existing?.phase ?? (association.workspacePairId === undefined ? 'prepared' : 'bound'),
-    recordedAt: existing?.recordedAt ?? at,
-    updatedAt: at,
-  };
-  await writeWorkspaceIndexEntry(coordination, entry);
-
-  const associationPath = association.executionAssociationPath;
-  if (associationPath !== undefined) {
-    const text = await dependencies.fs.readText(associationPath);
-    if (text !== null) {
-      const fact = parseBindingFact(text, associationPath);
-      // Only the finalized-Change fact is added. Every scope field the
-      // association already declares is preserved byte-for-byte, so this write
-      // introduces no fact that was not already true.
-      const next = serializeFinalizedAssociation(text, fact, {
-        changeId,
-        outcome: finalization.outcome,
-        publishedEntry: plan.paths.final,
-        finalizedAt: at,
-      });
-      if (next !== text) {
-        await dependencies.fs.writeText(associationPath, next);
+  const associationSnapshot =
+    await dependencies.fs.readAtomicSnapshot(associationPath);
+  const associationText = associationSnapshot.content;
+  if (associationText === null) {
+    throw bindingMismatch(
+      associationPath,
+      'execution association document',
+      associationPath,
+      '(missing)',
+      plan.paths.final
+    );
+  }
+  let associationFact: BindingFact;
+  try {
+    associationFact = parseBindingFact(associationText, associationPath);
+  } catch (error) {
+    throw finalizationRefusal(
+      'planning_execution_binding_mismatch',
+      'The execution association document is not a coherent binding.',
+      {
+        expected: 'the frozen Store/worktree binding',
+        actual: error instanceof Error ? error.message : String(error),
+        target: associationPath,
+        fix: `Repair ${associationPath}, then re-apply the SAME plan token. The disagreeing document is never overwritten.`,
+        cause: error,
       }
+    );
+  }
+  assertExecutionAssociationAgrees(
+    associationText,
+    associationFact,
+    association,
+    plan,
+    options.requireComplete === true
+  );
+
+  const coordination = dependencies.coordination(association.globalDataDir);
+  const indexPath = coordination.resolve(
+    workspaceIndexRelativePath(planningScopeId)
+  );
+  if (
+    options.carriers?.some(
+      carrier =>
+        carrier.target !== associationPath && carrier.target !== indexPath
+    )
+  ) {
+    throw bindingMismatch(
+      indexPath,
+      'associationCarrier.target',
+      `${associationPath} or ${indexPath}`,
+      options.carriers
+        .map(carrier => carrier.target)
+        .filter(target => target !== associationPath && target !== indexPath)
+        .join(', '),
+      plan.paths.final
+    );
+  }
+  const indexSnapshot = await dependencies.fs.readAtomicSnapshot(indexPath);
+  let parsedEntries: WorkspaceIndexEntry[] = [];
+  if (indexSnapshot.content !== null) {
+    let rawDocument: unknown;
+    try {
+      rawDocument = JSON.parse(indexSnapshot.content) as unknown;
+    } catch {
+      throw bindingMismatch(
+        indexPath,
+        'workspaceIndexDocument',
+        'valid JSON',
+        '(corrupt)',
+        plan.paths.final
+      );
+    }
+    if (
+      !isAssociationRecord(rawDocument) ||
+      Object.keys(rawDocument).some(
+        key => !['version', 'planningScopeId', 'entries'].includes(key)
+      ) ||
+      rawDocument.version !== 1 ||
+      rawDocument.planningScopeId !== planningScopeId ||
+      !Array.isArray(rawDocument.entries)
+    ) {
+      throw bindingMismatch(
+        indexPath,
+        'workspaceIndexDocument',
+        `version 1 scope ${planningScopeId}`,
+        '(malformed or disagreeing)',
+        plan.paths.final
+      );
+    }
+    parsedEntries = rawDocument.entries.filter(isStrictWorkspaceIndexEntry);
+    if (
+      parsedEntries.length !== rawDocument.entries.length ||
+      parsedEntries.some(entry => entry.planningScopeId !== planningScopeId)
+    ) {
+      throw bindingMismatch(
+        indexPath,
+        'workspaceIndexEntry',
+        `complete entries belonging to scope ${planningScopeId}`,
+        '(malformed or cross-scope entry)',
+        plan.paths.final
+      );
+    }
+    const seenChangeIds = new Set<string>();
+    for (const candidate of parsedEntries) {
+      if (seenChangeIds.has(candidate.changeId)) {
+        throw bindingMismatch(
+          indexPath,
+          'workspaceIndexEntry.changeId',
+          'unique Change aliases',
+          `duplicate ${candidate.changeId}`,
+          plan.paths.final
+        );
+      }
+      seenChangeIds.add(candidate.changeId);
     }
   }
 
+  const existing = parsedEntries.find(entry => entry.changeId === changeId);
+  if (existing !== undefined) {
+    assertIndexEntryAgrees(existing, association, plan.paths.final, indexPath);
+  }
+  if (options.requireComplete === true && existing === undefined) {
+    throw bindingMismatch(
+      indexPath,
+      'workspaceIndexEntry',
+      `the exact frozen entry for ${changeId}`,
+      '(missing)',
+      plan.paths.final
+    );
+  }
+  if (options.requireComplete === true) return 'applied';
+  await assertLiveWorktreePairAgrees(
+    dependencies,
+    association,
+    plan.paths.final
+  );
+  const at = plan.createdAt;
+  if (existing === undefined) {
+    const entry: WorkspaceIndexEntry = {
+      version: 1,
+      planningScopeId,
+      storeUid: expected.storeUid,
+      storeId: expected.storeId,
+      projectId: expected.projectId,
+      targetLineId: expected.targetLineId,
+      changeId,
+      ...(association.changeInstanceId === undefined
+        ? {}
+        : { changeInstanceId: association.changeInstanceId }),
+      ...(association.workspacePairId === undefined
+        ? {}
+        : { workspacePairId: association.workspacePairId }),
+      planning: expected.planning,
+      execution: expected.execution,
+      planId: expected.indexPlanId,
+      phase: expected.indexPhase as WorkspacePhase,
+      recordedAt: at,
+      updatedAt: at,
+    };
+    const nextIndexDocument = {
+      version: 1 as const,
+      planningScopeId,
+      entries: [...parsedEntries, entry].sort((left, right) =>
+        left.changeId.localeCompare(right.changeId)
+      ),
+    };
+    try {
+      await dependencies.fs.writeTextAtomic(
+        indexPath,
+        `${JSON.stringify(nextIndexDocument, null, 2)}\n`,
+        {
+          ...indexSnapshot,
+          authority: options.carriers?.find(
+            carrier => carrier.target === indexPath
+          ),
+          onPrepared: options.carrierPrepared,
+        }
+      );
+    } catch (error) {
+      if (error instanceof AtomicWorkspaceWriteConflictError) {
+        throw bindingMismatch(
+          error.target,
+          'workspaceIndexPersistence',
+          'the exact validated index snapshot',
+          error.message,
+          plan.paths.final
+        );
+      }
+      throw error;
+    }
+  }
+
+  const next = serializeFinalizedAssociation(
+    associationText,
+    associationFact,
+    {
+      changeId,
+      outcome: finalization.outcome,
+      publishedEntry: plan.paths.final,
+      finalizedAt: at,
+    }
+  );
+  if (next !== associationText) {
+    try {
+      await dependencies.fs.writeTextAtomic(associationPath, next, {
+        ...associationSnapshot,
+        authority: options.carriers?.find(
+          carrier => carrier.target === associationPath
+        ),
+        onPrepared: options.carrierPrepared,
+      });
+    } catch (error) {
+      if (error instanceof AtomicWorkspaceWriteConflictError) {
+        throw bindingMismatch(
+          error.target,
+          'executionAssociationPersistence',
+          'the exact validated execution association snapshot',
+          error.message,
+          plan.paths.final
+        );
+      }
+      throw error;
+    }
+  }
   return 'applied';
+}
+function isAssociationRecord(
+  value: unknown
+): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+
+const WORKSPACE_PHASES: ReadonlySet<WorkspacePhase> = new Set([
+  'planned',
+  'planning-worktree-created',
+  'execution-worktree-created',
+  'markers-written',
+  'prepared',
+  'bound',
+  'removing-execution',
+  'removed-execution',
+  'removing-planning',
+  'removed-planning',
+  'pruned',
+  'complete',
+]);
+
+function isCanonicalTimestamp(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
+}
+
+function isStrictWorkspaceIndexEntry(
+  value: unknown
+): value is WorkspaceIndexEntry {
+  if (!isAssociationRecord(value)) return false;
+  const allowed = [
+    'version',
+    'planningScopeId',
+    'storeUid',
+    'storeId',
+    'projectId',
+    'targetLineId',
+    'changeId',
+    'changeInstanceId',
+    'workspacePairId',
+    'planning',
+    'execution',
+    'planId',
+    'phase',
+    'recordedAt',
+    'updatedAt',
+  ];
+  if (Object.keys(value).some(key => !allowed.includes(key))) return false;
+  const sideAgrees = (side: unknown) =>
+    isAssociationRecord(side) &&
+    Object.keys(side).every(key =>
+      ['root', 'repositoryIdentity', 'worktreeInstanceId', 'ref', 'headOid'].includes(
+        key
+      )
+    ) &&
+    typeof side.root === 'string' &&
+    typeof side.repositoryIdentity === 'string' &&
+    typeof side.worktreeInstanceId === 'string' &&
+    typeof side.ref === 'string' &&
+    typeof side.headOid === 'string';
+  return (
+    value.version === 1 &&
+    typeof value.planningScopeId === 'string' &&
+    typeof value.storeUid === 'string' &&
+    typeof value.storeId === 'string' &&
+    typeof value.projectId === 'string' &&
+    typeof value.targetLineId === 'string' &&
+    typeof value.changeId === 'string' &&
+    (value.changeInstanceId === undefined ||
+      typeof value.changeInstanceId === 'string') &&
+    (value.workspacePairId === undefined ||
+      typeof value.workspacePairId === 'string') &&
+    sideAgrees(value.planning) &&
+    sideAgrees(value.execution) &&
+    typeof value.planId === 'string' &&
+    typeof value.phase === 'string' &&
+    WORKSPACE_PHASES.has(value.phase as WorkspacePhase) &&
+    isCanonicalTimestamp(value.recordedAt) &&
+    isCanonicalTimestamp(value.updatedAt)
+  );
 }
 
 function assertIndexEntryAgrees(
   entry: WorkspaceIndexEntry,
   association: NonNullable<ArchivePlan['finalization']>['association'],
-  publishedEntry: string
+  publishedEntry: string,
+  indexPath: string
 ): void {
-  const disagreements: Array<[string, string, string]> = [];
-  if (
-    association.changeInstanceId !== undefined &&
-    entry.changeInstanceId !== undefined &&
-    entry.changeInstanceId !== association.changeInstanceId
-  ) {
-    disagreements.push([
-      'changeInstanceId',
-      association.changeInstanceId,
-      entry.changeInstanceId,
-    ]);
-  }
-  if (
-    association.workspacePairId !== undefined &&
-    entry.workspacePairId !== undefined &&
-    entry.workspacePairId !== association.workspacePairId
-  ) {
-    disagreements.push([
-      'workspacePairId',
-      association.workspacePairId,
-      entry.workspacePairId,
-    ]);
-  }
   const expected = association.expected;
-  if (expected !== undefined) {
-    if (
-      entry.planning.worktreeInstanceId.length > 0 &&
-      entry.planning.worktreeInstanceId !== expected.planning.worktreeInstanceId
-    ) {
-      disagreements.push([
-        'planning worktree',
-        expected.planning.worktreeInstanceId,
-        entry.planning.worktreeInstanceId,
-      ]);
-    }
-    if (
-      entry.execution.worktreeInstanceId.length > 0 &&
-      entry.execution.worktreeInstanceId !== expected.execution.worktreeInstanceId
-    ) {
-      disagreements.push([
-        'execution worktree',
-        expected.execution.worktreeInstanceId,
-        entry.execution.worktreeInstanceId,
-      ]);
-    }
+  if (expected === undefined) {
+    throw bindingMismatch(
+      indexPath,
+      'expected binding',
+      'complete frozen binding facts',
+      '(missing)',
+      publishedEntry
+    );
   }
+  const disagreements: Array<[string, string, string]> = [];
+  compareRequired(disagreements, 'version', '1', String(entry.version));
+  compareRequired(
+    disagreements,
+    'planningScopeId',
+    association.planningScopeId ?? '(missing)',
+    entry.planningScopeId
+  );
+  compareRequired(disagreements, 'storeUid', expected.storeUid, entry.storeUid);
+  compareRequired(disagreements, 'storeId', expected.storeId, entry.storeId);
+  compareRequired(disagreements, 'projectId', expected.projectId, entry.projectId);
+  compareRequired(
+    disagreements,
+    'targetLineId',
+    expected.targetLineId,
+    entry.targetLineId
+  );
+  compareRequired(
+    disagreements,
+    'changeId',
+    association.changeId ?? '(missing)',
+    entry.changeId
+  );
+  compareRequired(
+    disagreements,
+    'planId',
+    expected.indexPlanId,
+    entry.planId
+  );
+  compareOptional(
+    disagreements,
+    'changeInstanceId',
+    association.changeInstanceId,
+    entry.changeInstanceId
+  );
+  compareOptional(
+    disagreements,
+    'workspacePairId',
+    association.workspacePairId,
+    entry.workspacePairId
+  );
+  compareRequired(
+    disagreements,
+    'phase',
+    expected.indexPhase,
+    entry.phase
+  );
+  compareSide(disagreements, 'planning', expected.planning, entry.planning);
+  compareSide(disagreements, 'execution', expected.execution, entry.execution);
   if (disagreements.length === 0) return;
-  throw finalizationRefusal(
+  const error = finalizationRefusal(
     'planning_execution_binding_mismatch',
     `The recorded binding disagrees with the finalized pair: ${disagreements
       .map(([field, want, got]) => `${field} expected ${want}, recorded ${got}`)
@@ -193,10 +511,258 @@ function assertIndexEntryAgrees(
     {
       expected: disagreements.map(([, want]) => want).join(', '),
       actual: disagreements.map(([, , got]) => got).join(', '),
-      target: publishedEntry,
+      target: indexPath,
       fix: `Repair the binding, then re-apply the SAME plan token. The Archive entry at ${publishedEntry} is published and stays published; the journal names the unfinished phase.`,
     }
   );
+  Object.assign(error, {
+    retainedPaths: [indexPath, publishedEntry],
+  });
+  throw error;
+}
+
+function compareRequired(
+  disagreements: Array<[string, string, string]>,
+  field: string,
+  expected: string,
+  actual: string
+): void {
+  if (actual !== expected) disagreements.push([field, expected, actual]);
+}
+
+function compareOptional(
+  disagreements: Array<[string, string, string]>,
+  field: string,
+  expected: string | undefined,
+  actual: string | undefined
+): void {
+  // An absent optional projection field may be derived. A recorded value may
+  // never be erased or replaced merely because the frozen plan omitted it.
+  if (actual === undefined && expected !== undefined) return;
+  if (actual !== expected) {
+    disagreements.push([field, expected ?? '(absent)', actual ?? '(absent)']);
+  }
+}
+
+function compareSide(
+  disagreements: Array<[string, string, string]>,
+  label: 'planning' | 'execution',
+  expected: NonNullable<
+    NonNullable<ArchivePlan['finalization']>['association']['expected']
+  >['planning'],
+  actual: WorkspaceIndexEntry['planning']
+): void {
+  compareRequired(disagreements, `${label}.root`, expected.root, actual.root);
+  compareRequired(
+    disagreements,
+    `${label}.repositoryIdentity`,
+    expected.repositoryIdentity,
+    actual.repositoryIdentity
+  );
+  compareRequired(
+    disagreements,
+    `${label}.worktreeInstanceId`,
+    expected.worktreeInstanceId,
+    actual.worktreeInstanceId
+  );
+  // A binding index records the pair's immutable identity. Branch/ref movement
+  // and later commits are revalidated live against the frozen plan below, but
+  // do not make the already-bound pair a different pair.
+}
+
+function bindingMismatch(
+  target: string,
+  field: string,
+  expected: string,
+  actual: string,
+  publishedEntry: string
+): Error {
+  const error = finalizationRefusal(
+    'planning_execution_binding_mismatch',
+    `The execution binding disagrees with the frozen plan at ${field}.`,
+    {
+      expected,
+      actual,
+      target,
+      fix: `Repair ${target}, then re-apply the SAME plan token. The Archive entry at ${publishedEntry} stays published and the disagreeing binding is never overwritten.`,
+    }
+  );
+  Object.assign(error, {
+    retainedPaths: [target, publishedEntry],
+  });
+  return error;
+}
+
+function assertExecutionAssociationAgrees(
+  originalText: string,
+  fact: BindingFact,
+  association: NonNullable<ArchivePlan['finalization']>['association'],
+  plan: ArchivePlan,
+  requireComplete: boolean
+): void {
+  const expected = association.expected!;
+  const associationPath = association.executionAssociationPath!;
+  const fields: Array<[string, string, string | undefined]> = [
+    ['version', '1', String(fact.version)],
+    ['storeUid', expected.storeUid, fact.storeUid],
+    ['storeId', expected.storeId, fact.storeId],
+    ['projectId', expected.projectId, fact.projectId],
+    ['targetLineId', expected.targetLineId, fact.targetLineId],
+    ['planningWorktree', expected.planning.root, fact.planningWorktree],
+    ['executionRoot', expected.execution.root, fact.executionRoot],
+  ];
+  for (const [field, wanted, actual] of fields) {
+    if (actual !== wanted) {
+      throw bindingMismatch(
+        associationPath,
+        field,
+        wanted,
+        actual ?? '(missing)',
+        plan.paths.final
+      );
+    }
+  }
+
+  let existing: Record<string, unknown>;
+  try {
+    existing = JSON.parse(originalText) as Record<string, unknown>;
+  } catch {
+    return;
+  }
+  if (existing.finalizedChange === undefined && !requireComplete) return;
+  if (existing.finalizedChange === undefined) {
+    throw bindingMismatch(
+      associationPath,
+      'finalizedChange',
+      'the exact durable finalized Change fact',
+      '(missing)',
+      plan.paths.final
+    );
+  }
+  const wanted = {
+    changeId: association.changeId,
+    outcome: plan.finalization!.outcome,
+    publishedEntry: plan.paths.final,
+    finalizedAt: plan.createdAt,
+  };
+  if (
+    typeof existing.finalizedChange !== 'object' ||
+    existing.finalizedChange === null ||
+    Array.isArray(existing.finalizedChange) ||
+    JSON.stringify(existing.finalizedChange) !== JSON.stringify(wanted)
+  ) {
+    throw bindingMismatch(
+      associationPath,
+      'finalizedChange',
+      JSON.stringify(wanted),
+      JSON.stringify(existing.finalizedChange),
+      plan.paths.final
+    );
+  }
+}
+
+async function assertLiveWorktreePairAgrees(
+  dependencies: FinalizationDependencies,
+  association: NonNullable<ArchivePlan['finalization']>['association'],
+  publishedEntry: string
+): Promise<void> {
+  const expected = association.expected!;
+  for (const [label, side] of [
+    ['planning', expected.planning],
+    ['execution', expected.execution],
+  ] as const) {
+    const [paths, ref, headOid] = await Promise.all([
+      dependencies.git.repositoryPaths(side.root),
+      dependencies.git.checkedOutRef(side.root),
+      dependencies.git.headOid(side.root),
+    ]);
+    if (paths === null) {
+      throw bindingMismatch(
+        side.root,
+        `${label}.worktreeMembership`,
+        side.worktreeInstanceId,
+        '(unobservable)',
+        publishedEntry
+      );
+    }
+    let repositoryIdentity: string;
+    let worktreeIdentity: string;
+    try {
+      repositoryIdentity = comparablePath(
+        dependencies.fs.canonicalizeExisting(paths.commonDir),
+        'native'
+      );
+      worktreeIdentity = comparablePath(
+        dependencies.fs.canonicalizeExisting(paths.toplevel),
+        'native'
+      );
+    } catch {
+      throw bindingMismatch(
+        side.root,
+        `${label}.worktreeMembership`,
+        side.worktreeInstanceId,
+        '(uncanonicalizable)',
+        publishedEntry
+      );
+    }
+    const worktreeInstanceId = deriveWorktreeInstanceId({
+      repositoryIdentity,
+      worktreeIdentity,
+    });
+    for (const [field, wanted, actual] of [
+      ['root', comparablePath(side.root, 'native'), worktreeIdentity],
+      ['repositoryIdentity', side.repositoryIdentity, repositoryIdentity],
+      ['worktreeInstanceId', side.worktreeInstanceId, worktreeInstanceId],
+      ['ref', side.ref, ref ?? '(unobservable)'],
+      ['headOid', side.headOid, headOid ?? '(unobservable)'],
+    ] as const) {
+      if (actual !== wanted) {
+        throw bindingMismatch(
+          side.root,
+          `${label}.${field}`,
+          wanted,
+          actual,
+          publishedEntry
+        );
+      }
+    }
+  }
+
+  const registered = (await dependencies.snapshotProjects(
+    association.globalDataDir
+  )).filter(project => project.entry.projectId === expected.projectId);
+  if (registered.length !== 1) {
+    throw bindingMismatch(
+      expected.execution.root,
+      'project.registryMembership',
+      `one registered checkout for ${expected.projectId}`,
+      `${registered.length} registered checkouts`,
+      publishedEntry
+    );
+  }
+  const registeredPaths = await dependencies.git.repositoryPaths(
+    registered[0]!.root
+  );
+  let registeredRepositoryIdentity: string | null = null;
+  if (registeredPaths !== null) {
+    try {
+      registeredRepositoryIdentity = comparablePath(
+        dependencies.fs.canonicalizeExisting(registeredPaths.commonDir),
+        'native'
+      );
+    } catch {
+      registeredRepositoryIdentity = null;
+    }
+  }
+  if (registeredRepositoryIdentity !== expected.execution.repositoryIdentity) {
+    throw bindingMismatch(
+      registered[0]!.root,
+      'project.repositoryIdentity',
+      expected.execution.repositoryIdentity,
+      registeredRepositoryIdentity ?? '(unobservable)',
+      publishedEntry
+    );
+  }
 }
 
 interface FinalizedAssociationFacts {
@@ -214,7 +780,7 @@ interface FinalizedAssociationFacts {
  */
 export function serializeFinalizedAssociation(
   originalText: string,
-  fact: ReturnType<typeof parseBindingFact>,
+  fact: BindingFact,
   finalized: FinalizedAssociationFacts
 ): string {
   let existing: Record<string, unknown> = {};

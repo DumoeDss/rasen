@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -11,6 +11,7 @@ import {
   deriveHomeBaseName,
   deriveProjectDisplayName,
   findDanglingProjectEntries,
+  findProjectIdentityClaimants,
   findProjectRegistryEntry,
   findWorktreeDuplicateEntries,
   gcProjectRegistry,
@@ -19,6 +20,7 @@ import {
   getProjectsDir,
   parseProjectRegistryState,
   readProjectRegistryState,
+  refreshRegisteredProject,
   registerProject,
   resolveRegistrationRoot,
   serializeProjectRegistryState,
@@ -39,6 +41,7 @@ describe('project-registry', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     fs.rmSync(globalDataDir, { recursive: true, force: true });
     fs.rmSync(fixturesRoot, { recursive: true, force: true });
   });
@@ -574,6 +577,11 @@ describe('project-registry', () => {
       expect(result.canonicalPath).toBe(FileSystemUtils.canonicalizeExistingPath(worktreePath));
       const state = await readProjectRegistryState({ globalDataDir });
       expect(state?.projects[result.canonicalPath]).toBeDefined();
+      const found = await findProjectRegistryEntry(worktreePath, {
+        globalDataDir,
+      });
+      expect(found?.canonicalPath).toBe(result.canonicalPath);
+      expect(found?.entry.projectId).toBe(projectId);
 
       fs.rmSync(worktreePath, { recursive: true, force: true });
     });
@@ -621,13 +629,305 @@ describe('project-registry', () => {
 
       const projectId = randomUUID();
       const main = await registerProject({ projectRoot: repoRoot, projectId, mode: 'in-repo' }, { globalDataDir });
+      const canonicalWorktree = FileSystemUtils.canonicalizeExistingPath(worktreePath);
+      await updateProjectRegistryState(
+        current => ({
+          version: 1,
+          projects: {
+            ...(current?.projects ?? {}),
+            [canonicalWorktree]: {
+              ...main.entry,
+              name: 'legacy-worktree-copy',
+              home: 'legacy-worktree-home',
+            },
+          },
+        }),
+        { globalDataDir }
+      );
 
       const found = await findProjectRegistryEntry(worktreePath, { globalDataDir });
       expect(found?.canonicalPath).toBe(main.canonicalPath);
       expect(found?.entry.home).toBe(main.entry.home);
+      expect(found?.entry.name).toBe(main.entry.name);
 
       execFileSync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
       fs.rmSync(repoRoot, { recursive: true, force: true });
+    });
+
+    it('collapses canonical aliases by direct then unique-live authority regardless of insertion order', async () => {
+      const projectRoot = makeProjectDir('alias-authority');
+      const canonicalRoot = FileSystemUtils.canonicalizeExistingPath(projectRoot);
+      const liveAlias = path.join(
+        path.dirname(projectRoot),
+        `alias-authority-live-${randomUUID().slice(0, 8)}`
+      );
+      fs.symlinkSync(projectRoot, liveAlias, process.platform === 'win32' ? 'junction' : 'dir');
+      const aliasBlocker = path.join(projectRoot, 'registry-alias-blocker');
+      fs.writeFileSync(aliasBlocker, 'not a directory\n');
+      const missingAlias = [projectRoot, path.basename(aliasBlocker), '..'].join(path.sep);
+      const stat = fs.promises.stat.bind(fs.promises);
+      vi.spyOn(fs.promises, 'stat').mockImplementation(async (target, options) => {
+        if (String(target) === missingAlias) {
+          throw Object.assign(new Error('simulated missing registry alias'), { code: 'ENOENT' });
+        }
+        return options === undefined ? stat(target) : stat(target, options);
+      });
+      const projectId = 'AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA';
+      const directEntry = {
+        projectId,
+        name: 'direct-authority',
+        mode: 'in-repo' as const,
+        home: 'direct-authority-home',
+        lastSeen: '2026-08-01T00:00:00.000Z',
+      };
+      const liveEntry = {
+        ...directEntry,
+        projectId: projectId.toLowerCase(),
+        name: 'live-alias-cache',
+      };
+      const missingEntry = {
+        ...liveEntry,
+        name: 'missing-alias-cache',
+        home: 'missing-alias-home',
+      };
+      const permutations = [
+        [[canonicalRoot, directEntry], [liveAlias, liveEntry], [missingAlias, missingEntry]],
+        [[missingAlias, missingEntry], [canonicalRoot, directEntry], [liveAlias, liveEntry]],
+        [[liveAlias, liveEntry], [missingAlias, missingEntry], [canonicalRoot, directEntry]],
+      ] as const;
+
+      for (const entries of permutations) {
+        await writeProjectRegistryState(
+          { version: 1, projects: Object.fromEntries(entries) },
+          { globalDataDir }
+        );
+
+        const claimants = await findProjectIdentityClaimants(projectId, { globalDataDir });
+        expect(claimants).toHaveLength(1);
+        expect(claimants[0]).toMatchObject({
+          path: canonicalRoot,
+          entry: directEntry,
+          live: true,
+        });
+
+        const collapsed = await registerProject(
+          { projectRoot, projectId: projectId.toLowerCase(), mode: 'in-repo' },
+          { globalDataDir }
+        );
+        expect(collapsed.entry.home).toBe(directEntry.home);
+        expect(collapsed.entry.projectId).toBe(directEntry.projectId);
+        const state = await readProjectRegistryState({ globalDataDir });
+        expect(Object.keys(state!.projects)).toEqual([canonicalRoot]);
+      }
+
+      const uniqueLivePermutations = [
+        [[liveAlias, liveEntry], [missingAlias, missingEntry]],
+        [[missingAlias, missingEntry], [liveAlias, liveEntry]],
+      ] as const;
+      for (const entries of uniqueLivePermutations) {
+        await writeProjectRegistryState(
+          { version: 1, projects: Object.fromEntries(entries) },
+          { globalDataDir }
+        );
+        const claimants = await findProjectIdentityClaimants(projectId, { globalDataDir });
+        expect(claimants).toHaveLength(1);
+        expect(claimants[0]!.entry.home).toBe(liveEntry.home);
+
+        const collapsed = await registerProject(
+          { projectRoot, projectId: projectId.toLowerCase(), mode: 'in-repo' },
+          { globalDataDir }
+        );
+        expect(collapsed.entry.home).toBe(liveEntry.home);
+        expect(Object.keys((await readProjectRegistryState({ globalDataDir }))!.projects)).toEqual([
+          canonicalRoot,
+        ]);
+      }
+
+      fs.rmSync(liveAlias, { recursive: true, force: true });
+    });
+
+    it('refuses conflicting live aliases before explicit or refresh mutation', async () => {
+      const projectRoot = makeProjectDir('alias-conflict');
+      const aliasA = path.join(
+        path.dirname(projectRoot),
+        `alias-conflict-a-${randomUUID().slice(0, 8)}`
+      );
+      const aliasB = path.join(
+        path.dirname(projectRoot),
+        `alias-conflict-b-${randomUUID().slice(0, 8)}`
+      );
+      fs.symlinkSync(projectRoot, aliasA, process.platform === 'win32' ? 'junction' : 'dir');
+      fs.symlinkSync(projectRoot, aliasB, process.platform === 'win32' ? 'junction' : 'dir');
+      const entryA = {
+        projectId: 'alias-owner-a',
+        name: 'alias-conflict-a',
+        mode: 'in-repo' as const,
+        home: 'alias-conflict-home-a',
+        lastSeen: '2026-08-01T00:00:00.000Z',
+      };
+      const entryB = {
+        ...entryA,
+        projectId: 'alias-owner-b',
+        name: 'alias-conflict-b',
+        home: 'alias-conflict-home-b',
+      };
+      await writeProjectRegistryState(
+        { version: 1, projects: { [aliasA]: entryA, [aliasB]: entryB } },
+        { globalDataDir }
+      );
+      for (const entry of [entryA, entryB]) {
+        const homeDir = getProjectHomeDir(entry.home, { globalDataDir });
+        fs.mkdirSync(homeDir, { recursive: true });
+        fs.writeFileSync(path.join(homeDir, 'owner.txt'), `${entry.projectId}\n`);
+      }
+      const registryPath = getProjectRegistryPath({ globalDataDir });
+      const beforeRegistry = fs.readFileSync(registryPath);
+      const beforeHomes = [entryA, entryB].map(entry =>
+        fs.readFileSync(path.join(getProjectHomeDir(entry.home, { globalDataDir }), 'owner.txt'))
+      );
+
+      await expect(
+        registerProject(
+          { projectRoot, projectId: entryA.projectId, mode: 'in-repo' },
+          { globalDataDir }
+        )
+      ).rejects.toMatchObject({
+        diagnostic: expect.objectContaining({ code: 'project_registry_alias_conflict' }),
+      });
+      await expect(
+        refreshRegisteredProject(
+          { projectRoot, projectId: entryA.projectId, mode: 'in-repo' },
+          { globalDataDir }
+        )
+      ).resolves.toBeNull();
+      await expect(gcProjectRegistry({ globalDataDir })).resolves.toEqual({
+        removedEntries: [],
+        removedHomes: [],
+      });
+
+      expect(fs.readFileSync(registryPath)).toEqual(beforeRegistry);
+      for (const [index, entry] of [entryA, entryB].entries()) {
+        expect(
+          fs.readFileSync(path.join(getProjectHomeDir(entry.home, { globalDataDir }), 'owner.txt'))
+        ).toEqual(beforeHomes[index]);
+      }
+      expect(fs.existsSync(getProjectHomeDir('alias-conflict-home-a-2', { globalDataDir }))).toBe(false);
+
+      fs.rmSync(aliasA, { recursive: true, force: true });
+      fs.rmSync(aliasB, { recursive: true, force: true });
+    });
+
+    it('refuses a third identity before mutating an alias-only live conflict', async () => {
+      const projectRoot = makeProjectDir('alias-third-identity-conflict');
+      const canonicalRoot = FileSystemUtils.canonicalizeExistingPath(projectRoot);
+      const aliasA = path.join(
+        path.dirname(projectRoot),
+        `alias-third-identity-a-${randomUUID().slice(0, 8)}`
+      );
+      const aliasB = path.join(
+        path.dirname(projectRoot),
+        `alias-third-identity-b-${randomUUID().slice(0, 8)}`
+      );
+      fs.symlinkSync(projectRoot, aliasA, process.platform === 'win32' ? 'junction' : 'dir');
+      fs.symlinkSync(projectRoot, aliasB, process.platform === 'win32' ? 'junction' : 'dir');
+      const entryA = {
+        projectId: 'alias-third-owner-a',
+        name: 'alias-third-owner-a',
+        mode: 'in-repo' as const,
+        home: 'alias-third-owner-a-home',
+        lastSeen: '2026-08-01T00:00:00.000Z',
+      };
+      const entryB = {
+        ...entryA,
+        projectId: 'alias-third-owner-b',
+        name: 'alias-third-owner-b',
+        home: 'alias-third-owner-b-home',
+      };
+      const thirdProjectId = 'alias-third-owner-c';
+      const thirdHome = deriveHomeBaseName(canonicalRoot, thirdProjectId);
+      await writeProjectRegistryState(
+        { version: 1, projects: { [aliasA]: entryA, [aliasB]: entryB } },
+        { globalDataDir }
+      );
+      for (const entry of [entryA, entryB]) {
+        fs.mkdirSync(getProjectHomeDir(entry.home, { globalDataDir }), { recursive: true });
+      }
+      const registryPath = getProjectRegistryPath({ globalDataDir });
+      const beforeRegistry = fs.readFileSync(registryPath);
+      const beforeHomeInventory = fs.readdirSync(getProjectsDir({ globalDataDir })).sort();
+
+      await expect(
+        registerProject(
+          { projectRoot, projectId: thirdProjectId, mode: 'in-repo' },
+          { globalDataDir }
+        )
+      ).rejects.toMatchObject({
+        diagnostic: expect.objectContaining({ code: 'project_registry_alias_conflict' }),
+      });
+
+      expect(fs.readFileSync(registryPath)).toEqual(beforeRegistry);
+      const state = await readProjectRegistryState({ globalDataDir });
+      expect(state?.projects[canonicalRoot]).toBeUndefined();
+      expect(
+        Object.values(state?.projects ?? {}).some(entry => entry.projectId === thirdProjectId)
+      ).toBe(false);
+      expect(fs.existsSync(getProjectHomeDir(thirdHome, { globalDataDir }))).toBe(false);
+      expect(fs.readdirSync(getProjectsDir({ globalDataDir })).sort()).toEqual(
+        beforeHomeInventory
+      );
+
+      fs.rmSync(aliasA, { recursive: true, force: true });
+      fs.rmSync(aliasB, { recursive: true, force: true });
+    });
+
+    it('exposes a direct-owner conflict when another identity claims a live alias', async () => {
+      const projectRoot = makeProjectDir('alias-public-conflict');
+      const canonicalRoot = FileSystemUtils.canonicalizeExistingPath(projectRoot);
+      const aliasRoot = path.join(
+        path.dirname(projectRoot),
+        `alias-public-conflict-${randomUUID().slice(0, 8)}`
+      );
+      fs.symlinkSync(projectRoot, aliasRoot, process.platform === 'win32' ? 'junction' : 'dir');
+      const directEntry = {
+        projectId: 'alias-owner-b',
+        name: 'alias-owner-b',
+        mode: 'in-repo' as const,
+        home: 'alias-owner-b-home',
+        lastSeen: '2026-08-01T00:00:00.000Z',
+      };
+      const aliasEntry = {
+        ...directEntry,
+        projectId: 'alias-owner-a',
+        name: 'alias-owner-a',
+        home: 'alias-owner-a-home',
+      };
+      await writeProjectRegistryState(
+        {
+          version: 1,
+          projects: {
+            [canonicalRoot]: directEntry,
+            [aliasRoot]: aliasEntry,
+          },
+        },
+        { globalDataDir }
+      );
+
+      await expect(
+        findProjectIdentityClaimants(aliasEntry.projectId, { globalDataDir })
+      ).resolves.toEqual([
+        expect.objectContaining({
+          path: canonicalRoot,
+          entry: directEntry,
+          live: true,
+          fixedMetadataConflict: true,
+          aliases: expect.arrayContaining([
+            expect.objectContaining({ registryPath: canonicalRoot, entry: directEntry }),
+            expect.objectContaining({ registryPath: aliasRoot, entry: aliasEntry }),
+          ]),
+        }),
+      ]);
+
+      fs.rmSync(aliasRoot, { recursive: true, force: true });
     });
   });
 
@@ -653,6 +953,78 @@ describe('project-registry', () => {
       expect(Object.keys(state?.projects ?? {})).toHaveLength(1);
 
       fs.rmSync(projectRoot, { recursive: true, force: true });
+    });
+
+    it('collapses case, separator, and dot-segment aliases under native Windows policy', async () => {
+      if (process.platform !== 'win32') return;
+      const projectRoot = makeProjectDir('windows-alias-policy');
+      const canonicalRoot = FileSystemUtils.canonicalizeExistingPath(projectRoot);
+      const separatorAlias = canonicalRoot.replace(/\\/gu, '/');
+      const dotAlias = `${canonicalRoot}${path.sep}.${path.sep}`;
+      const caseAlias = `${canonicalRoot.slice(0, 1).toLowerCase()}${canonicalRoot.slice(1).toUpperCase()}`;
+      const entry = {
+        projectId: 'windows-alias-policy',
+        name: 'windows-alias-policy',
+        mode: 'in-repo' as const,
+        home: 'windows-alias-policy-home',
+        lastSeen: '2026-08-01T00:00:00.000Z',
+      };
+      await writeProjectRegistryState(
+        {
+          version: 1,
+          projects: {
+            [dotAlias]: { ...entry, name: 'dot-cache' },
+            [separatorAlias]: { ...entry, name: 'separator-cache' },
+            [caseAlias]: { ...entry, name: 'case-cache' },
+            [canonicalRoot]: entry,
+          },
+        },
+        { globalDataDir }
+      );
+
+      const claimants = await findProjectIdentityClaimants(entry.projectId, { globalDataDir });
+      expect(claimants).toEqual([
+        expect.objectContaining({ path: canonicalRoot, entry }),
+      ]);
+      await registerProject(
+        { projectRoot, projectId: entry.projectId, mode: 'in-repo' },
+        { globalDataDir }
+      );
+      expect(Object.keys((await readProjectRegistryState({ globalDataDir }))!.projects)).toEqual([
+        canonicalRoot,
+      ]);
+    });
+
+    it('keeps case-only missing paths distinct under POSIX path policy', async () => {
+      if (process.platform === 'win32') return;
+      const lower = path.resolve(fixturesRoot, 'posix-case-alias');
+      const upper = path.resolve(fixturesRoot, 'POSIX-CASE-ALIAS');
+      const entry = {
+        projectId: 'posix-case-policy',
+        name: 'posix-case-policy',
+        mode: 'in-repo' as const,
+        home: 'posix-case-policy-home',
+        lastSeen: '2026-08-01T00:00:00.000Z',
+      };
+      await writeProjectRegistryState(
+        {
+          version: 1,
+          projects: {
+            [lower]: entry,
+            [upper]: { ...entry, home: 'posix-case-policy-home-2' },
+          },
+        },
+        { globalDataDir }
+      );
+
+      const claimants = await findProjectIdentityClaimants(entry.projectId, { globalDataDir });
+      const canonicalFixturesRoot = fs.realpathSync.native(fixturesRoot);
+      expect(claimants.map(claimant => claimant.path).sort()).toEqual(
+        [
+          path.join(canonicalFixturesRoot, path.basename(lower)),
+          path.join(canonicalFixturesRoot, path.basename(upper)),
+        ].sort()
+      );
     });
   });
 

@@ -65,6 +65,73 @@ describe('generated archive consumers use the authoritative engine', () => {
     expect(instructions).toContain('abort-required');
   });
 
+  it('single archive preserves canonical interactive PR overrides before preview and apply', () => {
+    const instructions = getArchiveChangeSkillTemplate().instructions;
+    const verification = instructions.indexOf(
+      'gh pr view <url> --json state,mergedAt'
+    );
+    const preview = instructions.indexOf(REQUIRED_PLAN_COMMAND);
+    const mergeOnlyAdmission = instructions.indexOf(
+      'exactly one blocker with the typed code `archive_merge_confirmation_required`'
+    );
+    const apply = instructions.indexOf(REQUIRED_APPLY_COMMAND);
+
+    expect(verification).toBeGreaterThanOrEqual(0);
+    expect(preview).toBeGreaterThan(verification);
+    expect(mergeOnlyAdmission).toBeGreaterThan(preview);
+    expect(apply).toBeGreaterThan(mergeOnlyAdmission);
+    expect(instructions).toContain(
+      `After admitting either a zero-blocker preview or the sole typed merge blocker permitted above, run \`${REQUIRED_APPLY_COMMAND}\``
+    );
+    expect(instructions).toContain(
+      'reject that code when accompanied by any other blocker, and reject every other blocker'
+    );
+    expect(instructions).toContain(
+      'separate explicit override that names this PR\'s known OPEN/unmerged condition'
+    );
+    expect(instructions).toContain(
+      'ask the human to explicitly confirm that this recorded PR is merged and treat that answer as the check'
+    );
+    expect(instructions).toContain(
+      'In a non-interactive or dispatched context, REFUSE outright'
+    );
+    expect(instructions).toContain(
+      'Only in the sole-merge-blocker case does the generated apply command\'s `--yes` supply the saved merge-gate assertion; on a zero-blocker plan it admits no blocker'
+    );
+  });
+
+  it('bulk archive resolves each PR independently before sync, preview, and apply', () => {
+    const instructions = getBulkArchiveChangeSkillTemplate().instructions;
+    const verification = instructions.indexOf(
+      'gh pr view <url> --json state,mergedAt'
+    );
+    const sync = instructions.indexOf(
+      '**Sync specs** after that item\'s PR gate is satisfied'
+    );
+    const preview = instructions.indexOf(REQUIRED_PLAN_COMMAND);
+    const apply = instructions.indexOf(REQUIRED_APPLY_COMMAND);
+
+    expect(verification).toBeGreaterThanOrEqual(0);
+    expect(sync).toBeGreaterThan(verification);
+    expect(preview).toBeGreaterThan(sync);
+    expect(apply).toBeGreaterThan(preview);
+    expect(instructions).toContain(
+      'separate explicit override naming this item\'s PR and its known OPEN/unmerged condition'
+    );
+    expect(instructions).toContain(
+      'ask separately whether that recorded PR is merged and treat only that explicit item-specific confirmation as the check'
+    );
+    expect(instructions).toContain(
+      'One answer MUST NOT satisfy another item or waive another blocker'
+    );
+    expect(instructions).toContain(
+      'Require zero blockers except that a PR item whose gate was satisfied in step 8a may contain exactly one typed `archive_merge_confirmation_required` blocker'
+    );
+    expect(instructions).toContain(
+      'Preserve every returned recovery or abort command exactly, including `--yes` when present'
+    );
+  });
+
   it('sync-specs requires complete replacement blocks and a clean shared preflight', () => {
     const instructions = getSyncSpecsSkillTemplate().instructions;
     expect(instructions).toContain('MODIFIED` is wholesale replacement');

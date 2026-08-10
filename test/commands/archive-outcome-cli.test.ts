@@ -212,6 +212,53 @@ describe('rasen archive: the Store v2 outcome surface', () => {
     });
   }, 240_000);
 
+  it('refuses landed --skip-specs when a nested delta spec exists', async () => {
+    const bound = await bind('nested-delta-skip');
+    const nestedDelta = path.join(
+      bound.changeDir,
+      'specs',
+      'platform',
+      'routing',
+      'spec.md'
+    );
+    f.write(
+      nestedDelta,
+      '# routing - Changes\n\n## ADDED Requirements\n\n### Requirement: Nested routing\nThe system SHALL preserve nested delta discovery.\n\n#### Scenario: Nested delta is present\n- **WHEN** a landed archive uses `--skip-specs`\n- **THEN** finalization refuses before writing canonical specs\n'
+    );
+    const canonicalTarget = path.join(
+      bound.planningWorktree,
+      'rasen',
+      'projects',
+      PROJECT,
+      'specs',
+      'platform',
+      'routing',
+      'spec.md'
+    );
+
+    const refused = await runCLI(
+      archiveArgs(
+        bound,
+        '--outcome',
+        'landed',
+        '--commit',
+        f.refOid(bound.executionWorktree, 'HEAD'),
+        '--skip-specs',
+        '--json',
+        '--yes'
+      ),
+      { cwd: bound.executionWorktree, env: f.env }
+    );
+
+    expect(refused.exitCode).toBe(1);
+    expect(parseJson(refused).status[0].code).toBe(
+      'finalization_spec_skip_conflict'
+    );
+    expect(fs.existsSync(bound.changeDir)).toBe(true);
+    expect(fs.existsSync(bound.archiveLine)).toBe(false);
+    expect(fs.existsSync(canonicalTarget)).toBe(false);
+  }, 240_000);
+
   it('states the same facts in human output as in JSON', async () => {
     const bound = await bind('human-parity-change');
 
@@ -317,6 +364,7 @@ describe('rasen archive: the Store v2 outcome surface', () => {
       status: 'aborted',
       change: bound.changeId,
       blockers: [],
+      associationPhase: 'pending',
     });
     expect(hashTree(bound.changeDir)).toEqual(changeBefore);
     expect(fs.existsSync(bound.archiveLine)).toBe(false);
@@ -327,7 +375,10 @@ describe('rasen archive: the Store v2 outcome surface', () => {
         env: f.env,
       })
     );
-    expect(parseJson(repeated).archive.result.status).toBe('already-aborted');
+    expect(parseJson(repeated).archive.result).toMatchObject({
+      status: 'already-aborted',
+      associationPhase: 'pending',
+    });
 
     const reapplied = await runCLI(
       ['archive', '--apply-plan', token, '--json', '--yes'],

@@ -21,6 +21,7 @@
  * working tree while making no Git call that writes.
  */
 import { execFile } from 'node:child_process';
+import * as path from 'node:path';
 import { promisify } from 'node:util';
 
 import {
@@ -81,6 +82,11 @@ export interface FinalizationGit {
     portablePath: string
   ): Promise<readonly string[] | null>;
   checkedOutRef(root: string): Promise<string | null>;
+  /** Canonical identity inputs for proving that a root is still a live worktree. */
+  repositoryPaths(root: string): Promise<{
+    readonly toplevel: string;
+    readonly commonDir: string;
+  } | null>;
   headOid(root: string): Promise<string | null>;
   /** `status --porcelain` lines. */
   statusEntries(root: string): Promise<readonly string[]>;
@@ -218,6 +224,31 @@ export const nodeFinalizationGit: FinalizationGit = {
       .filter(line => line.length > 0);
   },
 
+  async repositoryPaths(root) {
+    const [toplevelResult, commonDirResult] = await Promise.all([
+      spawnGit(root, ['rev-parse', '--show-toplevel'], {
+        tolerateFailure: true,
+      }),
+      spawnGit(root, ['rev-parse', '--git-common-dir'], {
+        tolerateFailure: true,
+      }),
+    ]);
+    if (
+      toplevelResult === null ||
+      commonDirResult === null ||
+      toplevelResult.exitCode !== 0 ||
+      commonDirResult.exitCode !== 0
+    ) {
+      return null;
+    }
+    const toplevel = toplevelResult.stdout.trim();
+    const commonDirRaw = commonDirResult.stdout.trim();
+    if (toplevel.length === 0 || commonDirRaw.length === 0) return null;
+    return {
+      toplevel,
+      commonDir: path.resolve(root, commonDirRaw),
+    };
+  },
   async checkedOutRef(root) {
     const result = await spawnGit(root, ['symbolic-ref', '--quiet', 'HEAD'], {
       tolerateFailure: true,

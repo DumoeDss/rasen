@@ -5,10 +5,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   ARCHIVE_JOURNAL_FILENAME,
+  ARCHIVE_FINAL_OWNER_FILENAME,
   applyArchive,
   createArchivePlan,
   defaultArchiveEngineAdapters,
+  persistArchivePlan,
   resolveArchiveSidecar,
+  withStoredArchivePlanOperation,
   type ArchiveApplyResult,
   type ArchiveEngineAdapters,
   type ArchiveFileSystem,
@@ -185,6 +188,24 @@ describe('archive apply named fault and recovery matrix', () => {
         resumePhase: expected.resumePhase,
       },
     });
+    if (expected.disposed !== undefined) {
+      const disposedProgress = journal.cleanerProgress
+        .filter(progress => expected.disposed!.includes(progress.path))
+        .map(progress => ({ path: progress.path, state: progress.state }));
+      expect(disposedProgress).toEqual(
+        expected.disposed.map(disposedPath => ({
+          path: disposedPath,
+          state: expect.stringMatching(
+            /^(?:deleted|deleted-after-intent|already-absent)$/u
+          ),
+        }))
+      );
+      for (const disposedPath of expected.disposed) {
+        await expect(
+          fs.access(path.join(plan.paths.ephemera, disposedPath))
+        ).rejects.toMatchObject({ code: 'ENOENT' });
+      }
+    }
   }
 
   async function expectRetryCompletes(plan: ArchivePlan): Promise<void> {
@@ -368,6 +389,263 @@ describe('archive apply named fault and recovery matrix', () => {
     expect(await fs.readFile(quarantineProposal, 'utf8')).toBe('# Sample bytes\n');
   });
 
+  it.skipIf(process.platform === 'win32')(
+    'rejects a precreated symlink at the deterministic active-source claim root',
+    async () => {
+      const plan = await makePlan();
+      const claimRoot = path.join(
+        path.dirname(active),
+        `.rasen-archive-source-${plan.transactionId}`
+      );
+      const unrelated = path.join(root, 'unrelated-source-claim');
+      await fs.mkdir(unrelated);
+      await fs.writeFile(path.join(unrelated, 'keep.txt'), 'keep\n');
+      await fs.symlink(unrelated, claimRoot, 'dir');
+
+      const result = await applyArchive(plan, { adapters: baseAdapters });
+
+      expect(result).toMatchObject({
+        status: 'recoverable',
+        manualRecoveryAction: { kind: 'manual-recovery-required' },
+        retainedPaths: expect.arrayContaining([claimRoot, plan.paths.publishedJournal]),
+        blockers: [
+          expect.objectContaining({
+            operation: 'source-remove',
+            path: claimRoot,
+            code: 'archive_claim_ownership_unverified',
+          }),
+        ],
+      });
+      await expect(fs.access(active)).resolves.toBeUndefined();
+      expect(await fs.readFile(path.join(unrelated, 'keep.txt'), 'utf8')).toBe(
+        'keep\n'
+      );
+    }
+  );
+
+  it('retains a claimed source when its durable claim-root identity is replaced after a crash', async () => {
+    const plan = await makePlan();
+    const claimRoot = path.join(
+      path.dirname(active),
+      `.rasen-archive-source-${plan.transactionId}`
+    );
+    const quarantine = path.join(claimRoot, plan.change);
+    let crash = true;
+    const crashingAdapters: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      fs: {
+        ...baseAdapters.fs,
+        rename: async (source, destination) => {
+          await baseAdapters.fs.rename(source, destination);
+          if (source === active && crash) {
+            crash = false;
+            throw injectedError('crash after active source claim', 'EIO');
+          }
+        },
+      },
+    };
+
+    const first = await applyArchive(plan, { adapters: crashingAdapters });
+    expect(first.status).toBe('recoverable');
+    const crashedJournal = await readJournal(plan.paths.publishedJournal);
+    expect(crashedJournal.sourceProgress).toEqual(
+      expect.objectContaining({
+        state: 'delete-intent',
+        claimIdentity: expect.objectContaining({
+          dev: expect.any(String),
+          ino: expect.any(String),
+        }),
+      })
+    );
+    const displaced = `${claimRoot}.displaced`;
+    await fs.rename(claimRoot, displaced);
+    await fs.mkdir(claimRoot);
+    await fs.writeFile(path.join(claimRoot, 'unrelated.txt'), 'unrelated\n');
+
+    const retry = await applyArchive(plan, { adapters: baseAdapters });
+
+    expect(retry).toMatchObject({
+      status: 'recoverable',
+      resumed: true,
+      manualRecoveryAction: { kind: 'manual-recovery-required' },
+      retainedPaths: expect.arrayContaining([claimRoot, plan.paths.publishedJournal]),
+      blockers: [
+        expect.objectContaining({
+          operation: 'source-remove',
+          code: 'archive_claim_ownership_unverified',
+        }),
+      ],
+    });
+    await expect(fs.access(active)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await snapshotTree(path.join(displaced, plan.change))).not.toBeNull();
+    expect(await fs.readFile(path.join(claimRoot, 'unrelated.txt'), 'utf8')).toBe(
+      'unrelated\n'
+    );
+    await expect(fs.access(quarantine)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('retains an occupant injected at the active-source claim-root removal boundary', async () => {
+    const plan = await makePlan();
+    const claimRoot = path.join(
+      path.dirname(active),
+      `.rasen-archive-source-${plan.transactionId}`
+    );
+    const intruder = path.join(claimRoot, 'unrelated.txt');
+    let inject = true;
+    const adapters: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      fs: {
+        ...baseAdapters.fs,
+        rmdir: async target => {
+          if (target === claimRoot && inject) {
+            inject = false;
+            await fs.writeFile(intruder, 'unrelated\n');
+          }
+          await baseAdapters.fs.rmdir(target);
+        },
+      },
+    };
+
+    const result = await applyArchive(plan, { adapters });
+
+    expect(result).toMatchObject({
+      status: 'recoverable',
+      manualRecoveryAction: { kind: 'manual-recovery-required' },
+      retainedPaths: expect.arrayContaining([
+        claimRoot,
+        intruder,
+        plan.paths.publishedJournal,
+      ]),
+      blockers: [
+        expect.objectContaining({
+          operation: 'source-remove',
+          code: 'archive_claim_ownership_unverified',
+        }),
+      ],
+    });
+    await expect(fs.access(active)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await fs.readFile(intruder, 'utf8')).toBe('unrelated\n');
+  });
+
+  it('reads an older claimed source-removal journal without claim identity but refuses destructive resume', async () => {
+    const plan = await makePlan();
+    let crash = true;
+    const adapters: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      fs: {
+        ...baseAdapters.fs,
+        rename: async (source, destination) => {
+          await baseAdapters.fs.rename(source, destination);
+          if (source === active && crash) {
+            crash = false;
+            throw injectedError('crash after legacy source claim', 'EIO');
+          }
+        },
+      },
+    };
+    expect((await applyArchive(plan, { adapters })).status).toBe('recoverable');
+    const legacyJournal = await readJournal(plan.paths.publishedJournal);
+    legacyJournal.sourceProgress.state = 'claimed';
+    delete legacyJournal.sourceProgress.claimIdentity;
+    await fs.writeFile(
+      plan.paths.publishedJournal,
+      JSON.stringify(legacyJournal)
+    );
+
+    const retry = await applyArchive(plan, { adapters: baseAdapters });
+
+    expect(retry).toMatchObject({
+      status: 'recoverable',
+      resumed: true,
+      manualRecoveryAction: { kind: 'manual-recovery-required' },
+      blockers: [
+        expect.objectContaining({
+          operation: 'source-remove',
+          code: 'archive_claim_ownership_unverified',
+        }),
+      ],
+    });
+    expect(retry.blockers[0]?.code).not.toBe('archive_journal_invalid');
+    expect(await snapshotTree(legacyJournal.sourceProgress.quarantine)).not.toBeNull();
+  });
+
+  it('resumes source removal idempotently when the durable claim-root identity is unchanged', async () => {
+    const plan = await makePlan();
+    let crash = true;
+    const adapters: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      fs: {
+        ...baseAdapters.fs,
+        rename: async (source, destination) => {
+          await baseAdapters.fs.rename(source, destination);
+          if (source === active && crash) {
+            crash = false;
+            throw injectedError('crash after same-identity source claim', 'EIO');
+          }
+        },
+      },
+    };
+    expect((await applyArchive(plan, { adapters })).status).toBe('recoverable');
+
+    const retry = await applyArchive(plan, { adapters: baseAdapters });
+
+    expect(retry.status).toBe('complete');
+    expect(retry.resumed).toBe(true);
+    await expect(fs.access(active)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(
+      fs.access(
+        path.join(
+          path.dirname(active),
+          `.rasen-archive-source-${plan.transactionId}`
+        )
+      )
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('promotes durable removing state when source, quarantine, and claim root are already absent', async () => {
+    const plan = await makePlan();
+    const claimRoot = path.join(
+      path.dirname(active),
+      `.rasen-archive-source-${plan.transactionId}`
+    );
+    const quarantine = path.join(claimRoot, plan.change);
+    let crash = true;
+    const adapters: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      fs: {
+        ...baseAdapters.fs,
+        rmdir: async target => {
+          await baseAdapters.fs.rmdir(target);
+          if (target === claimRoot && crash) {
+            crash = false;
+            throw injectedError('crash after claim-root removal', 'EIO');
+          }
+        },
+      },
+    };
+
+    const interrupted = await applyArchive(plan, { adapters });
+
+    expect(interrupted).toMatchObject({
+      status: 'recoverable',
+      blockers: [
+        {
+          operation: 'source-remove',
+          path: claimRoot,
+          code: 'EIO',
+        },
+      ],
+    });
+    await expect(fs.access(active)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fs.access(quarantine)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fs.access(claimRoot)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(
+      (await readJournal(plan.paths.publishedJournal)).sourceProgress.state
+    ).toBe('removing');
+
+    await expectRetryCompletes(plan);
+  });
+
   it('a target race never writes a journal into or changes the unrelated target', async () => {
     const plan = await makePlan();
     const activeBefore = await snapshotTree(active);
@@ -377,11 +655,18 @@ describe('archive apply named fault and recovery matrix', () => {
     const unrelatedBefore = await snapshotTree(plan.paths.final);
 
     const first = await applyArchive(plan, { adapters: baseAdapters });
-    expectFailureReport(first, plan, {
-      operation: 'publish',
-      path: plan.paths.final,
-      code: 'EEXIST',
-      journalPath: plan.paths.journal,
+    expect(first).toMatchObject({
+      status: 'abort-required',
+      transactionId: plan.transactionId,
+      planHash: plan.planHash,
+      blockers: [
+        {
+          operation: 'publish',
+          path: plan.paths.archiveParent,
+          code: 'archive_destination_ancestry_invalid',
+        },
+      ],
+      abortCommand: expect.stringContaining('--abort-plan'),
     });
     expect(await snapshotTree(plan.paths.final)).toEqual(unrelatedBefore);
     expect(await snapshotTree(active)).toEqual(activeBefore);
@@ -393,7 +678,154 @@ describe('archive apply named fault and recovery matrix', () => {
     expect(await snapshotTree(plan.paths.final)).toEqual(unrelatedBefore);
 
     await fs.rm(plan.paths.final, { recursive: true, force: false });
+    await fs.rmdir(plan.paths.archiveParent);
     expect((await applyArchive(plan, { adapters: baseAdapters })).status).toBe('complete');
+  });
+
+  it('never clobbers a journal that appears before its first exclusive publication', async () => {
+    const plan = await makePlan();
+    let injected = false;
+    const adapters: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      fs: {
+        ...baseAdapters.fs,
+        link: async (source, target) => {
+          if (target === plan.paths.journal && !injected) {
+            injected = true;
+            await baseAdapters.fs.writeFile(target, '{"intruder":true}\n');
+          }
+          return baseAdapters.fs.link(source, target);
+        },
+      },
+    };
+
+    const result = await applyArchive(plan, { adapters });
+
+    expect(result).toMatchObject({
+      status: 'recoverable',
+      blockers: [
+        expect.objectContaining({
+          operation: 'journal',
+          code: 'archive_transaction_temp_ownership_unverified',
+        }),
+      ],
+      manualRecoveryAction: { kind: 'manual-recovery-required' },
+    });
+    expect(result).not.toHaveProperty('recoveryCommand');
+    await expect(fs.readFile(plan.paths.journal, 'utf8')).resolves.toBe(
+      '{"intruder":true}\n'
+    );
+    await expect(fs.access(active)).resolves.toBeUndefined();
+  });
+
+  it('retains a journal replacement detected at the compare-and-swap claim boundary', async () => {
+    const plan = await makePlan();
+    let injected = false;
+    const adapters: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      fs: {
+        ...baseAdapters.fs,
+        rename: async (source, target) => {
+          if (
+            source === plan.paths.journal &&
+            path.basename(target) === 'object' &&
+            !injected
+          ) {
+            injected = true;
+            await baseAdapters.fs.writeFile(
+              source,
+              '{"replacement":"must survive"}\n'
+            );
+          }
+          return baseAdapters.fs.rename(source, target);
+        },
+      },
+    };
+
+    const result = await applyArchive(plan, { adapters });
+
+    expect(result).toMatchObject({
+      status: 'recoverable',
+      blockers: [
+        expect.objectContaining({
+          operation: 'journal',
+          code: 'archive_claim_ownership_unverified',
+          message: expect.stringContaining(
+            'Original archive failure at journal'
+          ),
+        }),
+      ],
+      manualRecoveryAction: { kind: 'manual-recovery-required' },
+    });
+    expect(result).not.toHaveProperty('recoveryCommand');
+    const claimRoot = (
+      await fs.readdir(plan.paths.stage, { withFileTypes: true })
+    ).find(
+      entry =>
+        entry.isDirectory() &&
+        entry.name.startsWith(
+          `.rasen-archive-claim-${plan.transactionId}-`
+        )
+    );
+    expect(claimRoot).toBeDefined();
+    await expect(
+      fs.readFile(
+        path.join(plan.paths.stage, claimRoot!.name, 'object'),
+        'utf8'
+      )
+    ).resolves.toBe('{"replacement":"must survive"}\n');
+  });
+
+  it('gives failure-journal publication ownership conflicts precedence over the original failure', async () => {
+    const plan = await makePlan();
+    let injectedFailureCarrier = false;
+    const adapters: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      fs: {
+        ...baseAdapters.fs,
+        copyFile: async (source, target, flags) => {
+          if (source === path.join(active, 'proposal.md')) {
+            throw injectedError('injected payload copy failure', 'EIO');
+          }
+          return baseAdapters.fs.copyFile(source, target, flags);
+        },
+        link: async (source, target) => {
+          if (target === plan.paths.journal && !injectedFailureCarrier) {
+            const candidate = JSON.parse(
+              await baseAdapters.fs.readFile(source, 'utf8')
+            ) as { phase?: string };
+            if (candidate.phase === 'failed') {
+              injectedFailureCarrier = true;
+              await baseAdapters.fs.writeFile(
+                target,
+                '{"failure-carrier":"must survive"}\n'
+              );
+            }
+          }
+          return baseAdapters.fs.link(source, target);
+        },
+      },
+    };
+
+    const result = await applyArchive(plan, { adapters });
+
+    expect(result).toMatchObject({
+      status: 'recoverable',
+      blockers: [
+        expect.objectContaining({
+          operation: 'journal',
+          path: plan.paths.journal,
+          code: 'archive_transaction_temp_ownership_unverified',
+          message: expect.stringContaining('Original archive failure'),
+        }),
+      ],
+      manualRecoveryAction: { kind: 'manual-recovery-required' },
+    });
+    expect(result).not.toHaveProperty('recoveryCommand');
+    await expect(fs.readFile(plan.paths.journal, 'utf8')).resolves.toBe(
+      '{"failure-carrier":"must survive"}\n'
+    );
+    await expect(fs.access(active)).resolves.toBeUndefined();
   });
 
   it('a final target created at the reservation boundary is never replaced', async () => {
@@ -473,7 +905,9 @@ describe('archive apply named fault and recovery matrix', () => {
     expect(retry.status).toBe('recoverable');
     expect(retry.blockers).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ code: 'EEXIST' }),
+        expect.objectContaining({
+          code: 'archive_reservation_ownership_unverified',
+        }),
       ])
     );
     expect(await fs.readFile(concurrent, 'utf8')).toBe(
@@ -585,7 +1019,11 @@ describe('archive apply named fault and recovery matrix', () => {
     expect(resumed.status).toBe('recoverable');
     expect(resumed.blockers).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ operation: 'publish', code: 'ESTALE' }),
+        expect.objectContaining({
+          operation: 'accounting',
+          path: path.join(plan.paths.final, 'archive.json'),
+          code: 'archive_journal_invalid',
+        }),
       ])
     );
     await expect(fs.access(active)).resolves.toBeUndefined();
@@ -631,7 +1069,157 @@ describe('archive apply named fault and recovery matrix', () => {
     ).toBe('# Sample bytes\n');
   });
 
-  it('staged-tree mismatch keeps exact sources and rebuilds the owned corrupt stage on retry', async () => {
+  it('classifies an empty planned stage with no journal as manual-only crash state', async () => {
+    const plan = await makePlan();
+    const failingAdapters: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      fs: {
+        ...baseAdapters.fs,
+        copyFile: async (source, target, flags) => {
+          if (source === path.join(active, 'proposal.md')) {
+            throw injectedError('injected copy failure', 'EIO');
+          }
+          return baseAdapters.fs.copyFile(source, target, flags);
+        },
+      },
+    };
+    expect(
+      (await applyArchive(plan, { adapters: failingAdapters })).status
+    ).toBe('recoverable');
+    for (const entry of await fs.readdir(plan.paths.stage)) {
+      await fs.rm(path.join(plan.paths.stage, entry), {
+        recursive: true,
+        force: false,
+      });
+    }
+
+    const retry = await applyArchive(plan, { adapters: baseAdapters });
+
+    expect(retry).toMatchObject({
+      status: 'recoverable',
+      blockers: [
+        {
+          operation: 'stage',
+          path: plan.paths.stage,
+          code: 'archive_stage_ownership_unverified',
+        },
+      ],
+      manualRecoveryAction: {
+        kind: 'manual-recovery-required',
+      },
+    });
+    expect(retry.recoveryCommand).toBeUndefined();
+    await expect(fs.access(plan.paths.stage)).resolves.toBeUndefined();
+    expect(await fs.readdir(plan.paths.stage)).toEqual([]);
+    await expect(fs.access(plan.paths.journal)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('retains an unplanned descendant during exact-token partial-stage resume', async () => {
+    const plan = await makePlan();
+    const failingAdapters: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      fs: {
+        ...baseAdapters.fs,
+        copyFile: async (source, target, flags) => {
+          if (source === path.join(active, 'proposal.md')) {
+            throw injectedError('injected copy failure', 'EIO');
+          }
+          return baseAdapters.fs.copyFile(source, target, flags);
+        },
+      },
+    };
+    expect(
+      (await applyArchive(plan, { adapters: failingAdapters })).status
+    ).toBe('recoverable');
+
+    const injected = path.join(
+      plan.paths.stage,
+      'evidence',
+      'unowned-after-failure.txt'
+    );
+    await fs.writeFile(injected, 'later mutation\n');
+    const retainedOwned = path.join(
+      plan.paths.stage,
+      'evidence',
+      'nested',
+      'review-report.md'
+    );
+
+    const resumed = await applyArchive(plan, { adapters: baseAdapters });
+
+    expect(resumed).toMatchObject({
+      status: 'recoverable',
+      resumed: true,
+      effectivePhase: 'planned',
+      blockers: [
+        {
+          operation: 'stage',
+          path: plan.paths.stage,
+          code: 'archive_stage_ownership_unverified',
+        },
+      ],
+      manualRecoveryAction: {
+        kind: 'manual-recovery-required',
+      },
+    });
+    expect(resumed.recoveryCommand).toBeUndefined();
+    await expect(fs.readFile(injected, 'utf8')).resolves.toBe('later mutation\n');
+    await expect(fs.readFile(retainedOwned, 'utf8')).resolves.toContain(
+      '# Review'
+    );
+    await expect(fs.access(plan.paths.journal)).resolves.toBeUndefined();
+
+    await fs.unlink(injected);
+    await expectRetryCompletes(plan);
+  });
+
+  it('retains a same-path substitution that was never copied by the failed transaction', async () => {
+    const plan = await makePlan();
+    const failingAdapters: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      fs: {
+        ...baseAdapters.fs,
+        copyFile: async (source, target, flags) => {
+          if (source === path.join(active, 'proposal.md')) {
+            throw injectedError('injected pre-copy failure', 'EIO');
+          }
+          return baseAdapters.fs.copyFile(source, target, flags);
+        },
+      },
+    };
+    expect(
+      (await applyArchive(plan, { adapters: failingAdapters })).status
+    ).toBe('recoverable');
+    const substituted = path.join(plan.paths.stage, 'proposal.md');
+    await fs.writeFile(substituted, 'actor-owned replacement\n');
+
+    const resumed = await applyArchive(plan, { adapters: baseAdapters });
+
+    expect(resumed).toMatchObject({
+      status: 'recoverable',
+      resumed: true,
+      blockers: [
+        {
+          operation: 'stage',
+          path: plan.paths.stage,
+          code: 'archive_stage_ownership_unverified',
+        },
+      ],
+      manualRecoveryAction: {
+        kind: 'manual-recovery-required',
+      },
+    });
+    await expect(fs.readFile(substituted, 'utf8')).resolves.toBe(
+      'actor-owned replacement\n'
+    );
+
+    await fs.unlink(substituted);
+    await expectRetryCompletes(plan);
+  });
+
+  it('retains a corrupt planned payload slot for manual recovery', async () => {
     const plan = await makePlan();
     const activeBefore = await snapshotTree(active);
     const ephemeraBefore = await snapshotTree(ephemera);
@@ -664,6 +1252,202 @@ describe('archive apply named fault and recovery matrix', () => {
       code: 'ESTALE',
       resumePhase: 'planned',
     });
+    const corrupt = path.join(plan.paths.stage, 'proposal.md');
+    const resumed = await applyArchive(plan, { adapters: baseAdapters });
+    expect(resumed).toMatchObject({
+      status: 'recoverable',
+      resumed: true,
+      blockers: [
+        {
+          operation: 'stage',
+          path: plan.paths.stage,
+          code: 'archive_stage_ownership_unverified',
+        },
+      ],
+      manualRecoveryAction: {
+        kind: 'manual-recovery-required',
+      },
+    });
+    await expect(fs.readFile(corrupt, 'utf8')).resolves.toBe(
+      'corrupted staged bytes\n'
+    );
+    expect(await snapshotTree(active)).toEqual(activeBefore);
+
+    await fs.unlink(corrupt);
+    await expectRetryCompletes(plan);
+  });
+
+  it('rejects an evidence-directory symlink swap without mutating its outside target', async () => {
+    const plan = await makePlan();
+    const evidenceRoot = path.join(plan.paths.stage, 'evidence');
+    const retainedEvidence = path.join(plan.paths.stage, 'evidence-owned');
+    const outside = path.join(root, 'outside-evidence');
+    const outsideSentinel = path.join(outside, 'sentinel.txt');
+    await fs.mkdir(outside);
+    await fs.writeFile(outsideSentinel, 'outside bytes\n');
+    let swapped = false;
+    const adapters: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      fs: {
+        ...baseAdapters.fs,
+        lstat: async target => {
+          if (target === evidenceRoot && !swapped) {
+            try {
+              const journal = await readJournal(plan.paths.journal);
+              if (
+                journal.phase === 'handoff-finalized' ||
+                (journal.phase === 'failed' &&
+                  journal.failure?.resumePhase === 'handoff-finalized')
+              ) {
+                swapped = true;
+                await baseAdapters.fs.rename(evidenceRoot, retainedEvidence);
+                await baseAdapters.fs.symlink(outside, evidenceRoot, 'dir');
+              }
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+            }
+          }
+          return baseAdapters.fs.lstat(target);
+        },
+      },
+    };
+
+    const result = await applyArchive(plan, { adapters });
+
+    expect(result).toMatchObject({
+      status: 'recoverable',
+      effectivePhase: 'handoff-finalized',
+      blockers: [
+        {
+          operation: 'quality',
+          path: evidenceRoot,
+          code: 'archive_stage_ownership_unverified',
+        },
+      ],
+      manualRecoveryAction: {
+        kind: 'manual-recovery-required',
+      },
+    });
+    await expect(fs.readFile(outsideSentinel, 'utf8')).resolves.toBe(
+      'outside bytes\n'
+    );
+    await expect(
+      fs.access(path.join(outside, 'ship-log.md'))
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    expect((await fs.lstat(evidenceRoot)).isSymbolicLink()).toBe(true);
+
+    await fs.unlink(evidenceRoot);
+    await fs.rename(retainedEvidence, evidenceRoot);
+    await expectRetryCompletes(plan);
+  });
+
+  it('classifies a torn staged ship-log write as retained manual state', async () => {
+    const plan = await makePlan();
+    const stagedShipLog = path.join(
+      plan.paths.stage,
+      'evidence',
+      'ship-log.md'
+    );
+    let interrupted = false;
+    const adapters: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      fs: {
+        ...baseAdapters.fs,
+        open: async (target, flags, mode) => {
+          const handle = await baseAdapters.fs.open(target, flags, mode);
+          if (target !== stagedShipLog || interrupted) return handle;
+          return new Proxy(handle, {
+            get(object, property) {
+              if (property === 'writeFile') {
+                return async () => {
+                  interrupted = true;
+                  await object.writeFile('partial ship log\n', 'utf8');
+                  throw injectedError('crash during staged ship-log write', 'EIO');
+                };
+              }
+              const value = Reflect.get(object, property, object) as unknown;
+              return typeof value === 'function'
+                ? value.bind(object)
+                : value;
+            },
+          });
+        },
+      },
+    };
+
+    expect((await applyArchive(plan, { adapters })).status).toBe('recoverable');
+    await expect(fs.readFile(stagedShipLog, 'utf8')).resolves.toBe(
+      'partial ship log\n'
+    );
+
+    const retry = await applyArchive(plan, { adapters: baseAdapters });
+
+    expect(retry).toMatchObject({
+      status: 'recoverable',
+      resumed: true,
+      blockers: [
+        {
+          operation: 'stage',
+          path: plan.paths.stage,
+          code: 'archive_stage_ownership_unverified',
+        },
+      ],
+      manualRecoveryAction: { kind: 'manual-recovery-required' },
+    });
+    expect(retry.recoveryCommand).toBeUndefined();
+    await expect(fs.readFile(stagedShipLog, 'utf8')).resolves.toBe(
+      'partial ship log\n'
+    );
+
+    await fs.unlink(stagedShipLog);
+    await expectRetryCompletes(plan);
+  });
+
+  it('classifies a torn staged quality metadata write as retained manual state', async () => {
+    const plan = await makePlan();
+    const stagedMetadata = path.join(plan.paths.stage, '.openspec.yaml');
+    let interrupted = false;
+    const adapters: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      fs: {
+        ...baseAdapters.fs,
+        writeFile: async (target, data, options) => {
+          if (target === stagedMetadata && !interrupted) {
+            interrupted = true;
+            await baseAdapters.fs.writeFile(target, 'quality: [partial');
+            throw injectedError('crash during staged quality write', 'EIO');
+          }
+          return baseAdapters.fs.writeFile(target, data, options);
+        },
+      },
+    };
+
+    expect((await applyArchive(plan, { adapters })).status).toBe('recoverable');
+    await expect(fs.readFile(stagedMetadata, 'utf8')).resolves.toBe(
+      'quality: [partial'
+    );
+
+    const retry = await applyArchive(plan, { adapters: baseAdapters });
+
+    expect(retry).toMatchObject({
+      status: 'recoverable',
+      resumed: true,
+      blockers: [
+        {
+          operation: 'stage',
+          path: plan.paths.stage,
+          code: 'archive_stage_ownership_unverified',
+        },
+      ],
+      manualRecoveryAction: { kind: 'manual-recovery-required' },
+    });
+    expect(retry.recoveryCommand).toBeUndefined();
+    await expect(fs.readFile(stagedMetadata, 'utf8')).resolves.toBe(
+      'quality: [partial'
+    );
+
+    await fs.unlink(stagedMetadata);
+    await fs.unlink(path.join(plan.paths.stage, 'evidence', 'ship-log.md'));
     await expectRetryCompletes(plan);
   });
 
@@ -976,9 +1760,130 @@ describe('archive apply named fault and recovery matrix', () => {
     await expectRetryCompletes(plan);
   });
 
+  it('blocks source-last removal when a durably deleted cleaner candidate is recreated', async () => {
+    const plan = await makePlan();
+    const candidate = path.join(ephemera, 'trace-a.log');
+    const original = await fs.readFile(candidate);
+    const failingAdapters: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      writeArchiveJson: async archivedDir => {
+        const error = injectedError('injected accounting write failure', 'EIO') as
+          Error & { operation: string; path: string };
+        error.operation = 'archive-json-write';
+        error.path = path.join(archivedDir, 'archive.json');
+        throw error;
+      },
+    };
+    expect(await applyArchive(plan, { adapters: failingAdapters })).toMatchObject({
+      status: 'recoverable',
+      ephemeraDiscarded: ['trace-a.log', 'trace-b.log'],
+    });
+    await fs.writeFile(candidate, original);
+
+    const retry = await applyArchive(plan, { adapters: baseAdapters });
+
+    expect(retry).toMatchObject({
+      status: 'recoverable',
+      resumed: true,
+      blockers: [
+        expect.objectContaining({
+          operation: 'cleaner-apply',
+          path: candidate,
+          code: 'archive_cleaner_ownership_unverified',
+        }),
+      ],
+      manualRecoveryAction: { kind: 'manual-recovery-required' },
+    });
+    expect(retry).not.toHaveProperty('recoveryCommand');
+    await expect(fs.readFile(candidate)).resolves.toEqual(original);
+    await expect(fs.access(active)).resolves.toBeUndefined();
+  });
+
+  it('adopts a durable accounting result after a crash before verified progress flush', async () => {
+    const plan = await makePlan();
+    let writeCalls = 0;
+    const crashAfterWrite: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      writeArchiveJson: async (...args) => {
+        writeCalls += 1;
+        await baseAdapters.writeArchiveJson(...args);
+        throw injectedError('crash after accounting rename', 'EIO');
+      },
+    };
+    const first = await applyArchive(plan, { adapters: crashAfterWrite });
+    expect(first.status).toBe('recoverable');
+    expect(writeCalls).toBe(1);
+    await expect(fs.access(active)).resolves.toBeUndefined();
+    await expect(
+      fs.access(path.join(plan.paths.final, 'archive.json'))
+    ).resolves.toBeUndefined();
+
+    let verifyCalls = 0;
+    const retryAdapters: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      writeArchiveJson: async () => {
+        throw new Error('accounting output must not be rewritten');
+      },
+      verifyArchiveAccounting: async (...args) => {
+        verifyCalls += 1;
+        return baseAdapters.verifyArchiveAccounting(...args);
+      },
+    };
+    const retry = await applyArchive(plan, { adapters: retryAdapters });
+
+    expect(retry.status).toBe('complete');
+    expect(verifyCalls).toBeGreaterThan(0);
+    expect(await snapshotTree(active)).toBeNull();
+  });
+
+  it('keeps a mismatched post-intent accounting record manual-only', async () => {
+    const plan = await makePlan();
+    const crashAfterWrite: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      writeArchiveJson: async (...args) => {
+        await baseAdapters.writeArchiveJson(...args);
+        throw injectedError('crash after accounting rename', 'EIO');
+      },
+    };
+    expect((await applyArchive(plan, { adapters: crashAfterWrite })).status).toBe(
+      'recoverable'
+    );
+    const ledger = path.join(plan.paths.final, 'archive.json');
+    await fs.writeFile(
+      ledger,
+      `${JSON.stringify({ change: 'someone-else' }, null, 2)}\n`
+    );
+
+    const retry = await applyArchive(plan, { adapters: baseAdapters });
+
+    expect(retry).toMatchObject({
+      status: 'recoverable',
+      blockers: [
+        expect.objectContaining({
+          operation: 'accounting',
+          code: 'archive_journal_invalid',
+        }),
+      ],
+      manualRecoveryAction: {
+        kind: 'manual-recovery-required',
+      },
+    });
+    expect(retry.recoveryCommand).toBeUndefined();
+    await expect(fs.access(active)).resolves.toBeUndefined();
+    expect(await fs.readFile(ledger, 'utf8')).toContain('someone-else');
+  });
+
   it('cleaner partial failure records only actual progress, retains active bytes, and resumes the untouched candidate', async () => {
     const plan = await makePlan();
     expect(plan.cleaner.effectiveDelete).toEqual(['trace-a.log', 'trace-b.log']);
+    expect(plan.cleaner.deletionAuthority?.map(entry => entry.path)).toEqual(
+      plan.cleaner.effectiveDelete
+    );
+    expect(
+      plan.cleaner.deletionAuthority?.every(entry =>
+        Object.values(entry.identity).every(value => typeof value === 'string')
+      )
+    ).toBe(true);
     const activeBefore = await snapshotTree(active);
     let cleanerCalls = 0;
     const adapters: ArchiveEngineAdapters = {
@@ -1025,6 +1930,70 @@ describe('archive apply named fault and recovery matrix', () => {
     await expectRetryCompletes(plan);
   });
 
+  it(
+    'promotes a restored cleaner retry whose claim was deleted before the retry error',
+    async () => {
+      const plan = await makePlan();
+      const failBeforeDelete: ArchiveEngineAdapters = {
+        ...baseAdapters,
+        applyEphemeraDeletion: async () => {
+          throw injectedError('injected cleaner failure before unlink', 'EIO');
+        },
+      };
+
+      const restored = await applyArchive(plan, { adapters: failBeforeDelete });
+      expect(restored.status).toBe('recoverable');
+      const restoredJournal = await readJournal(plan.paths.publishedJournal);
+      expect(restoredJournal.cleanerProgress).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: 'trace-a.log',
+            state: 'delete-intent',
+            restoredIdentity: expect.objectContaining({
+              dev: expect.any(String),
+              ino: expect.any(String),
+              mtimeNs: expect.any(String),
+              ctimeNs: expect.any(String),
+            }),
+          }),
+        ])
+      );
+
+      let failAfterDelete = true;
+      const deleteThenFail: ArchiveEngineAdapters = {
+        ...baseAdapters,
+        applyEphemeraDeletion: async (...args) => {
+          const deleted = await baseAdapters.applyEphemeraDeletion(...args);
+          if (failAfterDelete) {
+            failAfterDelete = false;
+            throw injectedError('injected cleaner failure after unlink', 'EIO');
+          }
+          return deleted;
+        },
+      };
+      const deletedBeforeError = await applyArchive(plan, {
+        adapters: deleteThenFail,
+      });
+      expect(deletedBeforeError.status).toBe('recoverable');
+      const deleteIntentJournal = await readJournal(plan.paths.publishedJournal);
+      const deleteIntent = deleteIntentJournal.cleanerProgress.find(
+        progress => progress.path === 'trace-a.log'
+      );
+      expect(deleteIntent).toEqual(
+        expect.objectContaining({ path: 'trace-a.log', state: 'delete-intent' })
+      );
+      expect(deleteIntent).not.toHaveProperty('restoredIdentity');
+      await expect(
+        fs.access(path.join(ephemera, 'trace-a.log'))
+      ).rejects.toMatchObject({ code: 'ENOENT' });
+
+      const retry = await applyArchive(plan, { adapters: baseAdapters });
+      expect(retry.status).toBe('complete');
+      expect(retry.ephemeraDiscarded).toEqual(['trace-a.log', 'trace-b.log']);
+    },
+    120_000
+  );
+
   it('recovers a cleaner deletion that crashed after unlink from durable intent', async () => {
     const plan = await makePlan();
     let crashAfterDelete = true;
@@ -1070,8 +2039,111 @@ describe('archive apply named fault and recovery matrix', () => {
     );
   });
 
+  it('promotes durable cleaner intent when the candidate vanishes during deletion', async () => {
+    const plan = await makePlan();
+    let raceInjected = false;
+    const adapters: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      applyEphemeraDeletion: async (directory, classification, fileSystem) => {
+        if (!raceInjected) {
+          raceInjected = true;
+          await fs.unlink(path.join(directory, classification.discarded[0]!));
+          return [];
+        }
+        return baseAdapters.applyEphemeraDeletion(
+          directory,
+          classification,
+          fileSystem
+        );
+      },
+    };
+
+    const result = await applyArchive(plan, { adapters });
+
+    expect(result.status).toBe('complete');
+    expect(result.ephemeraDiscarded).toEqual(['trace-a.log', 'trace-b.log']);
+    expect((await readJournal(plan.paths.publishedJournal)).cleanerProgress).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: 'trace-a.log',
+          state: 'deleted-after-intent',
+        }),
+      ])
+    );
+  });
+
+  it('keeps post-publication cleaner identity drift manual-only across retries', async () => {
+    const plan = await makePlan();
+    const candidate = path.join(ephemera, 'trace-a.log');
+    let driftInjected = false;
+    const adapters: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      fs: {
+        ...baseAdapters.fs,
+        link: async (source, target) => {
+          await baseAdapters.fs.link(source, target);
+          if (
+            !driftInjected &&
+            path.basename(target) === '.rasen-archive-published.json'
+          ) {
+            driftInjected = true;
+            await fs.writeFile(candidate, 'changed after publication\n');
+          }
+        },
+      },
+    };
+
+    const first = await applyArchive(plan, { adapters });
+
+    expect(first).toMatchObject({
+      status: 'recoverable',
+      blockers: [
+        expect.objectContaining({
+          operation: 'cleaner-apply',
+          path: candidate,
+          code: 'archive_cleaner_ownership_unverified',
+        }),
+      ],
+      manualRecoveryAction: {
+        kind: 'manual-recovery-required',
+      },
+    });
+    expect(first.recoveryCommand).toBeUndefined();
+    expect(first.abortCommand).toBeUndefined();
+    expect(first.retainedPaths).toEqual(
+      expect.arrayContaining([
+        candidate,
+        plan.paths.final,
+        plan.paths.publishedJournal,
+      ])
+    );
+    expect(await fs.readFile(candidate, 'utf8')).toBe(
+      'changed after publication\n'
+    );
+
+    const retry = await applyArchive(plan, { adapters: baseAdapters });
+    expect(retry).toMatchObject({
+      status: 'recoverable',
+      blockers: [
+        expect.objectContaining({
+          code: 'archive_cleaner_ownership_unverified',
+          path: candidate,
+        }),
+      ],
+      manualRecoveryAction: {
+        kind: 'manual-recovery-required',
+      },
+    });
+    expect(retry.recoveryCommand).toBeUndefined();
+    expect(await fs.readFile(candidate, 'utf8')).toBe(
+      'changed after publication\n'
+    );
+  });
+
   it('active-source removal failure retains exact active bytes and finalized accounting, then resumes source-last', async () => {
     const plan = await makePlan();
+    const globalDataDir = path.join(root, 'source-removal-global');
+    const token = await persistArchivePlan(plan, globalDataDir, baseAdapters);
     const activeBefore = await snapshotTree(active);
     let failOnce = true;
     const adapters: ArchiveEngineAdapters = {
@@ -1088,14 +2160,25 @@ describe('archive apply named fault and recovery matrix', () => {
       },
     };
 
-    const result = await applyArchive(plan, { adapters: adapters });
+    const result = await withStoredArchivePlanOperation(
+      plan,
+      globalDataDir,
+      'apply',
+      () => applyArchive(plan, { adapters })
+    );
     expectFailureReport(result, plan, {
       operation: 'source-remove',
-      path: active,
+      path: path.join(
+        path.dirname(active),
+        `.rasen-archive-source-${plan.transactionId}`
+      ),
       code: 'EACCES',
       journalPath: plan.paths.publishedJournal,
     });
     expect(result.ephemeraDiscarded).toEqual(['trace-a.log', 'trace-b.log']);
+    expect(result.recoveryCommand).toBe(
+      `rasen archive --apply-plan ${token} --yes`
+    );
     expect(await snapshotTree(active)).toEqual(activeBefore);
     expect(
       JSON.parse(await fs.readFile(path.join(plan.paths.final, 'archive.json'), 'utf8'))
@@ -1104,11 +2187,147 @@ describe('archive apply named fault and recovery matrix', () => {
     await expectFailedJournal(plan, {
       target: plan.paths.publishedJournal,
       operation: 'source-remove',
-      path: active,
+      path: path.join(
+        path.dirname(active),
+        `.rasen-archive-source-${plan.transactionId}`
+      ),
       code: 'EACCES',
       resumePhase: 'accounting-finalized',
       disposed: ['trace-a.log', 'trace-b.log'],
     });
+    const retry = await withStoredArchivePlanOperation(
+      plan,
+      globalDataDir,
+      'apply',
+      () => applyArchive(plan, { adapters: baseAdapters })
+    );
+    expect(retry.status).toBe('complete');
+    expect(retry.resumed).toBe(true);
+    expect((await readJournal(plan.paths.publishedJournal)).phase).toBe('complete');
+    expect(await snapshotTree(active)).toBeNull();
+  });
+
+  it('retains a descendant injected after stage verification and blocks terminal completion', async () => {
+    const plan = await makePlan();
+    const injected = path.join(plan.paths.stage, 'post-verification.txt');
+    let injectedLate = false;
+    const adapters: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      fs: {
+        ...baseAdapters.fs,
+        lstat: async target => {
+          if (target === plan.paths.stage && !injectedLate) {
+            try {
+              await baseAdapters.fs.access(active);
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+              await baseAdapters.fs.access(plan.paths.publishedJournal);
+              injectedLate = true;
+              await baseAdapters.fs.writeFile(injected, 'later mutation\n');
+            }
+          }
+          return baseAdapters.fs.lstat(target);
+        },
+      },
+    };
+
+    const result = await applyArchive(plan, { adapters });
+
+    expect(result).toMatchObject({
+      status: 'recoverable',
+      effectivePhase: 'source-removed',
+      blockers: [
+        {
+          operation: 'stage',
+          path: plan.paths.stage,
+          code: 'archive_stage_ownership_unverified',
+        },
+      ],
+      manualRecoveryAction: {
+        kind: 'manual-recovery-required',
+      },
+    });
+    expect(result.recoveryCommand).toBeUndefined();
+    await expect(fs.readFile(injected, 'utf8')).resolves.toBe('later mutation\n');
+    await expect(fs.access(active)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expectFailedJournal(plan, {
+      target: plan.paths.publishedJournal,
+      operation: 'stage',
+      path: plan.paths.stage,
+      code: 'archive_stage_ownership_unverified',
+      resumePhase: 'source-removed',
+      disposed: ['trace-a.log', 'trace-b.log'],
+    });
+
+    await fs.unlink(injected);
+    await expectRetryCompletes(plan);
+    expect(await snapshotTree(plan.paths.stage)).toBeNull();
+  });
+
+  it('retains a malformed same-token stage journal during terminal cleanup', async () => {
+    const plan = await makePlan();
+    let replacedJournal = false;
+    let trustedStageJournal = '';
+    const adapters: ArchiveEngineAdapters = {
+      ...baseAdapters,
+      fs: {
+        ...baseAdapters.fs,
+        lstat: async target => {
+          if (target === plan.paths.stage && !replacedJournal) {
+            try {
+              await baseAdapters.fs.access(active);
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+              await baseAdapters.fs.access(plan.paths.publishedJournal);
+              replacedJournal = true;
+              trustedStageJournal = await baseAdapters.fs.readFile(
+                plan.paths.journal,
+                'utf8'
+              );
+              await baseAdapters.fs.writeFile(
+                plan.paths.journal,
+                `${JSON.stringify({
+                  transactionId: plan.transactionId,
+                  planHash: plan.planHash,
+                  change: plan.change,
+                  activePath: plan.paths.active,
+                  stagePath: plan.paths.stage,
+                  finalPath: plan.paths.final,
+                })}\n`
+              );
+            }
+          }
+          return baseAdapters.fs.lstat(target);
+        },
+      },
+    };
+
+    const result = await applyArchive(plan, { adapters });
+
+    expect(result).toMatchObject({
+      status: 'recoverable',
+      effectivePhase: 'source-removed',
+      blockers: [
+        {
+          operation: 'stage',
+          path: plan.paths.stage,
+          code: 'archive_journal_invalid',
+        },
+      ],
+      manualRecoveryAction: {
+        kind: 'manual-recovery-required',
+      },
+    });
+    const retained = JSON.parse(
+      await fs.readFile(plan.paths.journal, 'utf8')
+    ) as Record<string, unknown>;
+    expect(retained).toMatchObject({
+      transactionId: plan.transactionId,
+      planHash: plan.planHash,
+    });
+    expect(retained.schemaVersion).toBeUndefined();
+
+    await fs.writeFile(plan.paths.journal, trustedStageJournal);
     await expectRetryCompletes(plan);
   });
 
@@ -1129,7 +2348,7 @@ describe('archive apply named fault and recovery matrix', () => {
         expect.objectContaining({
           operation: 'accounting',
           path: plan.paths.final,
-          code: 'ESTALE',
+          code: 'archive_reservation_ownership_unverified',
         }),
       ],
       manualRecoveryAction: {
@@ -1147,9 +2366,9 @@ describe('archive apply named fault and recovery matrix', () => {
         detectedAt: '2026-07-31T00:00:00.000Z',
         operation: 'accounting',
         path: plan.paths.final,
-        code: 'ESTALE',
+        code: 'archive_reservation_ownership_unverified',
         message: expect.stringContaining(
-          'Completed archive payload differs from its verified phase fingerprint'
+          'Recorded reserved archive entry no longer matches its durable identity'
         ),
         safeAction: {
           kind: 'manual-recovery-required',
@@ -1255,7 +2474,7 @@ describe('archive apply named fault and recovery matrix', () => {
         expect.objectContaining({
           operation: 'accounting',
           path: plan.paths.final,
-          code: 'ESTALE',
+          code: 'archive_reservation_ownership_unverified',
         }),
       ],
       manualRecoveryAction: {
@@ -1269,7 +2488,7 @@ describe('archive apply named fault and recovery matrix', () => {
       integrityFailure: {
         operation: 'accounting',
         path: plan.paths.final,
-        code: 'ESTALE',
+        code: 'archive_reservation_ownership_unverified',
       },
     });
     const durableJournalBytes = await fs.readFile(
@@ -1310,6 +2529,34 @@ describe('archive apply named fault and recovery matrix', () => {
     );
     expect(await fs.readFile(proposal, 'utf8')).toBe(
       '# corrupt after completion\n'
+    );
+  });
+
+  it('retains a recreated final-owner sentinel and blocks completed fast-path acceptance', async () => {
+    const plan = await makePlan();
+    expect(await applyArchive(plan, { adapters: baseAdapters })).toMatchObject({
+      status: 'complete',
+    });
+    const owner = path.join(plan.paths.final, ARCHIVE_FINAL_OWNER_FILENAME);
+    await fs.unlink(owner);
+    await fs.writeFile(owner, 'later mutation must survive\n');
+
+    const retry = await applyArchive(plan, { adapters: baseAdapters });
+
+    expect(retry).toMatchObject({
+      status: 'recoverable',
+      resumed: true,
+      blockers: [
+        expect.objectContaining({
+          path: plan.paths.final,
+          code: 'archive_reservation_ownership_unverified',
+        }),
+      ],
+      manualRecoveryAction: { kind: 'manual-recovery-required' },
+    });
+    expect(retry).not.toHaveProperty('recoveryCommand');
+    await expect(fs.readFile(owner, 'utf8')).resolves.toBe(
+      'later mutation must survive\n'
     );
   });
 });

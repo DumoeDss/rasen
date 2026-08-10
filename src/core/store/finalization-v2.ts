@@ -195,11 +195,32 @@ const ArchiveCodeMergeSchema = z
   })
   .strict();
 
+const CapabilityPathSchema = z.string().superRefine((value, context) => {
+  const segments = value.split('/');
+  if (
+    value.length === 0 ||
+    value.includes('\\') ||
+    segments.some(
+      segment =>
+        segment.length === 0 ||
+        segment === '.' ||
+        segment === '..' ||
+        !ChangeIdSchema.safeParse(segment).success
+    )
+  ) {
+    context.addIssue({
+      code: 'custom',
+      message:
+        'Capability must be a slash-delimited path of canonical lowercase kebab-case ids',
+    });
+  }
+});
+
 export const ArchiveSpecActionSchema = z.union([
   z
     .object({
       action: z.literal('create'),
-      capabilityId: ChangeIdSchema,
+      capabilityId: CapabilityPathSchema,
       beforeSha256: z.null(),
       afterSha256: Sha256DigestSchema,
     })
@@ -207,7 +228,7 @@ export const ArchiveSpecActionSchema = z.union([
   z
     .object({
       action: z.literal('update'),
-      capabilityId: ChangeIdSchema,
+      capabilityId: CapabilityPathSchema,
       beforeSha256: Sha256DigestSchema,
       afterSha256: Sha256DigestSchema,
     })
@@ -215,7 +236,7 @@ export const ArchiveSpecActionSchema = z.union([
   z
     .object({
       action: z.literal('delete'),
-      capabilityId: ChangeIdSchema,
+      capabilityId: CapabilityPathSchema,
       beforeSha256: Sha256DigestSchema,
       afterSha256: z.null(),
     })

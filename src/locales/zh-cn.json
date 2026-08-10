@@ -5,11 +5,18 @@
     "confirmationRequired": "中止归档事务需要显式确认。",
     "confirmationFix": "请重新运行 'rasen archive --abort-plan {token} --yes'。",
     "applyAborted": "此归档计划已中止，无法应用。",
-    "aborted": "归档计划 {transactionId} 已中止。引擎拥有的暂存目录和事务日志已删除。",
+    "aborted": "归档计划 {transactionId} 已中止。未撤销任何已持久化的归档更改。",
     "alreadyAborted": "归档计划 {transactionId} 已经中止，无需进一步更改。",
+    "associationPending": "Store 工作区关联仍处于待处理状态。",
     "blocked": "归档计划 {transactionId} 未中止。",
-    "blocker": "{code}：已保护 {path}",
-    "recovery": "事务仍可恢复。请修复报告的阻止项，或使用 --apply-plan 恢复同一计划。"
+    "blocker": "阻止项 {code}：{message}（{path}）",
+    "effectivePhase": "有效阶段：{phase}",
+    "effectivePhaseUnknown": "尚未确定",
+    "retainedPath": "保留路径：{path}",
+    "retainedPathsNone": "保留路径：未报告",
+    "manualRecoveryAction": "手动恢复：{action}",
+    "abortAction": "中止：{action}",
+    "recoveryAction": "恢复：{action}"
   },
   "bootstrap": {
     "headingProject": "对 {path} 处项目执行 bootstrap {mode}",

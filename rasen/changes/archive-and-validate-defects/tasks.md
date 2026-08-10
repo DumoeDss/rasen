@@ -62,14 +62,18 @@
 - [x] 7.5 Add `abort-plan` to Commander help, the completion registry, generated command examples where applicable, and command/registry parity tests.
 - [x] 7.6 Add every new structured human message and option description to `src/locales/en.json`, `ja.json`, and `zh-cn.json` with identical keys and interpolation placeholders.
 - [x] 7.7 Update workflow golden/parity tests to cover the merge assertion order, reserved heading ownership, recovery disposition, and complete-scenario guidance.
+- [x] 7.8 Reconcile single and bulk archive PR handling with the canonical timing contract: independent verification precedes sync/preview/apply, known-open override and unavailable-verification fallback remain interactive and item-specific, and dispatched/non-interactive runs refuse.
+- [x] 7.9 Render human abort refusals in durable-state order — blocker messages, effective phase, retained paths, then the localized exact recovery or manual disposition — with no generic replay advice for ownership or integrity disputes.
+- [x] 7.10 Extend the canonical management finalization API artifacts and focused contract tests for the explicit `mergeConfirmed` request assertion and nested structured error disposition.
 
 ## 8. Verification
 
 - [x] 8.1 Run the focused reconciliation and validation suites, including `test/core/validation.test.ts`, `test/commands/validate.test.ts`, and the new B2 regression cases.
-- [x] 8.2 Run the focused archive suites, including `test/core/archive.test.ts`, `test/core/archive-engine.test.ts`, `test/core/archive-consumer-integration.test.ts`, `test/templates/archive-engine-consumers.test.ts`, and new B1/B3/B4/B6 cases.
+- [x] 8.2 Run the focused archive suites, including `test/core/archive.test.ts`, `test/core/archive-engine.test.ts`, `test/core/archive-consumer-integration.test.ts`, `test/core/templates/archive-engine-consumers.test.ts`, and new B1/B3/B4/B6 cases.
 - [x] 8.3 Run `test/core/project-registry.test.ts`, `test/core/project-home.test.ts`, `test/core/root-selection.test.ts`, and `test/core/learned-skills/context.test.ts` for B5 and owner diagnostics.
 - [x] 8.4 Run locale catalog parity, completion parity, and workflow-template tests after all generated surface updates.
 - [x] 8.5 Build the CLI, then smoke-test the real saved-plan/apply-confirmation path and reserved-heading plan/abort/re-plan path against temporary isolated roots.
 - [x] 8.6 Run `pnpm exec tsc --noEmit`, `pnpm lint`, and `env -u ZSH pnpm test`; investigate any failure rather than narrowing the claimed verification scope.
-- [ ] 8.7 Confirm the repository's Windows CI job executes the new path-sensitive archive and registry regressions, and record the passing job as cross-platform evidence.
+- [x] 8.7 Confirm the repository's Windows CI job executes the new path-sensitive archive and registry regressions, and record the passing job as cross-platform evidence.
+  - Evidence: GitHub Actions run [31355525652](https://github.com/DumoeDss/rasen/actions/runs/31355525652) passed at exact head `21e9c0a75a36f0845dcf4771f53759e9fceb519d`; [Windows shard 1](https://github.com/DumoeDss/rasen/actions/runs/31355525652/job/93354366692), [shard 2](https://github.com/DumoeDss/rasen/actions/runs/31355525652/job/93354366688), and [shard 3](https://github.com/DumoeDss/rasen/actions/runs/31355525652/job/93354366683) completed the disjoint `143 + 142 + 142 = 427`-file manifest with 7,473 passed, 47 skipped, and 0 failed tests, including the path-sensitive archive/finalization and project-registry regressions. The [PR aggregate](https://github.com/DumoeDss/rasen/actions/runs/31355525652/job/93356944247) passed.
 - [x] 8.8 Run `npm pack --dry-run --json` and verify the published schemas, skills, completion metadata, and all three locale catalogs contain the updated contracts.

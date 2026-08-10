@@ -385,6 +385,9 @@ const archiveCommand = program
   .option('--keep-ephemera', '')
   .option('--dry-run', '')
   .option('--save-plan', '')
+  .addOption(
+    new Option('--finalization-preview-precondition <token>', '').hideHelp()
+  )
   .option('--apply-plan <token>', '')
   .option('--abort-plan <token>', '')
   .option('--intent-template', '')

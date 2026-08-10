@@ -5,11 +5,18 @@
     "confirmationRequired": "アーカイブトランザクションを中止するには明示的な確認が必要です。",
     "confirmationFix": "'rasen archive --abort-plan {token} --yes' を再実行してください。",
     "applyAborted": "このアーカイブ計画は中止済みのため、適用できません。",
-    "aborted": "アーカイブ計画 {transactionId} を中止しました。エンジンが所有するステージとトランザクションジャーナルを削除しました。",
+    "aborted": "アーカイブ計画 {transactionId} を中止しました。永続化済みのアーカイブ変更は取り消していません。",
     "alreadyAborted": "アーカイブ計画 {transactionId} はすでに中止済みです。追加の変更は不要でした。",
+    "associationPending": "Store ワークスペースの関連付けは保留中のままです。",
     "blocked": "アーカイブ計画 {transactionId} は中止されませんでした。",
-    "blocker": "{code}: {path} は保護されています",
-    "recovery": "トランザクションは復旧可能なままです。報告されたブロッカーを修復するか、--apply-plan で同じ計画を再開してください。"
+    "blocker": "ブロッカー {code}: {message}（{path}）",
+    "effectivePhase": "有効なフェーズ: {phase}",
+    "effectivePhaseUnknown": "未確定",
+    "retainedPath": "保持されたパス: {path}",
+    "retainedPathsNone": "保持されたパス: 報告なし",
+    "manualRecoveryAction": "手動復旧: {action}",
+    "abortAction": "中止: {action}",
+    "recoveryAction": "復旧: {action}"
   },
   "bootstrap": {
     "headingProject": "{path} のプロジェクトに対する bootstrap {mode}",

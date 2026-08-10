@@ -266,6 +266,21 @@ describe('Archive v2 contract', () => {
     expect(validateArchiveV2(value).specSync.actions).toEqual([action]);
   });
 
+  it('accepts a nested canonical capability path without flattening it', () => {
+    const value = archiveBase();
+    value.specSync.actions = [
+      {
+        action: 'update',
+        capabilityId: 'platform/routing',
+        beforeSha256: BEFORE,
+        afterSha256: AFTER,
+      },
+    ];
+    expect(validateArchiveV2(value).specSync.actions[0]?.capabilityId).toBe(
+      'platform/routing'
+    );
+  });
+
   it.each([
     { action: 'create', capabilityId: 'auth', beforeSha256: BEFORE, afterSha256: AFTER },
     { action: 'create', capabilityId: 'auth', beforeSha256: null, afterSha256: null },

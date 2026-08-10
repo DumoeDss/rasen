@@ -5,7 +5,9 @@ import chalk from 'chalk';
 
 import { getTaskProgressForChange, formatTaskStatus } from '../utils/task-progress.js';
 import { formatLocaleMessage, getLocaleCatalog } from '../locales/index.js';
+import { canonicalJson } from './canonical-json.js';
 import {
+  ARCHIVE_MERGE_CONFIRMATION_BLOCKER_CODE,
   applyArchive,
   abortArchivePlan,
   inspectArchiveApplyPlan,
@@ -23,6 +25,7 @@ import {
   type ArchiveIntentV1,
   type ArchivePlan,
   type PreparedArchiveSpecAction,
+  type ArchiveSpecSyncPreparation,
 } from './archive-engine.js';
 import { getCliLocale } from './cli-locale.js';
 import { getGlobalDataDir } from './global-config.js';
@@ -41,8 +44,10 @@ import {
 } from './root-selection.js';
 import {
   analyzeSpecUpdates,
+  discoverDeltaSpecFiles,
   findSpecUpdates,
   SpecReconciliationError,
+  type SpecReconciliationIssue,
 } from './specs-apply.js';
 import { classifyStoreRootLayout } from './store/layout-write-guard.js';
 import {
@@ -54,6 +59,165 @@ import {
   type ImmutableFinalizationPlan,
 } from './store/finalization/index.js';
 import { Validator } from './validation/validator.js';
+
+interface PreparedSpecActions {
+  readonly actions: PreparedArchiveSpecAction[];
+  readonly specSync: ArchiveSpecSyncPreparation;
+}
+
+interface ArchiveDisposition {
+  readonly manualRecoveryAction?: { readonly guidance: string };
+  readonly abortCommand?: string;
+  readonly recoveryCommand?: string;
+}
+
+/**
+ * A Store dry-run may persist only a plan that the exact-token apply surface
+ * can actually admit. The sole merge gate is the one runtime assertion; every
+ * other blocker remains transaction-store neutral.
+ */
+export function canPersistStoreFinalizationPlan(
+  plan: ImmutableFinalizationPlan
+): boolean {
+  if (plan.alreadyComplete) return false;
+  if (plan.blockers.length === 0) return true;
+  if (plan.blockers.length !== 1) return false;
+  const [blocker] = plan.blockers;
+  return (
+    String(blocker?.code) === ARCHIVE_MERGE_CONFIRMATION_BLOCKER_CODE ||
+    blocker?.archiveBlocker?.code === ARCHIVE_MERGE_CONFIRMATION_BLOCKER_CODE
+  );
+}
+
+const FINALIZATION_PREVIEW_PRECONDITION_PREFIX =
+  'finalization-preview-v1:';
+const FINALIZATION_PREVIEW_TRANSACTION_ID_PLACEHOLDER = '<transaction-id>';
+const FINALIZATION_PREVIEW_CREATED_AT_PLACEHOLDER = '<created-at>';
+
+/**
+ * Stable admission material for the two-process management preview.
+ *
+ * Archive transaction ids, hashes, staging/journal paths, and generated archive
+ * timestamps are deliberately normalized because each CLI process creates a
+ * fresh transaction. Every other finalization and archive-plan field remains in
+ * the projection, including cleaner/sidecar authority, source identities,
+ * paths, actions, decisions, and the complete ordered blocker set. The server
+ * never reconstructs this value: inspect emits it and save validates the opaque
+ * bytes before persistence.
+ */
+export function storeFinalizationPreviewPrecondition(
+  plan: ImmutableFinalizationPlan
+): string {
+  const {
+    createdAt,
+    planId: _planId,
+    token: _token,
+    archivePlan,
+    ...finalizationDecision
+  } = plan;
+  const {
+    transactionId,
+    planHash: _planHash,
+    createdAt: archiveCreatedAt,
+    paths,
+    ...archiveDecision
+  } = archivePlan;
+  const {
+    stage: _stage,
+    journal: _journal,
+    ...stableArchivePaths
+  } = paths;
+  const projection = {
+    version: 1,
+    createdAtConsistent: createdAt === archiveCreatedAt,
+    finalization: finalizationDecision,
+    archive: { ...archiveDecision, paths: stableArchivePaths },
+  };
+  let canonical = canonicalJson(projection);
+  if (transactionId.length > 0) {
+    canonical = canonical
+      .split(transactionId)
+      .join(FINALIZATION_PREVIEW_TRANSACTION_ID_PLACEHOLDER);
+  }
+  for (const generatedAt of new Set([createdAt, archiveCreatedAt])) {
+    if (generatedAt.length > 0) {
+      canonical = canonical
+        .split(generatedAt)
+        .join(FINALIZATION_PREVIEW_CREATED_AT_PLACEHOLDER);
+    }
+  }
+  return (
+    FINALIZATION_PREVIEW_PRECONDITION_PREFIX +
+    createHash('sha256').update(canonical, 'utf8').digest('hex')
+  );
+}
+
+export function formatArchiveDispositionLine(
+  disposition: ArchiveDisposition,
+  locale: Parameters<typeof getLocaleCatalog>[0] = getCliLocale()
+): string | null {
+  const messages = getLocaleCatalog(locale).archiveAbort;
+  if (disposition.manualRecoveryAction !== undefined) {
+    return formatLocaleMessage(messages.manualRecoveryAction, {
+      action: disposition.manualRecoveryAction.guidance,
+    });
+  }
+  if (disposition.abortCommand !== undefined) {
+    return formatLocaleMessage(messages.abortAction, {
+      action: disposition.abortCommand,
+    });
+  }
+  if (disposition.recoveryCommand !== undefined) {
+    return formatLocaleMessage(messages.recoveryAction, {
+      action: disposition.recoveryCommand,
+    });
+  }
+  return null;
+}
+
+export function formatArchiveAbortBlockedLines(
+  result: Pick<
+    ArchiveAbortResult,
+    | 'blockers'
+    | 'effectivePhase'
+    | 'retainedPaths'
+    | 'associationPhase'
+    | 'manualRecoveryAction'
+    | 'recoveryCommand'
+  >,
+  locale: Parameters<typeof getLocaleCatalog>[0] = getCliLocale()
+): string[] {
+  const messages = getLocaleCatalog(locale).archiveAbort;
+  const lines = result.blockers.map(blocker =>
+    formatLocaleMessage(messages.blocker, {
+      code: blocker.code ?? blocker.operation,
+      message: blocker.message,
+      path: blocker.path,
+    })
+  );
+  lines.push(
+    formatLocaleMessage(messages.effectivePhase, {
+      phase: result.effectivePhase ?? messages.effectivePhaseUnknown,
+    })
+  );
+  if (result.retainedPaths === undefined || result.retainedPaths.length === 0) {
+    lines.push(messages.retainedPathsNone);
+  } else {
+    for (const retainedPath of result.retainedPaths) {
+      lines.push(
+        formatLocaleMessage(messages.retainedPath, {
+          path: retainedPath,
+        })
+      );
+    }
+  }
+  if (result.associationPhase === 'pending') {
+    lines.push(messages.associationPending);
+  }
+  const disposition = formatArchiveDispositionLine(result, locale);
+  if (disposition !== null) lines.push(disposition);
+  return lines;
+}
 
 function errorCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException | undefined)?.code;
@@ -95,6 +259,8 @@ export interface ArchiveOptions {
   keepEphemera?: boolean;
   dryRun?: boolean;
   savePlan?: boolean;
+  /** Internal Store-finalization compare-before-persist precondition. */
+  finalizationPreviewPrecondition?: string;
   applyPlan?: string;
   abortPlan?: string;
   intentTemplate?: boolean;
@@ -256,7 +422,12 @@ interface ArchiveResult {
     provenCommit: string | null;
     codeRef: string | null;
     codeRefOid: string | null;
-    associationPhase?: 'applied' | 'no-op';
+    associationPhase?: 'applied' | 'no-op' | 'pending';
+    effectivePhase?: FinalizationResult['effectivePhase'];
+    retainedPaths?: readonly string[];
+    recoveryCommand?: string;
+    abortCommand?: string;
+    manualRecoveryAction?: ArchiveApplyResult['manualRecoveryAction'];
     alreadyComplete?: boolean;
   };
   finalizationPlan?: ImmutableFinalizationPlan;
@@ -266,8 +437,12 @@ interface ArchiveResult {
   journalPath?: string;
   blockers?: ArchivePlan['blockers'];
   planToken?: string;
+  previewPrecondition?: string;
   status?: ArchiveApplyResult['status'];
   result?: ArchiveApplyResult;
+  recoveryCommand?: string;
+  abortCommand?: string;
+  manualRecoveryAction?: ArchiveApplyResult['manualRecoveryAction'];
   mode?: 'intent-template' | 'plan' | 'apply';
   intent?: ArchiveIntentV1;
   compatibilityDiagnostic?: ArchiveDiagnostic;
@@ -289,35 +464,15 @@ class ArchiveBlockedError extends Error {
 }
 
 /**
- * Does the change carry delta specs at all? Decided independently of whether
- * spec actions were prepared, because `--skip-specs` suppresses preparation and
- * the landed record's assertion depends on the deltas EXISTING, not on whether
- * this invocation chose to apply them.
+ * Does the change carry any currently discoverable delta specs? Discovery
+ * issues are already retained as typed preparation blockers; this presence
+ * probe must not replace that aggregate with a second top-level exception.
+ * The engine's exhaustive fingerprint/manifest gate independently fail-closes
+ * files that appear or become invalid after preparation.
  */
 async function changeHasDeltaSpecs(changeDir: string): Promise<boolean> {
-  const specsRoot = path.join(changeDir, 'specs');
-  let capabilities: import('node:fs').Dirent[];
-  try {
-    capabilities = await fs.readdir(specsRoot, { withFileTypes: true });
-  } catch (error) {
-    if (!isMissingPathError(error)) throw error;
-    return false;
-  }
-  for (const capability of capabilities) {
-    if (!capability.isDirectory()) continue;
-    try {
-      const content = await fs.readFile(
-        path.join(specsRoot, capability.name, 'spec.md'),
-        'utf8'
-      );
-      if (/^##\s+(ADDED|MODIFIED|REMOVED|RENAMED)\s+Requirements/m.test(content)) {
-        return true;
-      }
-    } catch (error) {
-      if (!isMissingPathError(error)) throw error;
-    }
-  }
-  return false;
+  const discovery = await discoverDeltaSpecFiles(changeDir);
+  return discovery.files.length > 0;
 }
 
 function finalizationFacts(
@@ -335,6 +490,21 @@ function finalizationFacts(
     codeRef: result.codeRef,
     codeRefOid: result.codeRefOid,
     associationPhase: result.associationPhase,
+    ...(result.effectivePhase === undefined
+      ? {}
+      : { effectivePhase: result.effectivePhase }),
+    ...(result.retainedPaths === undefined
+      ? {}
+      : { retainedPaths: result.retainedPaths }),
+    ...(result.recoveryCommand === undefined
+      ? {}
+      : { recoveryCommand: result.recoveryCommand }),
+    ...(result.abortCommand === undefined
+      ? {}
+      : { abortCommand: result.abortCommand }),
+    ...(result.manualRecoveryAction === undefined
+      ? {}
+      : { manualRecoveryAction: result.manualRecoveryAction }),
   };
 }
 
@@ -432,6 +602,20 @@ export class ArchiveCommand {
       }
       throw error;
     }
+    if (
+      options.finalizationPreviewPrecondition !== undefined &&
+      (!options.dryRun || !options.savePlan)
+    ) {
+      const error = new ArchiveBlockedError(
+        'archive_option_conflict',
+        '--finalization-preview-precondition is valid only with --dry-run --save-plan.'
+      );
+      if (json) {
+        this.printJsonFailure(undefined, error.diagnostic);
+        return;
+      }
+      throw error;
+    }
     let root: ResolvedOpenSpecRoot;
     try {
       root = await resolveOpenSpecRoot({
@@ -449,6 +633,15 @@ export class ArchiveCommand {
     }
 
     const finalizationDiagnostic =
+      (options.finalizationPreviewPrecondition !== undefined &&
+      root.planningScope?.kind !== 'store-project'
+        ? {
+            severity: 'error' as const,
+            code: 'archive_option_conflict',
+            message:
+              '--finalization-preview-precondition is reserved for Store project finalization saves.',
+          }
+        : null) ??
       inapplicableFinalizationOptions(root, options) ??
       declaredOutcomeDiagnostic(root, options) ??
       (await storeFinalizationDiagnostic(root));
@@ -533,6 +726,7 @@ export class ArchiveCommand {
       options.applyPlan !== undefined,
       !!options.dryRun,
       !!options.savePlan,
+      options.finalizationPreviewPrecondition !== undefined,
       !!options.intentTemplate,
       options.intentFile !== undefined,
       !!options.skipSpecs,
@@ -633,15 +827,12 @@ export class ArchiveCommand {
             transactionId: result.transactionId,
           })
         );
-        for (const blocker of result.blockers) {
-          console.log(
-            formatLocaleMessage(messages.blocker, {
-              code: blocker.code ?? blocker.operation,
-              path: blocker.path,
-            })
-          );
+        for (const line of formatArchiveAbortBlockedLines(result)) {
+          console.log(line);
         }
-        console.log(messages.recovery);
+      }
+      if (result.status !== 'blocked' && result.associationPhase === 'pending') {
+        console.log(messages.associationPending);
       }
     } catch (error) {
       const diagnostic = toArchiveDiagnostic(error);
@@ -662,6 +853,7 @@ export class ArchiveCommand {
       changeName !== undefined,
       !!options.dryRun,
       !!options.savePlan,
+      options.finalizationPreviewPrecondition !== undefined,
       !!options.intentTemplate,
       options.intentFile !== undefined,
       !!options.skipSpecs,
@@ -711,14 +903,8 @@ export class ArchiveCommand {
         (aborted as NodeJS.ErrnoException).code = 'archive_plan_aborted';
         throw aborted;
       }
-      await withStoredArchivePlanOperation(
-        plan,
-        globalDataDir,
-        'apply',
-        async () => {
-      // A stored Store v2 plan is REVALIDATED and applied, not refused. The
-      // plan carries the finalization block, so the invoking directory and the
-      // selectors that produced it cannot influence the outcome.
+      // Store finalization owns this same operation gate internally so direct
+      // and saved-plan apply share one lock/tombstone path without nesting.
       if (plan.finalization !== undefined) {
         const finalization = await ChangeFinalizationModuleInstance.applyStoredPlan(
           plan,
@@ -742,13 +928,23 @@ export class ArchiveCommand {
         for (const item of finalization.blockers) {
           console.log(`${item.code}: ${item.message}`);
         }
+        const disposition = formatArchiveDispositionLine(finalization);
+        if (disposition !== null) console.log(disposition);
         return;
       }
-      const result = await this.applyPlannedArchive(plan, {
-        assertions: { mergeConfirmed: options.yes === true },
-      });
+
+      const result = await withStoredArchivePlanOperation(
+        plan,
+        globalDataDir,
+        'apply',
+        () =>
+          this.applyPlannedArchive(plan, {
+            assertions: { mergeConfirmed: options.yes === true },
+          })
+      );
       if (result.status !== 'complete') {
         if (
+          result.recoveryCommand === undefined &&
           result.status === 'blocked' &&
           inspectArchiveApplyPlan(plan, { mergeConfirmed: true }).applicable
         ) {
@@ -774,16 +970,9 @@ export class ArchiveCommand {
         for (const item of result.blockers) {
           console.log(`${item.operation}: ${item.message}`);
         }
-        if (result.manualRecoveryAction) {
-          console.log(`Manual recovery: ${result.manualRecoveryAction.guidance}`);
-        } else if (result.abortCommand) {
-          console.log(`Abort: ${result.abortCommand}`);
-        } else if (result.recoveryCommand) {
-          console.log(`Recovery: ${result.recoveryCommand}`);
-        }
+        const disposition = formatArchiveDispositionLine(result);
+        if (disposition !== null) console.log(disposition);
       }
-        }
-      );
     } catch (error) {
       const diagnostic = toArchiveDiagnostic(error);
       if (json) {
@@ -1056,12 +1245,17 @@ export class ArchiveCommand {
     }
 
     const preparationBlockers: ArchivePlan['blockers'] = [...planningBlockers];
-    let specActions: PreparedArchiveSpecAction[] = [];
+    const reconciliationIssues: SpecReconciliationIssue[] = [];
+    let preparedSpecs: PreparedSpecActions = {
+      actions: [],
+      specSync: {
+        mode: sourceAvailable ? 'no-deltas' : 'passive',
+        deltaSources: [],
+      },
+    };
     try {
-      if (!sourceAvailable) {
-        specActions = [];
-      } else {
-        specActions = await this.prepareSpecActions(
+      if (sourceAvailable) {
+        preparedSpecs = await this.prepareSpecActions(
           changeDir,
           root.specsDir,
           changeName,
@@ -1073,6 +1267,7 @@ export class ArchiveCommand {
       }
     } catch (error) {
       if (error instanceof SpecReconciliationError) {
+        reconciliationIssues.push(...error.issues);
         for (const issue of error.issues) {
           preparationBlockers.push({
             operation: 'spec',
@@ -1103,8 +1298,12 @@ export class ArchiveCommand {
           compatibilityDiagnostic ??= diagnostic;
         }
       }
-      specActions = [];
+      preparedSpecs = {
+        actions: [],
+        specSync: { mode: 'no-deltas', deltaSources: [] },
+      };
     }
+    const specActions = preparedSpecs.actions;
 
     const executionRoot = resolvedExecutionProjectRoot(root);
     if (executionRoot === undefined) {
@@ -1158,7 +1357,9 @@ export class ArchiveCommand {
         override: false,
       },
       specActions,
+      specSync: preparedSpecs.specSync,
       preparationBlockers,
+      reconciliationIssues,
       sidecar,
       shipLog,
     } as const;
@@ -1232,7 +1433,23 @@ export class ArchiveCommand {
       };
     }
 
-    const result = await this.applyPlannedArchive(plan, applyOptions);
+    const globalDataDir = getGlobalDataDir();
+    const persistedPlanToken = await persistArchivePlan(plan, globalDataDir);
+    const result = await withStoredArchivePlanOperation(
+      plan,
+      globalDataDir,
+      'apply',
+      () => this.applyPlannedArchive(plan, applyOptions)
+    );
+    if (
+      result.status === 'recoverable' &&
+      result.manualRecoveryAction === undefined &&
+      result.recoveryCommand === undefined
+    ) {
+      result.recoveryCommand =
+        `rasen archive --apply-plan ${persistedPlanToken}` +
+        (applyOptions.assertions?.mergeConfirmed === true ? ' --yes' : '');
+    }
     if (result.status !== 'complete') {
       const message =
         result.blockers.map(item => `${item.operation}: ${item.message}`).join('; ') ||
@@ -1253,13 +1470,21 @@ export class ArchiveCommand {
           blockers: result.blockers,
           status: result.status,
           result,
+          ...(result.recoveryCommand === undefined
+            ? {}
+            : { recoveryCommand: result.recoveryCommand }),
+          ...(result.abortCommand === undefined
+            ? {}
+            : { abortCommand: result.abortCommand }),
+          ...(result.manualRecoveryAction === undefined
+            ? {}
+            : { manualRecoveryAction: result.manualRecoveryAction }),
         };
       }
       console.log(message);
       console.log(`Recovery journal: ${result.journalPath}`);
-      if (result.manualRecoveryAction) {
-        console.log(`Manual recovery: ${result.manualRecoveryAction.guidance}`);
-      }
+      const disposition = formatArchiveDispositionLine(result);
+      if (disposition !== null) console.log(disposition);
       process.exitCode = 1;
       return null;
     }
@@ -1330,7 +1555,9 @@ export class ArchiveCommand {
       readonly tasks: ArchivePlan['decisions']['tasks'];
       readonly timing: ArchivePlan['decisions']['timing'];
       readonly specActions: PreparedArchiveSpecAction[];
+      readonly specSync: ArchiveSpecSyncPreparation;
       readonly preparationBlockers: ArchivePlan['blockers'];
+      readonly reconciliationIssues: readonly SpecReconciliationIssue[];
       readonly sidecar: Awaited<ReturnType<typeof resolveArchiveSidecar>>;
       readonly shipLog: ArchivePlan['shipLog'];
     },
@@ -1348,7 +1575,10 @@ export class ArchiveCommand {
           : { byTargetLine: options.byTargetLine }),
         ...(options.commit === undefined ? {} : { commit: options.commit }),
       },
-      ...(options.skipSpecs === undefined ? {} : { skipSpecs: options.skipSpecs }),
+      skipSpecs:
+        planInputs.specSync.mode === 'skip'
+          ? true
+          : options.skipSpecs,
       startPath: planInputs.executionRoot,
       ...(selection === undefined ? {} : { selection }),
       archive: {
@@ -1363,18 +1593,42 @@ export class ArchiveCommand {
         tasks: planInputs.tasks,
         timing: planInputs.timing,
         specActionCandidates: planInputs.specActions,
+        specSync: planInputs.specSync,
         hasDeltaSpecs,
         sidecar: planInputs.sidecar,
         shipLog: planInputs.shipLog,
         scope: planInputs.scope,
         preparationBlockers: planInputs.preparationBlockers,
+        reconciliationIssues: planInputs.reconciliationIssues,
       },
     });
 
     if (options.dryRun) {
-      const canSave = !finalizationPlan.archivePlan.blockers.some(
-        blocker => blocker.code === 'archive_ship_log_reserved_section'
-      );
+      const canSave = canPersistStoreFinalizationPlan(finalizationPlan);
+      const previewPrecondition =
+        storeFinalizationPreviewPrecondition(finalizationPlan);
+      if (
+        options.savePlan &&
+        options.finalizationPreviewPrecondition !== undefined &&
+        options.finalizationPreviewPrecondition !== previewPrecondition
+      ) {
+        const diagnostic: ArchiveDiagnostic = {
+          severity: 'error',
+          code: 'archive_finalization_preview_changed',
+          message:
+            'The Store finalization preview changed after admission. No transaction plan was persisted.',
+          fix: 'Inspect the current finalization preview and retry only after admitting its exact identity, blockers, and archive decisions.',
+        };
+        if (json) {
+          this.printJsonFailure(root, diagnostic, finalizationPlan.archivePlan);
+          return null;
+        }
+        throw new ArchiveBlockedError(
+          diagnostic.code,
+          diagnostic.message,
+          diagnostic.fix
+        );
+      }
       const planToken =
         options.savePlan && canSave
           ? await persistArchivePlan(
@@ -1382,7 +1636,12 @@ export class ArchiveCommand {
               getGlobalDataDir()
             )
           : undefined;
-      return this.renderFinalizationDryRun(finalizationPlan, json, planToken);
+      return this.renderFinalizationDryRun(
+        finalizationPlan,
+        json,
+        planToken,
+        previewPrecondition
+      );
     }
 
     // Re-finalizing a finalized Change is not a second outcome: report the
@@ -1439,9 +1698,16 @@ export class ArchiveCommand {
       throw new ArchiveBlockedError(diagnostic.code, diagnostic.message, diagnostic.fix);
     }
 
+    const finalizationToken = finalizationPlan.token;
+    if (finalizationToken === undefined) {
+      throw new ArchiveBlockedError(
+        'archive_plan_blocked',
+        'The incomplete finalization plan has no immutable apply token.'
+      );
+    }
     const result = await ChangeFinalizationModuleInstance.applyStoredPlan(
       finalizationPlan.archivePlan,
-      finalizationPlan.token,
+      finalizationToken,
       { mergeConfirmed: options.yes === true }
     );
     if (result.status !== 'complete') process.exitCode = 1;
@@ -1466,6 +1732,8 @@ export class ArchiveCommand {
       } else {
         console.log(`Finalization did not complete (${result.status}).`);
         console.log(`Recovery journal: ${result.journalPath}`);
+        const disposition = formatArchiveDispositionLine(result);
+        if (disposition !== null) console.log(disposition);
       }
     }
     return {
@@ -1477,13 +1745,23 @@ export class ArchiveCommand {
       transactionId: result.transactionId,
       journalPath: result.journalPath,
       status: result.status,
+      ...(result.recoveryCommand === undefined
+        ? {}
+        : { recoveryCommand: result.recoveryCommand }),
+      ...(result.abortCommand === undefined
+        ? {}
+        : { abortCommand: result.abortCommand }),
+      ...(result.manualRecoveryAction === undefined
+        ? {}
+        : { manualRecoveryAction: result.manualRecoveryAction }),
     };
   }
 
   private renderFinalizationDryRun(
     plan: ImmutableFinalizationPlan,
     json: boolean,
-    planToken?: string
+    planToken: string | undefined,
+    previewPrecondition: string
   ): ArchiveResult | null {
     if (!plan.applicable) process.exitCode = 1;
     if (!json) {
@@ -1520,6 +1798,7 @@ export class ArchiveCommand {
       specsUpdated: false,
       dryRun: true,
       finalizationPlan: plan,
+      previewPrecondition,
       plan: plan.archivePlan,
       ...(planToken ? { planToken } : {}),
       transactionId: plan.archivePlan.transactionId,
@@ -1551,34 +1830,17 @@ export class ArchiveCommand {
       }
     }
 
-    const specsRoot = path.join(changeDir, 'specs');
-    let hasDeltaSpecs = false;
-    try {
-      const capabilities = await fs.readdir(specsRoot, { withFileTypes: true });
-      for (const capability of capabilities) {
-        if (!capability.isDirectory()) continue;
-        try {
-          const content = await fs.readFile(
-            path.join(specsRoot, capability.name, 'spec.md'),
-            'utf8'
-          );
-          if (
-            /^##\s+(ADDED|MODIFIED|REMOVED|RENAMED)\s+Requirements/m.test(content)
-          ) {
-            hasDeltaSpecs = true;
-            break;
-          }
-        } catch (error) {
-          if (!isMissingPathError(error)) throw error;
-        }
-      }
-    } catch (error) {
-      if (!isMissingPathError(error)) throw error;
+    const deltaDiscovery = await discoverDeltaSpecFiles(changeDir);
+    if (
+      deltaDiscovery.files.length === 0 &&
+      deltaDiscovery.issues.length === 0
+    ) {
+      return true;
     }
-    if (!hasDeltaSpecs) return true;
     const report = await validator.validateChangeDeltaSpecs(
       changeDir,
-      canonicalSpecsDir
+      canonicalSpecsDir,
+      deltaDiscovery
     );
     if (report.valid) return true;
     if (!json) {
@@ -1602,14 +1864,10 @@ export class ArchiveCommand {
     root: ResolvedOpenSpecRoot,
     json: boolean,
     skipValidation: boolean
-  ): Promise<PreparedArchiveSpecAction[]> {
-    if (options.skipSpecs) {
-      if (!json) console.log('Skipping spec updates (--skip-specs flag provided).');
-      return [];
-    }
-    let updates: Awaited<ReturnType<typeof findSpecUpdates>>;
+  ): Promise<PreparedSpecActions> {
+    let discovery: Awaited<ReturnType<typeof findSpecUpdates>>;
     try {
-      updates = await findSpecUpdates(changeDir, mainSpecsDir);
+      discovery = await findSpecUpdates(changeDir, mainSpecsDir);
     } catch (error) {
       throw new ArchiveBlockedError(
         'archive_spec_update_failed',
@@ -1617,12 +1875,36 @@ export class ArchiveCommand {
         'Fix the change delta specs and rerun. No files were changed.'
       );
     }
-    if (updates.length === 0) return [];
+    const deltaSources = discovery.updates
+      .map(update => path.resolve(update.source))
+      .sort();
+    if (options.skipSpecs) {
+      if (discovery.issues.length > 0) {
+        throw new SpecReconciliationError(discovery.issues);
+      }
+      if (!json) console.log('Skipping spec updates (--skip-specs flag provided).');
+      return {
+        actions: [],
+        specSync: { mode: 'skip', deltaSources },
+      };
+    }
+    const analysis = await analyzeSpecUpdates(discovery, changeName, {
+      silent: json,
+    });
+    if (analysis.issues.length > 0) {
+      throw new SpecReconciliationError(analysis.issues);
+    }
+    if (discovery.updates.length === 0) {
+      return {
+        actions: [],
+        specSync: { mode: 'no-deltas', deltaSources: [] },
+      };
+    }
     if (!json) {
       console.log('\nSpecs to update:');
-      for (const update of updates) {
+      for (const update of discovery.updates) {
         console.log(
-          `  ${path.basename(path.dirname(update.target))}: ${
+          `  ${path.relative(mainSpecsDir, path.dirname(update.target)).split(path.sep).join('/')}: ${
             update.exists ? 'update' : 'create'
           }`
         );
@@ -1634,7 +1916,7 @@ export class ArchiveCommand {
       if (json) {
         throw new ArchiveBlockedError(
           'archive_confirmation_required',
-          `Updating ${updates.length} spec(s) requires confirmation: rerun with --yes.`,
+          `Updating ${discovery.updates.length} spec(s) requires confirmation: rerun with --yes.`,
           withStoreFlag(root, 'rasen archive <change-name> --json --yes')
         );
       }
@@ -1645,19 +1927,18 @@ export class ArchiveCommand {
       });
       if (!proceed) {
         console.log('Skipping spec updates. Proceeding with archive.');
-        return [];
+        return {
+          actions: [],
+          specSync: { mode: 'skip', deltaSources },
+        };
       }
-    }
-    const analysis = await analyzeSpecUpdates(updates, changeName, { silent: json });
-    if (analysis.issues.length > 0) {
-      throw new SpecReconciliationError(analysis.issues);
     }
 
     const actions: PreparedArchiveSpecAction[] = [];
     try {
       for (const built of analysis.prepared) {
         const update = built.update;
-        const capability = path.basename(path.dirname(update.target));
+        const capability = update.capability;
         if (!skipValidation && !built.emptied) {
           const report = await new Validator().validateSpecContent(
             capability,
@@ -1685,32 +1966,28 @@ export class ArchiveCommand {
             );
           }
         }
-        const source = await fs.readFile(update.source);
-        let targetPrecondition: PreparedArchiveSpecAction['targetPrecondition'] = {
-          state: 'absent',
-        };
-        try {
-          targetPrecondition = {
-            state: 'file',
-            sha256: createHash('sha256')
-              .update(await fs.readFile(update.target))
-              .digest('hex'),
-          };
-        } catch (error) {
-          if (!isMissingPathError(error)) throw error;
-        }
         actions.push({
           capability,
-          action: built.emptied ? 'delete' : update.exists ? 'update' : 'create',
+          action:
+            built.emptied
+              ? 'delete'
+              : built.targetPrecondition.state === 'file'
+                ? 'update'
+                : 'create',
           source: update.source,
           target: update.target,
-          sourceSha256: createHash('sha256').update(source).digest('hex'),
-          targetPrecondition,
+          sourceSha256: built.sourceSha256,
+          targetPrecondition: built.targetPrecondition,
           rebuilt: built.rebuilt,
           counts: built.counts,
         });
       }
-      return actions.sort((left, right) => left.target.localeCompare(right.target));
+      return {
+        actions: actions.sort((left, right) =>
+          left.target.localeCompare(right.target)
+        ),
+        specSync: { mode: 'apply', deltaSources },
+      };
     } catch (error) {
       if (error instanceof ArchiveBlockedError) throw error;
       throw new ArchiveBlockedError(

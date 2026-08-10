@@ -26,6 +26,7 @@ import {
   type ChangeFinalizationError,
 } from '../../../src/core/store/finalization/index.js';
 import type { PreparedArchiveSpecAction } from '../../../src/core/archive-engine.js';
+import type { SpecReconciliationIssue } from '../../../src/core/specs-apply.js';
 import {
   createStoreFinalizationFixture,
   hashTree,
@@ -110,6 +111,23 @@ describe('the digest mapping table', () => {
       ['delete', 'beta'],
     ]);
   });
+  it('preserves a nested capability path without collapsing its identity', () => {
+    expect(
+      archiveSpecActionFor(
+        action({
+          capability: 'platform/routing',
+          source: '/change/specs/platform/routing/spec.md',
+          target: '/store/specs/platform/routing/spec.md',
+        })
+      )
+    ).toEqual({
+      action: 'update',
+      capabilityId: 'platform/routing',
+      beforeSha256: digest('before'),
+      afterSha256: digest('after'),
+    });
+  });
+
 });
 
 describe('the precondition blocks', () => {
@@ -434,6 +452,65 @@ describe('a real finalization against real delta specs', () => {
     ).toEqual({ applied: true, actions: [] });
   }, 180_000);
 
+  it('preserves every typed reconciliation issue in occurrence order without capability deduplication', async () => {
+    const bound = await f.bind({
+      projectId: PROJECT,
+      targetLineId: LINE,
+      changeId: 'typed-reconciliation-blockers',
+    });
+    const source = path.join(bound.changeDir, 'specs', 'alpha', 'spec.md');
+    const issues: SpecReconciliationIssue[] = [
+      {
+        code: 'spec_modified_scenarios_missing',
+        source,
+        capability: 'alpha',
+        requirement: 'First Rule',
+        missingScenarios: ['First scenario'],
+        message: 'First Rule is missing First scenario.',
+      },
+      {
+        code: 'spec_modified_scenarios_missing',
+        source,
+        capability: 'alpha',
+        requirement: 'Second Rule',
+        missingScenarios: ['Second A', 'Second B'],
+        message: 'Second Rule is missing two scenarios.',
+      },
+    ];
+    const archive = f.preparation(bound, {
+      hasDeltaSpecs: true,
+      specActionCandidates: [],
+      specSync: { mode: 'no-deltas', deltaSources: [source] },
+      preparationBlockers: issues.map(issue => ({
+        operation: 'spec',
+        path: issue.source,
+        code: issue.code,
+        message: issue.message,
+      })),
+      reconciliationIssues: issues,
+    } as unknown as Parameters<StoreFinalizationFixture['preparation']>[1]);
+
+    const plan = await f.finalization().plan(
+      f.planInput(
+        bound,
+        { outcome: 'landed', commit: f.refOid(bound.executionWorktree, 'HEAD') },
+        { archive }
+      )
+    );
+
+    expect(plan.applicable).toBe(false);
+    expect(
+      (plan.blockers as readonly Record<string, unknown>[]).flatMap(blocker =>
+        blocker.specReconciliationIssue === undefined
+          ? []
+          : [blocker.specReconciliationIssue]
+      )
+    ).toEqual(issues);
+    expect(plan.blockers.map(blocker => blocker.code)).not.toContain(
+      'finalization_spec_skip_conflict'
+    );
+  }, 180_000);
+
   it('refuses --skip-specs on a landed Change that carries deltas', async () => {
     const bound = await f.bind({
       projectId: PROJECT,
@@ -467,4 +544,43 @@ describe('a real finalization against real delta specs', () => {
     expect(codeOf(thrown)).toBe('finalization_spec_skip_conflict');
     expect(hashTree(canonical)).toEqual(before);
   }, 180_000);
+  it('refuses an effective prompt-decline skip on a landed Change with deltas', async () => {
+    const bound = await f.bind({
+      projectId: PROJECT,
+      targetLineId: LINE,
+      changeId: 'effective-skip-conflict-change',
+    });
+    seedDeltas(bound);
+    const canonical = specsDir(bound.planningWorktree);
+    const before = hashTree(canonical);
+
+    let thrown: unknown;
+    try {
+      await f.finalization().plan(
+        f.planInput(
+          bound,
+          { outcome: 'landed', commit: f.refOid(bound.executionWorktree, 'HEAD') },
+          {
+            archive: f.preparation(bound, {
+              specActionCandidates: [],
+              specSync: {
+                mode: 'skip',
+                deltaSources: [
+                  path.join(bound.changeDir, 'specs', 'alpha', 'spec.md'),
+                  path.join(bound.changeDir, 'specs', 'beta', 'spec.md'),
+                ],
+              },
+              hasDeltaSpecs: true,
+            }),
+          }
+        )
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(codeOf(thrown)).toBe('finalization_spec_skip_conflict');
+    expect(hashTree(canonical)).toEqual(before);
+  }, 180_000);
+
 });

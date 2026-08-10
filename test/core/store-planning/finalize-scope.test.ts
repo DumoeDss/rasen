@@ -23,6 +23,8 @@ import { PlanningScopeError } from '../../../src/core/store-planning/index.js';
 import {
   createStorePlanningResolverForTesting,
   nodeStorePlanningFileSystem,
+  type ProjectIdentityClaimantSnapshot,
+  type ProjectRegistrySnapshotEntry,
   type StorePlanningDependencies,
 } from '../../../src/core/store-planning/testing.js';
 import {
@@ -33,6 +35,7 @@ import {
   type VerifiedChangeInstanceId,
 } from '../../../src/core/store/planning-foundation.js';
 import { resolveStorePlanningLayoutV2Path } from '../../../src/core/store/planning-layout-v2.js';
+import { hashTree } from '../../helpers/store-finalization-fixture.js';
 
 const STORE_UID = '123e4567-e89b-42d3-a456-426614174000';
 const PROJECT = 'project-a';
@@ -179,6 +182,26 @@ function resolver(
   roots: { storeRoot?: string; projectRoot: string },
   overrides: Partial<StorePlanningDependencies> = {}
 ) {
+  const projectEntry: ProjectRegistrySnapshotEntry['entry'] = {
+    projectId: PROJECT,
+    name: PROJECT,
+    mode: roots.storeRoot === undefined ? 'in-repo' : 'store',
+    home: `${PROJECT}-home`,
+    lastSeen: '2026-08-06T00:00:00.000Z',
+  };
+  const projectClaimant: ProjectIdentityClaimantSnapshot = {
+    root: roots.projectRoot,
+    entry: projectEntry,
+    live: true,
+    aliases: [{
+      registryPath: roots.projectRoot,
+      canonicalPath: roots.projectRoot,
+      entry: projectEntry,
+      live: true,
+      direct: true,
+    }],
+    fixedMetadataConflict: false,
+  };
   const dependencies: StorePlanningDependencies = {
     fs: nodeStorePlanningFileSystem,
     probePlanningWorktree: overrides.probePlanningWorktree ?? healthyPlanningProbe(),
@@ -195,15 +218,10 @@ function resolver(
     snapshotProjects: async () => [
       {
         root: roots.projectRoot,
-        entry: {
-          projectId: PROJECT,
-          name: PROJECT,
-          mode: roots.storeRoot === undefined ? 'standalone' : 'store',
-          home: `${PROJECT}-home`,
-          lastSeen: '2026-08-06T00:00:00.000Z',
-        },
+        entry: projectEntry,
       },
     ],
+    findProjectIdentityClaimants: async () => [projectClaimant],
     findRegisteredProject: async () => null,
     sessionContextPath: () => undefined,
     checkoutRole: overrides.checkoutRole ?? (() => 'linked-worktree'),
@@ -357,6 +375,40 @@ describe('the three authority refusals, exactly as project mutation states them'
     // project the marker names: an unknown project never resolves to the
     // nearest available one.
     expect(codeOf(thrown)).toBe('planning_selection_conflict');
+  });
+
+  it('refuses normalized registry/config drift for finalization without touching any planning or transaction bytes', async () => {
+    const roots = storeFixture();
+    write(
+      path.join(roots.projectRoot, 'rasen', 'config.yaml'),
+      `schema: spec-driven\nprojectId: drifted-project\nstore:\n  uid: ${STORE_UID}\n  id: team-store\n`
+    );
+    const fixtureRoot = path.dirname(roots.storeRoot);
+    write(
+      path.join(fixtureRoot, 'machine-data', 'archive-transactions', 'sentinel.json'),
+      '{"owned":"elsewhere"}\n'
+    );
+    write(
+      path.join(roots.storeRoot, 'rasen', 'projects', PROJECT, 'specs', 'alpha', 'spec.md'),
+      '# alpha\n'
+    );
+    const before = hashTree(fixtureRoot);
+
+    let thrown: unknown;
+    try {
+      await resolver(roots).open({
+        intent: 'finalize-change',
+        startPath: roots.projectRoot,
+        selection: { project: PROJECT, targetLine: LINE },
+        change: { changeId: CHANGE },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(codeOf(thrown)).toBe('planning_selection_conflict');
+    expect((thrown as Error).message).toContain('drifted-project');
+    expect(hashTree(fixtureRoot)).toEqual(before);
   });
 
   it('refuses a Change frozen against a different target line before any address', async () => {

@@ -26,6 +26,10 @@ const EXPECTED_DIRECT_JOINS: Readonly<
   'src/commands/change.ts': { count: 1, classification: 'standalone-only-adapter' },
   'src/commands/spec.ts': { count: 1, classification: 'standalone-only-adapter' },
   'src/commands/workflow/shared.ts': { count: 2, classification: 'standalone-only-adapter' },
+  'src/core/archive-engine.ts': {
+    count: 1,
+    classification: 'standalone-only-adapter',
+  },
   'src/core/artifact-graph/instruction-loader.ts': {
     count: 1,
     classification: 'standalone-only-adapter',
