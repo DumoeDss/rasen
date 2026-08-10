@@ -21,7 +21,7 @@
   - Evidence (Windows, 2026-08-09): 3 files passed; 89 tests passed, 3 skipped; exit 0 in 68.00s.
 - [x] 4.2 Run `pnpm exec tsc --noEmit` and `pnpm lint` once after the focused suites are green.
   - Evidence (Windows, 2026-08-09): `tsc --noEmit` exit 0; `pnpm lint` exit 0.
-- [ ] 4.3 Confirm the repository Windows CI job exercises the nested/unreadable capability-path and fenced-reconciliation regressions, and record the passing job as cross-platform evidence.
-  - Pending external evidence: `.github/workflows/ci.yml` runs all `test/**/*.test.ts` across three `windows-latest` PowerShell shards, so the new focused files are covered. The local Windows focused run passed, but no remote job can include these uncommitted changes before portfolio shipping.
+- [x] 4.3 Confirm the repository Windows CI job exercises the nested/unreadable capability-path and fenced-reconciliation regressions, and record the passing job as cross-platform evidence.
+  - Evidence: GitHub Actions run [31355525652](https://github.com/DumoeDss/rasen/actions/runs/31355525652) passed at exact head `21e9c0a75a36f0845dcf4771f53759e9fceb519d`. The reconciliation coverage executed across successful `windows-latest` PowerShell [shard 1](https://github.com/DumoeDss/rasen/actions/runs/31355525652/job/93354366692), [shard 2](https://github.com/DumoeDss/rasen/actions/runs/31355525652/job/93354366688), and [shard 3](https://github.com/DumoeDss/rasen/actions/runs/31355525652/job/93354366683); together they covered 427 files with 7,473 passed, 47 skipped, and 0 failed tests. This is post-commit native CI evidence, not the earlier local mock/focused run.
 - [x] 4.4 Obtain non-author review of the scoped diff and focused evidence; do not mark any parent VSR/CCR finding resolved until that review confirms the exact failure mode is closed.
   - Pending LEAD orchestration: this leaf was explicitly prohibited from spawning or messaging a reviewer.

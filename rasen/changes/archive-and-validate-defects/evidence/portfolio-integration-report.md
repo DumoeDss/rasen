@@ -1,5 +1,7 @@
 # Portfolio Integration Report: archive-and-validate-defects
 
+> **Current terminal status (2026-08-10): PASS.** GitHub Actions run `31355525652` completed successfully at exact head `21e9c0a75a36f0845dcf4771f53759e9fceb519d`; see “Post-fix native CI gate” below. The `INCONCLUSIVE` verdict and task dispositions immediately below are preserved historical results from the earlier local attempts, not the final delivery state.
+
 - Verdict: **INCONCLUSIVE — the unsharded run and all three Windows-shaped shards timed out**
 - `fix-store-finalization-admission` task 7.3 evidence: **insufficient; do not mark complete**
 - Verification role: fresh integration verifier; no product, test, task, run-state, commit, push, or archive mutation
@@ -164,3 +166,56 @@ This is a merged-tree focused gate only. It does not replace the repository full
 
 - `fix-store-finalization-admission` task 7.3 remains unchecked because the full portfolio test gate did not complete.
 - Parent `archive-and-validate-defects` task 8.7 remains unchecked because no passing GitHub Windows CI job was recorded.
+
+## Historical failed native CI run
+
+- Verdict: **FAIL** — diagnostic evidence superseded by the later exact-head pass
+- GitHub Actions run: [31353647221](https://github.com/DumoeDss/rasen/actions/runs/31353647221)
+- Exact tested head: `446a224f4820c5963bc304737575d46f0de4beb4`
+- Failure class: real test assertion/fixture-baseline failures, not an infrastructure timeout
+
+| Platform job | Failures | Evidence-backed attribution |
+|---|---:|---|
+| [Windows shard 2](https://github.com/DumoeDss/rasen/actions/runs/31353647221/job/93349060030) | 5 | Five archive-finalization failures |
+| [Linux Node 20](https://github.com/DumoeDss/rasen/actions/runs/31353647221/job/93349060001) | 7 | Five archive-finalization failures plus two workspace-atomic failures |
+| [Linux Node 24](https://github.com/DumoeDss/rasen/actions/runs/31353647221/job/93349060015) | 7 | The same five archive-finalization failures plus two workspace-atomic failures |
+| [macOS](https://github.com/DumoeDss/rasen/actions/runs/31353647221/job/93349060029) | 7 | Five archive-finalization failures plus two combined cross-platform assertions involving workspace/platform behavior and registry path identity |
+
+This native CI result is distinct from the earlier local unsharded and three-shard timeout history: those local gates timed out, while run `31353647221` completed with observable assertion and fixture-baseline failures. The branch test-baseline fix commit `21e9c0a7` closed these failures, and the next run, [31355525652](https://github.com/DumoeDss/rasen/actions/runs/31355525652), passed completely.
+
+## Post-fix native CI gate
+
+### Terminal admission
+
+- Verdict: **PASS**
+- GitHub Actions run: [31355525652](https://github.com/DumoeDss/rasen/actions/runs/31355525652)
+- Exact tested head: `21e9c0a75a36f0845dcf4771f53759e9fceb519d`
+- PR aggregate: [All checks passed](https://github.com/DumoeDss/rasen/actions/runs/31355525652/job/93356944247) — success
+- Platform boundary: GitHub-hosted `windows-latest` PowerShell shards, `ubuntu-latest` Linux jobs, and `macos-latest` POSIX jobs. Linux ran both the Node 20.19 matrix floor and Node 24 compatibility job; the Windows and macOS general jobs used Node 20.19.
+
+The test-fix head completed the repository's native CI matrix without a failed required check. The earlier local unsharded/sharded timeouts and failed CI run `31353647221` remain valid historical diagnostic evidence, but they are not the terminal delivery state and must not be read as contradicting or replacing this later exact-head success.
+
+### General test matrix
+
+| Platform job | Manifest files | Passed | Skipped | Failed | Result |
+|---|---:|---:|---:|---:|---|
+| [Linux Node 20](https://github.com/DumoeDss/rasen/actions/runs/31355525652/job/93354366687) | 427 | 7,480 | 40 | 0 | PASS |
+| [Linux Node 24](https://github.com/DumoeDss/rasen/actions/runs/31355525652/job/93354366664) | 427 | 7,480 | 40 | 0 | PASS |
+| [macOS Node 20](https://github.com/DumoeDss/rasen/actions/runs/31355525652/job/93354366783) | 427 | 7,479 | 41 | 0 | PASS |
+| [Windows shard 1](https://github.com/DumoeDss/rasen/actions/runs/31355525652/job/93354366692), [shard 2](https://github.com/DumoeDss/rasen/actions/runs/31355525652/job/93354366688), [shard 3](https://github.com/DumoeDss/rasen/actions/runs/31355525652/job/93354366683) | `143 + 142 + 142 = 427` | 7,473 | 47 | 0 | PASS |
+
+The three successful Windows shards executed the complete disjoint 427-file manifest, including the path-sensitive reconciliation, archive/finalization, project-registry, workspace persistence, and Store-finalization regressions distributed across the partitions.
+
+### Native recovery and quality gates
+
+| Gate | Passed | Skipped | Result |
+|---|---:|---:|---|
+| [Windows file-placement recovery](https://github.com/DumoeDss/rasen/actions/runs/31355525652/job/93354366597) | 186 | 9 | PASS |
+| [Linux file-placement recovery](https://github.com/DumoeDss/rasen/actions/runs/31355525652/job/93354366624) | 182 | 13 | PASS |
+| [macOS file-placement recovery](https://github.com/DumoeDss/rasen/actions/runs/31355525652/job/93354366673) | 182 | 13 | PASS |
+| [Lint and type check](https://github.com/DumoeDss/rasen/actions/runs/31355525652/job/93354366607) | — | — | PASS |
+| [UI package build and tests](https://github.com/DumoeDss/rasen/actions/runs/31355525652/job/93354366609) | 510 | 0 | PASS |
+
+### Final task disposition
+
+This exact-head native evidence closes parent task 8.7, `fix-spec-reconciliation-integrity` task 4.3, `fix-workspace-claim-portability` task 4.3, and `fix-store-finalization-admission` tasks 7.1 through 7.4. The earlier focused merged-tree build and 7-file/135-test overlap gate remain complementary local evidence; the terminal GitHub matrix supplies the previously missing full-suite and native Windows/POSIX boundary.
