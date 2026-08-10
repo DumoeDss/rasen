@@ -432,6 +432,7 @@
       "selectedProjectRoot": "Using Rasen root: project {project} ({path})",
       "staleProfileWorkflowsWarning": "Warning: dropping unknown workflow id(s) from stored profile: {workflows}",
       "unknownHostRuntimeWarning": "Warning: LEAD host runtime is unknown; using the legacy compatibility route. Set {override}=claude|codex for deterministic dispatch.",
+      "hostRuntimeWithoutDispatchAdapterWarning": "Warning: LEAD host runtime {host} has no dispatch adapter; using the legacy compatibility route. Set {override}=claude|codex for deterministic dispatch — that also makes context probing report the forced runtime.",
       "noPipelinesFound": "No pipelines found.",
       "availablePipelinesHeading": "Available pipelines:",
       "pipelineTableEntry": "  {name}  [{source}]",

@@ -95,6 +95,22 @@ describe('pipeline messages', () => {
     }, expected.locale)).toBe(expected.stale);
   });
 
+  it('names the host and the probe coupling in every locale, with matching placeholders', () => {
+    for (const locale of ['en', 'ja', 'zh-cn'] as const) {
+      const rendered = formatPipelineExecutionNotice(
+        {
+          kind: 'host-runtime-without-dispatch-adapter',
+          host: 'omp',
+          override: 'RASEN_AGENT_RUNTIME',
+        },
+        locale
+      );
+      expect(rendered, locale).toContain('omp');
+      expect(rendered, locale).toContain('RASEN_AGENT_RUNTIME');
+      expect(rendered, locale).not.toMatch(/\{\w+\}/);
+    }
+  });
+
   it('formats the inheriting-store-config and unavailable-store notices', () => {
     const byAlias = formatPipelineRootSelectionNotice(
       {

@@ -33,6 +33,11 @@ export const RUNTIME_ADAPTERS = {
     canAudit: true,
     canDispatch: false,
   },
+  omp: {
+    canProbeContext: false,
+    canAudit: false,
+    canDispatch: false,
+  },
 } as const satisfies Readonly<Record<string, RuntimeAdapterDefinition>>;
 
 Object.values(RUNTIME_ADAPTERS).forEach(Object.freeze);
@@ -48,12 +53,18 @@ export type ProbeRuntime = RuntimeForCapability<'canProbeContext'>;
 export type AuditRuntime = RuntimeForCapability<'canAudit'>;
 export type DispatchRuntime = RuntimeForCapability<'canDispatch'>;
 
-export type HostRuntime = DispatchRuntime | 'unknown';
+/**
+ * The harness a session runs in. Any registered adapter can be a host:
+ * naming the harness is independent of Rasen being able to probe, audit, or
+ * dispatch workers to it.
+ */
+export type HostRuntime = RuntimeAdapterId | 'unknown';
 export type HostRuntimeSource =
   | 'env-override'
   | 'cli-option'
   | 'codex-thread-id'
   | 'codex-sandbox'
+  | 'omp-code'
   | 'claude-code'
   | 'unknown';
 
@@ -77,7 +88,8 @@ export interface DispatchRoute {
   bridge?: DispatchBridge;
 }
 
-type KnownHostRuntime = Exclude<HostRuntime, 'unknown'>;
+/** Only a dispatch-capable host can own a route row. */
+type KnownHostRuntime = DispatchRuntime;
 
 const KNOWN_DISPATCH_ROUTES = {
   claude: {
@@ -100,15 +112,27 @@ function hasText(value: string | undefined): boolean {
 }
 
 /**
- * Detect the tool host running the LEAD. Codex fingerprints precede Claude
- * because nested Codex sessions can inherit Claude environment variables.
+ * Detect the tool host running the LEAD.
+ *
+ * Precedence is fingerprint specificity under process nesting, not
+ * popularity. Codex fingerprints precede every other host because a
+ * `codex exec` child inherits its parent harness's variables while being a
+ * genuine Codex process. `OMPCODE` precedes `CLAUDECODE` for the same
+ * reason inverted: Oh My Pi sets `CLAUDECODE` itself, so trusting the
+ * Claude fingerprint first would report every Oh My Pi session as Claude.
+ *
+ * Residual hazard, unreachable today: a `claude -p` child spawned FROM Oh My
+ * Pi would inherit `OMPCODE` and be detected as its parent. No such child
+ * exists, because an Oh My Pi host has no dispatch adapter and so never
+ * reaches the `claude-print` bridge. Whoever gives Oh My Pi dispatch MUST
+ * inject `RASEN_AGENT_RUNTIME=claude` into that child's environment.
  */
 export function detectHostRuntime(
   env: NodeJS.ProcessEnv = process.env
 ): DetectedHostRuntime {
   const explicit = env.RASEN_AGENT_RUNTIME?.trim().toLowerCase();
-  if (explicit === 'claude' || explicit === 'codex') {
-    return { runtime: explicit, source: 'env-override' };
+  if (explicit !== undefined && Object.hasOwn(RUNTIME_ADAPTERS, explicit)) {
+    return { runtime: explicit as RuntimeAdapterId, source: 'env-override' };
   }
   if (hasText(env.CODEX_THREAD_ID)) {
     return { runtime: 'codex', source: 'codex-thread-id' };
@@ -116,18 +140,25 @@ export function detectHostRuntime(
   if (hasText(env.CODEX_SANDBOX)) {
     return { runtime: 'codex', source: 'codex-sandbox' };
   }
+  if (hasText(env.OMPCODE)) {
+    return { runtime: 'omp', source: 'omp-code' };
+  }
   if (hasText(env.CLAUDECODE)) {
     return { runtime: 'claude', source: 'claude-code' };
   }
   return { runtime: 'unknown', source: 'unknown' };
 }
 
-/** Resolve the concrete dispatch mechanism implemented for a host/target pair. */
+/**
+ * Resolve the concrete dispatch mechanism implemented for a host/target pair.
+ * A host with no dispatch adapter — unidentified or recognized — resolves to
+ * the observable legacy compatibility route rather than a fabricated one.
+ */
 export function resolveDispatchRoute(
   host: HostRuntime,
   target: DispatchRuntime
 ): DispatchRoute {
-  if (host === 'unknown') {
+  if (!hasRuntimeCapability(host, 'canDispatch')) {
     return { host, target, mode: 'legacy-fallback' };
   }
   return { host, target, ...KNOWN_DISPATCH_ROUTES[host][target] };

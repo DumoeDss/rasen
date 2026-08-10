@@ -186,7 +186,7 @@ describe('AgentCommand.context — Codex rollout support', () => {
     expect(JSON.parse(logs[0]!)).toMatchObject({
       contextTokens: 20_000,
       pct: 0.2,
-      threshold: 0.5,
+      threshold: 0.85,
       shouldHandoff: false,
     });
   });
@@ -272,7 +272,7 @@ describe('AgentCommand.context — Codex rollout support', () => {
     const p = writeRollout('rollout-2026-01-01T00-00-04-abc.jsonl', [
       SESSION_META_LINE,
       TURN_CONTEXT_LINE,
-      tokenCountLine(1_000, 353_400), // low occupancy, default 0.5 threshold not met
+      tokenCountLine(1_000, 353_400), // low occupancy, default 0.85 (codex) threshold not met
     ]);
 
     const logs: string[] = [];
@@ -285,7 +285,7 @@ describe('AgentCommand.context — Codex rollout support', () => {
     }
 
     expect(logs[0]).toContain('handoff not yet needed');
-    expect(logs[0]).toContain('50%');
+    expect(logs[0]).toContain('85%');
     expect(logs[0]).toContain('default');
   });
 
@@ -351,6 +351,72 @@ describe('AgentCommand.context — Codex rollout support', () => {
       await expect(
         cmd.context({ transcript: path.join(dir, 'nope.jsonl') })
       ).rejects.toThrow(/Cannot read transcript/);
+    });
+  });
+
+  // detect-omp-host-runtime: an implicit --latest probe must refuse rather
+  // than report an unrelated Claude session's occupancy as this session's.
+  describe('implicit --latest on a host with no context-probe adapter', () => {
+    beforeEach(() => {
+      process.env.OMPCODE = '1';
+      process.env.CLAUDECODE = '1';
+    });
+
+    it('--json exits 0 with the unavailable shape and no occupancy fields', async () => {
+      const logs: string[] = [];
+      const orig = console.log;
+      console.log = (msg?: unknown) => logs.push(String(msg));
+      try {
+        await expect(cmd.context({ latest: true, json: true })).resolves.toBeUndefined();
+      } finally {
+        console.log = orig;
+      }
+
+      expect(logs).toHaveLength(1);
+      const parsed = JSON.parse(logs[0]);
+      expect(parsed).toEqual({
+        available: false,
+        reason: 'unsupported-host',
+        detail: expect.stringContaining('omp'),
+      });
+    });
+
+    it('text mode prints one line naming the host and no occupancy figures', async () => {
+      const logs: string[] = [];
+      const orig = console.log;
+      console.log = (msg?: unknown) => logs.push(String(msg));
+      try {
+        await expect(cmd.context({ latest: true })).resolves.toBeUndefined();
+      } finally {
+        console.log = orig;
+      }
+
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toMatch(/^context unavailable: /);
+      expect(logs[0]).toMatch(/omp/);
+      expect(logs[0]).not.toMatch(/\d+%/);
+    });
+
+    it('still probes an explicitly named runtime from the same host', async () => {
+      writeRollout('session-main.jsonl', [
+        JSON.stringify({
+          type: 'assistant',
+          message: { role: 'assistant', model: 'claude-opus-4-8', usage: { input_tokens: 12 } },
+        }),
+      ]);
+
+      const logs: string[] = [];
+      const orig = console.log;
+      console.log = (msg?: unknown) => logs.push(String(msg));
+      try {
+        await cmd.context({ latest: true, runtime: 'claude', dir, json: true });
+      } finally {
+        console.log = orig;
+      }
+
+      const parsed = JSON.parse(logs[0]);
+      expect(parsed.available).toBe(true);
+      expect(parsed.contextTokens).toBe(12);
     });
   });
 });

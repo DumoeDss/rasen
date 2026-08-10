@@ -1468,7 +1468,7 @@ describe('pipeline command', () => {
       }
       // handoff is the fully-resolved config (built-in defaults when unset).
       expect(stage.handoff).toMatchObject({
-        threshold: 0.5,
+        threshold: 0.85,
         source: 'default',
       });
       expect(stage.id).toBe('propose');
