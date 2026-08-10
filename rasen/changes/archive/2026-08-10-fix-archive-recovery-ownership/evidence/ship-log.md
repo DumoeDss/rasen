@@ -29,3 +29,9 @@
 
 - No push, PR, merge, deployment, or archive action was performed.
 - Portfolio-level delivery owns the eventual branch push/PR update and integration CI.
+
+## Archive
+**Date:** 2026-08-10T05:54:39.536Z
+**Ship commit:** c09a1dcbe2553a3831ab117f41e0a3326d2c9cec
+**Outcome:** archived at E:\wt\rasen-archive-follow-up\rasen\changes\archive\2026-08-10-fix-archive-recovery-ownership
+**Transaction:** 8467f492-11d2-4576-8569-1223131f8e00
