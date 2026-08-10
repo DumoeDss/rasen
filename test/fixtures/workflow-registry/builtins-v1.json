@@ -37,5 +37,6 @@
   { "id": "office-hours", "skillName": "rasen-office-hours", "dirName": "rasen-office-hours", "kind": "expert" },
   { "id": "qa", "skillName": "rasen-qa", "dirName": "rasen-qa", "kind": "expert" },
   { "id": "review", "skillName": "rasen-review", "dirName": "rasen-review", "kind": "expert" },
+  { "id": "teacher-advisor", "skillName": "rasen-teacher-advisor", "dirName": "rasen-teacher-advisor", "kind": "expert" },
   { "id": "workflow-author", "skillName": "rasen-workflow-author", "dirName": "rasen-workflow-author", "kind": "expert" }
 ]

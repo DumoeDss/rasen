@@ -56,5 +56,6 @@ export {
   getOfficeHoursSkillTemplate,
   getQaSkillTemplate,
   getReviewSkillTemplate,
+  getTeacherAdvisorSkillTemplate,
   getWorkflowAuthorSkillTemplate,
 } from './experts/index.js';

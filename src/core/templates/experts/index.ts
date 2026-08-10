@@ -15,4 +15,5 @@ export { getInvestigateSkillTemplate } from './investigate.js';
 export { getOfficeHoursSkillTemplate } from './office-hours.js';
 export { getQaSkillTemplate } from './qa.js';
 export { getReviewSkillTemplate } from './review.js';
+export { getTeacherAdvisorSkillTemplate } from './teacher-advisor.js';
 export { getWorkflowAuthorSkillTemplate } from './workflow-author.js';

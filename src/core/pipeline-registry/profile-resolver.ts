@@ -1,4 +1,5 @@
 import type { Digest } from '../change-run/contracts.js';
+import { CONSULTATION_SERVER_LIMITS } from '../change-run/consultation-contracts.js';
 import type {
   AtomicStageNode,
   BoundedLoopNode,
@@ -12,6 +13,7 @@ import {
 } from './stage-overrides.js';
 import type {
   AgentRuntime,
+  ConsultationBindingYaml,
   PipelineYaml,
   Stage,
   StageRole,
@@ -25,6 +27,7 @@ import type {
   EffectiveRunPolicy,
   ReconcilerSupportProfile,
   RuntimeCapabilityBinding,
+  RuntimeConsultationBinding,
   RuntimeExecutionProfile,
   RuntimeExecutionProfileInput,
 } from './execution-plan-internal.js';
@@ -704,6 +707,220 @@ export function resolveNativeV2PolicyStages(
 }
 
 /**
+ * Resolve the hierarchical path for a consultation source stage from the
+ * resolved capability bindings. For v1 definitions without v2 lowering, the
+ * path is directly `stage:<id>`. For v1 definitions with v2 lowering
+ * (parallel groups, review cycles), the original stage id is preserved as
+ * `legacyStageId` on the AtomicStageNode, and the path is the v2 hierarchical
+ * form.
+ *
+ * Throws a typed error if the source stage cannot be resolved.
+ */
+function findSourceStageNodeId(
+  prepared: PreparedDefinition,
+  capabilities: readonly RuntimeCapabilityBinding[],
+  sourceStage: string
+): string {
+  // v1 without lowering: directly stage:<id>
+  const directPath = `stage:${sourceStage}`;
+  if (capabilities.some((binding) => binding.nodeId === directPath)) {
+    return directPath;
+  }
+
+  // v1 with lowering: search definition nodes for matching legacyStageId
+  for (const node of prepared.definition.root.nodes) {
+    if (node.kind !== 'AtomicStage') continue;
+    const legacyStageId = (
+      node as AtomicStageNode & { legacyStageId?: string }
+    ).legacyStageId;
+    if (legacyStageId === sourceStage) {
+      const path = `root:${node.id}`;
+      if (capabilities.some((binding) => binding.nodeId === path)) {
+        return path;
+      }
+    }
+  }
+
+  // Search declaration body nodes
+  for (const declaration of prepared.definition.declarations) {
+    for (const node of declaration.graph.nodes) {
+      if (node.kind !== 'AtomicStage') continue;
+      const legacyStageId = (
+        node as AtomicStageNode & { legacyStageId?: string }
+      ).legacyStageId;
+      if (legacyStageId === sourceStage) {
+        const path = `declaration:${declaration.id}/node:${node.id}`;
+        if (capabilities.some((binding) => binding.nodeId === path)) {
+          return path;
+        }
+      }
+    }
+  }
+
+  throw new Error(
+    `Consultation sourceStage "${sourceStage}" does not resolve to any capability binding path.`
+  );
+}
+
+/**
+ * Build the full content-limits object from an optional YAML override, filling
+ * in server maxima for any field not specified.
+ */
+function resolveConsultationContentLimits(
+  yamlLimits: ConsultationBindingYaml['limits']
+): RuntimeConsultationBinding['limits'] {
+  return {
+    maxQuestionBytes:
+      yamlLimits?.maxQuestionBytes ?? CONSULTATION_SERVER_LIMITS.maxQuestionBytes,
+    maxAdviceBytes:
+      yamlLimits?.maxAdviceBytes ?? CONSULTATION_SERVER_LIMITS.maxAdviceBytes,
+    maxAttemptedApproaches:
+      yamlLimits?.maxAttemptedApproaches ??
+      CONSULTATION_SERVER_LIMITS.maxAttemptedApproaches,
+    maxConstraints:
+      yamlLimits?.maxConstraints ?? CONSULTATION_SERVER_LIMITS.maxConstraints,
+    maxEvidencePointers:
+      yamlLimits?.maxEvidencePointers ??
+      CONSULTATION_SERVER_LIMITS.maxEvidencePointers,
+    maxAdviceSteps:
+      yamlLimits?.maxAdviceSteps ?? CONSULTATION_SERVER_LIMITS.maxAdviceSteps,
+    maxCautions:
+      yamlLimits?.maxCautions ?? CONSULTATION_SERVER_LIMITS.maxCautions,
+    maxEvidenceNotes:
+      yamlLimits?.maxEvidenceNotes ?? CONSULTATION_SERVER_LIMITS.maxEvidenceNotes,
+  };
+}
+
+/**
+ * Build Teacher capability bindings and consultation bindings from the
+ * pipeline's consultation declarations. Returns the Teacher capability
+ * bindings to append to the capabilities list and the consultation bindings
+ * to populate the execution profile's consultations field.
+ *
+ * When `consultations` is undefined or empty, returns empty arrays so the
+ * profile is byte-identical to before this change.
+ */
+function resolveConsultationBindings(
+  prepared: PreparedDefinition,
+  capabilities: readonly RuntimeCapabilityBinding[],
+  catalog: CapabilityCatalogSnapshot,
+  consultations: readonly ConsultationBindingYaml[] | undefined,
+  trustedAdapters?: TrustedExecutionAdapterCatalog
+): { teacherBindings: RuntimeCapabilityBinding[]; consultationBindings: RuntimeConsultationBinding[] } {
+  if (consultations === undefined || consultations.length === 0) {
+    return { teacherBindings: [], consultationBindings: [] };
+  }
+
+  const descriptorById = new Map(
+    catalog.descriptors.map((descriptor) => [descriptor.id, descriptor] as const)
+  );
+
+  // Build Teacher capability bindings (one per distinct teacherSkill).
+  const teacherBindings: RuntimeCapabilityBinding[] = [];
+  const teacherBindingBySkill = new Map<string, RuntimeCapabilityBinding>();
+
+  for (const consultation of consultations) {
+    const { teacherSkill } = consultation;
+    if (teacherBindingBySkill.has(teacherSkill)) continue;
+
+    const skillId = `skill:${teacherSkill}`;
+    const descriptor = descriptorById.get(skillId);
+    if (descriptor === undefined) {
+      throw new Error(
+        `Teacher capability descriptor for ${skillId} is not in the production catalog.`
+      );
+    }
+    const skillDigest = descriptor.version as Digest;
+    const teacherPath = `teacher:${teacherSkill}`;
+    const binding: RuntimeCapabilityBinding = {
+      nodeId: teacherPath,
+      authoredCapability: { id: skillId, version: descriptor.version },
+      contract: { id: teacherSkill, version: '1', digest: skillDigest },
+      actionKind: 'agent',
+      resultContract: { id: `${teacherSkill}-result`, version: '1', digest: skillDigest },
+      evidenceContract: { id: `${teacherSkill}-evidence`, version: '1', digest: skillDigest },
+      recovery: 'suspend-if-ambiguous',
+      workspace: { access: 'none', resources: [] },
+      effects: [],
+      adapter: trustedAdapter(
+        { id: `adapter:${teacherSkill}`, version: '1', contentDigest: skillDigest },
+        trustedAdapters
+      ),
+    };
+    teacherBindingBySkill.set(teacherSkill, binding);
+    teacherBindings.push(binding);
+  }
+
+  // Build consultation bindings (one per entry).
+  const consultationBindings: RuntimeConsultationBinding[] = consultations.map(
+    (consultation) => {
+      const sourceProfilePath = findSourceStageNodeId(
+        prepared,
+        capabilities,
+        consultation.sourceStage
+      );
+      const teacherProfilePath = `teacher:${consultation.teacherSkill}`;
+      return {
+        sourceProfilePath,
+        teacherProfilePath,
+        maxConsultationsPerInvocation: consultation.maxConsultationsPerInvocation,
+        maxTeacherAttemptsPerConsultation:
+          consultation.maxTeacherAttemptsPerConsultation,
+        limits: resolveConsultationContentLimits(consultation.limits),
+      };
+    }
+  );
+
+  // Sort by sourceProfilePath then teacherProfilePath for deterministic digest.
+  consultationBindings.sort((a, b) => {
+    if (a.sourceProfilePath !== b.sourceProfilePath) {
+      return a.sourceProfilePath < b.sourceProfilePath ? -1 : 1;
+    }
+    return a.teacherProfilePath < b.teacherProfilePath ? -1 : 1;
+  });
+
+  return { teacherBindings, consultationBindings };
+}
+
+/**
+ * Synthesize a policy stage for a Teacher capability binding. The runtime
+ * requires the Teacher to be a read-only agent in the execution profile
+ * (checked at `normalizeProfileInput`). The values are conservative
+ * placeholders with truthful `'definition'` provenance — the Teacher is
+ * always read-only and never gates.
+ */
+function synthesizeTeacherPolicyStage(
+  nodeId: string
+): EffectiveRunPolicy['stages'][number] {
+  return {
+    nodeId,
+    role: 'teacher',
+    model: 'default',
+    effort: 'default',
+    runtime: 'codex',
+    sandbox: 'read-only',
+    gate: false,
+    sessionReuse: 'never',
+    // PLACEHOLDER — the Teacher is advisory and session reuse is not a
+    // concern; these values match the placeholder convention of other
+    // synthesized policy stages.
+    handoffTokenLimit: 10_000,
+    reuseRoundLimit: 1,
+    provenance: {
+      role: 'definition',
+      model: 'default',
+      effort: 'default',
+      runtime: 'default',
+      sandbox: 'definition',
+      gate: 'default',
+      sessionReuse: 'definition',
+      handoffTokenLimit: 'default',
+      reuseRoundLimit: 'default',
+    },
+  };
+}
+
+/**
  * Build a full sealed {@link RuntimeExecutionProfile} for a new launch (task
  * 3.4): resolve capability bindings from the authoritative catalog and freeze
  * them together with the effective policy stages and the source revision. The
@@ -713,6 +930,11 @@ export function resolveNativeV2PolicyStages(
  * When the definition needs v2 lowering (`definitionRequiresV2Lowering`), the
  * policy stages are remapped to v2 hierarchical paths so they align with the v2
  * capability bindings and lowerer.
+ *
+ * When `consultations` is provided and non-empty, Teacher capability bindings
+ * are appended to the capabilities list and consultation bindings populate the
+ * profile's `consultations` field. When omitted (the case for all existing call
+ * sites), the profile is byte-identical to before this parameter existed.
  */
 export function resolveRuntimeExecutionProfile(
   prepared: PreparedDefinition,
@@ -721,7 +943,8 @@ export function resolveRuntimeExecutionProfile(
   sourceRevision: RuntimeExecutionProfileInput['sourceRevision'],
   limits: Readonly<{ maxAttempts: number; maxActions: number }>,
   nativeV2Inputs: NativeV2ExecutionResolutionInputs = EMPTY_NATIVE_V2_EXECUTION_INPUTS,
-  trustedAdapters?: TrustedExecutionAdapterCatalog
+  trustedAdapters?: TrustedExecutionAdapterCatalog,
+  consultations?: readonly ConsultationBindingYaml[]
 ): RuntimeExecutionProfile {
   const capabilities = resolveCapabilityBindings(prepared, catalog, trustedAdapters);
   // ECP-2: v2 authored definitions need their own policy stage mapping.
@@ -734,15 +957,32 @@ export function resolveRuntimeExecutionProfile(
       ? remapPolicyStagesForV2(prepared, policyStages)
       : [...policyStages];
 
+  const { teacherBindings, consultationBindings } = resolveConsultationBindings(
+    prepared,
+    capabilities,
+    catalog,
+    consultations,
+    trustedAdapters
+  );
+
+  // Synthesize Teacher policy stages so the runtime finds them in the
+  // execution profile alongside the Teacher capability bindings.
+  const teacherPolicyStages = teacherBindings.map((binding) =>
+    synthesizeTeacherPolicyStage(binding.nodeId)
+  );
+
+  const hasConsultations = consultationBindings.length > 0;
+
   return createRuntimeExecutionProfile({
     sourceRevision,
-    capabilities: [...capabilities],
+    capabilities: [...capabilities, ...teacherBindings],
     policy: {
       format: 'effective-run-policy/1',
       maxAttempts: limits.maxAttempts,
       maxActions: limits.maxActions,
-      stages: [...finalPolicyStages],
+      stages: [...finalPolicyStages, ...teacherPolicyStages],
     },
+    ...(hasConsultations ? { consultations: consultationBindings } : {}),
   });
 }
 
@@ -769,6 +1009,9 @@ export function resolveRuntimeExecutionProfile(
  * `analyzeReconcilerSupport` already used for a null profile, so a digest read
  * from a read plane can never be mistaken for the profile a Run froze.
  *
+ * When `consultations` is provided, Teacher capability bindings are appended so
+ * the discovery/projection plane is consistent with the launch profile.
+ *
  * Returns `null` — i.e. `execution_profile_unavailable`, fail-closed — when the
  * bindings cannot be resolved at all (a capability missing from the catalog),
  * which is the same verdict discovery gave before and is strictly more truthful
@@ -777,13 +1020,30 @@ export function resolveRuntimeExecutionProfile(
 export function resolveDiscoveryReconcilerSupportProfile(
   prepared: PreparedDefinition,
   catalog: CapabilityCatalogSnapshot,
-  trustedAdapters?: TrustedExecutionAdapterCatalog
+  trustedAdapters?: TrustedExecutionAdapterCatalog,
+  consultations?: readonly ConsultationBindingYaml[]
 ): ReconcilerSupportProfile | null {
   let capabilities: readonly RuntimeCapabilityBinding[];
   try {
     capabilities = resolveCapabilityBindings(prepared, catalog, trustedAdapters);
   } catch {
     return null;
+  }
+  // Append Teacher capability bindings for consistency with the launch profile.
+  try {
+    const { teacherBindings } = resolveConsultationBindings(
+      prepared,
+      capabilities,
+      catalog,
+      consultations,
+      trustedAdapters
+    );
+    if (teacherBindings.length > 0) {
+      capabilities = [...capabilities, ...teacherBindings];
+    }
+  } catch {
+    // If Teacher resolution fails at discovery time, return the base
+    // capabilities — the launch path will surface the error.
   }
   return {
     profileDigest: domainDigest(
