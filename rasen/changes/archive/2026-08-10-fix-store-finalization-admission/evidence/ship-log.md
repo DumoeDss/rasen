@@ -35,3 +35,9 @@ The fixer-recorded seven-file suite (177 passed) and the reviewer's earlier nine
 - [ ] 7.4 Post-commit evidence constraint: local mocks and pre-child jobs are not represented as native CI evidence.
 
 The local Windows pre-flight run above does not substitute for task 7.1. Delivery, native CI, portfolio integration, and any later archive action are deferred to the parent portfolio; this child was not pushed, merged, deployed, or archived.
+
+## Archive
+**Date:** 2026-08-10T06:08:45.526Z
+**Ship commit:** cedfa82d3905e1aa63527121db6ce828e35ead82
+**Outcome:** archived at E:\wt\rasen-archive-follow-up\rasen\changes\archive\2026-08-10-fix-store-finalization-admission
+**Transaction:** 3ca1aae5-ddca-4eb6-b396-fae45202b14c

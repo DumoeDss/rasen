@@ -1,0 +1,29 @@
+{
+  "change": "fix-store-finalization-admission",
+  "archivedAt": "2026-08-10T06:08:45.526Z",
+  "codeCommit": "371a08ae6ceba9ec32fff5991ab03679536b414a",
+  "planningBranch": "fix/archive-transaction-recovery-follow-up",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/review-cycle-report.md",
+      "sha256": "172109014a0974aefbbc26f9b21f41cf6a20cd595c8301f2cd77209ccd9d1916"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "47f36cbe9916daf0a8814b1345b88e0934a9d95ad5109bb0f9525413b2bfdcb2"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "c5d59531d7259993fc36f13ccb6eeb70eede07c9ca5694f171f1b771919c25a8"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}
