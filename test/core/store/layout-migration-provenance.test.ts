@@ -18,7 +18,10 @@ import type {
   ProjectRegistrySnapshot,
   StoreLayoutMigrationDependencies,
 } from '../../../src/core/store/layout-migration/dependencies.js';
-import { migrationItemStateLabel } from '../../../src/core/store/layout-migration/types.js';
+import {
+  migrationItemDiagnosticCode,
+  migrationItemStateLabel,
+} from '../../../src/core/store/layout-migration/types.js';
 import {
   createLayoutMigrationFixture,
   targetLineMapping,
@@ -197,6 +200,7 @@ describe('store layout v2 migration — ownership evidence and provenance', () =
     const spec = plan.items.find((candidate) => candidate.kind === 'spec');
 
     expect(label(spec)).toBe('unresolved:unknown-owner');
+    expect(migrationItemDiagnosticCode(spec!)).toBe('migration_provenance_unresolved');
     expect(spec?.owner).toBeUndefined();
   });
 

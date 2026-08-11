@@ -15,9 +15,15 @@ import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 
 import { parse as parseYaml } from 'yaml';
+import { z } from 'zod';
 
 import { canonicalJson } from '../../canonical-json.js';
+import { formatZodIssues } from '../../zod-issues.js';
 import { StoreError } from '../errors.js';
+import { compileMigrationIssueTree } from '../issues/migration-compiler.js';
+import { normalizePlanNodes } from '../issues/plans.js';
+import { verifyExecutionPlanReferences } from '../issues/reference-verification.js';
+import type { ExecutionPlanNodeInput } from '../issues/types.js';
 import {
   resolveStorePlanningLayoutV2Path,
   type StorePlanningPathFlavor,
@@ -29,6 +35,7 @@ import {
 } from '../planning-identity.js';
 import { serializeStoreTargetLineCatalogV1 } from '../planning-catalogs.js';
 import { isProjectId, isTargetLineId } from '../planning-validation.js';
+import { listTargetLineEntries } from '../query/refs.js';
 import { parseStoreProjectRecord } from '../project-records.js';
 import { upgradeMembershipRecord } from './catalog-upgrade.js';
 import type { StoreLayoutMigrationDependencies } from './dependencies.js';
@@ -48,6 +55,7 @@ import {
 } from './flat-source.js';
 import type { LoadedMappingFile } from './mapping.js';
 import { validateMappingAgainstInventory } from './mapping.js';
+import { loadMigrationPlanInput } from './plan-input.js';
 import type {
   BlockedReason,
   CatalogUpgrade,
@@ -63,6 +71,9 @@ import type {
   SurveyedRef,
   TargetLineCatalogOutput,
   UnresolvedReason,
+  WorkDisposition,
+  MigrationMaterialization,
+  SourceLifecycle,
 } from './types.js';
 import { migrationItemStateLabel } from './types.js';
 
@@ -123,6 +134,10 @@ interface DraftItem {
   contributors?: string[];
   digest?: string;
   untracked?: string[];
+  sourceLifecycle?: SourceLifecycle;
+  disposition?: WorkDisposition;
+  materialization?: MigrationMaterialization;
+  planInput?: MigrationItem['planInput'];
 }
 
 function unresolved(reason: UnresolvedReason, repair: string): Pick<DraftItem, 'state' | 'reason' | 'repair'> {
@@ -167,6 +182,7 @@ export async function buildMigrationPlan(
   const storeRoot = context.storeRoot;
   const paths = flatStorePaths(storeRoot);
   const flavor = input.pathFlavor ?? 'native';
+  const createdAt = dependencies.now().toISOString();
 
   const evidenceIndex = await collectEvidence(dependencies, {
     storeRoot,
@@ -218,9 +234,90 @@ export async function buildMigrationPlan(
       const declaration =
         kind === 'change' ? mapping?.changes.get(name) : mapping?.archive.get(name);
 
+      if (declaration?.kind === 'store-issue') {
+        const source = path.join(collection, name);
+        const destination = safeLayoutPath(
+          storeRoot,
+          { kind: 'issue', issueId: declaration.issueId },
+          flavor
+        );
+        if (destination === null) {
+          items.push({
+            kind,
+            name,
+            source,
+            sourceRelative: storeRelative(storeRoot, source),
+            evidence: [...decision.evidence],
+            supersededEvidence: [...decision.superseded],
+            sourceLifecycle: kind === 'change' ? 'active-change' : 'archive-entry',
+            disposition: {
+              kind: 'store-issue',
+              nature: 'operator-asserted',
+              issueId: declaration.issueId,
+              title: declaration.title,
+              state: declaration.state,
+              reason: declaration.reason,
+              ...(declaration.plan === undefined ? {} : { planInput: declaration.plan }),
+            },
+            ...unresolved(
+              'unrecordable-identity',
+              `Declare ${kind === 'change' ? 'changes' : 'archive'}.${name}.issueId with a portable Issue id.`
+            ),
+          });
+          ownerByKey.set(key, undefined);
+          continue;
+        }
+        const compiled = compileMigrationIssueTree({
+          issueId: declaration.issueId,
+          title: declaration.title,
+          state: declaration.state,
+          reason: declaration.reason,
+          createdAt,
+        });
+        const destinationRelative = storeRelative(storeRoot, destination);
+        items.push({
+          kind,
+          name,
+          source,
+          sourceRelative: storeRelative(storeRoot, source),
+          destination,
+          destinationRelative,
+          evidence: [...decision.evidence],
+          supersededEvidence: [...decision.superseded],
+          sourceLifecycle: kind === 'change' ? 'active-change' : 'archive-entry',
+          disposition: {
+            kind: 'store-issue',
+            nature: 'operator-asserted',
+            issueId: declaration.issueId,
+            title: declaration.title,
+            state: declaration.state,
+            reason: declaration.reason,
+            ...(declaration.plan === undefined ? {} : { planInput: declaration.plan }),
+          },
+          materialization: {
+            kind: 'generated-tree',
+            role: 'store-issue',
+            destination,
+            destinationRelative,
+            files: compiled.files,
+          },
+          ...resolvedState(),
+          reason: `explicitly classified as Store Issue '${declaration.issueId}'`,
+        });
+        ownerByKey.set(key, undefined);
+        continue;
+      }
+
       let owner = decision.owner;
       const chain: OwnershipEvidence[] = [...decision.evidence];
-      if (declaration !== undefined && decision.reason !== undefined) {
+      if (
+        declaration?.kind === 'project-change' &&
+        (decision.reason !== undefined || mapping?.version === 2)
+      ) {
+        // Mapping v1 keeps its established E4 behavior: it resolves only an
+        // unknown/conflicting owner. Mapping v2 is an explicit work
+        // disposition assertion and may override E2/E3, while inventory
+        // validation above still makes E1 recorded identity binding.
         owner = declaration.project;
         chain.push({
           class: 'E4-explicit-mapping',
@@ -251,7 +348,9 @@ export async function buildMigrationPlan(
           draft,
           unresolved(
             reason,
-            `Declare ${kind === 'change' ? 'changes' : 'archive'}.${name}.project in the mapping file.`
+            mapping?.version === 2
+              ? `Declare ${kind === 'change' ? 'changes' : 'archive'}.${name} as kind: project-change with project, or kind: store-issue with explicit Issue fields.`
+              : `Declare ${kind === 'change' ? 'changes' : 'archive'}.${name}.project in the mapping file.`
           )
         );
         if (decision.conflictingProjects !== undefined) {
@@ -266,7 +365,7 @@ export async function buildMigrationPlan(
       ownerByKey.set(key, owner);
 
       const targetLine = declaredTargetLine(
-        declaration?.targetLine,
+        declaration?.kind === 'project-change' ? declaration.targetLine : undefined,
         mapping?.defaultTargetLine,
         input.defaultTargetLine
       );
@@ -635,9 +734,20 @@ export async function buildMigrationPlan(
       continue;
     }
     const untracked = dirty.untracked.filter((entry) => underPath(entry, relative));
-    if (untracked.length > 0) {
-      item.untracked = untracked;
-      if (!input.includeUntracked) {
+    const ignored = dirty.ignored.filter((entry) => underPath(entry, relative));
+    const nonGit = [...new Set([...untracked, ...ignored])].sort();
+    if (nonGit.length > 0) {
+      item.untracked = nonGit;
+      if (item.materialization?.kind === 'generated-tree') {
+        Object.assign(
+          item,
+          blocked(
+            'dirty-source',
+            'Commit or remove every non-Git entry below this generated source; --include-untracked cannot authorize data loss.',
+            `${nonGit.length} untracked or ignored file(s): ${nonGit.slice(0, 5).join(', ')}`
+          )
+        );
+      } else if (!input.includeUntracked) {
         Object.assign(
           item,
           blocked(
@@ -744,10 +854,173 @@ export async function buildMigrationPlan(
     }
   }
 
+  // --- Optional tracked Issue plan inputs ----------------------------------
+  // Project dispositions and their canonical Change identities are frozen
+  // first.  Migration-only sourceChange selectors are then compiled away and
+  // never enter an Issue revision or receipt-owned runtime lookup rule.
+  const existingReferenceLines = await listTargetLineEntries(
+    dependencies.referenceEvidence,
+    storeRoot
+  );
+  const referenceLines = new Map<string, string>();
+  for (const entry of existingReferenceLines) {
+    if (entry.catalog !== null) {
+      referenceLines.set(entry.targetLineId, entry.catalog.storeRef);
+    }
+  }
+  for (const [targetLineId, catalog] of mapping?.targetLines ?? new Map()) {
+    referenceLines.set(targetLineId, catalog.storeRef);
+  }
+
+  for (const item of items) {
+    if (item.disposition?.kind !== 'store-issue') continue;
+    const inputPath = item.disposition.planInput;
+    if (inputPath === undefined) continue;
+    const loaded = await loadMigrationPlanInput(dependencies, storeRoot, inputPath);
+    const directCanonicalNodeIds = new Set<string>();
+    const nodeInputs: ExecutionPlanNodeInput[] = loaded.nodes.map((node) => {
+      if (node.kind === 'intent') return node;
+      if (!('sourceChange' in node)) {
+        directCanonicalNodeIds.add(node.nodeId);
+        return node;
+      }
+      const selector = node.sourceChange;
+      const claimants =
+        mintedIdentities.filter((candidate) => candidate.oldAlias === selector);
+      if (claimants.length !== 1) {
+        throw new StoreError(
+          `Plan input ${loaded.relative} sourceChange '${selector}' resolves to ${claimants.length} active project-change claimant(s) in this migration.`,
+          'migration_plan_input_invalid',
+          {
+            target: loaded.relative,
+            fix: 'Reference one exact active sourceChange planned as project-change.',
+          }
+        );
+      }
+      const identity = claimants[0]!;
+      if (
+        identity.projectId !== node.projectId ||
+        identity.targetLineId !== node.targetLineId
+      ) {
+        throw new StoreError(
+          `Plan input ${loaded.relative} node '${node.nodeId}' declares ${node.projectId}/${node.targetLineId}, but its Change is ${identity.projectId}/${identity.targetLineId}.`,
+          'migration_plan_input_invalid',
+          {
+            target: loaded.relative,
+            fix: 'Make the node projectId and targetLineId exactly match the planned Change identity.',
+          }
+        );
+      }
+      return {
+        nodeId: node.nodeId,
+        kind: 'change' as const,
+        projectId: node.projectId,
+        targetLineId: node.targetLineId,
+        changeInstanceId: identity.changeInstanceId,
+        changeAlias: identity.oldAlias,
+        ...(node.dependsOn === undefined ? {} : { dependsOn: node.dependsOn }),
+      };
+    });
+    const nodes = normalizePlanNodes(nodeInputs);
+    const evidenceNodes = nodes.filter(
+      node => node.kind === 'intent' || directCanonicalNodeIds.has(node.nodeId)
+    );
+    try {
+      if (context.storeUid === undefined) {
+        throw new Error('the Store has no permanent identity');
+      }
+      await verifyExecutionPlanReferences(dependencies.referenceEvidence, {
+        registeredRoot: storeRoot,
+        storeId: context.storeId,
+        storeUid: context.storeUid,
+        nodes: evidenceNodes,
+        catalogs: {
+          projectIds: evidenceIndex.members,
+          targetLines: [...referenceLines]
+            .map(([targetLineId, storeRef]) => ({ targetLineId, storeRef }))
+            .sort((left, right) => left.targetLineId.localeCompare(right.targetLineId)),
+        },
+        ...(input.globalDataDir === undefined
+          ? {}
+          : { globalDataDir: input.globalDataDir }),
+      });
+    } catch (error) {
+      throw new StoreError(
+        `Plan input ${loaded.relative} has unverifiable Store references: ${error instanceof Error ? error.message : String(error)}`,
+        'migration_plan_input_invalid',
+        {
+          target: loaded.relative,
+          fix: 'Repair unreadable, ambiguous, foreign, unresolved, or scope-conflicting references and re-plan.',
+        }
+      );
+    }
+    let compiled: ReturnType<typeof compileMigrationIssueTree>;
+    try {
+      compiled = compileMigrationIssueTree({
+        issueId: item.disposition.issueId,
+        title: item.disposition.title,
+        state: item.disposition.state,
+        reason: item.disposition.reason,
+        createdAt,
+        nodes,
+      });
+    } catch (error) {
+      throw new StoreError(
+        `Plan input ${loaded.relative} cannot compile: ${error instanceof Error ? error.message : String(error)}`,
+        'migration_issue_compilation_failed',
+        {
+          target: loaded.relative,
+          fix: 'Correct the node schema, canonical references, or dependency graph and re-plan.',
+        }
+      );
+    }
+    item.planInput = {
+      path: loaded.path,
+      relative: loaded.relative,
+      digest: loaded.digest,
+    };
+    if (item.materialization?.kind === 'generated-tree') {
+      item.materialization = {
+        ...item.materialization,
+        files: compiled.files,
+      };
+    }
+  }
+
   // --- Digests for revalidation --------------------------------------------
   for (const item of items) {
     if (item.state.kind === 'blocked') continue;
     item.digest = (await digestTree(dependencies.fs, item.source)).digest;
+  }
+
+  const requiresV2 = items.some(
+    (item) => item.disposition?.kind === 'store-issue'
+  );
+  if (requiresV2) {
+    for (const item of items) {
+      if (item.kind === 'change' || item.kind === 'archive-entry') {
+        item.sourceLifecycle = item.kind === 'change' ? 'active-change' : 'archive-entry';
+        item.disposition ??= {
+          kind: 'project-change',
+          nature: item.evidence.some((entry) => entry.class === 'E4-explicit-mapping')
+            ? 'operator-asserted'
+            : 'derived',
+        };
+      }
+      if (item.materialization !== undefined || item.destination === undefined) continue;
+      item.materialization =
+        item.destination === item.source
+          ? {
+              kind: 'retain',
+              destination: item.destination,
+              destinationRelative: item.destinationRelative as string,
+            }
+          : {
+              kind: 'copy-tree',
+              destination: item.destination,
+              destinationRelative: item.destinationRelative as string,
+            };
+    }
   }
 
   items.sort(
@@ -767,8 +1040,7 @@ export async function buildMigrationPlan(
           ...frozenItems
             .filter((item) => item.kind === 'spec' || item.kind === 'change' || item.kind === 'archive-entry')
             .map((item) => item.sourceRelative),
-          FLAT_RELATIVE.specs,
-          FLAT_RELATIVE.changes,
+          ...(requiresV2 ? [] : [FLAT_RELATIVE.specs, FLAT_RELATIVE.changes]),
           ...(inventory.hasAdoptionsManifest ? [FLAT_RELATIVE.adoptionsManifest] : []),
         ]),
       ].sort()
@@ -779,14 +1051,15 @@ export async function buildMigrationPlan(
   );
 
   const body = {
-    schemaVersion: MIGRATION_PLAN_SCHEMA_VERSION,
+    schemaVersion: requiresV2 ? 2 : MIGRATION_PLAN_SCHEMA_VERSION,
+    ...(requiresV2 ? { mappingVersion: mapping?.version ?? 2 } : {}),
     storeId: context.storeId,
     ...(context.storeUid === undefined ? {} : { storeUid: context.storeUid }),
     storeRoot,
     ...(inventory.checkedOutRef === undefined ? {} : { ref: inventory.checkedOutRef }),
     ...(inventory.headOid === undefined ? {} : { headOid: inventory.headOid }),
     inventoryFingerprint: inventory.fingerprint,
-    createdAt: dependencies.now().toISOString(),
+    createdAt,
     items: frozenItems,
     catalogUpgrades,
     targetLineCatalogs,
@@ -834,6 +1107,384 @@ export function canonicalPlanId(body: unknown): string {
   return createHash('sha256').update(canonicalJson(body), 'utf8').digest('hex');
 }
 
+const DigestSchema = z.string().regex(/^[0-9a-f]{64}$/u);
+const EvidenceSchema = z
+  .object({
+    class: z.enum([
+      'E1-recorded-identity',
+      'E2-store-records',
+      'E3-association',
+      'E4-explicit-mapping',
+      'spec-provenance',
+    ]),
+    source: z.string(),
+    projectId: z.string(),
+    nature: z.enum(['derived', 'asserted']),
+    detail: z.string().optional(),
+  })
+  .strict();
+const ItemStateSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('resolved') }).strict(),
+  z
+    .object({
+      kind: z.literal('unresolved'),
+      reason: z.enum([
+        'unknown-owner',
+        'evidence-conflict',
+        'shared-spec',
+        'non-member-owner',
+        'unrecordable-identity',
+        'missing-target-line',
+      ]),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('blocked'),
+      reason: z.enum([
+        'destination-exists',
+        'mixed-layout',
+        'store-identity-missing',
+        'unrecordable-catalog-field',
+        'target-line-catalog-conflict',
+        'dirty-source',
+      ]),
+    })
+    .strict(),
+]);
+const CommonItemShape = {
+  kind: z.enum([
+    'spec',
+    'change',
+    'archive-entry',
+    'design-doc',
+    'membership-record',
+    'adoptions-manifest',
+  ]),
+  name: z.string(),
+  source: z.string(),
+  sourceRelative: z.string(),
+  state: ItemStateSchema,
+  reason: z.string(),
+  repair: z.string(),
+  owner: z.string().optional(),
+  destination: z.string().optional(),
+  destinationRelative: z.string().optional(),
+  targetLineId: z.string().optional(),
+  evidence: z.array(EvidenceSchema),
+  supersededEvidence: z.array(EvidenceSchema),
+  contributors: z.array(z.string()).optional(),
+  digest: DigestSchema.optional(),
+  untracked: z.array(z.string()).optional(),
+};
+const MigrationItemV1Schema = z.object(CommonItemShape).strict();
+const DispositionSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('project-change'),
+      nature: z.enum(['derived', 'operator-asserted']),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('store-issue'),
+      nature: z.literal('operator-asserted'),
+      issueId: z.string(),
+      title: z.string(),
+      state: z.enum(['open', 'resolved', 'dropped']),
+      reason: z.string().nullable(),
+      planInput: z.string().optional(),
+    })
+    .strict(),
+]);
+const GeneratedFileSchema = z
+  .object({
+    role: z.enum(['issue-record', 'execution-plan']),
+    relativePath: z.string(),
+    content: z.string(),
+    digest: DigestSchema,
+  })
+  .strict();
+const MaterializationSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('copy-tree'),
+      destination: z.string(),
+      destinationRelative: z.string(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('generated-tree'),
+      role: z.literal('store-issue'),
+      destination: z.string(),
+      destinationRelative: z.string(),
+      files: z.array(GeneratedFileSchema),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('retain'),
+      destination: z.string(),
+      destinationRelative: z.string(),
+    })
+    .strict(),
+]);
+const MigrationItemV2Schema = z
+  .object({
+    ...CommonItemShape,
+    sourceLifecycle: z.enum(['active-change', 'archive-entry']).optional(),
+    disposition: DispositionSchema.optional(),
+    materialization: MaterializationSchema.optional(),
+    planInput: z
+      .object({ path: z.string(), relative: z.string(), digest: DigestSchema })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .superRefine((item, context) => {
+    if (
+      item.state.kind === 'resolved' &&
+      item.destination !== undefined &&
+      item.materialization === undefined
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['materialization'],
+        message: 'resolved schema-v2 destination requires explicit materialization',
+      });
+    }
+    if (item.disposition?.kind === 'store-issue') {
+      if (item.materialization?.kind !== 'generated-tree') {
+        context.addIssue({
+          code: 'custom',
+          path: ['materialization'],
+          message: 'store-issue disposition requires generated-tree materialization',
+        });
+      }
+      if (item.owner !== undefined || item.targetLineId !== undefined) {
+        context.addIssue({
+          code: 'custom',
+          path: ['disposition'],
+          message: 'store-issue disposition cannot carry project ownership or target line',
+        });
+      }
+    }
+    if (
+      item.materialization?.kind === 'generated-tree' &&
+      (item.disposition?.kind !== 'store-issue' || item.sourceLifecycle === undefined)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['materialization'],
+        message: 'generated-tree requires store-issue disposition and source lifecycle',
+      });
+    }
+    if (item.materialization !== undefined) {
+      if (
+        item.destination !== item.materialization.destination ||
+        item.destinationRelative !== item.materialization.destinationRelative
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['materialization'],
+          message: 'materialization destination must equal the item destination',
+        });
+      }
+    }
+    if (item.materialization?.kind === 'generated-tree') {
+      const files = item.materialization.files;
+      const issueRecords = files.filter(file => file.role === 'issue-record');
+      const plans = files.filter(file => file.role === 'execution-plan');
+      const paths = files.map(file => file.relativePath);
+      if (
+        issueRecords.length !== 1 ||
+        issueRecords[0]?.relativePath !== 'issue.yaml' ||
+        plans.length > 1 ||
+        plans.some(file => file.relativePath !== 'plans/0001.yaml') ||
+        new Set(paths).size !== paths.length ||
+        paths.some(relative => {
+          const normalized = relative.split('\\').join('/');
+          return (
+            normalized.startsWith('/') ||
+            normalized === '..' ||
+            normalized.startsWith('../') ||
+            normalized.includes('/../')
+          );
+        })
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['materialization', 'files'],
+          message: 'generated-tree must contain exact issue.yaml and optional plans/0001.yaml inventory',
+        });
+      }
+    }
+  });
+const CatalogUpgradeSchema = z
+  .object({
+    projectId: z.string(),
+    recordPath: z.string(),
+    recordRelative: z.string(),
+    sourceDigest: DigestSchema,
+    catalogYaml: z.string(),
+    droppedAdoption: z
+      .object({
+        specs: z.array(z.string()),
+        changes: z.array(z.string()),
+        adoptedAt: z.string(),
+      })
+      .strict()
+      .optional(),
+    binding: z.enum(['bound', 'unbound']),
+  })
+  .strict();
+const TargetLineCatalogSchema = z
+  .object({
+    targetLineId: z.string(),
+    destination: z.string(),
+    destinationRelative: z.string(),
+    catalogYaml: z.string(),
+  })
+  .strict();
+const MintedIdentitySchema = z
+  .object({
+    changeId: z.string(),
+    projectId: z.string(),
+    targetLineId: z.string(),
+    instanceSeed: z.string(),
+    planningScopeId: z.string(),
+    changeInstanceId: z.string(),
+    oldAlias: z.string(),
+    minted: z.boolean(),
+  })
+  .strict();
+const SharedSpecResolutionSchema = z
+  .object({
+    capability: z.string(),
+    mode: z.enum(['owner', 'split']),
+    projects: z.array(z.string()),
+    contributors: z.array(z.string()),
+  })
+  .strict();
+const RetainedDesignDocSchema = z
+  .object({ name: z.string(), path: z.string(), relative: z.string() })
+  .strict();
+const SurveyedRefSchema = z
+  .object({
+    ref: z.string(),
+    kind: z.enum(['local-branch', 'remote-tracking', 'other']),
+    classification: z.enum(['layout-v2', 'flat', 'no-store-metadata', 'unreadable']),
+    checkedOut: z.boolean(),
+    notCandidateReason: z.string().optional(),
+    migrateFrom: z.string().optional(),
+    reason: z.string().optional(),
+  })
+  .strict();
+const TokenSchema = z
+  .object({
+    planId: DigestSchema,
+    storeUid: z.string(),
+    ref: z.string(),
+    headOid: z.string(),
+    inventoryFingerprint: DigestSchema,
+  })
+  .strict();
+const CommonPlanShape = {
+  planId: DigestSchema,
+  storeId: z.string(),
+  storeUid: z.string().optional(),
+  storeRoot: z.string(),
+  ref: z.string().optional(),
+  headOid: z.string().optional(),
+  inventoryFingerprint: DigestSchema,
+  createdAt: z.string(),
+  catalogUpgrades: z.array(CatalogUpgradeSchema),
+  targetLineCatalogs: z.array(TargetLineCatalogSchema),
+  mintedIdentities: z.array(MintedIdentitySchema),
+  sharedSpecResolutions: z.array(SharedSpecResolutionSchema),
+  retainedDesignDocs: z.array(RetainedDesignDocSchema),
+  retirementSet: z.array(z.string()),
+  otherFlatRefs: z.array(SurveyedRefSchema),
+  mappingPath: z.string().optional(),
+  mappingDigest: DigestSchema.optional(),
+  defaultTargetLine: z.string().optional(),
+  includeUntracked: z.boolean(),
+  applicable: z.boolean(),
+  token: TokenSchema.optional(),
+};
+const ImmutableMigrationPlanV1Schema = z
+  .object({
+    schemaVersion: z.literal(1),
+    ...CommonPlanShape,
+    items: z.array(MigrationItemV1Schema),
+    blockers: z.array(MigrationItemV1Schema),
+  })
+  .strict();
+const ImmutableMigrationPlanV2Schema = z
+  .object({
+    schemaVersion: z.literal(2),
+    mappingVersion: z.literal(2),
+    ...CommonPlanShape,
+    items: z.array(MigrationItemV2Schema),
+    blockers: z.array(MigrationItemV2Schema),
+  })
+  .strict();
+
+function invalidStoredPlan(message: string): StoreError {
+  return new StoreError(message, 'migration_plan_stale', {
+    target: 'migration.plan',
+    fix: 'Do not edit stored plan bytes; re-run the plan.',
+  });
+}
+
+/** Strict version dispatch for machine-local immutable plans. */
+export function readImmutableMigrationPlan(value: unknown): ImmutableMigrationPlan {
+  if (typeof value !== 'object' || value === null) {
+    throw new StoreError('Stored migration plan is not an object.', 'migration_plan_stale', {
+      target: 'migration.plan',
+      fix: 'Re-run the plan.',
+    });
+  }
+  const candidate = value as Record<string, unknown>;
+  if (candidate.schemaVersion !== 1 && candidate.schemaVersion !== 2) {
+    throw new StoreError(
+      `Stored migration plan declares unsupported schemaVersion '${String(candidate.schemaVersion)}'.`,
+      'migration_plan_stale',
+      { target: 'migration.plan', fix: 'Re-run the plan with this Rasen version.' }
+    );
+  }
+  const parsed =
+    candidate.schemaVersion === 1
+      ? ImmutableMigrationPlanV1Schema.safeParse(value)
+      : ImmutableMigrationPlanV2Schema.safeParse(value);
+  if (!parsed.success) {
+    throw invalidStoredPlan(
+      `Stored migration plan does not match its closed schema v${candidate.schemaVersion}: ${formatZodIssues(parsed.error)}`
+    );
+  }
+  const { planId, token: _token, ...body } = candidate;
+  if (canonicalPlanId(body) !== planId) {
+    throw new StoreError(
+      'Stored migration plan canonical body does not match its planId.',
+      'migration_plan_stale',
+      { target: 'migration.plan', fix: 'Re-run the plan; stored plans are immutable.' }
+    );
+  }
+  const plan = parsed.data;
+  if (
+    plan.token !== undefined &&
+    (plan.token.planId !== plan.planId ||
+      plan.token.storeUid !== plan.storeUid ||
+      plan.token.ref !== plan.ref ||
+      plan.token.headOid !== plan.headOid ||
+      plan.token.inventoryFingerprint !== plan.inventoryFingerprint)
+  ) {
+    throw invalidStoredPlan('Stored migration plan token disagrees with its canonical plan body.');
+  }
+  return value as ImmutableMigrationPlan;
+}
+
 function underPath(candidate: string, ancestor: string): boolean {
   const normalizedCandidate = candidate.split('\\').join('/');
   const normalizedAncestor = ancestor.split('\\').join('/');
@@ -846,7 +1497,7 @@ function underPath(candidate: string, ancestor: string): boolean {
 async function collectDirtySources(
   dependencies: StoreLayoutMigrationDependencies,
   storeRoot: string
-): Promise<{ tracked: string[]; untracked: string[] }> {
+): Promise<{ tracked: string[]; untracked: string[]; ignored: string[] }> {
   const entries = await dependencies.git.status(storeRoot, [
     FLAT_RELATIVE.planning,
     FLAT_RELATIVE.storeMetadata,
@@ -855,11 +1506,17 @@ async function collectDirtySources(
   ]);
   const tracked: string[] = [];
   const untracked: string[] = [];
+  const ignored: string[] = [];
   for (const entry of entries) {
     if (entry.status === 'untracked') untracked.push(entry.path);
+    else if (entry.status === 'ignored') ignored.push(entry.path);
     else tracked.push(entry.path);
   }
-  return { tracked: [...new Set(tracked)].sort(), untracked: [...new Set(untracked)].sort() };
+  return {
+    tracked: [...new Set(tracked)].sort(),
+    untracked: [...new Set(untracked)].sort(),
+    ignored: [...new Set(ignored)].sort(),
+  };
 }
 
 function safeLayoutPath(

@@ -7,13 +7,16 @@
  * carry, and the receipt loses nothing the catalog dropped.
  */
 import * as fs from 'node:fs';
+import { createHash } from 'node:crypto';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parse as parseYaml } from 'yaml';
 
 import {
   migrationReceiptPath,
+  readMigrationReceipt,
   serializeMigrationReceipt,
+  withMigrationReceiptPhase,
   type MigrationReceipt,
 } from '../../../src/core/store/layout-migration/index.js';
 import { migrationItemStateLabel } from '../../../src/core/store/layout-migration/types.js';
@@ -22,6 +25,7 @@ import { serializeStoreProjectRecord } from '../../../src/core/store/project-rec
 import {
   createLayoutMigrationFixture,
   targetLineMapping,
+  targetLineMappingV2,
   MIGRATION_FIXTURE_STORE_UID,
   type LayoutMigrationFixture,
 } from '../../helpers/layout-migration-fixture.js';
@@ -337,11 +341,158 @@ describe('store layout v2 migration — catalog upgrade and receipt', () => {
     expect(bytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf]))).toBe(false);
     const text = bytes.toString('utf8');
     expect(text.endsWith('\n')).toBe(true);
-    expect(text).not.toContain('�');
+    expect(text).not.toContain('\uFFFD');
 
     const parsed = JSON.parse(text) as MigrationReceipt;
     expect(serializeMigrationReceipt(parsed)).toBe(text);
+    expect(readMigrationReceipt(text)).toMatchObject({
+      ok: true,
+      receipt: { schemaVersion: 1, planId: plan.planId },
+    });
+    const legitimateNonAscii = JSON.parse(text) as MigrationReceipt;
+    (legitimateNonAscii.items[0] as { name: string }).name = 'Ãurea âncora 中文';
+    expect(readMigrationReceipt(`${JSON.stringify(legitimateNonAscii)}\n`)).toMatchObject({
+      ok: true,
+    });
+    expect(readMigrationReceipt(`\ufeff${text}`)).toMatchObject({ ok: false });
+    expect(
+      readMigrationReceipt(text.replace('billing', 'replacement \uFFFD marker'))
+    ).toMatchObject({
+      ok: false,
+    });
+    expect(readMigrationReceipt(text.replace('billing', 'FranÃ§ais double decode'))).toMatchObject({
+      ok: false,
+    });
+    expect(readMigrationReceipt(text.replace('billing', '鏂囦欢 double decode'))).toMatchObject({
+      ok: false,
+    });
+
+    const nestedUnknown = JSON.parse(text) as Record<string, unknown>;
+    (nestedUnknown.items as Record<string, unknown>[])[0]!.codeCommit = 'not permitted';
+    expect(readMigrationReceipt(`${JSON.stringify(nestedUnknown)}\n`)).toMatchObject({
+      ok: false,
+    });
   });
+
+  it('round-trips strict receipt v2 with Store provenance, conversion digests, and unproven terminal acceptance', async () => {
+    await f.member('elftia', { specs: [], changes: [] });
+    f.writeChange('release-coordinator');
+    f.writeArchiveEntry('historical-coordinator');
+    f.writePlanInput(
+      'rasen/migration-inputs/release-plan.yaml',
+      [
+        'nodes:',
+        '  - nodeId: guide',
+        '    kind: intent',
+        '    projectId: elftia',
+        `    targetLineId: ${LINE}`,
+        '    summary: Publish the guide',
+        '    dependsOn: []',
+        '',
+      ].join('\n')
+    );
+    f.write(
+      MAPPING,
+      targetLineMappingV2(LINE, ['elftia'], [
+        'changes:',
+        '  release-coordinator:',
+        '    kind: store-issue',
+        '    issueId: release-coordinator',
+        '    title: Coordinate the release',
+        '    plan: rasen/migration-inputs/release-plan.yaml',
+        'archive:',
+        '  historical-coordinator:',
+        '    kind: store-issue',
+        '    issueId: historical-coordinator',
+        '    title: Historical coordination',
+        '    state: dropped',
+        '    reason: Operator declares this historical work abandoned.',
+      ])
+    );
+    f.commitAll('declare receipt-v2 conversions');
+
+    const plan = await f.migration().plan(f.input({ mappingPath: MAPPING }));
+    await f.migration().apply(plan.token!);
+    const text = fs.readFileSync(migrationReceiptPath(f.storeRoot, plan.planId), 'utf8');
+    const read = readMigrationReceipt(text);
+    expect(read.ok).toBe(true);
+    if (!read.ok || read.receipt.schemaVersion !== 2) throw new Error('expected receipt v2');
+    expect(read.receipt.sourceRevision).toEqual({
+      repositoryKind: 'store',
+      role: 'planning-source',
+      storeUid: MIGRATION_FIXTURE_STORE_UID,
+      ref: 'refs/heads/main',
+      headOid: plan.headOid,
+    });
+    expect(read.receipt.mapping?.schemaVersion).toBe(2);
+    expect(read.receipt.conversions.find(entry => entry.source.alias === 'release-coordinator'))
+      .toMatchObject({
+        issue: { state: 'open', reason: null, stateNature: 'migration-default-open' },
+        planInput: {
+          path: 'rasen/migration-inputs/release-plan.yaml',
+          digest: expect.stringMatching(/^[0-9a-f]{64}$/u),
+        },
+        outputs: expect.arrayContaining([
+          expect.objectContaining({ role: 'issue-record', schemaVersion: 1 }),
+          expect.objectContaining({ role: 'execution-plan', schemaVersion: 1 }),
+        ]),
+      });
+    const activeConversion = read.receipt.conversions.find(
+      entry => entry.source.alias === 'release-coordinator'
+    )!;
+    const committedSource = f.git(
+      'show',
+      `${plan.headOid}:${activeConversion.source.path}/proposal.md`
+    );
+    const committedFileDigest = createHash('sha256')
+      .update(committedSource, 'utf8')
+      .digest('hex');
+    expect(
+      createHash('sha256')
+        .update(`dir\0proposal.md\0${committedFileDigest}\0`, 'utf8')
+        .digest('hex')
+    ).toBe(activeConversion.source.digest);
+    expect(read.receipt.conversions.find(entry => entry.source.alias === 'historical-coordinator'))
+      .toMatchObject({
+        issue: {
+          state: 'dropped',
+          reason: 'Operator declares this historical work abandoned.',
+          stateNature: 'operator-asserted',
+          acceptanceEvidence: 'unproven',
+        },
+      });
+    expect(text).not.toContain('codeCommit');
+    expect(serializeMigrationReceipt(read.receipt)).toBe(text);
+    expect(withMigrationReceiptPhase(text, 'published', '2099-01-01T00:00:00.000Z')).toBe(text);
+
+    const tampered = JSON.parse(text) as {
+      sourceRevision: { storeUid: string };
+      conversions: Array<{ issue: Record<string, unknown> }>;
+    };
+    tampered.conversions[0]!.issue.codeCommit = 'forbidden';
+    expect(readMigrationReceipt(`${JSON.stringify(tampered)}\n`)).toMatchObject({ ok: false });
+    tampered.conversions[0]!.issue = { state: 'open' };
+    tampered.sourceRevision.storeUid = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    expect(readMigrationReceipt(`${JSON.stringify(tampered)}\n`)).toMatchObject({ ok: false });
+
+    await f.migration().recover(f.input({ action: 'retire-flat' }));
+    expect(fs.existsSync(f.at(...activeConversion.source.path.split('/')))).toBe(false);
+    expect(fs.existsSync(f.issueAt('release-coordinator', 'issue.yaml'))).toBe(true);
+    expect(fs.existsSync(f.at('rasen', 'migration-inputs', 'release-plan.yaml'))).toBe(true);
+    expect(
+      createHash('sha256')
+        .update(
+          `dir\0proposal.md\0${createHash('sha256')
+            .update(
+              f.git('show', `${plan.headOid}:${activeConversion.source.path}/proposal.md`),
+              'utf8'
+            )
+            .digest('hex')}\0`,
+          'utf8'
+        )
+        .digest('hex')
+    ).toBe(activeConversion.source.digest);
+  }, 180_000);
 
   it('records the superseded evidence a recorded identity outranked', async () => {
     await f.member('elftia', { specs: [], changes: ['fix-a'] });

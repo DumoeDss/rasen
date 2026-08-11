@@ -17,12 +17,17 @@ import * as nodeFs from 'node:fs';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
 
+import { FileSystemUtils } from '../../../utils/file-system.js';
 import { getGlobalDataDir } from '../../global-config.js';
 import {
   readProjectRegistryState,
   type ProjectRegistryEntryState,
 } from '../../project-registry.js';
 import { mintChangeInstanceSeed } from '../planning-foundation.js';
+import {
+  productionStoreQueryDependencies,
+  type StoreQueryDependencies,
+} from '../query/dependencies.js';
 
 const fs = nodeFs.promises;
 const execFilePromise = promisify(execFile);
@@ -38,6 +43,7 @@ export interface LayoutMigrationFileSystem {
   statKind(target: string): Promise<FsEntryKind>;
   readText(target: string): Promise<string | null>;
   readBytes(target: string): Promise<Buffer | null>;
+  readLink(target: string): Promise<string | null>;
   listEntries(target: string): Promise<readonly LayoutMigrationDirEntry[]>;
   mkdirp(target: string): Promise<void>;
   writeText(target: string, content: string): Promise<void>;
@@ -45,6 +51,7 @@ export interface LayoutMigrationFileSystem {
   rename(source: string, destination: string): Promise<void>;
   removeTree(target: string): Promise<void>;
   removeFile(target: string): Promise<void>;
+  canonicalizeExistingPath(target: string): Promise<string>;
 }
 
 export interface GitRefEntry {
@@ -54,7 +61,7 @@ export interface GitRefEntry {
 
 export interface GitStatusEntry {
   readonly path: string;
-  readonly status: 'tracked-modified' | 'staged' | 'untracked';
+  readonly status: 'tracked-modified' | 'staged' | 'untracked' | 'ignored';
 }
 
 export interface LayoutMigrationGit {
@@ -85,11 +92,43 @@ export interface ProjectRegistrySnapshot {
   readonly entry: ProjectRegistryEntryState;
 }
 
+/**
+ * Semantic checkpoints around the publication protocol. Production observes
+ * none of them; deterministic tests may pause or fail one exact boundary
+ * without sleeps or filesystem polling.
+ */
+export type LayoutMigrationCheckpoint =
+  | { readonly kind: 'plan-input-read'; readonly path: string }
+  | { readonly kind: 'generated-file-write'; readonly path: string; readonly phase: 'before' | 'after' }
+  | { readonly kind: 'generated-tree-digest-verification'; readonly destination: string }
+  | { readonly kind: 'generated-destination-precondition'; readonly issueIds: readonly string[] }
+  | { readonly kind: 'issue-lock-acquired'; readonly issueId: string; readonly index: number; readonly total: number }
+  | { readonly kind: 'migration-run-acquired'; readonly storeUid: string; readonly ref: string }
+  | {
+      readonly kind: 'operation-manifest-write';
+      readonly destination: string;
+      readonly operationKind: 'target-line-catalog' | 'item' | 'issue-tree' | 'receipt';
+      readonly status: 'prepared' | 'completed';
+      readonly phase: 'before' | 'after';
+    }
+  | {
+      readonly kind: 'operation-renamed';
+      readonly destination: string;
+      readonly operationKind: 'target-line-catalog' | 'item' | 'issue-tree' | 'receipt';
+    }
+  | { readonly kind: 'legacy-recovery-upgrade'; readonly phase: 'after' }
+  | { readonly kind: 'layout-flip'; readonly phase: 'before' | 'after' }
+  | { readonly kind: 'source-removal'; readonly path: string }
+  | { readonly kind: 'final-manifest-write'; readonly phase: 'before' | 'after' };
+
 export interface StoreLayoutMigrationDependencies {
   readonly fs: LayoutMigrationFileSystem;
   readonly git: LayoutMigrationGit;
+  /** Existing Store reference-evidence reader used by canonical plan nodes. */
+  readonly referenceEvidence: StoreQueryDependencies;
   coordination(globalDataDir?: string): LayoutMigrationCoordination;
   snapshotProjects(globalDataDir?: string): Promise<readonly ProjectRegistrySnapshot[]>;
+  checkpoint(event: LayoutMigrationCheckpoint): Promise<void>;
   now(): Date;
   mintInstanceSeed(): string;
 }
@@ -170,6 +209,19 @@ export const nodeLayoutMigrationFileSystem: LayoutMigrationFileSystem = {
     } catch (error) {
       if (nodeErrorCode(error) !== 'ENOENT') throw error;
     }
+  },
+  async readLink(target) {
+    try {
+      const stat = await fs.lstat(target);
+      if (!stat.isSymbolicLink()) return null;
+      return await fs.readlink(target);
+    } catch (error) {
+      if (nodeErrorCode(error) === 'ENOENT') return null;
+      throw error;
+    }
+  },
+  async canonicalizeExistingPath(target) {
+    return FileSystemUtils.canonicalizeExistingPath(target);
   },
 };
 
@@ -271,6 +323,7 @@ export const nodeLayoutMigrationGit: LayoutMigrationGit = {
       'status',
       '--porcelain=v1',
       '--untracked-files=all',
+      '--ignored=matching',
       '--no-renames',
       '--',
       ...pathspecs,
@@ -285,6 +338,10 @@ export const nodeLayoutMigrationGit: LayoutMigrationGit = {
       if (target.length === 0) continue;
       if (indexState === '?' && workingState === '?') {
         entries.push({ path: target, status: 'untracked' });
+        continue;
+      }
+      if (indexState === '!' && workingState === '!') {
+        entries.push({ path: target, status: 'ignored' });
         continue;
       }
       if (indexState !== ' ') entries.push({ path: target, status: 'staged' });
@@ -310,7 +367,6 @@ export function createNodeCoordination(globalDataDir?: string): LayoutMigrationC
         return JSON.parse(await fs.readFile(target, 'utf8')) as unknown;
       } catch (error) {
         if (nodeErrorCode(error) === 'ENOENT') return null;
-        if (error instanceof SyntaxError) return null;
         throw error;
       }
     },
@@ -329,6 +385,7 @@ export function createNodeCoordination(globalDataDir?: string): LayoutMigrationC
 export const productionStoreLayoutMigrationDependencies: StoreLayoutMigrationDependencies = {
   fs: nodeLayoutMigrationFileSystem,
   git: nodeLayoutMigrationGit,
+  referenceEvidence: productionStoreQueryDependencies,
   coordination: (globalDataDir) => createNodeCoordination(globalDataDir),
   async snapshotProjects(globalDataDir) {
     const registry = await readProjectRegistryState(
@@ -339,6 +396,7 @@ export const productionStoreLayoutMigrationDependencies: StoreLayoutMigrationDep
       .map(([root, entry]) => ({ root, entry }))
       .sort((left, right) => left.root.localeCompare(right.root));
   },
+  checkpoint: async () => {},
   now: () => new Date(),
   mintInstanceSeed: () => mintChangeInstanceSeed(),
 };

@@ -106,6 +106,49 @@ export type BlockedReason =
   | 'target-line-catalog-conflict'
   | 'dirty-source';
 
+export type SourceLifecycle = 'active-change' | 'archive-entry';
+
+export type WorkDisposition =
+  | {
+      readonly kind: 'project-change';
+      readonly nature: 'derived' | 'operator-asserted';
+    }
+  | {
+      readonly kind: 'store-issue';
+      readonly nature: 'operator-asserted';
+      readonly issueId: string;
+      readonly title: string;
+      readonly state: 'open' | 'resolved' | 'dropped';
+      readonly reason: string | null;
+      readonly planInput?: string;
+    };
+
+export interface GeneratedMigrationFile {
+  readonly role: 'issue-record' | 'execution-plan';
+  readonly relativePath: string;
+  readonly content: string;
+  readonly digest: string;
+}
+
+export type MigrationMaterialization =
+  | {
+      readonly kind: 'copy-tree';
+      readonly destination: string;
+      readonly destinationRelative: string;
+    }
+  | {
+      readonly kind: 'generated-tree';
+      readonly role: 'store-issue';
+      readonly destination: string;
+      readonly destinationRelative: string;
+      readonly files: readonly GeneratedMigrationFile[];
+    }
+  | {
+      readonly kind: 'retain';
+      readonly destination: string;
+      readonly destinationRelative: string;
+    };
+
 export type MigrationItemState =
   | { readonly kind: 'resolved' }
   | { readonly kind: 'unresolved'; readonly reason: UnresolvedReason }
@@ -114,6 +157,40 @@ export type MigrationItemState =
 /** Stable `resolved` / `unresolved:<reason>` / `blocked:<reason>` label. */
 export function migrationItemStateLabel(state: MigrationItemState): string {
   return state.kind === 'resolved' ? 'resolved' : `${state.kind}:${state.reason}`;
+}
+
+/** Stable diagnostic code for every plan-time item refusal shown by human/JSON previews. */
+export function migrationItemDiagnosticCode(item: Pick<MigrationItem, 'kind' | 'state'>): string | undefined {
+  if (item.state.kind === 'resolved') return undefined;
+  if (item.state.kind === 'unresolved') {
+    if (item.kind === 'spec') return 'migration_provenance_unresolved';
+    switch (item.state.reason) {
+      case 'shared-spec':
+        return 'migration_provenance_unresolved';
+      case 'missing-target-line':
+        return 'migration_target_line_missing';
+      case 'unrecordable-identity':
+        return 'migration_identity_unrecordable';
+      case 'unknown-owner':
+      case 'evidence-conflict':
+      case 'non-member-owner':
+        return 'migration_classification_unresolved';
+    }
+  }
+  switch (item.state.reason) {
+    case 'destination-exists':
+      return 'migration_destination_conflict';
+    case 'dirty-source':
+      return 'migration_source_unsafe';
+    case 'mixed-layout':
+      return 'migration_mixed_layout';
+    case 'store-identity-missing':
+      return 'migration_store_identity_missing';
+    case 'unrecordable-catalog-field':
+      return 'migration_catalog_invalid';
+    case 'target-line-catalog-conflict':
+      return 'migration_target_line_conflict';
+  }
 }
 
 export interface MigrationItem {
@@ -142,6 +219,18 @@ export interface MigrationItem {
   readonly digest?: string;
   /** Untracked files inside a moved tree, Store-relative POSIX. */
   readonly untracked?: readonly string[];
+  /** Present only in plan schema v2. */
+  readonly sourceLifecycle?: SourceLifecycle;
+  /** Present only for Change/Archive work items in plan schema v2. */
+  readonly disposition?: WorkDisposition;
+  /** Present only in plan schema v2. */
+  readonly materialization?: MigrationMaterialization;
+  /** Bound tracked input evidence for a generated plan, schema v2 only. */
+  readonly planInput?: {
+    readonly path: string;
+    readonly relative: string;
+    readonly digest: string;
+  };
 }
 
 // -----------------------------------------------------------------------------
@@ -234,7 +323,9 @@ export interface MigrationPlanToken {
 
 export interface ImmutableMigrationPlan {
   readonly planId: string;
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 1 | 2;
+  /** Mapping parser version; omitted from byte-compatible schema-v1 plans. */
+  readonly mappingVersion?: 1 | 2;
   readonly storeId: string;
   readonly storeUid?: string;
   readonly storeRoot: string;
@@ -336,11 +427,16 @@ export const STORE_LAYOUT_MIGRATION_ERROR_CODES = [
   'migration_plan_missing',
   'migration_mapping_invalid',
   'migration_mapping_outside_store',
+  'migration_plan_input_invalid',
+  'migration_issue_compilation_failed',
   'migration_store_identity_missing',
   'migration_run_missing',
   'migration_retire_without_publication',
   'migration_rollback_after_retirement',
   'migration_staging_verification_failed',
+  'migration_recovery_ambiguous',
+  'migration_recovery_digest_mismatch',
+  'migration_recovery_unrecorded_destination',
   'migration_already_v2',
   'migration_lock_unavailable',
 ] as const;

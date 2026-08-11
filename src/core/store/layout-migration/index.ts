@@ -13,16 +13,30 @@ export {
 export {
   productionStoreLayoutMigrationDependencies,
   withDeterministicIdentity,
+  type LayoutMigrationCheckpoint,
   type StoreLayoutMigrationDependencies,
 } from './dependencies.js';
 export {
   migrationReceiptPath,
   migrationReceiptsDir,
   serializeMigrationReceipt,
+  readMigrationReceipt,
+  queryLegacyCoordinatorConversion,
   withMigrationReceiptPhase,
   type MigrationReceipt,
+  type MigrationReceiptV2,
+  type AnyMigrationReceipt,
+  type MigrationReceiptReadResult,
+  type LegacyCoordinatorConversionQuery,
 } from './receipt.js';
-export { MIGRATION_STAGING_RELATIVE, type RecoveryManifest } from './apply.js';
+export {
+  MIGRATION_STAGING_RELATIVE,
+  readRecoveryManifest,
+  type LegacyRecoveryManifest,
+  type PreparedRecoveryManifest,
+  type RecoveryManifest,
+  type RecoveryOperation,
+} from './apply.js';
 // The read-only diagnostic surface. Both doctors call THIS one function, so
 // `rasen doctor` and `rasen store doctor` cannot report different codes or
 // different repairs for the same Store (design D13, task 10.4).

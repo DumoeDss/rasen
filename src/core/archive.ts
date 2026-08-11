@@ -50,6 +50,8 @@ import {
   type SpecReconciliationIssue,
 } from './specs-apply.js';
 import { classifyStoreRootLayout } from './store/layout-write-guard.js';
+import { productionStoreLayoutMigrationDependencies } from './store/layout-migration/dependencies.js';
+import { queryLegacyCoordinatorConversion } from './store/layout-migration/receipt.js';
 import {
   ChangeFinalizationModuleInstance,
   isChangeFinalizationError,
@@ -272,6 +274,71 @@ interface ArchiveDiagnostic {
   code: string;
   message: string;
   fix?: string;
+  issueId?: string;
+  storeId?: string;
+  forwarded?: false;
+  continuations?: readonly string[];
+}
+
+async function exactActiveChangeExists(
+  changesDir: string,
+  changeName: string,
+  lstat: typeof fs.lstat
+): Promise<boolean> {
+  try {
+    const stat = await lstat(path.join(changesDir, changeName));
+    return stat.isDirectory() && !stat.isSymbolicLink();
+  } catch (error) {
+    if (isMissingPathError(error)) return false;
+    throw error;
+  }
+}
+
+async function legacyCoordinatorDiagnostic(
+  root: ResolvedOpenSpecRoot,
+  changeName: string | undefined,
+  options: ArchiveOptions,
+  lstat: typeof fs.lstat
+): Promise<ArchiveDiagnostic | null> {
+  if (
+    changeName === undefined ||
+    options.intentTemplate === true ||
+    root.planningScope?.kind !== 'store-project'
+  ) {
+    return null;
+  }
+  // A real active Change always wins and remains subject to finalization.
+  if (await exactActiveChangeExists(root.changesDir, changeName, lstat)) return null;
+  const ref = root.planningScope.ref;
+  if (ref.mode !== 'store-project') return null;
+  const checkedOutRef = await productionStoreLayoutMigrationDependencies.git.currentRef(
+    ref.storeRoot
+  );
+  if (checkedOutRef === null) return null;
+  const result = await queryLegacyCoordinatorConversion(
+    productionStoreLayoutMigrationDependencies,
+    {
+      storeRoot: ref.storeRoot,
+      storeUid: ref.storeUid,
+      ref: checkedOutRef,
+      alias: changeName,
+    }
+  );
+  if (result.status !== 'found') return null;
+  const show = `rasen store issue show ${result.issueId} --store ${ref.storeId}`;
+  const state = `rasen store issue state ${result.issueId} --store ${ref.storeId} --state <resolved|dropped>`;
+  return {
+    severity: 'error',
+    code: 'legacy_coordinator_became_issue',
+    message:
+      `Legacy Change alias '${changeName}' was converted to Store Issue '${result.issueId}'. ` +
+      `This archive invocation executed no finalization option and changed neither resource.`,
+    fix: `Inspect it with '${show}'. If appropriate, declare Issue state separately with '${state}'; that is an independent operator action, not archive forwarding.`,
+    issueId: result.issueId,
+    storeId: ref.storeId,
+    forwarded: false,
+    continuations: [show, state],
+  };
 }
 
 function legacyFlatStoreArchiveRefusal(storeId: string): ArchiveDiagnostic {
@@ -580,7 +647,15 @@ async function inspectShipLog(
   };
 }
 
+export interface ArchiveCommandDependencies {
+  readonly lstat: typeof fs.lstat;
+}
+
 export class ArchiveCommand {
+  constructor(
+    private readonly dependencies: ArchiveCommandDependencies = { lstat: fs.lstat }
+  ) {}
+
   async execute(changeName?: string, options: ArchiveOptions = {}): Promise<void> {
     const json = !!options.json;
     if (options.abortPlan !== undefined) {
@@ -630,6 +705,24 @@ export class ArchiveCommand {
         return;
       }
       throw error;
+    }
+
+    const conversionDiagnostic = await legacyCoordinatorDiagnostic(
+      root,
+      changeName,
+      options,
+      this.dependencies.lstat
+    );
+    if (conversionDiagnostic !== null) {
+      if (json) {
+        this.printJsonFailure(root, conversionDiagnostic);
+        return;
+      }
+      throw new ArchiveBlockedError(
+        conversionDiagnostic.code,
+        `[${conversionDiagnostic.code}] ${conversionDiagnostic.message}`,
+        conversionDiagnostic.fix
+      );
     }
 
     const finalizationDiagnostic =

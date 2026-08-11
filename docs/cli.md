@@ -509,6 +509,104 @@ to commit; the command never touches the git index.
 }
 ```
 
+### `rasen store migrate-layout` (0.1.7 compatibility bridge)
+
+Convert one checked-out ref of a legacy flat Store to layout v2. Preview is the
+default; writes happen only with `--apply`, and the command never commits,
+fetches, or pushes.
+
+```bash
+rasen store migrate-layout <store> --mapping rasen/migration-mapping.yaml --json
+rasen store migrate-layout <store> --mapping rasen/migration-mapping.yaml --apply --json
+rasen store migrate-layout <store> --status --json
+rasen store migrate-layout <store> --resume --json
+rasen store migrate-layout <store> --rollback --json
+rasen store migrate-layout <store> --retire-flat --json
+```
+
+Mapping version 1 keeps the original project-copy contract and continues to
+produce plan-schema-v1 canonical bytes and plan ids for equal inputs. Mapping
+version 2 adds an explicit choice between a project-owned Change and a
+Store-level Issue:
+
+```yaml
+version: 2
+defaultTargetLine: release-0-1
+targetLines:
+  release-0-1:
+    storeRef: refs/heads/main
+    projects:
+      scene-bridge:
+        codeRef: refs/heads/main
+changes:
+  render-worker:
+    kind: project-change
+    project: scene-bridge
+  release-coordinator:
+    kind: store-issue
+    issueId: release-coordinator
+    title: Coordinate the cross-project release
+    plan: rasen/migration-inputs/release-coordinator.yaml
+archive:
+  historical-coordinator:
+    kind: store-issue
+    issueId: historical-coordinator
+    title: Historical release coordination
+    state: resolved
+    reason: Operator declares the historical coordination concluded; acceptance is unproven.
+```
+
+Recorded Change identity remains binding. An active `store-issue` always imports
+as `open` and cannot declare a reason. An archived source must explicitly
+declare `open`, `resolved`, or `dropped`; terminal states require an operator
+reason and are recorded with acceptance evidence `unproven`. Names, prose,
+branches, cwd, archive placement, and commits never infer ownership, state, or
+acceptance.
+
+An optional Issue plan input must be inside the Store, Git-tracked, and
+byte-identical in HEAD, index, and worktree. It must be strict UTF-8 without a
+BOM. A migration-only `sourceChange` node still declares project and target
+line; planning verifies it against one project Change in the same immutable
+plan and serializes only the canonical `changeInstanceId`. Without a plan input,
+the Issue is created without nodes and preview reports
+`no plan supplied; no nodes invented` plus the ordinary follow-up command:
+
+```bash
+rasen store issue plan <issue-id> --store <store> --from-file <path>
+```
+
+Publication stages and verifies the complete ref, writes project partitions and
+generated Issue roots without copying a coordinator's legacy tree, records a
+typed receipt, and flips `layoutVersion: 2` last. A failure can be continued with
+`--resume` or reverted with `--rollback` while flat sources remain. After the
+publication commit is secured, `--retire-flat` removes only the receipt-listed
+legacy paths and is safe to retry after partial removal. The receipt identifies
+the source as a Store planning revision, never as a member code commit:
+
+```bash
+git restore --source=<receipt.sourceRevision.headOid> --worktree -- <conversion.source.path>
+```
+
+After restoring, compare the recursive source digest with
+`conversion.source.digest`. Member code repositories are never migration write
+targets.
+
+After retirement, ordinary direct `rasen archive <old-active-alias>` reports
+`legacy_coordinator_became_issue` and the existing `rasen store issue show`
+command when one current-ref v2 receipt proves the conversion. It does not
+redirect or translate archive outcome, reason, token, commit, confirmation, or
+acceptance into Issue state. Archived-source aliases do not redirect, token
+`--apply-plan`/`--abort-plan` routes do not query receipts, and a real Change
+still follows normal finalization (including `finalization_outcome_required`).
+
+This is an explicitly bounded **Rasen 0.1.7 compatibility-only bridge** for
+retiring flat Store coordinators through the already available minimal Issue
+record and Execution Plan v1 resources. It does not implement the later
+Issue-centered automation platform, Dispatch, Reconciliation, Acceptance,
+Delivery, Board, or coordinator runtime. Remove the bridge when supported Stores
+no longer require flat-to-v2 migration; keep typed historical receipt readers as
+long as committed receipts remain supported evidence.
+
 ### Store membership
 
 Membership answers "which projects belong to this store", and is a different

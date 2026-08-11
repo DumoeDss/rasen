@@ -46,6 +46,14 @@ export interface LayoutMigrationFixture {
   writeArchiveEntry(name: string, extra?: Record<string, string>): void;
   member(projectId: string, adoption?: { specs: string[]; changes: string[] }): Promise<void>;
   writeMapping(relative: string, body: string): string;
+  writePlanInput(relative: string, body: string): string;
+  writeUntracked(relative: string, content: string): string;
+  ignore(relative: string): void;
+  issueAt(issueId: string, ...segments: string[]): string;
+  receiptAt(planId: string): string;
+  receiptVersion(planId: string): 1 | 2;
+  readBytes(relative: string): Buffer;
+  switchRef(ref: string, create?: boolean): void;
   migration(overrides?: Partial<StoreLayoutMigrationDependencies>): StoreLayoutMigration;
   /** `InventoryInput` / `MigrationPlanInput` with the fixture's Store selected. */
   input(overrides?: Record<string, unknown>): never;
@@ -72,6 +80,18 @@ export function targetLineMapping(
     ...extra,
     '',
   ].join('\n');
+}
+
+/** Mapping-v2 counterpart used by coordinator migration tests. */
+export function targetLineMappingV2(
+  targetLineId: string,
+  projectIds: readonly string[],
+  extra: readonly string[] = []
+): string {
+  return targetLineMapping(targetLineId, projectIds, extra).replace(
+    /^version: 1$/mu,
+    'version: 2'
+  );
 }
 
 export interface LayoutMigrationFixtureOptions {
@@ -203,6 +223,43 @@ export async function createLayoutMigrationFixture(
     writeMapping(relative, body) {
       write(relative, body);
       return relative;
+    },
+    writePlanInput(relative, body) {
+      write(relative, body);
+      git('add', '--', relative);
+      return relative;
+    },
+    writeUntracked(relative, content) {
+      return write(relative, content);
+    },
+    ignore(relative) {
+      const ignorePath = at('.gitignore');
+      const previous = fs.existsSync(ignorePath) ? fs.readFileSync(ignorePath, 'utf8') : '';
+      fs.writeFileSync(ignorePath, `${previous}${relative}\n`, 'utf8');
+    },
+    issueAt(issueId, ...segments) {
+      return at('rasen', 'issues', issueId, ...segments);
+    },
+    receiptAt(planId) {
+      return at('.rasen-store', 'migration', 'receipts', `${planId}.json`);
+    },
+    receiptVersion(planId) {
+      const raw = JSON.parse(
+        fs.readFileSync(
+          at('.rasen-store', 'migration', 'receipts', `${planId}.json`),
+          'utf8'
+        )
+      ) as { schemaVersion?: unknown };
+      if (raw.schemaVersion !== 1 && raw.schemaVersion !== 2) {
+        throw new Error(`Receipt ${planId} has no supported schema version.`);
+      }
+      return raw.schemaVersion;
+    },
+    readBytes(relative) {
+      return fs.readFileSync(at(...relative.split('/')));
+    },
+    switchRef(ref, create = false) {
+      git('switch', ...(create ? ['-c'] : []), ref);
     },
     migration(overrides) {
       return new StoreLayoutMigration(
