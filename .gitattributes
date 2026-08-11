@@ -8,3 +8,6 @@ openspec/changes/** linguist-generated=true
 
 # This fixture is spawned directly through its shebang on POSIX.
 test/fixtures/management-api/session-fake-cli.mjs text eol=lf
+
+# Layout-migration byte pins must survive Windows checkout unchanged.
+test/fixtures/layout-migration/scene-bridge/** text eol=lf
