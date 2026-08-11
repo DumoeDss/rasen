@@ -249,14 +249,16 @@ Record progress as JSON in \`<ephemeraDir>/auto-run.json\` (sticky-legacy: an \`
     }
   },
   "sessionHandoff": { "n": 1, "path": "<handoffDir>/lead-1.md", "pct": 0.52, "afterStage": "apply", "at": "<iso>" },
-  "rounds": 0,
-  "openFindings": []
+  "rounds": 1,
+  "openFindings": [
+    { "severity": "major", "summary": "Unhandled error path", "stage": "verify" }
+  ]
 }
 \`\`\`
 
 **Run-state boundary by engine.** For a **legacy-engine** run this file is the AUTHORITATIVE record of progression, exactly as described here and below. For a **reconciler-engine** run it is bounded to what the canonical Run does not model — the engine and its deciding source, worker handles and transcripts, the gate-policy freeze, the retention mode, \`strategyAttempts\`, and the session-relay generation. Mechanical truth for such a run (stage status, rounds, phases, findings, outcomes) lives in the canonical Record and is READ from the run view; anything you mirror into run-state is a labeled projection (e.g. \`"projection": true\` beside the mirrored block) and MUST NEVER be read back to make a progression decision the Run owns. Record the engine once at run start as \`engine: { effective: 'reconciler'|'legacy', source: 'flag'|'project'|'store'|'global'|'default' }\`, so a resumer knows which of these two contracts it is reading before it interprets a single field.
 
-\`status\` is pending | in_progress | done | skipped | escalated | delegated; \`delegated\` is parent-stage-only, and **done | skipped | delegated** count as complete for resume. (A simpler \`"completed": ["propose","apply"]\` array is also accepted when you are not recording per-stage workers.) Record each dispatched worker's **role**, **runtime**, **dispatchMode**, and only the identity pointers actually returned by that route (Step B). Also record review \`rounds\`, \`openFindings\` (legacy-engine: authoritative; reconciler-engine: a labeled projection of the run view's \`review-cycle\` section, never the thing you branch on), any skips/escalations, per-stage \`handoffs\` and \`strategyAttempts\` (Step H), and the top-level \`sessionHandoff\` when the session itself hands off. **autopilot-gate-policy:** record the top-level \`gatePolicy: { effective: 'on'|'off', source: 'flag'|'project'|'global'|'default' }\` ONCE at run start (Step D), and a per-stage \`gateDecision: "auto-approved (<source>)"\` on any stage whose gate was auto-approved rather than confirmed by a human — a human-confirmed gate leaves \`gateDecision\` unset. \`sessionHandoff.n\` is the session RELAY GENERATION (the example seeds it at \`1\`); Step H.7 caps it at \`maxRelays\`, and a \`sessionHandoff\` record written WITHOUT \`n\` reads as generation 1 and never advances — so always carry \`n\` and increment it each session relay, or the H.7 cap can never trip. Subagent work is otherwise opaque; this record is what lets the run be observed and resumed.
+\`status\` is pending | in_progress | done | skipped | escalated | delegated; \`delegated\` is parent-stage-only, and **done | skipped | delegated** count as complete for resume. (A simpler \`"completed": ["propose","apply"]\` array is also accepted when you are not recording per-stage workers.) Record each dispatched worker's **role**, **runtime**, **dispatchMode**, and only the identity pointers actually returned by that route (Step B). Also record review \`rounds\`, \`openFindings\` (legacy-engine: authoritative; reconciler-engine: a labeled projection of the run view's \`review-cycle\` section, never the thing you branch on), any skips/escalations, per-stage \`handoffs\` and \`strategyAttempts\` (Step H), and the top-level \`sessionHandoff\` when the session itself hands off. Human-facing reports use \`Blocker | Major | Minor | Trivial\`; at the run-state serialization boundary, convert \`openFindings[].severity\` to the lowercase machine enum \`blocker | major | minor | trivial\` exactly as shown above. **autopilot-gate-policy:** record the top-level \`gatePolicy: { effective: 'on'|'off', source: 'flag'|'project'|'global'|'default' }\` ONCE at run start (Step D), and a per-stage \`gateDecision: "auto-approved (<source>)"\` on any stage whose gate was auto-approved rather than confirmed by a human — a human-confirmed gate leaves \`gateDecision\` unset. \`sessionHandoff.n\` is the session RELAY GENERATION (the example seeds it at \`1\`); Step H.7 caps it at \`maxRelays\`, and a \`sessionHandoff\` record written WITHOUT \`n\` reads as generation 1 and never advances — so always carry \`n\` and increment it each session relay, or the H.7 cap can never trip. Subagent work is otherwise opaque; this record is what lets the run be observed and resumed.
 
 **Handoff pointers are ABSOLUTE.** Every \`path\` in \`handoffs[]\` and in \`sessionHandoff\` records the document's absolute location (the \`handoffDir\` one, or the legacy location the series actually uses). Run-state and handoff documents no longer share a parent — run-state is under \`ephemeraDir\`, documents under \`handoffDir\` — so a bare \`handoff/<role>-<n>.md\` has no base a reader can trust, and \`rasen pipeline resume\` prints these pointers next to \`runStateDir\`. Records written before this rule hold a relative path; resolve those against the change directory.
 
@@ -687,8 +689,14 @@ function renderRunState(
   if (!features.reviewLoop) {
     rendered = replaceExactlyOnce(
       rendered,
-      "Also record review `rounds`, `openFindings` (legacy-engine: authoritative; reconciler-engine: a labeled projection of the run view's `review-cycle` section, never the thing you branch on), any skips/escalations,",
-      'Also record any skips/escalations,',
+      ',\n  "rounds": 1,\n  "openFindings": [\n    { "severity": "major", "summary": "Unhandled error path", "stage": "verify" }\n  ]',
+      '',
+      'run-state review example'
+    );
+    rendered = replaceExactlyOnce(
+      rendered,
+      "Also record review `rounds`, `openFindings` (legacy-engine: authoritative; reconciler-engine: a labeled projection of the run view's `review-cycle` section, never the thing you branch on), any skips/escalations, per-stage `handoffs` and `strategyAttempts` (Step H), and the top-level `sessionHandoff` when the session itself hands off. Human-facing reports use `Blocker | Major | Minor | Trivial`; at the run-state serialization boundary, convert `openFindings[].severity` to the lowercase machine enum `blocker | major | minor | trivial` exactly as shown above.",
+      'Also record any skips/escalations, per-stage `handoffs` and `strategyAttempts` (Step H), and the top-level `sessionHandoff` when the session itself hands off.',
       'run-state review fields'
     );
   }

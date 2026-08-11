@@ -188,6 +188,20 @@ export function sessionHandoffGeneration(handoff: SessionHandoff): number {
  * authoritative progress record; `completed` is a simpler convenience the
  * reader also accepts (and falls back to when `stages` is absent).
  */
+const OPEN_FINDING_SEVERITY_ALIASES: Readonly<Record<string, string>> = {
+  Blocker: 'blocker',
+  Major: 'major',
+  Minor: 'minor',
+  Trivial: 'trivial',
+};
+
+const OpenFindingSeveritySchema = z.preprocess(
+  value => typeof value === 'string'
+    ? (OPEN_FINDING_SEVERITY_ALIASES[value] ?? value)
+    : value,
+  z.enum(['blocker', 'major', 'minor', 'trivial'])
+);
+
 export const RunStateSchema = z
   .object({
     pipeline: z.string(),
@@ -241,7 +255,7 @@ export const RunStateSchema = z
       .array(
         z
           .object({
-            severity: z.enum(['blocker', 'major', 'minor', 'trivial']).optional(),
+            severity: OpenFindingSeveritySchema.optional(),
             summary: z.string().optional(),
             stage: z.string().optional(),
           })

@@ -112,6 +112,28 @@ describe('selective orchestration bundles', () => {
     );
   });
 
+  it('documents the human-to-machine severity boundary only in review-capable bundles', () => {
+    for (const playbook of [
+      AUTO_ORCHESTRATION_PLAYBOOK,
+      REVIEW_CYCLE_ORCHESTRATION_PLAYBOOK,
+    ]) {
+      expect(playbook).toContain(
+        'Human-facing reports use `Blocker | Major | Minor | Trivial`'
+      );
+      expect(playbook).toContain(
+        'the lowercase machine enum `blocker | major | minor | trivial`'
+      );
+      expect(playbook).toContain(
+        '{ "severity": "major", "summary": "Unhandled error path", "stage": "verify" }'
+      );
+    }
+
+    expect(GOAL_ORCHESTRATION_PLAYBOOK).not.toContain(
+      'Human-facing reports use `Blocker | Major | Minor | Trivial`'
+    );
+    expect(GOAL_ORCHESTRATION_PLAYBOOK).not.toContain('"openFindings"');
+  });
+
   it('keeps portfolio state canonical and every child resumable from creation', () => {
     const stepG = AUTO_ORCHESTRATION_PLAYBOOK.slice(
       AUTO_ORCHESTRATION_PLAYBOOK.indexOf('### Step G '),

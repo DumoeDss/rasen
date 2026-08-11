@@ -41,7 +41,7 @@ const EXACT_CAPABILITY_PINS = {
   'skill:rasen-retain': 'sha256:4b28b97d4cefc2e3b9fed896439e5360d1697d7da39df109f9f3d6d06b2d8bd4',
   'skill:rasen-review': 'sha256:06a80842145868a2ffb43b9017225ec15c06b0b946e490c8daa6cb7a68b8e049',
   'skill:rasen-review-fix': 'sha256:737e61418515fb67d0bdf46626f80b0e0c418a38d7b931b9bf69d320a520cad0',
-  'skill:rasen-review-cycle': 'sha256:e5af856986fb791a4200a9fdb3eabddce3d7e49cb0b0c13ace0f74bed171c1f5',
+  'skill:rasen-review-cycle': 'sha256:4408724a34b151d6e2ee54f4324e6585c61a0764d355990a7105bb4235ae6df0',
   'skill:rasen-ship': 'sha256:a2c069c2051ba9957df1f9cffea17f3ed93683a8ed5f7b29f5cf443a90e47450',
 } as const;
 

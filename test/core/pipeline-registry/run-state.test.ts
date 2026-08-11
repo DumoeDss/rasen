@@ -120,6 +120,31 @@ describe('pipeline run-state', () => {
         parseRunState('{"pipeline":"bug-fix","stages":{"propose":{"status":"nope"}}}')
       ).toThrow(RunStateValidationError);
     });
+
+    it.each([
+      ['Blocker', 'blocker'],
+      ['Major', 'major'],
+      ['Minor', 'minor'],
+      ['Trivial', 'trivial'],
+    ] as const)('normalizes title-case open finding severity %s to %s', (input, expected) => {
+      const s = parseRunState(
+        JSON.stringify({ pipeline: 'bug-fix', openFindings: [{ severity: input }] })
+      );
+      expect(s.openFindings?.[0]?.severity).toBe(expected);
+    });
+
+    it('keeps a canonical lowercase open finding severity unchanged', () => {
+      const s = parseRunState(
+        '{"pipeline":"bug-fix","openFindings":[{"severity":"major"}]}'
+      );
+      expect(s.openFindings?.[0]?.severity).toBe('major');
+    });
+
+    it.each(['MAJOR', 'MaJoR', 'critical'])('rejects non-canonical open finding severity %s', severity => {
+      expect(() =>
+        parseRunState(JSON.stringify({ pipeline: 'bug-fix', openFindings: [{ severity }] }))
+      ).toThrow(RunStateValidationError);
+    });
   });
 
   // design D1: host-tolerant parse-boundary normalization for a non-Claude

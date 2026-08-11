@@ -2888,13 +2888,13 @@ stages:
             apply: { status: 'in_progress' },
             verify: { status: 'escalated' },
           },
-          openFindings: [{ severity: 'major', summary: 'unhandled error path', stage: 'verify' }],
+          openFindings: [{ severity: 'Major', summary: 'unhandled error path', stage: 'verify' }],
         }),
         'utf-8'
       );
 
       const result = await runCLI(['pipeline', 'resume', 'stalled-change', '--json'], { cwd: testDir });
-      expect(result.exitCode).toBe(0);
+      expect(result.exitCode, `${result.stderr}\n${result.stdout}`).toBe(0);
       const json = JSON.parse(result.stdout.trim());
       expect(json.inProgressStages).toEqual(['apply']);
       expect(json.escalatedStages).toEqual(['verify']);
