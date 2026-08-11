@@ -2,29 +2,31 @@
 
 ## Status
 
-HANDOFF on 2026-08-11: shipping is blocked at staging because every `git add` invocation required shell approval and approval was not granted. No commit, push, PR, merge, stash operation, or archive operation occurred.
+DONE on 2026-08-11. The Opus shipper prepared the evidence but hit a shell staging permission boundary; the LEAD then completed the same explicit path-scoped ship protocol without widening scope.
 
 - Mode: `pr`
 - Branch: `feat/store-owned-coordinator-migration-0.1.7`
 - Base: `dev/0.1.7`
-- Commit: not created
-- Push: not performed
-- PR: not created
+- Implementation commit: `f4a48a36` — `feat(store): migrate coordinators to Store Issues`
+- Push: `origin/feat/store-owned-coordinator-migration-0.1.7`
+- PR: [#154](https://github.com/DumoeDss/rasen/pull/154)
+- PR state: OPEN
 - Merge: not authorized and not performed
 - Archive timing: `on-merge`
 - Archive: not run; remains pending a future PR merge
-- Blocker: shell permission denied for explicit path-scoped staging
 
 ## Scope audit
 
-The intended delivery consists of the explicitly enumerated modified `.github`, docs, `src`, and `test` paths from the pre-ship status plus the Change artifacts, four new production modules, three new tests, and `test/fixtures/layout-migration/**`. The final cached/committed path audit is pending.
+The implementation commit contains 61 explicitly staged deliverable files: the intended modified `.github`, docs, `src`, and `test` paths; the Change artifacts and evidence; four new production modules; three new tests; and `test/fixtures/layout-migration/**`.
 
-Hard exclusions:
+Audited exclusions:
 
-- `.rasen/**` is machine-local state and must remain untracked.
-- `rasen/specs/**` is unchanged.
-- Ignored `atelierai-rasen-0.1.7.tgz` and machine workDir artifacts are not deliverables.
-- `stash@{0}` is the retained pre-sync safety backup and remains untouched.
+- `.rasen/**`: absent from the commit and remains untracked machine-local state.
+- `rasen/specs/**`: unchanged and absent from the commit.
+- Ignored `atelierai-rasen-0.1.7.tgz` and machine workDir artifacts: absent.
+- `stash@{0}`: retained pre-sync safety backup, untouched.
+- `git diff --cached --check`: passed after stripping Markdown-only trailing whitespace from the two new review evidence files without changing their text.
+- After the implementation commit the working tree contained only untracked `.rasen/` before this narrow evidence update.
 
 ## Verification summary
 
@@ -42,6 +44,6 @@ Hard exclusions:
 
 ## Remaining action
 
-A future shipper with permission to run Git writes must stage only the explicit deliverables, audit `git diff --cached --name-status` and `git diff --cached --check`, create the scoped commit(s), push explicitly, create and verify the PR, then replace pending identifiers here and in `evidence/ship-log.md` using narrow follow-up commits. Do not merge or archive.
-
-The new `evidence/ship-log.md` and this handoff are currently untracked deliverables because staging was blocked. They must be included in the eventual commits; no deliverable was intentionally omitted.
+- Do not merge from this session; the user did not authorize merge.
+- Do not archive before merge. After PR #154 merges into `dev/0.1.7`, resume the pipeline's `archive` stage and archive from the merged line.
+- Monitor CI and address any verified PR finding through a new reviewed fix; do not rewrite published history.

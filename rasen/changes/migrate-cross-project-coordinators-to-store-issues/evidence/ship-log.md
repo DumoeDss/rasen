@@ -3,11 +3,13 @@
 **Date:** 2026-08-11
 **Mode:** pr
 **Branch:** feat/store-owned-coordinator-migration-0.1.7
-**Commit:** pending initial ship commit
-**Tree:** pending initial ship commit
-**Base:** dev/0.1.7
-**PR:** pending creation
-**Status:** PR creation pending
+**Implementation commit:** `f4a48a36` (`feat(store): migrate coordinators to Store Issues`)
+**Implementation tree:** `git show f4a48a36^{tree}`
+**Base:** `dev/0.1.7`
+**Push:** `origin/feat/store-owned-coordinator-migration-0.1.7`
+**PR:** [#154](https://github.com/DumoeDss/rasen/pull/154)
+**PR base/head:** `dev/0.1.7` ← `feat/store-owned-coordinator-migration-0.1.7`
+**Status:** OPEN; not merged
 **Archive timing:** on-merge
 **Archived in ship:** no
 **Archive pending:** PR not merged
@@ -33,7 +35,7 @@
 - `check:pack-version`: passed; packed CLI reports 0.1.7. Generated tgz is ignored and not committed.
 - `check:release` / `check:paired-pack`: not applicable blockers because `dev/0.1.7` has pre-existing CLI 0.1.7 / UI 0.1.6 skew and this change does not alter package metadata.
 - Strict Change validation: 1/1 passed.
-- Tree: pending initial ship commit.
+- Implementation delivered in `f4a48a36`; a narrow evidence-only follow-up records PR #154 and final delivery facts.
 
 ## Safety Invariants
 
@@ -45,4 +47,4 @@
 
 ## Deployment
 
-Status: Pending — PR creation authorized; merge is not authorized.
+Status: Delivered to PR [#154](https://github.com/DumoeDss/rasen/pull/154). The PR is OPEN. Merge was not authorized and was not performed. Archive remains pending until a future merge.
