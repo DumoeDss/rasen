@@ -1,11 +1,75 @@
 {
   "pipeline": "small-feature",
+  "tier": "A",
+  "gatePolicy": {
+    "effective": "off",
+    "source": "global"
+  },
+  "portfolioChild": 2,
+  "parent": "store-v2-foundation",
+  "baseline": {
+    "note": "Post-child-1 no-regression reference, taken by the LEAD on a quiesced tree",
+    "command": "pnpm exec vitest run test/core/store test/core/change-run test/commands/store.test.ts test/commands/store-root-selection.test.ts test/cli-e2e/store-lifecycle.test.ts",
+    "result": "green",
+    "testFiles": 110,
+    "passed": 1511,
+    "skipped": 1,
+    "failed": 0
+  },
   "stages": {
     "propose": {
-      "status": "pending"
+      "status": "done",
+      "gateDecision": "auto-approved (global)",
+      "worker": {
+        "role": "planner",
+        "runtime": "claude",
+        "dispatchMode": "native",
+        "agentId": "planner@session-54f71457",
+        "model": "opus",
+        "reusedFrom": "store-planning-contract-v2",
+        "reuseBasis": "Persistent portfolio planner warm-reused per Step B.1. Probed at 21.1% against the REUSE threshold 0.6 (cross-change re-staffing), not the handoff threshold."
+      },
+      "taskCount": 33,
+      "capabilities": [
+        "store-planning-worktree-bindings (14 req)",
+        "store-target-lines (4 req)"
+      ],
+      "leadDirectionCheck": {
+        "enabledByPipeline": false,
+        "performedAnyway": "light",
+        "verified": [
+          "rasen validate --type change --strict PASSES (re-run by the LEAD).",
+          "33 tasks, ZERO [~] markers - child 1's N2 lesson applied.",
+          "The two apparent out-of-scope mentions in tasks.md are scope GUARDS, not leaks: 2.2 orders a stop-and-report if any import reaches store-planning/ layout-migration/ issues/ or query/, and 6.13 is a diff audit confirming they stay untouched."
+        ],
+        "acceptedScopeDecisions": [
+          "Port target is the 0.1.7 TIP - the OPPOSITE of child 1, and correct here. 0ede6cfb is a five-child squash creating all of S2's files from zero (6,619 insertions), and every post-squash change is one of the two mandated fixups or the block they rewrote. Same recipe, opposite conclusion - evidence the planner is running the method rather than reusing an answer.",
+          "src/core/project-registry.ts (+471 on 0.1.7) EXCLUDED - it belongs to planning-scope-routing.",
+          "The dependencies.ts atomic-write block ports despite its only production consumer being deferred: the mandated fixup bf6bdbb7 names that file, it has a dedicated ~920-line suite in S2's own namespace importing no finalization, and excluding it would require inventing a file state that never existed."
+        ],
+        "carveOutVerifiedByLead": {
+          "file": "src/core/session-runtime-context.ts",
+          "decision": "CARVED OUT of this child; handed to the store-session execution-context slice (L6), which owns that file under locked decision D2.",
+          "leadVerification": "0.2.0 has RUNTIME_CONTEXT_VERSION = 1 and guards it TWICE - z.literal(RUNTIME_CONTEXT_VERSION) at line 95 and an independent rejection of a differing declared version at line 255. 0.1.7 has it at 2 and declares the raise BREAKING. 0.2.0 has 14 consumers, 6 of them inside management-api/ (supervisor, sessions, session-registry, durable-session-registry, reusable-session-api, session-launch-context) - none of which existed on 0.1.7.",
+          "consequenceAvoided": "Porting the bump would make every on-disk context file unreadable under a live daemon, regressing locked target-state Outcome 5 (change-run Run Record, daemon/SessionSupervisor, reusable sessions and ECP not regressed).",
+          "nothingDropped": "The machine-readable-report requirement was re-homed onto `store workspace show`; the version freeze and the `rasen context` projection are handed forward as inbound acceptance items for the slice that owns the file. This is re-homing, not scope reduction."
+        }
+      }
     },
     "apply": {
-      "status": "pending"
+      "status": "in_progress",
+      "gateDecision": "auto-approved (global)",
+      "worker": {
+        "role": "implementer",
+        "runtime": "claude",
+        "dispatchMode": "native",
+        "agentId": "implementer-s2@session-54f71457",
+        "model": "sonnet",
+        "modelSource": "user-directive",
+        "horizon": "LOOP_BOUND",
+        "freshNotReused": "Step G.1 cross-child implementer reuse does NOT apply: child 1's implementer was already retired at its close, and this is a fresh worker for a new child."
+      },
+      "digestAnchorMandate": "S2 has SIX digest sites (plan.ts:794, cleanup.ts:170 and :251, locks.ts:128, registry.ts:201, binding.ts:93, dependencies.ts:343). The 0.1.7 reference's own 'Equal inputs produce an identical plan' scenario is exactly the blind shape - it compares two derivations to each other. Tasks 6.1-6.3 require a pinned literal anchor per site, UNCHAINED, each walked back through its own reader, each mutation-proved. Child 1's most expensive lesson, applied at propose time instead of after three review rounds."
     },
     "verify": {
       "status": "pending"
