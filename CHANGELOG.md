@@ -2,7 +2,7 @@
 
 <!-- rasen-history:start -->
 
-## Unreleased
+## 0.1.7
 
 ### Added
 
