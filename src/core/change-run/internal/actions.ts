@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   ChangeRunContractError,
   decodeRunAction,
@@ -73,6 +75,41 @@ export interface ActionIdentity {
 
 export interface AgentActionInput {
   readonly input: JsonValue;
+  /** Exact complete base prompt produced by the trusted driver before admission. */
+  readonly renderedTurnInput: string;
+}
+
+export const MAX_CANONICAL_AGENT_TURN_INPUT_BYTES = 2 * 1024 * 1024;
+const AGENT_TURN_INPUT_DIGEST_DOMAIN = 'agent-turn-input/1';
+
+export function deriveAgentTurnInputBinding(renderedTurnInput: string) {
+  const bytes = Buffer.from(renderedTurnInput, 'utf8');
+  const digest = createHash('sha256')
+    .update(AGENT_TURN_INPUT_DIGEST_DOMAIN, 'utf8')
+    .update(Buffer.from([0]))
+    .update(bytes)
+    .digest('hex');
+  return Object.freeze({
+    format: 'agent-turn-input/1' as const,
+    mediaType: 'text/plain;charset=utf-8' as const,
+    renderingContract: 'rasen.driver-rendered-turn/1' as const,
+    utf8ByteLength: bytes.length,
+    contentDigest: `sha256:${digest}` as Digest,
+  });
+}
+
+export function bindAgentTurnInput(renderedTurnInput: string) {
+  const binding = deriveAgentTurnInputBinding(renderedTurnInput);
+  if (
+    binding.utf8ByteLength === 0 ||
+    binding.utf8ByteLength > MAX_CANONICAL_AGENT_TURN_INPUT_BYTES
+  ) {
+    throw new ActionBuildError(
+      'invalid_action_input',
+      `Rendered agent turn input must be non-empty and no larger than ${MAX_CANONICAL_AGENT_TURN_INPUT_BYTES} UTF-8 bytes.`
+    );
+  }
+  return binding;
 }
 
 export interface CommandActionInput {
@@ -322,6 +359,11 @@ export function buildAgentAction(
       reasoningEffort: stage.effort,
       runtime: stage.runtime,
       sandbox: stage.sandbox,
+      ...(stage.workerContract !== undefined
+        ? { workerContract: stage.workerContract }
+        : {}),
+      ...(stage.inference !== undefined ? { inference: stage.inference } : {}),
+      turnInput: bindAgentTurnInput(input.renderedTurnInput),
       input: input.input,
       ...(ctx.consultationBinding === undefined
         ? {}

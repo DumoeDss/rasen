@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+
 export type PublishFaultPoint =
   | 'before-stage'
   | 'after-stage-before-fsync'
@@ -11,7 +13,10 @@ export class PublishFault extends Error {
   }
 }
 
-export type PublishErrorCode = 'publish_target_exists' | 'publish_staging_corrupt';
+export type PublishErrorCode =
+  | 'publish_target_exists'
+  | 'publish_target_unverifiable'
+  | 'publish_staging_corrupt';
 
 export class PublishError extends Error {
   constructor(
@@ -25,18 +30,49 @@ export class PublishError extends Error {
 
 /**
  * Pluggable atomic-publish filesystem surface (tasks 9.5/9.6). The runtime
- * adapter uses a staging directory + `wx` (O_EXCL) publication + fsync/close;
- * tests supply an in-memory substitute and inject named faults to exercise
- * each crash boundary.
+ * adapter stages to a per-attempt sibling file, fsyncs it, and publishes by
+ * exclusive-create hard link; tests supply an in-memory substitute and inject
+ * named faults to exercise each crash boundary.
  */
 export interface PublishPlumbing {
   readonly exists: (path: string) => boolean;
   readonly readFinal: (path: string) => Uint8Array;
+  /** Writes the staging file. Implementations truncate, so see `stagingPathFor`. */
   readonly writeStaging: (stagingPath: string, bytes: Uint8Array) => void;
   readonly fsync: (stagingPath: string) => void;
-  /** Atomic same-directory rename with O_EXCL semantics; throws if target exists. */
+  /**
+   * Creates the final name from the staged bytes with exclusive-create
+   * semantics: it MUST fail when the target already exists and MUST NOT
+   * replace it, and it must do so in one step. A rename does not qualify on
+   * any platform — Node's rename replaces an existing target on POSIX and on
+   * Windows alike — and neither does a rename behind an `exists` precheck,
+   * which only narrows the window in which a concurrent publisher can clobber
+   * an already-published immutable file. `link(2)` qualifies.
+   */
   readonly publish: (stagingPath: string, targetPath: string) => void;
   readonly removeStaging: (stagingPath: string) => void;
+}
+
+let stagingAttempt = 0;
+
+/**
+ * Build the staging sibling for `targetPath`. The result is unique per process
+ * and per attempt, and callers MUST use it rather than deriving a staging name
+ * from the target alone.
+ *
+ * A staging path shared by two publishers is not merely wasteful, it silently
+ * loses updates: `writeStaging` truncates, so the interleaving
+ * `write(A) -> write(B) -> publish(A)` makes publisher A create the final name
+ * from *B's* bytes and return `published: true`. The byte-equality check below
+ * cannot catch this, because A never observes a present target — it is the
+ * winner. The same interleaving can also publish a half-written file, breaking
+ * the "no corrupt target" guarantee. Uniqueness is what makes a publisher's
+ * staged bytes exclusively its own.
+ */
+export function stagingPathFor(targetPath: string): string {
+  stagingAttempt += 1;
+  const nonce = randomBytes(16).toString('hex');
+  return `${targetPath}.${process.pid}.${stagingAttempt}.${nonce}.staging`;
 }
 
 export interface PublishResult {
@@ -44,13 +80,49 @@ export interface PublishResult {
   readonly alreadyPresent: boolean;
 }
 
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
+function assertIdempotentTarget(
+  plumbing: PublishPlumbing,
+  targetPath: string,
+  bytes: Uint8Array
+): void {
+  let existing: Uint8Array;
+  try {
+    existing = plumbing.readFinal(targetPath);
+  } catch (error) {
+    // The target was present a moment ago but cannot be read now (concurrent
+    // removal, permission change, unreadable state). Idempotency is a claim
+    // about content, so without the content we fail closed rather than let a
+    // raw filesystem error escape as an unclassified failure.
+    throw new PublishError(
+      'publish_target_unverifiable',
+      `Immutable publish target exists but could not be read for comparison: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+  if (!bytesEqual(existing, bytes)) {
+    throw new PublishError(
+      'publish_target_exists',
+      'Immutable publish target already exists with different bytes.'
+    );
+  }
+}
+
 /**
  * Publish `bytes` to `targetPath` immutably: if the final target already
- * exists, the publish is idempotent (already present); otherwise stage,
- * fsync, and atomically rename into place with `wx` semantics. A named fault
- * injector crashes at each boundary so recovery is provable: a present final
- * means success regardless of staging residue; an absent final with staging
- * residue is retried cleanly.
+ * exists, the publish is idempotent ONLY when its bytes match; otherwise
+ * stage, fsync, and create the final name exclusively. A named fault injector
+ * crashes at each boundary so recovery is provable: a present final means
+ * success regardless of staging residue; an absent final with staging residue
+ * is retried cleanly under a fresh staging name.
  */
 export function publishAtomic(
   plumbing: PublishPlumbing,
@@ -60,6 +132,7 @@ export function publishAtomic(
   fault?: PublishFaultPoint
 ): PublishResult {
   if (plumbing.exists(targetPath)) {
+    assertIdempotentTarget(plumbing, targetPath, bytes);
     return Object.freeze({ published: false, alreadyPresent: true });
   }
   if (fault === 'before-stage') throw new PublishFault('before-stage');
@@ -74,6 +147,7 @@ export function publishAtomic(
     // treat this as idempotent success; otherwise surface a typed conflict.
     if (plumbing.exists(targetPath)) {
       plumbing.removeStaging(stagingPath);
+      assertIdempotentTarget(plumbing, targetPath, bytes);
       return Object.freeze({ published: false, alreadyPresent: true });
     }
     throw error;

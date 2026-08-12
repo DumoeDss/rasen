@@ -623,6 +623,7 @@ describe('POST /api/v1/runs/<changeId>/<runId> control bridge (task 13.7/13.8)',
       // The receipt actions are sealed to empty — no granted actions leave
       // via HTTP. A subsequent trusted CLI resume performs the first grant.
       expect(result.response.actions).toEqual([]);
+      expect(result.response.candidates).toEqual([]);
     });
 
     it('the request body cannot override deliveryMode (strict schema rejects the field)', async () => {

@@ -154,6 +154,29 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
     );
   }
 
+  function writeRoutedPipeline(root = projectRoot): void {
+    const directory = path.join(root, 'rasen', 'pipelines', 'routed-projection');
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(
+      path.join(directory, 'pipeline.yaml'),
+      [
+        'name: routed-projection',
+        'stages:',
+        '  - id: ship',
+        '    skill: rasen-ship',
+        '    role: shipper',
+        '    runtime: codex',
+        '    model: deepseek-chat',
+        '    inference:',
+        '      broker: omnicross',
+        '      upstream:',
+        '        kind: provider',
+        '        providerId: deepseek-api',
+        '',
+      ].join('\n')
+    );
+  }
+
   function v2Definition(name = 'definition-v2') {
     return {
       version: 2 as const,
@@ -1058,6 +1081,47 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
           compatibilityBoundary: 'issue-dispatch-0.3.0',
         },
       });
+    });
+
+    it('projects only credential-free effective inference in inventory and detail', async () => {
+      writeRoutedPipeline();
+      const h = await startServer({
+        hostRuntime: { runtime: 'codex', source: 'env-override' },
+      });
+      const inventory = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/pipelines',
+        headers: authed(),
+      });
+      const detail = await req(h.port, {
+        method: 'GET',
+        path: '/api/v1/pipelines/routed-projection',
+        headers: authed(),
+      });
+      expect(inventory.status).toBe(200);
+      expect(detail.status).toBe(200);
+      const inventoryStage = (inventory.json() as any).pipelines
+        .find((pipeline: any) => pipeline.name === 'routed-projection').stages[0];
+      const detailStage = (detail.json() as any).pipeline.stages[0];
+      const expected = {
+        broker: 'omnicross',
+        runtime: 'codex',
+        model: 'deepseek-chat',
+        upstream: { kind: 'provider', providerId: 'deepseek-api' },
+      };
+      expect(inventoryStage).toMatchObject({
+        dispatchMode: 'exec-bridge',
+        bridge: 'codex-exec',
+        inference: expected,
+      });
+      expect(detailStage).toMatchObject({
+        dispatchMode: 'exec-bridge',
+        bridge: 'codex-exec',
+        inference: expected,
+      });
+      expect(JSON.stringify({ inventoryStage, detailStage })).not.toMatch(
+        /controlToken|routeToken|leaseId|launch|credential/i
+      );
     });
 
     it.each(['codex', 'claude'] as const)(

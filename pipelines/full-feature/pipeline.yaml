@@ -21,22 +21,22 @@ declarations:
       nodes:
         - id: review
           kind: AtomicStage
-          capability: { id: skill:rasen-review, version: sha256:06a80842145868a2ffb43b9017225ec15c06b0b946e490c8daa6cb7a68b8e049 }
+          capability: { id: skill:rasen-review, version: sha256:281717f5e3164dca91e21d9329ae812b8ee1263f656d605ef8b1d3d6bba0c7fc }
           execution: { version: 1, role: reviewer, workspace: { access: read } }
           reviewCyclePhase: review
         - id: triage
           kind: AtomicStage
-          capability: { id: skill:rasen-review, version: sha256:06a80842145868a2ffb43b9017225ec15c06b0b946e490c8daa6cb7a68b8e049 }
+          capability: { id: skill:rasen-review, version: sha256:281717f5e3164dca91e21d9329ae812b8ee1263f656d605ef8b1d3d6bba0c7fc }
           execution: { version: 1, role: reviewer, workspace: { access: read } }
           reviewCyclePhase: triage
         - id: fix
           kind: AtomicStage
-          capability: { id: skill:rasen-review-fix, version: sha256:737e61418515fb67d0bdf46626f80b0e0c418a38d7b931b9bf69d320a520cad0 }
+          capability: { id: skill:rasen-review-fix, version: sha256:fa102c0d009739407f98afffff477d336966b5c58b0f76dd9d16b50bab19476b }
           execution: { version: 1, role: fixer, workspace: { access: write } }
           reviewCyclePhase: fix
         - id: re-review
           kind: AtomicStage
-          capability: { id: skill:rasen-review, version: sha256:06a80842145868a2ffb43b9017225ec15c06b0b946e490c8daa6cb7a68b8e049 }
+          capability: { id: skill:rasen-review, version: sha256:281717f5e3164dca91e21d9329ae812b8ee1263f656d605ef8b1d3d6bba0c7fc }
           execution: { version: 1, role: reviewer, workspace: { access: read } }
           reviewCyclePhase: re-review
       connections:
@@ -47,17 +47,17 @@ root:
   nodes:
     - id: office-hours
       kind: AtomicStage
-      capability: { id: skill:rasen-office-hours-command, version: sha256:887b1f2c918539a1e087d257ad75458d38a38f5f83fbe66f584d54bf539c5ff3 }
+      capability: { id: skill:rasen-office-hours-command, version: sha256:ff0bd82ad3aafe527fee2ff20bc6854e0dd1812b1bc47ac8f38f9489af31c4ab }
       execution: { version: 1, role: planner, workspace: { access: write } }
     - { id: gate:office-hours, kind: Gate, outcomes: [approved, rejected], dispositions: { approved: proceed, rejected: escalate }, target: office-hours }
     - id: propose
       kind: AtomicStage
-      capability: { id: skill:rasen-propose, version: sha256:f7948291bd23ca25d1856a828f62261698207025d1f8dd0929455fbc52ca41e0 }
+      capability: { id: skill:rasen-propose, version: sha256:950fbdbff5734ef2760fc9c04d60399e43caaf869a7f24ba11ddcbb2d6bb1907 }
       execution: { version: 1, role: planner, workspace: { access: write }, leadReview: true }
     - { id: gate:propose, kind: Gate, outcomes: [approved, rejected], dispositions: { approved: proceed, rejected: escalate }, target: propose }
     - id: apply
       kind: AtomicStage
-      capability: { id: skill:rasen-apply-change, version: sha256:5f1665c92086b87a024161e9205bf27f89158b91fa69b144e48eb433865b6368 }
+      capability: { id: skill:rasen-apply-change, version: sha256:dd1b0845380d232d173d7c28873738aff2a798defc13b83bf1041a39d6a6a79f }
       execution: { version: 1, role: implementer, workspace: { access: write } }
     - { id: gate:apply, kind: Gate, outcomes: [approved, rejected], dispositions: { approved: proceed, rejected: escalate }, target: apply }
     - id: experts
@@ -75,27 +75,27 @@ root:
         - { id: qa-report-only, hierarchicalPath: qa-report-only, required: false, condition: non-ui }
     - id: review
       kind: AtomicStage
-      capability: { id: skill:rasen-review, version: sha256:06a80842145868a2ffb43b9017225ec15c06b0b946e490c8daa6cb7a68b8e049 }
+      capability: { id: skill:rasen-review, version: sha256:281717f5e3164dca91e21d9329ae812b8ee1263f656d605ef8b1d3d6bba0c7fc }
       execution: { version: 1, role: reviewer, workspace: { access: read } }
     - id: cso
       kind: AtomicStage
-      capability: { id: skill:rasen-cso, version: sha256:d0cd6e299998b3c4608bfad49d0c830ae6a7cbd62d15506b62741706430472bb }
+      capability: { id: skill:rasen-cso, version: sha256:1f89c4fadfd9ad155f5af3e5835799201d347b9dbe2a670c0b076193ce219808 }
       execution: { version: 1, role: reviewer, workspace: { access: read } }
     - id: benchmark
       kind: AtomicStage
-      capability: { id: skill:rasen-benchmark, version: sha256:de4886394ef59b50e82cd36b85edbd6525359b8bd0f166f664836bf6c62c5844 }
+      capability: { id: skill:rasen-benchmark, version: sha256:34927b5d7713076287cad9cd71e03e0892efec7911080795d4294c9fe0e8ad1b }
       execution: { version: 1, role: reviewer, workspace: { access: read } }
     - id: design-review
       kind: AtomicStage
-      capability: { id: skill:rasen-design-review, version: sha256:c754f0ce59670186ceab07c6ba648f330d5d28a1cc0ab40283b1fbb735a543f2 }
+      capability: { id: skill:rasen-design-review, version: sha256:588c9a8901527e1cfb9b0f814f8759a79d063536126c13eddb3240de5ef79c52 }
       execution: { version: 1, role: reviewer, workspace: { access: read } }
     - id: qa
       kind: AtomicStage
-      capability: { id: skill:rasen-qa, version: sha256:a922a0bae2a70d3c7713dcc75f204e2a3c12cb68c23746d632f7eea53390601b }
+      capability: { id: skill:rasen-qa, version: sha256:c7f0878f5a66889bf3da8ef6de125864bd71402fd0cd92817315f8a810acae87 }
       execution: { version: 1, role: reviewer, workspace: { access: read } }
     - id: qa-report-only
       kind: AtomicStage
-      capability: { id: skill:rasen-qa, version: sha256:a922a0bae2a70d3c7713dcc75f204e2a3c12cb68c23746d632f7eea53390601b }
+      capability: { id: skill:rasen-qa, version: sha256:c7f0878f5a66889bf3da8ef6de125864bd71402fd0cd92817315f8a810acae87 }
       execution: { version: 1, role: reviewer, workspace: { access: read } }
     - id: experts-join
       kind: Join
@@ -126,16 +126,16 @@ root:
         needs_fix: { action: continue }
     - id: ship
       kind: AtomicStage
-      capability: { id: skill:rasen-ship, version: sha256:a2c069c2051ba9957df1f9cffea17f3ed93683a8ed5f7b29f5cf443a90e47450 }
+      capability: { id: skill:rasen-ship, version: sha256:35615d0bfd09e3fadef419a6ba6f28fe15f278fa981ec3af45beaacc6be1d965 }
       execution: { version: 1, role: shipper, workspace: { access: write }, model: sonnet }
     - { id: gate:ship, kind: Gate, outcomes: [approved, rejected], dispositions: { approved: proceed, rejected: escalate }, target: ship }
     - id: retain
       kind: AtomicStage
-      capability: { id: skill:rasen-retain, version: sha256:4b28b97d4cefc2e3b9fed896439e5360d1697d7da39df109f9f3d6d06b2d8bd4 }
+      capability: { id: skill:rasen-retain, version: sha256:baa284d853a6153df7dcdca336b5d410bc987cd852c6aa2354f6218de8e3f66f }
       execution: { version: 1, role: reviewer, workspace: { access: write }, model: sonnet }
     - id: archive
       kind: AtomicStage
-      capability: { id: skill:rasen-archive-change, version: sha256:76c36f451797c28fc0c5b78ccdd83cc2a26f194564f86c5f509841fb5b98b178 }
+      capability: { id: skill:rasen-archive-change, version: sha256:4883a8d8e4c61343c87e3e0bdd194bc5d48e8b4cbc7ded32738b7652bec93b13 }
       execution: { version: 1, role: shipper, workspace: { access: write }, model: sonnet }
     - { id: finish, kind: Finish, outcome: completed }
   connections:

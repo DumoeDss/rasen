@@ -469,6 +469,29 @@ describe('native-v2 lowerer typed contract closure', () => {
     expect(plan.finishNode).toMatchObject({ hierarchicalPath: 'root:finish', outcome: 'reported' });
   });
 
+  it('freezes evaluate only for an evaluate GoalLoop judge from Definition authority', () => {
+    const evaluateSource = structuredClone(GOAL_SOURCE);
+    const loop = evaluateSource.root.nodes.find(
+      (node) => node.kind === 'BoundedLoop'
+    );
+    if (loop?.kind !== 'BoundedLoop') throw new Error('missing GoalLoop');
+    loop.goalCycleVariant = 'evaluate';
+
+    const evaluateProfile = profileFor(prepare(evaluateSource));
+    const researchProfile = profileFor(prepare(GOAL_SOURCE));
+    const work = evaluateProfile.policy.stages.find(
+      (stage) => stage.nodeId === 'declaration:goal-body/node:work'
+    );
+    const judge = evaluateProfile.policy.stages.find(
+      (stage) => stage.nodeId === 'declaration:goal-body/node:judge'
+    );
+
+    expect(work?.workerContract).toBe('leaf');
+    expect(judge?.workerContract).toBe('evaluate');
+    expect(evaluateProfile.policyDigest).not.toBe(researchProfile.policyDigest);
+    expect(evaluateProfile.profileDigest).not.toBe(researchProfile.profileDigest);
+  });
+
   it('lowers typed Choice, FanOut members, Join partitions/outcomes, and Finish branch targets exactly', () => {
     const prepared = prepare(PARALLEL_SOURCE);
     const input = lowerRuntimePlanInput(prepared, profileFor(prepared), runId);

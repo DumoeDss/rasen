@@ -205,6 +205,7 @@ export {
   normalizeRunStateWorkerRecord,
   inferWorkerDispatchMode,
   stageWorkers,
+  frozenStageInference,
   stagesWithStatus,
   stagesLackingDurableHandle,
   detectDuplicateKeys,

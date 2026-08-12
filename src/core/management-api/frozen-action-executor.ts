@@ -75,6 +75,7 @@ import {
   type ProductionExecutor,
   type TrustedCompletionProducerResolver,
 } from '../frozen-action-executor/index.js';
+import { createProductionRoutedTurnExecutor } from '../frozen-action-executor/index.js';
 
 const MAX_DISPATCH_BODY_BYTES = 2 * 1024 * 1024;
 
@@ -1693,12 +1694,27 @@ export async function handleFrozenActionDispatch(input: Readonly<{
   }
 
   // --- Construct the production executor bound to the daemon's SessionHost + dispatch ---
+  const hostedSeam = envelope.hostedSeam as {
+    cwd: string;
+    backend: string;
+    limits: TurnLimits;
+  };
+  const executeRoutedTurn = createProductionRoutedTurnExecutor({
+    cwd: hostedSeam.cwd,
+    limits: hostedSeam.limits,
+  });
+  const hostedSeamOptions = {
+    cwd: hostedSeam.cwd,
+    backend: hostedSeam.backend,
+    limits: hostedSeam.limits,
+    executeRoutedTurn,
+  } as HostedBackendSeamOptions;
   const initialExecutor =
     teacherConsultation === undefined
       ? createProductionExecutor({
           hostPlatform: input.hostPlatform,
           host: input.host,
-          hostedSeamOptions: envelope.hostedSeam as HostedBackendSeamOptions,
+          hostedSeamOptions,
         })
       : undefined;
   const executor = consultationDriven

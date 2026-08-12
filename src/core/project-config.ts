@@ -193,6 +193,16 @@ export const ProjectConfigSchema = z.object({
     .optional()
     .describe('Run engine policy configuration'),
 
+  omnicross: z
+    .object({
+      endpoint: z.string().min(1).optional(),
+      controlTokenEnv: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/).optional(),
+      requestTimeoutMs: z.number().int().min(100).max(60_000).optional(),
+      leaseTtlSeconds: z.number().int().min(30).max(3_600).optional(),
+    })
+    .optional()
+    .describe('Resident loopback OmniCross daemon connection settings'),
+
   // Optional: session reuse/handoff/touch/retire policy
   // (session-policy-and-control-parity). Supplies the frozen-action executor's
   // policy block numeric limits with `authored` provenance through the existing
@@ -1325,6 +1335,60 @@ function parseProjectConfigContent(
           },
           reporter
         );
+      }
+    }
+
+    // Parse OmniCross connection settings leaf-by-leaf. The control credential
+    // itself is deliberately not a config field; only its environment-variable
+    // name is persisted.
+    if (raw.omnicross !== undefined) {
+      if (raw.omnicross && typeof raw.omnicross === 'object' && !Array.isArray(raw.omnicross)) {
+        const omniRaw = raw.omnicross as Record<string, unknown>;
+        const omnicross: NonNullable<ProjectConfig['omnicross']> = {};
+        if (omniRaw.endpoint !== undefined) {
+          if (typeof omniRaw.endpoint === 'string' && omniRaw.endpoint.trim().length > 0) {
+            omnicross.endpoint = omniRaw.endpoint;
+          } else {
+            console.warn(`Invalid 'omnicross.endpoint' field in config (must be a non-empty string)`);
+          }
+        }
+        if (omniRaw.controlTokenEnv !== undefined) {
+          if (
+            typeof omniRaw.controlTokenEnv === 'string' &&
+            /^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(omniRaw.controlTokenEnv)
+          ) {
+            omnicross.controlTokenEnv = omniRaw.controlTokenEnv;
+          } else {
+            console.warn(`Invalid 'omnicross.controlTokenEnv' field in config (must be an environment variable name)`);
+          }
+        }
+        if (omniRaw.requestTimeoutMs !== undefined) {
+          if (
+            typeof omniRaw.requestTimeoutMs === 'number' &&
+            Number.isInteger(omniRaw.requestTimeoutMs) &&
+            omniRaw.requestTimeoutMs >= 100 &&
+            omniRaw.requestTimeoutMs <= 60_000
+          ) {
+            omnicross.requestTimeoutMs = omniRaw.requestTimeoutMs;
+          } else {
+            console.warn(`Invalid 'omnicross.requestTimeoutMs' field in config (must be an integer between 100 and 60000)`);
+          }
+        }
+        if (omniRaw.leaseTtlSeconds !== undefined) {
+          if (
+            typeof omniRaw.leaseTtlSeconds === 'number' &&
+            Number.isInteger(omniRaw.leaseTtlSeconds) &&
+            omniRaw.leaseTtlSeconds >= 30 &&
+            omniRaw.leaseTtlSeconds <= 3_600
+          ) {
+            omnicross.leaseTtlSeconds = omniRaw.leaseTtlSeconds;
+          } else {
+            console.warn(`Invalid 'omnicross.leaseTtlSeconds' field in config (must be an integer between 30 and 3600)`);
+          }
+        }
+        config.omnicross = omnicross;
+      } else {
+        console.warn(`Invalid 'omnicross' field in config (must be an object)`);
       }
     }
 

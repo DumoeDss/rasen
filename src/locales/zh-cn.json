@@ -2713,7 +2713,7 @@
               }
             },
             "resume-run": {
-              "description": "恢复 reconciler 引擎 Run 并授予就绪前沿",
+              "description": "恢复 reconciler 引擎 Run 并预览就绪前沿",
               "options": {
                 "json": {
                   "description": "输出为 JSON"
@@ -2724,6 +2724,16 @@
                 "project": {
                   "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
                 }
+              }
+            },
+            "admit": {
+              "description": "从私有提示清单准入并授予已预览的 Agent 前沿",
+              "options": {
+                "run": { "description": "精确 Run ID" },
+                "turn-input-file": { "description": "绑定候选项的私有提示清单" },
+                "json": { "description": "输出为 JSON" },
+                "store": { "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）" },
+                "project": { "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。" }
               }
             },
             "cancel": {
@@ -2866,6 +2876,9 @@
                 },
                 "resume": {
                   "description": "要恢复的精确 Claude session ID"
+                },
+                "inference-file": {
+                  "description": "受限的 rasen.inference/1 路由尝试文件"
                 },
                 "json": {
                   "description": "输出一条机器可读 receipt"

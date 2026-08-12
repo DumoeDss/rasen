@@ -5,6 +5,8 @@ import {
   type AgentContinuationGrant,
   type ConsultationContentLimits,
 } from './consultation-contracts.js';
+import { FrozenInferenceRouteSchema } from '../omnicross/contracts.js';
+import { WorkerContractZodSchema } from '../worker-contracts.js';
 
 export type Brand<T, Name extends string> = T & { readonly __brand: Name };
 export type Digest = Brand<string, 'Digest'>;
@@ -64,7 +66,7 @@ const SafeIntegerSchema = z.number().int().nonnegative().safe();
 const UuidShape = z
   .string()
   .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
-const JsonValueSchema = z.json();
+const JsonValueSchema = z.json().transform((value): JsonValue => value);
 
 const WorkspaceRevisionSchema = z.strictObject({
   format: z.literal('workspace-revision/1'),
@@ -247,6 +249,38 @@ const EffectDescriptorSchema = z.strictObject({
   }),
 });
 
+const FrozenAgentTurnInputSchema = z.strictObject({
+  format: z.literal('agent-turn-input/1'),
+  mediaType: z.literal('text/plain;charset=utf-8'),
+  renderingContract: z.literal('rasen.driver-rendered-turn/1'),
+  utf8ByteLength: SafeIntegerSchema,
+  contentDigest: DigestSchema,
+});
+
+export type FrozenAgentTurnInput = Readonly<
+  z.infer<typeof FrozenAgentTurnInputSchema>
+>;
+
+const AgentCandidateSessionSchema = z.strictObject({
+  reuse: z.enum(['never', 'same-invocation']),
+  sessionReuseAuthored: z
+    .enum(['none', 'stage', 'run-planner', 'review-thread'])
+    .optional(),
+  handoffTokenLimit: SafeIntegerSchema,
+  reuseRoundLimit: SafeIntegerSchema,
+});
+
+const AgentCandidateDispatchSchema = z.strictObject({
+  role: z.string().min(1).max(128),
+  model: z.string().min(1).max(256),
+  reasoningEffort: z.string().min(1).max(128),
+  runtime: z.string().min(1).max(128),
+  sandbox: z.string().min(1).max(128),
+  workerContract: WorkerContractZodSchema.optional(),
+  inference: FrozenInferenceRouteSchema.optional(),
+  session: AgentCandidateSessionSchema,
+});
+
 const CapabilityBindingSchema = z.strictObject({
   id: z.string().min(1).max(256),
   authoredVersion: z.string().min(1).max(128),
@@ -285,12 +319,12 @@ const RunActionSchema = z.discriminatedUnion('kind', [
   z.strictObject({
     ...RunActionBaseShape,
     kind: z.literal('agent'),
-    agent: z.strictObject({
-      role: z.string().min(1).max(128),
-      model: z.string().min(1).max(256),
-      reasoningEffort: z.string().min(1).max(128),
-      runtime: z.string().min(1).max(128),
-      sandbox: z.string().min(1).max(128),
+    agent: AgentCandidateDispatchSchema.extend({
+      /**
+       * Exact driver-rendered base-turn authority. Optional only for historical
+       * decoding; every newly admitted canonical agent Action carries it.
+       */
+      turnInput: FrozenAgentTurnInputSchema.optional(),
       input: JsonValueSchema,
       consultation: z
         .strictObject({
@@ -903,6 +937,21 @@ export interface ChangeRunView
   readonly sections: readonly ChangeRunViewSection[];
 }
 
+const AgentTurnInputCandidateSchema = z.strictObject({
+  format: z.literal('change-run-agent-candidate/1'),
+  candidateId: z.string().regex(/^candidate:[0-9a-f]{64}$/),
+  runId: RunIdSchema,
+  recordVersion: SafeIntegerSchema,
+  nodeId: NodeIdSchema,
+  occurrence: SafeIntegerSchema,
+  profilePath: z.string().min(1).max(1024).optional(),
+  input: JsonValueSchema.optional(),
+});
+
+export type AgentTurnInputCandidate = Readonly<
+  z.infer<typeof AgentTurnInputCandidateSchema>
+>;
+
 const ChangeRunReceiptCoreSchema = z.strictObject({
   format: z.literal('change-run-receipt/1'),
   disposition: z.enum([
@@ -916,16 +965,18 @@ const ChangeRunReceiptCoreSchema = z.strictObject({
   view: z.unknown(),
   actions: z.array(RunActionSchema),
   continuationGrants: z.array(z.unknown()).optional(),
+  candidates: z.array(AgentTurnInputCandidateSchema).optional(),
 });
 
 export interface ChangeRunReceipt
   extends Omit<
     z.infer<typeof ChangeRunReceiptCoreSchema>,
-    'view' | 'actions' | 'continuationGrants'
+    'view' | 'actions' | 'continuationGrants' | 'candidates'
   > {
   readonly view: ChangeRunView;
   readonly actions: readonly RunAction[];
   readonly continuationGrants?: readonly AgentContinuationGrant[];
+  readonly candidates: readonly AgentTurnInputCandidate[];
 }
 
 /**
@@ -1340,6 +1391,25 @@ export function decodeChangeRunReceipt(
       'Other-worktree receipts cannot carry execution grants.'
     );
   }
+  const candidateIds = new Set<string>();
+  for (const candidate of core.candidates ?? []) {
+    if (
+      candidate.runId !== view.runId ||
+      candidate.recordVersion !== view.recordVersion
+    ) {
+      throw new ChangeRunContractError(
+        'invalid_run_invariant',
+        'Every candidate preview must match the receipt Run and Record version.'
+      );
+    }
+    if (candidateIds.has(candidate.candidateId)) {
+      throw new ChangeRunContractError(
+        'invalid_run_invariant',
+        'A receipt cannot carry duplicate candidate preview identities.'
+      );
+    }
+    candidateIds.add(candidate.candidateId);
+  }
   const root = view.sections.find(
     (section): section is RootDagViewSection => section.kind === 'root-dag'
   )!;
@@ -1420,6 +1490,7 @@ export function decodeChangeRunReceipt(
     ...receiptCore,
     view,
     actions,
+    candidates: core.candidates ?? [],
     ...(continuationGrants === undefined
       ? {}
       : {

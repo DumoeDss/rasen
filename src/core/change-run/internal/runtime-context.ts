@@ -25,7 +25,11 @@ import {
 import type { RunStore } from './run-store.js';
 import { lowerRuntimePlan } from './lowerer.js';
 import { openRuntimePlan, type RuntimePlan } from './runtime-plan.js';
-import { buildAgentAction } from './actions.js';
+import {
+  buildAgentAction,
+  buildCommandAction,
+  buildHostAction,
+} from './actions.js';
 import { observeGitWorkspace } from './workspace-git.js';
 import type { WorkspaceManifest } from './workspace.js';
 import { deriveWorkspaceRevision } from './workspace.js';
@@ -447,6 +451,7 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
     admissionKind: 'agent' | 'command' | 'host';
     profilePath?: string;
     input?: JsonValue;
+    renderedTurnInput?: string;
   }): RunAction => {
     // Bounded-loop phase admits (review-cycle) carry a profilePath to look
     // up the capability/stage binding directly — no plan-node lookup needed.
@@ -466,30 +471,52 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
     if (capability === undefined || stage === undefined) {
       throw new Error(`No capability/policy binding for ${hierarchicalPath}`);
     }
-    return buildAgentAction(
-      {
-        capability,
-        stage: stage as never,
-        executionProfileDigest: profile.profileDigest,
-        policyDigest: profile.policyDigest,
-        ...(consultationBinding === undefined
-          ? {}
-          : { consultationBinding }),
-      },
-      {
-        runId: plan.runId,
-        nodeId: descriptor.nodeId as NodeId,
-        occurrence: descriptor.occurrence,
-        attemptOrdinal: 0,
-        expectedBeforeWorkspace:
-          plan.pipeline === 'task-loop' ? observeWorkspace() : workspaceRevision,
-      },
-      {
-        input: (descriptor.input ?? {
-          change: input.changeId,
-        }) as never,
-      }
-    );
+    if (capability.actionKind !== descriptor.admissionKind) {
+      throw new Error(
+        `Admission kind ${descriptor.admissionKind} does not match frozen capability kind ${capability.actionKind} for ${hierarchicalPath}.`
+      );
+    }
+    const buildContext = {
+      capability,
+      stage: stage as never,
+      executionProfileDigest: profile.profileDigest,
+      policyDigest: profile.policyDigest,
+      ...(consultationBinding === undefined ? {} : { consultationBinding }),
+    };
+    const identity = {
+      runId: plan.runId,
+      nodeId: descriptor.nodeId as NodeId,
+      occurrence: descriptor.occurrence,
+      attemptOrdinal: 0,
+      expectedBeforeWorkspace:
+        plan.pipeline === 'task-loop' ? observeWorkspace() : workspaceRevision,
+    };
+    const actionInput = (descriptor.input ?? {
+      change: input.changeId,
+    }) as JsonValue;
+
+    switch (capability.actionKind) {
+      case 'agent':
+        if (descriptor.renderedTurnInput === undefined) {
+          throw new Error(
+            `Trusted driver rendering is required before admitting agent Action ${descriptor.nodeId}.`
+          );
+        }
+        return buildAgentAction(buildContext, identity, {
+          input: actionInput,
+          renderedTurnInput: descriptor.renderedTurnInput,
+        });
+      case 'command':
+        return buildCommandAction(buildContext, identity, {
+          ...capability.command,
+          workspaceInstanceId: input.workspaceInstanceId,
+        });
+      case 'host':
+        return buildHostAction(buildContext, identity, {
+          operation: capability.host.operation,
+          input: actionInput,
+        });
+    }
   };
 
   const facade = createChangePipelineRuntime({

@@ -42,6 +42,7 @@
         { "title": "CLI", "slug": "reference/cli", "source": "cli.md" },
         { "title": "Installable Workflows", "slug": "reference/workflow-packages", "source": "workflow-packages.md" },
         { "title": "Supported Tools", "slug": "reference/supported-tools", "source": "supported-tools.md" },
+        { "title": "OmniCross Inference Routing", "slug": "reference/omnicross-inference-routing", "source": "omnicross-inference-routing.md" },
         { "title": "Agent Contract", "slug": "reference/agents", "source": "agent-contract.md" }
       ]
     },

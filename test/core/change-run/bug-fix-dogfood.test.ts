@@ -167,7 +167,7 @@ describe('simple bug-fix dogfood through the facade (11.5/11.6)', () => {
     const store = createInMemoryRunStore();
     const capabilityByPath = new Map(profile.capabilities.map((c) => [c.nodeId, c] as const));
     const stageByPath = new Map(profile.policy.stages.map((s) => [s.nodeId, s] as const));
-    const buildAction = (descriptor: { nodeId: string; occurrence: number; admissionKind: 'agent' | 'command' | 'host' }): RunAction => {
+    const buildAction = (descriptor: { nodeId: string; occurrence: number; admissionKind: 'agent' | 'command' | 'host'; renderedTurnInput?: string }): RunAction => {
       const node = plan.nodes.find((n) => n.nodeId === descriptor.nodeId)!;
       const capability = capabilityByPath.get(node.hierarchicalPath)!;
       const stage = stageByPath.get(node.hierarchicalPath)!;
@@ -185,7 +185,11 @@ describe('simple bug-fix dogfood through the facade (11.5/11.6)', () => {
           attemptOrdinal: 0,
           expectedBeforeWorkspace: workspaceRevision,
         },
-        { input: { change: 'fixture-change' } as never }
+        {
+          renderedTurnInput:
+            descriptor.renderedTurnInput ?? 'trusted fixture prompt',
+          input: { change: 'fixture-change' } as never,
+        }
       );
     };
 

@@ -2713,7 +2713,7 @@
               }
             },
             "resume-run": {
-              "description": "reconciler-engine Runを再開し、ready frontierを許可します",
+              "description": "reconciler-engine Runを再開し、ready frontierをプレビューします",
               "options": {
                 "json": {
                   "description": "JSONで出力します"
@@ -2724,6 +2724,16 @@
                 "project": {
                   "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
                 }
+              }
+            },
+            "admit": {
+              "description": "非公開prompt manifestからpreview済みagent frontierを許可します",
+              "options": {
+                "run": { "description": "正確なRun ID" },
+                "turn-input-file": { "description": "candidateに束縛された非公開prompt manifest" },
+                "json": { "description": "JSONで出力します" },
+                "store": { "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）" },
+                "project": { "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）" }
               }
             },
             "cancel": {
@@ -2866,6 +2876,9 @@
                 },
                 "resume": {
                   "description": "再開する正確な Claude session ID"
+                },
+                "inference-file": {
+                  "description": "rasen.inference/1 形式の制限付きルート試行ファイル"
                 },
                 "json": {
                   "description": "機械可読 receipt を1件出力"

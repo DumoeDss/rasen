@@ -18,6 +18,7 @@
 
 import type { ExecutionBackendId } from './capability-matrix.js';
 import type { HostedTurnReceipt } from '../session-host/contracts.js';
+import type { WorkerContractResult } from '../worker-contracts.js';
 
 /**
  * The typed Action outcomes the executor mints. `execution-lost` is a DISTINCT
@@ -47,6 +48,8 @@ export interface ActionOutcome {
   readonly source: 'daemon-death' | 'launcher-disappearance' | 'lost-generation' | 'host-turn' | 'host-ambiguous' | 'host-failure' | 'workspace-observation';
   readonly message: string;
   readonly hostedTurn?: HostedTurnFacts;
+  /** Validated structured worker payload when the routed runner returned one. */
+  readonly result?: WorkerContractResult;
 }
 
 export interface HostedTurnFacts {
@@ -83,6 +86,7 @@ export type TurnResult =
       readonly ok: true;
       readonly status: 'succeeded' | 'failed';
       readonly hostedTurn?: HostedTurnFacts;
+      readonly result?: WorkerContractResult;
     }
   | {
       readonly ok: false;
@@ -188,6 +192,7 @@ export function reconcileActionOutcome(
       ...(turn.hostedTurn === undefined
         ? {}
         : { hostedTurn: turn.hostedTurn }),
+      ...(turn.result !== undefined ? { result: turn.result } : {}),
     };
   }
 

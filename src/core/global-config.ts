@@ -170,6 +170,13 @@ export interface GlobalConfig {
   runs?: {
     engine?: 'auto' | 'reconciler' | 'legacy';
   };
+  /** Non-secret connection settings for a resident loopback OmniCross daemon. */
+  omnicross?: {
+    endpoint?: string;
+    controlTokenEnv?: string;
+    requestTimeoutMs?: number;
+    leaseTtlSeconds?: number;
+  };
   /**
    * Machine-wide session reuse/handoff/touch/retire policy defaults
    * (session-policy-and-control-parity). Project and store config of the same

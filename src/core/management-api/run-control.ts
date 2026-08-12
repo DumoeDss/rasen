@@ -14,9 +14,10 @@
  * ignores the context's `deliveryMode` entirely, always returning an empty
  * action list). HTTP responses therefore NEVER contain executable
  * Agent/Command/Host payloads — they return only the committed view and an
- * EMPTY receipt action list. A subsequent trusted CLI resume performs the
- * first atomic grant; browser response loss/replay cannot turn an unconsumed
- * admission into an uncertain already-delivered effect.
+ * EMPTY receipt action list plus prompt-free candidates. A subsequent trusted
+ * CLI admit binds private prompt bytes and performs the atomic grant; browser
+ * response loss/replay cannot turn an unconsumed admission into an uncertain
+ * already-delivered effect.
  */
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -26,6 +27,7 @@ import * as fs from 'node:fs';
 import type { ProjectHome } from '../project-home.js';
 import {
   decodeControl,
+  type AgentTurnInputCandidate,
   type ChangeRunControlRequest,
   type ChangeRunView,
 } from '../change-run/index.js';
@@ -156,6 +158,8 @@ export interface RunControlResponse {
   readonly disposition: string;
   /** ALWAYS empty — the bridge seals defer; no executable grants in the response. */
   readonly actions: readonly never[];
+  /** Prompt-free agent candidates that the trusted driver may render and admit. */
+  readonly candidates: readonly AgentTurnInputCandidate[];
 }
 
 export type RunControlResult =
@@ -387,6 +391,7 @@ interface CliControlReceipt {
   runId?: unknown;
   disposition?: unknown;
   status?: unknown;
+  candidates?: unknown;
 }
 
 /**
@@ -403,7 +408,8 @@ function parseCliReceipt(stdout: string): CliControlReceipt | null {
     if (
       typeof parsed.runId === 'string' &&
       typeof parsed.disposition === 'string' &&
-      (parsed.status === undefined || typeof parsed.status === 'string')
+      (parsed.status === undefined || typeof parsed.status === 'string') &&
+      (parsed.candidates === undefined || Array.isArray(parsed.candidates))
     ) {
       return parsed;
     }
@@ -583,7 +589,7 @@ export async function handleRunControl(
   // The control method inherently defers (facade.control ignores deliveryMode
   // and always returns empty actions). The receipt actions are sealed to empty
   // regardless of what the CLI output contained — no executable payload leaves
-  // via HTTP. A subsequent trusted CLI resume performs the first atomic grant.
+  // via HTTP. A subsequent trusted CLI admit performs the atomic grant.
   return {
     ok: true,
     status: 200,
@@ -591,6 +597,7 @@ export async function handleRunControl(
       view,
       disposition: receipt.disposition as string,
       actions: [] as readonly never[],
+      candidates: (receipt.candidates ?? []) as readonly AgentTurnInputCandidate[],
     },
   };
 }

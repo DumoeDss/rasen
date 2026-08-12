@@ -88,6 +88,11 @@ export interface DispatchRoute {
   bridge?: DispatchBridge;
 }
 
+export interface DispatchRouteOptions {
+  /** A routed stage needs an isolated child process even when host === target. */
+  readonly externalInference?: boolean;
+}
+
 /** Only a dispatch-capable host can own a route row. */
 type KnownHostRuntime = DispatchRuntime;
 
@@ -156,8 +161,25 @@ export function detectHostRuntime(
  */
 export function resolveDispatchRoute(
   host: HostRuntime,
-  target: DispatchRuntime
+  target: DispatchRuntime,
+  options: DispatchRouteOptions = {}
 ): DispatchRoute {
+  if (options.externalInference) {
+    // A routed stage needs an isolated child process, so a host with no
+    // dispatch adapter cannot serve one. Guarding on `canDispatch` rather than
+    // on `host === 'unknown'` is load-bearing: a recognized-but-non-dispatching
+    // host (Oh My Pi) would otherwise reach the claude-print bridge here, which
+    // is exactly the residual hazard detectHostRuntime documents above.
+    if (!hasRuntimeCapability(host, 'canDispatch')) {
+      return { host, target, mode: 'unsupported' };
+    }
+    return {
+      host,
+      target,
+      mode: 'exec-bridge',
+      bridge: target === 'codex' ? 'codex-exec' : 'claude-print',
+    };
+  }
   if (!hasRuntimeCapability(host, 'canDispatch')) {
     return { host, target, mode: 'legacy-fallback' };
   }

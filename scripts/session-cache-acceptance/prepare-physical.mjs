@@ -283,7 +283,32 @@ export async function createAdmittedAction(input) {
     projectRoot: input.workspace,
     changeId: `cache-${input.armId.replace(/[^a-z0-9]+/gu, '-')}`,
   };
-  let receipt = await context.facade.start(
+  const admitPreview = async (preview) => {
+    if (preview.candidates.length === 0) return preview;
+    const pending = new Set(preview.candidates.map((candidate) => candidate.candidateId));
+    return context.facade.admit(
+      { change, runId },
+      {
+        deliveryMode: 'grant',
+        resolveAgentTurnInput: (candidate) => {
+          if (!pending.delete(candidate.candidateId)) {
+            throw new Error('canonical_agent_candidate_not_previewed');
+          }
+          return [
+            'rasen trusted physical acceptance driver turn input',
+            `candidate=${candidate.candidateId}`,
+            `node=${candidate.nodeId}`,
+            `occurrence=${candidate.occurrence}`,
+            `input=${JSON.stringify(candidate.input ?? null)}`,
+          ].join('\n');
+        },
+        finalizeAgentTurnInputs: () => {
+          if (pending.size !== 0) throw new Error('canonical_agent_candidate_unused');
+        },
+      }
+    );
+  };
+  let receipt = await admitPreview(await context.facade.start(
     {
       change,
       pipeline: 'bug-fix',
@@ -292,7 +317,7 @@ export async function createAdmittedAction(input) {
       inputs,
     },
     { deliveryMode: 'grant' }
-  );
+  ));
   let action;
   for (let step = 0; step < 32 && action === undefined; step += 1) {
     action = receipt.actions.find(
@@ -321,10 +346,10 @@ export async function createAdmittedAction(input) {
       },
       { deliveryMode: 'grant' }
     );
-    receipt = await context.facade.resume(
+    receipt = await admitPreview(await context.facade.resume(
       { change, runId },
       { deliveryMode: 'grant' }
-    );
+    ));
   }
   if (action === undefined) throw new Error('canonical_agent_action_not_admitted');
   return { runId, action };

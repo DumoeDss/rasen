@@ -8,6 +8,7 @@ import {
   readRunState,
   writeRunState,
   completedStages,
+  frozenStageInference,
   frozenRetentionMode,
   RETAIN_STAGE_ID,
   normalizeWorker,
@@ -24,6 +25,7 @@ import {
   RUN_STATE_FILENAME,
   type RunState,
 } from '../../../src/core/pipeline-registry/run-state.js';
+import { computeOmniCrossConfigRevision } from '../../../src/core/omnicross/index.js';
 
 describe('pipeline run-state', () => {
   let dir: string;
@@ -83,6 +85,56 @@ describe('pipeline run-state', () => {
     it('a run-state with no gatePolicy leaves it undefined (older runs pre-date this field)', () => {
       const s = parseRunState('{"pipeline":"small-feature"}');
       expect(s.gatePolicy).toBeUndefined();
+    });
+
+    it('round-trips only credential-free frozen inference and exposes it by stage', () => {
+      const connection = {
+        endpoint: 'http://127.0.0.1:8765',
+        controlTokenEnv: 'OMNICROSS_ADMIN_TOKEN',
+        requestTimeoutMs: 5_000,
+        leaseTtlSeconds: 600,
+      };
+      const frozenInference = {
+        broker: 'omnicross',
+        runtime: 'codex',
+        upstream: { kind: 'provider', providerId: 'deepseek-api' },
+        model: 'deepseek-chat',
+        connection: {
+          ...connection,
+          configRevision: computeOmniCrossConfigRevision(connection),
+        },
+      };
+      const state = parseRunState(JSON.stringify({
+        pipeline: 'small-feature',
+        stages: { ship: { status: 'in_progress', frozenInference } },
+      }));
+      expect(frozenStageInference(state)).toEqual({ ship: frozenInference });
+      expect(JSON.stringify(state)).not.toMatch(/leaseId|route-token|launch/i);
+    });
+
+    it('rejects secret or live-lease fields inside frozen inference', () => {
+      expect(() => parseRunState(JSON.stringify({
+        pipeline: 'small-feature',
+        stages: {
+          ship: {
+            status: 'in_progress',
+            frozenInference: {
+              broker: 'omnicross',
+              runtime: 'codex',
+              upstream: { kind: 'provider', providerId: 'deepseek-api' },
+              model: 'deepseek-chat',
+              connection: {
+                endpoint: 'http://127.0.0.1:8765',
+                controlTokenEnv: 'OMNICROSS_ADMIN_TOKEN',
+                requestTimeoutMs: 5_000,
+                leaseTtlSeconds: 600,
+                configRevision: `sha256:${'0'.repeat(64)}`,
+              },
+              routeToken: 'forbidden',
+            },
+          },
+        },
+      }))).toThrow(RunStateValidationError);
     });
 
     it('parses a gatePolicy recorded with source store', () => {
@@ -770,7 +822,7 @@ describe('pipeline run-state', () => {
         expect(s.loopConfig.gate.command).toBe('./lighthouse');
         expect(s.loopConfig.gate.threshold).toBe(90);
         // The configured per-task timeout survives the strict nested object
-        // (the core of the fix ��� previously Zod stripped it).
+        // (the core of the fix — previously Zod stripped it).
         expect(s.loopConfig.gate.timeoutSec).toBe(30);
       }
     });

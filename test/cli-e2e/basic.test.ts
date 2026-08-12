@@ -118,6 +118,7 @@ describe('openspec CLI e2e basics', () => {
       'start',
       'status',
       'resume-run',
+      'admit',
       'cancel',
       'complete',
       'control',

@@ -21,7 +21,7 @@ declarations:
       nodes:
         - id: work
           kind: AtomicStage
-          capability: { id: skill:rasen-goal-iterate, version: sha256:9522e1108c941534a888d5a0230ba29f1b7719a75949411b36e05f664d95331b }
+          capability: { id: skill:rasen-goal-iterate, version: sha256:1b1a8566322f14a02994b3274f4256def710a77c95ec7927e58daaf948520a87 }
           execution:
             version: 1
             role: implementer
@@ -30,7 +30,7 @@ declarations:
           goalCyclePhase: work
         - id: judge
           kind: AtomicStage
-          capability: { id: skill:rasen-goal-judge, version: sha256:944c21e977d795c1ee2c67f5a0ad0534e8b40a8c1f746ecd83ae89a4e51de40c }
+          capability: { id: skill:rasen-goal-judge, version: sha256:2ae0f1918512979d732b3f1b881c85530cc1447ea53cabfd76811bf68e6f9b1e }
           execution: { version: 1, role: reviewer, workspace: { access: read } }
           goalCyclePhase: judge
       connections:
@@ -39,7 +39,7 @@ root:
   nodes:
     - id: define-goal
       kind: AtomicStage
-      capability: { id: skill:rasen-goal-plan, version: sha256:2c24bd2b0f8661f24bf94553aa15926ace8fa36c71900953e5a68c8c34606ce2 }
+      capability: { id: skill:rasen-goal-plan, version: sha256:610dd104f26d8b622fe42cb0e25ea08c4678427f1188d3fe1e6dc05a44192463 }
       execution: { version: 1, role: planner, workspace: { access: write } }
     - { id: gate:define-goal, kind: Gate, outcomes: [approved, rejected], dispositions: { approved: proceed, rejected: escalate }, target: define-goal }
     - id: iterate
@@ -53,7 +53,7 @@ root:
         strategy:
           maxAttempts: 1
           requireMaterialChange: true
-          capability: { id: skill:rasen-goal-iterate, version: sha256:9522e1108c941534a888d5a0230ba29f1b7719a75949411b36e05f664d95331b }
+          capability: { id: skill:rasen-goal-iterate, version: sha256:1b1a8566322f14a02994b3274f4256def710a77c95ec7927e58daaf948520a87 }
         exits:
           iterationLimit: { action: exit, outcome: max-rounds-exhausted }
           actionLimit: { action: fail, outcome: goal-action-limit }
@@ -66,7 +66,7 @@ root:
         needs_fix: { action: continue }
     - id: report
       kind: AtomicStage
-      capability: { id: skill:rasen-goal-report, version: sha256:f881d6f5379f1c8e1a4508eac7c25078a5fc69c0c3b1b2dee2fe9a72cf46bf35 }
+      capability: { id: skill:rasen-goal-report, version: sha256:92a97c8f454aedef85e7c7cb0a09271389417a7ecfe140416d70ecc0e205d70b }
       execution: { version: 1, role: shipper, workspace: { access: write } }
     - { id: finish, kind: Finish, outcome: reported }
   connections:

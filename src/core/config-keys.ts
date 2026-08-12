@@ -351,6 +351,75 @@ export const CONFIG_KEY_REGISTRY: ConfigKeyDefinition[] = [
     group: 'Pipelines',
   },
   {
+    key: 'omnicross.endpoint',
+    scopes: ['global', 'store', 'project'],
+    type: 'string',
+    defaultValue: '',
+    validate: (value) => {
+      if (typeof value !== 'string' || value.trim().length === 0) {
+        return 'must be a non-empty HTTP loopback origin';
+      }
+      try {
+        const url = new URL(value);
+        const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+        const octets = host.split('.');
+        const ipv4Loopback =
+          octets.length === 4 &&
+          octets.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255) &&
+          Number(octets[0]) === 127;
+        if (
+          url.protocol !== 'http:' ||
+          !(host === 'localhost' || host === '::1' || ipv4Loopback) ||
+          Boolean(url.username || url.password || url.search || url.hash) ||
+          (url.pathname !== '/' && url.pathname !== '')
+        ) {
+          return 'must be an unauthenticated HTTP loopback origin (localhost, 127.0.0.0/8, or [::1])';
+        }
+      } catch {
+        return 'must be a valid absolute HTTP loopback origin';
+      }
+      return null;
+    },
+    description: 'Loopback HTTP origin of the resident OmniCross daemon',
+    group: 'OmniCross',
+  },
+  {
+    key: 'omnicross.controlTokenEnv',
+    scopes: ['global', 'store', 'project'],
+    type: 'string',
+    defaultValue: 'OMNICROSS_ADMIN_TOKEN',
+    validate: (value) =>
+      typeof value === 'string' && /^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(value)
+        ? null
+        : 'must be a valid environment variable name',
+    description: 'Environment variable containing the OmniCross Admin control token',
+    group: 'OmniCross',
+  },
+  {
+    key: 'omnicross.requestTimeoutMs',
+    scopes: ['global', 'store', 'project'],
+    type: 'number',
+    defaultValue: 5_000,
+    validate: (value) =>
+      typeof value === 'number' && Number.isInteger(value) && value >= 100 && value <= 60_000
+        ? null
+        : 'must be an integer between 100 and 60000 milliseconds',
+    description: 'Timeout for local OmniCross control-plane requests',
+    group: 'OmniCross',
+  },
+  {
+    key: 'omnicross.leaseTtlSeconds',
+    scopes: ['global', 'store', 'project'],
+    type: 'number',
+    defaultValue: 600,
+    validate: (value) =>
+      typeof value === 'number' && Number.isInteger(value) && value >= 30 && value <= 3_600
+        ? null
+        : 'must be an integer between 30 and 3600 seconds',
+    description: 'Requested lifetime of each ephemeral OmniCross route lease',
+    group: 'OmniCross',
+  },
+  {
     key: 'archive.timing',
     scopes: ['store', 'project'],
     type: 'enum',

@@ -2719,7 +2719,7 @@
               }
             },
             "resume-run": {
-              "description": "Resume a reconciler-engine Run: grant the ready frontier",
+              "description": "Resume a reconciler-engine Run and preview the ready frontier",
               "options": {
                 "json": {
                   "description": "Output as JSON"
@@ -2730,6 +2730,16 @@
                 "project": {
                   "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
                 }
+              }
+            },
+            "admit": {
+              "description": "Admit and grant the exact previewed agent frontier from a private prompt manifest",
+              "options": {
+                "run": { "description": "Exact Run ID" },
+                "turn-input-file": { "description": "Private candidate-bound prompt manifest" },
+                "json": { "description": "Output as JSON" },
+                "store": { "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)" },
+                "project": { "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store." }
               }
             },
             "cancel": {
@@ -2872,6 +2882,9 @@
                 },
                 "resume": {
                   "description": "Exact Claude session ID to resume"
+                },
+                "inference-file": {
+                  "description": "Bounded rasen.inference/1 route-attempt file"
                 },
                 "json": {
                   "description": "Output one machine-readable receipt"
