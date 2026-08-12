@@ -7,6 +7,7 @@ import {
   derivePlanningScopeId,
   parseStoreProjectCatalogV2,
   parseStoreTargetLineCatalogV1,
+  resolveStorePlanningLayoutV2Path,
   serializeStoreMetadataState,
   serializeStoreProjectCatalogV2,
   serializeStoreTargetLineCatalogV1,
@@ -97,6 +98,44 @@ planningBinding:
     expect(catalog).not.toHaveProperty('adoption');
     expect(JSON.stringify(catalog)).not.toContain('localPath');
   });
+
+  // `id` is the project's human DISPLAY name, never an identifier (design
+  // Decision 6). The v1 membership record accepts any non-empty string there,
+  // so the v2 catalog must accept the same set or a Store holding what the
+  // field is documented to hold could never be migrated. `example-project`
+  // above cannot show this: it is itself a valid kebab id, so it passes both
+  // the fixed rule and the identifier rule this child removed.
+  it.each(['Elftia', 'my app'])(
+    'carries the human display name %s through unvalidated, exactly as the v1 record does',
+    displayName => {
+      const content = `version: 2
+projectId: ${PROJECT_ID}
+id: ${JSON.stringify(displayName)}
+roles: { planning: true, knowledge: false }
+planningBinding: { state: unbound }
+`;
+      const catalog = parseStoreProjectCatalogV2(content, `${PROJECT_ID}.yaml`);
+      expect(catalog.id).toBe(displayName);
+
+      const roundTripped = parseStoreProjectCatalogV2(
+        serializeStoreProjectCatalogV2(catalog),
+        `${PROJECT_ID}.yaml`
+      );
+      expect(roundTripped.id).toBe(displayName);
+      expect(roundTripped).toEqual(catalog);
+
+      // The migration source accepts it, so the migration target must too.
+      const legacy: StoreProjectRecord = {
+        version: 1,
+        projectId: PROJECT_ID,
+        id: displayName,
+        roles: { planning: true, knowledge: false },
+      };
+      expect(
+        parseStoreProjectRecord(serializeStoreProjectRecord(legacy), `${PROJECT_ID}.yaml`).id
+      ).toBe(displayName);
+    }
+  );
 
   it.each([
     'https://example.invalid/org/example-project.git',
@@ -429,6 +468,67 @@ describe('pure Store planning layout v2', () => {
         changeInstanceId: 'ci_bad' as ReturnType<typeof changeInstance>,
       })
     ).toThrow(StorePlanningValidationError);
+  });
+
+  // `path.win32.isAbsolute('/store')` is TRUE: Windows accepts a
+  // current-drive-rooted path, whose drive is supplied by process state. Under
+  // Windows semantics absoluteness alone is therefore NOT self-containment
+  // (design Decision 5 / "Drive-less Windows root is refused"). Both entry
+  // points reach that rule, so both are pinned here.
+  it.each([
+    { label: 'forward-slash', storeRoot: '/store' },
+    { label: 'backslash', storeRoot: '\\store' },
+  ])('refuses a drive-less $label-rooted Windows Store root', ({ storeRoot }) => {
+    expect(path.win32.isAbsolute(storeRoot)).toBe(true);
+
+    const refusals = [
+      () =>
+        computeStorePlanningLayoutV2({
+          storeRoot,
+          projectId: PROJECT_ID,
+          targetLineId: 'line-0.2',
+          changeId: 'drive-less',
+          archiveDate: '2026-08-04',
+          changeInstanceId: changeInstance('line-0.2', SEED_A),
+          flavor: 'win32',
+        }),
+      () => resolveStorePlanningLayoutV2Path(storeRoot, { kind: 'store-metadata' }, 'win32'),
+    ];
+
+    for (const refusal of refusals) {
+      try {
+        refusal();
+        throw new Error(`expected drive-less Windows root '${storeRoot}' to be refused`);
+      } catch (error) {
+        expect(error).toBeInstanceOf(StorePlanningValidationError);
+        expect(error).toMatchObject({
+          code: 'invalid_store_layout_v2',
+          field: 'storeRoot',
+        });
+      }
+    }
+  });
+
+  it.each([
+    { label: 'a drive', storeRoot: 'C:\\stores\\example' },
+    { label: 'a UNC share', storeRoot: String.raw`\\server\share\stores` },
+    { label: 'a device root', storeRoot: String.raw`\\?\C:\stores\example` },
+  ])('accepts a Windows Store root carrying $label', ({ storeRoot }) => {
+    const layout = computeStorePlanningLayoutV2({
+      storeRoot,
+      projectId: PROJECT_ID,
+      targetLineId: 'line-0.2',
+      changeId: 'self-contained',
+      archiveDate: '2026-08-04',
+      changeInstanceId: changeInstance('line-0.2', SEED_A),
+      flavor: 'win32',
+    });
+    expect(layout.storeMetadata).toBe(
+      path.win32.resolve(storeRoot, '.rasen-store', 'store.yaml')
+    );
+    expect(
+      resolveStorePlanningLayoutV2Path(storeRoot, { kind: 'store-metadata' }, 'win32')
+    ).toBe(layout.storeMetadata);
   });
 
   it.each(['2026-02-29', '2026-13-01', '2026-08-32'])(

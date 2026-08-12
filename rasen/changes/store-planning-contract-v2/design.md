@@ -231,9 +231,19 @@ from disk and asserts:
 
 Two properties make the allowlist honest. It is an **explicit list**, matching the repo rule "use
 existing constants and lists — don't invent detection mechanisms", so widening it is a visible diff a
-reviewer must approve. And it is transitively sound: `id.ts` has no imports, `zod-issues.ts` imports
-only a zod type, `identity-types.ts` imports only `node:crypto`, and `remote.ts` imports only
-`./errors.js`, which has no imports — each verified in this worktree.
+reviewer must approve. And it is transitively sound — *enforced*, not asserted. The guard follows the
+allowlisted edges into the dependency closure (`canonical-json.ts` → `canonicalize`; `id.ts` and
+`errors.ts` with no imports; `zod-issues.ts` → a zod type; `identity-types.ts` → `node:crypto`;
+`remote.ts` → `./errors.js`) and holds every file it reaches to its own explicit dependency allowlist
+and to the same forbidden-pattern list. A hand-verified prose claim would have been point-in-time
+only: a forbidden import added to an allowlisted dependency (`node:fs` in `id.ts`, say) falsifies the
+Layer-0 purity claim without touching a Layer-0 file at all. Only allowlisted edges are walked, so
+the governed set is exactly the walked set — a specifier outside the allowlist is a finding in its
+own right rather than a licence to drag the rest of the tree into this guard's surface.
+
+Specifier collection must cover static `import`, `export … from`, **and dynamic `import()`**: a
+single `await import('./foundation.js')` reaches `node:fs`, the Store registry, and the global data
+dir, so a collector that only reads static imports can be walked straight past.
 
 A guard in this repository is presumed non-discriminating until proven otherwise, so the
 implementation must include a recorded mutation proof: inject a forbidden import into one Layer-0

@@ -18,7 +18,8 @@ const LAYER_0_MODULES = [
   'finalization-v2.ts',
 ] as const;
 
-const STORE_DIR = path.resolve(__dirname, '../../../src/core/store');
+const SRC_DIR = path.resolve(__dirname, '../../../src');
+const STORE_DIR = path.join(SRC_DIR, 'core', 'store');
 
 const ALLOWED_IMPORT_SPECIFIERS = new Set([
   'zod',
@@ -34,6 +35,32 @@ const ALLOWED_IMPORT_SPECIFIERS = new Set([
   './planning-identity.js',
 ]);
 
+/**
+ * Design Decision 9 does not only claim the list above is closed — it claims it
+ * is *transitively sound*, because each allowlisted dependency was read by hand
+ * once. Prose cannot hold that: a forbidden import added to an allowlisted
+ * dependency makes the Layer-0 purity claim false without touching a Layer-0
+ * file. The guard therefore walks the whole dependency closure and holds every
+ * file it reaches to an explicit allowlist — this one for the dependencies, the
+ * narrower Layer-0 list above for the five contract modules themselves.
+ */
+const ALLOWED_DEPENDENCY_SPECIFIERS = new Set([
+  'zod',
+  'canonicalize',
+  'node:crypto',
+  './errors.js',
+]);
+
+/** Dependencies design Decision 9 names; the walk must actually reach them. */
+const EXPECTED_DEPENDENCY_LABELS = [
+  'core/canonical-json.ts',
+  'core/id.ts',
+  'core/store/errors.ts',
+  'core/store/identity-types.ts',
+  'core/store/remote.ts',
+  'core/zod-issues.ts',
+] as const;
+
 const FORBIDDEN_PATTERNS: ReadonlyArray<{ readonly label: string; readonly pattern: RegExp }> = [
   { label: 'node:fs', pattern: /(?:^|['"])(?:node:)?fs(?:\/promises)?(?:['"])/u },
   { label: 'node:child_process', pattern: /(?:^|['"])(?:node:)?child_process['"]/u },
@@ -45,40 +72,111 @@ const FORBIDDEN_PATTERNS: ReadonlyArray<{ readonly label: string; readonly patte
   { label: 'Store registry', pattern: /\.\/registry\.js|StoreRegistry/u },
 ];
 
-function readLayer0Source(fileName: string): string {
-  return fs.readFileSync(path.join(STORE_DIR, fileName), 'utf8');
-}
-
-function importSpecifiers(source: string): string[] {
+/**
+ * Static `import ... from '...'`, bare `import '...'`, `export ... from '...'`,
+ * and dynamic `import('...')`. The dynamic form is not a curiosity: a single
+ * `await import('./foundation.js')` reaches `node:fs`, the Store registry, and
+ * the global data dir, so a guard that only reads static imports can be walked
+ * straight past.
+ */
+function collectModuleSpecifiers(source: string): string[] {
   const specifiers: string[] = [];
-  const importPattern = /\bimport\s+(?:type\s+)?(?:[^'";]+?\s+from\s+)?['"]([^'"]+)['"]/gu;
-  let match: RegExpExecArray | null;
-  while ((match = importPattern.exec(source)) !== null) {
-    specifiers.push(match[1]!);
+  const patterns = [
+    /\b(?:import|export)\s+(?:type\s+)?(?:[^'";]+?\s+from\s+)?['"]([^'"]+)['"]/gu,
+    /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/gu,
+  ];
+  for (const pattern of patterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(source)) !== null) {
+      specifiers.push(match[1]!);
+    }
   }
   return specifiers;
 }
 
+function resolveRelativeSpecifier(specifier: string, importer: string): string {
+  const base = path.resolve(path.dirname(importer), specifier.replace(/\.js$/u, ''));
+  const direct = `${base}.ts`;
+  return fs.existsSync(direct) ? direct : path.join(base, 'index.ts');
+}
+
+interface ClosureModule {
+  readonly label: string;
+  readonly source: string;
+  readonly allowed: ReadonlySet<string>;
+}
+
+function buildLayer0Closure(): ClosureModule[] {
+  const seeds = LAYER_0_MODULES.map(fileName => path.join(STORE_DIR, fileName));
+  const seen = new Map<string, ClosureModule>();
+  const queue = [...seeds];
+
+  while (queue.length > 0) {
+    const file = queue.shift()!;
+    if (seen.has(file)) continue;
+    const allowed = seeds.includes(file)
+      ? ALLOWED_IMPORT_SPECIFIERS
+      : ALLOWED_DEPENDENCY_SPECIFIERS;
+    seen.set(file, {
+      label: path.relative(SRC_DIR, file).split(path.sep).join('/'),
+      source: fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '',
+      allowed,
+    });
+    for (const specifier of collectModuleSpecifiers(seen.get(file)!.source)) {
+      // Only ALLOWLISTED edges are followed, which keeps the walked set exactly
+      // the governed set: a specifier outside the allowlist is a finding of its
+      // own (reported by name below), not a licence to drag half the tree into
+      // this guard's surface and bury the finding under it.
+      if (!specifier.startsWith('.') || !allowed.has(specifier)) continue;
+      const dependency = resolveRelativeSpecifier(specifier, file);
+      if (fs.existsSync(dependency)) queue.push(dependency);
+    }
+  }
+
+  return [...seen.values()].sort((left, right) => left.label.localeCompare(right.label));
+}
+
+const LAYER_0_CLOSURE = buildLayer0Closure();
+
 describe('Store planning v2 Layer-0 purity', () => {
-  it.each(LAYER_0_MODULES)('reads %s from disk', fileName => {
-    expect(() => readLayer0Source(fileName)).not.toThrow();
+  it('walks exactly the Layer-0 modules and the dependencies Decision 9 claims are sound', () => {
+    // Exact, not `arrayContaining`: the governed set is the whole point, so
+    // growing it must be a visible diff someone approves — the same reason the
+    // specifier allowlists are explicit lists rather than inferred patterns.
+    expect(LAYER_0_CLOSURE.map(module => module.label).sort()).toEqual(
+      [
+        ...LAYER_0_MODULES.map(fileName => `core/store/${fileName}`),
+        ...EXPECTED_DEPENDENCY_LABELS,
+      ].sort()
+    );
   });
 
-  it.each(LAYER_0_MODULES)('imports only allowlisted specifiers in %s', fileName => {
-    const source = readLayer0Source(fileName);
-    const specifiers = importSpecifiers(source);
-    expect(specifiers.length).toBeGreaterThan(0);
-    for (const specifier of specifiers) {
-      expect(ALLOWED_IMPORT_SPECIFIERS.has(specifier)).toBe(true);
+  it.each(LAYER_0_CLOSURE)('reads $label from disk', module => {
+    expect(module.source.length).toBeGreaterThan(0);
+  });
+
+  it.each(LAYER_0_MODULES)('collects at least one import specifier from %s', fileName => {
+    const module = LAYER_0_CLOSURE.find(entry => entry.label === `core/store/${fileName}`);
+    expect(module).toBeDefined();
+    expect(collectModuleSpecifiers(module!.source).length).toBeGreaterThan(0);
+  });
+
+  it.each(LAYER_0_CLOSURE)('imports only allowlisted specifiers in $label', module => {
+    for (const specifier of collectModuleSpecifiers(module.source)) {
+      expect(
+        module.allowed.has(specifier),
+        `${module.label} must not import '${specifier}'`
+      ).toBe(true);
     }
   });
 
-  it.each(LAYER_0_MODULES)(
-    'contains no filesystem, process, or registry access in %s',
-    fileName => {
-      const source = readLayer0Source(fileName);
+  it.each(LAYER_0_CLOSURE)(
+    'contains no filesystem, process, or registry access in $label',
+    module => {
       for (const { label, pattern } of FORBIDDEN_PATTERNS) {
-        expect(pattern.test(source), `${fileName} must not reference ${label}`).toBe(false);
+        expect(pattern.test(module.source), `${module.label} must not reference ${label}`).toBe(
+          false
+        );
       }
     }
   );

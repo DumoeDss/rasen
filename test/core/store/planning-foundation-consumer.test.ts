@@ -8,8 +8,8 @@ import {
   parseProjectId,
   parseTargetLineId,
   serializeArchiveV2,
-  type ChangeInstanceId,
   type ProjectId,
+  type StorePlanningChangeInstanceId,
   type StorePlanningLayoutV2,
   type VerifiedChangeInstanceId,
   type VerifiedWorkspacePairId,
@@ -41,8 +41,8 @@ describe('public Store planning foundation consumer surface', () => {
 
     expectTypeOf(projectId).toEqualTypeOf<ProjectId>();
     expectTypeOf(changeInstanceId).toEqualTypeOf<VerifiedChangeInstanceId>();
-    expectTypeOf<VerifiedChangeInstanceId>().toMatchTypeOf<ChangeInstanceId>();
-    expectTypeOf<ChangeInstanceId>().not.toMatchTypeOf<
+    expectTypeOf<VerifiedChangeInstanceId>().toMatchTypeOf<StorePlanningChangeInstanceId>();
+    expectTypeOf<StorePlanningChangeInstanceId>().not.toMatchTypeOf<
       Parameters<typeof computeStorePlanningLayoutV2>[0]['changeInstanceId']
     >();
     expectTypeOf<string>().not.toMatchTypeOf<

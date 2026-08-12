@@ -279,6 +279,45 @@ describe('Archive v2 contract', () => {
     expect(() => validateArchiveV2(value)).toThrow(/archive/u);
   });
 
+  // A capability's canonical address is a slash-delimited PATH of kebab
+  // segments, not a single kebab id (design Decision 7). Every other fixture
+  // in this file uses the single-segment `auth`, which passes both the ported
+  // contract and the single-kebab rule this child replaced, so only a real
+  // nested address can tell them apart.
+  it.each(['store/planning-layout-v2', 'store/planning/layout-v2', 'auth'])(
+    'accepts capability address %s and preserves it verbatim',
+    capabilityId => {
+      const action = {
+        action: 'create',
+        capabilityId,
+        beforeSha256: null,
+        afterSha256: AFTER,
+      };
+      const value = archiveBase();
+      value.specSync.actions = [action];
+      expect(validateArchiveV2(value).specSync.actions).toEqual([action]);
+      expect(parseArchiveV2(serializeArchiveV2(value)).specSync.actions).toEqual([action]);
+    }
+  );
+
+  it.each([
+    { label: 'empty', capabilityId: '' },
+    { label: 'current directory', capabilityId: '.' },
+    { label: 'parent directory', capabilityId: '..' },
+    { label: 'traversal segment', capabilityId: 'store/../auth' },
+    { label: 'empty inner segment', capabilityId: 'store//auth' },
+    { label: 'leading separator', capabilityId: '/store' },
+    { label: 'trailing separator', capabilityId: 'store/' },
+    { label: 'backslash separator', capabilityId: String.raw`store\auth` },
+    { label: 'non-canonical case', capabilityId: 'Store/Auth' },
+  ])('rejects a $label capability address', ({ capabilityId }) => {
+    const value = archiveBase();
+    value.specSync.actions = [
+      { action: 'create', capabilityId, beforeSha256: null, afterSha256: AFTER },
+    ];
+    expect(() => validateArchiveV2(value)).toThrow(/archive/u);
+  });
+
   it.each([
     '/absolute/report.md',
     'C:/absolute/report.md',
