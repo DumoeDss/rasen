@@ -43,13 +43,101 @@
       }
     },
     "apply": {
-      "status": "pending"
+      "status": "done",
+      "commit": "eaefc01b",
+      "diffStat": "25 files changed, +3858/-99",
+      "tasksCompleted": "36/36",
+      "retiredVia": "standDown signal (LEAD-written) - consumed, DONE returned, worker stopped and slot freed",
+      "gateDecision": "auto-approved (global)",
+      "worker": {
+        "role": "implementer",
+        "runtime": "claude",
+        "dispatchMode": "native",
+        "agentId": "implementer-s1@session-54f71457",
+        "model": "sonnet",
+        "modelSource": "user-directive",
+        "horizon": "LOOP_BOUND",
+        "horizonBasis": "A verify stage follows apply immediately and non-trivial findings route back to the author, so the implementer parks in `rasen agent wait` pending the first review verdict rather than idling its cache out. keepalive.enabled resolves true (registry default; project config has an empty keepalive block) and the route is claude-native, so parking is permitted."
+      }
     },
     "verify": {
-      "status": "pending"
+      "status": "in_progress",
+      "verifyPolicy": "standard",
+      "worker": {
+        "role": "reviewer",
+        "runtime": "claude",
+        "dispatchMode": "native",
+        "agentId": "reviewer-s1@session-54f71457",
+        "model": "opus",
+        "horizon": "LOOP_BOUND",
+        "horizonBasis": "A review-loop stage follows; the reviewer re-reviews fix deltas, so it parks between rounds."
+      },
+      "authorIsNotVerifier": true,
+      "testGate": {
+        "command": "pnpm exec vitest run test/core/store test/core/change-run test/commands/store.test.ts test/commands/store-root-selection.test.ts test/cli-e2e/store-lifecycle.test.ts",
+        "status": "OPEN - not yet measured on a quiesced tree. Both LEAD re-runs are VOID (contaminated).",
+        "leadRerunsVoided": {
+          "cause": "LEAD METHODOLOGICAL ERROR. Both LEAD re-runs were executed against the SHARED working tree while reviewer-s1 was concurrently mutating source files in it - mutation testing the LEAD itself had instructed. A test gate taken on a tree another agent is actively mutating measures that agent, not the change.",
+          "run1": {
+            "startedAt": "18:25:36",
+            "durationSec": 346,
+            "observed": "2 failed; one identified as test/core/change-run/reservations.test.ts. Overlapped the reviewer's active window. VOID.",
+            "secondaryError": "The LEAD piped this run through `tail -45`, discarding the second failure's identity - the same reason-from-a-truncated-tail trap this repo has been burned by before."
+          },
+          "run2": {
+            "startedAt": "18:32:26",
+            "durationSec": 518,
+            "observed": "1 file / 2 tests failed, BOTH in test/core/store/planning-foundation-purity.test.ts naming planning-catalogs.ts.",
+            "diagnosis": "Almost certainly the reviewer's in-flight purity mutation: 2 failures naming one file is the exact signature the implementer documented for its own mutation proof. VOID."
+          },
+          "treeStateAfter": "git status is clean for src/ and test/ - the reviewer reverted. Confirms transient mutation, not a persisted defect."
+        },
+        "correctedStanding": "The implementer's own post-change run is the ONLY uncontaminated post-change measurement so far (no other agent was active during it). It reported 2 failures in test/cli-e2e/store-lifecycle.test.ts. The LEAD's earlier claim that 'the failing file differs between runs' was an artifact of the LEAD's own contaminated runs and is WITHDRAWN. The open question is unchanged and still real: are those 2 store-lifecycle failures CAUSED BY, EXPOSED BY, or INDEPENDENT OF commit eaefc01b - given the pre-change baseline on the same file set was 0 failures.",
+        "nextMeasurement": "Re-take the gate only on a QUIESCED tree - every worker parked or stood down and git status clean for src/ and test/ - or in an isolated detached worktree at the commit.",
+        "resolution": {
+          "verdict": "TRANSIENT, NON-REPRODUCING, CAUSE UNESTABLISHED. Not 'pre-existing' and not dismissible as 'flake'.",
+          "evidence": [
+            "LEAD pre-change baseline, uncontaminated: 104 files / 1264 passed / 0 failed.",
+            "Implementer post-change run, uncontaminated: 110 files / 1436 passed / 2 failed in test/cli-e2e/store-lifecycle.test.ts.",
+            "Reviewer independent re-run, same command, same commit eaefc01b, uncontaminated: 110 files / 1438 passed / 0 failed. 1438 = 1436 passed + 2 failed, proving the same test set ran.",
+            "Two LEAD runs in between: VOID, contaminated by the reviewer's concurrent mutation testing."
+          ],
+          "openItem": "One of the two original failures was NEVER read - the second FAIL block was not rendered in the implementer's captured output. The reviewer's causal lead, recorded so it is not lost: the printed stderr names add-billing (machine A's change, archived at store-lifecycle.test.ts:325-331 BEFORE machine B clones at :349-353) as still active, which is the signature of machine A's archive step failing first and cascading. This is durable cross-process reservation/archive state, an area with prior defects in this repo, so it is recorded as an open question rather than closed.",
+          "shipDecision": "Does NOT block ship on the evidence available: two independent uncontaminated runs on the same commit are clean, and no mechanism linking the failure to this Layer-0 diff has been established. Carried forward as a recorded open item, not silently dropped."
+        },
+        "preChangeBaseline": {
+          "result": "green",
+          "testFiles": 104,
+          "tests": 1264,
+          "skipped": 1,
+          "failures": 0,
+          "gitTreeFingerprint": "964a7c62d0c838360c62f68c7e1e2ee81a431f03"
+        },
+        "disputedClaim": "The implementer reported 2 failures in test/cli-e2e/store-lifecycle.test.ts and classified them as a pre-existing full-parallel-load isolation flake. The LEAD's own PRE-change baseline of that same file was GREEN with 0 failures, which is evidence against 'pre-existing'. Additionally the diff touches src/core/index.ts, a barrel with repo-wide blast radius, so 'the failing path is outside the diff' is weaker than it sounds. Classification treated as UNPROVEN pending the LEAD's independent re-run."
+      }
     },
     "review-loop": {
-      "status": "pending"
+      "status": "in_progress",
+      "loop": {
+        "kind": "review-cycle",
+        "maxRounds": 3
+      },
+      "round": 1,
+      "worker": {
+        "role": "fixer",
+        "runtime": "claude",
+        "dispatchMode": "native",
+        "agentId": "fixer-s1@session-54f71457",
+        "model": "opus",
+        "horizon": "LOOP_BOUND"
+      },
+      "routingDecision": "Fixes routed to a SEPARATE fixer, not the author. All three code Majors are one defect class - a requirement with an implementation but no discriminating test - and tasks 2.7/4.6 were ticked [x] while claiming exactly those scenarios. That is a judgment failure about what counts as coverage, so re-running the same judgment (and the same model tier) is the wrong configuration. The non-author reviewer still confirms the fix, per author != verifier.",
+      "acceptedKnown": [
+        "m4 - resolveStorePlanningLayoutV2Path is never called directly by any test",
+        "m5 - task 6.5 records no CI run reference",
+        "t1 - four cosmetic respellings vs the 0.1.7 reference",
+        "t2 - computeStorePlanningLayoutV2 tightened beyond the reference without a design note"
+      ]
     },
     "ship": {
       "status": "pending"
