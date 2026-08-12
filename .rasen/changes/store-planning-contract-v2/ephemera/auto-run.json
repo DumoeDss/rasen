@@ -61,7 +61,8 @@
       }
     },
     "verify": {
-      "status": "in_progress",
+      "status": "done",
+      "findings": "round 1: 0 Blocker / 4 Major / 5 Minor / 2 Trivial - all resolved",
       "verifyPolicy": "standard",
       "worker": {
         "role": "reviewer",
@@ -117,7 +118,20 @@
       }
     },
     "review-loop": {
-      "status": "in_progress",
+      "status": "done",
+      "outcome": "CLEAN - 0 Blocker / 0 Major open. 17 findings closed across 3 review rounds plus one escalation-ladder attempt, every one confirmed by a non-author who re-ran the mutation rather than accepting the recorded proof.",
+      "finalGate": {
+        "command": "pnpm exec vitest run test/core/store test/core/change-run test/commands/store.test.ts test/commands/store-root-selection.test.ts test/cli-e2e/store-lifecycle.test.ts",
+        "takenOn": "a QUIESCED tree - every worker returned or retired, git status clean for src/ and test/",
+        "result": "GREEN",
+        "testFiles": 110,
+        "passed": 1511,
+        "skipped": 1,
+        "failed": 0,
+        "durationSec": 299,
+        "comparedToBaseline": "pre-change 104 files / 1264 passed / 0 failed -> +6 files, +247 tests, NO regression",
+        "storeLifecycleResolution": "test/cli-e2e/store-lifecycle.test.ts passed here too - the fourth consecutive clean run since the implementer's single observed failure (reviewer, fixer, and this quiesced LEAD gate). Confirms the recorded verdict of transient / non-reproducing / cause unestablished. Does not block; the unread second failure and the machine-A archive cascade lead remain recorded as an open question."
+      },
       "loop": {
         "kind": "review-cycle",
         "maxRounds": 3
