@@ -2,7 +2,16 @@
   "pipeline": "small-feature",
   "stages": {
     "propose": {
-      "status": "pending"
+      "status": "in_progress",
+      "gateDecision": "auto-approved (global)",
+      "worker": {
+        "role": "planner",
+        "runtime": "claude",
+        "dispatchMode": "native",
+        "model": "opus",
+        "horizon": "ONE_SHOT",
+        "horizonBasis": "Persistent planner, but siblings are serialized behind full child pipelines so the gap to the next propose is long/unbounded; parking would burn the 12-beat cap. Re-engage per Step B.1 instead."
+      }
     },
     "apply": {
       "status": "pending"

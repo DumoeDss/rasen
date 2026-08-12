@@ -5,6 +5,16 @@
     "source": "global"
   },
   "tier": "A",
+  "planner": {
+    "role": "planner",
+    "runtime": "claude",
+    "dispatchMode": "native",
+    "agentId": "planner@session-54f71457",
+    "model": "opus",
+    "horizon": "ONE_SHOT",
+    "horizonBasis": "Persistent across all three proposes per Step B.1, but NOT parked between them: children are serialized behind full pipelines, so the gap to the next propose is long/unbounded and the 12-beat cap would burn out first. Re-engage per Step B.1 item 2, applying the H.2 warm-continue guard against the REUSE threshold (0.6), not the handoff threshold (0.7), because taking on a new child change is a cross-change re-staffing decision.",
+    "seed": "rasen/changes/store-v2-foundation/planning-context.md"
+  },
   "decomposeBasis": "Slice plan.md preferred ONE change but pre-authorised a split if the port proves too large at design time. The survey measured it: the minimum coherent unit that delivers Store Issues is ~13,800 LOC of source plus ~345 KB of tests across three grepped dependency layers. That is not one reviewable diff, so the split is taken. Slicing deliberately mirrors 0.1.7's own proven delivery order (9 archived changes on origin/dev/0.1.7).",
   "parallelism": {
     "decision": "none",
@@ -46,9 +56,8 @@
       "node": "S2",
       "delivers": "Layer 1: planning worktree bindings (workspace locks/registry/binding/cleanup/plan/apply) and target-line catalog operations. Required because issues/ imports workspace/{dependencies,locks,binding,registry}.",
       "touches": [
-        "src/core/store/workspace/** (13 files)",
+        "src/core/store/workspace/** (all 13 files - see scopeNote, subset is NOT viable)",
         "src/core/store/target-lines.ts",
-        "src/core/store/membership-layout.ts",
         "src/commands/workspace.ts",
         "src/commands/store-target-line.ts",
         "test/core/store/workspace-*.test.ts",
@@ -61,7 +70,8 @@
         "store-target-lines (4 req)"
       ],
       "priorArt": "origin/dev/0.1.7 rasen/changes/archive/2026-08-08-store-planning-worktree-bindings (+ two archived fixups: 2026-08-09-fix-existing-change-workspace-binding, 2026-08-10-fix-workspace-claim-portability)",
-      "scopeNote": "OPEN AT DESIGN TIME: whether the whole workspace/ module is required, or only the subset issues/ actually imports. The planner must decide this from the import graph, not port blindly."
+      "scopeNote": "RESOLVED 2026-08-12 - port workspace/ WHOLE. A minimal subset is not viable. issues/ takes only 12 symbols across 4 files, and the source-only closure is 7 of 13 files (3,212 of 6,445 LOC, a ~50% paper saving). But test/helpers/store-workspace-fixture.ts:31 imports StoreWorkspace from workspace/module.js, and module.js pulls apply + cleanup + plan, so the closure is all 13. Five of S3's ten test files go through that fixture (store-aggregate-query 24 cases, store-query-lock-free, store-issue-cli, store-aggregate-cli, store-issue-scope-intent). Buying the ~2,900-LOC saving would mean discarding the 0.1.7 test suite that the entire portfolio leans on as prior art, to save source S2 is chartered to deliver anyway. LEAD-verified.",
+      "scopeChange": "membership-layout.ts REMOVED from this child 2026-08-12 and deferred to the layout-migration slice (L2). Evidence: membership-layout.ts:18 imports layout-write-guard.js, which at line 23 imports layout-migration/receipt.js, dragging a bounded 5-file / 1,737-LOC piece of a LATER roadmap slice into this one. The consumer graph confirms it does not belong here: every consumer of membership-layout is bootstrap.ts, membership.ts, migration-ops.ts, migration-ops-v2.ts, or layout-migration/diagnostics.ts. Neither issues/ nor query/ nor any S1 file imports it, so it has ZERO consumers inside this portfolio's scope."
     },
     {
       "id": "store-issue-resources",
@@ -87,7 +97,19 @@
         "store-issue-resources (11 req)",
         "store-aggregate-query (7 req)"
       ],
-      "priorArt": "origin/dev/0.1.7 rasen/changes/archive/2026-08-08-store-scoped-issues-management"
+      "priorArt": "origin/dev/0.1.7 rasen/changes/archive/2026-08-08-store-scoped-issues-management",
+      "deferredTest": {
+        "file": "test/core/store/store-issue-scope-intent.test.ts",
+        "cases": 7,
+        "reason": "Transitively requires an out-of-scope later slice. It imports test/helpers/store-finalization-fixture.js, which imports src/core/store/finalization/index.js (12 files, 4,785 LOC) and specs-apply/archive-engine; the test body itself imports StorePlanning from src/core/store-planning/index.js (6 files, 3,787 LOC). Both belong to the finalization slice (L3+L5). It is the only one of S3's ten test files with this property. LEAD-verified against origin/dev/0.1.7.",
+        "mandateForPlanner": "Do NOT silently drop it, and do NOT drag finalization/ into this child to satisfy it. Deferring the FILE is acceptable; shipping issues/scope.ts with NO coverage is not. The S3 planner MUST determine which behaviours of issues/scope.ts (207 LOC) are covered only by this file, and author equivalent finalization-free coverage for them in this child. Record the deferral and the substitute coverage explicitly in the proposal, and hand the file itself forward as an inbound acceptance item for the finalization slice."
+      },
+      "reviewHazard": {
+        "symbol": "assertStoreLockOrderAgreesWithWorkspace",
+        "site": "src/core/store/issues/locks.ts:101 (called at module load)",
+        "hazard": "It compares STORE_LOCK_ORDER.slice(1) element-wise against WORKSPACE_LOCK_ORDER = ['scope','workspace','change','integration'] - two frozen arrays. It therefore keeps PASSING under any partial port even when the ordering it encodes has no enforcement surface left: 'workspace' is taken only by workspace/apply.ts and cleanup.ts, and 'change'/'integration' only by finalization/. The file's own docstring names this failure mode - 'the precise way an ordering gate keeps passing while it stops meaning anything.' Compile-clean and silently vacuous.",
+        "instructionForReviewer": "Comparing the two arrays proves NOTHING about this child. To confirm lock ordering actually survived, verify that each kind in STORE_LOCK_ORDER has a real TAKER in shipped code, and treat any kind whose taker lives in a deferred slice as explicitly unenforced-by-design rather than as covered."
+      }
     }
   ],
   "delivery": {
@@ -95,7 +117,12 @@
     "note": "Children ship local (commit only). Single portfolio-level delivery at the parent after all three are terminal."
   },
   "outOfScope": {
-    "S4-finalization": "src/core/store/finalization/** + src/core/store-planning/** - roadmap slice 'finalization + stored-plan' (L3+L5), not this slice.",
-    "S5-layout-migration": "src/core/store/layout-migration/** + layout-write-guard + migration-ops-v2 + consistency-gates - roadmap slice 'layout-migration' (L2), not this slice."
-  }
+    "S4-finalization": "src/core/store/finalization/** + src/core/store-planning/** - roadmap slice 'finalization + stored-plan' (L3+L5), not this slice. INBOUND ITEM: test/core/store/store-issue-scope-intent.test.ts (7 cases) is deferred to this slice from S3 - see children[2].deferredTest.",
+    "S5-layout-migration": "src/core/store/layout-migration/** + layout-write-guard + migration-ops-v2 + consistency-gates - roadmap slice 'layout-migration' (L2), not this slice. INBOUND ITEM: membership-layout.ts moved here from S2 - see children[1].scopeChange."
+  },
+  "portfolioLessons": [
+    "The 0.1.7 TEST HELPERS are the real coupling graph, not the src imports. test/helpers/store-workspace-fixture.ts -> workspace/module.js and test/helpers/store-finalization-fixture.ts -> finalization/index.js are what actually decide slice boundaries here. Both scope surprises in this portfolio came from test/helpers/ and neither was visible in the src import graph. Any future 'can we port a subset of X' question in this codebase starts at test/helpers/, not at src/.",
+    "Keep ported file layout byte-comparable to origin/dev/0.1.7 wherever possible. That comparability is what makes the 9 archived 0.1.7 changes usable as a diff-able reference, and it is worth more than local tidiness. Concretely: do NOT extract the two string constants issues/ takes out of workspace/binding.ts (611 LOC) just because they look separable.",
+    "Re-run `git diff e62b101f origin/dev/0.2.0 -- src/core/store` before trusting any future claim that the store lines diverged. It is currently EMPTY and it is the cheapest possible check."
+  ]
 }

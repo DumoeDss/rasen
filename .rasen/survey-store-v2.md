@@ -517,3 +517,222 @@ Missing spec capabilities on 0.2.0 (9 dirs, 76 requirements, 165 KB of spec text
   their blobs differ between branches and that finalization/layout-migration import them.
 - Test-case counts are `it(`-prefix greps at fixed indent levels; parametrized `it.each` blocks
   count as one.
+
+---
+
+## 7. Minimal `workspace/` subset for `issues/`
+
+**VERDICT: port the module whole.** The minimal subset is real on the source import graph
+(7 of 13 files, 50% of the LOC) but it collapses to zero saving at the test boundary — 5 of S3's
+10 test files reach `workspace/module.ts`, which imports `apply`, `cleanup`, and `plan`.
+
+### 7.1 The exact symbols `issues/**` imports out of `workspace/`
+
+Twelve symbols across four files. Verified by reading each import block.
+
+| From | Symbol | Kind | Imported by |
+|---|---|---|---|
+| `workspace/dependencies.ts` | `nodeWorkspaceFileSystem` | value | `issues/dependencies.ts` |
+| | `createNodeWorkspaceCoordination` | value | `issues/dependencies.ts` |
+| | `nodeWorkspaceGit` | value | `issues/dependencies.ts` |
+| | `WorkspaceFileSystem` | type | `issues/dependencies.ts` |
+| | `WorkspaceCoordination` | type | `issues/dependencies.ts`, `issues/locks.ts` |
+| `workspace/locks.ts` | `LOCKS_DIR_NAME` | value | `issues/locks.ts` |
+| | `WORKSPACE_LOCK_ORDER` | value | `issues/locks.ts` |
+| | `heldLockKinds` | value | `issues/locks.ts` |
+| | `WorkspaceLockKind` | type | `issues/locks.ts` |
+| `workspace/binding.ts` | `PLANNING_MARKER_FILE_NAME` | value (string const) | `issues/scope.ts` |
+| | `RUN_STATE_DIR_NAME` | value (string const) | `issues/scope.ts` |
+| `workspace/registry.ts` | `listAllWorkspaceIndexEntries` | value | `issues/scope.ts` |
+
+`issues/dependencies.ts` states the intent explicitly: *"The filesystem, coordination, and worktree
+adapters are the workspace Module's implementations rather than second copies: they are the same
+machine facilities, and a second copy would drift."*
+
+### 7.2 Transitive closure within `workspace/`
+
+Internal edges (from `git grep "from './'"` over `workspace/`):
+
+```
+dependencies.ts → diagnostics.ts
+diagnostics.ts  → types.ts
+types.ts        → (no internal imports)
+locks.ts        → diagnostics.ts, dependencies.ts
+registry.ts     → dependencies.ts, types.ts
+binding.ts      → dependencies.ts, diagnostics.ts, identity.ts, registry.ts, types.ts
+identity.ts     → dependencies.ts, diagnostics.ts
+─────────────────────────────────────────────────────────────────────
+scope.ts        → dependencies.ts, diagnostics.ts, identity.ts
+plan.ts         → binding, dependencies, diagnostics, identity, registry, scope, types
+apply.ts        → binding, dependencies, diagnostics, identity, registry, types
+cleanup.ts      → binding, dependencies, diagnostics, identity, locks, registry, scope, types
+module.ts       → apply, binding, cleanup, dependencies, diagnostics, identity, locks, plan, registry, types
+index.ts        → binding, dependencies, diagnostics, identity, locks, module, plan, registry, types
+```
+
+**Closure A — `issues/**` source only: 7 of 13 files, 3,212 of 6,445 LOC (50%)**
+
+| Reached | LOC | | Never reached | LOC |
+|---|---|---|---|---|
+| `dependencies.ts` | 1,444 | | `plan.ts` | 901 |
+| `binding.ts` | 611 | | `module.ts` | 794 |
+| `types.ts` | 412 | | `cleanup.ts` | 705 |
+| `locks.ts` | 284 | | `apply.ts` | 479 |
+| `registry.ts` | 222 | | `scope.ts` | 291 |
+| `identity.ts` | 160 | | `index.ts` | 63 |
+| `diagnostics.ts` | 79 | | | |
+| **total** | **3,212** | | **total** | **3,233** |
+
+### 7.3 What else in THIS portfolio's scope reaches the unreached six
+
+| Consumer (in scope) | Reaches | Effect on closure |
+|---|---|---|
+| `query/**` | `workspace/registry.js`, `workspace/dependencies.js` | already in Closure A — **no growth** |
+| `store-issue.ts` (CLI) | `issues/index.js`, `query/index.js`, `store/errors.js` only | **no growth** |
+| `store-aggregate.ts` (CLI) | `query/index.js`, `store/errors.js` only | **no growth** |
+| `membership-layout.ts` | nothing under `workspace/` | **no growth** (but see 7.4e) |
+| **`target-lines.ts`** | **`workspace/scope.js`** (+ `dependencies`, `diagnostics`, `identity`, `locks`, `types`) | **+`scope.ts`** |
+
+`target-lines.ts` pulls nine symbols out of `workspace/scope.js`: `resolveWorkspaceStore`,
+`ResolvedWorkspaceStore`, `readProjectCatalog`, `readTargetLineCatalog`,
+`requireTargetLineCatalog`, `listTargetLineCatalogs`, `targetLineCatalogPath`,
+`resolveProjectRepositoryRoot`, `storeRelativePosix`.
+
+**Closure B — + `target-lines.ts`: 8 of 13 files, 3,503 LOC.** Unreached drops to 5 files / 2,942 LOC
+(`apply`, `cleanup`, `module`, `plan`, `index`).
+
+What the still-unreached five are for:
+- `plan.ts` (901) — `buildWorkspacePlan`, `resolveWorkspaceContext`, `workspaceBranchRef`: computes the plan to create/bind a planning worktree
+- `apply.ts` (479) — `applyWorkspacePlan`: executes it (git worktree add + index writes)
+- `cleanup.ts` (705) — `buildCleanupPlan`, `applyCleanupPlan`, `cleanupGateError`: worktree release/removal, the concurrency-sensitive path
+- `module.ts` (794) — the public `StoreWorkspace` module + `completeChangeBinding`
+- `index.ts` (63) — public barrel
+
+### 7.4 Coupled in practice — five flags
+
+**(a) The test fixture is the hard blocker — this is what decides it.**
+
+`test/helpers/store-workspace-fixture.ts:31` imports `StoreWorkspace` from
+`src/core/store/workspace/module.js` (and `StoreTargetLinesModule` from `target-lines.js`).
+`module.ts` imports `apply`, `cleanup`, `plan` → **the closure becomes all 13 files.**
+
+Per-test-file dependency of the S3 suite:
+
+| S3 test file | cases | deepest reach |
+|---|---|---|
+| `store-issue-layout.test.ts` | 20 | `planning-foundation` + `issues/` — clean |
+| `store-execution-plans.test.ts` | 21 | `planning-foundation` + `issues/` — clean |
+| `store-issue-migration-compiler.test.ts` | 4 | `issues/` only — clean |
+| `store-query-read-only-guard.test.ts` | 10 | `query/dependencies` + source-text scan — clean |
+| `store-issue-locks.test.ts` | 19 | `workspace/dependencies.js` — **in Closure A** |
+| `store-aggregate-query.test.ts` | 24 | `store-workspace-fixture` → **`workspace/module.js`** |
+| `store-query-lock-free.test.ts` | 5 | `store-workspace-fixture` → **`workspace/module.js`** |
+| `test/commands/store-issue-cli.test.ts` | CLI | `store-workspace-fixture` → **`workspace/module.js`** |
+| `test/commands/store-aggregate-cli.test.ts` | CLI | `store-workspace-fixture` → **`workspace/module.js`** |
+| `store-issue-scope-intent.test.ts` | 7 | `store-finalization-fixture` → **`finalization/` + `store-planning/`** (see (b)) |
+
+**5 of 10 S3 test files** require the whole workspace module.
+
+**(b) SCOPE ALERT — one S3 test file requires S4 (finalization), which is out of scope.**
+
+`test/core/store/store-issue-scope-intent.test.ts` (7 cases) imports
+`createStoreFinalizationFixture` from `test/helpers/store-finalization-fixture.ts`, which imports:
+- `src/core/store/finalization/index.js` (line 30)
+- `src/core/store/finalization/dependencies.js` (line 35)
+- `completeChangeBinding` from `src/core/store/workspace/module.js` (line 36)
+- `src/core/specs-apply.js`, `src/core/archive-engine.js` (lines 21–22)
+
+and the test itself imports `StorePlanning` from `src/core/store-planning/index.js` (line 20).
+
+So this S3 test transitively needs the entire `finalization/` module (12 files, 4,785 LOC) **and**
+`src/core/store-planning/` (6 files, 3,787 LOC) — both assigned to the LATER roadmap slice.
+**S3's definition of done must either defer this file, or rewrite it without the finalization
+fixture.** It is the only S3 test with this property; the other nine are clean of `finalization/`.
+This is a finding about S3, not S2.
+
+**(c) Lock ordering — a subset ships a gate that passes but stops meaning anything.**
+
+`workspace/locks.ts` defines `WorkspaceLockKind = 'scope' | 'workspace' | 'change' | 'integration'`
+and `WORKSPACE_LOCK_ORDER = ['scope','workspace','change','integration']`.
+`issues/locks.ts` defines `STORE_LOCK_ORDER = ['issue','scope','workspace','change','integration']`
+and calls `assertStoreLockOrderAgreesWithWorkspace()` **at module load** (`issues/locks.ts:101`),
+which element-wise compares `STORE_LOCK_ORDER.slice(1)` against `WORKSPACE_LOCK_ORDER`.
+
+Who actually takes each kind (from the `workspace/locks.ts` header table):
+
+| kind | taken by | in a minimal subset? |
+|---|---|---|
+| `issue` | Issue/Plan writes | yes |
+| `scope` | target-line writes, plan/apply, cleanup | partly — only via `target-lines.ts` |
+| `workspace` | **`apply.ts`, `cleanup.ts`** | **no taker at all** |
+| `change` | published for `finalization/` | no taker |
+| `integration` | published for `finalization/` | no taker |
+
+Under a minimal subset the assertion **still passes** — it only compares two frozen arrays — while
+3 of its 5 keys have no enforcement surface in the shipped code. The file's own docstring names
+exactly this failure mode: *"which is the precise way an ordering gate keeps passing while it stops
+meaning anything."* Compile-clean, silently vacuous. Not a blocker on its own, but it is invisible
+and belongs in the record.
+
+**(d) `binding.ts` looks separable and is not worth separating.**
+
+`issues/scope.ts` takes only two string constants out of it — `PLANNING_MARKER_FILE_NAME` and
+`RUN_STATE_DIR_NAME` — from a 611-LOC file. Tempting to extract into a small constants module.
+**Recommend against**: every other `binding.ts` export is consumed by `module`/`plan`/`apply`/
+`cleanup`, and extracting would diverge the file layout from `origin/dev/0.1.7`, which is what makes
+the 9 archived changes usable as a diff-able reference. Keep the file shape identical to 0.1.7.
+
+**(e) `membership-layout.ts` leaks S2 into S5 — bounded, but real.**
+
+`membership-layout.ts:18` imports `readStoreLayoutState` from `./layout-write-guard.js`, and
+`layout-write-guard.ts:23` imports `readMigrationReceipt` from `./layout-migration/receipt.js`.
+Closure of that edge: `layout-migration/{receipt(639), types(445), dependencies(427),
+flat-source(214), strict-text(12)}` = **5 files, 1,737 LOC**. Verified bounded — none of those five
+pull `plan.ts`, `apply.ts`, `mapping.ts`, or `module.ts` from `layout-migration/`.
+If `membership-layout.ts` stays in S2, S2 must carry that 5-file sub-slice, or `membership-layout.ts`
+should move to the later layout-migration slice.
+
+**(f) `workspace/dependencies.ts` (1,444 LOC) cannot shrink.** It is entry point #1 for `issues/`
+and holds the whole adapter layer: `nodeWorkspaceFileSystem`, `nodeWorkspaceGit`,
+`createNodeWorkspaceCoordination`, `productionStoreWorkspaceDependencies`,
+`withDeterministicWorkspaceIdentity`, the atomic-write machinery
+(`AtomicWorkspaceWriteConflictError`, `AtomicWorkspaceCarrierAuthority`,
+`AtomicWorkspaceExpectedBefore`), and the verb allow-lists `GIT_WRITE_VERBS = ['worktree']` /
+`GIT_READ_VERBS` / `GIT_WORKTREE_SUBCOMMANDS`. Those verb lists are what
+`store-query-read-only-guard.test.ts` leans on to prove `issues/` performs no Git write; moving
+them would break the guard's meaning without breaking its build.
+
+### 7.5 Verdict and evidence
+
+**Port `workspace/` whole (13 files, 6,445 LOC). Minimal-subset is NOT viable.**
+
+1. The source-only saving is genuine but modest: Closure A is 7/13 files, 3,212 LOC — and
+   `target-lines.ts`, already inside S2's charter, immediately pulls `scope.ts` to make it 8/13,
+   3,503 LOC (Closure B).
+2. **The saving is fully erased by the tests.** `store-workspace-fixture.ts` imports
+   `workspace/module.js`, which imports `apply`/`cleanup`/`plan`; five S3 test files (including
+   `store-aggregate-query.test.ts`, the largest query suite at 24 cases / 31.8 KB, plus both CLI
+   journey suites) go through that fixture. Closure C = all 13 files.
+3. Buying the ~2,900-LOC saving therefore means rewriting the shared fixture plus five test files
+   to stand up planning worktrees without `StoreWorkspace` — i.e. discarding the 0.1.7 test suite,
+   which this portfolio's plan explicitly leans on as prior art. That trades the most valuable
+   asset for source S2 is chartered to deliver anyway.
+4. Cohesion confirms it: `module.ts` is the public face, `plan`/`apply`/`cleanup` are the
+   three phases behind it, and the lock vocabulary (7.4c) is defined once for all of them. Partial
+   porting would strand S3 and leave a green-but-vacuous lock-order gate.
+
+**Net effect on the portfolio: S2 stays ~7,200 LOC as planned. The scope risk you flagged is real
+but does not resolve in the shrinking direction** — and the two genuine scope surprises are
+elsewhere: S3's `store-issue-scope-intent.test.ts` needs S4 (7.4b), and `membership-layout.ts`
+needs a 5-file slice of `layout-migration/` (7.4e).
+
+### 7.6 UNVERIFIED in this section
+
+- I read the bodies of `workspace/locks.ts` (head), `workspace/dependencies.ts` (export list only),
+  `issues/{dependencies,locks,scope,module}.ts` import blocks, and both test helper import blocks.
+  I did **not** read `apply.ts`, `cleanup.ts`, `plan.ts`, `module.ts`, or `scope.ts` bodies — their
+  roles above come from export names, the `workspace/locks.ts` header table, and filenames.
+- I did not attempt a compile of any subset. "Closure A compiles" is an import-graph inference,
+  not an executed `tsc` result.
+- Whether `store-issue-scope-intent.test.ts` could be rewritten without the finalization fixture is
+  unassessed — I established only that as written it requires `finalization/` + `store-planning/`.
