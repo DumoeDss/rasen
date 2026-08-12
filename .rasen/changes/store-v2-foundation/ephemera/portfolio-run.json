@@ -32,7 +32,16 @@
       "id": "store-planning-contract-v2",
       "pipeline": "small-feature",
       "dependsOn": [],
-      "status": "pending",
+      "status": "done",
+      "completion": {
+        "implemented": true,
+        "reviewClean": true,
+        "shipped": "local (f8e17e3d)",
+        "archive": "pending - correctly blocked by task 6.5, whose CI run reference cannot exist until the portfolio's single PR. Unblocks at portfolio delivery.",
+        "reviewSummary": "17 findings closed across 3 rounds plus one escalation-ladder attempt; final 0 Blocker / 0 Major, every one confirmed by a non-author re-running the mutation.",
+        "finalGate": "110 files / 1511 passed / 1 skipped / 0 failed on a quiesced tree, vs a 104 / 1264 / 0 pre-change baseline.",
+        "note": "Marked done because it is implemented and review-clean, which is what Step G requires to unblock a dependent child. Its archive is gated on portfolio delivery, not on any remaining work."
+      },
       "node": "S1",
       "delivers": "Layer 0 pure planning contract: branded IDs + derive/verify, id/text/state validators, project & target-line catalog schemas, the v2 on-disk layout resolver, finalization contract types, canonical-json.",
       "touches": [

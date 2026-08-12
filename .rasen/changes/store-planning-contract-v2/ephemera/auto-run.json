@@ -232,10 +232,31 @@
       ]
     },
     "ship": {
-      "status": "pending"
+      "status": "done",
+      "mode": "local",
+      "gateDecision": "auto-approved (global)",
+      "shipLog": "rasen/changes/store-planning-contract-v2/evidence/ship-log.md",
+      "commit": "f8e17e3d",
+      "worker": {
+        "role": "shipper",
+        "runtime": "claude",
+        "dispatchMode": "native",
+        "agentId": "shipper-s1@session-54f71457",
+        "model": "sonnet",
+        "modelSource": "stage-definition + user-directive",
+        "horizon": "ONE_SHOT"
+      },
+      "confirmed": "No remote ref created or moved (gh pr view finds no PR for the branch; git branch -vv shows ahead 23, unpushed). No 'Archived in ship:' line, and no '## Archive' heading pre-written in the ship log - that heading would make a later `rasen archive` refuse with archive_recovery_required.",
+      "carriedForwardHonestly": [
+        "Task 6.5 is deliberately [ ] and the change is 35/36, not complete - its CI run reference is structurally unavailable until the portfolio PR exists.",
+        "The store-lifecycle transient failure: transient / non-reproducing / cause unestablished, 4-for-4 clean since, one of the two original failures never read."
+      ]
     },
     "archive": {
-      "status": "pending"
+      "status": "pending",
+      "reason": "Correctly blocked, verified by the LEAD's own `rasen archive --dry-run --json`: /archive/blockers = [{operation: 'tasks', message: '1 task(s) are incomplete.'}]. That is task 6.5, whose CI run reference cannot exist until the portfolio opens its single PR at the parent. No archive worker was dispatched - the blocker is known and intended, so a dispatch would only produce a refusal.",
+      "unblockedBy": "Portfolio delivery at the parent -> PR CI run -> record the run reference in 6.5 -> archive.",
+      "stageResidue": "none - no .rasen-archive-stage-* left by the dry-run"
     }
   }
 }
