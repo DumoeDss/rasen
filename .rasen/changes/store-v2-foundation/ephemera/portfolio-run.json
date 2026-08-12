@@ -127,6 +127,26 @@
     "S4-finalization": "src/core/store/finalization/** + src/core/store-planning/** - roadmap slice 'finalization + stored-plan' (L3+L5), not this slice. INBOUND ITEM: test/core/store/store-issue-scope-intent.test.ts (7 cases) is deferred to this slice from S3 - see children[2].deferredTest.",
     "S5-layout-migration": "src/core/store/layout-migration/** + layout-write-guard + migration-ops-v2 + consistency-gates - roadmap slice 'layout-migration' (L2), not this slice. INBOUND ITEM: membership-layout.ts moved here from S2 - see children[1].scopeChange."
   },
+  "inboundNotesFromS1": {
+    "brandVocabularyGuardBlindSpot": {
+      "appliesTo": [
+        "store-worktree-bindings-v2",
+        "store-issue-resources"
+      ],
+      "severity": "Trivial in S1, but with a LIVE consumer in both later children",
+      "what": "S1 ships a guard in test/core/store/planning-foundation-consumer.test.ts that reads branded-type declarations out of the Layer-0 sources and fails by name if a brand reaches the vocabulary without a bare-string pin. It closes the recurring 'a type assertion reached through a derived type is inert against its base' defect. But the guard reads exactly THREE hardcoded source files.",
+      "consequence": "S2 and S3 both add new modules to src/core/store/. Any brand declared in a file outside those three inherits NONE of this guard - the suite stays fully green. Two further blind spots, both requiring a deliberate act: a commented-out pin still counts as present (text scan), and a brand declared with a line break after the `=` is invisible while the count assertion still passes (there is no formatter backstop - no prettier config, lint is eslint only).",
+      "actionForPlanner": "When proposing S2 and S3, decide explicitly whether new branded types are in scope. If they are, extend the guard's source list in the same change that introduces them - do NOT leave a new brand unguarded and do not assume the S1 guard covers it."
+    },
+    "relationalAssertionBlindness": {
+      "appliesTo": [
+        "store-worktree-bindings-v2",
+        "store-issue-resources"
+      ],
+      "what": "S1's most expensive lesson, established over three review rounds plus an escalation-ladder attempt. A test suite built entirely from toMatch(shape), .toBe(other), .not.toBe(other) and distinct-set counts is UNIFORMLY BLIND to any change that transforms every value the same way - which is exactly what a preimage, digest, or serialization-format change does. Three consecutive rounds of 217/217 green missed it: the problem was never too few assertions, it was an assertion SHAPE structurally immune to the defect class.",
+      "actionForPlanner": "S3 in particular ships executionPlanDigest and the Issue/Plan serializers - the same durable-format shape. Require known-input/known-digest golden vectors in the proposal, with pinned LITERAL inputs per vector (never chained off the previous derivation, or a break smears across all vectors instead of localising). Require that each vector also walks back through its own verifier, so a preimage change cannot hide behind a verifier that stopped checking."
+    }
+  },
   "portfolioLessons": [
     "The 0.1.7 TEST HELPERS are the real coupling graph, not the src imports. test/helpers/store-workspace-fixture.ts -> workspace/module.js and test/helpers/store-finalization-fixture.ts -> finalization/index.js are what actually decide slice boundaries here. Both scope surprises in this portfolio came from test/helpers/ and neither was visible in the src import graph. Any future 'can we port a subset of X' question in this codebase starts at test/helpers/, not at src/.",
     "Keep ported file layout byte-comparable to origin/dev/0.1.7 wherever possible. That comparability is what makes the 9 archived 0.1.7 changes usable as a diff-able reference, and it is worth more than local tidiness. Concretely: do NOT extract the two string constants issues/ takes out of workspace/binding.ts (611 LOC) just because they look separable.",
