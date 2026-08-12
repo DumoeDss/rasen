@@ -1,0 +1,101 @@
+{
+  "parent": "store-v2-foundation",
+  "gatePolicy": {
+    "effective": "off",
+    "source": "global"
+  },
+  "tier": "A",
+  "decomposeBasis": "Slice plan.md preferred ONE change but pre-authorised a split if the port proves too large at design time. The survey measured it: the minimum coherent unit that delivers Store Issues is ~13,800 LOC of source plus ~345 KB of tests across three grepped dependency layers. That is not one reviewable diff, so the split is taken. Slicing deliberately mirrors 0.1.7's own proven delivery order (9 archived changes on origin/dev/0.1.7).",
+  "parallelism": {
+    "decision": "none",
+    "basis": "Strict dependency chain S1 -> S2 -> S3, every edge grepped. Slice plan.md independently declares 'Parallelism: None'. No positive independence proof exists between any pair, so all three run serially."
+  },
+  "children": [
+    {
+      "id": "store-planning-contract-v2",
+      "pipeline": "small-feature",
+      "dependsOn": [],
+      "status": "pending",
+      "node": "S1",
+      "delivers": "Layer 0 pure planning contract: branded IDs + derive/verify, id/text/state validators, project & target-line catalog schemas, the v2 on-disk layout resolver, finalization contract types, canonical-json.",
+      "touches": [
+        "src/core/store/planning-validation.ts",
+        "src/core/store/planning-catalogs.ts",
+        "src/core/store/planning-identity.ts",
+        "src/core/store/planning-layout-v2.ts",
+        "src/core/store/finalization-v2.ts",
+        "src/core/store/planning-foundation.ts",
+        "src/core/canonical-json.ts",
+        "src/core/store/index.ts (+1 export line)",
+        "test/core/store/planning-*.test.ts"
+      ],
+      "collisionClass": "A (free drop) - zero Category-B collisions with 0.2.0",
+      "referenceSpecs": [
+        "store-planning-identity-v2 (6 req)",
+        "store-planning-layout-v2 (9 req)"
+      ],
+      "priorArt": "origin/dev/0.1.7 rasen/changes/archive/2026-08-05-store-planning-foundation-v2"
+    },
+    {
+      "id": "store-worktree-bindings-v2",
+      "pipeline": "small-feature",
+      "dependsOn": [
+        "store-planning-contract-v2"
+      ],
+      "status": "pending",
+      "node": "S2",
+      "delivers": "Layer 1: planning worktree bindings (workspace locks/registry/binding/cleanup/plan/apply) and target-line catalog operations. Required because issues/ imports workspace/{dependencies,locks,binding,registry}.",
+      "touches": [
+        "src/core/store/workspace/** (13 files)",
+        "src/core/store/target-lines.ts",
+        "src/core/store/membership-layout.ts",
+        "src/commands/workspace.ts",
+        "src/commands/store-target-line.ts",
+        "test/core/store/workspace-*.test.ts",
+        "test/core/store/target-lines.test.ts",
+        "test/helpers/store-workspace-fixture.ts"
+      ],
+      "collisionClass": "A mostly; rim overlap on src/commands/store.ts registration + src/core/store/membership.ts",
+      "referenceSpecs": [
+        "store-planning-worktree-bindings (14 req)",
+        "store-target-lines (4 req)"
+      ],
+      "priorArt": "origin/dev/0.1.7 rasen/changes/archive/2026-08-08-store-planning-worktree-bindings (+ two archived fixups: 2026-08-09-fix-existing-change-workspace-binding, 2026-08-10-fix-workspace-claim-portability)",
+      "scopeNote": "OPEN AT DESIGN TIME: whether the whole workspace/ module is required, or only the subset issues/ actually imports. The planner must decide this from the import graph, not port blindly."
+    },
+    {
+      "id": "store-issue-resources",
+      "pipeline": "small-feature",
+      "dependsOn": [
+        "store-worktree-bindings-v2"
+      ],
+      "status": "pending",
+      "node": "S3",
+      "delivers": "Layer 2, the direction's named target: IssueRecordV1, ExecutionPlanRevisionV1, issue lock protocol, plan node normalizer + graph checker + revision digest, reference verification against committed Store evidence, StoreIssues.{create,setState,publishPlan}, and StoreAggregateQuery.{listIssues,showIssue,issuesReferencing,resolveExecutionPlan,listProjects,listTargetLines,listChanges}.",
+      "touches": [
+        "src/core/store/issues/** (11 files)",
+        "src/core/store/query/** (7 files) - SAME SLICE, proven import cycle",
+        "src/commands/store-issue.ts",
+        "src/commands/store-aggregate.ts",
+        "src/core/management-api/stores.ts",
+        "packages/ui/src/components/StoreIssuesView.tsx",
+        "packages/ui/src/components/StoreAggregateBoard.tsx",
+        "8 core test files (110 cases) + 2 CLI suites + 4 UI test/fixture files"
+      ],
+      "collisionClass": "B (HIGH) on the consumer rim: management-api/router.ts, management-api/wire-types.ts, packages/ui/src/api/types.ts, src/cli/index.ts, src/core/completions/command-registry.ts, 6 locale files",
+      "referenceSpecs": [
+        "store-issue-resources (11 req)",
+        "store-aggregate-query (7 req)"
+      ],
+      "priorArt": "origin/dev/0.1.7 rasen/changes/archive/2026-08-08-store-scoped-issues-management"
+    }
+  ],
+  "delivery": {
+    "status": "pending",
+    "note": "Children ship local (commit only). Single portfolio-level delivery at the parent after all three are terminal."
+  },
+  "outOfScope": {
+    "S4-finalization": "src/core/store/finalization/** + src/core/store-planning/** - roadmap slice 'finalization + stored-plan' (L3+L5), not this slice.",
+    "S5-layout-migration": "src/core/store/layout-migration/** + layout-write-guard + migration-ops-v2 + consistency-gates - roadmap slice 'layout-migration' (L2), not this slice."
+  }
+}
