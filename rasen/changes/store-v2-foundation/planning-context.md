@@ -168,3 +168,85 @@ pnpm exec vitest run test/core/store test/core/change-run test/commands/store.te
 ## Appended findings
 
 <!-- Planner: append durable findings below, newest last. Decisions and discovered constraints only. -->
+
+### From S1 `store-planning-contract-v2` (planner-1)
+
+**A. The 0.1.7 tip of a file is NOT the port target — attribute per commit first.** Each child's
+contribution must be separated from what LATER 0.1.7 children added to the same files. Method that
+worked, reusable for S2/S3:
+
+```
+git log --oneline e62b101f..origin/dev/0.1.7 -- <the child's own new files>   # find the ship commit
+git show --stat <shipCommit>                                                  # exact file inventory
+git diff --stat <shipCommit> origin/dev/0.1.7 -- <those files>                # what came later
+git diff <shipCommit> origin/dev/0.1.7 -- <file>                              # read it, attribute it
+```
+
+S1's ship commit is `a7135669` (4,307 insertions, 13 source + 5 test files). The other 0.1.7 commits
+that touched `src/core/store/` after it: `1fa114d4`, `79fd80a9`, `0ede6cfb` (the last is a large
+squash). Applied to S1, the split was: **S3 owns** `planning-validation.ts` +93 (`IssueId`,
+`ExecutionPlanRevisionId`, `formatExecutionPlanRevisionId`, `invalid_issue_record` /
+`invalid_execution_plan` codes) and `planning-layout-v2.ts` +47 (the `issue`, `issue-record`,
+`execution-plans`, `execution-plan` addresses). **S3 must add these back** when it lands — S1
+deliberately omits them. Decisive evidence for the split: the tip's own TEST delta over the ship
+commit is only +15 lines, so porting the tip would ship ~140 lines no suite in that child exercises.
+
+**B. The frozen reference carries three defects in S1's own surface, each found by a LATER child.**
+All three are folded into S1's port; expect the same pattern (a later child discovering the contract
+is too strict) for S2/S3:
+- `planning-catalogs.ts` — the v2 project catalog `id` (a **human display name**: `Elftia`, `my app`)
+  was validated with `parseChangeId`, so any Store whose v1 membership record held what the field is
+  documented to hold could not be migrated at all. **General rule: a migration must never block on
+  data the schema it migrates FROM accepted.**
+- `finalization-v2.ts` — spec-action `capabilityId` was typed as a single kebab id; a capability
+  address can be slash-delimited kebab segments.
+- `planning-layout-v2.ts` — `path.win32.isAbsolute('/store')` is `true` (Windows accepts a
+  current-drive-rooted path), so absoluteness alone let process drive state complete a "self-contained"
+  root. Fix requires a drive, UNC share, or device root under win32 semantics.
+
+**C. Rim collision for the non-`src/core/store` files is effectively nil, measured.** Empty
+`e62b101f..origin/dev/0.2.0` diffs for: `src/core/change-metadata/**`, `src/core/id.ts`,
+`src/core/zod-issues.ts`, `src/core/store/{identity-types,errors,remote}.ts`,
+`src/core/workflow-package/canonical.ts`. `src/core/index.ts` has +1 on each line but both are
+appended export lines — an append, not a conflict. `src/core/config.ts` diverges only by an unrelated
+0.1.7 AI-tool entry (Oh My Pi), needed by nothing in this portfolio.
+
+**D. `.strict()` on `ChangeMetadataSchema` breaks the product's own archive output.**
+`archive-engine.ts:2965` writes `metadata.quality = summary` into the ARCHIVED `.openspec.yaml` via
+raw YAML (so the write path bypasses the schema), but `readChangeMetadata`
+(`src/utils/change-metadata.ts:130`) **throws** on strict-parse failure. This repo holds **33**
+archived records carrying `quality:` (0.1.7 holds 35 and shipped the defect). Active changes carry
+only `schema`/`created`/`goal`. Historical shapes vary — the oldest also carry `rulesExtracted`, which
+is not in the current `ArchiveQualitySummary`, so any passthrough must be permissive. S1 adopts
+`.strict()` AND admits `quality`; this is a deliberate divergence from the frozen reference.
+
+**E. The reference has NO Layer-0 purity test.** `planning-foundation-consumer.test.ts` is a
+type-level branding test (`expectTypeOf`), valuable but orthogonal — purity is asserted only in the
+barrel docstring. S1 adds a static import-allowlist guard plus a required mutation proof. The
+verified-pure allowlist is: `zod`, `yaml`, `node:crypto`, `node:path`, `../canonical-json.js`,
+`../zod-issues.js`, `../id.js`, `./identity-types.js`, `./remote.js`, `./planning-validation.js`,
+`./planning-identity.js`. Transitively sound: `id.ts` has zero imports, `zod-issues.ts` imports only a
+zod type, `identity-types.ts` only `node:crypto`, `remote.ts` only `./errors.js`, which has zero
+imports.
+
+**F. Test-file inventory correction (the S1 brief undercounted).** S1's suites are **five**, ~159
+tests: `planning-validation-v2`, `planning-layout-v2`, `planning-identity-v2`, `finalization-v2`,
+`planning-foundation-consumer`. There is **no `planning-*-windows-paths.test.ts`** anywhere on 0.1.7 —
+the three `*-windows-paths.test.ts` suites belong to `finalization/`, `layout-migration/`, and
+`workspace/`. **S2 owns `workspace-windows-paths.test.ts`**; the other two are out of portfolio scope.
+Windows coverage for S1 lives inside `planning-layout-v2.test.ts`.
+
+**G. `KNOWN_SLOW_TEST_WEIGHTS_MS` lives in `vitest.config.ts:34` and falls back to `file.size / 10`
+for unlisted files.** Pure unit suites need no entry. S2/S3, whose suites use real fixtures, should
+measure and add entries or the macOS/Windows shards will skew.
+
+**H. S1 scope decisions taken** (do not re-litigate): three NEW capabilities, not two — the brief's
+`referenceSpecs` omitted `change-finalization-record-v2`, which is the spec for `finalization-v2.ts`
+and therefore S1's. Requirement counts are 8 / 7 / 7 (layout / identity / finalization); the layout
+capability's live 0.1.7 spec carries more because later children added to it. Modified capabilities:
+none — S1 changes no existing capability's requirements.
+
+**I. Answers to two of the open design questions above.** Q3 (`target-lines.ts` placement):
+**confirmed S2** — nothing in S1 imports it, and S1's five Layer-0 modules reach only the allowlist in
+finding E. Q4 (which tests port as-is): S1's five suites port as-is; they are pure unit tests with no
+fixtures, no Git, and no filesystem, so 0.2.0's structures do not touch them.

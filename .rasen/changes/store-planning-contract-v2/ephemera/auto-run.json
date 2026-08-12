@@ -2,15 +2,44 @@
   "pipeline": "small-feature",
   "stages": {
     "propose": {
-      "status": "in_progress",
+      "status": "done",
       "gateDecision": "auto-approved (global)",
       "worker": {
         "role": "planner",
         "runtime": "claude",
         "dispatchMode": "native",
+        "agentId": "planner@session-54f71457",
         "model": "opus",
         "horizon": "ONE_SHOT",
         "horizonBasis": "Persistent planner, but siblings are serialized behind full child pipelines so the gap to the next propose is long/unbounded; parking would burn the 12-beat cap. Re-engage per Step B.1 instead."
+      },
+      "artifacts": [
+        "proposal.md",
+        "design.md",
+        "tasks.md",
+        "specs/store-planning-layout-v2/spec.md",
+        "specs/store-planning-identity-v2/spec.md",
+        "specs/change-finalization-record-v2/spec.md"
+      ],
+      "taskCount": 36,
+      "leadDirectionCheck": {
+        "enabledByPipeline": false,
+        "performedAnyway": "light",
+        "basis": "leadReview is false on this stage and --review-plan was not passed, so no full direction review is owed. The LEAD holds the original intent, so a light check was run on the planner's four out-of-brief scope decisions.",
+        "verified": [
+          "rasen validate --type change --strict PASSES (re-run by the LEAD, not taken on report).",
+          "Zero scope leak: tasks.md mentions none of workspace/, issues/, query/, layout-migration, store-planning/.",
+          "The .strict() divergence is load-bearing and correctly reasoned: archive-engine.ts:2965 writes metadata.quality into the ARCHIVED .openspec.yaml via raw YAML, and readChangeMetadata (src/utils/change-metadata.ts:130) THROWS ChangeMetadataError on Zod failure rather than degrading. LEAD counted 33 archived records carrying quality and 13 carrying rulesExtracted in this repo - matching the planner's figures exactly. Plain .strict() would make the product unable to read its own archives."
+        ],
+        "acceptedScopeDecisions": [
+          "THREE capabilities, not two: change-finalization-record-v2 added because finalization-v2.ts is assigned to S1 by the LEAD's own brief, so its spec belongs here. The finalization/ DIRECTORY remains out of scope.",
+          "Port target is ship-commit a7135669 plus its own later fixes MINUS S3's additions, not the 0.1.7 tip. Porting the tip would ship ~140 lines (IssueId, ExecutionPlanRevisionId, the four issue* addresses) that no S1 suite exercises. S3 adds them back; the chain is serial so there is no conflict cost.",
+          "A Layer-0 purity guard the reference does not have, with a MANDATORY mutation proof (tasks 5.3/5.4) - correct per the repo rule that an unmutated guard is presumed non-discriminating."
+        ],
+        "briefCorrectionsAccepted": [
+          "There is NO planning-*-windows-paths.test.ts on 0.1.7. The three *-windows-paths.test.ts suites belong to finalization/, layout-migration/, and workspace/ (S2 owns the workspace one). S1's Windows coverage lives inside planning-layout-v2.test.ts. This corrects BOTH the LEAD's dispatch brief and the surveyor's count.",
+          "S1 has FIVE suites / ~159 tests, not four / ~60."
+        ]
       }
     },
     "apply": {
