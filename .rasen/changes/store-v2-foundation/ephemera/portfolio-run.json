@@ -136,6 +136,22 @@
     "S4-finalization": "src/core/store/finalization/** + src/core/store-planning/** - roadmap slice 'finalization + stored-plan' (L3+L5), not this slice. INBOUND ITEM: test/core/store/store-issue-scope-intent.test.ts (7 cases) is deferred to this slice from S3 - see children[2].deferredTest.",
     "S5-layout-migration": "src/core/store/layout-migration/** + layout-write-guard + migration-ops-v2 + consistency-gates - roadmap slice 'layout-migration' (L2), not this slice. INBOUND ITEM: membership-layout.ts moved here from S2 - see children[1].scopeChange."
   },
+  "toolingHazard": {
+    "what": "The bare `rasen` command on this machine is a GLOBALLY INSTALLED dev-local build at version 0.1.7 (dev.local 9472d7dc). This repo is 0.2.0. So `rasen ...` runs 0.1.7 code against 0.2.0 data.",
+    "howItSurfaced": "The S2 implementer hit `error: unknown option '--target-line'` running ported upstream tests. The LEAD had earlier run `rasen new change --help`, seen `--target-line <id>` in the output, and read it as a fact about this branch - it was a fact about the global 0.1.7 binary. `git grep target-line -- src/cli/index.ts src/commands/change.ts` on this branch returns NOTHING.",
+    "rule": "Use `node bin/rasen.js ...` for every rasen invocation in this worktree, never bare `rasen`.",
+    "damageAssessment": "The LEAD re-ran every load-bearing measurement against the local 0.2.0 build: `pipeline show auto-decompose --for-execution` (same 7 stages, same gate resolution to false via autopilot-global, same ship/archive sonnet stage models, same review-cycle maxRounds 3), `validate --strict` on both children (1 passed / 0 failed each), and `archive --dry-run` on child 1 (same tasks blocker). ALL IDENTICAL - no orchestration decision was corrupted. TASK_PATTERN is byte-identical between the two lines, so the [~] finding also stands.",
+    "residualRisk": "Worker-taken measurements that used the bare command may differ. Each worker has been told to re-take with the local build and report any that changed."
+  },
+  "decompositionGap": {
+    "found": "During S2 implementation, not at propose time.",
+    "what": "`rasen new change --target-line <id>`, and the marker-reading planning-worktree resolution it depends on (refusal code `planning_worktree_required`, zero hits in src/ on this branch), were delivered upstream by `store-planning-scope-routing` (commit 3b050663) - which is NOT an ancestor of dev/0.2.0. Seven faithfully-ported S2 test cases (5 in workspace-baseline.test.ts, 2 in store-v2-workspace-journey.test.ts) depend on that CLI surface.",
+    "whyNeitherChildClaimsIt": "S1's design.md explicitly hands workspace bindings and target-line operations to the next two children; S2's 33 tasks never mention `new change`, cli/index.ts's `new` command, or CLI-level target-line resolution - only `store workspace` / `store target-line` as new subcommands.",
+    "ruling": "OPTION 1 - defer the 7 cases with mandatory substitute coverage. Rejected pulling scope-routing forward: 3b050663 maps to the finalization/scope-routing slice, a LATER roadmap slice deliberately out of this whole portfolio's scope, and porting it would drag context.ts and store-planning/** in with it.",
+    "rule": "Deferring the CASE is acceptable; shipping the behaviour untested is not. Substitute coverage drives the same behaviours - marker validation, the refusal taxonomy including planning_worktree_required, integration-checkout refusal, index update - through StoreWorkspace / StoreTargetLinesModule directly. The CLI is a delivery surface; the behaviour lives in the modules this child owns. Substitutes must be mutation-proved like any other guard.",
+    "precedent": "Same shape as child 3's already-recorded deferral of test/core/store/store-issue-scope-intent.test.ts (7 cases, same later slice via store-finalization-fixture.ts).",
+    "warningForS3": "The same upstream commit also touched show.ts and spec.ts, which is adjacent to child 3's territory. The S3 proposal MUST check for CLI-surface dependencies in the tests it plans to port, at propose time, rather than discovering them at implementation time as happened here."
+  },
   "inboundNotesFromS1": {
     "brandVocabularyGuardBlindSpot": {
       "appliesTo": [
