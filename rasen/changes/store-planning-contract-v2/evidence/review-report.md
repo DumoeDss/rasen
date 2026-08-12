@@ -750,3 +750,451 @@ git status --porcelain -- src test              ->  (empty)
 ```
 
 The `rasen archive --dry-run --json` invocations left no `.rasen-archive-stage-*` residue.
+
+---
+
+# Round 3 — fix confirmation and a systematic discrimination sweep
+
+- Reviewer: a fresh leaf reviewer. I wrote none of this code, authored no fix, and applied no fix.
+  Rounds 1 and 2 above are other workers' reports and are left untouched.
+- Target: the round-2 fix delta (`git diff 5c1b22dd..HEAD`, substance in `9c0f548e`) plus an
+  exhaustive discrimination sweep of every assertion this change owns.
+- Verified against committed bytes at HEAD `79246f48`. Every mutation was restored from an
+  out-of-repo snapshot under `E:\tmp\rev-s3-backup`; `git checkout --` was never used.
+
+## Verdict summary
+
+| Finding | Verdict | Basis |
+| --- | --- | --- |
+| N1 inert type assertions | **RESOLVED** | probes A/B/D re-run by me; the new gate is load-bearing and not a duplicate |
+| N2 `[~]` marker | **RESOLVED** | measured 35/36 `in-progress` and the archive `tasks` blocker; no stage residue |
+| N3 ASCII-ized capture | **RESOLVED** | exact character counts from committed bytes |
+| CI step | **SOUND** | correctly placed, single-OS, correctly scoped; fails loudly if its file disappears |
+
+New this round: **Major 2 | Minor 1 | Trivial 1**. Blocker 0.
+
+---
+
+## Part 1 — the round-2 fixes
+
+### Shape invariance (re-checked at HEAD)
+
+```
+git diff --stat eaefc01b HEAD -- src/core/store   ->  (empty)
+git diff --name-only eaefc01b..HEAD -- src/       ->  src/core/index.ts   (the only src edit)
+```
+
+Holds. All Layer-0 contract sources are byte-identical to what round 1 reviewed.
+
+### N1 — RESOLVED
+
+Baseline at HEAD: `pnpm run test:types` -> 1 file / 5 tests / no type errors (4.6s).
+
+**Probe A — an obviously false assertion.** Replaced
+`expectTypeOf<string>().not.toMatchTypeOf<ProjectId>();` with
+`expectTypeOf<number>().toMatchTypeOf<StorePlanningChangeInstanceId>();`:
+
+| gate | result |
+| --- | --- |
+| `pnpm exec tsc --noEmit` | **exit 0 — still blind** |
+| `pnpm run lint` | **exit 0 — still blind** |
+| `pnpm run test:types` | **exit 1, RED** |
+
+```
+ x public Store planning foundation type surface > refuses a bare string where a branded value is required
+ TypeCheckError: Type 'ChangeInstanceId' does not satisfy the constraint
+   '`Expected literal string ${ChangeInstanceId}, Actual number`'
+ test/core/store/planning-foundation-consumer.test-d.ts:47:42
+```
+
+One test fails, not a cascade. The two "still blind" rows are the load-bearing part of this result:
+they prove the new gate closes a hole no existing gate could see, rather than duplicating one.
+
+**Probe B — the m3 direction pin.** Flipped `src/core/index.ts:48` to
+`export type { ChangeInstanceId } from './store/planning-identity.js';`, keeping the
+`StorePlanningChangeInstanceId` alias line so the only variable is the direction (removing the alias
+would have produced a RED for the unrelated reason that the test file's import broke).
+
+```
+pnpm exec tsc --noEmit  ->  exit 0        (blind, as round 2 measured)
+pnpm run test:types     ->  exit 1, RED
+  x public Store planning foundation type surface > keeps the published ChangeInstanceId pointing at the change-run brand
+```
+
+**On the fixer's caveat about opaque error text — I judge it good enough.** The message really is
+unattributable on its own (`Expected literal string ${ChangeInstanceId}, Actual literal string
+${ChangeInstanceId}`, because both brands are *named* `ChangeInstanceId`), and a second failure on
+the next line reads only `Expected 1 arguments, but got 0`. But what vitest actually prints around it
+carries the attribution: the FAIL header is the full test name, which states the invariant in words
+("keeps the published ChangeInstanceId pointing at the change-run brand"), and the source-context
+block prints lines 84-89 — which include the tail of the comment explaining what a flip of that
+re-export has to get past. A future worker who sees only this failure gets the invariant, the file,
+the line, and the rationale. That is more than most failures in this repository carry.
+
+**Probe C — weakening the real API.** The fixer's self-assessment is **correct**. I did not re-run it
+as an isolating probe because it cannot be one: the recorded result already shows `tsc --noEmit`
+exiting 2, which means the mutation breaks `src/` internally and the root type check catches it. It
+demonstrates the assertions track the real API; it does not isolate the new gate. Recording it as a
+partial rather than as evidence was the right call.
+
+**Probe D — collapsing the brand, re-run against the CURRENT committed bytes.**
+`src/core/store/planning-identity.ts:24`, `ChangeInstanceId = string & { readonly [brand]: true }`
+-> `= string`:
+
+```
+pnpm exec tsc --noEmit  ->  exit 0     (src stays internally consistent — nothing objects)
+pnpm run test:types     ->  exit 1, RED
+  x refuses a bare string where a branded value is required
+  test/core/store/planning-foundation-consumer.test-d.ts:49:32   (the individual StorePlanningChangeInstanceId pin)
+```
+
+**Genuinely RED now.** The fix works, and it fails at exactly the assertion the fixer added to close
+its own gap. I take the fixer's account of the first (green) run at face value only as narrative; the
+result that matters is this one, which I ran myself.
+
+**Pushing further on probe D's class — I found more instances. See N6 below.** The general defect is
+real and the fixer's fix is local to the names that already appeared in the file.
+
+### The harness does not weaken `pnpm test`
+
+- `vitest.config.ts:135` default include is `['test/**/*.test.ts']` (read from
+  `resolveTestInclude`, the `!partition` branch). `.test-d.ts` does not match, so `pnpm test` never
+  collects it. Confirmed by running `pnpm exec vitest run test/core/store/` -> **31 files / 648
+  passed | 1 skipped**, matching the fixer's claim exactly.
+- **Sharding claim confirmed specifically.** `vitest.config.ts:71` is
+  `if (!entry.isFile() || !entry.name.endsWith('.test.ts')) return [];`. `planning-foundation-consumer.test-d.ts`
+  ends with `-d.ts`, not `.test.ts`, so the partitioner never sees it and no shard's file list moves.
+  I also ran `test/ci-workflow-contract.test.ts` (the repo's own partition contract, which asserts
+  deterministic disjoint coverage over 8 partitions): **4 passed**, unaffected by the new step.
+- `typecheck` is declared but **disabled by default**; only `test:types` passes
+  `--typecheck.enabled --typecheck.only`.
+
+### Review of the CI change on its own merits
+
+The step is **correctly placed and correctly scoped**:
+
+- It is in the `lint` job (`Lint & Type Check`), which is `runs-on: ubuntu-latest` — a single leg, not
+  the `test_matrix`. Type checking is platform-independent, so one leg is right and it adds no
+  multiplier to the matrix cost. Measured cost is ~5-10s.
+- It sits between `Type check` and `Lint`, after `Install dependencies` and `Build project`, so
+  everything it needs already exists.
+- `tsconfig.typecheck.json` does **not** pull in more than intended: it extends the root config but
+  overrides `include` to `["src/**/*", "test/**/*.test-d.ts"]`, so the closure is `src/` plus the one
+  type-test file. It sets `noEmit` and disables `declaration`/`declarationMap`/`sourceMap`, so it
+  cannot write output. Nothing else in the repo references it. The alternative the fixer rejected
+  (dropping `test` from the root `exclude`) would indeed have signed the whole suite up at once.
+- **Durability probe (mine).** I moved `planning-foundation-consumer.test-d.ts` out of the tree and
+  re-ran `pnpm run test:types`: `No test files found, exiting with code 1`. The gate therefore cannot
+  go vacuously green if a future worker renames or deletes the file — it fails loudly and prints both
+  its include patterns. Restored; tree verified clean.
+
+### N2 — RESOLVED
+
+Measured by me on this worktree, at HEAD:
+
+```
+rasen list --changes --json
+  {"name":"store-planning-contract-v2","completedTasks":35,"totalTasks":36,"status":"in-progress"}
+
+rasen archive store-planning-contract-v2 --dry-run --json
+  /archive/plan/blockers = [{"operation":"tasks","message":"1 task(s) are incomplete."}]
+  /archive/blockers      = [{"operation":"tasks","message":"1 task(s) are incomplete."}]
+```
+
+The marker is `[ ]` at `tasks.md:51` and the LEAD's PARTIAL prose is kept verbatim. **This blocker is
+the intended state, not a defect**: task 6.5 is genuinely incomplete until the portfolio PR's Windows
+CI run exists, and the gate correctly refuses to let this child archive before then.
+
+Residue: I checked for `.rasen-archive-stage-*` before and after the dry-run — none, and
+`git status --porcelain` is empty (whole tree, not just `src`/`test`).
+
+### N3 — RESOLVED
+
+Counted from committed bytes (`git show HEAD:...task-6-4-baseline-flake-analysis.md`), not the
+working tree:
+
+```
+U+276F  prompt      : 1
+U+2716  cross       : 1
+U+2026  ellipsis    : 4
+U+FFFD  replacement : 0        <- the repo's known Write-path mangling did not occur
+U+2717 / U+00D7     : 0 / 0    <- no look-alike substitutions either
+```
+
+Matches the required counts exactly. Restoring from `git show` via a script rather than retyping was
+the right method for this repo.
+
+---
+
+## Part 2 — the systematic discrimination sweep
+
+Rounds 1 and 2 found one new instance of the same defect class per round (M1, M2, M3, then N1), and
+the fixer's own probe D found a fifth inside its own fix. This round replaced sampling with a
+group-control pass over everything this change owns.
+
+### Method
+
+For each source module I built a **central accept-all control** (every rejection path neutered at one
+seam) and, where the accept side carried claims, a **mirror refuse-all control**. Then I enumerated
+the reddened tests **by name** and compared that set against the suite's full test inventory. A
+rejection-named test that survives its module's accept-all control is a candidate finding; an
+accept-named test that survives refuse-all likewise.
+
+The levers used (all applied to pristine bytes, then restored):
+
+| Module | Accept-all lever | Mirror control |
+| --- | --- | --- |
+| `planning-validation.ts` | `throw invalid(` -> `void invalid(` (20 sites) + the two hex regexes widened, because `isGitOid`/`isSha256Digest` bypass their parsers and test the regex directly | `assertPortableSegment` throws on entry + hex regexes never match |
+| `planning-identity.ts` | `throw identityError(` -> `void identityError(` (10 sites) + `SEED_PATTERN` widened | preimage probes (K, L) below |
+| `planning-layout-v2.ts` | `throw pathError(` -> `void pathError(` (5 sites) | — |
+| `finalization-v2.ts` | every `superRefine` body short-circuited (5 sites) | cross-field probes (O, P) below |
+| purity guard | forbidden-pattern injections, one per module for attribution | — |
+| `.test-d.ts` | brand collapse, individually and in a 9-brand batch | — |
+
+### Coverage achieved
+
+| Suite | Tests | Swept by | Result |
+| --- | --- | --- | --- |
+| `planning-validation-v2.test.ts` | 43 | accept-all + refuse-all | **43/43 live in at least one direction** (35 RED under accept-all, 12 under refuse-all, 4 in both) |
+| `planning-identity-v2.test.ts` | 26 | accept-all + 2 preimage probes | 14 RED under accept-all; **N5 found** |
+| `planning-layout-v2.test.ts` | 55 | accept-all (own module) + inherited from validation control | 6 RED for layout-owned rules; the rest of its rejection surface is validation-owned and was swept there |
+| `finalization-v2.test.ts` | 53 | superRefine no-op + 2 cross-field probes | 18 RED under superRefine no-op; **N4 found** |
+| `planning-foundation-purity.test.ts` | 39 | 3 forbidden-pattern injections | 3 RED, each naming its own file and pattern — **all 8 forbidden patterns now mutation-proven** (5 by round 1, 3 by me) |
+| `planning-foundation-consumer.test.ts` | 1 | (runtime composition; exercised under every control above) | live |
+| `planning-foundation-consumer.test-d.ts` | 5 (20 assertions) | probes A/B/D + a 9-brand batch collapse | **N6 found** |
+
+### What I could NOT reach — stated plainly
+
+1. **I did not mutation-prove every assertion individually.** 217 runtime tests carry far more than
+   217 assertions. I proved *families* via central seams and enumerated the reddened set by name. An
+   assertion that is decorative but sits inside a test whose *other* assertions redden under a
+   control would not be distinguishable by this method. The three cases I dug into individually
+   (probe P's three tests, the reserved-device-name length assertion, the determinism test) were
+   chosen by the risk heuristics; there could be others of that shape.
+2. **`planning-catalogs.ts` did not get its own accept-all control.** Its rejection surface is
+   covered by round 2's M2 proof (both sides of the display-name invariant, independently mutated)
+   and by the layout-suite controls, but I did not run a dedicated catalogs-wide seam break. The
+   catalog schemas are `.strict()` zod objects whose failures surface through `catalogError`; a
+   `throw catalogError(` -> `void catalogError(` control would be the analogous sweep and I did not
+   run it.
+3. **`it.runIf(process.platform === 'win32')` at `planning-layout-v2.test.ts:329` ran here** (I am on
+   win32), so I observed it live — but I cannot speak to the Linux/macOS legs, where it is skipped.
+   That is round 1's standing observation, not a new one.
+4. **I did not re-run round 2's m1/m2 purity mutations**; I extended that suite's proof to the three
+   forbidden patterns nobody had mutated instead. Round 2's dynamic-import and transitive-closure
+   proofs are taken as recorded.
+5. **Round 1 and 2 findings were not re-litigated** and the five round-1 pressure-test verdicts stay
+   closed, per instruction.
+
+---
+
+## New findings (round 3)
+
+### N4 (Major) — the Archive v2 cross-field null constraints have zero discriminating coverage
+
+`src/core/store/finalization-v2.ts:319-407`, `test/core/store/finalization-v2.test.ts`.
+
+Task 4.4 is ticked `[x]` and claims the discriminated schema makes "landed-only applied spec sync,
+null code merge on non-landed records, `implementation: none` landed records with no code merge, and
+successor-only-on-superseded **structurally impossible to violate**". Task 4.6 is ticked `[x]` and
+claims the suite carries "outcome and successor matrices".
+
+**Probe O.** I relaxed every cross-field null constraint across all five Archive variants —
+`codeMerge: z.null()` -> `z.any()` (3 sites), `supersededBy: z.null()` -> `z.any()` (3 sites),
+`reason: z.null()` -> `z.any()` (2 sites):
+
+```
+pnpm exec vitest run test/core/store/finalization-v2.test.ts
+  Tests  53 passed (53)          <- nothing reddens
+```
+
+So three of the four properties task 4.4 names are unenforced *by the tests*:
+
+- `codeMerge` must be `null` on superseded / cancelled / abandoned records and on
+  `implementation: none` landed records. No fixture ever puts a code merge on a passive record and
+  asserts rejection.
+- `supersededBy` must be `null` on every non-superseded record — "successor-only-on-superseded". No
+  fixture ever puts a successor on a landed / cancelled / abandoned **archive record** and asserts
+  rejection.
+- `reason` must be `null` on landed records. No fixture ever puts a reason on a landed archive
+  record and asserts rejection.
+
+**The fourth property IS covered, and I verified it separately (probe P).** Pointing the passive and
+superseded variants at `LandedSpecSyncSchema` turns exactly 3 tests RED:
+
+```
+  x accepts passive superseded history only with null merge and unapplied empty spec sync
+  x accepts passive cancelled  history only with null merge and unapplied empty spec sync
+  x accepts passive abandoned  history only with null merge and unapplied empty spec sync
+```
+
+**But note what those three test names say versus what they do.** The name claims "only with **null
+merge** and unapplied empty spec sync". The body (`finalization-v2.test.ts:223-236`) builds one
+*valid* passive record and asserts it is accepted. There is no negative case at all: it never
+constructs a passive record carrying a code merge. They redden under probe P only because the valid
+fixture stopped being accepted — an accept-side sensitivity, not the "only" claim. This is round-1
+M2's shape exactly: the fixture cannot distinguish enforced from unenforced.
+
+**A sharpening detail that shows this is an oversight, not a decision.** The parallel constraints on
+the *smaller* `FinalizationOutcomeSchema` contract ARE properly covered — `finalization-v2.test.ts:117-121`
+is a real rejection matrix including `{outcome:'landed', reason:'contradiction'}` and
+`{outcome:'cancelled', ..., supersededBy: SUCCESSOR_INSTANCE}`. The author knew how to write that
+matrix and wrote it for one contract; the Archive record never got one.
+
+Behavior is **correct** — the schema does enforce all four. Only the coverage is missing. Fix: add
+the negative half of the matrix for the archive record (a passive record with a `codeMerge`, a
+non-superseded record with a `supersededBy`, a landed record with a `reason`), each asserted to
+reject.
+
+### N5 (Major) — the versioned domain in every identity preimage is unpinned, because no derived digest is pinned anywhere
+
+`src/core/store/planning-identity.ts:183-303`, `test/core/store/planning-identity-v2.test.ts`.
+
+Task 3.6 is ticked `[x]` and names "**domain separation across the four kinds**" as covered. Design
+Decision 4 specifies the four preimages exactly (`H({ domain: "planning-scope/v2", storeUid,
+projectId, targetLineId })` and siblings) and the spec requires each kind be "derived under its own
+versioned domain".
+
+**Probe K.** Bumped all four domains from `/v2` to `/v3` — which changes every derived digest for
+every input:
+
+```
+six Layer-0 suites  ->  Tests  217 passed (217)
+```
+
+**Probe L.** Deleted the `domain` field from all four preimages entirely:
+
+```
+six Layer-0 suites  ->  Tests  217 passed (217)
+```
+
+**Root cause: no test pins any derived digest to a value.** Every identity assertion in the suite is
+*relational* — `toMatch(/^ps_[0-9a-f]{64}$/u)`, `.toBe(other)`, `.not.toBe(other)`, and
+`expect(new Set([...four digests]).size).toBe(4)` at line 80. All of those survive any change that
+transforms every digest uniformly. The `Set(...).size === 4` assertion is what task 3.6's "domain
+separation" rests on, and it cannot discriminate: the four preimages differ in their field names
+regardless of the domain, so they hash to four distinct values with or without it. Round-1 M2's
+non-discriminating-fixture shape again.
+
+I also grepped the whole repository for a literal `(ps_|ci_|wt_|wp_)[0-9a-f]{16,}` — **no matches**,
+so nothing anywhere pins a digest.
+
+What IS covered, to be fair: cross-kind substitution is genuinely rejected by the prefix check, and
+the spec scenario "Identity kind cannot be substituted" exercises it. Determinism across insertion
+order is genuinely covered. Removing the domain would not create a collision *today*, because the
+preimages differ structurally.
+
+Why it is Major anyway: these identities are **durable** — the same suite (`planning-identity-v2.test.ts:341`)
+writes and reads them through `writeChangeMetadata` into `.openspec.yaml`. A silent preimage change
+invalidates every previously minted identity, and nothing in the repository would go red. A versioned
+domain exists precisely to make that transition deliberate; here the version is a string no test
+reads. Fix: one known-input/known-digest vector per kind, which pins the domain, the field names, and
+the canonical-JSON encoding in a single assertion each.
+
+### N6 (Minor) — 9 of 16 branded types are still unpinned, and the new comment claims otherwise
+
+`test/core/store/planning-foundation-consumer.test-d.ts:41-56`.
+
+This is probe D's class, generalized. The vocabulary is 16 brands (7 in `planning-validation.ts`, 8 in
+`planning-identity.ts`, 1 in `planning-layout-v2.ts`). The new type suite pins 6 of them individually
+against a bare `string`. The other 9 — `TargetLineId`, `ChangeId`, `FullGitRef`, `GitOid`,
+`Sha256Digest`, `PlanningScopeId`, `ChangeInstanceSeed`, `WorktreeInstanceId`, `StorePlanningPath` —
+appear in the suite only through derived types, or not at all.
+
+**Probe E** (single instance): collapsing `StorePlanningPath` to `string` leaves `tsc --noEmit` at
+exit 0, all 5 type tests green, and 109 runtime tests green. Its only reachable assertion is
+`expectTypeOf<ReturnType<typeof computeStorePlanningLayoutV2>>().toEqualTypeOf<StorePlanningLayoutV2>()`,
+where both sides collapse together.
+
+**Probe F** (the group control): collapsing all 9 simultaneously:
+
+```
+pnpm exec tsc --noEmit                ->  exit 0        (src stays internally consistent)
+pnpm run test:types                   ->  5 passed, no type errors
+six Layer-0 suites                    ->  217 passed (217)
+```
+
+Every gate in the repository is blind to it.
+
+Why Minor rather than Major: task 5.2's claim is glossed as "a bare `string` and an unverified id must
+not satisfy **the APIs that require verified ones**", and that narrower claim *is* met — the verified
+pins and the parameter pins hold, and I confirmed the verified/unverified distinction reddens
+correctly. Design Decision 4's broader "branded TypeScript output so a bare `string` cannot satisfy a
+downstream API by accident" is prose, not a ticked task.
+
+What is squarely wrong is the **comment**, at lines 41-47: "Each branded name is pinned against a
+bare `string` INDIVIDUALLY, not only through the verified-id parameters." That is not true of 9 of 16
+names, and it is exactly the artifact a future worker would read before deciding a newly added brand
+needs no pin. Fix is one line either way: add the 9 missing pins, or narrow the comment to the names
+it actually covers.
+
+### N7 (Trivial) — a parameterized test ignores its parameter, so its name claims coverage it does not have
+
+`test/core/store/planning-validation-v2.test.ts:107-125`.
+`it.each(['win32', 'posix'])('enforces Windows-representable path/ref components for %s materialization', _flavor => {...})`
+— the parameter is discarded (`_flavor`) and the body runs identical assertions both times, because
+`isPortableRelativePath` and `isFullGitRef` take no flavor argument. The two cases are the same test
+run twice under two names that each claim a per-flavor guarantee. The assertions themselves are live
+(both reddened under my accept-all and refuse-all controls); only the naming and the +1 to the test
+count are misleading. Fix: drop the `it.each` and name it once for what it checks.
+
+---
+
+## Ship recommendation
+
+**Do not ship past this without a decision: two Majors are open (N4, N5).**
+
+Both are verification defects, not behavior defects — I found no wrong behavior anywhere in the
+shipped contract this round, and the round-2 fixes for N1/N2/N3 are all genuinely resolved. But both
+N4 and N5 are the same class rounds 1 and 2 rated Major and chose to fix: a task ticked `[x]` whose
+text names coverage that provably cannot distinguish fixed from unfixed. Applying a different bar to
+them now would be inconsistent with how M1, M2, M3, and N1 were handled in this very change.
+
+Weighing them for the escalation ladder:
+
+- **N5 is the one I would fix first.** It protects a durable, externally-visible identity format, its
+  fix is four one-line assertions, and the property it protects (a preimage change must be
+  deliberate) has no other guard anywhere in the repository.
+- **N4 is a slightly larger but entirely mechanical fix** — three negative fixtures mirroring the
+  matrix the same file already contains for `FinalizationOutcomeSchema`.
+- **N6 and N7 are cheap enough to fold into whichever fix round happens**, and N6's comment is worth
+  correcting whether or not the missing pins are added, because it actively misleads.
+
+If the LEAD instead decides these are acceptable as recorded coverage gaps, the honest framing is
+that tasks 3.6, 4.4, and 4.6 are ticked with claims their tests do not support, and that should be
+written into the tasks the way task 6.5's PARTIAL was — not left standing.
+
+This was round 3 of 3, so the loop is exhausted; the decision is the LEAD's.
+
+## Mutation hygiene (round 3)
+
+Every mutation used an out-of-repo pristine snapshot under `E:\tmp\rev-s3-backup`, applied and
+restored with `cp`; `git checkout --` was never used. Seven touched files verified byte-exact against
+their pre-mutation snapshots after restore:
+
+```
+RESTORED-EXACT  14774ded...  src/core/store/planning-catalogs.ts
+RESTORED-EXACT  5627d7c5...  src/core/store/planning-validation.ts
+RESTORED-EXACT  40ecab21...  src/core/store/planning-layout-v2.ts
+RESTORED-EXACT  6de40f78...  src/core/store/planning-identity.ts
+RESTORED-EXACT  63346fa9...  src/core/store/finalization-v2.ts
+RESTORED-EXACT  6262a35a...  src/core/index.ts
+RESTORED-EXACT  6bbf391d...  test/core/store/planning-foundation-consumer.test-d.ts
+```
+
+Per the correction round 2 established, working-tree sha256 is compared against the pre-mutation
+snapshot, not against `git show`, because `core.autocrlf=true` leaves pre-existing files CRLF in the
+tree while their blobs are LF. `git status --porcelain` is the authority and it is empty for the
+whole tree.
+
+Final state at HEAD, all run by me after the last restore:
+
+```
+pnpm exec tsc --noEmit                          ->  exit 0
+pnpm run lint                                   ->  exit 0
+pnpm run test:types                             ->  1 file / 5 tests / no type errors
+pnpm exec vitest run test/core/store/           ->  31 files / 648 passed | 1 skipped
+pnpm exec vitest run test/ci-workflow-contract  ->  4 passed
+git status --porcelain                          ->  (empty, whole tree)
+.rasen-archive-stage-*                          ->  none
+```
