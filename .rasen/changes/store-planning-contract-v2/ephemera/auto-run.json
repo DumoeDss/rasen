@@ -122,14 +122,56 @@
         "kind": "review-cycle",
         "maxRounds": 3
       },
-      "round": 1,
+      "round": 3,
+      "roundHistory": [
+        {
+          "round": 1,
+          "found": "0 Blocker / 4 Major / 5 Minor / 2 Trivial",
+          "outcome": "M1-M4 + m1-m3 fixed at 221bf789"
+        },
+        {
+          "round": 2,
+          "outcome": "All seven round-1 items RESOLVED - each mutation re-run by a non-author rather than accepting the recorded proof.",
+          "newFindings": "0 Blocker / 2 Major / 1 Trivial",
+          "N1": "Major. All 11 expectTypeOf assertions in test/core/store/planning-foundation-consumer.test.ts are INERT - an obviously false assertion passes tsc --noEmit, vitest run, AND lint. Causes: tsconfig.json excludes test/ (and ci.yml:274 runs that same command), vitest.config.ts declares no typecheck key, eslint.config.js is not type-aware. Task 5.2 is ticked [x] claiming this file proves brand discrimination. FOURTH instance of the same defect class, found in the round convened to close the first three.",
+          "N2": "Major, and the defect is the LEAD's own. The [~] marker on task 6.5 is invisible to TASK_PATTERN (src/utils/task-progress.ts:7-8), so the line stopped being a task at all and left BOTH numerator and denominator. Measured: [x] -> 36/36 complete, blockers []; [~] -> 35/35 complete, blockers []; [ ] -> 35/36 in-progress, blockers [1 task incomplete]. The LEAD's edit removed the false claim from the prose and left it standing in the machine record - the item designated as the portfolio-delivery acceptance gate became the one thing no automated gate could see. Reasoning accepted, marker rejected.",
+          "N3": "Trivial. The rewritten M4 evidence ASCII-ized its quoted terminal capture, so a block presented as verbatim no longer is.",
+          "leadLesson": "rasen validate --strict passes under ALL THREE markers. Only `archive --dry-run --json` blockers and `rasen list --changes --json` progress counts discriminate. The reviewer reached for the right instrument; the LEAD had reached for validate alone. This is the standing 'validate has a blind spot, a dry-run archive is what closes the loop' rule, hit again."
+        }
+      ],
       "worker": {
         "role": "fixer",
         "runtime": "claude",
         "dispatchMode": "native",
         "agentId": "fixer-s1@session-54f71457",
         "model": "opus",
-        "horizon": "LOOP_BOUND"
+        "horizon": "LOOP_BOUND",
+        "fixCommit": "221bf789",
+        "status": "round-1 fixes delivered; held idle pending the round-2 verdict"
+      },
+      "reviewers": [
+        {
+          "round": 1,
+          "agentId": "reviewer-s1@session-54f71457",
+          "model": "opus",
+          "outcome": "delivered round-1 findings, then RETIRED by keepalive beat-cap while parked",
+          "handoff": "rasen/changes/store-planning-contract-v2/handoff/reviewer-1.md"
+        },
+        {
+          "round": 2,
+          "agentId": "reviewer-s1-r2@session-54f71457",
+          "model": "opus",
+          "horizon": "ONE_SHOT",
+          "horizonBasis": "Deliberately NOT parked. The round-1 reviewer was lost to the beat cap; a cold seed from its handoff is cheaper and safer than another park. If a round 3 is needed, dispatch another fresh reviewer.",
+          "seed": "rasen/changes/store-planning-contract-v2/handoff/reviewer-1.md"
+        }
+      ],
+      "leadError": {
+        "what": "The LEAD delivered the round-2 re-review instruction to the round-1 reviewer with SendMessage while that reviewer was PARKED in `rasen agent wait`.",
+        "why it failed": "The signal file is the ONLY channel to a parked worker; SendMessage to a parked worker is explicitly forbidden. The instruction never reached it, it idled 12 beats, and the beat cap stood it down with the fix delta entirely unreviewed.",
+        "correctChannel": "Write {\"kind\":\"resume\",\"instruction\":\"...\"} atomically to <changeRoot>/signals/<role>.json - the same mechanism the LEAD used correctly to stand down the implementer.",
+        "note": "The beat cap firing is by design and worked correctly; the defect was the LEAD's choice of channel, not the keepalive mechanism.",
+        "cost": "One wasted park cycle (~54 min of reviewer wall-clock) and one retired worker. No work product lost - the reviewer's handoff carries a complete five-row re-verification recipe."
       },
       "routingDecision": "Fixes routed to a SEPARATE fixer, not the author. All three code Majors are one defect class - a requirement with an implementation but no discriminating test - and tasks 2.7/4.6 were ticked [x] while claiming exactly those scenarios. That is a judgment failure about what counts as coverage, so re-running the same judgment (and the same model tier) is the wrong configuration. The non-author reviewer still confirms the fix, per author != verifier.",
       "acceptedKnown": [
