@@ -1,0 +1,27 @@
+{
+  "change": "migrate-cross-project-coordinators-to-store-issues",
+  "archivedAt": "2026-08-12T03:58:48.138Z",
+  "codeCommit": "5e01bf0ffed235afabf63f18fad99a37d8ff41b5",
+  "planningBranch": "dev/0.1.7",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/review-cycle-report.md",
+      "sha256": "da76102a8c9a42c705cce39f1ab1b60a57ad4d67b1948772baa8678ff378bed5"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "154c4527b4c35313e3211f232804ba45523bb9b2fa2a5146ee6a802be041bd67"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "7b08083818586439b87b31bb51f460cee00203821360764fa906f6de32f8d301"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [],
+  "missing": [
+    "verification-report"
+  ]
+}

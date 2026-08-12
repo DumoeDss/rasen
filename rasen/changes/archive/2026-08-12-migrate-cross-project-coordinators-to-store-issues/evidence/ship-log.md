@@ -48,3 +48,8 @@
 ## Deployment
 
 Status: Delivered to PR [#154](https://github.com/DumoeDss/rasen/pull/154). The PR is OPEN. Merge was not authorized and was not performed. Archive remains pending until a future merge.
+
+## Archive
+**Date:** 2026-08-12T03:58:48.138Z
+**Outcome:** archived at E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code-wt-store-project-planning-v2\rasen\changes\archive\2026-08-12-migrate-cross-project-coordinators-to-store-issues
+**Transaction:** 282a8720-11a2-45c3-93fb-81b4f3ed21ad
