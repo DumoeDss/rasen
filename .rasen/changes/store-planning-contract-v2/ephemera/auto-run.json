@@ -189,6 +189,21 @@
         "cost": "One wasted park cycle (~54 min of reviewer wall-clock) and one retired worker. No work product lost - the reviewer's handoff carries a complete five-row re-verification recipe."
       },
       "routingDecision": "Fixes routed to a SEPARATE fixer, not the author. All three code Majors are one defect class - a requirement with an implementation but no discriminating test - and tasks 2.7/4.6 were ticked [x] while claiming exactly those scenarios. That is a judgment failure about what counts as coverage, so re-running the same judgment (and the same model tier) is the wrong configuration. The non-author reviewer still confirms the fix, per author != verifier.",
+      "capReached": {
+        "at": "round 3 of maxRounds 3, with Majors still open (N4, N5)",
+        "action": "Step H.5/H.6 escalation ladder entered. NOT shipped past, NOT re-run as a fourth identical round."
+      },
+      "strategyAttempts": [
+        {
+          "attempt": 1,
+          "round": 3,
+          "action": "Stop fixing instances; fix the root-cause class. Dispatched golden-vector anchoring for the derived identity digests plus a mirrored negative cross-field matrix, rather than another find-and-patch cycle.",
+          "rationale": "Three rounds produced six instances of one defect class (M1, M2, M3, N1, the fixer's own probe D, now N4/N5). Round 3's systematic sweep already changed the search strategy and found two in one pass instead of one per round - real improvement. But the reviewer's N5 diagnosis names an actual root cause rather than another instance: 'no test pins any derived digest to a value - every identity assertion is relational.' A repo-wide grep for a literal (ps_|ci_|wt_|wp_)[0-9a-f]{16,} returns NO matches. That is a design gap, and golden vectors close the class, not just the finding.",
+          "materialChange": "Root-cause anchoring (pin the format to literal digests) instead of per-finding patching.",
+          "whyNotAccept": "N5's identities are DURABLE - written into .openspec.yaml - so an unpinned preimage means a silent format change invalidates every minted identity with nothing going red. This is the foundation layer S2 and S3 both build on, so the defect compounds downstream rather than staying local. N4 is cheap and mirrors a pattern the same file already implements correctly for FinalizationOutcomeSchema.",
+          "result": "in flight"
+        }
+      ],
       "acceptedKnown": [
         "m4 - resolveStorePlanningLayoutV2Path is never called directly by any test",
         "m5 - task 6.5 records no CI run reference",
