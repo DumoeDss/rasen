@@ -1,6 +1,6 @@
 {
   "name": "@atelierai/rasen-ui",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Optional local management platform for Rasen — boards, pipelines, configuration, and supervised agent sessions served by `rasen ui`.",
   "license": "MIT",
   "author": "Sayo",
