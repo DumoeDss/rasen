@@ -1,0 +1,25 @@
+{
+  "change": "backport-archive-validate-defects",
+  "archivedAt": "2026-08-12T08:16:36.004Z",
+  "codeCommit": "34d9132291fbecd376b8d3e3284be9227cdd92d5",
+  "planningBranch": "chore/store-v2-direction-and-backport-archive",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "96265c8b4b08c38cb83f9abdd6904f5fc2602877869d64da6a5cb89ed50338a3"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "e8606a88f1deb3d5bccf04a593b8881aff6d682f30570d7f34dafae4145a2393"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}
