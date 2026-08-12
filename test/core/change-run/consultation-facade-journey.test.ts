@@ -569,6 +569,7 @@ function fixture(
     const sourceBinding = profile.consultations?.find(
       (entry) => entry.sourceProfilePath === path
     );
+    const actionInput = descriptor.input ?? { change: 'fixture-change' };
     return buildAgentAction(
       {
         capability: boundCapability,
@@ -587,10 +588,14 @@ function fixture(
         expectedBeforeWorkspace: fixtureWorkspaceRevision,
       },
       {
-        input: descriptor.input ?? { change: 'fixture-change' },
+        input: actionInput,
+        // FIXTURE CHOICE, not production behaviour: these journeys dispatch
+        // `JSON.stringify(action.agent.input)` as the turn input, so the
+        // fixture "trusted driver" renders exactly those bytes and the
+        // executor's transport assertion matches. Production MUST NOT derive
+        // turn-input authority from `JSON.stringify(agent.input)`.
         renderedTurnInput:
-          descriptor.renderedTurnInput ??
-          `fixture turn input for ${descriptor.nodeId}#${descriptor.occurrence}`,
+          descriptor.renderedTurnInput ?? JSON.stringify(actionInput),
       }
     );
   };
@@ -601,6 +606,9 @@ function fixture(
   // preview -> render -> admit driver instead of restating it per test.
   const makeRuntime = () =>
     createAdmittingChangePipelineDriver(
+      // These journeys dispatch `JSON.stringify(action.agent.input)`, so the
+      // fixture driver renders exactly those bytes. Production never derives
+      // turn-input authority this way.
       createChangePipelineRuntime({
         store,
         plan,
@@ -610,7 +618,9 @@ function fixture(
         reservationRegistry: reservations,
         verifyHostedTurnReceipt: options.verifyHostedTurnReceipt ?? (() => true),
         buildAction,
-      })
+      }),
+      (candidate) =>
+        JSON.stringify(candidate.input ?? { change: 'fixture-change' })
     );
   const writer = createHostEvidenceWriter({
     runId: plan.runId,

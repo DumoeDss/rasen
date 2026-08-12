@@ -25,7 +25,8 @@ function trustedTestTurnInput(candidate: AgentTurnInputCandidate): string {
 export async function admitPreviewedCandidates(
   runtime: ChangePipelineRuntime,
   ref: ExactChangeRunRef,
-  preview: ChangeRunReceipt
+  preview: ChangeRunReceipt,
+  render: (candidate: AgentTurnInputCandidate) => string = trustedTestTurnInput
 ): Promise<ChangeRunReceipt> {
   if (preview.actions.length > 0 || preview.candidates.length === 0) return preview;
 
@@ -44,7 +45,7 @@ export async function admitPreviewedCandidates(
         throw new Error(`trusted test driver received an unpreviewed candidate: ${candidate.candidateId}`);
       }
       pending.delete(candidate.candidateId);
-      return trustedTestTurnInput(exact);
+      return render(exact);
     },
     finalizeAgentTurnInputs: () => {
       if (pending.size !== 0) {
@@ -61,13 +62,14 @@ export async function admitPreviewedCandidates(
  * mutations still preview first; only exact returned candidates are admitted.
  */
 export function createAdmittingChangePipelineDriver(
-  runtime: ChangePipelineRuntime
+  runtime: ChangePipelineRuntime,
+  render: (candidate: AgentTurnInputCandidate) => string = trustedTestTurnInput
 ): ChangePipelineRuntime {
   const admitFrom = async (
     ref: ExactChangeRunRef,
     preview: Promise<ChangeRunReceipt>
   ): Promise<ChangeRunReceipt> =>
-    admitPreviewedCandidates(runtime, ref, await preview);
+    admitPreviewedCandidates(runtime, ref, await preview, render);
 
   return {
     // Spread first so every runtime method the facade grows (consultation
@@ -80,7 +82,8 @@ export function createAdmittingChangePipelineDriver(
       return admitPreviewedCandidates(
         runtime,
         { change: request.change, runId: receipt.view.runId },
-        receipt
+        receipt,
+        render
       );
     },
     resume: (request, context) => admitFrom(request, runtime.resume(request, context)),
