@@ -1,0 +1,8 @@
+version: 1
+id: store-v2-onto-020
+status: draft
+targetState: target-state.md
+roadmap: roadmap.md
+# No own North Star: this sub-direction inherits the parent
+# issue-centered-automation-platform/north-star.md as read-only higher authority.
+# activeSlice is intentionally unset until the first Slice is confirmed.
