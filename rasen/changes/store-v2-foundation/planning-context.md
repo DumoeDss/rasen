@@ -250,3 +250,65 @@ none — S1 changes no existing capability's requirements.
 **confirmed S2** — nothing in S1 imports it, and S1's five Layer-0 modules reach only the allowlist in
 finding E. Q4 (which tests port as-is): S1's five suites port as-is; they are pure unit tests with no
 fixtures, no Git, and no filesystem, so 0.2.0's structures do not touch them.
+
+### From S2 `store-worktree-bindings-v2` (planner-1, same planner warm-reused)
+
+**J. The attribution recipe gives OPPOSITE answers per child — run it, never assume it.** For S1 the
+verdict was "port the ship commit, exclude the tip". For S2 it is "port the TIP", because every
+post-squash change to `workspace/**` is either one of the two mandated fixups or the block they
+rewrote. There is no single S2 ship commit: `0ede6cfb` is a squash of five 0.1.7 children, but its
+effect on S2's files is unambiguous (creates all of them from zero, 6,619 insertions). Attribution
+table: `0ede6cfb` = base; `79fd80a9` +468 / `55aafa1d` +113 / `bf6bdbb7` +489 all rewrite the ONE
+atomic-write block in `dependencies.ts`; `70b5a74c` = the existing-change binding fixup
+(`apply.ts` +78, `module.ts` +41). **`project-registry.ts` +471 is NOT S2** — it comes from
+`3b050663 feat(store): add planning scope routing` plus two registry-hardening commits, all out of
+portfolio scope. Verify before porting it.
+
+**K. A commit's TITLE lies about its owner; the consumer graph and the archived fixup decide.** Two
+of the four commits that built `workspace/dependencies.ts`'s atomic-write block are titled
+`fix(archive): …`, and the block's only PRODUCTION consumer is `finalization/association.ts` — a
+deferred slice. By S1's rule that argues for exclusion. It is still IN, for three measured reasons:
+`bf6bdbb7` **is** the archived fixup `2026-08-10-fix-workspace-claim-portability` that S2 is mandated
+to fold in and whose own proposal names that file; the block has a dedicated ~920-line suite in S2's
+own namespace (`test/core/store/workspace-atomic-write.test.ts`) that imports no finalization; and
+excluding it is mechanically impossible without inventing a file state that never existed on the
+reference line. Generalisation: **"no production consumer in this child" is not sufficient for
+exclusion — check for a dedicated suite and check whether a mandated fixup already rewrote it.**
+
+**L. `session-runtime-context` is a 0.1.7-vs-0.2.0 trap, and it recurs.** The 0.1.7 worktree-bindings
+change ALSO modified `session-runtime-context` (a third capability the brief did not name — the same
+omission pattern as S1's `change-finalization-record-v2`) and **raised `RUNTIME_CONTEXT_VERSION`
+1 → 2, declared BREAKING**. On 0.2.0 that file has **13 production consumers, 6 in `management-api/`**
+(`supervisor`, `sessions`, `session-registry`, `durable-session-registry`, `reusable-session-api`,
+`session-launch-context`) — none of which existed on 0.1.7. The version is load-bearing, not
+advisory: it is bound as `z.literal(RUNTIME_CONTEXT_VERSION)` and a differing declared version is
+rejected on read, so a bump makes every on-disk context file unreadable under a live daemon. **S2
+carves it out** and hands the session-freezing + `rasen context` projection forward as an inbound item
+to the store-session execution-context slice (which owns that file anyway). Carve-out is clean:
+nothing in `workspace/**`, `target-lines.ts`, or the two command files imports it. The pair stays
+auditable via `store workspace show`. **Any later slice touching 0.1.7's session/daemon-adjacent
+surfaces must re-run this consumer count first.**
+
+**M. S2's `workspace/` imports NOTHING from `store-planning/`, `layout-migration/`, `issues/`, or
+`query/`** — verified by enumerating every `from '...'` in the module. The 0.1.7 proposal's stated
+dependency on `store-planning`/`store-layout-v2-migration` was about *wiring* (`planChangeWorkspace`
+surfaced ON `StorePlanning`), not about the module's own imports, so that wiring is droppable without
+touching the module. Cheap check worth repeating: `git grep -h "from '" origin/dev/0.1.7 -- <dir> |
+grep -oE "from '[^']+'" | sort -u`.
+
+**N. Six digest sites in S2 make it squarely subject to the relational-blindness lesson**, and the
+reference's own strongest plan scenario is the blind shape. Sites: `plan.ts:794` (the
+content-addressed token `apply` consumes), `cleanup.ts:170` and `:251`, `locks.ts:128` (versioned
+domain preimage `workspace-lock/v1`), `registry.ts:201`, `binding.ts:93`, `dependencies.ts:343`. The
+ported scenario **"Equal inputs produce an identical plan"** compares two derivations *to each other*
+and stays green under any uniform preimage or serialization change — it is now anchored to a pinned
+literal value.
+
+**O. S2 declares ZERO new branded types** — `git grep 'unique symbol'` over `workspace/**` and
+`target-lines.ts` on 0.1.7 is empty. So S1's three-file brand-vocabulary guard needs no extension
+here. **S3 must re-run that grep rather than inherit this answer**, since `issues/` is the likelier
+place for new brands.
+
+**P. `rasen validate --strict` requires SHALL/MUST on the FIRST LINE of a requirement's description**,
+not merely somewhere in the paragraph. A requirement whose opening line is scene-setting and whose
+SHALL lands on line 2 fails with `must contain SHALL or MUST`. Lead with the normative clause.
