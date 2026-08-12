@@ -40,6 +40,7 @@ import {
 import { createBoundedEvidenceStore } from '../../../src/core/change-run/internal/evidence.js';
 import { createFilesystemEvidenceStore } from '../../../src/core/change-run/internal/evidence-store-fs.js';
 import { createChangePipelineRuntime } from '../../../src/core/change-run/internal/facade-runtime.js';
+import { createAdmittingChangePipelineDriver } from '../../helpers/change-run-admission.js';
 import { createHostEvidenceWriter } from '../../../src/core/change-run/internal/host-evidence-writer.js';
 import {
   canonicalJson,
@@ -557,6 +558,7 @@ function fixture(
     admissionKind: 'agent' | 'command' | 'host';
     profilePath?: string;
     input?: JsonValue;
+    renderedTurnInput?: string;
   }): RunAction => {
     const path = descriptor.profilePath ?? 'source';
     const boundCapability = capabilityByPath.get(path);
@@ -584,20 +586,32 @@ function fixture(
         attemptOrdinal: 0,
         expectedBeforeWorkspace: fixtureWorkspaceRevision,
       },
-      { input: descriptor.input ?? { change: 'fixture-change' } }
+      {
+        input: descriptor.input ?? { change: 'fixture-change' },
+        renderedTurnInput:
+          descriptor.renderedTurnInput ??
+          `fixture turn input for ${descriptor.nodeId}#${descriptor.occurrence}`,
+      }
     );
   };
+  // Agent Actions are no longer admitted by `start`/`resume`/`complete`: they
+  // are previewed as prompt-free candidates and admitted only against trusted
+  // rendered bytes. These journeys assert consultation behaviour rather than
+  // the admission boundary, so they drive the runtime through the canonical
+  // preview -> render -> admit driver instead of restating it per test.
   const makeRuntime = () =>
-    createChangePipelineRuntime({
-      store,
-      plan,
-      initialRecord,
-      executionProfile: profile,
-      evidenceStore,
-      reservationRegistry: reservations,
-      verifyHostedTurnReceipt: options.verifyHostedTurnReceipt ?? (() => true),
-      buildAction,
-    });
+    createAdmittingChangePipelineDriver(
+      createChangePipelineRuntime({
+        store,
+        plan,
+        initialRecord,
+        executionProfile: profile,
+        evidenceStore,
+        reservationRegistry: reservations,
+        verifyHostedTurnReceipt: options.verifyHostedTurnReceipt ?? (() => true),
+        buildAction,
+      })
+    );
   const writer = createHostEvidenceWriter({
     runId: plan.runId,
     runStore: store,

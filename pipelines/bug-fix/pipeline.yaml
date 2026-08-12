@@ -112,7 +112,7 @@ root:
           requireMaterialChange: true
           capability:
             id: skill:rasen-review-cycle
-            version: sha256:4408724a34b151d6e2ee54f4324e6585c61a0764d355990a7105bb4235ae6df0
+            version: sha256:2689d5c85df54bf702f34337db8a51c90faf321d6c18b9e829f79dca89ea6e05
         exits:
           iterationLimit: { action: strategy }
           actionLimit: { action: fail, outcome: review-action-limit }

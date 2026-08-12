@@ -582,6 +582,7 @@ export function openStoredRuntimeContext(
     admissionKind: 'agent' | 'command' | 'host';
     profilePath?: string;
     input?: JsonValue;
+    renderedTurnInput?: string;
   }): RunAction => {
     const hierarchicalPath =
       descriptor.profilePath ??
@@ -597,24 +598,52 @@ export function openStoredRuntimeContext(
     if (capability === undefined || stage === undefined) {
       throw new Error(`No persisted capability/policy binding for ${hierarchicalPath}.`);
     }
+    if (capability.actionKind !== descriptor.admissionKind) {
+      throw new Error(
+        `Admission kind ${descriptor.admissionKind} does not match frozen capability kind ${capability.actionKind} for ${hierarchicalPath}.`
+      );
+    }
     const head = store.load(input.runId);
-    return buildAgentAction(
-      {
-        capability,
-        stage: stage as never,
-        executionProfileDigest: profile.profileDigest,
-        policyDigest: profile.policyDigest,
-        ...(consultationBinding === undefined ? {} : { consultationBinding }),
-      },
-      {
-        runId: plan.runId,
-        nodeId: descriptor.nodeId as NodeId,
-        occurrence: descriptor.occurrence,
-        attemptOrdinal: 0,
-        expectedBeforeWorkspace: head.currentWorkspaceRevision,
-      },
-      { input: (descriptor.input ?? {}) as never }
-    );
+    const buildContext = {
+      capability,
+      stage: stage as never,
+      executionProfileDigest: profile.profileDigest,
+      policyDigest: profile.policyDigest,
+      ...(consultationBinding === undefined ? {} : { consultationBinding }),
+    };
+    const identity = {
+      runId: plan.runId,
+      nodeId: descriptor.nodeId as NodeId,
+      occurrence: descriptor.occurrence,
+      attemptOrdinal: 0,
+      expectedBeforeWorkspace: head.currentWorkspaceRevision,
+    };
+    const actionInput = (descriptor.input ?? {}) as JsonValue;
+
+    switch (capability.actionKind) {
+      case 'agent':
+        if (descriptor.renderedTurnInput === undefined) {
+          throw new Error(
+            `Trusted driver rendering is required before admitting agent Action ${descriptor.nodeId}.`
+          );
+        }
+        return buildAgentAction(buildContext, identity, {
+          input: actionInput,
+          renderedTurnInput: descriptor.renderedTurnInput,
+        });
+      case 'command':
+        return buildCommandAction(buildContext, identity, {
+          ...capability.command,
+          // The resumed context has no launch input; the committed Record is
+          // the workspace authority for an already-started Run.
+          workspaceInstanceId: head.workspaceInstanceId,
+        });
+      case 'host':
+        return buildHostAction(buildContext, identity, {
+          operation: capability.host.operation,
+          input: actionInput,
+        });
+    }
   };
   const evidenceStore = createFilesystemEvidenceStore(input.storeRoot, plan.runId, {
     maxRunBytes: 64 * 1024 * 1024,

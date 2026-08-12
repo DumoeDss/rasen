@@ -1307,6 +1307,9 @@ function createManagementExactTeacherAttemptModule(input: Readonly<{
                 disposition: 'idempotent' as const,
                 view: projectRunView(record, 'active', runtime.plan),
                 actions: Object.freeze([]),
+                // A settled Teacher advice receipt admits nothing, so it
+                // carries no agent candidates.
+                candidates: Object.freeze([]),
               }),
             }),
           });

@@ -809,27 +809,22 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
       if (!result.ok) {
         throw new Error(`facade settle failed: ${result.failure.message}`);
       }
+      const settledGrants = collected.continuationIds.map((id) =>
+        continuationGrantFromCommitted(
+          result.record,
+          result.record.consultations![id]!
+        )
+      );
       return {
         record: result.record,
         granted: collected.granted,
+        continuationGrants: settledGrants,
         reserved: collected.reserved,
       };
     } catch (error) {
       discardPendingReservations(collected.reserved);
       throw error;
     }
-    const continuationGrants = collected.continuationIds.map((id) =>
-      continuationGrantFromCommitted(
-        result.record,
-        result.record.consultations![id]!
-      )
-    );
-    return {
-      record: result.record,
-      granted: collected.granted,
-      continuationGrants,
-      reserved: collected.reserved,
-    };
   };
 
   return {
@@ -1086,7 +1081,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
       const collected = collectSettleStimuli(
         intermediate.record,
         reconciled.actions,
-        context.deliveryMode
+        context
       );
       const reduced = reduceCandidateBatch(record, [
         requestStimulus,
@@ -1109,6 +1104,8 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
           collected.granted,
           deps.resolveSourceState,
           deps.plan,
+          deps.buildAction,
+          undefined,
           continuationGrants
         )
       );
@@ -1224,7 +1221,7 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
       const collected = collectSettleStimuli(
         intermediate.record,
         reconciled.actions,
-        context.deliveryMode
+        context
       );
       const reduced = reduceCandidateBatch(record, [
         failureStimulus,
@@ -1250,6 +1247,8 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
           collected.granted,
           deps.resolveSourceState,
           deps.plan,
+          deps.buildAction,
+          undefined,
           continuationGrants
         )
       );

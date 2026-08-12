@@ -70,6 +70,10 @@ export function createAdmittingChangePipelineDriver(
     admitPreviewedCandidates(runtime, ref, await preview);
 
   return {
+    // Spread first so every runtime method the facade grows (consultation
+    // settlement, teacher failure, ...) is forwarded unchanged; only the
+    // mutations that can preview candidates are wrapped below.
+    ...runtime,
     start: async (request: StartChangePipeline, context) => {
       const preview = runtime.start(request, context);
       const receipt = await preview;
