@@ -17,29 +17,41 @@ import {
   withOwnerAwareFileLock,
 } from '../../file-state.js';
 import { StoreError } from '../errors.js';
+import { productionStoreIssueDependencies } from '../issues/dependencies.js';
+import {
+  heldIssueLockKeys,
+  issueLockCanonicalBytes,
+  issueLockKey,
+  withIssueLockBatch,
+} from '../issues/locks.js';
 import { resolveRegisteredStore } from '../registry.js';
 import {
+  consumeDestinationOwnedStagingCopies,
   emptyResult,
   manifestRelativePath,
   planRelativePath,
   publicationCommitSuggestion,
   publishPlan,
+  reconcileLegacyCreatedPaths,
   retireFlatTree,
   retirementCommitSuggestion,
   revalidatePlan,
   rollbackRun,
+  readRecoveryManifest,
   stagePlan,
   verifyStagedTree,
+  verifyRecoveryOperationOwnership,
+  type PreparedRecoveryManifest,
   type RecoveryManifest,
 } from './apply.js';
 import {
   productionStoreLayoutMigrationDependencies,
   type StoreLayoutMigrationDependencies,
 } from './dependencies.js';
-import { flatStorePaths, storeRelative } from './flat-source.js';
+import { flatStorePaths, sha256Hex, storeRelative } from './flat-source.js';
 import { inventoryStore } from './inventory.js';
 import { loadMappingFile } from './mapping.js';
-import { buildMigrationPlan, planGateError } from './plan.js';
+import { buildMigrationPlan, planGateError, readImmutableMigrationPlan } from './plan.js';
 import { migrationReceiptPath } from './receipt.js';
 import type {
   FlatStoreInventory,
@@ -159,36 +171,107 @@ export class StoreLayoutMigration implements StoreLayoutMigrationModule {
   async apply(token: MigrationPlanToken): Promise<MigrationResult> {
     const plan = await this.loadPlan(token);
     if (!plan.applicable) throw planGateError(plan);
-
-    const lockPath = machineLockPath(
-      path.resolve(plan.storeRoot, `.rasen-store-layout-${token.storeUid}-${token.ref.replace(/\W/gu, '_')}`)
+    return this.withPublicationLocks(plan, token, this.globalDataDir, async () =>
+      this.applyLocked(plan, token, this.globalDataDir)
     );
-    return withOwnerAwareFileLock(
+  }
+
+  private async withPublicationLocks<T>(
+    plan: ImmutableMigrationPlan,
+    token: Pick<MigrationPlanToken, 'storeUid' | 'ref'>,
+    globalDataDir: string | undefined,
+    fn: () => Promise<T>
+  ): Promise<T> {
+    const issueIds = plan.items.flatMap((item) =>
+      item.materialization?.kind === 'generated-tree' &&
+      item.disposition?.kind === 'store-issue'
+        ? [item.disposition.issueId]
+        : []
+    );
+    const keys = issueIds.map((issueId) => issueLockKey({ storeUid: token.storeUid, issueId }));
+    const run = async (): Promise<T> => {
+      if (keys.length > 0) {
+        const expected = keys
+          .map((key) => issueLockCanonicalBytes(key).toString('hex'))
+          .filter((value, index, all) => all.indexOf(value) === index)
+          .sort();
+        const held = heldIssueLockKeys()
+          .map((key) => issueLockCanonicalBytes(key).toString('hex'))
+          .sort();
+        if (expected.join(',') !== held.join(',')) {
+          throw new Error('generated layout publication entered its run lock without the expected Issue batch');
+        }
+      }
+      const lockPath = machineLockPath(
+        path.resolve(
+          plan.storeRoot,
+          `.rasen-store-layout-${token.storeUid}-${token.ref.replace(/\W/gu, '_')}`
+        )
+      );
+      return withOwnerAwareFileLock(
+        {
+          lockPath,
+          holder: 'store-layout-migration',
+          errorFor: layoutMigrationLockError,
+        },
+        async () => {
+          await this.dependencies.checkpoint({
+            kind: 'migration-run-acquired',
+            storeUid: token.storeUid,
+            ref: token.ref,
+          });
+          return fn();
+        }
+      );
+    };
+    if (keys.length === 0) return run();
+    return withIssueLockBatch(
+      productionStoreIssueDependencies.coordination(globalDataDir),
+      keys,
+      run,
       {
-        lockPath,
-        holder: 'store-layout-migration',
-        errorFor: layoutMigrationLockError,
-      },
-      async () => this.applyLocked(plan, token)
+        onAcquired: async (key, index, total) => {
+          await this.dependencies.checkpoint({
+            kind: 'issue-lock-acquired',
+            issueId: key.material.issueId ?? key.label,
+            index,
+            total,
+          });
+        },
+      }
     );
   }
 
   private async applyLocked(
     plan: ImmutableMigrationPlan,
-    token: MigrationPlanToken
+    token: MigrationPlanToken,
+    globalDataDir: string | undefined
   ): Promise<MigrationResult> {
     await revalidatePlan(this.dependencies, plan);
+    const issueIds = plan.items.flatMap((item) =>
+      item.materialization?.kind === 'generated-tree' &&
+      item.disposition?.kind === 'store-issue'
+        ? [item.disposition.issueId]
+        : []
+    );
+    await this.dependencies.checkpoint({
+      kind: 'generated-destination-precondition',
+      issueIds,
+    });
 
     const paths = flatStorePaths(plan.storeRoot);
     const legacyManifest = (await this.dependencies.fs.readText(paths.adoptionsManifest)) ?? undefined;
     const staged = await stagePlan(this.dependencies, plan, legacyManifest);
     await verifyStagedTree(this.dependencies, plan, staged);
 
-    const coordination = this.dependencies.coordination(this.globalDataDir);
+    const coordination = this.dependencies.coordination(globalDataDir);
     const manifestRelative = manifestRelativePath(token.storeUid, token.ref);
     const startedAt = this.dependencies.now().toISOString();
-    const initial: RecoveryManifest = {
-      version: 1,
+    const initial: PreparedRecoveryManifest = {
+      version: 2,
+      runId: sha256Hex(
+        `${plan.planId}\0${startedAt}\0${this.dependencies.mintInstanceSeed()}`
+      ),
       planId: plan.planId,
       storeId: plan.storeId,
       storeUid: token.storeUid,
@@ -201,6 +284,7 @@ export class StoreLayoutMigration implements StoreLayoutMigrationModule {
       stagingDir: staged.root,
       createdPaths: [],
       replacedFiles: {},
+      operations: [],
       phases: [{ phase: 'verified', at: startedAt }],
     };
 
@@ -211,8 +295,8 @@ export class StoreLayoutMigration implements StoreLayoutMigrationModule {
     // discarded it, so a mid-publication failure left orphaned partitions and
     // an upgraded catalog behind with a manifest that claimed the run had
     // created nothing (design decision 9; task 6.3).
-    let latestManifest: RecoveryManifest = initial;
-    const writeManifest = async (manifest: RecoveryManifest): Promise<void> => {
+    let latestManifest: PreparedRecoveryManifest = initial;
+    const writeManifest = async (manifest: PreparedRecoveryManifest): Promise<void> => {
       latestManifest = manifest;
       await coordination.writeJson(manifestRelative, manifest);
     };
@@ -249,12 +333,13 @@ export class StoreLayoutMigration implements StoreLayoutMigrationModule {
   }
 
   async status(input: MigrationStatusInput): Promise<MigrationRunStatus> {
+    const globalDataDir = input.globalDataDir ?? this.globalDataDir;
     const context = await this.resolveStore(input);
     const ref = (await this.dependencies.git.currentRef(context.storeRoot)) ?? undefined;
     const manifest = await this.readManifest(
       context,
       ref,
-      input.globalDataDir ?? this.globalDataDir
+      globalDataDir
     );
     const publicationComplete = manifest?.phase === 'published' || manifest?.phase === 'retired';
     return {
@@ -275,7 +360,7 @@ export class StoreLayoutMigration implements StoreLayoutMigrationModule {
               context.storeUid === undefined || ref === undefined
                 ? undefined
                 : this.dependencies
-                    .coordination(input.globalDataDir ?? this.globalDataDir)
+                    .coordination(globalDataDir)
                     .resolve(manifestRelativePath(context.storeUid, ref)),
             ...(manifest.receiptPath === undefined
               ? {}
@@ -287,13 +372,14 @@ export class StoreLayoutMigration implements StoreLayoutMigrationModule {
   }
 
   async recover(input: MigrationRecoveryInput): Promise<MigrationResult> {
+    const globalDataDir = input.globalDataDir ?? this.globalDataDir;
     const context = await this.resolveStore(input);
     this.assertInvokedFromStoreWorktree(context, input.startPath);
     const ref = (await this.dependencies.git.currentRef(context.storeRoot)) ?? undefined;
     const manifest = await this.readManifest(
       context,
       ref,
-      input.globalDataDir ?? this.globalDataDir
+      globalDataDir
     );
     if (manifest === null || manifest === undefined) {
       throw migrationError(
@@ -303,7 +389,7 @@ export class StoreLayoutMigration implements StoreLayoutMigrationModule {
       );
     }
 
-    const plan = await this.loadPlanById(manifest, input.globalDataDir ?? this.globalDataDir);
+    const plan = await this.loadPlanById(manifest, globalDataDir);
 
     if (input.action === 'rollback') {
       if (manifest.phase === 'retired') {
@@ -313,14 +399,25 @@ export class StoreLayoutMigration implements StoreLayoutMigrationModule {
           'Recover with Git: check out the commit before the retirement commit in the Store repository.'
         );
       }
-      const removed = await rollbackRun(this.dependencies, manifest);
-      await this.dependencies
-        .coordination(input.globalDataDir ?? this.globalDataDir)
-        .writeJson(manifestRelativePath(manifest.storeUid, manifest.ref), {
-          ...manifest,
-          phase: 'rolled-back',
-          updatedAt: this.dependencies.now().toISOString(),
-        });
+      const removed = await this.withPublicationLocks(
+        plan,
+        { storeUid: manifest.storeUid, ref: manifest.ref },
+        globalDataDir,
+        async () => {
+          if (manifest.version === 2) {
+            await verifyRecoveryOperationOwnership(this.dependencies, manifest, plan);
+          }
+          const rolledBack = await rollbackRun(this.dependencies, manifest, plan);
+          await this.dependencies
+            .coordination(globalDataDir)
+            .writeJson(manifestRelativePath(manifest.storeUid, manifest.ref), {
+              ...manifest,
+              phase: 'rolled-back',
+              updatedAt: this.dependencies.now().toISOString(),
+            });
+          return rolledBack;
+        }
+      );
       return { ...emptyResult(plan, 'rolled-back'), removed };
     }
 
@@ -345,7 +442,7 @@ export class StoreLayoutMigration implements StoreLayoutMigrationModule {
       }
       const removed = await retireFlatTree(this.dependencies, plan);
       await this.dependencies
-        .coordination(input.globalDataDir ?? this.globalDataDir)
+        .coordination(globalDataDir)
         .writeJson(manifestRelativePath(manifest.storeUid, manifest.ref), {
           ...manifest,
           phase: 'retired',
@@ -367,7 +464,120 @@ export class StoreLayoutMigration implements StoreLayoutMigrationModule {
       return { ...emptyResult(plan, manifest.phase), suggestedCommits: [] };
     }
     if (plan.token === undefined) throw planGateError(plan);
-    return this.apply(plan.token);
+    return this.withPublicationLocks(plan, plan.token, globalDataDir, async () =>
+      this.resumeLocked(
+        plan,
+        plan.token as MigrationPlanToken,
+        manifest,
+        globalDataDir
+      )
+    );
+  }
+
+  private async resumeLocked(
+    plan: ImmutableMigrationPlan,
+    token: MigrationPlanToken,
+    manifest: RecoveryManifest,
+    globalDataDir: string | undefined
+  ): Promise<MigrationResult> {
+    if (manifest.version === 2) {
+      await verifyRecoveryOperationOwnership(this.dependencies, manifest, plan);
+    }
+    await revalidatePlan(this.dependencies, plan, manifest);
+    const issueIds = plan.items.flatMap((item) =>
+      item.materialization?.kind === 'generated-tree' &&
+      item.disposition?.kind === 'store-issue'
+        ? [item.disposition.issueId]
+        : []
+    );
+    await this.dependencies.checkpoint({
+      kind: 'generated-destination-precondition',
+      issueIds,
+    });
+    const paths = flatStorePaths(plan.storeRoot);
+    const legacyManifest =
+      (await this.dependencies.fs.readText(paths.adoptionsManifest)) ?? undefined;
+    const staged = await stagePlan(this.dependencies, plan, legacyManifest);
+    await verifyStagedTree(this.dependencies, plan, staged);
+    const coordination = this.dependencies.coordination(globalDataDir);
+    const manifestRelative = manifestRelativePath(token.storeUid, token.ref);
+    const resumedAt = this.dependencies.now().toISOString();
+    let latest: PreparedRecoveryManifest;
+    if (manifest.version === 1) {
+      const runId = sha256Hex(
+        `${plan.planId}\0${resumedAt}\0${this.dependencies.mintInstanceSeed()}`
+      );
+      const operations = await reconcileLegacyCreatedPaths(
+        this.dependencies,
+        manifest,
+        staged,
+        runId
+      );
+      latest = {
+        ...manifest,
+        version: 2,
+        runId,
+        operations,
+        phase: 'verified',
+        stagingDir: staged.root,
+        updatedAt: resumedAt,
+      };
+    } else {
+      await consumeDestinationOwnedStagingCopies(
+        this.dependencies,
+        staged,
+        manifest.operations,
+        manifest.startedAt
+      );
+      latest = {
+        ...manifest,
+        phase: 'verified',
+        stagingDir: staged.root,
+        updatedAt: resumedAt,
+      };
+    }
+    const writeManifest = async (next: PreparedRecoveryManifest): Promise<void> => {
+      latest = next;
+      await coordination.writeJson(manifestRelative, next);
+    };
+    if (manifest.version === 1) {
+      // The v2 upgrade must itself be a valid fresh-process boundary: every
+      // adopted completed operation already has one digest-proved destination
+      // copy and no staged copy before these ownership claims become durable.
+      await verifyRecoveryOperationOwnership(this.dependencies, latest, plan);
+    }
+    await writeManifest(latest);
+    if (manifest.version === 1) {
+      await this.dependencies.checkpoint({ kind: 'legacy-recovery-upgrade', phase: 'after' });
+    }
+    try {
+      const outcome = await publishPlan(
+        this.dependencies,
+        plan,
+        staged,
+        writeManifest,
+        latest
+      );
+      return {
+        planId: plan.planId,
+        storeId: plan.storeId,
+        storeRoot: plan.storeRoot,
+        ref: plan.ref as string,
+        phase: 'published',
+        published: outcome.published,
+        removed: [],
+        receiptPath: staged.receiptDestination,
+        suggestedCommits: [publicationCommitSuggestion(plan)],
+      };
+    } catch (error) {
+      await writeManifest({
+        ...latest,
+        phase: 'failed',
+        updatedAt: this.dependencies.now().toISOString(),
+        failure: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -427,7 +637,7 @@ export class StoreLayoutMigration implements StoreLayoutMigrationModule {
     const value = await this.dependencies
       .coordination(globalDataDir)
       .readJson(manifestRelativePath(context.storeUid, ref));
-    return value === null ? null : (value as RecoveryManifest);
+    return value === null ? null : readRecoveryManifest(value);
   }
 
   private async loadPlan(token: MigrationPlanToken): Promise<ImmutableMigrationPlan> {
@@ -441,7 +651,7 @@ export class StoreLayoutMigration implements StoreLayoutMigrationModule {
         'Re-run the plan; a plan is machine-local coordination state and is never committed.'
       );
     }
-    const plan = value as ImmutableMigrationPlan;
+    const plan = readImmutableMigrationPlan(value);
     if (
       plan.planId !== token.planId ||
       plan.inventoryFingerprint !== token.inventoryFingerprint
@@ -469,7 +679,7 @@ export class StoreLayoutMigration implements StoreLayoutMigrationModule {
         'Re-run the plan from this worktree; recovery state is machine-local.'
       );
     }
-    return value as ImmutableMigrationPlan;
+    return readImmutableMigrationPlan(value);
   }
 }
 

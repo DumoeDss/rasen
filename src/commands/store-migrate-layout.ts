@@ -12,6 +12,7 @@ import { asErrorMessage, printJson } from './shared-output.js';
 import { StoreError } from '../core/store/index.js';
 import {
   StoreLayoutMigration,
+  migrationItemDiagnosticCode,
   migrationItemStateLabel,
   type FlatStoreInventory,
   type ImmutableMigrationPlan,
@@ -40,7 +41,7 @@ function fail(json: boolean | undefined, error: unknown, code: string): void {
   if (json) {
     printJson({ status: [diagnostic] });
   } else {
-    console.error(asErrorMessage(diagnostic.message));
+    console.error(`${diagnostic.code}: ${asErrorMessage(diagnostic.message)}`);
     if (diagnostic.fix) console.error(`  fix: ${diagnostic.fix}`);
   }
   process.exitCode = 1;
@@ -49,6 +50,8 @@ function fail(json: boolean | undefined, error: unknown, code: string): void {
 function planPayload(plan: ImmutableMigrationPlan, inventory: FlatStoreInventory): unknown {
   return {
     planId: plan.planId,
+    schemaVersion: plan.schemaVersion,
+    mappingVersion: plan.mappingVersion,
     storeId: plan.storeId,
     ref: plan.ref,
     applicable: plan.applicable,
@@ -57,6 +60,7 @@ function planPayload(plan: ImmutableMigrationPlan, inventory: FlatStoreInventory
       kind: item.kind,
       name: item.name,
       state: migrationItemStateLabel(item.state),
+      code: migrationItemDiagnosticCode(item),
       reason: item.reason,
       repair: item.repair,
       source: item.sourceRelative,
@@ -67,10 +71,23 @@ function planPayload(plan: ImmutableMigrationPlan, inventory: FlatStoreInventory
       supersededEvidence: item.supersededEvidence,
       contributors: item.contributors,
       untracked: item.untracked,
+      sourceLifecycle: item.sourceLifecycle,
+      disposition: item.disposition,
+      materialization: item.materialization,
+      planInput: item.planInput,
+      continuation:
+        item.disposition?.kind === 'store-issue' && item.planInput === undefined
+          ? {
+              code: 'migration_issue_plan_absent',
+              message: 'no plan supplied; no nodes invented',
+              command: `rasen store issue plan ${item.disposition.issueId} --store ${plan.storeId} --from-file <path>`,
+            }
+          : undefined,
     })),
     blockers: plan.blockers.map((item) => ({
       name: item.name,
       state: migrationItemStateLabel(item.state),
+      code: migrationItemDiagnosticCode(item),
       reason: item.reason,
       repair: item.repair,
     })),
@@ -106,6 +123,8 @@ function renderPlan(plan: ImmutableMigrationPlan, inventory: FlatStoreInventory)
       console.log(
         `    [${state}] ${item.kind} ${item.name}${item.owner ? ` -> ${item.owner}` : ''}`
       );
+      const code = migrationItemDiagnosticCode(item);
+      if (code !== undefined) console.log(`        code:        ${code}`);
       console.log(`        source:      ${item.sourceRelative}`);
       if (item.destinationRelative !== undefined) {
         console.log(`        destination: ${item.destinationRelative}`);
@@ -127,10 +146,23 @@ function renderPlan(plan: ImmutableMigrationPlan, inventory: FlatStoreInventory)
       }
       if (item.untracked !== undefined && item.untracked.length > 0) {
         console.log(
-          `        untracked:   ${item.untracked.length} file(s) will move with the tree — ${item.untracked
+          `        non-Git:     ${item.untracked.length} file(s)${item.materialization?.kind === 'generated-tree' ? ' block generated conversion' : ' will move with the copied tree'} — ${item.untracked
             .slice(0, 5)
             .join(', ')}`
         );
+      }
+      if (item.disposition?.kind === 'store-issue') {
+        console.log(
+          `        Issue:       ${item.disposition.issueId} (${item.disposition.state})`
+        );
+        if (item.planInput === undefined) {
+          console.log(
+            '        info:        migration_issue_plan_absent — no plan supplied; no nodes invented'
+          );
+          console.log(
+            `        continue:    rasen store issue plan ${item.disposition.issueId} --store ${plan.storeId} --from-file <path>`
+          );
+        }
       }
     }
   }

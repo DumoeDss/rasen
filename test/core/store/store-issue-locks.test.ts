@@ -23,7 +23,10 @@ import {
   issueLockHeld,
   issueLockKey,
   issueLockPath,
+  issueLockCanonicalBytes,
+  heldIssueLockKeys,
   withIssueLock,
+  withIssueLockBatch,
 } from '../../../src/core/store/issues/index.js';
 import {
   WORKSPACE_LOCK_ORDER,
@@ -150,6 +153,96 @@ describe('holding the issue lock', () => {
       })
     ).rejects.toThrow('boom');
     expect(fs.existsSync(lockPath)).toBe(false);
+  });
+
+  it('deduplicates and canonical-byte-sorts a migration batch, then releases it', async () => {
+    const keys = [
+      issueLockKey({ storeUid: STORE_UID, issueId: 'beta' }),
+      issueLockKey({ storeUid: STORE_UID, issueId: 'alpha' }),
+      issueLockKey({ storeUid: STORE_UID, issueId: 'beta' }),
+    ];
+    let heldPaths: string[] = [];
+    await withIssueLockBatch(coordination(), keys, async () => {
+      const held = heldIssueLockKeys();
+      expect(held).toHaveLength(2);
+      expect(
+        Buffer.compare(issueLockCanonicalBytes(held[0]!), issueLockCanonicalBytes(held[1]!))
+      ).toBeLessThan(0);
+      heldPaths = held.map((key) => issueLockPath(coordination(), key));
+      expect(heldPaths.every((target) => fs.existsSync(target))).toBe(true);
+    });
+    expect(heldPaths.every((target) => !fs.existsSync(target))).toBe(true);
+  });
+
+  it('releases an earlier batch key when a later canonical key is unavailable', async () => {
+    const handle = coordination();
+    const keys = ['alpha', 'beta']
+      .map((issueId) => issueLockKey({ storeUid: STORE_UID, issueId }))
+      .sort((left, right) =>
+        Buffer.compare(issueLockCanonicalBytes(left), issueLockCanonicalBytes(right))
+      );
+    await withIssueLockIgnoringOrder(handle, keys[1]!, async () => {
+      await expect(
+        withIssueLockBatch(handle, keys, async () => undefined, {
+          deadlineMs: 100,
+          pollMs: 10,
+        })
+      ).rejects.toThrow(/held by/u);
+      expect(fs.existsSync(issueLockPath(handle, keys[0]!))).toBe(false);
+      expect(fs.existsSync(issueLockPath(handle, keys[1]!))).toBe(true);
+    });
+  });
+
+  it('releases the whole batch after callback failure', async () => {
+    const handle = coordination();
+    const keys = ['alpha', 'beta'].map((issueId) =>
+      issueLockKey({ storeUid: STORE_UID, issueId })
+    );
+    await expect(
+      withIssueLockBatch(handle, keys, async () => {
+        throw new Error('batch callback failed');
+      })
+    ).rejects.toThrow('batch callback failed');
+    expect(keys.every((key) => !fs.existsSync(issueLockPath(handle, key)))).toBe(true);
+  });
+
+  it('serializes overlapping migration batches across refs while disjoint batches complete', async () => {
+    const handle = coordination();
+    const keys = (ids: readonly string[]) =>
+      ids.map((issueId) => issueLockKey({ storeUid: STORE_UID, issueId }));
+    let announce!: () => void;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      announce = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const firstRef = withIssueLockBatch(handle, keys(['alpha', 'beta']), async () => {
+      announce();
+      await gate;
+    });
+    await held;
+
+    let disjointCompleted = false;
+    await withIssueLockBatch(handle, keys(['gamma', 'delta']), async () => {
+      disjointCompleted = true;
+    }, { deadlineMs: 100, pollMs: 10 });
+    expect(disjointCompleted).toBe(true);
+    await expect(
+      withIssueLockBatch(handle, keys(['beta', 'gamma']), async () => undefined, {
+        deadlineMs: 100,
+        pollMs: 10,
+      })
+    ).rejects.toThrow(/held by/u);
+
+    release();
+    await firstRef;
+    expect(
+      keys(['alpha', 'beta', 'gamma', 'delta']).every(
+        (key) => !fs.existsSync(issueLockPath(handle, key))
+      )
+    ).toBe(true);
   });
 
   it('lets two Issues in one Store proceed concurrently', async () => {

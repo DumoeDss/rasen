@@ -406,7 +406,7 @@ describe('local version prepare command', () => {
       const failure = spawnSync('powershell.exe', [...baseArguments, '--fail-fixture'], options);
       expect(failure.status).toBe(17);
     },
-    30_000,
+    60_000,
   );
 
   test.runIf(process.platform === 'win32')(

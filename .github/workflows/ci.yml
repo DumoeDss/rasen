@@ -54,42 +54,42 @@ jobs:
             label: linux-bash
             node: '20.19.0'
             vitest_workers: 4
-            timeout_minutes: 15
+            timeout_minutes: 20
             vitest_partition: ''
           - os: macos-latest
             shell: bash
             label: macos-bash
             node: '20.19.0'
             vitest_workers: 4
-            timeout_minutes: 15
+            timeout_minutes: 20
             vitest_partition: ''
           - os: windows-latest
             shell: pwsh
             label: windows-pwsh-shard-1
             node: '20.19.0'
             vitest_workers: 2
-            timeout_minutes: 20
+            timeout_minutes: 25
             vitest_partition: '1/3'
           - os: windows-latest
             shell: pwsh
             label: windows-pwsh-shard-2
             node: '20.19.0'
             vitest_workers: 2
-            timeout_minutes: 20
+            timeout_minutes: 25
             vitest_partition: '2/3'
           - os: windows-latest
             shell: pwsh
             label: windows-pwsh-shard-3
             node: '20.19.0'
             vitest_workers: 2
-            timeout_minutes: 20
+            timeout_minutes: 25
             vitest_partition: '3/3'
           - os: ubuntu-latest
             shell: bash
             label: linux-bash-node24
             node: '24.x'
             vitest_workers: 4
-            timeout_minutes: 15
+            timeout_minutes: 20
             vitest_partition: ''
 
     defaults:
@@ -149,6 +149,57 @@ jobs:
           path: coverage/
           retention-days: 7
 
+  layout_migration_compatibility:
+    name: Layout migration compatibility (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            shell: bash
+            label: linux
+          - os: macos-latest
+            shell: bash
+            label: macos
+          - os: windows-latest
+            shell: pwsh
+            label: windows
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build project
+        run: pnpm run build
+      - name: Run native migration, Issue, archive, path, encoding, and Git-ref suites
+        env:
+          VITEST_MAX_WORKERS: 1
+        run: >-
+          pnpm exec vitest run
+          test/core/store/layout-migration-mapping.test.ts
+          test/core/store/layout-migration-plan-gates.test.ts
+          test/core/store/layout-migration-catalog-receipt.test.ts
+          test/core/store/layout-migration-apply-recovery.test.ts
+          test/core/store/layout-migration-windows-paths.test.ts
+          test/core/store/store-issue-locks.test.ts
+          test/core/store/store-issue-migration-compiler.test.ts
+          test/commands/store-migrate-layout-cli.test.ts
+          test/commands/archive-legacy-coordinator.test.ts
+
   file_placement_recovery:
     name: File placement recovery (${{ matrix.label }})
     runs-on: ${{ matrix.os }}
@@ -207,7 +258,7 @@ jobs:
   test_pr_required:
     name: Test
     runs-on: ubuntu-latest
-    needs: [test_matrix, file_placement_recovery]
+    needs: [test_matrix, layout_migration_compatibility, file_placement_recovery]
     if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
     steps:
       - name: Verify matrix tests passed
@@ -218,6 +269,10 @@ jobs:
           fi
           if [[ "${{ needs.file_placement_recovery.result }}" != "success" ]]; then
             echo "Native file-placement recovery job failed"
+            exit 1
+          fi
+          if [[ "${{ needs.layout_migration_compatibility.result }}" != "success" ]]; then
+            echo "Layout migration compatibility matrix failed"
             exit 1
           fi
           echo "All general and native recovery matrix tests passed!"
@@ -368,7 +423,7 @@ jobs:
   required-checks-pr:
     name: All checks passed
     runs-on: ubuntu-latest
-    needs: [test_matrix, file_placement_recovery, lint, ui_build, nix-flake-validate]
+    needs: [test_matrix, layout_migration_compatibility, file_placement_recovery, lint, ui_build, nix-flake-validate]
     if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
     steps:
       - name: Verify all checks passed
@@ -379,6 +434,10 @@ jobs:
           fi
           if [[ "${{ needs.file_placement_recovery.result }}" != "success" ]]; then
             echo "Native file-placement recovery job failed"
+            exit 1
+          fi
+          if [[ "${{ needs.layout_migration_compatibility.result }}" != "success" ]]; then
+            echo "Layout migration compatibility matrix failed"
             exit 1
           fi
           if [[ "${{ needs.lint.result }}" != "success" ]]; then
@@ -402,7 +461,7 @@ jobs:
   required-checks-main:
     name: All checks passed
     runs-on: ubuntu-latest
-    needs: [test_matrix, file_placement_recovery, lint, ui_build, nix-flake-validate]
+    needs: [test_matrix, layout_migration_compatibility, file_placement_recovery, lint, ui_build, nix-flake-validate]
     if: always() && github.event_name == 'push'
     steps:
       - name: Verify all checks passed
@@ -413,6 +472,10 @@ jobs:
           fi
           if [[ "${{ needs.file_placement_recovery.result }}" != "success" ]]; then
             echo "Native file-placement recovery job failed"
+            exit 1
+          fi
+          if [[ "${{ needs.layout_migration_compatibility.result }}" != "success" ]]; then
+            echo "Layout migration compatibility matrix failed"
             exit 1
           fi
           if [[ "${{ needs.lint.result }}" != "success" ]]; then

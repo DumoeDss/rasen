@@ -61,17 +61,6 @@ const EXCEPTIONS: readonly Exception[] = Object.freeze([
   // the now-unnecessary entry, and the entry came out. That round trip is the
   // list working; leave this note as the worked example.
   {
-    file: 'src/core/store/layout-migration/apply.ts',
-    defect: 'replacement-char',
-    reason:
-      "child 3's file (store-layout-v2-migration). A U+FFFD means a character in the source is already destroyed, not merely mis-encoded. Routed to its owner.",
-  },
-  {
-    file: 'test/core/store/layout-migration-catalog-receipt.test.ts',
-    defect: 'replacement-char',
-    reason: "child 3's file, same cause as the entry above.",
-  },
-  {
     file: 'test/core/pipeline-registry/run-state.test.ts',
     defect: 'replacement-char',
     reason: 'predates this branch; byte-identical to the HEAD blob.',

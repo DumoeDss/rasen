@@ -20,8 +20,12 @@ import {
 import { collectEvidence, buildSpecProvenance, evidenceKey, reduceOwnership } from './evidence.js';
 import { flatStorePaths, listDirectoryNames } from './flat-source.js';
 import { inventoryStore } from './inventory.js';
-import { manifestRelativePath, type RecoveryManifest } from './apply.js';
-import { migrationReceiptsDir } from './receipt.js';
+import {
+  manifestRelativePath,
+  readRecoveryManifest,
+  type RecoveryManifest,
+} from './apply.js';
+import { migrationReceiptsDir, readMigrationReceipt } from './receipt.js';
 
 export interface LayoutMigrationDiagnosticsInput {
   readonly storeId: string;
@@ -221,7 +225,7 @@ async function readManifest(
   const value = await dependencies
     .coordination(input.globalDataDir)
     .readJson(manifestRelativePath(input.storeUid, ref));
-  return value === null ? null : (value as RecoveryManifest);
+  return value === null ? null : readRecoveryManifest(value);
 }
 
 async function partitionOrphans(
@@ -299,8 +303,9 @@ async function legacyArchiveRecords(
     const text = await dependencies.fs.readText(path.join(receipts, entry.name));
     if (text === null) continue;
     try {
-      const receipt = JSON.parse(text) as { items?: { recordSchema?: string }[] };
-      legacy += (receipt.items ?? []).filter((item) => item.recordSchema === 'legacy').length;
+      const read = readMigrationReceipt(text);
+      if (!read.ok) continue;
+      legacy += read.receipt.items.filter((item) => item.recordSchema === 'legacy').length;
     } catch {
       continue;
     }
