@@ -146,8 +146,23 @@
         "agentId": "fixer-s1@session-54f71457",
         "model": "opus",
         "horizon": "LOOP_BOUND",
-        "fixCommit": "221bf789",
-        "status": "round-1 fixes delivered; held idle pending the round-2 verdict"
+        "fixCommits": [
+          "221bf789 (round 1: M1-M4 + m1-m3)",
+          "9c0f548e (round 2: N1-N3)"
+        ],
+        "status": "round-2 fixes delivered; held idle pending the round-3 verdict",
+        "round2Substance": {
+          "N1": "Closed with a SCOPED type-check harness rather than signing the whole test/ tree up: new test/core/store/planning-foundation-consumer.test-d.ts, new tsconfig.typecheck.json (src/**/* + test/**/*.test-d.ts only), a test.typecheck block in vitest.config.ts DISABLED by default so `pnpm test` is unchanged, a test:types script, and exactly ONE new CI step inside the existing lint job.",
+          "N2": "tasks.md:51 [~] -> [ ], LEAD prose kept verbatim. Measured after: rasen list reports 35/36 in-progress and archive --dry-run reports the tasks blocker. That blocker is the INTENDED end state - 6.5 is genuinely incomplete until the portfolio PR's CI run exists, and this child must not archive before then.",
+          "N3": "Capture bytes spliced back from `git show eaefc01b:<file>` via a script rather than retyped, because this repo's Write path has previously mangled multibyte characters to U+FFFD. Verified U+FFFD x0."
+        },
+        "probeD": {
+          "what": "The fixer's OWN round-2 fix missed a mutation, and its own probe caught it.",
+          "detail": "Collapsing the brand itself (ChangeInstanceId = string & {...} -> string) leaves src/ internally consistent: tsc exit 0, runtime 27 passed, and the new type assertions stayed GREEN. Cause: every bare-string assertion reached the brand through Parameters<typeof computeStorePlanningLayoutV2>[0]['changeInstanceId'], i.e. through VerifiedChangeInstanceId, which stays branded by its OWN symbol when the base collapses. So the parameter assertions held while the whole public vocabulary silently became string.",
+          "fix": "An individual bare-string pin per branded name; re-ran the same mutation -> RED.",
+          "generalRule": "A type assertion reached through a DERIVED type can be inert against the base type it depends on. Pinning Parameters<f>[0]['x'] against string looks like it pins the brand; it does not, because an intersection brand survives its base collapsing. Pin each name individually.",
+          "significance": "FIFTH instance of the assertion-cannot-fail defect class, and the second one found inside work convened to close earlier instances. This is what moved the LEAD to fold a systematic discrimination sweep into round 3 rather than waiting for the round cap to force a strategy change."
+        }
       },
       "reviewers": [
         {
