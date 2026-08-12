@@ -55,6 +55,132 @@ function identity(
   };
 }
 
+/**
+ * GOLDEN VECTORS — known input, known digest.
+ *
+ * Every other identity assertion in this file is *relational*: a shape match, a
+ * `.toBe(other)`, a `.not.toBe(other)`, or a distinct-set count. All of those
+ * survive any change that transforms every digest uniformly — bumping the four
+ * versioned domains `/v2` -> `/v3`, or deleting the `domain` field from all four
+ * preimages, left this whole suite green. The values below are the only thing
+ * that pins the preimage itself: the domain string, the field names, the field
+ * order-independence of canonical JSON, and the hash.
+ *
+ * These digests were generated from the implementation as committed at
+ * `eaefc01b` — this pins TODAY'S format as the contract, it does not propose a
+ * new one.
+ *
+ * If one of these fails, do not "fix" it by pasting in the new digest. These
+ * identities are DURABLE: they are written into `.openspec.yaml` (see the
+ * metadata round trip at the bottom of this file), so a changed preimage
+ * silently invalidates every identity ever minted. A change here is a breaking
+ * format change and needs a deliberate, versioned decision — which is exactly
+ * what the `/v2` in each domain exists to record.
+ */
+const GOLDEN = {
+  storeUid: '9d1d9f4b-8fd8-45d8-b5ef-f0c7a28491d0',
+  projectId: '8a0c76e8-faa9-49dc-b0d1-c35df3ad797f',
+  targetLineId: 'line-0.2',
+  instanceSeed: '12'.repeat(16),
+  repositoryIdentity: 'repo:store:1',
+  worktreeIdentity: 'worktree:planning:1',
+  executionRepositoryIdentity: 'repo:code:1',
+  executionWorktreeIdentity: 'worktree:execution:1',
+
+  planningScopeId: 'ps_384a664d67f2070c077f94f47f0b0669d756685674b8fa3ce4f081f25a7504f2',
+  changeInstanceId: 'ci_4f060f983194432ca1090c7c25ef1318bd08b41c39b263251db674f5d3836559',
+  planningWorktreeInstanceId:
+    'wt_b752701ba966052cd47da06d290389b4ab04dbdb2c6cd23b5a68d8563835c3cf',
+  executionWorktreeInstanceId:
+    'wt_df70478e14d257f7640f5c5f537cbf9ac68fd7d94c3278dd4225b860b166d52c',
+  workspacePairId: 'wp_208017abeb33ac3a209d87258753ce1fcf92801913fd90986ac7d2b7be71bb7e',
+} as const;
+
+describe('Store planning v2 identity golden vectors', () => {
+  it('pins the PlanningScopeId preimage to a known digest', () => {
+    expect(
+      derivePlanningScopeId({
+        storeUid: GOLDEN.storeUid,
+        projectId: GOLDEN.projectId,
+        targetLineId: GOLDEN.targetLineId,
+      })
+    ).toBe(GOLDEN.planningScopeId);
+  });
+
+  it('pins the ChangeInstanceId preimage to a known digest', () => {
+    expect(
+      deriveChangeInstanceId({
+        planningScopeId: GOLDEN.planningScopeId,
+        instanceSeed: GOLDEN.instanceSeed,
+      })
+    ).toBe(GOLDEN.changeInstanceId);
+  });
+
+  it.each([
+    {
+      role: 'planning',
+      repositoryIdentity: GOLDEN.repositoryIdentity,
+      worktreeIdentity: GOLDEN.worktreeIdentity,
+      expected: GOLDEN.planningWorktreeInstanceId,
+    },
+    {
+      role: 'execution',
+      repositoryIdentity: GOLDEN.executionRepositoryIdentity,
+      worktreeIdentity: GOLDEN.executionWorktreeIdentity,
+      expected: GOLDEN.executionWorktreeInstanceId,
+    },
+  ])('pins the $role WorktreeInstanceId preimage to a known digest', vector => {
+    expect(
+      deriveWorktreeInstanceId({
+        repositoryIdentity: vector.repositoryIdentity,
+        worktreeIdentity: vector.worktreeIdentity,
+      })
+    ).toBe(vector.expected);
+  });
+
+  it('pins the WorkspacePairId preimage to a known digest', () => {
+    expect(
+      deriveWorkspacePairId({
+        changeInstanceId: GOLDEN.changeInstanceId,
+        planningWorktreeInstanceId: GOLDEN.planningWorktreeInstanceId,
+        executionWorktreeInstanceId: GOLDEN.executionWorktreeInstanceId,
+      })
+    ).toBe(GOLDEN.workspacePairId);
+  });
+
+  // The golden digests above pin the preimage. This pins that they are still
+  // reachable through the verification APIs a durable writer actually calls, so
+  // a preimage change cannot be hidden behind a verifier that stopped checking.
+  it('accepts every golden digest through its own verifier', () => {
+    expect(
+      verifyPlanningScopeId(GOLDEN.planningScopeId, {
+        storeUid: GOLDEN.storeUid,
+        projectId: GOLDEN.projectId,
+        targetLineId: GOLDEN.targetLineId,
+      })
+    ).toBe(GOLDEN.planningScopeId);
+    expect(
+      verifyChangeInstanceId(GOLDEN.changeInstanceId, {
+        planningScopeId: GOLDEN.planningScopeId,
+        instanceSeed: GOLDEN.instanceSeed,
+      })
+    ).toBe(GOLDEN.changeInstanceId);
+    expect(
+      verifyWorktreeInstanceId(GOLDEN.planningWorktreeInstanceId, {
+        repositoryIdentity: GOLDEN.repositoryIdentity,
+        worktreeIdentity: GOLDEN.worktreeIdentity,
+      })
+    ).toBe(GOLDEN.planningWorktreeInstanceId);
+    expect(
+      verifyWorkspacePairId(GOLDEN.workspacePairId, {
+        changeInstanceId: GOLDEN.changeInstanceId,
+        planningWorktreeInstanceId: GOLDEN.planningWorktreeInstanceId,
+        executionWorktreeInstanceId: GOLDEN.executionWorktreeInstanceId,
+      })
+    ).toBe(GOLDEN.workspacePairId);
+  });
+});
+
 describe('Store planning v2 identities', () => {
   it('derives canonical, typed, domain-separated ids', () => {
     const scope = identity().planningScopeId;

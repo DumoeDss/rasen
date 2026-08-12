@@ -104,25 +104,27 @@ describe('Store planning v2 portable validators', () => {
     }
   });
 
-  it.each(['win32', 'posix'])(
-    'enforces Windows-representable path/ref components for %s materialization',
-    _flavor => {
-      for (const character of [':', '*', '?', '"', '<', '>', '|']) {
-        expect(
-          isPortableRelativePath(`evidence/report${character}name.md`),
-          `portable path containing ${character}`
-        ).toBe(false);
-        expect(
-          isFullGitRef(`refs/heads/report${character}name`),
-          `portable ref containing ${character}`
-        ).toBe(false);
-      }
-      for (const reserved of ['con', 'NUL.txt', 'com1.release', 'con .txt']) {
-        expect(isPortableRelativePath(`evidence/${reserved}`), reserved).toBe(false);
-        expect(isFullGitRef(`refs/heads/${reserved}`), reserved).toBe(false);
-      }
+  // Deliberately NOT parameterized by flavor. `isPortableRelativePath` and
+  // `isFullGitRef` take no flavor argument — the rule is unconditional on every
+  // platform, which is the point. An `it.each(['win32','posix'])` here ran the
+  // identical body twice under two names that each claimed a per-flavor
+  // guarantee neither case actually exercised.
+  it('enforces Windows-representable path/ref components on every platform', () => {
+    for (const character of [':', '*', '?', '"', '<', '>', '|']) {
+      expect(
+        isPortableRelativePath(`evidence/report${character}name.md`),
+        `portable path containing ${character}`
+      ).toBe(false);
+      expect(
+        isFullGitRef(`refs/heads/report${character}name`),
+        `portable ref containing ${character}`
+      ).toBe(false);
     }
-  );
+    for (const reserved of ['con', 'NUL.txt', 'com1.release', 'con .txt']) {
+      expect(isPortableRelativePath(`evidence/${reserved}`), reserved).toBe(false);
+      expect(isFullGitRef(`refs/heads/${reserved}`), reserved).toBe(false);
+    }
+  });
 
   it('accepts canonical full Git OIDs and SHA-256 digests', () => {
     expect(isGitOid('a'.repeat(40))).toBe(true);

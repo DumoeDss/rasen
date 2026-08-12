@@ -6,13 +6,24 @@ import type {
   deriveChangeInstanceId,
   parseProjectId,
   serializeArchiveV2,
+  CanonicalLocalIdentity,
+  ChangeId,
   ChangeInstanceId,
+  ChangeInstanceSeed,
+  FullGitRef,
+  GitOid,
+  PlanningScopeId,
+  PortableRelativePath,
   ProjectId,
+  Sha256Digest,
   StorePlanningChangeInstanceId,
   StorePlanningLayoutV2,
+  StorePlanningPath,
+  TargetLineId,
   VerifiedChangeInstanceId,
   VerifiedWorkspacePairId,
   WorkspacePairId,
+  WorktreeInstanceId,
 } from '../../../src/core/index.js';
 
 /**
@@ -36,20 +47,44 @@ describe('public Store planning foundation type surface', () => {
     >();
   });
 
-  // Each branded name is pinned against a bare `string` INDIVIDUALLY, not only
-  // through the verified-id parameters. Pinning only the parameters leaves the
-  // underlying brands free: collapsing `ChangeInstanceId` to `string` keeps
-  // `VerifiedChangeInstanceId` branded by its own symbol, so the parameter
-  // assertions stay green while the whole public vocabulary silently accepts
-  // bare strings — and `tsc --noEmit` over `src/` reports nothing, because the
-  // collapse is internally consistent. Found by mutation, not by reading.
+  // EVERY branded name in the Layer-0 vocabulary is pinned against a bare
+  // `string` individually — all 16, not only the ones that happen to appear in
+  // the assertions above.
+  //
+  // Pinning only the derived parameters leaves the underlying brands free:
+  // collapsing `ChangeInstanceId` to `string` keeps `VerifiedChangeInstanceId`
+  // branded by its own symbol, so a parameter pin stays green while the whole
+  // public vocabulary silently starts accepting bare strings — and
+  // `tsc --noEmit` over `src/` reports nothing, because the collapse is
+  // internally consistent. An earlier round pinned 7 of 16 and claimed to pin
+  // all of them; both facts were found by mutation, not by reading.
+  //
+  // `planning-foundation-consumer.test.ts` carries a guard that reads the brand
+  // declarations out of the three Layer-0 sources and fails if a name reaches
+  // this vocabulary without a pin here, so a 17th brand cannot arrive unpinned.
   it('refuses a bare string where a branded value is required', () => {
+    // planning-validation.ts
     expectTypeOf<string>().not.toMatchTypeOf<ProjectId>();
-    expectTypeOf<string>().not.toMatchTypeOf<ChangeInstanceId>();
+    expectTypeOf<string>().not.toMatchTypeOf<TargetLineId>();
+    expectTypeOf<string>().not.toMatchTypeOf<ChangeId>();
+    expectTypeOf<string>().not.toMatchTypeOf<FullGitRef>();
+    expectTypeOf<string>().not.toMatchTypeOf<GitOid>();
+    expectTypeOf<string>().not.toMatchTypeOf<Sha256Digest>();
+    expectTypeOf<string>().not.toMatchTypeOf<PortableRelativePath>();
+    // planning-identity.ts
+    expectTypeOf<string>().not.toMatchTypeOf<PlanningScopeId>();
     expectTypeOf<string>().not.toMatchTypeOf<StorePlanningChangeInstanceId>();
-    expectTypeOf<string>().not.toMatchTypeOf<WorkspacePairId>();
     expectTypeOf<string>().not.toMatchTypeOf<VerifiedChangeInstanceId>();
+    expectTypeOf<string>().not.toMatchTypeOf<ChangeInstanceSeed>();
+    expectTypeOf<string>().not.toMatchTypeOf<WorktreeInstanceId>();
+    expectTypeOf<string>().not.toMatchTypeOf<WorkspacePairId>();
     expectTypeOf<string>().not.toMatchTypeOf<VerifiedWorkspacePairId>();
+    expectTypeOf<string>().not.toMatchTypeOf<CanonicalLocalIdentity>();
+    // planning-layout-v2.ts
+    expectTypeOf<string>().not.toMatchTypeOf<StorePlanningPath>();
+    // change-run's independent brand, published under the bare name (see below)
+    expectTypeOf<string>().not.toMatchTypeOf<ChangeInstanceId>();
+    // and the derived parameter, which is what a caller actually meets
     expectTypeOf<string>().not.toMatchTypeOf<
       Parameters<typeof computeStorePlanningLayoutV2>[0]['changeInstanceId']
     >();

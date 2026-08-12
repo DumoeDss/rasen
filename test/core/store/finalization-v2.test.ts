@@ -232,8 +232,91 @@ describe('Archive v2 contract', () => {
         specSync: { applied: false, actions: [] },
       };
       expect(validateArchiveV2(value).outcome).toBe(outcome);
+
+      // The word "only" in this test's name used to be carried by nothing: the
+      // body built one valid record and asserted acceptance, so the fixture
+      // could not tell an enforced constraint from an unenforced one. These two
+      // are what make the name true.
+      expect(() =>
+        validateArchiveV2({ ...value, codeMerge: archiveBase().codeMerge })
+      ).toThrow(/archive/u);
+      expect(() =>
+        validateArchiveV2({ ...value, specSync: { applied: true, actions: [] } })
+      ).toThrow(/archive/u);
     }
   );
+
+  // The Archive record's cross-field null constraints — task 4.4's
+  // "structurally impossible to violate" — had no negative fixture anywhere:
+  // relaxing every `z.null()` to `z.any()` across all five variants left this
+  // file at 53/53 passing. This mirrors the rejection matrix the same file
+  // already carries for the smaller `FinalizationOutcomeSchema` above.
+  it.each([
+    {
+      label: 'a landed record carrying a reason',
+      build: () => ({ ...archiveBase(), reason: 'landed records carry no reason' }),
+    },
+    {
+      label: 'a landed record carrying a successor',
+      build: () => ({ ...archiveBase(), supersededBy: SUCCESSOR_INSTANCE }),
+    },
+    {
+      label: 'a planning-only landed record carrying a code merge',
+      build: () => ({ ...archiveBase(), implementation: 'none' }),
+    },
+    {
+      label: 'a superseded record carrying a code merge',
+      build: () => ({
+        ...archiveBase(),
+        outcome: 'superseded',
+        reason: 'Replaced by the next line',
+        supersededBy: SUCCESSOR_INSTANCE,
+        specSync: { applied: false, actions: [] },
+      }),
+    },
+    {
+      label: 'a cancelled record carrying a code merge',
+      build: () => ({
+        ...archiveBase(),
+        outcome: 'cancelled',
+        reason: 'No longer needed',
+        specSync: { applied: false, actions: [] },
+      }),
+    },
+    {
+      label: 'an abandoned record carrying a code merge',
+      build: () => ({
+        ...archiveBase(),
+        outcome: 'abandoned',
+        reason: 'The implementation was discarded',
+        specSync: { applied: false, actions: [] },
+      }),
+    },
+    {
+      label: 'a cancelled record carrying a successor',
+      build: () => ({
+        ...archiveBase(),
+        outcome: 'cancelled',
+        reason: 'No longer needed',
+        supersededBy: SUCCESSOR_INSTANCE,
+        codeMerge: null,
+        specSync: { applied: false, actions: [] },
+      }),
+    },
+    {
+      label: 'an abandoned record carrying a successor',
+      build: () => ({
+        ...archiveBase(),
+        outcome: 'abandoned',
+        reason: 'The implementation was discarded',
+        supersededBy: SUCCESSOR_INSTANCE,
+        codeMerge: null,
+        specSync: { applied: false, actions: [] },
+      }),
+    },
+  ])('rejects $label', ({ build }) => {
+    expect(() => validateArchiveV2(build())).toThrow(/archive/u);
+  });
 
   it('rejects passive-history spec mutations without changing the input bytes', () => {
     const value = {

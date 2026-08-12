@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -44,5 +46,75 @@ describe('public Store planning foundation consumer surface', () => {
     });
 
     expect(layout.activeChange).toContain('/consumer-change');
+  });
+});
+
+/**
+ * The bare-string pins in `planning-foundation-consumer.test-d.ts` are only as
+ * good as their completeness: a brand added later, with no pin, is invisible —
+ * `tsc --noEmit` over `src/` cannot see a brand collapse (it is internally
+ * consistent) and no runtime test can see a type at all. That is how 9 of the
+ * 16 names came to be unpinned under a comment claiming otherwise.
+ *
+ * So the vocabulary is not maintained by hand here. It is read out of the three
+ * Layer-0 sources, and a name without a pin fails by name.
+ */
+const LAYER_0_BRAND_SOURCES = [
+  'planning-validation.ts',
+  'planning-identity.ts',
+  'planning-layout-v2.ts',
+] as const;
+
+const STORE_DIR = path.resolve(__dirname, '../../../src/core/store');
+const TYPE_SUITE = path.resolve(__dirname, 'planning-foundation-consumer.test-d.ts');
+
+/**
+ * The store-planning `ChangeInstanceId` is published under a distinct name,
+ * because `change-run` owns the bare one at the package root (`src/core/index.ts`).
+ * Its pin therefore reads `StorePlanningChangeInstanceId`.
+ */
+const PUBLISHED_AS: Readonly<Record<string, string>> = {
+  ChangeInstanceId: 'StorePlanningChangeInstanceId',
+};
+
+function declaredBrands(): string[] {
+  const names: string[] = [];
+  for (const fileName of LAYER_0_BRAND_SOURCES) {
+    const source = fs.readFileSync(path.join(STORE_DIR, fileName), 'utf8');
+    // `X = string & {` (a root brand) and `X = Y & {` (a verified subtype).
+    for (const match of source.matchAll(/^export type (\w+) = (?:string|\w+) & \{/gmu)) {
+      names.push(match[1]!);
+    }
+  }
+  return names;
+}
+
+/** Exact type arguments, so `WorkspacePairId` is never satisfied by `VerifiedWorkspacePairId`. */
+function pinnedBrands(): Set<string> {
+  const source = fs.readFileSync(TYPE_SUITE, 'utf8');
+  return new Set(
+    [
+      ...source.matchAll(
+        /expectTypeOf<string>\(\)\.not\.toMatchTypeOf<\s*(\w+)\s*>\(\)/gu
+      ),
+    ].map(match => match[1]!)
+  );
+}
+
+describe('Store planning v2 branded vocabulary is pinned exhaustively', () => {
+  it('finds the whole declared vocabulary', () => {
+    const brands = declaredBrands();
+    expect(brands.length).toBe(16);
+    expect(new Set(brands).size).toBe(brands.length);
+  });
+
+  it.each(declaredBrands())('pins %s against a bare string', brandName => {
+    const expected = PUBLISHED_AS[brandName] ?? brandName;
+    expect(
+      pinnedBrands().has(expected),
+      `${brandName} is declared in src/core/store but has no ` +
+        `expectTypeOf<string>().not.toMatchTypeOf<${expected}>() pin in ` +
+        'planning-foundation-consumer.test-d.ts'
+    ).toBe(true);
   });
 });
