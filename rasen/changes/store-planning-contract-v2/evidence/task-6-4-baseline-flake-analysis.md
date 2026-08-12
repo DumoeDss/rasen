@@ -36,7 +36,7 @@ on long multi-file runs). **The second FAIL block was never read.**
 FAIL test/cli-e2e/store-lifecycle.test.ts > standalone store lifecycle journey
   > machine B: completes its own change through archive in the clone
 
-AssertionError: expected 'Using Rasen root: team-context (C:\Us...' to contain 'rasen new change <name> --store team-...'
+AssertionError: expected 'Using Rasen root: team-context (C:\Us…' to contain 'rasen new change <name> --store team-…'
 
 - Expected
 + Received
@@ -44,13 +44,13 @@ AssertionError: expected 'Using Rasen root: team-context (C:\Us...' to contain '
 - rasen new change <name> --store team-context
 + Using Rasen root: team-context (C:\Users\Sayo\AppData\Local\Temp\rasen-store-lifecycle-t2kwhO\machine-b\team-context)
 + - Generating apply instructions...
-+ * Error: Missing required option --change. Available changes:
++ ✖ Error: Missing required option --change. Available changes:
 +   add-billing
 
-> test/cli-e2e/store-lifecycle.test.ts:454:32
+❯ test/cli-e2e/store-lifecycle.test.ts:454:32
     452|     expect(failedApply.exitCode).not.toBe(0);
-    453|     expect(failedApply.stderr).toContain(`Using Rasen root: ${STORE_ID...
-    454|     expect(failedApply.stderr).toContain(`rasen new change <name> --st...
+    453|     expect(failedApply.stderr).toContain(`Using Rasen root: ${STORE_ID…
+    454|     expect(failedApply.stderr).toContain(`rasen new change <name> --st…
 ```
 
 ## Observations that do not settle it

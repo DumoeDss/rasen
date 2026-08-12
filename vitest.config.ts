@@ -131,6 +131,15 @@ export default defineConfig({
     pool: 'forks',
     maxWorkers: resolveMaxWorkers(),
     include: resolveTestInclude(),
+    // `expectTypeOf` is a runtime no-op, and the root tsconfig excludes `test/`,
+    // so type-level assertions living in `*.test.ts` cannot fail — nothing in
+    // this repository type-checks them. `*.test-d.ts` files are checked instead,
+    // under a tsconfig scoped to exactly those files plus `src/`. Disabled by
+    // default (so `pnpm test` is unchanged); `pnpm run test:types` enables it.
+    typecheck: {
+      include: ['test/**/*.test-d.ts'],
+      tsconfig: './tsconfig.typecheck.json',
+    },
     coverage: {
       reporter: ['text', 'json', 'html'],
       exclude: [

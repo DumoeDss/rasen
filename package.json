@@ -63,6 +63,7 @@
     "dev": "tsc --watch",
     "dev:cli": "pnpm build && node bin/rasen.js",
     "test": "vitest run",
+    "test:types": "vitest run --typecheck.enabled --typecheck.only",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",

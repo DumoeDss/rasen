@@ -273,6 +273,12 @@ jobs:
       - name: Type check
         run: pnpm exec tsc --noEmit
 
+      # The step above runs the root tsconfig, which excludes `test/`, so
+      # type-level assertions there are checked by nothing. This checks the
+      # `*.test-d.ts` files against tsconfig.typecheck.json.
+      - name: Type check type-level tests
+        run: pnpm run test:types
+
       - name: Lint
         run: pnpm lint
 
