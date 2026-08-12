@@ -399,3 +399,354 @@ git status --porcelain -- src test   ->   (empty)
 
 The first five match `git show eaefc01b:<path> | sha256sum`; `src/core/id.ts` is unchanged by this
 commit and matches its pre-existing content.
+
+---
+---
+
+# Round 2 — fix-delta re-review
+
+- Reviewer: a fresh leaf reviewer, seeded from `handoff/reviewer-1.md`. I did not write this code,
+  did not author any fix, and applied no fixes. Round 1 above is a different worker's report and is
+  left untouched.
+- Target: the delta only — `git diff eaefc01b..HEAD` @ `fcb5d326` (`221bf789` fixes, `ebaf17a8`
+  run-state, `e60249fd` round-1 report, `fcb5d326` LEAD's task-6.5 untick).
+- The five round-1 pressure-test verdicts are closed and were not re-litigated.
+
+## Verdict summary
+
+| Finding | Verdict | Basis |
+| --- | --- | --- |
+| M1 drive-less Windows root | **RESOLVED** | mutation RED (2), plus an over-refusal control |
+| M2 display name as identifier | **RESOLVED** | mutation RED (2), plus an independent v1-side control |
+| M3 nested capability address | **RESOLVED** | mutation RED (2), plus the 9/9 rejection control |
+| M4 flake classification | **RESOLVED** | classification retracted, not reworded |
+| m1 dynamic import blind spot | **RESOLVED** | mutation RED, and `export … from` closed too |
+| m2 transitive purity unenforced | **RESOLVED** | mutation RED (2), closure enforced over 11 files |
+| m3 published type meaning | **RESOLVED (behavior)** | published meaning preserved; direction unpinned — see N1 |
+| `fcb5d326` (LEAD's untick) | **reasoning ACCEPTED, marker REJECTED** | see N2 |
+
+New this round: **Major 2 | Trivial 1**. Blocker 0.
+
+## Shape check on the delta
+
+`git diff --stat eaefc01b 221bf789 -- src/core/store` and `git diff --stat eaefc01b HEAD -- src/core/store`
+are both **empty**. Every Layer-0 contract source is byte-identical to what round 1 reviewed, which is
+the right shape: all three code Majors were verification defects, so the fix is tests only. The single
+`src/` edit in the whole delta is `src/core/index.ts` (m3).
+
+Baseline before any mutation: 6 files / **217 passed** (was 174 at round 1; +43).
+
+## Re-run mutation proofs (mine, against committed bytes)
+
+Recorded proofs in `evidence/fix-round-1-mutation-proofs.md` were treated as claims. Each was re-run.
+
+### M1 — `planning-layout-v2.ts:93` → `return true`
+
+```
+Tests  2 failed | 215 passed (217)
+FAIL  planning-layout-v2.test.ts > refuses a drive-less 'forward-slash'-rooted Windows Store root
+FAIL  planning-layout-v2.test.ts > refuses a drive-less 'backslash'-rooted Windows Store root
+```
+
+Names the right thing. It pins the **rule**, not the symptom: the case asserts
+`path.win32.isAbsolute(storeRoot) === true` *first* — stating the trap (absoluteness is not
+self-containment under Windows semantics) — then requires refusal from **both** `isAbsoluteStoreRoot`
+call sites with the typed `{ code: 'invalid_store_layout_v2', field: 'storeRoot' }`. It uses an
+explicit `flavor: 'win32'`, not `it.runIf`, so unlike `planning-layout-v2.test.ts:290` it actually
+executes on the Linux and macOS legs.
+
+Control I added — the fix must not be satisfiable by refusing everything:
+
+```
+mutate line 93 -> return false;
+Tests  5 failed | 50 passed (55)
+FAIL  accepts a Windows Store root carrying 'a drive' / 'a UNC share' / 'a device root'
+```
+
+The three positive cases discriminate. M1 **RESOLVED**.
+
+### M2 — `planning-catalogs.ts:78` → kebab regex restored
+
+```
+Tests  2 failed | 97 passed (99)
+FAIL  carries the human display name Elftia through unvalidated, exactly as the v1 record does
+FAIL  carries the human display name my app through unvalidated, exactly as the v1 record does
+  -> catalog: id: Invalid string: must match pattern /^[a-z0-9]+(-[a-z0-9]+)*$/u
+```
+
+The LEAD asked me to verify the v1-membership assertion is really there and really pins the rule
+("a migration must never block on data the schema it migrates FROM accepted"). It is there — but it
+is the *last* assertion in the test, so the mutation above never reaches it. So I proved it
+independently, by mutating the **other** side of the invariant, in a file this change does not own:
+
+```
+mutate src/core/store/project-records.ts:205 (the v1 record's own `id`) -> same kebab regex
+Tests  2 failed | 53 passed (55)
+  -> Invalid store project membership record: id: Invalid string: must match pattern ...
+```
+
+Both halves are independently live, and they fail with distinct messages. The test genuinely pins the
+two-sided invariant rather than the symptom. M2 **RESOLVED**.
+
+### M3 — `finalization-v2.ts:198` → single-kebab validator restored
+
+```
+Tests  2 failed | 51 passed (53)
+FAIL  accepts capability address store/planning-layout-v2 and preserves it verbatim
+FAIL  accepts capability address store/planning/layout-v2 and preserves it verbatim
+```
+
+The `auth` case stayed GREEN under the mutation — correctly identified by the fixer as the
+non-discriminating fixture every pre-existing case used.
+
+Audit of the fixer's own control (`CapabilityPathSchema = z.string()`), which the LEAD flagged as
+exactly where theater would hide:
+
+```
+Tests  9 failed | 44 passed (53)
+```
+
+All nine failures are precisely the nine capability rejection cases (empty, current directory, parent
+directory, traversal segment, empty inner segment, leading separator, trailing separator, backslash
+separator, non-canonical case) — I enumerated them by name rather than trusting the count. The control
+is the right instrument for this question: with the schema replaced by `z.string()` everything else in
+the record is unchanged, so a case going RED proves `CapabilityPathSchema` is what rejected it. None
+is decorative. M3 **RESOLVED**.
+
+### M4 — flake classification
+
+`evidence/task-6-4-baseline-flake-analysis.md` does more than M4 asked. It **retracts** the
+classification in a leading blockquote rather than rewording it, tabulates all three runs, states
+plainly that "pre-existing" is *contradicted* by the LEAD's zero-failure pre-change baseline, carries
+the reviewer's causal chain as an explicit "lead, not a finding", and splits "What is established"
+from "What is still open" including the never-read second failure. The filename is deliberately kept
+so the round-1 reference keeps resolving, and that choice is stated in the file. M4 **RESOLVED**.
+
+### m1 — dynamic import
+
+```
+add `export async function reviewProbe() { const m = await import('./foundation.js'); return m; }`
+   to finalization-v2.ts
+Tests  1 failed | 38 passed (39)
+  -> core/store/finalization-v2.ts must not import './foundation.js'
+```
+
+The message names both the file and the offending specifier. The fix also closed a vector round 1 did
+not name: the old collector required `import\s+`, so `export … from` escaped it too. Verified:
+
+```
+add `export { FileSystemUtils } from './foundation.js';` to finalization-v2.ts
+  -> core/store/finalization-v2.ts must not import './foundation.js'   (RED)
+```
+
+m1 **RESOLVED**.
+
+### m2 — transitive purity
+
+```
+add `import * as fs from 'node:fs';` to src/core/id.ts
+Tests  2 failed | 37 passed (39)
+  -> core/id.ts must not import 'node:fs'
+  -> core/id.ts must not reference node:fs
+```
+
+Both failures name `core/id.ts`, a file no Layer-0 module is. The guard now governs an 11-file
+closure (5 Layer-0 + 6 dependencies), and the fixer is right that design Decision 9's hand-verified
+prose had omitted `canonical-json.ts` — enforcement caught a real gap in the hand verification, which
+is the strongest possible argument for enforcing rather than asserting. m2 **RESOLVED**.
+
+**On the exact-equality closure assertion** (the LEAD asked whether it fails legibly or becomes noise
+a future worker deletes): I simulated a legitimate growth — added `'../path-identity.js'` to
+`ALLOWED_IMPORT_SPECIFIERS` and the matching import to `planning-validation.ts`:
+
+```
+Tests  1 failed | 41 passed (42)
+FAIL  walks exactly the Layer-0 modules and the dependencies Decision 9 claims are sound
+AssertionError: expected [ 'core/canonical-json.ts', …(11) ] to deeply equal [ …(10) ]
+  - Expected / + Received
+      "core/id.ts",
+  +   "core/path-identity.ts",
+      "core/store/errors.ts",
+```
+
+My read: **it fails loudly and legibly, and it is not noise.**
+
+- Exactly one test fails, not a cascade. The other 41 pass — including the new node's own allowlist
+  and forbidden-pattern checks, so the reviewer of that future diff can see the new node was
+  genuinely governed, not merely counted.
+- The failure prints the exact array diff naming the added node, and vitest's source context prints
+  the adjacent comment explaining *why* the assertion is exact ("growing it must be a visible diff
+  someone approves"). The correct fix — one line in `EXPECTED_DEPENDENCY_LABELS` — is legible from
+  the failure alone.
+- It is fully deterministic (both sides sorted, no ordering or timing input), so it cannot generate
+  the repeated spurious failures that train a worker to delete an assertion.
+- Even in the worst case where a future worker does delete it, the purity guarantee itself does not
+  open: the per-node allowlist and forbidden-pattern `it.each` still run over every walked node. What
+  would be lost is the *approval* property, not the enforcement.
+
+No finding here.
+
+### m3 — the published `ChangeInstanceId`
+
+The LEAD asked me to falsify the fixer's decision to pin both names rather than unexport the bare
+one. I could not falsify the decision; I could falsify one claim about its durability.
+
+**The published meaning is genuinely preserved.** At `eea78de8`, `src/core/index.ts` already
+star-exported both `./store/index.js` (line 19) and `./change-run/index.js` (line 30) — but the store
+barrel did not carry the name, so `ChangeInstanceId` at the package root unambiguously meant
+change-run's brand. Line 48 re-exports from that same module, so the published declaration is
+literally the same one, not a look-alike. The pairing is unambiguous for a future importer: the bare
+name keeps its published meaning and `StorePlanningChangeInstanceId` names the new brand, with the
+rationale in the barrel comment.
+
+**The pairing cannot be silently dropped.** Removing line 48:
+
+```
+src/core/index.ts(31,1): error TS2308: Module './store/index.js' has already exported a member
+named 'ChangeInstanceId'. Consider explicitly re-exporting to resolve the ambiguity.
+```
+
+A hard compile error, so the disambiguation is load-bearing for the build.
+
+**But its direction is unpinned.** Pointing line 48 at the store brand instead — i.e. reverting to
+exactly what `eaefc01b` shipped and round 1 flagged — leaves `pnpm exec tsc --noEmit` **clean** and no
+test red. A future worker resolving TS2308 could pick either module and nothing would object. The
+behavior is correct; the guarantee is protected by a code comment. That residual is folded into N1
+below, since the natural place to pin it is the consumer test — which cannot pin anything.
+
+m3 **RESOLVED** as to behavior.
+
+---
+
+## New findings (round 2)
+
+### N1 (Major) — every type-level assertion in `planning-foundation-consumer.test.ts` is inert
+
+`test/core/store/planning-foundation-consumer.test.ts:42-60`. Eleven `expectTypeOf` assertions.
+**No check in this repository can make any of them fail.** Proof:
+
+```
+mutate line 44 -> expectTypeOf<number>().toMatchTypeOf<StorePlanningChangeInstanceId>();
+pnpm exec tsc --noEmit   -> exit 0, no output
+pnpm exec vitest run …consumer.test.ts -> Test Files 1 passed | Tests 1 passed
+pnpm run lint            -> exit 0, no output
+```
+
+Three independent reasons, all confirmed:
+
+- `tsconfig.json` is `"include": ["src/**/*"]`, `"exclude": ["node_modules", "dist", "test"]` — `tsc`
+  never type-checks `test/`. `.github/workflows/ci.yml:274` runs that same `pnpm exec tsc --noEmit`,
+  so CI does not close it either.
+- `vitest.config.ts` declares no `typecheck` key, and `pnpm test` is plain `vitest run`, so
+  `expectTypeOf` is a runtime no-op.
+- `eslint.config.js` uses `tseslint.configs.recommended` with no `project`/`projectService`, so lint
+  has no type information.
+
+Why this is Major and not a nit: **task 5.2 is ticked `[x]`** and its text explicitly claims this
+file proves "that the brands actually discriminate (a bare `string` and an unverified id must not
+satisfy the APIs that require verified ones)". That half is carried entirely by
+`expectTypeOf<string>().not.toMatchTypeOf<…>()` and its three siblings — assertions that cannot fail.
+This is the same defect class as round-1's M1/M2/M3 (a ticked task naming coverage that cannot
+distinguish fixed from unfixed), which makes it the fourth instance, in the round convened to close
+the first three.
+
+To be fair to what does work: the file's runtime half is real. It composes ids and a layout entirely
+through the public `src/core/index.js` surface and asserts `layout.activeChange` at runtime, which
+does prove the other half of 5.2 (no internal regex/hash/path import needed) and would break if the
+barrel stopped exporting the values. It is the brand-discrimination half that is unproven.
+
+In scope for round 2 because the delta edited exactly these lines (the m3 alias rename) and because
+m3's alias has no other demonstration — but stated plainly: the inertness pre-dates the delta, it was
+present at `eaefc01b`, and round 1 did not catch it.
+
+Fix options, cheapest first: (a) add a `typecheck` block to `vitest.config.ts` covering these suites
+and run it in CI; (b) move the type assertions to a `*.test-d.ts` file run under `vitest --typecheck`;
+(c) drop `test` from the tsconfig `exclude` (largest blast radius — likely surfaces pre-existing
+errors across the whole suite). Whichever is chosen, add the m3 direction pin at the same time:
+`expectTypeOf<ChangeInstanceId>().toEqualTypeOf<…change-run brand…>()`, which is the assertion that
+would have caught a flip of `src/core/index.ts:48`.
+
+### N2 (Major) — `[~]` removes task 6.5 from the machine record entirely, so the archive gate no longer sees it
+
+`rasen/changes/store-planning-contract-v2/tasks.md:51` (`fcb5d326`).
+
+The LEAD's **reasoning is right and I would not reverse it**: the run reference is structurally
+unsatisfiable before delivery, and leaving `[x]` would leave a false claim standing. The **marker** is
+wrong for this engine. `src/utils/task-progress.ts:7-8`:
+
+```ts
+const TASK_PATTERN = /^[-*]\s+\[[\sx]\]/i;
+const COMPLETED_TASK_PATTERN = /^[-*]\s+\[x\]/i;
+```
+
+`[~]` matches neither, so the line is not a task at all — it leaves the numerator *and* the
+denominator. `tasks.md` has 36 task lines; the engine sees 35. Measured, on this worktree:
+
+| marker | `rasen list --changes --json` | `rasen archive --dry-run --json` |
+| --- | --- | --- |
+| `[x]` (before `fcb5d326`) | 36/36 · `complete` | `blockers: []` |
+| `[~]` (at HEAD) | **35/35 · `complete`** | **`blockers: []`** |
+| `[ ]` | 35/36 · `in-progress` | `blockers: [{ operation: "tasks", message: "1 task(s) are incomplete." }]` |
+
+So the edit removed the false claim from the prose and left it standing in the machine record: the
+change still reports 100% complete, and the archive projection — the very gate this repo uses as its
+pre-archive check — is still fully open. The item the LEAD designated "the inbound acceptance item
+for portfolio delivery" is the one thing no automated gate can now see.
+
+On convention: `[~]` does have precedent — three archived changes use it the same way
+(`2026-06-02-upgrade-auto-orchestrated-pipelines` ×3, `2026-07-08-telemetry-rollups-dashboard:46`,
+`2026-07-22-ui-config-redesign-config-page:44`), and `2026-07-08` is the closest analogue (a PARTIAL
+with a structurally unreachable half). So it is an established *human* convention that no code
+implements. That is worth knowing on its own: every past `[~]` silently shrank its change's
+denominator too.
+
+Fix: one character — `[~]` → `[ ]`, keeping the PARTIAL prose exactly as written. That makes
+`archive --dry-run` report the blocker until the portfolio records the real Windows CI run, which is
+precisely the behavior the LEAD's note describes wanting. `rasen validate … --strict` passes under all
+three markers, so nothing else is affected.
+
+### N3 (Trivial) — the retracted evidence file no longer quotes its capture verbatim
+
+`evidence/task-6-4-baseline-flake-analysis.md`. The rewrite ASCII-ized the quoted terminal output
+(`❯` → `>`, `✖` → `*`, `…` → `...`). The block is presented as a capture of what the reporter printed,
+and it no longer is. Nothing turns on it; noted only because this file's whole purpose after the
+rewrite is to be an honest record of what was and was not observed.
+
+---
+
+## Mutation hygiene (round 2)
+
+Every mutation used an out-of-repo pristine snapshot under `E:\tmp\rev-s2-backup`, written back with
+`Copy-Item`; `git checkout --` was never used. Post-restore, all twelve touched files verified
+byte-exact against their pre-mutation snapshots:
+
+```
+RESTORED-EXACT  40ecab21…  src/core/store/planning-layout-v2.ts
+RESTORED-EXACT  14774ded…  src/core/store/planning-catalogs.ts
+RESTORED-EXACT  63346fa9…  src/core/store/finalization-v2.ts
+RESTORED-EXACT  5627d7c5…  src/core/store/planning-validation.ts
+RESTORED-EXACT  8df53557…  src/core/id.ts
+RESTORED-EXACT  6262a35a…  src/core/index.ts
+RESTORED-EXACT  0d8249a3…  src/core/store/project-records.ts
+RESTORED-EXACT  5fde812b…  test/core/store/planning-foundation-purity.test.ts
+RESTORED-EXACT  fb7f2947…  test/core/store/planning-foundation-consumer.test.ts
+RESTORED-EXACT  701a6337…  test/core/store/finalization-v2.test.ts
+RESTORED-EXACT  029b2445…  test/core/store/planning-layout-v2.test.ts
+RESTORED-EXACT  871c46b8…  rasen/changes/store-planning-contract-v2/tasks.md
+```
+
+Per the correction the fixer established, working-tree sha256 is compared against the pre-mutation
+snapshot rather than against `git show`, because `core.autocrlf=true` leaves pre-existing files
+(`src/core/id.ts`, `src/core/index.ts`, `src/core/store/project-records.ts`) CRLF in the tree while
+their blobs are LF. `git status --porcelain` is the authority, and it is clean.
+
+Final state:
+
+```
+pnpm exec vitest run <the six Layer-0 suites>  ->  6 files / 217 passed
+pnpm exec tsc --noEmit                          ->  exit 0
+pnpm run lint                                   ->  exit 0
+git status --porcelain -- src test              ->  (empty)
+```
+
+The `rasen archive --dry-run --json` invocations left no `.rasen-archive-stage-*` residue.
