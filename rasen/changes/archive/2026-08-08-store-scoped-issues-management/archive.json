@@ -1,0 +1,37 @@
+{
+  "change": "store-scoped-issues-management",
+  "archivedAt": "2026-08-08T08:42:00.674Z",
+  "codeCommit": "2de3ef858db2e07abb0cba8b65338be5dfe07990",
+  "planningBranch": "feat/store-project-partitions-planning-worktrees",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/implementation-report-2.md",
+      "sha256": "9c41b186bc339868c60b0f3f126e98b65da824f9741992d1ce63774bf9c475d5"
+    },
+    {
+      "path": "evidence/implementation-report-3.md",
+      "sha256": "22cd0516c04ffa39ddefa482dfb957394de058118aa5ece0342ff05534297273"
+    },
+    {
+      "path": "evidence/implementation-report.md",
+      "sha256": "65a8be9967d8ad70adb1dbb4166be67828f307be0e4253ba4c56f89d0dae95c5"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "2f62df84e74a8905a3e5050f49cde7cab4ff1c873159566c77a0b7d5e6bf80d3"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "128be2db4ef2c9b5124cf9fb095faade56c9a061a35bfb06911b9111b7c358b4"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

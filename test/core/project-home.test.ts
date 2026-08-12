@@ -134,6 +134,29 @@ describe('project-home', () => {
     expect(probed!.homeDir).toBe(ensured!.homeDir);
   });
 
+  it('probe mode refuses config/registry identity drift without mutation', async () => {
+    const ensured = await resolveProjectHome(projectRoot, { globalDataDir });
+    const configPath = path.join(projectRoot, 'rasen', 'config.yaml');
+    fs.writeFileSync(
+      configPath,
+      'schema: spec-driven\nprojectId: 22222222-2222-4222-8222-222222222222\n'
+    );
+    const registryPath = getProjectRegistryPath({ globalDataDir });
+    const registryBefore = fs.readFileSync(registryPath);
+    const configBefore = fs.readFileSync(configPath);
+    const homeInventoryBefore = fs.readdirSync(ensured!.homeDir).sort();
+
+    const probed = await resolveProjectHome(projectRoot, {
+      globalDataDir,
+      ensure: false,
+    });
+
+    expect(probed).toBeNull();
+    expect(fs.readFileSync(registryPath)).toEqual(registryBefore);
+    expect(fs.readFileSync(configPath)).toEqual(configBefore);
+    expect(fs.readdirSync(ensured!.homeDir).sort()).toEqual(homeInventoryBefore);
+  });
+
   it('fails with an actionable message when the config file cannot be written', async () => {
     const configPath = path.join(projectRoot, 'rasen', 'config.yaml');
     fs.chmodSync(configPath, 0o444);
@@ -168,6 +191,45 @@ describe('touchProjectRegistry (self-healing)', () => {
     await touchProjectRegistry(projectRoot, { globalDataDir });
 
     expect(fs.existsSync(path.join(globalDataDir, 'projects'))).toBe(false);
+  });
+
+  it('does not first-register an unknown path that merely carries a projectId', async () => {
+    fs.writeFileSync(
+      path.join(projectRoot, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nprojectId: 11111111-1111-4111-8111-111111111111\n'
+    );
+
+    await touchProjectRegistry(projectRoot, { globalDataDir });
+
+    expect(fs.existsSync(getProjectRegistryPath({ globalDataDir }))).toBe(false);
+  });
+
+  it('does not register a copied config while its original owner is live', async () => {
+    await resolveProjectHome(projectRoot, { globalDataDir });
+    const copiedRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'rasen-self-heal-copy-')
+    );
+    try {
+      fs.mkdirSync(path.join(copiedRoot, 'rasen'), { recursive: true });
+      fs.copyFileSync(
+        path.join(projectRoot, 'rasen', 'config.yaml'),
+        path.join(copiedRoot, 'rasen', 'config.yaml')
+      );
+      const registryPath = getProjectRegistryPath({ globalDataDir });
+      const before = fs.readFileSync(registryPath, 'utf8');
+      const beforeMtime = fs.statSync(registryPath).mtimeMs;
+
+      await touchProjectRegistry(copiedRoot, { globalDataDir });
+
+      expect(fs.readFileSync(registryPath, 'utf8')).toBe(before);
+      expect(fs.statSync(registryPath).mtimeMs).toBe(beforeMtime);
+      const state = await readProjectRegistryState({ globalDataDir });
+      expect(Object.keys(state?.projects ?? {})).toEqual([
+        FileSystemUtils.canonicalizeExistingPath(projectRoot),
+      ]);
+    } finally {
+      fs.rmSync(copiedRoot, { recursive: true, force: true });
+    }
   });
 
   it('refreshes lastSeen when the entry is current but stale (> 24h)', async () => {
@@ -209,6 +271,91 @@ describe('touchProjectRegistry (self-healing)', () => {
     expect(state?.projects[movedCanonical]?.home).toBe(path.basename(original!.homeDir));
 
     fs.rmSync(movedRoot, { recursive: true, force: true });
+  });
+
+  it('rebinds one moved root recorded through duplicate path aliases', async () => {
+    const original = await resolveProjectHome(projectRoot, { globalDataDir });
+    const state = await readProjectRegistryState({ globalDataDir });
+    const canonical = FileSystemUtils.canonicalizeExistingPath(projectRoot);
+    const entry = state!.projects[canonical];
+    const aliasPath = [
+      path.dirname(canonical),
+      'registry-alias',
+      '..',
+      path.basename(canonical),
+    ].join(path.sep);
+    await writeProjectRegistryState(
+      {
+        version: 1,
+        projects: {
+          ...state!.projects,
+          [aliasPath]: {
+            ...entry,
+            projectId: entry.projectId.toUpperCase(),
+          },
+        },
+      },
+      { globalDataDir }
+    );
+    const movedRoot = path.join(
+      path.dirname(projectRoot),
+      `rasen-self-heal-aliased-move-${Date.now()}`
+    );
+    fs.renameSync(projectRoot, movedRoot);
+
+    await touchProjectRegistry(movedRoot, { globalDataDir });
+
+    const refreshed = await readProjectRegistryState({ globalDataDir });
+    const movedCanonical = FileSystemUtils.canonicalizeExistingPath(movedRoot);
+    expect(Object.keys(refreshed!.projects)).toEqual([movedCanonical]);
+    expect(refreshed!.projects[movedCanonical].home).toBe(
+      path.basename(original!.homeDir)
+    );
+    fs.rmSync(movedRoot, { recursive: true, force: true });
+  });
+
+  it('canonicalizes an owned alias-only claim without recreating its missing home', async () => {
+    const projectId = '11111111-1111-4111-8111-111111111111';
+    const configPath = path.join(projectRoot, 'rasen', 'config.yaml');
+    fs.writeFileSync(configPath, `schema: spec-driven\nprojectId: ${projectId}\n`);
+    const aliasRoot = path.join(
+      path.dirname(projectRoot),
+      `rasen-self-heal-live-alias-${randomUUID().slice(0, 8)}`
+    );
+    fs.symlinkSync(projectRoot, aliasRoot, process.platform === 'win32' ? 'junction' : 'dir');
+    const missingHome = 'owned-but-missing-home';
+    await writeProjectRegistryState(
+      {
+        version: 1,
+        projects: {
+          [aliasRoot]: {
+            projectId,
+            name: 'legacy-alias-cache',
+            mode: 'in-repo',
+            home: missingHome,
+            lastSeen: '2026-08-01T00:00:00.000Z',
+          },
+        },
+      },
+      { globalDataDir }
+    );
+    const configBefore = fs.readFileSync(configPath);
+
+    await touchProjectRegistry(projectRoot, { globalDataDir });
+
+    const canonicalRoot = FileSystemUtils.canonicalizeExistingPath(projectRoot);
+    const refreshed = await readProjectRegistryState({ globalDataDir });
+    expect(Object.keys(refreshed!.projects)).toEqual([canonicalRoot]);
+    expect(refreshed!.projects[canonicalRoot].home).toBe(missingHome);
+    expect(fs.existsSync(path.join(globalDataDir, 'projects', missingHome))).toBe(false);
+    expect(fs.readFileSync(configPath)).toEqual(configBefore);
+    const afterFirstRefresh = fs.readFileSync(getProjectRegistryPath({ globalDataDir }));
+
+    await touchProjectRegistry(projectRoot, { globalDataDir });
+
+    expect(fs.readFileSync(getProjectRegistryPath({ globalDataDir }))).toEqual(afterFirstRefresh);
+    expect(fs.existsSync(path.join(globalDataDir, 'projects', missingHome))).toBe(false);
+    fs.rmSync(aliasRoot, { recursive: true, force: true });
   });
 
   it('does not rewrite the registry when the entry is current and recently seen', async () => {
@@ -399,11 +546,68 @@ describe('worktree piercing for probe and self-heal (worktree-aware-spaces D1)',
 
   it('probe (ensure:false) from a worktree resolves the main checkout entry', async () => {
     const main = await registerProject({ projectRoot: repoRoot, projectId, mode: 'in-repo' }, { globalDataDir });
+    const canonicalWorktree = FileSystemUtils.canonicalizeExistingPath(worktreePath);
+    const legacyHome = 'legacy-worktree-shadow-home';
+    const state = await readProjectRegistryState({ globalDataDir });
+    await writeProjectRegistryState(
+      {
+        version: 1,
+        projects: {
+          ...state!.projects,
+          [canonicalWorktree]: {
+            ...main.entry,
+            name: 'legacy-worktree-cache',
+            home: legacyHome,
+          },
+        },
+      },
+      { globalDataDir }
+    );
+    const mainHomeDir = path.join(globalDataDir, 'projects', main.entry.home);
+    const legacyHomeDir = path.join(globalDataDir, 'projects', legacyHome);
+    fs.mkdirSync(legacyHomeDir, { recursive: true });
+    fs.writeFileSync(path.join(mainHomeDir, 'owner.txt'), 'main\n');
+    fs.writeFileSync(path.join(legacyHomeDir, 'owner.txt'), 'legacy\n');
+    const registryPath = getProjectRegistryPath({ globalDataDir });
+    const registryBefore = fs.readFileSync(registryPath);
+    const configBefore = fs.readFileSync(path.join(worktreePath, 'rasen', 'config.yaml'));
 
     const probed = await resolveProjectHome(worktreePath, { globalDataDir, ensure: false });
     expect(probed).not.toBeNull();
     expect(probed!.projectId).toBe(projectId);
     expect(path.basename(probed!.homeDir)).toBe(main.entry.home);
+    expect(fs.readFileSync(registryPath)).toEqual(registryBefore);
+    expect(fs.readFileSync(path.join(worktreePath, 'rasen', 'config.yaml'))).toEqual(configBefore);
+    expect(fs.readFileSync(path.join(mainHomeDir, 'owner.txt'), 'utf8')).toBe('main\n');
+    expect(fs.readFileSync(path.join(legacyHomeDir, 'owner.txt'), 'utf8')).toBe('legacy\n');
+  });
+
+  it('probe (ensure:false) falls back to the direct worktree entry when the main entry is missing', async () => {
+    const canonicalWorktree = FileSystemUtils.canonicalizeExistingPath(worktreePath);
+    const directEntry = {
+      projectId,
+      name: 'surviving-worktree',
+      mode: 'in-repo' as const,
+      home: 'surviving-worktree-home',
+      lastSeen: '2026-08-01T00:00:00.000Z',
+    };
+    await writeProjectRegistryState(
+      { version: 1, projects: { [canonicalWorktree]: directEntry } },
+      { globalDataDir }
+    );
+    const directHomeDir = path.join(globalDataDir, 'projects', directEntry.home);
+    fs.mkdirSync(directHomeDir, { recursive: true });
+    fs.writeFileSync(path.join(directHomeDir, 'owner.txt'), 'worktree\n');
+    const registryPath = getProjectRegistryPath({ globalDataDir });
+    const registryBefore = fs.readFileSync(registryPath);
+    const configBefore = fs.readFileSync(path.join(worktreePath, 'rasen', 'config.yaml'));
+
+    const probed = await resolveProjectHome(worktreePath, { globalDataDir, ensure: false });
+
+    expect(probed?.homeDir).toBe(directHomeDir);
+    expect(fs.readFileSync(registryPath)).toEqual(registryBefore);
+    expect(fs.readFileSync(path.join(worktreePath, 'rasen', 'config.yaml'))).toEqual(configBefore);
+    expect(fs.readFileSync(path.join(directHomeDir, 'owner.txt'), 'utf8')).toBe('worktree\n');
   });
 
   it('self-heal from a worktree refreshes the main entry, never a worktree-keyed one', async () => {

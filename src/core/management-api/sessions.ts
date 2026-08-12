@@ -6,12 +6,12 @@
  * (task text: non-empty, length-capped, control-chars-free except tab/
  * newline) and reuses `validateChangeName` for the optional `changeName`.
  */
-import * as path from 'node:path';
 import * as fs from 'node:fs';
 
 import { validateChangeName } from '../../utils/change-utils.js';
-import { WORKSPACE_DIR_NAME } from '../config.js';
 import type { ProjectHome } from '../project-home.js';
+import { StorePlanning, type PlanningSelection } from '../store-planning/index.js';
+import type { ResolvedSpace } from '../config-api/project-addressing.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { buildChangeRunEntry } from './runs.js';
 import { ephemeraDir } from '../file-placement.js';
@@ -40,14 +40,6 @@ const MAX_TASK_LENGTH = 10_000;
 export type SessionsResult =
   | { ok: true; status: number; response: unknown }
   | { ok: false; status: number; code: string; message: string };
-
-function canonicalizeOrResolve(target: string): string {
-  try {
-    return FileSystemUtils.canonicalizeExistingPath(target);
-  } catch {
-    return path.resolve(target);
-  }
-}
 
 function validateTask(task: unknown): string | null {
   if (typeof task !== 'string' || task.length === 0) {
@@ -173,21 +165,27 @@ export async function handleLaunchSession(
  * `GET /api/v1/sessions` (design D3/D4): registry records, optionally filtered
  * to a single space, with each listed session's run-state joined against its
  * OWN frozen execution root and that checkout's machine home (not the
- * planning Store or server launch project). `filterRoot` (a canonical root)
- * still restricts the listing by recorded planning space; when omitted, every
- * session is returned (unattributed ones included, compat). A session without
- * a recorded space, change name, or usable frozen project execution reports
- * `runState: { kind: 'absent' }`.
+ * planning Store or server launch project). `filterSpace` restricts the
+ * listing by recorded planning space IDENTITY (type + id) rather than by a
+ * canonical root, so a Store space matches every session recorded against it
+ * regardless of which member checkout each one executes in; when omitted,
+ * every session is returned (unattributed ones included, compat). A session
+ * without a recorded space, change name, or usable frozen project execution
+ * reports `runState: { kind: 'absent' }`.
  */
 export async function handleListSessions(
   supervisor: SessionSupervisor,
-  filterRoot: string | undefined,
+  filterSpace: Pick<ResolvedSpace, 'type' | 'id'> | undefined,
   resolveHomeForRoot: (root: string) => Promise<ProjectHome | null>
 ): Promise<SessionsResponse> {
   const sessions: SessionListEntry[] = [];
   for (const record of supervisor.list()) {
-    if (filterRoot !== undefined) {
-      if (!record.space || canonicalizeOrResolve(record.space.root) !== filterRoot) {
+    if (filterSpace !== undefined) {
+      if (
+        !record.space ||
+        record.space.type !== filterSpace.type ||
+        record.space.id !== filterSpace.id
+      ) {
         continue;
       }
     }
@@ -223,7 +221,6 @@ export async function handleListSessions(
       }
       continue;
     }
-    const changeDir = path.join(record.space.root, WORKSPACE_DIR_NAME, 'changes', record.changeName);
     let home: ProjectHome | null;
     try {
       home = await resolveHomeForRoot(executionRoot);
@@ -238,11 +235,53 @@ export async function handleListSessions(
       });
       continue;
     }
-    // Terminal locations belong to the frozen execution checkout. The
-    // planning change directory remains the oldest compatibility location.
+
+    // The Change directory comes from the resolved planning scope, never from
+    // joining `<space.root>/rasen/changes` — that flat join is exactly what a
+    // Store v2 project partition invalidates.
+    const facts = record.space.planning;
+    let selection: PlanningSelection | undefined;
+    if (facts?.storeUid !== undefined || facts?.storeId !== undefined) {
+      selection = {
+        store: facts.storeUid ?? facts.storeId,
+        project: facts.projectId ?? record.execution.projectId,
+        ...(facts.targetLineId === undefined ? {} : { targetLine: facts.targetLineId }),
+      };
+    } else if (record.space.type === 'store') {
+      selection = { store: record.space.id, project: record.execution.projectId };
+    }
+
+    let changeDir: string;
+    let storeV2Planning = false;
+    try {
+      const planningScope = await StorePlanning.open({
+        intent: 'project-read',
+        startPath: executionRoot,
+        ...(selection === undefined ? {} : { selection }),
+        change: { changeId: record.changeName },
+      });
+      changeDir = (await planningScope.openChange({ changeId: record.changeName })).location.absolutePath;
+      storeV2Planning = planningScope.describe().kind === 'store-project';
+    } catch (error) {
+      sessions.push({
+        session: toWire(record),
+        runState: {
+          name: record.changeName,
+          kind: 'error',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
+      continue;
+    }
+
+    // Terminal locations belong to the frozen execution checkout. For a Store
+    // v2 project scope the planning Change directory is NEVER an ephemera
+    // fallback (task 5.5); for standalone and legacy scopes it remains the
+    // oldest compatibility location.
     const locations = {
       ephemeraDir: ephemeraDir(executionRoot, record.changeName),
       workDir: home ? home.workDir(record.changeName) : null,
+      ...(storeV2Planning ? { includeChangeDir: false } : {}),
     };
     sessions.push({ session: toWire(record), runState: buildChangeRunEntry(record.changeName, changeDir, locations) });
   }

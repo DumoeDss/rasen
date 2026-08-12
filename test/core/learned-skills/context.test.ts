@@ -11,6 +11,12 @@ import {
 } from '../../../src/core/learned-skills/index.js';
 import { resolveProjectHome } from '../../../src/core/project-home.js';
 import {
+  findProjectIdentityClaimants,
+  readProjectRegistryState,
+  registerProject,
+  writeProjectRegistryState,
+} from '../../../src/core/project-registry.js';
+import {
   getStoreMetadataPath,
   writeStoreMetadataState,
 } from '../../../src/core/store/foundation.js';
@@ -122,6 +128,178 @@ describe('learned-skill execution context', () => {
     ).rejects.toMatchObject({
       diagnostic: { code: 'knowledge_owner_ambiguous' },
     });
+  });
+
+  it('deduplicates aliases that claim one canonical project root', async () => {
+    const original = await createProject('owner-canonical');
+    const aliasRoot = path.join(tempDir, 'owner-alias');
+    fs.symlinkSync(
+      original.root,
+      aliasRoot,
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
+    const registry = await readProjectRegistryState({ globalDataDir });
+    const entry = registry?.projects[original.root];
+    expect(entry).toBeDefined();
+    await writeProjectRegistryState(
+      {
+        version: 1,
+        projects: {
+          ...registry?.projects,
+          [aliasRoot]: {
+            ...entry!,
+            projectId: original.id.toUpperCase(),
+          },
+        },
+      },
+      { globalDataDir }
+    );
+
+    await expect(
+      findProjectIdentityClaimants(original.id, { globalDataDir })
+    ).resolves.toEqual([
+      expect.objectContaining({
+        path: original.root,
+        live: true,
+      }),
+    ]);
+    const context = await resolveLearnedSkillExecutionContext({
+      launchDirectory: original.root,
+      selector: { project: original.id },
+      requestedScope: 'project',
+      globalDataDir,
+    });
+    expect(context.owner).toMatchObject({
+      type: 'project',
+      id: original.id,
+      root: original.root,
+    });
+  });
+
+  it('refuses an owner whose live alias conflicts with the direct project identity', async () => {
+    const projectRoot = createHealthyRoot(
+      path.join(tempDir, 'owner-direct-b'),
+      'schema: spec-driven\nprojectId: owner-direct-b\n'
+    );
+    const direct = await registerProject(
+      {
+        projectRoot,
+        projectId: 'owner-direct-b',
+        mode: 'in-repo',
+      },
+      { globalDataDir }
+    );
+    const aliasRoot = path.join(tempDir, 'owner-live-alias-a');
+    fs.symlinkSync(
+      projectRoot,
+      aliasRoot,
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
+    const aliasEntry = {
+      ...direct.entry,
+      projectId: 'owner-live-alias-a',
+      name: 'owner-live-alias-a',
+      home: 'owner-live-alias-a-home',
+    };
+    await writeProjectRegistryState(
+      {
+        version: 1,
+        projects: {
+          [direct.canonicalPath]: direct.entry,
+          [aliasRoot]: aliasEntry,
+        },
+      },
+      { globalDataDir }
+    );
+
+    let thrown: unknown;
+    try {
+      await resolveLearnedSkillExecutionContext({
+        launchDirectory: projectRoot,
+        selector: { project: aliasEntry.projectId },
+        requestedScope: 'project',
+        globalDataDir,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(KnowledgeContextError);
+    const diagnostic = (thrown as KnowledgeContextError).diagnostic;
+    expect(diagnostic.code).toBe('knowledge_owner_ambiguous');
+    expect(diagnostic.message).toContain(direct.entry.projectId);
+    expect(diagnostic.message).toContain(aliasEntry.projectId);
+    expect(diagnostic.message).toContain(aliasRoot);
+  });
+
+  it('names every live project claimant and refuses to recommend stale pruning', async () => {
+    const original = await createProject('owner-original');
+    const copyRoot = createHealthyRoot(
+      path.join(tempDir, 'owner-copy'),
+      fs.readFileSync(path.join(original.root, 'rasen', 'config.yaml'), 'utf8')
+    );
+    await registerProject(
+      {
+        projectRoot: copyRoot,
+        projectId: original.id,
+        mode: 'in-repo',
+      },
+      { globalDataDir }
+    );
+
+    let thrown: unknown;
+    try {
+      await resolveLearnedSkillExecutionContext({
+        launchDirectory: original.root,
+        selector: { project: original.id },
+        requestedScope: 'project',
+        globalDataDir,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(KnowledgeContextError);
+    const message = (thrown as KnowledgeContextError).diagnostic.message;
+    expect(message).toContain(`${original.root} (live)`);
+    expect(message).toContain(`${copyRoot} (live)`);
+    expect(message).toContain('Rasen refuses to choose an owner');
+    expect(message).not.toContain('rasen home prune');
+  });
+
+  it('names missing project claimants and recommends registry pruning', async () => {
+    const original = await createProject('stale-owner-original');
+    const copyRoot = createHealthyRoot(
+      path.join(tempDir, 'stale-owner-copy'),
+      fs.readFileSync(path.join(original.root, 'rasen', 'config.yaml'), 'utf8')
+    );
+    await registerProject(
+      {
+        projectRoot: copyRoot,
+        projectId: original.id,
+        mode: 'in-repo',
+      },
+      { globalDataDir }
+    );
+    fs.rmSync(copyRoot, { recursive: true, force: true });
+
+    let thrown: unknown;
+    try {
+      await resolveLearnedSkillExecutionContext({
+        launchDirectory: original.root,
+        selector: { project: original.id },
+        requestedScope: 'project',
+        globalDataDir,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(KnowledgeContextError);
+    const message = (thrown as KnowledgeContextError).diagnostic.message;
+    expect(message).toContain(`${original.root} (live)`);
+    expect(message).toContain(`${copyRoot} (missing)`);
+    expect(message).toContain('rasen home prune --apply');
   });
 
   it('keeps identical bare ids distinct across typed namespaces', async () => {

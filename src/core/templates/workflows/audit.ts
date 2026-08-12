@@ -21,7 +21,7 @@ ${STORE_SELECTION_GUIDANCE} \`rasen agent audit\` is one of those store/project-
 If the user already gave a session id or a transcript/rollout path, skip to step 2.
 
 Otherwise, help them find one:
-- **Current or most recent Claude Code session for this project**: the project's Claude transcripts directory is derived from the cwd (same slugging \`agent context\` uses); the newest \`*.jsonl\` file there (excluding \`agent-*.jsonl\` subagent files) is the one to audit. \`rasen agent context --latest --json\` will report on that same transcript and print its path if you need to confirm which file that is.
+- **Current or most recent Claude Code session for this project**: the project's Claude transcripts directory is derived from the cwd (same slugging \`agent context\` uses); the newest \`*.jsonl\` file there (excluding \`agent-*.jsonl\` subagent files) is the one to audit. \`rasen agent context --latest --runtime claude --json\` reports on that same transcript and prints its path if you need to confirm which file that is. Pass \`--runtime claude\` explicitly: a bare \`--latest\` refuses with \`{"available": false, "reason": "unsupported-host"}\` on a harness that has no context-probe adapter of its own, and that refusal says nothing about the Claude transcript you are looking for.
 - **A Codex CLI session**: if the user mentions Codex, or the current tool is Codex, route to \`--runtime codex\` (see step 2) — Codex rollouts live under \`~/.codex/sessions/<Y>/<M>/<D>/rollout-*.jsonl\` (or \`CODEX_HOME\`), keyed by thread id rather than a Claude session id.
 - **A Zed session**: if the user ran the session through Zed's agent panel, route to \`--runtime zed\` (see step 2). Zed sessions live in a local \`threads.db\` (SQLite), keyed by a thread id. The user can identify one **two ways**: by thread id (a prefix is enough), or by their **first command** with \`--match "<text>"\` (a case-insensitive substring of the session's first user message). If \`--match\` matches more than one thread, the command lists the candidates — relay them and ask which one.
 - If genuinely unsure which runtime or session, ask the user rather than guessing — a wrong \`--runtime\` guess just produces a resolution error, but confirming first is faster.
@@ -29,7 +29,7 @@ Otherwise, help them find one:
 ## 2. Run the audit
 
 \`\`\`bash
-rasen agent audit <sessionId|path>                       # Claude session (default runtime)
+rasen agent audit <sessionId|path>                       # Claude session by bare id, or any recognized session file by path
 rasen agent audit <threadId|path/to/rollout.jsonl> --runtime codex   # Codex session
 rasen agent audit <threadId> --runtime zed               # Zed session by thread id
 rasen agent audit --runtime zed --match "<first command>"  # Zed session by first command
@@ -64,6 +64,7 @@ If asked for detail beyond the summary, offer \`--open\` (or point at the printe
 Relay the actual error and next step — do not invent a cause:
 - **Ambiguous session id prefix**: the error names the matches; ask the user to supply more of the id, or a direct path.
 - **Format-drift** (\`transcript format not recognized\`): this is the experimental-format risk materializing — say so plainly, note the harness (or Zed) may have updated its log/database format since this command was last verified against it, and suggest filing feedback (\`rasen feedback\`) if it keeps happening. Don't attempt to patch or work around the parse failure yourself.
+- **Unauditable harness** (\`No token auditor exists for the recognized session runtime "<id>"\`): the file was recognized as belonging to a harness Rasen ships no auditor for. This is a deliberate refusal, NOT format drift and NOT a bug — analyzing it with another runtime's parser would attribute the report to a runtime that did not produce the session, and the behavior it replaces was a schema-valid ALL-ZERO report at exit 0. No report file is written. Relay the harness name and the auditable set (\`claude\`, \`codex\`, \`zed\`); do NOT suggest \`rasen feedback\`, and do NOT retry with \`--runtime\` to force another runtime's parser onto it.
 - **No transcript matching**: check the session id and, if relevant, \`--projects-dir\`/\`--runtime\`.
 - **Zed: database not found**: the default \`threads.db\` location for the platform had no database — relay the path it looked for and offer \`--db <path>\` if the user's Zed data lives elsewhere.
 - **Zed: ambiguous \`--match\`**: the error lists every thread whose first command matched — relay the candidates (id, title, start) and ask the user to pick, or to pass the thread id directly. Never guess one.

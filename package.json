@@ -1,6 +1,6 @@
 {
   "name": "@atelierai/rasen",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "AI-native system for spec-driven development",
   "keywords": [
     "rasen",
@@ -40,11 +40,13 @@
     "scripts/postinstall.js",
     "!dist/**/*.test.js",
     "!dist/**/__tests__",
-    "!dist/**/*.map"
+    "!dist/**/*.map",
+    "!dist/.build-fingerprint.json"
   ],
   "scripts": {
     "lint": "eslint src/ test/ vitest.config.ts vitest.setup.ts",
     "build": "node build.js",
+    "build:if-stale": "node build.js --if-stale",
     "dev": "tsc --watch",
     "dev:cli": "pnpm build && node bin/rasen.js",
     "test": "vitest run",

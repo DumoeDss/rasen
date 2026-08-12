@@ -1,0 +1,33 @@
+{
+  "change": "fix-project-registry-alias-safety",
+  "archivedAt": "2026-08-10T06:00:03.625Z",
+  "codeCommit": "e28d51f8e8ad3ebf62fc4034f17d9fca5ca29fcc",
+  "planningBranch": "fix/archive-transaction-recovery-follow-up",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/review-cycle-report.md",
+      "sha256": "801a12857c10b901b984481e8b9bab21aa356956f32495764a01f9a9ab6a9e3d"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "40c33981d5fe17f503a2bf4c043310eee26291345aa6682f7d401a3bc5a6b217"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "b4aa52ca3f746a63099b536bb2cdcb71cf9af001fac723db5a2e88fc585d9a0f"
+    },
+    {
+      "path": "evidence/windows-registry-root-selection.md",
+      "sha256": "ec0fd650c877188f466255a5102555b65ac2e01efb813bb64cf1104723d1b8c2"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

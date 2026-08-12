@@ -435,7 +435,7 @@ The change is implemented! One more step—let's archive it.
 \`\`\`
 ## Archiving
 
-When a change is complete, we archive it. The archive path is derived from \`planningHome.changesDir\` and the date.
+When a change is complete, we archive it. The archive destination comes from \`archive.archiveDir\` in status JSON; the engine returns the exact dated entry path.
 
 Archived changes become your project's decision history—you can always find them later to understand why something was built a certain way.
 \`\`\`
@@ -447,7 +447,7 @@ rasen archive "<name>"
 
 **SHOW:**
 \`\`\`
-Archived to: \`<planningHome.changesDir>/archive/YYYY-MM-DD-<name>/\`
+Archived to: \`<exact archive path returned by the engine>\`
 
 The change is now part of your project's history. The code is in your codebase, the decision record is preserved.
 \`\`\`

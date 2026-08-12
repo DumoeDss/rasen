@@ -1,8 +1,22 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ArchiveCommand } from '../../src/core/archive.js';
-import type { ArchiveApplyResult, ArchivePlan } from '../../src/core/archive-engine.js';
+import {
+  ArchiveCommand,
+  formatArchiveAbortBlockedLines,
+} from '../../src/core/archive.js';
+import type {
+  ArchiveApplyOptions,
+  ArchiveApplyResult,
+  ArchivePlan,
+} from '../../src/core/archive-engine.js';
+import {
+  applyArchive,
+  defaultArchiveEngineAdapters,
+  loadStoredArchivePlan,
+} from '../../src/core/archive-engine.js';
+import { getGlobalDataDir } from '../../src/core/global-config.js';
 import { Validator } from '../../src/core/validation/validator.js';
 import { promises as fs } from 'fs';
+import { writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'path';
 import os from 'os';
@@ -14,6 +28,53 @@ vi.mock('@inquirer/prompts', () => ({
   confirm: vi.fn()
 }));
 
+describe('archive abort human disposition ordering', () => {
+  it('prints every blocker before durable state, association, and exact recovery', () => {
+    const lines = formatArchiveAbortBlockedLines({
+      blockers: [
+        { operation: 'journal', path: '/tx/journal.json', code: 'first', message: 'first blocker' },
+        { operation: 'source', path: '/change', code: 'second', message: 'second blocker' },
+      ],
+      effectivePhase: 'published',
+      retainedPaths: ['/tx/journal.json', '/archive/entry'],
+      associationPhase: 'pending',
+      recoveryCommand: 'rasen archive --apply-plan exact-token',
+    }, 'en');
+
+    const first = lines.findIndex(line => line.includes('first blocker'));
+    const second = lines.findIndex(line => line.includes('second blocker'));
+    const phase = lines.findIndex(line => line.includes('published'));
+    const retained = lines.findIndex(line => line.includes('/archive/entry'));
+    const association = lines.findIndex(line => /association/i.test(line));
+    const recovery = lines.findIndex(line => line.includes('exact-token'));
+    expect([first, second, phase, retained, association, recovery].every(index => index >= 0)).toBe(true);
+    expect(first).toBeLessThan(second);
+    expect(second).toBeLessThan(phase);
+    expect(phase).toBeLessThan(retained);
+    expect(retained).toBeLessThan(association);
+    expect(association).toBeLessThan(recovery);
+    expect(recovery).toBe(lines.length - 1);
+  });
+
+  it('ends with verified manual ownership guidance and invents no replay command', () => {
+    const lines = formatArchiveAbortBlockedLines({
+      blockers: [
+        { operation: 'ownership', path: '/tx/claim', code: 'ownership_unverified', message: 'ownership is unproved' },
+      ],
+      effectivePhase: 'published',
+      retainedPaths: ['/tx/claim'],
+      associationPhase: 'pending',
+      manualRecoveryAction: {
+        kind: 'manual-recovery-required',
+        guidance: 'Preserve the claim and inspect its exact identity.',
+      },
+    }, 'en');
+
+    expect(lines.at(-1)).toContain('Preserve the claim and inspect its exact identity.');
+    expect(lines.join('\n')).not.toContain('rasen archive --apply-plan');
+  });
+});
+
 describe('ArchiveCommand', () => {
   let tempDir: string;
   let archiveCommand: ArchiveCommand;
@@ -21,6 +82,7 @@ describe('ArchiveCommand', () => {
   const originalExitCode = process.exitCode;
   const originalXdgDataHome = process.env.XDG_DATA_HOME;
   const originalRasenHome = process.env.RASEN_HOME;
+  const originalRasenLang = process.env.RASEN_LANG;
 
   beforeEach(async () => {
     // Create temp directory
@@ -40,6 +102,7 @@ describe('ArchiveCommand', () => {
     // outranks XDG_DATA_HOME — clear it so this suite's XDG isolation
     // actually applies.
     delete process.env.RASEN_HOME;
+    delete process.env.RASEN_LANG;
     process.env.XDG_DATA_HOME = path.join(tempDir, 'xdg-data');
 
     // Create Rasen structure
@@ -75,6 +138,11 @@ describe('ArchiveCommand', () => {
     } else {
       process.env.RASEN_HOME = originalRasenHome;
     }
+    if (originalRasenLang === undefined) {
+      delete process.env.RASEN_LANG;
+    } else {
+      process.env.RASEN_LANG = originalRasenLang;
+    }
 
     // Clear mocks
     vi.clearAllMocks();
@@ -92,12 +160,152 @@ describe('ArchiveCommand', () => {
       applyCalls = 0;
 
       protected override applyPlannedArchive(
-        plan: ArchivePlan
+        plan: ArchivePlan,
+        options: ArchiveApplyOptions = {}
       ): Promise<ArchiveApplyResult> {
         this.applyCalls += 1;
-        return super.applyPlannedArchive(plan);
+        return super.applyPlannedArchive(plan, options);
       }
     }
+
+    it('rejects the internal finalization precondition on a standalone archive', async () => {
+      const changeName = 'standalone-precondition-misuse';
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] done\n');
+
+      await archiveCommand.execute(changeName, {
+        dryRun: true,
+        savePlan: true,
+        finalizationPreviewPrecondition: `finalization-preview-v1:${'a'.repeat(64)}`,
+        json: true,
+      });
+
+      const output = JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      );
+      expect(output.archive).toBeNull();
+      expect(output.status).toEqual([
+        expect.objectContaining({ code: 'archive_option_conflict' }),
+      ]);
+      await expect(
+        fs.access(path.join(getGlobalDataDir(), 'archive-transactions'))
+      ).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('persists an incomplete direct plan before exposing token recovery', async () => {
+      const changeName = 'durable-direct-recovery';
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] done\n');
+
+      class RecoverableApplyCommand extends ArchiveCommand {
+        failedPlan?: ArchivePlan;
+        gateObserved = false;
+
+        protected override async applyPlannedArchive(
+          plan: ArchivePlan,
+          options: ArchiveApplyOptions = {}
+        ): Promise<ArchiveApplyResult> {
+          this.failedPlan = plan;
+          await fs.access(
+            path.join(
+              getGlobalDataDir(),
+              'archive-transactions',
+              plan.transactionId,
+              'operation.lock'
+            )
+          );
+          this.gateObserved = true;
+          return applyArchive(plan, {
+            ...options,
+            adapters: {
+              ...defaultArchiveEngineAdapters,
+              fs: {
+                ...defaultArchiveEngineAdapters.fs,
+                mkdir: async (
+                  targetPath: string,
+                  mkdirOptions?: { recursive?: boolean }
+                ): Promise<string | undefined> => {
+                  if (targetPath === plan.paths.final) {
+                    const error = new Error('injected final reservation failure');
+                    (error as NodeJS.ErrnoException).code = 'EACCES';
+                    throw error;
+                  }
+                  return defaultArchiveEngineAdapters.fs.mkdir(
+                    targetPath,
+                    mkdirOptions
+                  );
+                },
+              },
+            },
+          });
+        }
+      }
+
+      const command = new RecoverableApplyCommand();
+      await command.execute(changeName, { yes: true, json: true });
+      const output = JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      );
+      expect(output.archive.status).toBe('recoverable');
+      expect(output.archive.recoveryCommand).toMatch(
+        /^rasen archive --apply-plan archive-v1:/
+      );
+      const plan = command.failedPlan;
+      expect(plan).toBeDefined();
+      expect(command.gateObserved).toBe(true);
+      const token = `archive-v1:${plan!.transactionId}:${plan!.planHash}`;
+      await expect(
+        loadStoredArchivePlan(token, getGlobalDataDir())
+      ).resolves.toEqual(plan);
+    });
+
+    it('does not mutate a direct archive when plan persistence fails', async () => {
+      const changeName = 'direct-persistence-failure';
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
+      const archiveDir = path.join(tempDir, 'rasen', 'changes', 'archive');
+      const canonical = path.join(
+        tempDir,
+        'rasen',
+        'specs',
+        'existing',
+        'spec.md'
+      );
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.mkdir(path.dirname(canonical), { recursive: true });
+      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] done\n');
+      await fs.writeFile(canonical, '# Canonical\n');
+      const sourceBefore = await fs.readFile(
+        path.join(changeDir, 'tasks.md'),
+        'utf8'
+      );
+      const canonicalBefore = await fs.readFile(canonical, 'utf8');
+      process.env.XDG_DATA_HOME = path.join(tempDir, 'isolated-data-home');
+      const transactionStore = path.join(
+        getGlobalDataDir(),
+        'archive-transactions'
+      );
+      await fs.mkdir(getGlobalDataDir(), { recursive: true });
+      await fs.writeFile(transactionStore, 'not a directory\n');
+      const command = new TrackingArchiveCommand();
+
+      await command.execute(changeName, { yes: true, json: true });
+
+      const output = JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      );
+      expect(output.archive).toBeNull();
+      expect(process.exitCode).toBe(1);
+      expect(command.applyCalls).toBe(0);
+      await expect(
+        fs.readFile(path.join(changeDir, 'tasks.md'), 'utf8')
+      ).resolves.toBe(sourceBefore);
+      await expect(fs.readFile(canonical, 'utf8')).resolves.toBe(
+        canonicalBefore
+      );
+      await expect(fs.readdir(archiveDir)).resolves.toEqual([]);
+    });
 
     it('applies an immutable token and never presents completed corruption as auto-resumable', async () => {
       const changeName = 'durable-plan';
@@ -173,12 +381,89 @@ describe('ArchiveCommand', () => {
         phase: 'complete',
         integrityFailure: {
           operation: 'accounting',
-          code: 'ESTALE',
+          code: 'archive_reservation_ownership_unverified',
         },
       });
       expect(await fs.readFile(archivedTask, 'utf8')).toBe(
         'corrupt completed archive\n'
       );
+    });
+
+    it('aborts an unapplied token idempotently and rejects later apply', async () => {
+      const changeName = 'aborted-plan';
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] done\n');
+
+      await archiveCommand.execute(changeName, {
+        dryRun: true,
+        savePlan: true,
+        json: true,
+        yes: true,
+      });
+      const preview = JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      );
+      const token = preview.archive.planToken as string;
+      process.env.RASEN_LANG = 'ja';
+      vi.mocked(console.log).mockClear();
+
+      await archiveCommand.execute(undefined, {
+        abortPlan: token,
+        json: true,
+      });
+      const unconfirmed = JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      );
+      expect(unconfirmed.status[0]).toMatchObject({
+        code: 'archive_abort_confirmation_required',
+        message: expect.stringContaining('明示的な確認'),
+      });
+      await expect(fs.access(changeDir)).resolves.toBeUndefined();
+      process.exitCode = undefined;
+      vi.mocked(console.log).mockClear();
+
+      await archiveCommand.execute(undefined, {
+        abortPlan: token,
+        yes: true,
+        json: true,
+      });
+      const aborted = JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      );
+      expect(aborted.archive).toMatchObject({
+        mode: 'abort',
+        result: {
+          status: 'aborted',
+          change: changeName,
+          blockers: [],
+        },
+      });
+      await expect(fs.access(changeDir)).resolves.toBeUndefined();
+      vi.mocked(console.log).mockClear();
+
+      await archiveCommand.execute(undefined, {
+        abortPlan: token,
+        yes: true,
+      });
+      expect(vi.mocked(console.log).mock.calls.at(-1)?.[0]).toContain(
+        'すでに中止済み'
+      );
+      vi.mocked(console.log).mockClear();
+
+      await archiveCommand.execute(undefined, {
+        applyPlan: token,
+        yes: true,
+        json: true,
+      });
+      const reapplied = JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      );
+      expect(reapplied.status[0]).toMatchObject({
+        code: 'archive_plan_aborted',
+        message: expect.stringContaining('中止済み'),
+      });
+      await expect(fs.access(changeDir)).resolves.toBeUndefined();
     });
 
     it('returns a complete blocked preview with a nonzero status', async () => {
@@ -248,6 +533,54 @@ describe('ArchiveCommand', () => {
       await expect(fs.access(payload.plan.paths.stage)).rejects.toThrow();
       await expect(fs.access(payload.plan.paths.journal)).rejects.toThrow();
       await expect(fs.access(payload.plan.paths.final)).rejects.toThrow();
+      await expect(fs.access(changeDir)).resolves.toBeUndefined();
+    });
+
+    it('blocks a reserved ship-log heading before archive apply or journal creation', async () => {
+      const changeName = 'reserved-archive-heading';
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
+      const shipLogPath = path.join(changeDir, 'ship-log.md');
+      const shipLog = [
+        '# Ship Log',
+        '',
+        '**Mode:** local',
+        '',
+        '## Archive',
+        'Change-authored placeholder.',
+        '',
+      ].join('\n');
+      await fs.mkdir(changeDir, { recursive: true });
+      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] done\n');
+      await fs.writeFile(shipLogPath, shipLog);
+
+      const trackingCommand = new TrackingArchiveCommand();
+      await trackingCommand.execute(changeName, {
+        json: true,
+        yes: true,
+        dryRun: true,
+        savePlan: true,
+      });
+
+      const payload = JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      );
+      expect(process.exitCode).toBe(1);
+      expect(trackingCommand.applyCalls).toBe(0);
+      expect(payload.archive.plan.blockers).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            operation: 'evidence',
+            code: 'archive_ship_log_reserved_section',
+            path: shipLogPath,
+          }),
+        ])
+      );
+      expect(payload.archive.plan.shipLog.source).toBe(shipLogPath);
+      expect(payload.archive.planToken).toBeUndefined();
+      await expect(fs.readFile(shipLogPath, 'utf8')).resolves.toBe(shipLog);
+      await expect(fs.access(payload.archive.plan.paths.stage)).rejects.toThrow();
+      await expect(fs.access(payload.archive.plan.paths.journal)).rejects.toThrow();
+      await expect(fs.access(payload.archive.plan.paths.final)).rejects.toThrow();
       await expect(fs.access(changeDir)).resolves.toBeUndefined();
     });
 
@@ -355,6 +688,25 @@ describe('ArchiveCommand', () => {
           )
         )
       ).resolves.toBeUndefined();
+      vi.mocked(console.log).mockClear();
+      await archiveCommand.execute(undefined, {
+        applyPlan: preview.archive.planToken,
+        yes: true,
+        json: true,
+      });
+      const blockedApply = JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      );
+      expect(blockedApply.archive.result.status).toBe('blocked');
+      expect(blockedApply.archive.result.recoveryCommand).toBeUndefined();
+      vi.mocked(console.log).mockClear();
+      await archiveCommand.execute(undefined, {
+        applyPlan: preview.archive.planToken,
+        yes: true,
+      });
+      expect(console.log).not.toHaveBeenCalledWith(
+        expect.stringContaining('Recovery:')
+      );
     });
 
     it('preserves a structured recoverable JSON result and same-token retry command', async () => {
@@ -585,7 +937,7 @@ Modified content.`;
       
       // Verify error message mentions MODIFIED not allowed for new specs
       expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('new-capability: target spec does not exist; only ADDED requirements are allowed for new specs. MODIFIED and RENAMED operations require an existing spec.')
+        expect.stringContaining('new-capability: target spec does not exist; MODIFIED for "### Requirement: Existing Feature" requires an existing spec. Only ADDED requirements are allowed for new specs.')
       );
       expect(console.log).toHaveBeenCalledWith('Aborted. No files were changed.');
       
@@ -623,7 +975,7 @@ New feature description.
       
       // Verify error message mentions RENAMED not allowed for new specs
       expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('another-capability: target spec does not exist; only ADDED requirements are allowed for new specs. MODIFIED and RENAMED operations require an existing spec.')
+        expect.stringContaining('another-capability: target spec does not exist; RENAMED to "### Requirement: New Name" requires an existing spec. Only ADDED requirements are allowed for new specs.')
       );
       expect(console.log).toHaveBeenCalledWith('Aborted. No files were changed.');
       
@@ -701,6 +1053,46 @@ New feature description.
       const archiveDir = path.join(tempDir, 'rasen', 'changes', 'archive');
       const archives = await fs.readdir(archiveDir);
       expect(archives.length).toBe(1);
+    });
+
+    it('applies a recursively nested capability to the matching canonical path', async () => {
+      const changeName = 'nested-spec-feature';
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
+      const deltaPath = path.join(
+        changeDir,
+        'specs',
+        'platform',
+        'routing',
+        'spec.md'
+      );
+      await fs.mkdir(path.dirname(deltaPath), { recursive: true });
+      await fs.writeFile(
+        deltaPath,
+        [
+          '## ADDED Requirements',
+          '',
+          '### Requirement: Nested routing',
+          'The system SHALL support nested routing.',
+          '',
+          '#### Scenario: Route is resolved',
+          '- **WHEN** a nested route is requested',
+          '- **THEN** the route is resolved',
+        ].join('\n')
+      );
+
+      await archiveCommand.execute(changeName, { yes: true });
+
+      const canonicalPath = path.join(
+        tempDir,
+        'rasen',
+        'specs',
+        'platform',
+        'routing',
+        'spec.md'
+      );
+      await expect(fs.readFile(canonicalPath, 'utf8')).resolves.toContain(
+        '### Requirement: Nested routing'
+      );
     });
 
     it('should skip spec updates when --skip-specs flag is used', async () => {
@@ -781,20 +1173,17 @@ The system will log all events.
       const changeSpecDir = path.join(changeDir, 'specs', 'test-capability');
       await fs.mkdir(changeSpecDir, { recursive: true });
       
-      // Create valid spec in change
+      // Create a valid delta spec in the change.
       const specContent = `# Test Capability Spec
 
-## Purpose
-This is a test capability specification.
+## ADDED Requirements
 
-## Requirements
-
-### The system SHALL provide test capability
+### Requirement: Test capability
+The system SHALL provide a test capability.
 
 #### Scenario: Basic test
-Given a test condition
-When an action occurs
-Then expected result happens`;
+- **WHEN** an action occurs
+- **THEN** the expected result happens`;
       await fs.writeFile(path.join(changeSpecDir, 'spec.md'), specContent);
       
       // Mock confirm to return false (decline spec updates)
@@ -1331,6 +1720,88 @@ E1 updated`);
       await expect(fs.access(changeDir)).resolves.not.toThrow();
     });
 
+    it('returns one deterministic blocker for every spec reconciliation failure', async () => {
+      const changeName = 'multi-spec-reconciliation-blockers';
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
+      const mainSpecsDir = path.join(tempDir, 'rasen', 'specs');
+      const capabilities = ['alpha-inventory', 'zeta-inventory'];
+      const originalByCapability = new Map<string, string>();
+
+      for (const capability of capabilities) {
+        const changeSpecDir = path.join(changeDir, 'specs', capability);
+        const mainSpecDir = path.join(mainSpecsDir, capability);
+        await fs.mkdir(changeSpecDir, { recursive: true });
+        await fs.mkdir(mainSpecDir, { recursive: true });
+        const original = [
+          `# ${capability}`,
+          '',
+          '## Purpose',
+          'Inventory behavior remains deterministic.',
+          '',
+          '## Requirements',
+          '',
+          '### Requirement: Inventory lookup',
+          'The system SHALL return inventory.',
+          '',
+          '#### Scenario: Alpha remains',
+          '- **WHEN** inventory is checked',
+          '- **THEN** alpha is returned',
+          '',
+          '#### Scenario: Beta remains',
+          '- **WHEN** inventory is checked',
+          '- **THEN** beta is returned',
+        ].join('\n');
+        originalByCapability.set(capability, original);
+        await fs.writeFile(path.join(mainSpecDir, 'spec.md'), original);
+        await fs.writeFile(
+          path.join(changeSpecDir, 'spec.md'),
+          [
+            '## MODIFIED Requirements',
+            '',
+            '### Requirement: Inventory lookup',
+            'The system SHALL return refreshed inventory.',
+            '',
+            '#### Scenario: Alpha remains',
+            '- **WHEN** inventory is refreshed',
+            '- **THEN** updated alpha is returned',
+          ].join('\n')
+        );
+      }
+      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] done\n');
+
+      await archiveCommand.execute(changeName, {
+        dryRun: true,
+        json: true,
+        yes: true,
+        noValidate: true,
+      });
+
+      const preview = JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      );
+      const reconciliationBlockers = preview.archive.plan.blockers.filter(
+        (blocker: { operation: string; code?: string }) =>
+          blocker.operation === 'spec' &&
+          blocker.code === 'spec_modified_scenarios_missing'
+      );
+      expect(reconciliationBlockers).toHaveLength(2);
+      expect(
+        reconciliationBlockers.map(
+          (blocker: { path: string }) =>
+            path.basename(path.dirname(blocker.path))
+        )
+      ).toEqual(capabilities);
+      for (const blocker of reconciliationBlockers) {
+        expect(blocker.message).toContain('"Beta remains"');
+      }
+      for (const capability of capabilities) {
+        expect(
+          await fs.readFile(path.join(mainSpecsDir, capability, 'spec.md'), 'utf8')
+        ).toBe(originalByCapability.get(capability));
+      }
+      await expect(fs.access(changeDir)).resolves.not.toThrow();
+    });
+
     it('should display aggregated totals across multiple specs', async () => {
       const changeName = 'multi-spec-totals';
       const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
@@ -1646,6 +2117,7 @@ The system SHALL do the thing differently.
         process.env[key] = env[key];
       }
       execFileSync('git', ['init'], { cwd: tempDir });
+      writeFileSync(path.join(tempDir, '.gitignore'), 'xdg-data/\n');
     }
 
     function commitAll(message: string): void {
@@ -1799,6 +2271,79 @@ The system SHALL do the thing differently.
 
       const parsed = parseLoggedArchive();
       expect(parsed.archive.archivedAs).toContain(changeName);
+      await expect(fs.access(changeDir)).rejects.toThrow();
+    });
+
+    it('saved on-merge plan accepts --yes only when applying the exact token', async () => {
+      const changeName = 'shipped-pr-saved-plan';
+      const changeDir = await seedChange(changeName);
+      await fs.writeFile(
+        path.join(changeDir, 'ship-log.md'),
+        '# Ship Log\n\n**Mode:** pr\n**PR:** https://example.com/pull/1\n'
+      );
+
+      await archiveCommand.execute(changeName, {
+        dryRun: true,
+        savePlan: true,
+        json: true,
+      });
+      const preview = parseLoggedArchive();
+      expect(preview.archive.plan.complete).toBe(false);
+      expect(preview.archive.plan.blockers).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'archive_merge_confirmation_required',
+            operation: 'timing',
+          }),
+        ])
+      );
+
+      class PreciseRecoveryCommand extends ArchiveCommand {
+        protected override applyPlannedArchive(
+          plan: ArchivePlan
+        ): Promise<ArchiveApplyResult> {
+          return Promise.resolve({
+            status: 'blocked',
+            transactionId: plan.transactionId,
+            planHash: plan.planHash,
+            change: plan.change,
+            path: plan.paths.final,
+            journalPath: plan.paths.journal,
+            resumed: false,
+            specsUpdated: false,
+            totals: { added: 0, modified: 0, removed: 0, renamed: 0 },
+            ephemeraDiscarded: [],
+            ephemeraPreserved: plan.cleaner.effectivePreserve,
+            blockers: [
+              {
+                operation: 'timing',
+                path: plan.paths.active,
+                message: 'Injected retry disposition.',
+              },
+            ],
+            recoveryCommand:
+              `rasen archive --apply-plan ${preview.archive.planToken}` +
+              ' --yes --json',
+          });
+        }
+      }
+      await new PreciseRecoveryCommand().execute(undefined, {
+        applyPlan: preview.archive.planToken,
+      });
+      expect(vi.mocked(console.log).mock.calls.flat().join('\n')).toContain(
+        `rasen archive --apply-plan ${preview.archive.planToken} --yes --json`
+      );
+
+      vi.mocked(console.log).mockClear();
+      await archiveCommand.execute(undefined, {
+        applyPlan: preview.archive.planToken,
+        yes: true,
+        json: true,
+      });
+
+      const applied = parseLoggedArchive();
+      expect(applied.archive.result.status).toBe('complete');
+      expect(applied.archive.result.planHash).toBe(preview.archive.plan.planHash);
       await expect(fs.access(changeDir)).rejects.toThrow();
     });
 

@@ -40,6 +40,7 @@ interface PipelineLibraryCommandOptions {
   json?: boolean;
   store?: string;
   project?: string;
+  targetLine?: string;
   storePath?: string;
 }
 

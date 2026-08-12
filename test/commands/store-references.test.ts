@@ -6,7 +6,11 @@ import * as path from 'node:path';
 import { getGlobalDataDir, registerStore } from '../../src/core/index.js';
 import { runCLI, type RunCLIResult } from '../helpers/run-cli.js';
 import { snapshotDirectory as snapshot } from '../helpers/fs-snapshot.js';
-import { createOpenSpecRoot, writeSpec } from '../helpers/rasen-fixtures.js';
+import {
+  createOpenSpecRoot,
+  seedFlatStoreChange,
+  writeSpec,
+} from '../helpers/rasen-fixtures.js';
 
 describe('store references in instructions (3.1)', () => {
   let tempDir: string;
@@ -124,7 +128,10 @@ describe('store references in instructions (3.1)', () => {
       path.join(storeRoot, 'rasen', 'config.yaml'),
       'schema: spec-driven\nreferences:\n  - team-context\n'
     );
-    await createChange(appRepo, 'self-ref-change', ['--store', 'team-context']);
+    // Seeded rather than created: this suite's subject is the reference index,
+    // and a legacy flat store now refuses `new change` (see
+    // `seedFlatStoreChange`).
+    seedFlatStoreChange(storeRoot, 'self-ref-change');
 
     const result = await runCLI(
       ['instructions', 'proposal', '--change', 'self-ref-change', '--store', 'team-context', '--json'],
@@ -147,7 +154,7 @@ describe('store references in instructions (3.1)', () => {
       'schema: spec-driven\nreferences:\n  - upstream-context\n'
     );
 
-    await createChange(appRepo, 'store-scoped', ['--store', 'team-context']);
+    seedFlatStoreChange(storeRoot, 'store-scoped');
     const result = await runCLI(
       ['instructions', 'proposal', '--change', 'store-scoped', '--store', 'team-context', '--json'],
       { cwd: appRepo, env }

@@ -90,7 +90,7 @@
   "task.badge.escalated_title": "実行ステージがエスカレーション中です",
   "task.live_title": "このタスクのライブセッションが実行中です",
   "taskcard.run": "実行",
-  "taskcard.run_title": "この変更のパイプライン実行状態が記録されています",
+  "taskcard.run_title": "この変更の実行状態が記録されています",
 
   "worktree.label": "ワークツリー",
   "worktree.group_label": "ワークツリーを切り替え",
@@ -149,6 +149,7 @@
   "session.run_absent": "変更がリンクされていません — 実行が変更を作成するとボードに進捗が表示されます。",
   "session.run_no_state": "{name} の実行状態はまだ記録されていません。",
   "session.run_no_stages": "{pipeline} — ステージはまだ報告されていません。",
+  "session.run_no_pipeline": "パイプラインなし — この実行はretentionの識別情報のみを保持しているため、ステージはありません。",
   "session.stages_label": "パイプライン進捗",
   "session.started": "開始: {time}",
   "session.last_output": "最終出力: {time}",

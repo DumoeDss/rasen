@@ -61,6 +61,14 @@ export const AI_TOOLS: AIToolOption[] = [
   { name: 'Kiro', value: 'kiro', available: true, successLabel: 'Kiro', skillsDir: '.kiro' },
   { name: 'Lingma', value: 'lingma', available: true, successLabel: 'Lingma', skillsDir: '.lingma' },
   { name: 'Mistral Vibe', value: 'vibe', available: true, successLabel: 'Mistral Vibe', skillsDir: '.vibe' },
+  // Detection names content INSIDE `.omp/`, never the bare directory: Oh My Pi
+  // (and unrelated tooling) can leave an empty `.omp/` behind, and the default
+  // bare-directory rule would then report the tool as configured and make
+  // `rasen update` nudge on every run. Paths cover Oh My Pi's own documented
+  // project surfaces — skills, context/rules files, both settings spellings,
+  // commands, agents, and MCP. A surface missing from this list only
+  // under-detects (no nudge); it can never mis-install.
+  { name: 'Oh My Pi', value: 'omp', available: true, successLabel: 'Oh My Pi', skillsDir: '.omp', adapted: true, detectionPaths: ['.omp/skills', '.omp/AGENTS.md', '.omp/RULES.md', '.omp/settings.json', '.omp/config.yml', '.omp/commands', '.omp/agents', '.omp/mcp.json'] },
   { name: 'OpenCode', value: 'opencode', available: true, successLabel: 'OpenCode', skillsDir: '.opencode' },
   { name: 'Pi', value: 'pi', available: true, successLabel: 'Pi', skillsDir: '.pi' },
   { name: 'Qoder', value: 'qoder', available: true, successLabel: 'Qoder', skillsDir: '.qoder' },

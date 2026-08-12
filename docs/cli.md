@@ -113,9 +113,14 @@ rasen init [path] [options]
 
 An explicit `--profile` value other than `custom` is persisted as the project's **locked profile** (`profile:` in `rasen/config.yaml`): later `rasen update` runs keep resolving the project's workflows from that profile instead of the user-wide one. `--profile custom` uses whatever workflows are currently selected in global config (`rasen profile`) for this run only and is never persisted. Saved profile names come from `rasen profile new`/`import`; note that saved definitions live per machine (`<global-config-dir>/profiles/`), so a teammate without the named profile sees a warning and falls back to their user-wide profile until they import it.
 
-**Supported tool IDs (`--tools`):** `amazon-q`, `antigravity`, `auggie`, `bob`, `claude`, `cline`, `codex`, `forgecode`, `codebuddy`, `continue`, `costrict`, `crush`, `cursor`, `factory`, `gemini`, `github-copilot`, `iflow`, `junie`, `kilocode`, `kimi`, `kiro`, `lingma`, `vibe`, `opencode`, `pi`, `qoder`, `qwen`, `roocode`, `trae`, `windsurf`
+**Installable tool IDs (`--tools`):** `claude`, `codex`, `hermes`, `omp` — the agents
+Rasen has adapted its orchestration for. `--tools all` expands to exactly these four.
 
-> This list mirrors `AI_TOOLS` in `src/core/config.ts`. See [Supported Tools](supported-tools.md) for each tool's skill and command paths.
+> The installable set is the `adapted: true` entries of `AI_TOOLS` in
+> `src/core/config.ts`. Every other agent in that registry stays defined but is not
+> offered; naming one explicitly fails with a "recognized but not yet adapted"
+> message rather than the unrecognized-token error. See
+> [Supported Tools](supported-tools.md) for each tool's skills path.
 
 **Examples:**
 
@@ -126,8 +131,8 @@ rasen init
 # Initialize in a specific directory
 rasen init ./my-project
 
-# Non-interactive: configure for Claude and Cursor
-rasen init --tools claude,cursor
+# Non-interactive: configure for Claude and Oh My Pi
+rasen init --tools claude,omp
 
 # Configure for all supported tools
 rasen init --tools all
@@ -503,6 +508,104 @@ to commit; the command never touches the git index.
   "status": []
 }
 ```
+
+### `rasen store migrate-layout` (0.1.7 compatibility bridge)
+
+Convert one checked-out ref of a legacy flat Store to layout v2. Preview is the
+default; writes happen only with `--apply`, and the command never commits,
+fetches, or pushes.
+
+```bash
+rasen store migrate-layout <store> --mapping rasen/migration-mapping.yaml --json
+rasen store migrate-layout <store> --mapping rasen/migration-mapping.yaml --apply --json
+rasen store migrate-layout <store> --status --json
+rasen store migrate-layout <store> --resume --json
+rasen store migrate-layout <store> --rollback --json
+rasen store migrate-layout <store> --retire-flat --json
+```
+
+Mapping version 1 keeps the original project-copy contract and continues to
+produce plan-schema-v1 canonical bytes and plan ids for equal inputs. Mapping
+version 2 adds an explicit choice between a project-owned Change and a
+Store-level Issue:
+
+```yaml
+version: 2
+defaultTargetLine: release-0-1
+targetLines:
+  release-0-1:
+    storeRef: refs/heads/main
+    projects:
+      scene-bridge:
+        codeRef: refs/heads/main
+changes:
+  render-worker:
+    kind: project-change
+    project: scene-bridge
+  release-coordinator:
+    kind: store-issue
+    issueId: release-coordinator
+    title: Coordinate the cross-project release
+    plan: rasen/migration-inputs/release-coordinator.yaml
+archive:
+  historical-coordinator:
+    kind: store-issue
+    issueId: historical-coordinator
+    title: Historical release coordination
+    state: resolved
+    reason: Operator declares the historical coordination concluded; acceptance is unproven.
+```
+
+Recorded Change identity remains binding. An active `store-issue` always imports
+as `open` and cannot declare a reason. An archived source must explicitly
+declare `open`, `resolved`, or `dropped`; terminal states require an operator
+reason and are recorded with acceptance evidence `unproven`. Names, prose,
+branches, cwd, archive placement, and commits never infer ownership, state, or
+acceptance.
+
+An optional Issue plan input must be inside the Store, Git-tracked, and
+byte-identical in HEAD, index, and worktree. It must be strict UTF-8 without a
+BOM. A migration-only `sourceChange` node still declares project and target
+line; planning verifies it against one project Change in the same immutable
+plan and serializes only the canonical `changeInstanceId`. Without a plan input,
+the Issue is created without nodes and preview reports
+`no plan supplied; no nodes invented` plus the ordinary follow-up command:
+
+```bash
+rasen store issue plan <issue-id> --store <store> --from-file <path>
+```
+
+Publication stages and verifies the complete ref, writes project partitions and
+generated Issue roots without copying a coordinator's legacy tree, records a
+typed receipt, and flips `layoutVersion: 2` last. A failure can be continued with
+`--resume` or reverted with `--rollback` while flat sources remain. After the
+publication commit is secured, `--retire-flat` removes only the receipt-listed
+legacy paths and is safe to retry after partial removal. The receipt identifies
+the source as a Store planning revision, never as a member code commit:
+
+```bash
+git restore --source=<receipt.sourceRevision.headOid> --worktree -- <conversion.source.path>
+```
+
+After restoring, compare the recursive source digest with
+`conversion.source.digest`. Member code repositories are never migration write
+targets.
+
+After retirement, ordinary direct `rasen archive <old-active-alias>` reports
+`legacy_coordinator_became_issue` and the existing `rasen store issue show`
+command when one current-ref v2 receipt proves the conversion. It does not
+redirect or translate archive outcome, reason, token, commit, confirmation, or
+acceptance into Issue state. Archived-source aliases do not redirect, token
+`--apply-plan`/`--abort-plan` routes do not query receipts, and a real Change
+still follows normal finalization (including `finalization_outcome_required`).
+
+This is an explicitly bounded **Rasen 0.1.7 compatibility-only bridge** for
+retiring flat Store coordinators through the already available minimal Issue
+record and Execution Plan v1 resources. It does not implement the later
+Issue-centered automation platform, Dispatch, Reconciliation, Acceptance,
+Delivery, Board, or coordinator runtime. Remove the bridge when supported Stores
+no longer require flat-to-v2 migration; keep typed historical receipt readers as
+long as committed receipts remain supported evidence.
 
 ### Store membership
 
@@ -1710,8 +1813,8 @@ rasen archive update-ci-config --skip-specs
 
 1. Validates the change (unless `--no-validate`)
 2. Prompts for confirmation (unless `--yes`)
-3. Merges delta specs into `rasen/specs/`
-4. Moves change folder to `rasen/changes/archive/YYYY-MM-DD-<name>/`
+3. Merges delta specs into `rasen/specs/` (standalone; in a Store v2 project scope, into `rasen/projects/<projectId>/specs/`)
+4. Moves change folder to `rasen/changes/archive/YYYY-MM-DD-<name>/` (standalone; in a Store v2 project scope, into `rasen/projects/<projectId>/changes/archive/<targetLineId>/`)
 5. Captures a quality summary (scanned files + metric-line counts) into the archive's metadata
 
 In the full delivery flow, archive runs **after** the profile's retention step (`ship → retain → archive`). It preserves whatever retention produced — a report-mode `retro.md` is moved with the rest of the change — but archive itself performs no reporting or codification.
@@ -2198,7 +2301,8 @@ contract you are reading:
   so a consumer expecting only the older form stops instead of inheriting a
   root it never asked for.
 
-Inside a Store session that works on a project checkout:
+Inside a Store session that works on a project checkout (standalone mode;
+Store v2 uses per-project partitions — see the Store user guide):
 
 ```json
 {
@@ -2633,7 +2737,7 @@ Pipeline help and Rasen-owned human output for all eleven subcommands are availa
 | `show <name>` | Show a pipeline's stage DAG, build order, and resolved per-stage runtime/handoff/reuse config; `--for-execution` also validates active-profile skills |
 | `agents <name>` | Show, or set (writing a project-local override), per-role Claude/Codex runtimes |
 | `classify <task>` | Suggest a pipeline for a task string via an advisory keyword heuristic |
-| `resume <change>` | Show a change's (or portfolio's) next/remaining stages from its run-state |
+| `resume <change>` | Show a change's (or portfolio's) next/remaining stages from its run-state. Reports three distinguishable states: no file (`hasRunState: false`, plus the deterministic `runStateDir` state would be created at), a located-but-unparseable file (`invalidRunState: true` with path and reason), and a valid file naming no pipeline (`hasRunState: true`, `pipeline: null`, no next stage — a change holding retention identity only) |
 | `init <name>` | Create a minimal `pipeline.yaml` draft in the required empty `--output` directory without installing it |
 | `save <name>` | Validate a JSON or YAML definition from `--from`, then install canonical normalized YAML in the user layer; `--force` may replace an existing user pipeline, but never a built-in |
 | `validate <name-or-path>` | Structurally validate an installed pipeline name, a draft directory, or a `kind: pipeline` `.rasenpkg` — parse, duplicate/cycle/parallel-group/decompose-stage checks; does not require referenced skills to already be installed |
@@ -2650,6 +2754,50 @@ Pipeline v1 keeps the existing flat `requires` DAG and the current `stage.loop.k
 `delete`'s refcount guard refuses to delete a pipeline referenced by any installed workflow's `requires.pipelines` or by another pipeline's `decompose` stage `childPipeline` (explicit or the `small-feature` default), naming every referrer; `--force` bypasses the guard (not the built-in-pipeline prohibition) and warns about the referrers left dangling.
 
 Pipeline stage `skill:` fields in the built-in pipelines use the workflow directory-name form (`rasen-propose`, `rasen-review`); `validate` and package import also accept the retired skill-name colon form (`rasen:review`) for backward compatibility, and do not require the skill to be installed at import time — a missing skill is caught at execution time instead.
+
+### `rasen retain`
+
+Prepare a change for a retention run — the Rasen-owned transition from "standalone retention resolved a mode" to "project knowledge operations have a frozen identity".
+
+```text
+rasen retain prepare <change> [--store <id>|--project <id>] [--owner-store <id>|--owner-project <id>] [--json]
+```
+
+A change that never ran through a classified pipeline has no `auto-run.json`, so `rasen pipeline resume` reports no run-state directory and every `--run-state-dir`-bearing knowledge command has nothing to load. `prepare` closes that gap in one operation:
+
+- reports the **effective** retention mode — the same resolution that authorizes a project-scoped `rasen knowledge apply`, so it answers even when no `retention` key was ever stored (unlike `rasen config get retention`, which prints nothing for an unset key);
+- freezes durable knowledge identity when the change carries none, recording `{type:'project', projectId, id?}` / `{type:'store', uid, id?}` refs and **no absolute planning or owner directory**, so the record stays valid on another machine or checkout;
+- reuses a `knowledgeContext` already recorded at **any** version verbatim — reported unchanged, never upgraded in place, so repeating preparation is a no-op on disk;
+- reports the `runStateDir` to pass as `--run-state-dir` on every later project/store knowledge command.
+
+It writes run-state crash-safely (temp file plus rename), and it never replaces a record it did not create: a record that already exists — including one that appeared while preparation was resolving identity — is merged into, with `knowledgeContext` added and no other value changed, so the LEAD's own hand-written progress and handoff entries survive. The document is re-serialized rather than patched in place, so byte-level formatting is not preserved; a repeated key was already collapsed to its last value by any reader, which is the ambiguity `pipeline resume` reports separately.
+
+**It writes only for `codify`.** Freezing identity is a write, and only the `codify` branch reads what it freezes: `report` writes a retrospective, and `off` changes no learning state at all. When neither the effective mode nor a mode already frozen in run-state is `codify`, preparation resolves nothing and writes nothing — it reports the mode, the pipeline, and the directory durable state *would* live at, with `contextSource: "skipped"` and no `knowledgeContext`. A change that never ran a pipeline is therefore not left holding an `auto-run.json` no run produced, or an identity frozen permanently at the version of the day it was frozen for a branch that never reads it. Either mode being `codify` opens the write: a worker dispatched for a canonical `retain` stage uses the mode the LEAD froze while a standalone run uses the effective one, and preparation cannot tell those two callers apart.
+
+**Two independent selectors.** `--store`/`--project` select the planning root, exactly like `rasen pipeline resume`; `--owner-store`/`--owner-project` select the knowledge owner independently, exactly like the `rasen knowledge` group. Each pair is mutually exclusive within itself.
+
+**Fails closed before any candidate exists.** Ambiguous, missing, renamed, or stale ownership (`knowledge_owner_*`), an owner selector disagreeing with an already-recorded identity (`knowledge_selector_conflict`), an unreadable run-state (`retention_run_state_invalid`), and a change read from one planning root while identity resolves to another (`retention_planning_root_mismatch`) all refuse without writing. The ownership and planning-root refusals belong to the resolution path: a preparation that records nothing because no mode it reports is `codify` resolves no owner and so reports none of them. An unreadable run-state still refuses, because the frozen mode cannot be read from it.
+
+```json
+{
+  "ok": true,
+  "change": "add-thing",
+  "retention": "codify",
+  "runStateDir": "/abs/path/.rasen/changes/add-thing/ephemera",
+  "runStatePath": "/abs/path/.rasen/changes/add-thing/ephemera/auto-run.json",
+  "pipeline": null,
+  "contextSource": "prepared",
+  "knowledgeContext": {
+    "version": 3,
+    "planningRoot": { "type": "project", "projectId": "…" },
+    "owner": { "type": "project", "projectId": "…" }
+  },
+  "owner": "project:…",
+  "planningRoot": "project:…"
+}
+```
+
+`contextSource` is `prepared` when this call froze the identity, `recorded` when it reused one already on file, and `skipped` when no mode it reports is `codify` — that payload carries no `knowledgeContext`, `owner`, or `planningRoot`, because nothing was resolved and nothing was written. `frozenRetention` appears only when run-state carries a mode the LEAD froze for a pipeline `retain` stage; `retention` always reports the effective mode.
 
 ### `rasen config`
 

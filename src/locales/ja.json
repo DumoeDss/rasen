@@ -1,5 +1,23 @@
 {
   "locale": "ja",
+  "archiveAbort": {
+    "optionConflict": "--abort-plan は、change 名、または --yes と --json 以外の archive オプションと同時に指定できません。",
+    "confirmationRequired": "アーカイブトランザクションを中止するには明示的な確認が必要です。",
+    "confirmationFix": "'rasen archive --abort-plan {token} --yes' を再実行してください。",
+    "applyAborted": "このアーカイブ計画は中止済みのため、適用できません。",
+    "aborted": "アーカイブ計画 {transactionId} を中止しました。永続化済みのアーカイブ変更は取り消していません。",
+    "alreadyAborted": "アーカイブ計画 {transactionId} はすでに中止済みです。追加の変更は不要でした。",
+    "associationPending": "Store ワークスペースの関連付けは保留中のままです。",
+    "blocked": "アーカイブ計画 {transactionId} は中止されませんでした。",
+    "blocker": "ブロッカー {code}: {message}（{path}）",
+    "effectivePhase": "有効なフェーズ: {phase}",
+    "effectivePhaseUnknown": "未確定",
+    "retainedPath": "保持されたパス: {path}",
+    "retainedPathsNone": "保持されたパス: 報告なし",
+    "manualRecoveryAction": "手動復旧: {action}",
+    "abortAction": "中止: {action}",
+    "recoveryAction": "復旧: {action}"
+  },
   "bootstrap": {
     "headingProject": "{path} のプロジェクトに対する bootstrap {mode}",
     "headingStore": "{path} にある store {store} に対する bootstrap {mode}",
@@ -206,7 +224,7 @@
     "unreadableNext": "次の手順: レコードが作成された時点の内容にファイルを戻すか、`rasen knowledge apply <candidate>` で知識を記録し直してレコードを一致させてください。",
     "degradedHeading": "カタログ劣化 — 復元可能なバックアップの残骸:",
     "degradedRow": "  [{scope}] {dirs}",
-    "degradedRepair": "  学習スキルの変更���作(例: rasen knowledge apply)を実行してバックアップを復元してください。",
+    "degradedRepair": "  学習スキルの変更操作(例: rasen knowledge apply)を実行してバックアップを復元してください。",
     "showDegradedSuffix": " カタログは復元可能なバックアップの残骸({dirs})により劣化状態です。学習スキルの変更操作を実行して復元してください。",
     "showUnreadable": "学習スキル「{id}」は {scope} スコープに存在しますが読み取れません: {reason}",
     "showNotFound": "{scope} スコープに学習スキル「{id}」がありません。",
@@ -430,6 +448,7 @@
       "selectedProjectRoot": "使用するRasenルート: プロジェクト {project} ({path})",
       "staleProfileWorkflowsWarning": "警告: 保存済みプロファイルから不明なワークフローIDを除外します: {workflows}",
       "unknownHostRuntimeWarning": "警告: LEADのホストruntimeを識別できないため、legacy互換ルートを使用します。決定的なdispatchには {override}=claude|codex を設定してください。",
+      "hostRuntimeWithoutDispatchAdapterWarning": "警告: LEADのホストruntime {host} にはdispatchアダプタがないため、legacy互換ルートを使用します。決定的なdispatchには {override}=claude|codex を設定してください。ただしこの override は `rasen agent context --latest` の参照先をこのホスト自身のセッションから切り替えるため、以降は別の会話の占有率が報告されます。",
       "noPipelinesFound": "パイプラインが見つかりません。",
       "availablePipelinesHeading": "利用可能なパイプライン:",
       "pipelineTableEntry": "  {name}  [{source}]",
@@ -483,6 +502,9 @@
       "invalidPortfolioStateNote": "{path}のportfolio実行状態ファイルを読み取れませんでした: {reason}。この変更は子変更に分割されているため、分割されていない変更としては再開しません。再開する前に記録を修復してください。",
       "invalidRunStateNote": "{path}の実行状態ファイルは無効です: {reason}",
       "noRunStateNote": "実行状態（auto-run.json）が見つかりません。分類を実行してパイプラインを選択してください。",
+      "noPipelineRunStateNote": "実行状態はパイプラインを記録していません。retentionの識別情報のみを保持しているため、次のステージはありません。",
+      "runStateWouldLiveAt": "この変更の実行状態が作成される場所: {path}",
+      "frozenKnowledgeOwner": "凍結済みナレッジ所有者: {owner}",
       "nextStage": "次: {stage}",
       "openFindings": "未解決の指摘: {count}件（リリース前に解消してください）",
       "legacySkillHeading": "パイプライン'{pipeline}'に旧スキルIDがあります（pipeline yamlを更新してください）:",
@@ -541,6 +563,26 @@
       "staged_digest_mismatch": "stagingしたパイプラインのダイジェスト検証に失敗しました。",
       "pipeline_registry_busy": "パイプラインレジストリが使用中です。",
       "pipeline_command_error": "パイプライン操作に失敗しました（{code}）。"
+    }
+  },
+  "retain": {
+    "messages": {
+      "changeLabel": "変更: {change}",
+      "retentionMode": "retentionモード（実効値）: {mode}",
+      "frozenRetentionMode": "実行状態に凍結されたretentionモード: {mode}",
+      "runStateDir": "実行状態ディレクトリ: {path}",
+      "ownerLabel": "ナレッジ所有者: {owner}",
+      "planningRootLabel": "計画ルート: {planningRoot}",
+      "contextPrepared": "ナレッジコンテキストを新規に凍結しました（バージョン{version}）。",
+      "contextReused": "既に記録済みのナレッジコンテキストを再利用しました（バージョン{version}）。",
+      "contextSkipped": "ナレッジコンテキストは凍結していません。retentionモード{mode}はナレッジコンテキストを参照しないため、何も書き込んでいません。codifyモードで再度prepareを実行すると凍結されます。",
+      "noPipeline": "この変更はどのパイプラインにも割り当てられていません。",
+      "pipelineLabel": "パイプライン: {pipeline}",
+      "planningRootMismatch": "この変更は計画ルート{changeRoot}で見つかりましたが、ナレッジ識別情報は{identityRoot}に解決されます。別の計画ルートの識別情報を凍結しないよう、準備を中止します。",
+      "invalidRunState": "{path}の実行状態は無効で、retentionの識別情報として信頼できません: {reason}",
+      "writeRefused": "{path}にナレッジコンテキストを記録できませんでした: {reason}",
+      "nextApply": "この変更に対するプロジェクトまたはストアのknowledgeコマンドでは、必ず--run-state-dir \"{path}\"を渡してください。",
+      "ownerSelectorConflict": "--owner-projectと--owner-storeはナレッジ所有者セレクタとして排他です。どちらか一方のみを指定してください。"
     }
   },
   "profile": {
@@ -981,6 +1023,10 @@
       "deprecatedArchiveDestination": "'archive.destination' は非推奨になり、保存先を選択しなくなりました：アーカイブの記帳は常に計画ルートに配置されます。このキーを削除してください。既存のアーカイブは 'rasen archive relocate --to in-repo' で計画ルートに集約できます。"
     }
   },
+  "ompProjectContext": {
+    "nestedInstallCaptureWarning": "{installDir} に Oh My Pi の設定が入ったため、Oh My Pi はプロジェクト指示と常時適用ルールを上位ディレクトリではなくこの場所から読み込みます。次のファイルは読み込まれなくなります：{files}",
+    "nestedInstallCaptureFix": "読み込みを維持するには、{boundary} にインストールするか、上記のファイルを {installDir} にコピーしてください。インストール済みスキルには影響しません（Oh My Pi はスキルを全上位ディレクトリから探索します）。"
+  },
   "storeIdentityMigration": {
     "upgraded": "{count} 件の store をアップグレードしました：",
     "skipped": "{count} 件の store をスキップしました：",
@@ -1181,7 +1227,10 @@
               "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
             },
             "project": {
-              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+              "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+            },
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
             }
           }
         },
@@ -1222,7 +1271,10 @@
               "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
             },
             "project": {
-              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+              "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+            },
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
             }
           }
         },
@@ -1257,7 +1309,10 @@
               "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
             },
             "project": {
-              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+              "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+            },
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
             }
           }
         },
@@ -1299,7 +1354,10 @@
               "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
             },
             "project": {
-              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+              "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+            },
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
             },
             "keep-ephemera": {
               "description": "完全な安全検査を維持しながら、すべての ephemera ファイルを保持します"
@@ -1313,11 +1371,29 @@
             "apply-plan": {
               "description": "再計画せず、保存済みトークンの正確な計画を適用または再開します"
             },
+            "abort-plan": {
+              "description": "永続的な変更境界を越える前に、保存済みトークンの正確なアーカイブ計画を中止します"
+            },
             "intent-template": {
               "description": "ファイルを変更せずに、完全なアーカイブ意図テンプレートを JSON で出力します"
             },
             "intent-file": {
               "description": "厳密に検証された完全なアーカイブ意図を指定ファイルから読み込みます"
+            },
+            "outcome": {
+              "description": "Store v2 専用: 明示的に宣言する唯一の終了状態 (landed | superseded | cancelled | abandoned)。Store v2 では必須で、既定値はありません"
+            },
+            "reason": {
+              "description": "Store v2 専用: 変更が終了した理由。landed 以外のすべての結果で必須で、landed では拒否されます"
+            },
+            "by": {
+              "description": "Store v2 専用: superseded が指名する後継 change instance id。コミット済みのスコープ証拠で検証され、エイリアスでは解決されません"
+            },
+            "by-target-line": {
+              "description": "Store v2 専用: 後継検索を 1 つの target line に絞ります。検証の代替にはなりません"
+            },
+            "commit": {
+              "description": "Store v2 専用: landed 証明の候補コミット。証明を回避するものではありません"
             }
           },
           "commands": {
@@ -1326,6 +1402,9 @@
               "options": {
                 "to": {
                   "description": "移動先: in-repo または store（external は廃止）"
+                },
+                "target-line": {
+                  "description": "レイアウト v2 の store でアーカイブ項目を配置する安定ターゲットライン"
                 },
                 "dry-run": {
                   "description": "移動計画を表示し、何も変更しません"
@@ -1356,7 +1435,10 @@
               "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
             },
             "project": {
-              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+              "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+            },
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
             }
           }
         },
@@ -1376,7 +1458,10 @@
               "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
             },
             "project": {
-              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+              "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+            },
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
             }
           }
         },
@@ -1427,7 +1512,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             }
@@ -1549,6 +1637,41 @@
                 }
               }
             },
+            "migrate-layout": {
+              "description": "レガシーなフラット store を計画レイアウト v2 に移行する（常に全項目を先にプレビュー）",
+              "options": {
+                "mapping": {
+                  "description": "store ワークツリー内のコミット済みマッピングファイル。所有者不明・共有 spec・設計ドキュメント・ターゲットラインを明示的に解決する"
+                },
+                "default-target-line": {
+                  "description": "自身のターゲットラインを宣言しない項目に適用するターゲットライン。推測は一切行わない"
+                },
+                "include-untracked": {
+                  "description": "移動対象ツリー内の未追跡ファイルを承認する（Git では復元できない）"
+                },
+                "dry-run": {
+                  "description": "完全な項目一覧をプレビューし、何も変更しない（既定）"
+                },
+                "apply": {
+                  "description": "プレビュー済みの計画をステージ・検証・公開する"
+                },
+                "status": {
+                  "description": "この store とリファレンスに記録された移行実行のフェーズを報告する"
+                },
+                "resume": {
+                  "description": "中断した実行を記録済みフェーズから再開する"
+                },
+                "rollback": {
+                  "description": "その実行が作成したパスのみを削除し、以前の store メタデータを復元する"
+                },
+                "retire-flat": {
+                  "description": "公開完了後、別ステップとしてフラットな計画ツリーを削除する"
+                },
+                "json": {
+                  "description": "JSON で出力"
+                }
+              }
+            },
             "adopt": {
               "description": "リポジトリ内プロジェクトの計画内容をストアへ移行し、リポジトリをポインターに変換します",
               "options": {
@@ -1557,6 +1680,9 @@
                 },
                 "archive": {
                   "description": "アーカイブの扱い: move（デフォルト）または leave"
+                },
+                "target-line": {
+                  "description": "レイアウト v2 の store でアーカイブを配置する安定ターゲットライン"
                 },
                 "dry-run": {
                   "description": "移動計画を表示し、何も変更しません"
@@ -1616,6 +1742,300 @@
                   "description": "JSONで出力します"
                 }
               }
+            },
+            "target-line": {
+              "description": "ストアの変更とアーカイブを分割する安定したリリースラインを作成し、参照先を付け替えます",
+              "commands": {
+                "add": {
+                  "description": "ストア ref ロケーターを指定して新しいターゲットラインを作成します。ブランチ名からラインを推測することはありません",
+                  "options": {
+                    "store": {
+                      "description": "ターゲットラインを追加するストア"
+                    },
+                    "store-ref": {
+                      "description": "ラインが現在指すストアの完全な ref（例: refs/heads/release/0.2）"
+                    },
+                    "project": {
+                      "description": "コード ref ロケーターを併せて記録するプロジェクト"
+                    },
+                    "code-ref": {
+                      "description": "選択したプロジェクトのリポジトリにおける完全なコード ref"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "set-ref": {
+                  "description": "ロケーターをその場で付け替えます。ライン識別子は変わらず、改名もできません",
+                  "options": {
+                    "store": {
+                      "description": "ターゲットラインを保持するストア"
+                    },
+                    "store-ref": {
+                      "description": "ラインの新しい完全なストア ref"
+                    },
+                    "project": {
+                      "description": "コード ref ロケーターを編集するプロジェクト"
+                    },
+                    "code-ref": {
+                      "description": "選択したプロジェクトの新しい完全なコード ref"
+                    },
+                    "remove-code-ref": {
+                      "description": "選択したプロジェクトのコードロケーターを削除します（依存する進行中の変更がある場合は拒否）"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "list": {
+                  "description": "ストアに記録された全ターゲットラインを一覧します（ref が現在解決できないものも含む）",
+                  "options": {
+                    "store": {
+                      "description": "ターゲットラインを一覧するストア"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "show": {
+                  "description": "1 つのターゲットラインを表示し、ロケーターを具体的な ref とコミット ID に解決します",
+                  "options": {
+                    "store": {
+                      "description": "ターゲットラインを保持するストア"
+                    },
+                    "project": {
+                      "description": "ストア ref と併せてコード ref を解決するプロジェクト"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                }
+              }
+            },
+            "issue": {
+              "description": "ストアレベルのプロジェクト横断意図: Issue はプロジェクトの Change を参照し、いずれも所有しない",
+              "commands": {
+                "new": {
+                  "description": "ストアレベルの Issue を作成する。必要なのはストアだけで、プロジェクトもターゲットラインも不要",
+                  "options": {
+                    "store": {
+                      "description": "Issue を保持するストア。プロジェクトもターゲットラインも不要"
+                    },
+                    "title": {
+                      "description": "このプロジェクト横断作業が何であるか"
+                    },
+                    "readme": {
+                      "description": "事実の解析には決して使われない任意の説明用の雛形も書き出す"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "list": {
+                  "description": "ストアの Issue を、運用者が宣言した状態とともに一覧する",
+                  "options": {
+                    "store": {
+                      "description": "Issue を保持するストア。プロジェクトもターゲットラインも不要"
+                    },
+                    "state": {
+                      "description": "open、resolved、または dropped"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "show": {
+                  "description": "1 つの Issue を、最新の実行計画リビジョンと各ノードの状態とともに表示する",
+                  "options": {
+                    "store": {
+                      "description": "Issue を保持するストア。プロジェクトもターゲットラインも不要"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "plan": {
+                  "description": "不変の実行計画リビジョンを新規発行する、または最新のものを読む",
+                  "options": {
+                    "store": {
+                      "description": "Issue を保持するストア。プロジェクトもターゲットラインも不要"
+                    },
+                    "project": {
+                      "description": "ノードの所有プロジェクト。Issue のスコープではない"
+                    },
+                    "target-line": {
+                      "description": "ノードのターゲットライン。Issue のスコープではない"
+                    },
+                    "add-change": {
+                      "description": "既存の Change インスタンスを参照するノードを追加: node=ci_...[,alias]"
+                    },
+                    "add-intent": {
+                      "description": "まだ作成されていない作業を宣言するノードを追加: node=summary"
+                    },
+                    "depends-on": {
+                      "description": "ノードの依存関係を宣言: node:dependency"
+                    },
+                    "from-file": {
+                      "description": "トップレベルの nodes: リストを持つ YAML ファイルからノード一覧を読む"
+                    },
+                    "revision": {
+                      "description": "最新ではなくこのリビジョンを読む"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "state": {
+                  "description": "Issue の状態を宣言する。計画から導出される準備状況は判断材料であり、状態を決めない",
+                  "options": {
+                    "store": {
+                      "description": "Issue を保持するストア。プロジェクトもターゲットラインも不要"
+                    },
+                    "state": {
+                      "description": "open、resolved、または dropped"
+                    },
+                    "reason": {
+                      "description": "Issue を取り下げた理由。dropped には必須"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                }
+              }
+            },
+            "changes": {
+              "description": "ストア内のすべての Change を、プロジェクトとターゲットラインでグループ化して表示する。平坦な一覧は意図的に提供しない",
+              "options": {
+                "store": {
+                  "description": "集計対象のストア"
+                },
+                "project": {
+                  "description": "これらのプロジェクトに絞り込む"
+                },
+                "target-line": {
+                  "description": "これらのターゲットラインに絞り込む"
+                },
+                "outcome": {
+                  "description": "アーカイブ済みエントリをこれらの確定結果に絞り込む"
+                },
+                "state": {
+                  "description": "active または archived"
+                },
+                "json": {
+                  "description": "JSON で出力"
+                }
+              }
+            },
+            "projects": {
+              "description": "ストアのプロジェクトとターゲットラインの集計と、ライン別の Change 数",
+              "options": {
+                "store": {
+                  "description": "集計対象のストア"
+                },
+                "json": {
+                  "description": "JSON で出力"
+                }
+              }
+            },
+            "workspace": {
+              "description": "ストア計画ワークツリーとプロジェクト実行ワークツリーの束縛されたペアを準備・確認・削除します（個人用エディタービューの rasen workset とは別物です）",
+              "commands": {
+                "plan": {
+                  "description": "変更に必要なワークツリーペアを、何も書き込まず未充足の前提条件をすべて報告する不変の計画としてプレビューします",
+                  "options": {
+                    "store": {
+                      "description": "計画ワークツリーを所有するストア"
+                    },
+                    "project": {
+                      "description": "変更を所有するプロジェクト"
+                    },
+                    "target-line": {
+                      "description": "ペアを準備する安定したターゲットライン"
+                    },
+                    "change": {
+                      "description": "ペアを準備する対象の変更エイリアス"
+                    },
+                    "planning-worktree": {
+                      "description": "ストア計画ワークツリーの作成先（既定はストアチェックアウトの隣）"
+                    },
+                    "execution-worktree": {
+                      "description": "プロジェクト実行ワークツリーの作成先（既定はコードチェックアウトの隣）"
+                    },
+                    "existing-change": {
+                      "description": "新しく識別子を発行せず、既存の変更を新しいペアに束縛します"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "apply": {
+                  "description": "プレビュー済みの計画を ID で適用します。最初の書き込み前に凍結したコミット ID をすべて再検証します",
+                  "options": {
+                    "apply-plan": {
+                      "description": "rasen store workspace plan が生成した計画 ID"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "show": {
+                  "description": "解決済みのペア、束縛状態、検証結果を、権限を持たないロケーターとして報告します",
+                  "options": {
+                    "store": {
+                      "description": "計画ワークツリーを所有するストア"
+                    },
+                    "project": {
+                      "description": "変更を所有するプロジェクト"
+                    },
+                    "target-line": {
+                      "description": "ペアが属する安定したターゲットライン"
+                    },
+                    "change": {
+                      "description": "ペアを報告する対象の変更エイリアス"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "cleanup": {
+                  "description": "損失がないと証明できる削除のみをプレビューし実行します。強制も部分削除もありません",
+                  "options": {
+                    "store": {
+                      "description": "計画ワークツリーを所有するストア"
+                    },
+                    "project": {
+                      "description": "変更を所有するプロジェクト"
+                    },
+                    "target-line": {
+                      "description": "ペアが属する安定したターゲットライン"
+                    },
+                    "change": {
+                      "description": "ペアを削除する対象の変更エイリアス"
+                    },
+                    "include-untracked": {
+                      "description": "計画が列挙した未追跡ファイル（Git では復元できません）を受け入れます"
+                    },
+                    "apply-plan": {
+                      "description": "以前のプレビューが生成したクリーンアップ計画 ID"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                }
+              }
             }
           }
         },
@@ -1629,7 +2049,10 @@
               "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
             },
             "project": {
-              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+              "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+            },
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
             },
             "code-workspace": {
               "description": "このセットのVS Codeワークスペースファイルも作成します"
@@ -1675,7 +2098,10 @@
               "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
             },
             "project": {
-              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+              "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+            },
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
             },
             "gc": {
               "description": "参照切れのmachine-home登録と孤立したhomeディレクトリを削除します — そのhome内の外部アーカイブもすべて削除されます（archive-destinationの'external'アーカイブはhomeと同じライフサイクルです。Git履歴が永続的な記録として残ります）"
@@ -2255,7 +2681,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             },
@@ -2287,7 +2716,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             },
@@ -2316,7 +2748,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             },
@@ -2330,7 +2765,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             },
@@ -2344,7 +2782,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             },
@@ -2361,7 +2802,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             },
@@ -2375,7 +2819,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             },
@@ -2392,7 +2839,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             },
@@ -2409,7 +2859,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             },
@@ -2429,7 +2882,10 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 }
               }
             },
@@ -2449,7 +2905,43 @@
                   "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
                 },
                 "project": {
-                  "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                }
+              }
+            }
+          }
+        },
+        "retain": {
+          "description": "retention実行に向けて変更を準備します",
+          "commands": {
+            "prepare": {
+              "description": "実効のretentionモードを報告し、変更の永続的なナレッジ識別情報を凍結または再利用し、knowledgeコマンドがそれを読み取る実行状態ディレクトリを報告します",
+              "positionals": {
+                "change": {
+                  "description": "retentionの準備対象となる変更です"
+                }
+              },
+              "options": {
+                "json": {
+                  "description": "JSONで出力します"
+                },
+                "store": {
+                  "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立したRasenリポジトリです）"
+                },
+                "project": {
+                  "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
+                "owner-store": {
+                  "description": "計画ルートとは独立してストアの知識所有者を選択します"
+                },
+                "owner-project": {
+                  "description": "計画ルートとは独立してプロジェクトの知識所有者を選択します"
                 }
               }
             }
@@ -2493,6 +2985,9 @@
                 },
                 "project": {
                   "description": "登録済みプロジェクトをすべての移行ルートとして選択"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 },
                 "json": {
                   "description": "JSONで出力します（非対話、実行には--yesが必要）"
@@ -2549,19 +3044,19 @@
               "description": "記録済み使用量からtranscriptのcontext window使用率を報告します",
               "options": {
                 "transcript": {
-                  "description": "Claude Code transcriptまたはCodex rollout jsonlへのパスです"
+                  "description": "Claude Code transcriptまたはCodex rollout jsonlへのパスです。他の既知harnessのセッションファイルは、計測せずharness名を挙げて拒否します"
                 },
                 "latest": {
                   "description": "現在のディレクトリに対応する最新main-session transcriptを使用します"
                 },
                 "dir": {
-                  "description": "--latestが使用するClaude projectsディレクトリを上書きします"
+                  "description": "--latest が検索するセッションストアのディレクトリを上書きします（解決された runtime に応じて Claude projects ディレクトリ、Codex の sessions ルート、Oh My Pi の sessions ルート）"
                 },
                 "limit": {
                   "description": "解決済みcontext window上限を上書きします"
                 },
                 "runtime": {
-                  "description": "ファイル判定を使わず \"claude\" または \"codex\" を指定します"
+                  "description": "ファイル判定を使わず runtime を指定します：\"claude\"、\"codex\"、\"omp\""
                 },
                 "json": {
                   "description": "JSONで出力します"
@@ -2589,7 +3084,7 @@
               }
             },
             "audit": {
-              "description": "Claudeのtranscript、Codexのrollout、またはZedのスレッドデータベースからセッションのトークン消費量を分析します（実験的機能：内部の非公開形式を解析するため、harnessやZedの更新で動作しなくなる可能性があります）",
+              "description": "Claudeのtranscript、Codexのrollout、またはZedのスレッドデータベースからセッションのトークン消費量を分析します。他の既知harnessのセッションファイルは、0として報告せずharness名を挙げて拒否します（実験的機能：内部の非公開形式を解析するため、harnessやZedの更新で動作しなくなる可能性があります）",
               "options": {
                 "projects-dir": {
                   "description": "session idの解決に使うClaude projectsディレクトリを上書きします"

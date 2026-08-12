@@ -27,6 +27,7 @@ import { createRequire } from 'node:module';
 import { StoreError } from './store/errors.js';
 import {
   listStoreRegistryEntries,
+  readOptionalStoreMetadataState,
   readStoreRegistryState,
   validateStoreId,
 } from './store/foundation.js';
@@ -48,7 +49,12 @@ import {
   legacyWorkspaceGuidance,
   type PlanningHome,
 } from './planning-home.js';
-import { classifyOpenSpecDir, readProjectConfig } from './project-config.js';
+import {
+  classifyOpenSpecDir,
+  readProjectConfig,
+  readProjectConfigAtPath,
+  type ProjectConfig,
+} from './project-config.js';
 import { touchProjectRegistry, resolveProjectHome } from './project-home.js';
 import { findProjectRegistryEntry } from './project-registry.js';
 import { storeBindingDeclarationFrom } from './effective-config.js';
@@ -57,6 +63,16 @@ import { getAllToolVersionStatus } from './shared/index.js';
 import { reportConfigDiagnostic } from './config-diagnostics.js';
 import { createConfigDiagnosticReporter } from './config-diagnostic-locale.js';
 import { readLastWarnedVersionPair, writeLastWarnedVersionPair } from './version-guard-state.js';
+import {
+  StorePlanning,
+  PlanningScopeError,
+  projectReadProjection,
+  type ChangeCreationScope,
+  type ChangeSelector,
+  type PlanningScopeDescription,
+  type StoreAggregateReadScope,
+  type ProjectReadScope,
+} from './store-planning/index.js';
 
 const require = createRequire(import.meta.url);
 const { version: OPENSPEC_VERSION } = require('../../package.json');
@@ -69,6 +85,7 @@ export type StoreEntryType = 'store' | 'project';
 export interface StoreSelectorOptions {
   store?: string;
   project?: string;
+  targetLine?: string;
   storePath?: string;
 }
 
@@ -77,6 +94,7 @@ export interface ResolveOpenSpecRootOptions extends StoreSelectorOptions {
   allowImplicitRoot?: boolean;
   globalDataDir?: string;
   reporter?: RootSelectionReporter | false;
+  changeSelector?: ChangeSelector;
   /**
    * Read-only diagnostic opt-out (design D4). A declared Store that cannot be
    * used normally stops the command; `rasen doctor` sets this so it keeps
@@ -84,6 +102,8 @@ export interface ResolveOpenSpecRootOptions extends StoreSelectorOptions {
    * instead of failing.
    */
   allowUnavailableStore?: boolean;
+  /** Scope intent for read-only command adapters. Defaults to project-read. */
+  intent?: 'store-read' | 'project-read';
 }
 
 export interface ResolvedOpenSpecRoot {
@@ -96,6 +116,18 @@ export interface ResolvedOpenSpecRoot {
   storeId?: string;
   /** Set alongside storeId; the namespace the id was resolved from. */
   storeType?: StoreEntryType;
+  /** Scope-derived project read capability. Never serialize or persist it. */
+  scope?: ProjectReadScope | StoreAggregateReadScope;
+  /** Stable diagnostic projection; paths are locators, not authority. */
+  planningScope?: PlanningScopeDescription;
+  /** Scope-owned project home (not necessarily `<path>/rasen`). */
+  projectHome?: string;
+  /** Scope-owned planning configuration file. */
+  configPath?: string;
+  /** Scope-owned project-local workflow schemas collection. */
+  schemasDir?: string;
+  /** Explicit execution checkout when known. */
+  executionRoot?: string;
 }
 
 export type RootSelectionNotice =
@@ -673,7 +705,7 @@ async function resolveNearestOrDeclaredRoot(
   return makeRoot(binding.store.root, 'declared', binding.store.id, 'store');
 }
 
-export async function resolveOpenSpecRoot(
+async function resolveOpenSpecRootThroughPlanning(
   options: ResolveOpenSpecRootOptions = {}
 ): Promise<ResolvedOpenSpecRoot> {
   if (options.storePath !== undefined) {
@@ -687,25 +719,207 @@ export async function resolveOpenSpecRoot(
     );
   }
 
-  if (options.store !== undefined && options.project !== undefined) {
+  const startPath = options.startPath ?? process.cwd();
+  try {
+    const selection = {
+      ...(options.store === undefined ? {} : { store: options.store }),
+      ...(options.project === undefined ? {} : { project: options.project }),
+      ...(options.targetLine === undefined ? {} : { targetLine: options.targetLine }),
+    };
+    const scope = options.intent === 'store-read'
+      ? await StorePlanning.open({
+          intent: 'store-read',
+          startPath: path.resolve(startPath),
+          selection,
+          ...(options.globalDataDir === undefined ? {} : { globalDataDir: options.globalDataDir }),
+        })
+      : await StorePlanning.open({
+          intent: 'project-read',
+          startPath: path.resolve(startPath),
+          selection,
+          ...(options.globalDataDir === undefined ? {} : { globalDataDir: options.globalDataDir }),
+          ...(options.changeSelector === undefined ? {} : { change: options.changeSelector }),
+        });
+    const description = scope.describe();
+    const ref = scope.ref;
+    const aggregate = scope.kind === 'store-aggregate';
+    const projection = aggregate ? undefined : projectReadProjection(scope);
+    const rootPath = description.paths['planning-checkout'] as string;
+    const resolved: ResolvedOpenSpecRoot = {
+      path: rootPath,
+      changesDir: projection?.changesDir ?? '',
+      specsDir: projection?.specsDir ?? '',
+      archiveDir: projection?.archiveDir ?? '',
+      defaultSchema: DEFAULT_SCHEMA,
+      source:
+        description.source === 'explicit'
+          ? 'store'
+          : description.source === 'nearest-standalone'
+            ? 'nearest'
+            : 'declared',
+      scope,
+      planningScope: description,
+      ...(projection === undefined ? {} : {
+        projectHome: projection.projectHome,
+        schemasDir: projection.schemasDir,
+      }),
+      ...(description.paths['project-config'] === undefined
+        ? {}
+        : { configPath: description.paths['project-config'] }),
+      ...(description.paths['execution-root'] === undefined
+        ? {}
+        : { executionRoot: description.paths['execution-root'] }),
+      ...(options.project !== undefined && options.store === undefined
+        ? {
+            storeId: options.project,
+            storeType: 'project' as const,
+          }
+        : ref.mode === 'store-project' ||
+            ref.mode === 'legacy-store' ||
+            ref.mode === 'store-aggregate'
+        ? {
+            storeId: ref.storeId,
+            storeType: options.store === undefined && options.project !== undefined
+              ? 'project' as const
+              : 'store' as const,
+          }
+        : {}),
+    };
+    if (!aggregate && projection?.archiveDir === undefined) {
+      Object.defineProperty(resolved, 'archiveDir', {
+        enumerable: false,
+        configurable: false,
+        get() {
+          throw new RootSelectionError(
+            'The selected Store project has no independently verified target line.',
+            'target_line_required',
+            {
+              target: 'selection.targetLine',
+              fix: 'Add --target-line <id>.',
+            }
+          );
+        },
+      });
+    }
+    return resolved;
+  } catch (error) {
+    if (error instanceof PlanningScopeError) {
+      throw new RootSelectionError(
+        error.message,
+        error.diagnostic.code,
+        {
+          ...(error.diagnostic.target === undefined ? {} : { target: error.diagnostic.target }),
+          ...(error.diagnostic.fix === undefined ? {} : { fix: error.diagnostic.fix }),
+        }
+      );
+    }
+    throw error;
+  }
+}
+
+/**
+ * Frozen standalone/legacy-flat compatibility adapter. Store layout v2 never
+ * reaches this function; it contains the pre-v2 mapping only so existing
+ * standalone roots and legacy Store reads retain their established behavior
+ * while every Store v2 address crosses StorePlanning.
+ */
+async function resolveStandaloneOrLegacyRoot(
+  options: ResolveOpenSpecRootOptions = {}
+): Promise<ResolvedOpenSpecRoot> {
+  const root = await resolveCompatibilityRoot(options);
+  return withCompatibilityExecutionRoot(root, options.startPath ?? process.cwd());
+}
+
+/**
+ * Execution authority for a store-selected COMPATIBILITY root only.
+ *
+ * A legacy flat Store carries no scope description, so nothing else can report
+ * the member checkout that retention and other execution-owned readers have
+ * always written to. The launch project is discovered — a qualifying project
+ * checkout that is not the Store itself — never the bare current directory,
+ * and no execution root is invented when none is found.
+ *
+ * Store v2 scopes never reach here. They keep the fail-closed rule of
+ * `specs/file-placement/spec.md` ("planning-only work has no execution root";
+ * no Store checkout or current directory is substituted), which is why this
+ * returns early for anything carrying a planning scope.
+ */
+function withCompatibilityExecutionRoot(
+  root: ResolvedOpenSpecRoot,
+  startPath: string
+): ResolvedOpenSpecRoot {
+  if (root.planningScope !== undefined) return root;
+  if (root.executionRoot !== undefined) return root;
+  if (root.storeId === undefined || (root.storeType ?? 'store') !== 'store') return root;
+  const storeRoot = canonicalizeOrResolve(root.path);
+  // Established legacy order: the launch project if there is one, else the
+  // enclosing code checkout, else the directory the run was launched from.
+  // A member checkout of a legacy Store frequently has neither a planning
+  // shape nor a store pointer, and archive/retention have always written
+  // execution-owned ephemera there.
+  const candidate =
+    findQualifyingRootSync(startPath) ??
+    findEnclosingCodeCheckoutSync(startPath) ??
+    startPath;
+  const canonicalCandidate = canonicalizeOrResolve(candidate);
+  // The Store checkout itself is never an execution root, and neither is any
+  // directory inside it: that is the substitution `specs/file-placement`
+  // forbids. Store v2 scopes never reach here at all.
+  if (isSamePathOrDescendant(canonicalCandidate, storeRoot)) return root;
+  return { ...root, executionRoot: canonicalCandidate };
+}
+
+/** Nearest ancestor of `start` (inclusive) containing a `.git` entry. */
+function findEnclosingCodeCheckoutSync(start: string): string | null {
+  let candidate = path.resolve(start);
+  for (;;) {
+    if (fs.existsSync(path.join(candidate, '.git'))) return candidate;
+    const parent = path.dirname(candidate);
+    if (parent === candidate) return null;
+    candidate = parent;
+  }
+}
+
+function isSamePathOrDescendant(candidate: string, ancestor: string): boolean {
+  if (samePathForPlatform(candidate, ancestor)) return true;
+  const relative = path.relative(ancestor, candidate);
+  return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+function samePathForPlatform(left: string, right: string): boolean {
+  return process.platform === 'win32'
+    ? left.toLowerCase() === right.toLowerCase()
+    : left === right;
+}
+
+async function resolveCompatibilityRoot(
+  options: ResolveOpenSpecRootOptions = {}
+): Promise<ResolvedOpenSpecRoot> {
+  if (options.storePath !== undefined) {
     throw new RootSelectionError(
-      '--store and --project are mutually exclusive; pass only one.',
-      'store_project_mutually_exclusive',
+      '--store-path is not supported. Register the path with rasen store register <path>, then select it with --store <id>.',
+      'store_path_not_supported',
       {
         target: 'store.id',
-        fix: 'Pass either --store <id> or --project <id>, not both.',
+        fix: 'rasen store register <path>, then rerun with --store <id>.',
       }
     );
   }
-
+  if (options.store !== undefined && options.project !== undefined) {
+    // Orthogonal selection only has meaning in layout v2. The caller routes
+    // every two-dimensional selection to StorePlanning before this adapter.
+    throw new RootSelectionError(
+      'Store/project selection requires a Store v2 project catalog.',
+      'project_not_in_store',
+      { target: 'selection.project' }
+    );
+  }
   if (options.store !== undefined) {
     return resolveStoreRoot(options.store, options.globalDataDir, 'store', 'store');
   }
-
   if (options.project !== undefined) {
     return resolveStoreRoot(options.project, options.globalDataDir, 'store', 'project');
   }
-
   const startPath = options.startPath ?? process.cwd();
   const nearestRoot = findQualifyingRootSync(startPath);
   if (nearestRoot) {
@@ -716,7 +930,6 @@ export async function resolveOpenSpecRoot(
       options.allowUnavailableStore === true
     );
   }
-
   let registry;
   try {
     registry = await readStoreRegistryState(
@@ -728,7 +941,6 @@ export async function resolveOpenSpecRoot(
   const registeredIds = registry
     ? listStoreRegistryEntries(registry).map((entry) => entry.id)
     : [];
-
   if (registeredIds.length > 0) {
     throw new RootSelectionError(
       `No Rasen root found in the current directory or its ancestors. Registered stores: ${registeredIds.join(', ')}. Pass --store <id> to use one, or run rasen init to create a local root.`,
@@ -739,7 +951,6 @@ export async function resolveOpenSpecRoot(
       }
     );
   }
-
   if (options.allowImplicitRoot === false) {
     const legacyRoot = findLegacyWorkspaceRootSync(startPath);
     if (legacyRoot) {
@@ -758,8 +969,132 @@ export async function resolveOpenSpecRoot(
       { target: 'openspec.root', fix: 'Run rasen init to create a root here.' }
     );
   }
-
   return makeRoot(canonicalDirectory(startPath), 'implicit');
+}
+
+async function declaresLayoutV2(root: ResolvedOpenSpecRoot): Promise<boolean> {
+  if (!isStoreSelectedRoot(root) || root.storeType === 'project') return false;
+  try {
+    return (await readOptionalStoreMetadataState(root.path))?.layoutVersion === 2;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Public compatibility surface. Store v2 is always scope-routed; standalone
+ * and legacy flat roots use the bounded adapter above and are projected in
+ * their established shape. This keeps one Store write authority while the
+ * legacy read window remains open.
+ */
+export async function resolveOpenSpecRoot(
+  options: ResolveOpenSpecRootOptions = {}
+): Promise<ResolvedOpenSpecRoot> {
+  if (
+    options.targetLine !== undefined ||
+    (options.store !== undefined && options.project !== undefined)
+  ) {
+    const scoped = await resolveOpenSpecRootThroughPlanning(options);
+    // Orthogonal `--store S --project P` selection only has meaning against a
+    // v2 project catalog; a flat Store has nothing to validate P against, so
+    // answering with its flat root would silently drop the project selector.
+    // The frozen compatibility adapter owns that refusal
+    // (`project_not_in_store`), exactly as the `--store`-only branch below
+    // defers a legacy Store to it. Internal callers that legitimately carry a
+    // Store plus one of its members — a frozen Session, for instance — open
+    // StorePlanning directly and are unaffected.
+    if (
+      options.store !== undefined &&
+      options.project !== undefined &&
+      scoped.planningScope?.kind === 'legacy-store'
+    ) {
+      return resolveStandaloneOrLegacyRoot(options);
+    }
+    return scoped;
+  }
+
+  if (options.store !== undefined) {
+    // Inspect the Store through StorePlanning before applying legacy root
+    // health rules. A layout-v2 integration checkout intentionally need not
+    // have a flat `rasen/config.yaml`, so legacy inspection would reject a
+    // healthy aggregate before the layout discriminator could be read.
+    try {
+      const scoped = await resolveOpenSpecRootThroughPlanning(options);
+      return scoped.planningScope?.kind === 'legacy-store'
+        ? resolveStandaloneOrLegacyRoot(options)
+        : scoped;
+    } catch (planningError) {
+      // Preserve the established selector/identity diagnostics for entries
+      // that cannot even be classified as Store v2. If legacy inspection can
+      // positively open the root, only use it for a non-v2 Store; a classified
+      // v2 planning diagnostic remains authoritative and never fails open.
+      const legacyProjection = await resolveStandaloneOrLegacyRoot(options);
+      if (await declaresLayoutV2(legacyProjection)) throw planningError;
+      return legacyProjection;
+    }
+  }
+
+  if (options.project !== undefined) {
+    // StorePlanning is authoritative for explicit project selectors. It may
+    // positively return standalone or legacy-read compatibility, but a
+    // diagnostic is never converted into a successful legacy projection.
+    return resolveOpenSpecRootThroughPlanning(options);
+  }
+
+  const nearest = findQualifyingRootSync(options.startPath ?? process.cwd());
+  if (nearest) {
+    try {
+      const metadata = await readOptionalStoreMetadataState(nearest);
+      if (metadata?.layoutVersion === 2) {
+        return resolveOpenSpecRootThroughPlanning(options);
+      }
+    } catch {
+      // The compatibility adapter below preserves the existing, richer
+      // standalone/legacy diagnostic taxonomy for malformed roots.
+    }
+    const storeFact = declaresAmbientStoreFact(nearest);
+    try {
+      const scoped = await resolveOpenSpecRootThroughPlanning(options);
+      const kind = scoped.planningScope?.kind;
+      if (kind === 'store-project' || kind === 'store-aggregate') return scoped;
+      // `standalone` and `legacy-store` are POSITIVE answers, and the frozen
+      // compatibility adapter below owns their established notices and
+      // diagnostics; falling through is not a fail-open.
+    } catch (planningError) {
+      if (storeFact) {
+        // Same rule the explicit `--store` branch above uses: the compatibility
+        // adapter owns store-declaration availability and identity diagnostics
+        // (unregistered, invalid id, unhealthy root, metadata mismatch), and
+        // those keep their established taxonomy. But once it positively
+        // resolves a layout-v2 Store, the planning diagnostic is authoritative
+        // — an invalid catalog or an unbound relationship must never be
+        // answered with that Store's root-level `rasen/changes`.
+        const legacyProjection = await resolveStandaloneOrLegacyRoot(options);
+        if (await declaresLayoutV2(legacyProjection)) throw planningError;
+        return legacyProjection;
+      }
+      // No Store fact at all: an ordinary local root, whose richer
+      // standalone/legacy taxonomy the adapter below owns.
+    }
+  }
+  return resolveStandaloneOrLegacyRoot(options);
+}
+
+/**
+ * Does this checkout claim Store-owned planning? A resolvable `store:`
+ * declaration or a recorded planning/execution association both do. A
+ * MALFORMED pointer deliberately does not: its established diagnostic
+ * (`invalid_store_pointer`) belongs to the compatibility adapter.
+ */
+function declaresAmbientStoreFact(projectRoot: string): boolean {
+  try {
+    const { pointer } = classifyOpenSpecDir(projectRoot);
+    const declaration = storeBindingDeclarationFrom(pointer);
+    if (declaration.form === 'alias' || declaration.form === 'durable') return true;
+  } catch {
+    // An unreadable pointer is the compatibility adapter's diagnostic.
+  }
+  return fs.existsSync(path.join(projectRoot, '.rasen', 'planning-binding.json'));
 }
 
 // -----------------------------------------------------------------------------
@@ -770,6 +1105,7 @@ export interface RootOutput {
   path: string;
   source: OpenSpecRootSource;
   store_id?: string;
+  scope?: PlanningScopeDescription;
 }
 
 export function toRootOutput(root: ResolvedOpenSpecRoot): RootOutput {
@@ -777,6 +1113,7 @@ export function toRootOutput(root: ResolvedOpenSpecRoot): RootOutput {
     path: root.path,
     source: root.source,
     ...(root.storeId ? { store_id: root.storeId } : {}),
+    ...(root.planningScope ? { scope: root.planningScope } : {}),
   };
 }
 
@@ -818,6 +1155,12 @@ export function withStoreFlag(root: ResolvedOpenSpecRoot, command: string): stri
   if (!isStoreSelectedRoot(root)) {
     return command;
   }
+  const selection = root.planningScope?.followupSelection;
+  if (selection?.store !== undefined && selection.project !== undefined) {
+    return `${command} --store ${selection.store} --project ${selection.project}${
+      selection.targetLine === undefined ? '' : ` --target-line ${selection.targetLine}`
+    }`;
+  }
   const flag = root.storeType === 'project' ? '--project' : '--store';
   return `${command} ${flag} ${root.storeId}`;
 }
@@ -829,7 +1172,7 @@ export function withStoreFlag(root: ResolvedOpenSpecRoot, command: string): stri
 export function toPlanningHome(root: ResolvedOpenSpecRoot): PlanningHome {
   return {
     kind: 'repo',
-    root: root.path,
+    root: root.projectHome ?? root.path,
     changesDir: root.changesDir,
     defaultSchema: root.defaultSchema,
   };
@@ -854,14 +1197,16 @@ async function checkSkillVersionGuard(
   options: { globalDataDir?: string } = {}
 ): Promise<void> {
   try {
-    const statuses = getAllToolVersionStatus(root.path, OPENSPEC_VERSION);
+    const projectRoot = sideEffectProjectRoot(root);
+    if (!projectRoot) return;
+    const statuses = getAllToolVersionStatus(projectRoot, OPENSPEC_VERSION);
     const mismatched = statuses.find((status) => status.needsUpdate);
     if (!mismatched) return;
 
     const stampVersion = mismatched.generatedByVersion ?? 'unknown';
     const cliVersion = OPENSPEC_VERSION as string;
 
-    const home = await resolveProjectHome(root.path, {
+    const home = await resolveProjectHome(projectRoot, {
       ensure: false,
       ...(options.globalDataDir !== undefined ? { globalDataDir: options.globalDataDir } : {}),
     });
@@ -895,6 +1240,39 @@ async function checkSkillVersionGuard(
   }
 }
 
+/** Read the config selected by the same planning scope as every path. */
+export function readResolvedProjectConfig(root: ResolvedOpenSpecRoot): ProjectConfig | null {
+  return root.configPath === undefined
+    ? readProjectConfig(root.path)
+    : readProjectConfigAtPath(root.configPath);
+}
+
+/**
+ * Version warnings and registry freshness belong to a real execution or
+ * standalone project. A Store checkout and a Store project partition are
+ * planning locators, never projects to register as a side effect.
+ */
+function sideEffectProjectRoot(root: ResolvedOpenSpecRoot): string | undefined {
+  if (root.executionRoot !== undefined) return root.executionRoot;
+  if (root.planningScope !== undefined) {
+    return root.planningScope.kind === 'standalone' ? root.path : undefined;
+  }
+  if (root.storeType === 'store') return undefined;
+  return root.path;
+}
+
+/**
+ * Return the real execution/standalone project for execution-owned reads and
+ * ephemera. Compatibility roots predate scope descriptions, so a non-Store
+ * root remains its own execution project; a Store checkout never becomes an
+ * execution fallback merely because it is the selected planning locator.
+ */
+export function resolvedExecutionProjectRoot(
+  root: ResolvedOpenSpecRoot
+): string | undefined {
+  return sideEffectProjectRoot(root);
+}
+
 /**
  * CLI adapter shared by the supported commands. In JSON mode a resolution
  * failure is reported as a machine-readable payload on stdout (no human prose
@@ -921,20 +1299,29 @@ export async function resolveRootForCommand(
     reporter?: RootSelectionReporter | false;
     /** Read-only diagnostic opt-out; see `ResolveOpenSpecRootOptions`. */
     allowUnavailableStore?: boolean;
+    /** Explicit read intent for aggregate-aware diagnostics. */
+    intent?: 'store-read' | 'project-read';
+    /** Optional selected Change relationship constraint for Store v2 reads. */
+    changeSelector?: ChangeSelector;
   } = {}
 ): Promise<ResolvedOpenSpecRoot | null> {
   try {
     const root = await resolveOpenSpecRoot({
       ...(selector.store !== undefined ? { store: selector.store } : {}),
       ...(selector.project !== undefined ? { project: selector.project } : {}),
+      ...(selector.targetLine !== undefined ? { targetLine: selector.targetLine } : {}),
       ...(selector.storePath !== undefined ? { storePath: selector.storePath } : {}),
       ...(output.allowImplicitRoot !== undefined
         ? { allowImplicitRoot: output.allowImplicitRoot }
         : {}),
       ...(output.globalDataDir !== undefined ? { globalDataDir: output.globalDataDir } : {}),
-      ...(output.allowUnavailableStore !== undefined
-        ? { allowUnavailableStore: output.allowUnavailableStore }
-        : {}),
+    ...(output.allowUnavailableStore !== undefined
+      ? { allowUnavailableStore: output.allowUnavailableStore }
+      : {}),
+      ...(output.intent === undefined ? {} : { intent: output.intent }),
+      ...(output.changeSelector === undefined
+        ? {}
+        : { changeSelector: output.changeSelector }),
       reporter: output.reporter,
     });
 
@@ -951,10 +1338,13 @@ export async function resolveRootForCommand(
     // Registry self-healing (design D6): best-effort, throttled, and every
     // failure is swallowed inside touchProjectRegistry itself - it must
     // never fail or visibly slow this command.
-    await touchProjectRegistry(
-      root.path,
-      output.globalDataDir !== undefined ? { globalDataDir: output.globalDataDir } : {}
-    );
+    const projectRoot = sideEffectProjectRoot(root);
+    if (projectRoot !== undefined) {
+      await touchProjectRegistry(
+        projectRoot,
+        output.globalDataDir !== undefined ? { globalDataDir: output.globalDataDir } : {}
+      );
+    }
 
     return root;
   } catch (error) {
@@ -970,6 +1360,163 @@ export async function resolveRootForCommand(
       return null;
     }
 
+    throw error;
+  }
+}
+
+export interface ResolvedChangeCreationCommand {
+  readonly root: ResolvedOpenSpecRoot;
+  readonly scope: ChangeCreationScope;
+}
+
+function rootFromCreationScope(
+  scope: ChangeCreationScope,
+  selector: StoreSelectorOptions
+): ResolvedOpenSpecRoot {
+  const description = scope.describe();
+  const planningCheckout = description.paths['planning-checkout'];
+  const projectHome = description.paths['project-home'];
+  const schemasDir = description.paths['project-schemas'];
+  const changesDir = description.paths['active-changes'];
+  const specsDir = description.paths.specs;
+  const archiveDir = description.paths['archive-line'];
+  if (!planningCheckout || !projectHome || !schemasDir || !changesDir || !specsDir || !archiveDir) {
+    throw new RootSelectionError(
+      'The selected authoring scope does not expose a complete project planning layout.',
+      'planning_address_not_available',
+      { target: 'planning.scope' }
+    );
+  }
+  const source: OpenSpecRootSource =
+    description.source === 'explicit'
+      ? 'store'
+      : description.source === 'nearest-standalone'
+        ? 'nearest'
+        : 'declared';
+  const ref = description.ref;
+  return {
+    path: planningCheckout,
+    changesDir,
+    specsDir,
+    archiveDir,
+    defaultSchema: DEFAULT_SCHEMA,
+    source,
+    planningScope: description,
+    projectHome,
+    schemasDir,
+    ...(description.paths['project-config'] === undefined
+      ? {}
+      : { configPath: description.paths['project-config'] }),
+    ...(description.paths['execution-root'] === undefined
+      ? {}
+      : { executionRoot: description.paths['execution-root'] }),
+    // Store identity must survive creation exactly as it does on the read
+    // path. Without it a legacy Store authoring root is not a "store-selected"
+    // root, so the `Using Rasen root: <id>` banner, the `store_id` field in
+    // `new change --json`, and every follow-up `--store` hint silently vanish.
+    ...(ref.mode === 'store-project' || ref.mode === 'legacy-store'
+      ? {
+          storeId: ref.storeId,
+          storeType: selector.store === undefined && selector.project !== undefined
+            ? 'project' as const
+            : 'store' as const,
+        }
+      : {}),
+  };
+}
+
+/**
+ * CLI mutation adapter for `new change`. It returns the non-serializable
+ * authoring capability together with a locator-only compatibility view used
+ * for existing output and pipeline lookup.
+ */
+export async function resolveChangeCreationForCommand(
+  selector: StoreSelectorOptions,
+  output: {
+    json?: boolean;
+    failurePayload?: Record<string, unknown>;
+    globalDataDir?: string;
+    reporter?: RootSelectionReporter | false;
+    startPath?: string;
+  } = {}
+): Promise<ResolvedChangeCreationCommand | null> {
+  try {
+    if (selector.storePath !== undefined) {
+      throw new RootSelectionError(
+        '--store-path is not supported. Register the path with rasen store register <path>, then select it with --store <id>.',
+        'store_path_not_supported',
+        {
+          target: 'store.id',
+          fix: 'rasen store register <path>, then rerun with --store <id>.',
+        }
+      );
+    }
+    // Ambient creation obeys the SAME invocation guard as every read command.
+    // Without it `new change` silently scaffolds a stray planning root in
+    // whatever directory the user happens to be in, while `list` in that same
+    // directory reports `no_root_with_registered_stores` — two commands
+    // disagreeing about whether this is a place to work. The compatibility
+    // adapter owns that taxonomy (the store hint, the registered-store list,
+    // and the `rasen init` guidance); it is read-only and scaffolds nothing.
+    if (
+      selector.store === undefined &&
+      selector.project === undefined &&
+      selector.targetLine === undefined &&
+      findQualifyingRootSync(output.startPath ?? process.cwd()) === null
+    ) {
+      await resolveStandaloneOrLegacyRoot({
+        ...(output.startPath === undefined ? {} : { startPath: output.startPath }),
+        ...(output.globalDataDir === undefined ? {} : { globalDataDir: output.globalDataDir }),
+        reporter: false,
+      });
+    }
+    let scope: ChangeCreationScope;
+    try {
+      scope = await StorePlanning.open({
+        intent: 'create-change',
+        startPath: path.resolve(output.startPath ?? process.cwd()),
+        selection: {
+          ...(selector.store === undefined ? {} : { store: selector.store }),
+          ...(selector.project === undefined ? {} : { project: selector.project }),
+          ...(selector.targetLine === undefined ? {} : { targetLine: selector.targetLine }),
+        },
+        ...(output.globalDataDir === undefined ? {} : { globalDataDir: output.globalDataDir }),
+      });
+    } catch (error) {
+      if (!(error instanceof PlanningScopeError)) throw error;
+      throw new RootSelectionError(error.message, error.diagnostic.code, {
+        ...(error.diagnostic.target === undefined ? {} : { target: error.diagnostic.target }),
+        ...(error.diagnostic.fix === undefined ? {} : { fix: error.diagnostic.fix }),
+      });
+    }
+    const root = rootFromCreationScope(scope, selector);
+    if (!output.json) {
+      emitStoreRootBanner(root, output.reporter);
+      await checkSkillVersionGuard(
+        root,
+        output.globalDataDir === undefined ? {} : { globalDataDir: output.globalDataDir }
+      );
+    }
+    const projectRoot = sideEffectProjectRoot(root);
+    if (projectRoot !== undefined) {
+      await touchProjectRegistry(
+        projectRoot,
+        output.globalDataDir === undefined ? {} : { globalDataDir: output.globalDataDir }
+      );
+    }
+    return { root, scope };
+  } catch (error) {
+    if (output.json && isRootSelectionError(error)) {
+      console.log(
+        JSON.stringify(
+          { ...(output.failurePayload ?? {}), status: [error.diagnostic] },
+          null,
+          2
+        )
+      );
+      process.exitCode = 1;
+      return null;
+    }
     throw error;
   }
 }

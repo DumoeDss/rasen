@@ -8,6 +8,10 @@ Make Store membership a first-class relation with its own authority: one record 
 
 A Store SHALL record membership as one file per member project, named by that project's permanent identity, under the Store's metadata directory. The record SHALL be the single authority for whether a project belongs to the Store, and no other source — including the project's own durable Store declaration — SHALL confer membership or grant Store-scoped Session eligibility. A project whose declaration names a Store but for which no Store record exists SHALL be rejected from Store-scoped sessions with a diagnostic that names the missing record and the copy-pasteable repair command (`rasen store add-project <projectId> --store <storeId>`); the declaration MAY shape that diagnostic but SHALL NOT itself decide eligibility. The project identity inside the record SHALL be the authority for which project it describes, and the file's name SHALL agree with it — a disagreement SHALL be reported as an error rather than resolved by preferring either one. The display id in the record SHALL be for reading only, and a recorded remote SHALL be credential-free. Two people adding two different projects to the same Store SHALL write two different files.
 
+The record's schema SHALL follow the Store's declared planning layout: a Store that has not declared layout version 2 uses the legacy membership record, and a Store declaring layout version 2 uses the v2 project catalog, which carries the project's roles and its planning binding and carries no adopted spec or change name list. Readers SHALL choose the schema from the Store's declared layout version and SHALL NOT infer it from the file's contents, so a partially written file can never be read as the other schema. Only the explicit layout migration SHALL convert a record from one schema to the other.
+
+The project's permanent identity SHALL be the only identifier either schema validates as one. The recorded display name SHALL be treated as a human label in both schemas, SHALL NOT be constrained to an identifier form, and SHALL be accepted by the v2 project catalog wherever the legacy record accepts it — a migration SHALL NOT block on a value the schema it migrates from accepted.
+
 #### Scenario: Membership is recorded per project
 
 - **WHEN** a project is added to a Store
@@ -43,6 +47,24 @@ A Store SHALL record membership as one file per member project, named by that pr
 - **THEN** Store-scoped session eligibility for that project is denied
 - **AND** the rejection diagnostic names the missing record and prints the `rasen store add-project` command that establishes it
 - **AND** the project's declaration is not used to grant eligibility, only to shape the diagnostic
+
+#### Scenario: The record schema follows the declared layout
+
+- **WHEN** membership is read from a Store declaring layout version 2 and from a Store that has not
+- **THEN** the first is read as a v2 project catalog and the second as the legacy membership record
+- **AND** neither is chosen by inspecting the file's own version field
+
+#### Scenario: A recorded display name never blocks the migration
+
+- **WHEN** a membership record carries a display name that is not an identifier, such as `Elftia` or `my app`
+- **THEN** the layout migration plans and applies, carrying the name forward unchanged
+- **AND** the v2 project catalog accepts it, because the permanent identity is the only identifier either schema validates
+
+#### Scenario: A legacy record inside a partitioned Store is a finding
+
+- **WHEN** a Store declares layout version 2 and one member file is still the legacy record
+- **THEN** it is reported as a diagnostic naming the file and the migration command
+- **AND** it is not silently accepted as a second valid membership schema
 
 ### Requirement: Membership states what it is for, and never states where work is executed
 
@@ -121,6 +143,8 @@ The hint list is itself a read-modify-write over the project's shared configurat
 
 Every surface that asks which projects belong to a Store, or which Stores a project belongs to, SHALL get its answer from one membership provider. The provider SHALL normalize current records and legacy data — a Store's referenced-project entries, its legacy adoption data, and the machine's project namespace — into a single shape that reports, for each member, the Store, the project identity, the roles, and which source the answer came from. A current record SHALL take precedence over any legacy source for the same project. New membership SHALL be written only as per-project records.
 
+The provider SHALL choose the record schema from the Store's declared layout version, and every surface that reads a member's record SHALL go through it. A surface that reads a member's record with a single-version parser is reading the other layout's record as broken data: against a partitioned Store it reports a healthy project catalog as unreadable, and it drops whatever that catalog declares. Such a read SHALL be treated as a defect in the reader, not as a property of the record.
+
 #### Scenario: Records and legacy data answer through one shape
 
 - **WHEN** a Store carries both current membership records and legacy adoption data
@@ -142,6 +166,12 @@ Every surface that asks which projects belong to a Store, or which Stores a proj
 
 - **WHEN** any read-only command reads a Store's membership, including one carrying only legacy data
 - **THEN** the Store's files, the project's files, and the machine registries are all left byte-identical
+
+#### Scenario: A partitioned Store's member record reads as itself everywhere
+
+- **WHEN** any surface reads a member's record in a Store declaring the partitioned layout, including one reading it only to find that project's declared knowledge bundle, and one reading it only to decide whether the record is unreadable
+- **THEN** the record SHALL be parsed as that layout's project catalog
+- **AND** a healthy catalog SHALL NOT be reported as an unreadable record, and its declarations SHALL NOT be dropped
 
 ### Requirement: A project's eligible Stores include those declared and those recorded, and an unavailable Store is not an empty one
 
@@ -239,7 +269,11 @@ No command SHALL write a filesystem path from the current machine into any file 
 
 ### Requirement: Legacy membership data is converted only by an explicit, previewable migration
 
-Converting a Store's legacy membership data into per-project records SHALL happen only when the user explicitly runs the migration. The migration SHALL offer a preview that changes nothing, SHALL be safe to run more than once, and SHALL keep the legacy data until every record it produced has been written and read back successfully. A project it cannot resolve SHALL be reported and left untouched rather than guessed at. Once the records are verified, the legacy data SHALL be removed and the removal SHALL be reported for the user to commit.
+Converting a Store's legacy membership data into per-project records, and converting those records into v2 project catalogs as part of the Store's planning layout migration, SHALL happen only when the user explicitly runs the migration. The migration SHALL offer a preview that changes nothing, SHALL be safe to run more than once, and SHALL keep the legacy data until every record it produced has been written and read back successfully. A project it cannot resolve SHALL be reported and left untouched rather than guessed at. Once the records are verified, the legacy data SHALL be removed and the removal SHALL be reported for the user to commit.
+
+When a record is converted into a v2 project catalog, its roles SHALL be carried over unchanged, its planning binding SHALL be derived only from adoption evidence or a proven pointer-without-local-planning binding and never from membership alone, and its adopted spec and change name lists SHALL be dropped from the catalog and preserved verbatim in the committed migration receipt. A recorded value that cannot satisfy the stricter v2 catalog contract SHALL block the conversion, naming the record and the field, and SHALL NOT be rewritten to make it fit; the reported repair SHALL state what the operator must change the value to, not which validator rejected it.
+
+Once a Store declares planning layout version 2 its legacy membership data is already converted, so the legacy membership migration SHALL report that and do nothing. It SHALL NOT read that Store's project catalogs through the legacy record schema, and SHALL NOT report a valid project catalog as an invalid membership record or advise removing it.
 
 #### Scenario: Preview reports the plan and writes nothing
 
@@ -252,6 +286,12 @@ Converting a Store's legacy membership data into per-project records SHALL happe
 - **THEN** the legacy data is still present and unmodified
 - **AND** the failure names the project and the file
 
+#### Scenario: The legacy membership migration leaves a migrated Store alone
+
+- **WHEN** the legacy membership migration runs against a Store that already declares planning layout version 2
+- **THEN** it converts nothing, writes nothing, and reports that the Store's membership is already recorded as project catalogs
+- **AND** it reports no error against those catalogs and never advises removing one
+
 #### Scenario: Re-running the migration is safe
 
 - **WHEN** the migration is applied a second time against an already-migrated Store
@@ -261,6 +301,17 @@ Converting a Store's legacy membership data into per-project records SHALL happe
 
 - **WHEN** legacy data references a project whose identity cannot be determined on this machine
 - **THEN** the migration reports it, converts the projects it can, and leaves the unresolved entry untouched
+
+#### Scenario: Adoption data becomes a binding and a receipt entry
+
+- **WHEN** a record carrying adoption data is converted into a v2 project catalog
+- **THEN** the catalog declares a bound planning binding with a canonical timestamp and carries no name list
+- **AND** the dropped spec and change names are preserved in the committed migration receipt
+
+#### Scenario: Membership without adoption stays unbound
+
+- **WHEN** a record declaring only a knowledge role is converted
+- **THEN** its catalog declares the planning binding unbound
 
 ### Requirement: Membership diagnostics are read-only and name the repair
 
@@ -290,3 +341,4 @@ Converting a Store's legacy membership data into per-project records SHALL happe
 
 - **WHEN** the same project is diagnosed once in human mode and once with `--json`
 - **THEN** both report the same diagnostic codes and the same repair commands
+

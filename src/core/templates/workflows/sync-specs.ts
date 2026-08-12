@@ -13,9 +13,11 @@ export function getSyncSpecsSkillTemplate(): SkillTemplate {
     description: 'Sync delta specs from a change to main specs. Use when the user wants to update main specs with changes from a delta spec, without archiving the change.',
     instructions: `Sync delta specs from a change to main specs.
 
-This is an **agent-driven** operation - you will read delta specs and directly edit main specs to apply the changes. This allows intelligent merging (e.g., adding a scenario without copying the entire requirement).
+This is an **agent-driven** operation: read each delta and canonical spec, enforce the same reconciliation contract as validate/archive, then directly edit canonical specs. A \`MODIFIED\` requirement is a complete replacement block, never a partial or additive merge.
 
 ${STORE_SELECTION_GUIDANCE}
+
+**Store spec-sync hard gate:** inspect the first resolved CLI payload before editing any spec. If root.scope.kind is 'store-project', REFUSE to write that project's canonical specs and report that Store v2 canonical specs change ONLY as part of a landed change finalization: name \`rasen archive <change> --outcome landed\` as the route, and apply no delta. This is the out-of-band path being closed — a delta must not reach a partition's canonical specs without an outcome, a reachability proof, and an Archive v2 record. If root.scope.kind is 'legacy-store', REFUSE with 'legacy_flat_store_requires_migration' — the legacy flat Store planning tree is read-only until 'rasen store migrate-layout <store-id>' has migrated it. Any other scope proceeds normally.
 
 **Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
@@ -36,39 +38,40 @@ ${STORE_SELECTION_GUIDANCE}
    rasen status --change "<name>" --json
    \`\`\`
 
-3. **Find delta specs**
+3. **Find delta specs and preflight reconciliation**
 
    Use \`artifactPaths.specs.existingOutputPaths\` from the status JSON as the list of delta spec files.
 
    Each delta spec file contains sections like:
    - \`## ADDED Requirements\` - New requirements to add
-   - \`## MODIFIED Requirements\` - Changes to existing requirements
+   - \`## MODIFIED Requirements\` - Complete replacements for existing requirements
    - \`## REMOVED Requirements\` - Requirements to remove
    - \`## RENAMED Requirements\` - Requirements to rename (FROM:/TO: format)
 
-   If no delta specs found, inform user and stop.
+   If no delta specs are found, inform the user and stop.
 
-4. **For each delta spec, apply changes to main specs**
+   Before editing, run \`rasen validate "<name>" --type change --strict --json\` with the same resolved store/project selector from step 2. Inspect the structured issues. If validation reports any spec-reconciliation issue, including a missing current scenario, STOP and report every issue; do not edit any canonical spec. Repair the delta, rerun the preflight, and continue only after it is clean.
+
+4. **For each clean delta spec, apply changes to main specs**
 
    For each repo-local capability delta spec path returned by the CLI:
 
    a. **Read the delta spec** to understand the intended changes
 
-   b. **Read the main spec**, resolved under the \`specs/\` directory that is the sibling of \`planningHome.changesDir\` (from the status JSON in step 2), NOT the literal repo-relative \`rasen/specs/<capability>/spec.md\` (it may not exist yet) — in a registered store this resolves to the store's specs
+   b. **Read the main spec** under \`root.scope.paths.specs\` from the status JSON in step 2. Require that typed project location; do not derive a sibling from \`planningHome.changesDir\` or use a repo-relative fallback (the capability file may not exist yet).
 
-   c. **Apply changes intelligently**:
+   c. **Apply the declared operations exactly**:
 
       **ADDED Requirements:**
-      - If requirement doesn't exist in main spec → add it
-      - If requirement already exists → update it to match (treat as implicit MODIFIED)
+      - The requirement must not already exist in the canonical spec
+      - Add the complete declared requirement block
 
       **MODIFIED Requirements:**
-      - Find the requirement in main spec
-      - Apply the changes - this can be:
-        - Adding new scenarios (don't need to copy existing ones)
-        - Modifying existing scenarios
-        - Changing the requirement description
-      - Preserve scenarios/content not mentioned in the delta
+      - Find the requirement with the same normalized heading in the canonical spec
+      - Replace that entire requirement block with the delta block
+      - Require the delta block to contain every scenario that should survive
+      - Copy behaviorally unchanged scenario blocks verbatim and keep their \`#### Scenario:\` headings stable
+      - Never infer an additive merge from omitted content; omission would delete that content and must have been rejected by preflight
 
       **REMOVED Requirements:**
       - Remove the entire requirement block from main spec
@@ -76,10 +79,11 @@ ${STORE_SELECTION_GUIDANCE}
       **RENAMED Requirements:**
       - Find the FROM requirement, rename to TO
 
-   d. **Create new main spec** if capability doesn't exist yet:
-      - Create the main spec under the resolved \`specs/\` directory (the sibling of \`planningHome.changesDir\` from step 2), NOT a literal repo-relative \`rasen/specs/<capability>/spec.md\`
+   d. **Create a new main spec** if the capability doesn't exist yet:
+      - Create the main spec under the exact \`root.scope.paths.specs\` directory from step 2; never reconstruct a Store or repo-relative specs path.
       - Add Purpose section (can be brief, mark as TBD)
       - Add Requirements section with the ADDED requirements
+      - Refuse \`MODIFIED\` or \`RENAMED\` operations because they require an existing canonical capability
 
 5. **Show summary**
 
@@ -102,7 +106,13 @@ The system SHALL do something new.
 ## MODIFIED Requirements
 
 ### Requirement: Existing Feature
-#### Scenario: New scenario to add
+The system SHALL retain the existing behavior and expose the new behavior.
+
+#### Scenario: Existing stable scenario
+- **WHEN** the existing flow runs
+- **THEN** the existing result remains unchanged
+
+#### Scenario: New scenario
 - **WHEN** user does A
 - **THEN** system does B
 
@@ -116,12 +126,13 @@ The system SHALL do something new.
 - TO: \`### Requirement: New Name\`
 \`\`\`
 
-**Key Principle: Intelligent Merging**
+**Key Principle: Complete Replacement**
 
-Unlike programmatic merging, you can apply **partial updates**:
-- To add a scenario, just include that scenario under MODIFIED - don't copy existing scenarios
-- The delta represents *intent*, not a wholesale replacement
-- Use your judgment to merge changes sensibly
+\`MODIFIED\` is wholesale replacement, not an intelligent partial merge:
+- Copy the entire current requirement before editing it
+- Include the complete surviving scenario inventory
+- Keep unchanged scenario blocks verbatim and their headings stable
+- Use \`ADDED\` for a genuinely new concern that does not alter an existing requirement
 
 **Output On Success**
 
@@ -143,10 +154,12 @@ Main specs are now updated. The change remains active - archive when implementat
 
 **Guardrails**
 - Read both delta and main specs before making changes
-- Preserve existing content not mentioned in delta
-- If something is unclear, ask for clarification
+- Never write any canonical spec until the shared strict preflight is clean
+- Preserve canonical content outside the explicitly declared operations
+- Treat each \`MODIFIED\` block as authoritative complete replacement content
+- If intended surviving behavior is unclear, ask for clarification before editing
 - Show what you're changing as you go
-- The operation should be idempotent - running twice should give same result`,
+- The operation should be idempotent - running twice should give the same result`,
     license: 'MIT',
     compatibility: 'Requires rasen CLI.',
     metadata: { author: 'rasen', version: '1.0' },

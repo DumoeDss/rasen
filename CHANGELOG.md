@@ -2,11 +2,20 @@
 
 <!-- rasen-history:start -->
 
-## Unreleased
+## 0.1.7
+
+### Added
+
+- Added `rasen retain prepare <change>`, the one operation that gets a standalone retention run from a resolved mode to a frozen knowledge identity. It reports the **effective** retention mode (the same resolution that authorizes a project-scoped `rasen knowledge apply`, so it answers even when no `retention` key is stored), freezes durable `{planningRoot, owner}` identity for a change that never ran through a classified pipeline, reuses an identity already recorded at any version exactly as written, and returns the `runStateDir` to pass as `--run-state-dir` on later knowledge commands. It writes only for the mode that reads what it writes: unless the effective mode — or a mode already frozen in run-state for a canonical `retain` stage — is `codify`, preparation resolves nothing and records nothing (`contextSource: "skipped"`), so an `off` or `report` run leaves no `auto-run.json` behind for a change that never ran a pipeline. Ambiguous, missing, renamed, or stale ownership refuses before any candidate is created, and the record persists no absolute planning or owner directory. `--store`/`--project` select the planning root; `--owner-store`/`--owner-project` select the knowledge owner independently.
+- **Oh My Pi as an adapted install target** — `rasen init --tools omp` installs the workflow skills to `.omp/skills/rasen-*/SKILL.md`, and `--tools all` expands to include it. Because Oh My Pi reads project instructions (`.omp/AGENTS.md`) and always-apply project rules (`.omp/RULES.md`) from the nearest non-empty `.omp/` directory above the working directory and stops there, installing below an existing one shadows it — so init discloses the capture, naming the enclosing files that stop loading. Installed skills are unaffected: Oh My Pi scans every ancestor's `.omp/skills`.
+- **`rasen agent context` measures an Oh My Pi session's own occupancy** — occupancy is read from the session journal's last usage-bearing `message` row (`input + cacheRead + cacheWrite`, the same sum the Claude reader applies, so the two harnesses' numbers stay directly comparable) and is scoped to the current context epoch: a `/clear`'s `reset_boundary` restarts the measurement, and the all-zero usage rows Oh My Pi writes for a turn that sent nothing no longer report a full session as empty. An Oh My Pi LEAD's implicit `--latest` now resolves to that host's own session store instead of reporting another harness's conversation.
 
 ### Changed
 
 - **BREAKING (library API): CLI programs are now created with `createProgram({ locale, facts? })`.** The exported mutable `program` singleton has been removed. Each call returns a fresh Commander instance with catalog-backed help and completion presentation resolved for the requested locale, so library callers should replace `import { program }` with `import { createProgram }` and construct an instance before parsing or inspecting help.
+- Run-state may now carry frozen retention identity without naming a pipeline, so a completed change can hold durable retention identity without claiming a pipeline it never ran. Every `auto-run.json` valid before this release stays valid and is reported unchanged. `rasen pipeline resume` now distinguishes three states: no file (reporting the deterministic directory state *would* live at), a located-but-unparseable file, and a valid file naming no pipeline (reported as run-state present, with no pipeline and no next stage).
+- Made run-state writing crash-safe (temp file plus rename), and made a knowledge-context update add only that field, so a LEAD's own hand-written progress and handoff records keep their recorded values instead of being rewritten through a parse/serialize round trip. Creating a record is exclusive: preparation never replaces run-state it did not create, so a record written while it was resolving identity is merged into rather than overwritten.
+- Pointed the shipped `rasen-retain` workflow and its `codify` sidecar at `rasen retain prepare`, removing their dependency on `rasen config get retention`, which reports nothing at all when no retention key is stored while the authorization gate resolves the effective value.
 
 ## 0.1.6
 

@@ -4,33 +4,222 @@ import * as path from 'node:path';
 import chalk from 'chalk';
 
 import { getTaskProgressForChange, formatTaskStatus } from '../utils/task-progress.js';
+import { formatLocaleMessage, getLocaleCatalog } from '../locales/index.js';
+import { canonicalJson } from './canonical-json.js';
 import {
+  ARCHIVE_MERGE_CONFIRMATION_BLOCKER_CODE,
   applyArchive,
+  abortArchivePlan,
+  inspectArchiveApplyPlan,
+  hasReservedArchiveShipLogSection,
   createArchiveIntentTemplate,
   createArchivePlan,
   loadStoredArchivePlan,
+  loadCompletedArchiveAbort,
   persistArchivePlan,
   resolveArchiveSidecar,
+  type ArchiveApplyOptions,
   type ArchiveApplyResult,
+  type ArchiveAbortResult,
+  withStoredArchivePlanOperation,
   type ArchiveIntentV1,
   type ArchivePlan,
   type PreparedArchiveSpecAction,
+  type ArchiveSpecSyncPreparation,
 } from './archive-engine.js';
+import { getCliLocale } from './cli-locale.js';
 import { getGlobalDataDir } from './global-config.js';
-import { resolveArchiveDestination, resolveChangeWorkDir } from './change-work.js';
-import { ephemeraDir, evidenceDir, resolveExecutionRoot } from './file-placement.js';
-import { readProjectConfig, resolveArchiveTiming } from './project-config.js';
+import { resolveChangeWorkDir } from './change-work.js';
+import { ephemeraDir, evidenceDir } from './file-placement.js';
+import { resolveArchiveTiming } from './project-config.js';
 import {
   emitStoreRootBanner,
   isRootSelectionError,
-  isStoreSelectedRoot,
+  readResolvedProjectConfig,
+  resolvedExecutionProjectRoot,
   resolveOpenSpecRoot,
   toRootOutput,
   withStoreFlag,
   type ResolvedOpenSpecRoot,
 } from './root-selection.js';
-import { buildUpdatedSpec, findSpecUpdates } from './specs-apply.js';
+import {
+  analyzeSpecUpdates,
+  discoverDeltaSpecFiles,
+  findSpecUpdates,
+  SpecReconciliationError,
+  type SpecReconciliationIssue,
+} from './specs-apply.js';
+import { classifyStoreRootLayout } from './store/layout-write-guard.js';
+import { productionStoreLayoutMigrationDependencies } from './store/layout-migration/dependencies.js';
+import { queryLegacyCoordinatorConversion } from './store/layout-migration/receipt.js';
+import {
+  ChangeFinalizationModuleInstance,
+  isChangeFinalizationError,
+  inspectFinalizationApplyPlan,
+  resolveFinalizationOutcomeRequest,
+  type FinalizationResult,
+  type ImmutableFinalizationPlan,
+} from './store/finalization/index.js';
 import { Validator } from './validation/validator.js';
+
+interface PreparedSpecActions {
+  readonly actions: PreparedArchiveSpecAction[];
+  readonly specSync: ArchiveSpecSyncPreparation;
+}
+
+interface ArchiveDisposition {
+  readonly manualRecoveryAction?: { readonly guidance: string };
+  readonly abortCommand?: string;
+  readonly recoveryCommand?: string;
+}
+
+/**
+ * A Store dry-run may persist only a plan that the exact-token apply surface
+ * can actually admit. The sole merge gate is the one runtime assertion; every
+ * other blocker remains transaction-store neutral.
+ */
+export function canPersistStoreFinalizationPlan(
+  plan: ImmutableFinalizationPlan
+): boolean {
+  if (plan.alreadyComplete) return false;
+  if (plan.blockers.length === 0) return true;
+  if (plan.blockers.length !== 1) return false;
+  const [blocker] = plan.blockers;
+  return (
+    String(blocker?.code) === ARCHIVE_MERGE_CONFIRMATION_BLOCKER_CODE ||
+    blocker?.archiveBlocker?.code === ARCHIVE_MERGE_CONFIRMATION_BLOCKER_CODE
+  );
+}
+
+const FINALIZATION_PREVIEW_PRECONDITION_PREFIX =
+  'finalization-preview-v1:';
+const FINALIZATION_PREVIEW_TRANSACTION_ID_PLACEHOLDER = '<transaction-id>';
+const FINALIZATION_PREVIEW_CREATED_AT_PLACEHOLDER = '<created-at>';
+
+/**
+ * Stable admission material for the two-process management preview.
+ *
+ * Archive transaction ids, hashes, staging/journal paths, and generated archive
+ * timestamps are deliberately normalized because each CLI process creates a
+ * fresh transaction. Every other finalization and archive-plan field remains in
+ * the projection, including cleaner/sidecar authority, source identities,
+ * paths, actions, decisions, and the complete ordered blocker set. The server
+ * never reconstructs this value: inspect emits it and save validates the opaque
+ * bytes before persistence.
+ */
+export function storeFinalizationPreviewPrecondition(
+  plan: ImmutableFinalizationPlan
+): string {
+  const {
+    createdAt,
+    planId: _planId,
+    token: _token,
+    archivePlan,
+    ...finalizationDecision
+  } = plan;
+  const {
+    transactionId,
+    planHash: _planHash,
+    createdAt: archiveCreatedAt,
+    paths,
+    ...archiveDecision
+  } = archivePlan;
+  const {
+    stage: _stage,
+    journal: _journal,
+    ...stableArchivePaths
+  } = paths;
+  const projection = {
+    version: 1,
+    createdAtConsistent: createdAt === archiveCreatedAt,
+    finalization: finalizationDecision,
+    archive: { ...archiveDecision, paths: stableArchivePaths },
+  };
+  let canonical = canonicalJson(projection);
+  if (transactionId.length > 0) {
+    canonical = canonical
+      .split(transactionId)
+      .join(FINALIZATION_PREVIEW_TRANSACTION_ID_PLACEHOLDER);
+  }
+  for (const generatedAt of new Set([createdAt, archiveCreatedAt])) {
+    if (generatedAt.length > 0) {
+      canonical = canonical
+        .split(generatedAt)
+        .join(FINALIZATION_PREVIEW_CREATED_AT_PLACEHOLDER);
+    }
+  }
+  return (
+    FINALIZATION_PREVIEW_PRECONDITION_PREFIX +
+    createHash('sha256').update(canonical, 'utf8').digest('hex')
+  );
+}
+
+export function formatArchiveDispositionLine(
+  disposition: ArchiveDisposition,
+  locale: Parameters<typeof getLocaleCatalog>[0] = getCliLocale()
+): string | null {
+  const messages = getLocaleCatalog(locale).archiveAbort;
+  if (disposition.manualRecoveryAction !== undefined) {
+    return formatLocaleMessage(messages.manualRecoveryAction, {
+      action: disposition.manualRecoveryAction.guidance,
+    });
+  }
+  if (disposition.abortCommand !== undefined) {
+    return formatLocaleMessage(messages.abortAction, {
+      action: disposition.abortCommand,
+    });
+  }
+  if (disposition.recoveryCommand !== undefined) {
+    return formatLocaleMessage(messages.recoveryAction, {
+      action: disposition.recoveryCommand,
+    });
+  }
+  return null;
+}
+
+export function formatArchiveAbortBlockedLines(
+  result: Pick<
+    ArchiveAbortResult,
+    | 'blockers'
+    | 'effectivePhase'
+    | 'retainedPaths'
+    | 'associationPhase'
+    | 'manualRecoveryAction'
+    | 'recoveryCommand'
+  >,
+  locale: Parameters<typeof getLocaleCatalog>[0] = getCliLocale()
+): string[] {
+  const messages = getLocaleCatalog(locale).archiveAbort;
+  const lines = result.blockers.map(blocker =>
+    formatLocaleMessage(messages.blocker, {
+      code: blocker.code ?? blocker.operation,
+      message: blocker.message,
+      path: blocker.path,
+    })
+  );
+  lines.push(
+    formatLocaleMessage(messages.effectivePhase, {
+      phase: result.effectivePhase ?? messages.effectivePhaseUnknown,
+    })
+  );
+  if (result.retainedPaths === undefined || result.retainedPaths.length === 0) {
+    lines.push(messages.retainedPathsNone);
+  } else {
+    for (const retainedPath of result.retainedPaths) {
+      lines.push(
+        formatLocaleMessage(messages.retainedPath, {
+          path: retainedPath,
+        })
+      );
+    }
+  }
+  if (result.associationPhase === 'pending') {
+    lines.push(messages.associationPending);
+  }
+  const disposition = formatArchiveDispositionLine(result, locale);
+  if (disposition !== null) lines.push(disposition);
+  return lines;
+}
 
 function errorCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException | undefined)?.code;
@@ -56,16 +245,26 @@ async function listActiveChangeNames(changesDir: string): Promise<string[]> {
 export interface ArchiveOptions {
   yes?: boolean;
   skipSpecs?: boolean;
+  /** Store v2 finalization: the one explicitly declared terminal state. */
+  outcome?: string;
+  reason?: string;
+  by?: string;
+  byTargetLine?: string;
+  commit?: string;
   noValidate?: boolean;
   validate?: boolean;
   json?: boolean;
   store?: string;
   project?: string;
+  targetLine?: string;
   storePath?: string;
   keepEphemera?: boolean;
   dryRun?: boolean;
   savePlan?: boolean;
+  /** Internal Store-finalization compare-before-persist precondition. */
+  finalizationPreviewPrecondition?: string;
   applyPlan?: string;
+  abortPlan?: string;
   intentTemplate?: boolean;
   intentFile?: string;
 }
@@ -75,6 +274,195 @@ interface ArchiveDiagnostic {
   code: string;
   message: string;
   fix?: string;
+  issueId?: string;
+  storeId?: string;
+  forwarded?: false;
+  continuations?: readonly string[];
+}
+
+async function exactActiveChangeExists(
+  changesDir: string,
+  changeName: string,
+  lstat: typeof fs.lstat
+): Promise<boolean> {
+  try {
+    const stat = await lstat(path.join(changesDir, changeName));
+    return stat.isDirectory() && !stat.isSymbolicLink();
+  } catch (error) {
+    if (isMissingPathError(error)) return false;
+    throw error;
+  }
+}
+
+async function legacyCoordinatorDiagnostic(
+  root: ResolvedOpenSpecRoot,
+  changeName: string | undefined,
+  options: ArchiveOptions,
+  lstat: typeof fs.lstat
+): Promise<ArchiveDiagnostic | null> {
+  if (
+    changeName === undefined ||
+    options.intentTemplate === true ||
+    root.planningScope?.kind !== 'store-project'
+  ) {
+    return null;
+  }
+  // A real active Change always wins and remains subject to finalization.
+  if (await exactActiveChangeExists(root.changesDir, changeName, lstat)) return null;
+  const ref = root.planningScope.ref;
+  if (ref.mode !== 'store-project') return null;
+  const checkedOutRef = await productionStoreLayoutMigrationDependencies.git.currentRef(
+    ref.storeRoot
+  );
+  if (checkedOutRef === null) return null;
+  const result = await queryLegacyCoordinatorConversion(
+    productionStoreLayoutMigrationDependencies,
+    {
+      storeRoot: ref.storeRoot,
+      storeUid: ref.storeUid,
+      ref: checkedOutRef,
+      alias: changeName,
+    }
+  );
+  if (result.status !== 'found') return null;
+  const show = `rasen store issue show ${result.issueId} --store ${ref.storeId}`;
+  const state = `rasen store issue state ${result.issueId} --store ${ref.storeId} --state <resolved|dropped>`;
+  return {
+    severity: 'error',
+    code: 'legacy_coordinator_became_issue',
+    message:
+      `Legacy Change alias '${changeName}' was converted to Store Issue '${result.issueId}'. ` +
+      `This archive invocation executed no finalization option and changed neither resource.`,
+    fix: `Inspect it with '${show}'. If appropriate, declare Issue state separately with '${state}'; that is an independent operator action, not archive forwarding.`,
+    issueId: result.issueId,
+    storeId: ref.storeId,
+    forwarded: false,
+    continuations: [show, state],
+  };
+}
+
+function legacyFlatStoreArchiveRefusal(storeId: string): ArchiveDiagnostic {
+  return {
+    severity: 'error',
+    code: 'legacy_flat_store_requires_migration',
+    message:
+      'This Store still uses the legacy flat planning layout, which is read-only; archiving requires layout v2.',
+    fix: `Run 'rasen store migrate-layout ${storeId}' to migrate this Store, then retry.`,
+  };
+}
+
+/**
+ * The finalization options are meaningful only in a Store v2 project scope.
+ * Outside one they are REJECTED rather than silently ignored — archiving while
+ * discarding a declared outcome would be the worst possible reading of them.
+ */
+function inapplicableFinalizationOptions(
+  root: ResolvedOpenSpecRoot,
+  options: ArchiveOptions
+): ArchiveDiagnostic | null {
+  if (root.planningScope?.kind === 'store-project') return null;
+  const supplied = (
+    [
+      ['--outcome', options.outcome],
+      ['--reason', options.reason],
+      ['--by', options.by],
+      ['--by-target-line', options.byTargetLine],
+      ['--commit', options.commit],
+    ] as const
+  )
+    .filter(([, value]) => value !== undefined)
+    .map(([flag]) => flag);
+  if (supplied.length === 0) return null;
+  return {
+    severity: 'error',
+    code: 'finalization_scope_unsupported',
+    message: `${supplied.join(', ')} apply only when archiving a Change in a Store v2 project scope; this scope is '${root.planningScope?.kind ?? 'standalone'}'.`,
+    fix: 'Drop the finalization options. A standalone project and a legacy flat Store archive exactly as before, with no outcome required or recorded.',
+  };
+}
+
+/**
+ * The outcome request is decided FIRST in a Store v2 scope, before every other
+ * precondition, because it needs no filesystem or Git access at all and the
+ * contract says so: a missing outcome, or a contradictory combination, refuses
+ * before anything is read.
+ *
+ * The store-lifecycle journey found this ordering: archiving from a Store
+ * planning checkout reached `execution_authority_required` first, so a user who
+ * had also forgotten `--outcome` was told about the wrong thing and the spec's
+ * refusal was unreachable from that surface. The check is pure, so hoisting it
+ * costs nothing and makes the diagnostic deterministic.
+ */
+function declaredOutcomeDiagnostic(
+  root: ResolvedOpenSpecRoot,
+  options: ArchiveOptions
+): ArchiveDiagnostic | null {
+  if (root.planningScope?.kind !== 'store-project') return null;
+  if (options.intentTemplate === true || options.applyPlan !== undefined) return null;
+  try {
+    resolveFinalizationOutcomeRequest({
+      ...(options.outcome === undefined ? {} : { outcome: options.outcome }),
+      ...(options.reason === undefined ? {} : { reason: options.reason }),
+      ...(options.by === undefined ? {} : { by: options.by }),
+      ...(options.byTargetLine === undefined ? {} : { byTargetLine: options.byTargetLine }),
+      ...(options.commit === undefined ? {} : { commit: options.commit }),
+    });
+    return null;
+  } catch (error) {
+    if (!isChangeFinalizationError(error)) throw error;
+    return toArchiveDiagnostic(error);
+  }
+}
+
+async function storeFinalizationDiagnostic(
+  root: ResolvedOpenSpecRoot
+): Promise<ArchiveDiagnostic | null> {
+  // A Store v2 project scope is no longer refused here: it routes to the
+  // change-finalization Module, which requires one explicitly declared outcome.
+  //
+  // A legacy flat Store's planning tree is READ-ONLY until it is migrated:
+  // archiving writes into `rasen/changes/archive`, a namespace layout v2
+  // retires, and the entry would then have to be relocated a second time by the
+  // migration. The refusal ships together with the migration that makes it
+  // survivable (`store-layout-v2-migration`, tasks 10b.1-10b.3).
+  if (root.planningScope?.kind === 'legacy-store') {
+    const storeId =
+      root.planningScope.ref.mode === 'legacy-store'
+        ? root.planningScope.ref.storeId
+        : '<store-id>';
+    return legacyFlatStoreArchiveRefusal(storeId);
+  }
+  if (root.planningScope !== undefined) return null;
+
+  // No scope description at all. That is not "not a Store": ONLY the authoring
+  // resolution attaches one, and `resolveOpenSpecRoot` deliberately hands every
+  // legacy flat Store back through the frozen compatibility adapter, which
+  // attaches none — through `--store`, through a `store:` pointer, and from
+  // inside the Store checkout alike. Keying the refusal on the scope alone left
+  // it unreachable: `rasen new change` refused while `rasen archive` still
+  // wrote into the flat tree. Classify the root's own Store declaration
+  // instead, which is the same fact the resolver would have reported.
+  const classification = await classifyStoreRootLayout(root.path);
+  return classification.kind === 'legacy-flat'
+    ? legacyFlatStoreArchiveRefusal(root.storeId ?? classification.storeId ?? '<store-id>')
+    : null;
+}
+
+/** The planning scope facts recorded on every plan this build creates. */
+function archivePlanScope(root: ResolvedOpenSpecRoot): ArchivePlan['scope'] {
+  const ref = root.planningScope?.ref;
+  if (root.planningScope === undefined || ref === undefined) {
+    return { kind: 'standalone' };
+  }
+  return {
+    kind: root.planningScope.kind,
+    ...(ref.mode === 'standalone' || ref.storeUid === undefined
+      ? {}
+      : { storeUid: ref.storeUid }),
+    ...('projectId' in ref && ref.projectId !== undefined
+      ? { projectId: ref.projectId }
+      : {}),
+  };
 }
 
 interface ArchiveResult {
@@ -89,14 +477,39 @@ interface ArchiveResult {
   ephemeraAbortReason?: string;
   dryRun?: boolean;
   specSyncPlan?: Array<{ capability: string; status: string }>;
+  /** Store v2 only: the finalization facts a landed or passive archive reports. */
+  finalization?: {
+    outcome: string;
+    changeInstanceId: string;
+    workspacePairId: string;
+    targetLineId: string;
+    publishedEntry: string;
+    specSyncApplied: boolean;
+    specSyncActionCount: number;
+    provenCommit: string | null;
+    codeRef: string | null;
+    codeRefOid: string | null;
+    associationPhase?: 'applied' | 'no-op' | 'pending';
+    effectivePhase?: FinalizationResult['effectivePhase'];
+    retainedPaths?: readonly string[];
+    recoveryCommand?: string;
+    abortCommand?: string;
+    manualRecoveryAction?: ArchiveApplyResult['manualRecoveryAction'];
+    alreadyComplete?: boolean;
+  };
+  finalizationPlan?: ImmutableFinalizationPlan;
   plan?: ArchivePlan;
   transactionId?: string;
   planHash?: string;
   journalPath?: string;
   blockers?: ArchivePlan['blockers'];
   planToken?: string;
+  previewPrecondition?: string;
   status?: ArchiveApplyResult['status'];
   result?: ArchiveApplyResult;
+  recoveryCommand?: string;
+  abortCommand?: string;
+  manualRecoveryAction?: ArchiveApplyResult['manualRecoveryAction'];
   mode?: 'intent-template' | 'plan' | 'apply';
   intent?: ArchiveIntentV1;
   compatibilityDiagnostic?: ArchiveDiagnostic;
@@ -117,48 +530,79 @@ class ArchiveBlockedError extends Error {
   }
 }
 
+/**
+ * Does the change carry any currently discoverable delta specs? Discovery
+ * issues are already retained as typed preparation blockers; this presence
+ * probe must not replace that aggregate with a second top-level exception.
+ * The engine's exhaustive fingerprint/manifest gate independently fail-closes
+ * files that appear or become invalid after preparation.
+ */
+async function changeHasDeltaSpecs(changeDir: string): Promise<boolean> {
+  const discovery = await discoverDeltaSpecFiles(changeDir);
+  return discovery.files.length > 0;
+}
+
+function finalizationFacts(
+  result: FinalizationResult
+): NonNullable<ArchiveResult['finalization']> {
+  return {
+    outcome: result.outcome,
+    changeInstanceId: result.changeInstanceId,
+    workspacePairId: result.workspacePairId,
+    targetLineId: result.targetLineId,
+    publishedEntry: result.publishedEntry,
+    specSyncApplied: result.specSyncApplied,
+    specSyncActionCount: result.specSyncActionCount,
+    provenCommit: result.provenCommit,
+    codeRef: result.codeRef,
+    codeRefOid: result.codeRefOid,
+    associationPhase: result.associationPhase,
+    ...(result.effectivePhase === undefined
+      ? {}
+      : { effectivePhase: result.effectivePhase }),
+    ...(result.retainedPaths === undefined
+      ? {}
+      : { retainedPaths: result.retainedPaths }),
+    ...(result.recoveryCommand === undefined
+      ? {}
+      : { recoveryCommand: result.recoveryCommand }),
+    ...(result.abortCommand === undefined
+      ? {}
+      : { abortCommand: result.abortCommand }),
+    ...(result.manualRecoveryAction === undefined
+      ? {}
+      : { manualRecoveryAction: result.manualRecoveryAction }),
+  };
+}
+
 function toArchiveDiagnostic(error: unknown): ArchiveDiagnostic {
   if (error instanceof ArchiveBlockedError) return error.diagnostic;
   if (isRootSelectionError(error)) return error.diagnostic;
+  if (isChangeFinalizationError(error)) {
+    return {
+      severity: 'error',
+      code: error.finalizationCode,
+      message: error.message,
+      ...(error.diagnostic.fix === undefined ? {} : { fix: error.diagnostic.fix }),
+    };
+  }
+  const code = errorCode(error);
   return {
     severity: 'error',
-    code: 'archive_error',
+    code: code?.startsWith('archive_') ? code : 'archive_error',
     message: error instanceof Error ? error.message : String(error),
   };
 }
 
-async function readShipLogDeliveryMode(
-  workDir: string | null,
-  changeDir: string
-): Promise<'pr' | 'push' | 'local' | null> {
-  const candidates = [
-    path.join(evidenceDir(changeDir), 'ship-log.md'),
-    ...(workDir ? [path.join(workDir, 'ship-log.md')] : []),
-    path.join(changeDir, 'ship-log.md'),
-  ];
-  for (const candidate of candidates) {
-    let content: string;
-    try {
-      content = await fs.readFile(candidate, 'utf8');
-    } catch (error) {
-      if (isMissingPathError(error)) continue;
-      throw new ArchiveBlockedError(
-        'archive_ship_log_read_failed',
-        `Unable to read ship log at ${candidate}: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
-    }
-    const match = content.match(/\*\*Mode:\*\*\s*(pr|push|local)\b/);
-    return match ? (match[1] as 'pr' | 'push' | 'local') : null;
-  }
-  return null;
+interface ShipLogInspection {
+  shipLog: ArchivePlan['shipLog'];
+  deliveryMode: ArchivePlan['decisions']['timing']['deliveryMode'];
 }
 
-async function resolveShipLogPlan(
+async function inspectShipLog(
   workDir: string | null,
   changeDir: string
-): Promise<ArchivePlan['shipLog']> {
+): Promise<ShipLogInspection> {
   const candidates = [
     path.join(evidenceDir(changeDir), 'ship-log.md'),
     ...(workDir ? [path.join(workDir, 'ship-log.md')] : []),
@@ -167,13 +611,20 @@ async function resolveShipLogPlan(
   for (const candidate of candidates) {
     try {
       const content = await fs.readFile(candidate);
+      const text = content.toString('utf8');
+      const modeMatch = text.match(/\*\*Mode:\*\*\s*(pr|push|local)\b/);
       return {
-        source: candidate,
-        sha256: createHash('sha256').update(content).digest('hex'),
-        recordedCommit:
-          content
-            .toString('utf8')
-            .match(/^\*\*Commit:\*\*\s*([0-9a-f]{7,64})\s*$/im)?.[1] ?? null,
+        shipLog: {
+          source: candidate,
+          sha256: createHash('sha256').update(content).digest('hex'),
+          recordedCommit:
+            text.match(/^\*\*Commit:\*\*\s*([0-9a-f]{7,64})\s*$/im)?.[1] ??
+            null,
+          reservedSection: hasReservedArchiveShipLogSection(text),
+        },
+        deliveryMode: modeMatch
+          ? (modeMatch[1] as 'pr' | 'push' | 'local')
+          : null,
       };
     } catch (error) {
       if (isMissingPathError(error)) continue;
@@ -185,12 +636,32 @@ async function resolveShipLogPlan(
       );
     }
   }
-  return { source: null, sha256: null, recordedCommit: null };
+  return {
+    shipLog: {
+      source: null,
+      sha256: null,
+      recordedCommit: null,
+      reservedSection: false,
+    },
+    deliveryMode: null,
+  };
+}
+
+export interface ArchiveCommandDependencies {
+  readonly lstat: typeof fs.lstat;
 }
 
 export class ArchiveCommand {
+  constructor(
+    private readonly dependencies: ArchiveCommandDependencies = { lstat: fs.lstat }
+  ) {}
+
   async execute(changeName?: string, options: ArchiveOptions = {}): Promise<void> {
     const json = !!options.json;
+    if (options.abortPlan !== undefined) {
+      await this.abortStoredPlan(changeName, options, json);
+      return;
+    }
     if (options.applyPlan !== undefined) {
       await this.applyStoredPlan(changeName, options, json);
       return;
@@ -206,11 +677,26 @@ export class ArchiveCommand {
       }
       throw error;
     }
+    if (
+      options.finalizationPreviewPrecondition !== undefined &&
+      (!options.dryRun || !options.savePlan)
+    ) {
+      const error = new ArchiveBlockedError(
+        'archive_option_conflict',
+        '--finalization-preview-precondition is valid only with --dry-run --save-plan.'
+      );
+      if (json) {
+        this.printJsonFailure(undefined, error.diagnostic);
+        return;
+      }
+      throw error;
+    }
     let root: ResolvedOpenSpecRoot;
     try {
       root = await resolveOpenSpecRoot({
         ...(options.store !== undefined ? { store: options.store } : {}),
         ...(options.project !== undefined ? { project: options.project } : {}),
+        ...(options.targetLine !== undefined ? { targetLine: options.targetLine } : {}),
         ...(options.storePath !== undefined ? { storePath: options.storePath } : {}),
       });
     } catch (error) {
@@ -219,6 +705,49 @@ export class ArchiveCommand {
         return;
       }
       throw error;
+    }
+
+    const conversionDiagnostic = await legacyCoordinatorDiagnostic(
+      root,
+      changeName,
+      options,
+      this.dependencies.lstat
+    );
+    if (conversionDiagnostic !== null) {
+      if (json) {
+        this.printJsonFailure(root, conversionDiagnostic);
+        return;
+      }
+      throw new ArchiveBlockedError(
+        conversionDiagnostic.code,
+        `[${conversionDiagnostic.code}] ${conversionDiagnostic.message}`,
+        conversionDiagnostic.fix
+      );
+    }
+
+    const finalizationDiagnostic =
+      (options.finalizationPreviewPrecondition !== undefined &&
+      root.planningScope?.kind !== 'store-project'
+        ? {
+            severity: 'error' as const,
+            code: 'archive_option_conflict',
+            message:
+              '--finalization-preview-precondition is reserved for Store project finalization saves.',
+          }
+        : null) ??
+      inapplicableFinalizationOptions(root, options) ??
+      declaredOutcomeDiagnostic(root, options) ??
+      (await storeFinalizationDiagnostic(root));
+    if (finalizationDiagnostic) {
+      if (json) {
+        this.printJsonFailure(root, finalizationDiagnostic);
+        return;
+      }
+      throw new ArchiveBlockedError(
+        finalizationDiagnostic.code,
+        finalizationDiagnostic.message,
+        finalizationDiagnostic.fix
+      );
     }
 
     if (json) {
@@ -279,6 +808,135 @@ export class ArchiveCommand {
     await this.run(changeName, options, root, false);
   }
 
+  private async abortStoredPlan(
+    changeName: string | undefined,
+    options: ArchiveOptions,
+    json: boolean
+  ): Promise<void> {
+    const messages = getLocaleCatalog(getCliLocale()).archiveAbort;
+    const conflictingOptions = [
+      changeName !== undefined,
+      options.applyPlan !== undefined,
+      !!options.dryRun,
+      !!options.savePlan,
+      options.finalizationPreviewPrecondition !== undefined,
+      !!options.intentTemplate,
+      options.intentFile !== undefined,
+      !!options.skipSpecs,
+      !!options.noValidate,
+      options.validate === false,
+      options.outcome !== undefined,
+      options.reason !== undefined,
+      options.by !== undefined,
+      options.byTargetLine !== undefined,
+      options.commit !== undefined,
+      options.store !== undefined,
+      options.project !== undefined,
+      options.targetLine !== undefined,
+      options.storePath !== undefined,
+      !!options.keepEphemera,
+    ];
+    if (conflictingOptions.some(Boolean)) {
+      const diagnostic = new ArchiveBlockedError(
+        'archive_option_conflict',
+        messages.optionConflict
+      ).diagnostic;
+      if (json) {
+        this.printJsonFailure(undefined, diagnostic);
+        return;
+      }
+      throw new ArchiveBlockedError(diagnostic.code, diagnostic.message);
+    }
+    if (options.yes !== true) {
+      const diagnostic = new ArchiveBlockedError(
+        'archive_abort_confirmation_required',
+        messages.confirmationRequired,
+        formatLocaleMessage(messages.confirmationFix, {
+          token: options.abortPlan!,
+        })
+      ).diagnostic;
+      if (json) {
+        this.printJsonFailure(undefined, diagnostic);
+        return;
+      }
+      throw new ArchiveBlockedError(
+        diagnostic.code,
+        diagnostic.message,
+        diagnostic.fix
+      );
+    }
+
+    try {
+      const globalDataDir = getGlobalDataDir();
+      let result: ArchiveAbortResult;
+      try {
+        const plan = await loadStoredArchivePlan(
+          options.abortPlan!,
+          globalDataDir
+        );
+        result =
+          plan.finalization === undefined
+            ? await withStoredArchivePlanOperation(
+                plan,
+                globalDataDir,
+                'abort',
+                () => abortArchivePlan(plan, globalDataDir)
+              )
+            : await ChangeFinalizationModuleInstance.abortStoredPlan(
+                plan,
+                globalDataDir
+              );
+      } catch (error) {
+        if (errorCode(error) !== 'ENOENT') throw error;
+        const completed = await loadCompletedArchiveAbort(
+          options.abortPlan!,
+          globalDataDir
+        );
+        if (completed === null) throw error;
+        result = completed;
+      }
+      if (result.status === 'blocked') process.exitCode = 1;
+      if (json) {
+        console.log(
+          JSON.stringify({ archive: { mode: 'abort', result } }, null, 2)
+        );
+        return;
+      }
+      if (result.status === 'aborted') {
+        console.log(
+          formatLocaleMessage(messages.aborted, {
+            transactionId: result.transactionId,
+          })
+        );
+      } else if (result.status === 'already-aborted') {
+        console.log(
+          formatLocaleMessage(messages.alreadyAborted, {
+            transactionId: result.transactionId,
+          })
+        );
+      } else {
+        console.log(
+          formatLocaleMessage(messages.blocked, {
+            transactionId: result.transactionId,
+          })
+        );
+        for (const line of formatArchiveAbortBlockedLines(result)) {
+          console.log(line);
+        }
+      }
+      if (result.status !== 'blocked' && result.associationPhase === 'pending') {
+        console.log(messages.associationPending);
+      }
+    } catch (error) {
+      const diagnostic = toArchiveDiagnostic(error);
+      if (json) {
+        this.printJsonFailure(undefined, diagnostic);
+        return;
+      }
+      throw error;
+    }
+  }
+
   private async applyStoredPlan(
     changeName: string | undefined,
     options: ArchiveOptions,
@@ -288,13 +946,20 @@ export class ArchiveCommand {
       changeName !== undefined,
       !!options.dryRun,
       !!options.savePlan,
+      options.finalizationPreviewPrecondition !== undefined,
       !!options.intentTemplate,
       options.intentFile !== undefined,
       !!options.skipSpecs,
       !!options.noValidate,
       options.validate === false,
+      options.outcome !== undefined,
+      options.reason !== undefined,
+      options.by !== undefined,
+      options.byTargetLine !== undefined,
+      options.commit !== undefined,
       options.store !== undefined,
       options.project !== undefined,
+      options.targetLine !== undefined,
       options.storePath !== undefined,
       !!options.keepEphemera,
     ];
@@ -311,13 +976,71 @@ export class ArchiveCommand {
     }
 
     try {
-      const plan = await loadStoredArchivePlan(
-        options.applyPlan!,
-        getGlobalDataDir()
+      const globalDataDir = getGlobalDataDir();
+      let plan: ArchivePlan;
+      try {
+        plan = await loadStoredArchivePlan(
+          options.applyPlan!,
+          globalDataDir
+        );
+      } catch (error) {
+        if (errorCode(error) !== 'ENOENT') throw error;
+        const completedAbort = await loadCompletedArchiveAbort(
+          options.applyPlan!,
+          globalDataDir
+        );
+        if (completedAbort === null) throw error;
+        const aborted = new Error(
+          getLocaleCatalog(getCliLocale()).archiveAbort.applyAborted
+        );
+        (aborted as NodeJS.ErrnoException).code = 'archive_plan_aborted';
+        throw aborted;
+      }
+      // Store finalization owns this same operation gate internally so direct
+      // and saved-plan apply share one lock/tombstone path without nesting.
+      if (plan.finalization !== undefined) {
+        const finalization = await ChangeFinalizationModuleInstance.applyStoredPlan(
+          plan,
+          undefined,
+          {
+            mergeConfirmed: options.yes === true,
+          }
+        );
+        if (finalization.status !== 'complete') process.exitCode = 1;
+        if (json) {
+          console.log(
+            JSON.stringify({ archive: { mode: 'apply', finalization } }, null, 2)
+          );
+          return;
+        }
+        console.log(
+          finalization.status === 'complete'
+            ? `Change '${finalization.changeId}' finalized as '${finalization.outcome}' at ${finalization.publishedEntry}.`
+            : `Finalization did not complete (${finalization.status}); journal: ${finalization.journalPath}`
+        );
+        for (const item of finalization.blockers) {
+          console.log(`${item.code}: ${item.message}`);
+        }
+        const disposition = formatArchiveDispositionLine(finalization);
+        if (disposition !== null) console.log(disposition);
+        return;
+      }
+
+      const result = await withStoredArchivePlanOperation(
+        plan,
+        globalDataDir,
+        'apply',
+        () =>
+          this.applyPlannedArchive(plan, {
+            assertions: { mergeConfirmed: options.yes === true },
+          })
       );
-      const result = await this.applyPlannedArchive(plan);
       if (result.status !== 'complete') {
-        if (!result.manualRecoveryAction) {
+        if (
+          result.recoveryCommand === undefined &&
+          result.status === 'blocked' &&
+          inspectArchiveApplyPlan(plan, { mergeConfirmed: true }).applicable
+        ) {
           result.recoveryCommand =
             `rasen archive --apply-plan ${options.applyPlan} --yes` +
             (json ? ' --json' : '');
@@ -340,11 +1063,8 @@ export class ArchiveCommand {
         for (const item of result.blockers) {
           console.log(`${item.operation}: ${item.message}`);
         }
-        if (result.manualRecoveryAction) {
-          console.log(`Manual recovery: ${result.manualRecoveryAction.guidance}`);
-        } else {
-          console.log(`Recovery: ${result.recoveryCommand}`);
-        }
+        const disposition = formatArchiveDispositionLine(result);
+        if (disposition !== null) console.log(disposition);
       }
     } catch (error) {
       const diagnostic = toArchiveDiagnostic(error);
@@ -376,8 +1096,11 @@ export class ArchiveCommand {
     process.exitCode = 1;
   }
 
-  protected applyPlannedArchive(plan: ArchivePlan): Promise<ArchiveApplyResult> {
-    return applyArchive(plan);
+  protected applyPlannedArchive(
+    plan: ArchivePlan,
+    options: ArchiveApplyOptions = {}
+  ): Promise<ArchiveApplyResult> {
+    return applyArchive(plan, options);
   }
 
   private async failHuman(message: string, abort = true): Promise<null> {
@@ -403,7 +1126,7 @@ export class ArchiveCommand {
           withStoreFlag(root, 'rasen archive <change-name> --json')
         );
       }
-      const selected = await this.selectChange(changesDir);
+      const selected = await this.selectChange(root);
       if (!selected) {
         console.log('No change selected. Aborting.');
         return null;
@@ -456,7 +1179,7 @@ export class ArchiveCommand {
       };
     }
 
-    const archiveParent = resolveArchiveDestination(root.path).archiveDir;
+    const archiveParent = root.archiveDir;
     const planningBlockers: ArchivePlan['blockers'] = [];
     let workDir: string | null = null;
     try {
@@ -471,7 +1194,7 @@ export class ArchiveCommand {
     }
     let timing: ArchivePlan['decisions']['timing']['mode'] = 'on-merge';
     try {
-      timing = resolveArchiveTiming(readProjectConfig(root.path));
+      timing = resolveArchiveTiming(readResolvedProjectConfig(root));
     } catch (error) {
       planningBlockers.push({
         operation: 'timing',
@@ -480,17 +1203,28 @@ export class ArchiveCommand {
         message: error instanceof Error ? error.message : String(error),
       });
     }
-    let deliveryMode: ArchivePlan['decisions']['timing']['deliveryMode'] = null;
-    try {
-      deliveryMode = await readShipLogDeliveryMode(workDir, changeDir);
-    } catch (error) {
-      planningBlockers.push({
-        operation: 'timing',
-        path: changeDir,
-        ...(errorCode(error) ? { code: errorCode(error) } : {}),
-        message: error instanceof Error ? error.message : String(error),
-      });
+    let shipLogInspection: ShipLogInspection = {
+      shipLog: {
+        source: null,
+        sha256: null,
+        recordedCommit: null,
+        reservedSection: false,
+      },
+      deliveryMode: null,
+    };
+    if (sourceAvailable) {
+      try {
+        shipLogInspection = await inspectShipLog(workDir, changeDir);
+      } catch (error) {
+        planningBlockers.push({
+          operation: 'evidence',
+          path: changeDir,
+          ...(errorCode(error) ? { code: errorCode(error) } : {}),
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
+    const deliveryMode = shipLogInspection.deliveryMode;
     if (
       !options.yes &&
       timing === 'on-merge' &&
@@ -512,7 +1246,11 @@ export class ArchiveCommand {
       validationDecision = 'blocked';
     } else if (!skipValidation) {
       try {
-        const validationPassed = await this.validateActiveChange(changeDir, json);
+        const validationPassed = await this.validateActiveChange(
+          changeDir,
+          root.specsDir,
+          json
+        );
         if (!validationPassed) {
           validationDecision = 'blocked';
           compatibilityDiagnostic ??= new ArchiveBlockedError(
@@ -560,7 +1298,8 @@ export class ArchiveCommand {
       progress = await getTaskProgressForChange(
         changesDir,
         changeName,
-        path.resolve(changesDir, '..', '..')
+        path.resolve(changesDir, '..', '..'),
+        root.schemasDir
       );
     } catch (error) {
       planningBlockers.push({
@@ -599,12 +1338,17 @@ export class ArchiveCommand {
     }
 
     const preparationBlockers: ArchivePlan['blockers'] = [...planningBlockers];
-    let specActions: PreparedArchiveSpecAction[] = [];
+    const reconciliationIssues: SpecReconciliationIssue[] = [];
+    let preparedSpecs: PreparedSpecActions = {
+      actions: [],
+      specSync: {
+        mode: sourceAvailable ? 'no-deltas' : 'passive',
+        deltaSources: [],
+      },
+    };
     try {
-      if (!sourceAvailable) {
-        specActions = [];
-      } else {
-        specActions = await this.prepareSpecActions(
+      if (sourceAvailable) {
+        preparedSpecs = await this.prepareSpecActions(
           changeDir,
           root.specsDir,
           changeName,
@@ -615,26 +1359,53 @@ export class ArchiveCommand {
         );
       }
     } catch (error) {
-      const diagnostic = toArchiveDiagnostic(error);
-      preparationBlockers.push({
-        operation: 'spec',
-        path: changeDir,
-        code: diagnostic.code,
-        message:
-          diagnostic.code === 'archive_spec_validation_failed'
-            ? diagnostic.message.replace(/ No files were changed\.$/, '')
-            : diagnostic.message,
-      });
-      if (error instanceof ArchiveBlockedError) {
-        compatibilityDiagnostic ??= diagnostic;
+      if (error instanceof SpecReconciliationError) {
+        reconciliationIssues.push(...error.issues);
+        for (const issue of error.issues) {
+          preparationBlockers.push({
+            operation: 'spec',
+            path: issue.source,
+            code: issue.code,
+            message: issue.message,
+          });
+        }
+        const [firstIssue] = error.issues;
+        compatibilityDiagnostic ??= {
+          severity: 'error',
+          code: 'archive_spec_update_failed',
+          message: firstIssue?.message ?? error.message,
+          fix: 'Fix the change delta specs and rerun. No files were changed.',
+        };
+      } else {
+        const diagnostic = toArchiveDiagnostic(error);
+        preparationBlockers.push({
+          operation: 'spec',
+          path: changeDir,
+          code: diagnostic.code,
+          message:
+            diagnostic.code === 'archive_spec_validation_failed'
+              ? diagnostic.message.replace(/ No files were changed\.$/, '')
+              : diagnostic.message,
+        });
+        if (error instanceof ArchiveBlockedError) {
+          compatibilityDiagnostic ??= diagnostic;
+        }
       }
-      specActions = [];
+      preparedSpecs = {
+        actions: [],
+        specSync: { mode: 'no-deltas', deltaSources: [] },
+      };
     }
+    const specActions = preparedSpecs.actions;
 
-    const executionRoot = resolveExecutionRoot(root.path, {
-      storeSelected: isStoreSelectedRoot(root),
-      cwd: process.cwd(),
-    });
+    const executionRoot = resolvedExecutionProjectRoot(root);
+    if (executionRoot === undefined) {
+      throw new ArchiveBlockedError(
+        'execution_authority_required',
+        'Archive requires a verified execution checkout; planning scope alone is not writable.',
+        'Run from an associated execution worktree and retry.'
+      );
+    }
     const sidecar = sourceAvailable
       ? await resolveArchiveSidecar(
           changeDir,
@@ -656,27 +1427,12 @@ export class ArchiveCommand {
           probes: [],
           blockers: [],
         };
-    let shipLog: ArchivePlan['shipLog'] = {
-      source: null,
-      sha256: null,
-      recordedCommit: null,
-    };
-    if (sourceAvailable) {
-      try {
-        shipLog = await resolveShipLogPlan(workDir, changeDir);
-      } catch (error) {
-        preparationBlockers.push({
-          operation: 'evidence',
-          path: changeDir,
-          ...(errorCode(error) ? { code: errorCode(error) } : {}),
-          message: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-    const plan = await createArchivePlan({
+    const shipLog = shipLogInspection.shipLog;
+    const planInputs = {
       change: changeName,
       planningRoot: root.path,
       executionRoot,
+      scope: archivePlanScope(root),
       activePath: changeDir,
       archiveParent,
       ephemeraPath: ephemeraDir(executionRoot, changeName),
@@ -691,26 +1447,52 @@ export class ArchiveCommand {
       timing: {
         mode: timing,
         deliveryMode,
-        override: !!options.yes,
+        override: false,
       },
       specActions,
+      specSync: preparedSpecs.specSync,
       preparationBlockers,
+      reconciliationIssues,
       sidecar,
       shipLog,
-    });
+    } as const;
+
+    if (root.planningScope?.kind === 'store-project') {
+      return this.runStoreV2Finalization(
+        changeName,
+        options,
+        root,
+        json,
+        planInputs,
+        sourceAvailable ? await changeHasDeltaSpecs(changeDir) : false
+      );
+    }
+
+    const plan = await createArchivePlan(planInputs);
 
     if (options.dryRun) {
-      const planToken = options.savePlan
-        ? await persistArchivePlan(plan, getGlobalDataDir())
-        : undefined;
+      const canSave = !plan.blockers.some(
+        blocker => blocker.code === 'archive_ship_log_reserved_section'
+      );
+      const planToken =
+        options.savePlan && canSave
+          ? await persistArchivePlan(plan, getGlobalDataDir())
+          : undefined;
       return this.renderDryRun(plan, json, planToken);
     }
-    if (!plan.complete || plan.blockers.length > 0) {
-      const message = plan.blockers
+    const applyOptions: ArchiveApplyOptions = {
+      assertions: { mergeConfirmed: options.yes === true },
+    };
+    const applyInspection = inspectArchiveApplyPlan(
+      plan,
+      applyOptions.assertions
+    );
+    if (!applyInspection.applicable) {
+      const message = applyInspection.blockers
         .map(item => `${item.operation}: ${item.message}`)
         .join('; ');
       if (!json) {
-        const targetBlocker = plan.blockers.find(
+        const targetBlocker = applyInspection.blockers.find(
           item => item.operation === 'target-lstat' && item.code === 'EEXIST'
         );
         if (targetBlocker) {
@@ -738,13 +1520,29 @@ export class ArchiveCommand {
         transactionId: plan.transactionId,
         planHash: plan.planHash,
         journalPath: plan.paths.journal,
-        blockers: plan.blockers,
+        blockers: applyInspection.blockers,
         status: 'blocked',
         ...(compatibilityDiagnostic ? { compatibilityDiagnostic } : {}),
       };
     }
 
-    const result = await this.applyPlannedArchive(plan);
+    const globalDataDir = getGlobalDataDir();
+    const persistedPlanToken = await persistArchivePlan(plan, globalDataDir);
+    const result = await withStoredArchivePlanOperation(
+      plan,
+      globalDataDir,
+      'apply',
+      () => this.applyPlannedArchive(plan, applyOptions)
+    );
+    if (
+      result.status === 'recoverable' &&
+      result.manualRecoveryAction === undefined &&
+      result.recoveryCommand === undefined
+    ) {
+      result.recoveryCommand =
+        `rasen archive --apply-plan ${persistedPlanToken}` +
+        (applyOptions.assertions?.mergeConfirmed === true ? ' --yes' : '');
+    }
     if (result.status !== 'complete') {
       const message =
         result.blockers.map(item => `${item.operation}: ${item.message}`).join('; ') ||
@@ -765,13 +1563,21 @@ export class ArchiveCommand {
           blockers: result.blockers,
           status: result.status,
           result,
+          ...(result.recoveryCommand === undefined
+            ? {}
+            : { recoveryCommand: result.recoveryCommand }),
+          ...(result.abortCommand === undefined
+            ? {}
+            : { abortCommand: result.abortCommand }),
+          ...(result.manualRecoveryAction === undefined
+            ? {}
+            : { manualRecoveryAction: result.manualRecoveryAction }),
         };
       }
       console.log(message);
       console.log(`Recovery journal: ${result.journalPath}`);
-      if (result.manualRecoveryAction) {
-        console.log(`Manual recovery: ${result.manualRecoveryAction.guidance}`);
-      }
+      const disposition = formatArchiveDispositionLine(result);
+      if (disposition !== null) console.log(disposition);
       process.exitCode = 1;
       return null;
     }
@@ -818,7 +1624,288 @@ export class ArchiveCommand {
     };
   }
 
-  private async validateActiveChange(changeDir: string, json: boolean): Promise<boolean> {
+  /**
+   * The Store v2 arm. Everything above this point is archive PREPARATION, which
+   * is scope-independent; the outcome, the proof, the record, the destination,
+   * the locks, and the association all live in the finalization Module. This
+   * method formats and forwards — it holds no outcome logic.
+   */
+  private async runStoreV2Finalization(
+    changeName: string,
+    options: ArchiveOptions,
+    root: ResolvedOpenSpecRoot,
+    json: boolean,
+    planInputs: {
+      readonly planningRoot: string;
+      readonly executionRoot: string;
+      readonly scope: ArchivePlan['scope'];
+      readonly activePath: string;
+      readonly archiveParent: string;
+      readonly ephemeraPath: string;
+      readonly date: string;
+      readonly keepEphemera: boolean;
+      readonly validation: ArchivePlan['decisions']['validation'];
+      readonly tasks: ArchivePlan['decisions']['tasks'];
+      readonly timing: ArchivePlan['decisions']['timing'];
+      readonly specActions: PreparedArchiveSpecAction[];
+      readonly specSync: ArchiveSpecSyncPreparation;
+      readonly preparationBlockers: ArchivePlan['blockers'];
+      readonly reconciliationIssues: readonly SpecReconciliationIssue[];
+      readonly sidecar: Awaited<ReturnType<typeof resolveArchiveSidecar>>;
+      readonly shipLog: ArchivePlan['shipLog'];
+    },
+    hasDeltaSpecs: boolean
+  ): Promise<ArchiveResult | null> {
+    const selection = root.planningScope?.followupSelection;
+    const finalizationPlan = await ChangeFinalizationModuleInstance.plan({
+      changeId: changeName,
+      outcome: {
+        ...(options.outcome === undefined ? {} : { outcome: options.outcome }),
+        ...(options.reason === undefined ? {} : { reason: options.reason }),
+        ...(options.by === undefined ? {} : { by: options.by }),
+        ...(options.byTargetLine === undefined
+          ? {}
+          : { byTargetLine: options.byTargetLine }),
+        ...(options.commit === undefined ? {} : { commit: options.commit }),
+      },
+      skipSpecs:
+        planInputs.specSync.mode === 'skip'
+          ? true
+          : options.skipSpecs,
+      startPath: planInputs.executionRoot,
+      ...(selection === undefined ? {} : { selection }),
+      archive: {
+        planningRoot: planInputs.planningRoot,
+        executionRoot: planInputs.executionRoot,
+        activePath: planInputs.activePath,
+        archiveParent: planInputs.archiveParent,
+        ephemeraPath: planInputs.ephemeraPath,
+        date: planInputs.date,
+        keepEphemera: planInputs.keepEphemera,
+        validation: planInputs.validation,
+        tasks: planInputs.tasks,
+        timing: planInputs.timing,
+        specActionCandidates: planInputs.specActions,
+        specSync: planInputs.specSync,
+        hasDeltaSpecs,
+        sidecar: planInputs.sidecar,
+        shipLog: planInputs.shipLog,
+        scope: planInputs.scope,
+        preparationBlockers: planInputs.preparationBlockers,
+        reconciliationIssues: planInputs.reconciliationIssues,
+      },
+    });
+
+    if (options.dryRun) {
+      const canSave = canPersistStoreFinalizationPlan(finalizationPlan);
+      const previewPrecondition =
+        storeFinalizationPreviewPrecondition(finalizationPlan);
+      if (
+        options.savePlan &&
+        options.finalizationPreviewPrecondition !== undefined &&
+        options.finalizationPreviewPrecondition !== previewPrecondition
+      ) {
+        const diagnostic: ArchiveDiagnostic = {
+          severity: 'error',
+          code: 'archive_finalization_preview_changed',
+          message:
+            'The Store finalization preview changed after admission. No transaction plan was persisted.',
+          fix: 'Inspect the current finalization preview and retry only after admitting its exact identity, blockers, and archive decisions.',
+        };
+        if (json) {
+          this.printJsonFailure(root, diagnostic, finalizationPlan.archivePlan);
+          return null;
+        }
+        throw new ArchiveBlockedError(
+          diagnostic.code,
+          diagnostic.message,
+          diagnostic.fix
+        );
+      }
+      const planToken =
+        options.savePlan && canSave
+          ? await persistArchivePlan(
+              finalizationPlan.archivePlan,
+              getGlobalDataDir()
+            )
+          : undefined;
+      return this.renderFinalizationDryRun(
+        finalizationPlan,
+        json,
+        planToken,
+        previewPrecondition
+      );
+    }
+
+    // Re-finalizing a finalized Change is not a second outcome: report the
+    // recorded one and stop cleanly, writing nothing.
+    if (finalizationPlan.alreadyComplete) {
+      const facts = {
+        outcome: finalizationPlan.outcome,
+        changeInstanceId: finalizationPlan.changeInstanceId,
+        workspacePairId: finalizationPlan.workspacePairId,
+        targetLineId: finalizationPlan.scope.targetLineId,
+        publishedEntry: finalizationPlan.destination,
+        specSyncApplied: finalizationPlan.outcome === 'landed',
+        specSyncActionCount:
+          finalizationPlan.outcome === 'landed' ? finalizationPlan.specActions.length : 0,
+        provenCommit: null,
+        codeRef: finalizationPlan.targetLine.codeRef,
+        codeRefOid: finalizationPlan.targetLine.codeRefOid,
+        alreadyComplete: true,
+      };
+      if (!json) {
+        console.log(
+          `Change '${changeName}' is already finalized; nothing was recorded a second time.`
+        );
+      }
+      return {
+        change: changeName,
+        archivedAs: path.basename(finalizationPlan.destination),
+        path: finalizationPlan.destination,
+        specsUpdated: false,
+        finalization: facts,
+      };
+    }
+
+    const finalizationInspection = inspectFinalizationApplyPlan(
+      finalizationPlan,
+      { mergeConfirmed: options.yes === true }
+    );
+
+    if (!finalizationInspection.applicable) {
+      const first = finalizationInspection.blockers[0];
+      const diagnostic: ArchiveDiagnostic = {
+        severity: 'error',
+        code: first?.code ?? 'archive_plan_blocked',
+        message: first?.message ?? 'The finalization plan is incomplete.',
+        ...(first?.fix === undefined ? {} : { fix: first.fix }),
+      };
+      if (json) {
+        this.printJsonFailure(root, diagnostic, finalizationPlan.archivePlan);
+        return null;
+      }
+      for (const blocker of finalizationInspection.blockers) {
+        console.log(`${blocker.code}: ${blocker.message}`);
+      }
+      throw new ArchiveBlockedError(diagnostic.code, diagnostic.message, diagnostic.fix);
+    }
+
+    const finalizationToken = finalizationPlan.token;
+    if (finalizationToken === undefined) {
+      throw new ArchiveBlockedError(
+        'archive_plan_blocked',
+        'The incomplete finalization plan has no immutable apply token.'
+      );
+    }
+    const result = await ChangeFinalizationModuleInstance.applyStoredPlan(
+      finalizationPlan.archivePlan,
+      finalizationToken,
+      { mergeConfirmed: options.yes === true }
+    );
+    if (result.status !== 'complete') process.exitCode = 1;
+    const facts = finalizationFacts(result);
+    if (!json) {
+      if (result.status === 'complete') {
+        console.log(
+          `Change '${changeName}' finalized as '${result.outcome}' at ${result.publishedEntry}.`
+        );
+        console.log(
+          `Change instance: ${result.changeInstanceId}; workspace pair: ${result.workspacePairId}; target line: ${result.targetLineId}.`
+        );
+        console.log(
+          `Spec sync: ${result.specSyncApplied ? 'applied' : 'not applied'} (${result.specSyncActionCount} action(s)).`
+        );
+        if (result.provenCommit !== null) {
+          console.log(
+            `Proven commit ${result.provenCommit} reachable from ${result.codeRef} (${result.codeRefOid ?? 'local ref'}) as it stands locally; nothing was fetched.`
+          );
+        }
+        console.log(`Association phase: ${result.associationPhase}.`);
+      } else {
+        console.log(`Finalization did not complete (${result.status}).`);
+        console.log(`Recovery journal: ${result.journalPath}`);
+        const disposition = formatArchiveDispositionLine(result);
+        if (disposition !== null) console.log(disposition);
+      }
+    }
+    return {
+      change: changeName,
+      archivedAs: path.basename(result.publishedEntry),
+      path: result.publishedEntry,
+      specsUpdated: result.specSyncApplied,
+      finalization: facts,
+      transactionId: result.transactionId,
+      journalPath: result.journalPath,
+      status: result.status,
+      ...(result.recoveryCommand === undefined
+        ? {}
+        : { recoveryCommand: result.recoveryCommand }),
+      ...(result.abortCommand === undefined
+        ? {}
+        : { abortCommand: result.abortCommand }),
+      ...(result.manualRecoveryAction === undefined
+        ? {}
+        : { manualRecoveryAction: result.manualRecoveryAction }),
+    };
+  }
+
+  private renderFinalizationDryRun(
+    plan: ImmutableFinalizationPlan,
+    json: boolean,
+    planToken: string | undefined,
+    previewPrecondition: string
+  ): ArchiveResult | null {
+    if (!plan.applicable) process.exitCode = 1;
+    if (!json) {
+      console.log(chalk.cyan(`\n=== Finalization dry-run for '${plan.changeId}' ===`));
+      console.log(`Outcome: ${plan.outcome}`);
+      console.log(`Planned entry: ${plan.destination}`);
+      console.log(`Change instance: ${plan.changeInstanceId}`);
+      console.log(`Workspace pair: ${plan.workspacePairId}`);
+      console.log(`Target line: ${plan.scope.targetLineId} (${plan.targetLine.storeRef})`);
+      console.log(`Plan id: ${plan.planId}`);
+      if (planToken) console.log(`Plan token: ${planToken}`);
+      console.log(
+        `Spec sync: ${
+          plan.outcome === 'landed'
+            ? `${plan.specActions.length} action(s)`
+            : 'not applied (passive outcome)'
+        }`
+      );
+      if (plan.blockers.length > 0) {
+        console.log(chalk.red('Blocking conditions:'));
+        for (const blocker of plan.blockers) {
+          console.log(chalk.red(`  - ${blocker.code}: ${blocker.message}`));
+        }
+      }
+      console.log(chalk.cyan('Immutable finalization plan:'));
+      console.log(JSON.stringify(plan, null, 2));
+      console.log(chalk.cyan('No files were moved, deleted, or written.'));
+      return null;
+    }
+    return {
+      change: plan.changeId,
+      archivedAs: path.basename(plan.destination),
+      path: plan.destination,
+      specsUpdated: false,
+      dryRun: true,
+      finalizationPlan: plan,
+      previewPrecondition,
+      plan: plan.archivePlan,
+      ...(planToken ? { planToken } : {}),
+      transactionId: plan.archivePlan.transactionId,
+      planHash: plan.archivePlan.planHash,
+      journalPath: plan.archivePlan.paths.journal,
+      blockers: plan.archivePlan.blockers,
+    };
+  }
+
+  private async validateActiveChange(
+    changeDir: string,
+    canonicalSpecsDir: string,
+    json: boolean
+  ): Promise<boolean> {
     const validator = new Validator();
     if (!json) {
       const proposal = path.join(changeDir, 'proposal.md');
@@ -836,32 +1923,18 @@ export class ArchiveCommand {
       }
     }
 
-    const specsRoot = path.join(changeDir, 'specs');
-    let hasDeltaSpecs = false;
-    try {
-      const capabilities = await fs.readdir(specsRoot, { withFileTypes: true });
-      for (const capability of capabilities) {
-        if (!capability.isDirectory()) continue;
-        try {
-          const content = await fs.readFile(
-            path.join(specsRoot, capability.name, 'spec.md'),
-            'utf8'
-          );
-          if (
-            /^##\s+(ADDED|MODIFIED|REMOVED|RENAMED)\s+Requirements/m.test(content)
-          ) {
-            hasDeltaSpecs = true;
-            break;
-          }
-        } catch (error) {
-          if (!isMissingPathError(error)) throw error;
-        }
-      }
-    } catch (error) {
-      if (!isMissingPathError(error)) throw error;
+    const deltaDiscovery = await discoverDeltaSpecFiles(changeDir);
+    if (
+      deltaDiscovery.files.length === 0 &&
+      deltaDiscovery.issues.length === 0
+    ) {
+      return true;
     }
-    if (!hasDeltaSpecs) return true;
-    const report = await validator.validateChangeDeltaSpecs(changeDir);
+    const report = await validator.validateChangeDeltaSpecs(
+      changeDir,
+      canonicalSpecsDir,
+      deltaDiscovery
+    );
     if (report.valid) return true;
     if (!json) {
       console.log(chalk.red('\nValidation errors in change delta specs:'));
@@ -884,14 +1957,10 @@ export class ArchiveCommand {
     root: ResolvedOpenSpecRoot,
     json: boolean,
     skipValidation: boolean
-  ): Promise<PreparedArchiveSpecAction[]> {
-    if (options.skipSpecs) {
-      if (!json) console.log('Skipping spec updates (--skip-specs flag provided).');
-      return [];
-    }
-    let updates: Awaited<ReturnType<typeof findSpecUpdates>>;
+  ): Promise<PreparedSpecActions> {
+    let discovery: Awaited<ReturnType<typeof findSpecUpdates>>;
     try {
-      updates = await findSpecUpdates(changeDir, mainSpecsDir);
+      discovery = await findSpecUpdates(changeDir, mainSpecsDir);
     } catch (error) {
       throw new ArchiveBlockedError(
         'archive_spec_update_failed',
@@ -899,23 +1968,48 @@ export class ArchiveCommand {
         'Fix the change delta specs and rerun. No files were changed.'
       );
     }
-    if (updates.length === 0) return [];
+    const deltaSources = discovery.updates
+      .map(update => path.resolve(update.source))
+      .sort();
+    if (options.skipSpecs) {
+      if (discovery.issues.length > 0) {
+        throw new SpecReconciliationError(discovery.issues);
+      }
+      if (!json) console.log('Skipping spec updates (--skip-specs flag provided).');
+      return {
+        actions: [],
+        specSync: { mode: 'skip', deltaSources },
+      };
+    }
+    const analysis = await analyzeSpecUpdates(discovery, changeName, {
+      silent: json,
+    });
+    if (analysis.issues.length > 0) {
+      throw new SpecReconciliationError(analysis.issues);
+    }
+    if (discovery.updates.length === 0) {
+      return {
+        actions: [],
+        specSync: { mode: 'no-deltas', deltaSources: [] },
+      };
+    }
     if (!json) {
       console.log('\nSpecs to update:');
-      for (const update of updates) {
+      for (const update of discovery.updates) {
         console.log(
-          `  ${path.basename(path.dirname(update.target))}: ${
+          `  ${path.relative(mainSpecsDir, path.dirname(update.target)).split(path.sep).join('/')}: ${
             update.exists ? 'update' : 'create'
           }`
         );
       }
     }
 
+
     if (!options.dryRun && !options.yes) {
       if (json) {
         throw new ArchiveBlockedError(
           'archive_confirmation_required',
-          `Updating ${updates.length} spec(s) requires confirmation: rerun with --yes.`,
+          `Updating ${discovery.updates.length} spec(s) requires confirmation: rerun with --yes.`,
           withStoreFlag(root, 'rasen archive <change-name> --json --yes')
         );
       }
@@ -926,15 +2020,18 @@ export class ArchiveCommand {
       });
       if (!proceed) {
         console.log('Skipping spec updates. Proceeding with archive.');
-        return [];
+        return {
+          actions: [],
+          specSync: { mode: 'skip', deltaSources },
+        };
       }
     }
 
     const actions: PreparedArchiveSpecAction[] = [];
     try {
-      for (const update of updates) {
-        const built = await buildUpdatedSpec(update, changeName, { silent: json });
-        const capability = path.basename(path.dirname(update.target));
+      for (const built of analysis.prepared) {
+        const update = built.update;
+        const capability = update.capability;
         if (!skipValidation && !built.emptied) {
           const report = await new Validator().validateSpecContent(
             capability,
@@ -962,32 +2059,28 @@ export class ArchiveCommand {
             );
           }
         }
-        const source = await fs.readFile(update.source);
-        let targetPrecondition: PreparedArchiveSpecAction['targetPrecondition'] = {
-          state: 'absent',
-        };
-        try {
-          targetPrecondition = {
-            state: 'file',
-            sha256: createHash('sha256')
-              .update(await fs.readFile(update.target))
-              .digest('hex'),
-          };
-        } catch (error) {
-          if (!isMissingPathError(error)) throw error;
-        }
         actions.push({
           capability,
-          action: built.emptied ? 'delete' : update.exists ? 'update' : 'create',
+          action:
+            built.emptied
+              ? 'delete'
+              : built.targetPrecondition.state === 'file'
+                ? 'update'
+                : 'create',
           source: update.source,
           target: update.target,
-          sourceSha256: createHash('sha256').update(source).digest('hex'),
-          targetPrecondition,
+          sourceSha256: built.sourceSha256,
+          targetPrecondition: built.targetPrecondition,
           rebuilt: built.rebuilt,
           counts: built.counts,
         });
       }
-      return actions.sort((left, right) => left.target.localeCompare(right.target));
+      return {
+        actions: actions.sort((left, right) =>
+          left.target.localeCompare(right.target)
+        ),
+        specSync: { mode: 'apply', deltaSources },
+      };
     } catch (error) {
       if (error instanceof ArchiveBlockedError) throw error;
       throw new ArchiveBlockedError(
@@ -1074,8 +2167,9 @@ export class ArchiveCommand {
     };
   }
 
-  private async selectChange(changesDir: string): Promise<string | null> {
+  private async selectChange(root: ResolvedOpenSpecRoot): Promise<string | null> {
     const { select } = await import('@inquirer/prompts');
+    const changesDir = root.changesDir;
     const names = await listActiveChangeNames(changesDir);
     if (names.length === 0) {
       console.log('No active changes found.');
@@ -1090,7 +2184,8 @@ export class ArchiveCommand {
             await getTaskProgressForChange(
               changesDir,
               id,
-              path.resolve(changesDir, '..', '..')
+              root.path,
+              root.schemasDir
             )
           ),
         }))

@@ -10,6 +10,7 @@ const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..', '..');
 const cliEntry = path.join(projectRoot, 'dist', 'cli', 'index.js');
 const DEFAULT_CLI_TIMEOUT_MS = 30_000;
+const CLI_BUILD_READY_ENV = 'RASEN_TEST_CLI_BUILD_READY';
 
 // Isolate global-config / data reads from the developer's machine. Otherwise a
 // spawned CLI reads ~/.config|%APPDATA%/rasen/config.json, so a local custom
@@ -134,12 +135,33 @@ export function terminateActiveCliChildren(): void {
 }
 
 export async function ensureCliBuilt() {
-  if (existsSync(cliEntry)) {
+  // Vitest globalSetup verifies the build once in the main process, then worker
+  // forks inherit this marker. The marker is only ever SET by this process
+  // after `ensureCliBuildFresh()` proved the bundle current, so an ambient or
+  // stale value cannot make a worker trust an unverified dist.
+  if (process.env[CLI_BUILD_READY_ENV] === '1' && existsSync(cliEntry)) {
     return;
   }
+  await ensureCliBuildFresh();
+}
+
+/**
+ * Compile only when `dist/` does not match the current sources.
+ *
+ * `build.js --if-stale` compares a fingerprint of the compiler inputs against
+ * `dist/.build-fingerprint.json` and returns without touching anything when
+ * they agree; when they disagree it takes a cross-process build lock before
+ * cleaning and recompiling. That closes the original staleness gap — an
+ * unmarked or stale `dist/` is still never trusted — WITHOUT making every
+ * Vitest invocation delete the `dist/` another Vitest process is executing.
+ *
+ * The env marker is ignored here on purpose: this is the check that earns it.
+ */
+export async function ensureCliBuildFresh(): Promise<void> {
+  delete process.env[CLI_BUILD_READY_ENV];
 
   if (!buildPromise) {
-    buildPromise = runCommand('pnpm', ['run', 'build']).catch((error) => {
+    buildPromise = runCommand('pnpm', ['run', 'build:if-stale']).catch((error) => {
       buildPromise = undefined;
       throw error;
     });
@@ -150,6 +172,7 @@ export async function ensureCliBuilt() {
   if (!existsSync(cliEntry)) {
     throw new Error('CLI entry point missing after build. Expected dist/cli/index.js');
   }
+  process.env[CLI_BUILD_READY_ENV] = '1';
 }
 
 export async function runCLI(args: string[] = [], options: RunCLIOptions = {}): Promise<RunCLIResult> {

@@ -90,7 +90,7 @@
   "task.badge.escalated_title": "A run stage is escalated",
   "task.live_title": "A live session is running for this Task",
   "taskcard.run": "Run",
-  "taskcard.run_title": "A pipeline run has recorded state for this change",
+  "taskcard.run_title": "Run state is recorded for this change",
 
   "worktree.label": "Worktrees",
   "worktree.group_label": "Switch worktree",
@@ -149,6 +149,7 @@
   "session.run_absent": "No change linked — progress will appear on the board once the run creates one.",
   "session.run_no_state": "No run state recorded yet for {name}.",
   "session.run_no_stages": "{pipeline} — no stages reported yet.",
+  "session.run_no_pipeline": "No pipeline — this run holds retention identity only, so there are no stages.",
   "session.stages_label": "Pipeline progress",
   "session.started": "Started {time}",
   "session.last_output": "Last output {time}",

@@ -291,14 +291,128 @@ describe('InitCommand', () => {
       const claudeSkill = path.join(testDir, '.claude', 'skills', 'rasen-explore', 'SKILL.md');
       const codexSkill = path.join(testDir, '.codex', 'skills', 'rasen-explore', 'SKILL.md');
       const hermesSkill = path.join(hermesHome, 'skills', 'rasen-explore', 'SKILL.md');
+      // Asserted as an explicit project-local path, not merely "some skill was
+      // written": HERMES_HOME is set in this very test, so a wrong global-home
+      // resolution for omp would land inside `.hermes-home` and still satisfy a
+      // vaguer assertion.
+      const ompSkill = path.join(testDir, '.omp', 'skills', 'rasen-explore', 'SKILL.md');
       const cursorSkill = path.join(testDir, '.cursor', 'skills', 'rasen-explore', 'SKILL.md');
       const windsurfSkill = path.join(testDir, '.windsurf', 'skills', 'rasen-explore', 'SKILL.md');
 
       expect(await fileExists(claudeSkill)).toBe(true);
       expect(await fileExists(codexSkill)).toBe(true);
       expect(await fileExists(hermesSkill)).toBe(true);
+      expect(await fileExists(ompSkill)).toBe(true);
+      expect(await fileExists(path.join(hermesHome, 'skills', 'rasen-explore'))).toBe(true);
       expect(await fileExists(cursorSkill)).toBe(false);
       expect(await fileExists(windsurfSkill)).toBe(false);
+    });
+
+    it('should install omp skills to the project-local root with --tools omp', async () => {
+      const hermesHome = path.join(testDir, '.hermes-home');
+      process.env.HERMES_HOME = hermesHome;
+      const initCommand = new InitCommand({ tools: 'omp', force: true });
+
+      await initCommand.execute(testDir);
+
+      expect(
+        await fileExists(path.join(testDir, '.omp', 'skills', 'rasen-explore', 'SKILL.md'))
+      ).toBe(true);
+      // Nothing lands in the Hermes global home, and no command files are
+      // generated for a harness that discovers skills directly.
+      expect(await directoryExists(path.join(hermesHome, 'skills'))).toBe(false);
+      expect(await directoryExists(path.join(testDir, '.omp', 'commands'))).toBe(false);
+    });
+
+    it('should not delete files under an Oh My Pi command directory it never wrote', async () => {
+      // The spec's non-deletion clause. An ABSENT `.omp/commands` proves only
+      // non-creation, so both retired adapter shapes are pre-seeded and asserted
+      // to survive: `TOOL_COMMAND_PATH_BUILDERS` has no `omp` key, so every
+      // cleanup loop iterates an empty candidate list.
+      const flat = path.join(testDir, '.omp', 'commands', 'rasen-explore.md');
+      const nested = path.join(testDir, '.omp', 'commands', 'rasen', 'explore.md');
+      await fs.mkdir(path.dirname(nested), { recursive: true });
+      await fs.writeFile(flat, 'user-authored flat command');
+      await fs.writeFile(nested, 'user-authored nested command');
+
+      await new InitCommand({ tools: 'omp', force: true }).execute(testDir);
+
+      expect(await fs.readFile(flat, 'utf-8')).toBe('user-authored flat command');
+      expect(await fs.readFile(nested, 'utf-8')).toBe('user-authored nested command');
+    });
+
+    it('should carry a non-empty description in every omp skill front matter', async () => {
+      // Oh My Pi's `native` provider discovers with `requireDescription: true`,
+      // so a skill without one is installed and invisible.
+      const initCommand = new InitCommand({ tools: 'omp', force: true });
+      await initCommand.execute(testDir);
+
+      const skillsRoot = path.join(testDir, '.omp', 'skills');
+      const skillDirs = await fs.readdir(skillsRoot);
+      expect(skillDirs.length).toBeGreaterThan(0);
+      for (const dirName of skillDirs) {
+        const content = await fs.readFile(path.join(skillsRoot, dirName, 'SKILL.md'), 'utf-8');
+        const description = /^description:\s*(.+)$/m.exec(content);
+        expect(description, `${dirName} must declare a description`).not.toBeNull();
+        expect(description![1]!.replace(/^['"]|['"]$/g, '').trim().length).toBeGreaterThan(0);
+      }
+    });
+
+    describe('omp nested-install disclosure', () => {
+      /** A monorepo package inside a Git checkout that carries Oh My Pi context. */
+      async function buildNestedRepo(enclosingFiles: string[]): Promise<string> {
+        const repo = path.join(testDir, 'monorepo');
+        const pkg = path.join(repo, 'packages', 'api');
+        await fs.mkdir(pkg, { recursive: true });
+        await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+        if (enclosingFiles.length > 0) {
+          await fs.mkdir(path.join(repo, '.omp'), { recursive: true });
+          for (const name of enclosingFiles) {
+            await fs.writeFile(path.join(repo, '.omp', name), '# enclosing\n');
+          }
+        }
+        return pkg;
+      }
+
+      function loggedLines(): string {
+        return vi
+          .mocked(console.log)
+          .mock.calls.map((call) => String(call[0] ?? ''))
+          .join('\n');
+      }
+
+      it.each(['AGENTS.md', 'RULES.md'])(
+        'names an enclosing .omp/%s and still completes the install',
+        async (fileName) => {
+          const pkg = await buildNestedRepo([fileName]);
+          await new InitCommand({ tools: 'omp', force: true }).execute(pkg);
+
+          const output = loggedLines();
+          expect(output).toContain(path.join(testDir, 'monorepo', '.omp', fileName));
+          expect(output).toContain('stop loading');
+          // Advisory, not blocking: the skills are written either way.
+          expect(
+            await fileExists(path.join(pkg, '.omp', 'skills', 'rasen-explore', 'SKILL.md'))
+          ).toBe(true);
+        }
+      );
+
+      it('says nothing when no enclosing context file exists', async () => {
+        const pkg = await buildNestedRepo([]);
+        await new InitCommand({ tools: 'omp', force: true }).execute(pkg);
+
+        expect(loggedLines()).not.toContain('stop loading');
+        expect(
+          await fileExists(path.join(pkg, '.omp', 'skills', 'rasen-explore', 'SKILL.md'))
+        ).toBe(true);
+      });
+
+      it('says nothing when omp is not among the selected tools', async () => {
+        const pkg = await buildNestedRepo(['AGENTS.md']);
+        await new InitCommand({ tools: 'claude', force: true }).execute(pkg);
+
+        expect(loggedLines()).not.toContain('stop loading');
+      });
     });
 
     it('should skip tool configuration with --tools none option', async () => {
@@ -321,11 +435,18 @@ describe('InitCommand', () => {
       await expect(initCommand.execute(testDir)).rejects.toThrow(/Invalid tool\(s\): invalid-tool/);
     });
 
-    it('should reject a known but unadapted tool with a "not yet adapted" message', async () => {
+    it('should reject a known but unadapted tool and name every adapted tool', async () => {
       const initCommand = new InitCommand({ tools: 'cursor', force: true });
+      // Derived, not restated: the message is built from `getToolsWithSkillsDir()`,
+      // and the spec says the set SHALL be the one the shipped registry declares.
+      // A hardcoded `claude, codex` in the message would satisfy a literal
+      // assertion while dropping `hermes` and `omp` from what the user is told.
+      const { getToolsWithSkillsDir } = await import('../../src/core/shared/tool-detection.js');
+      const adapted = getToolsWithSkillsDir().join(', ');
+      expect(adapted).toContain('omp');
 
       await expect(initCommand.execute(testDir)).rejects.toThrow(
-        /recognized but not yet adapted in Rasen.*claude, codex/
+        new RegExp(`recognized but not yet adapted in Rasen.*${adapted.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
       );
     });
 
@@ -581,7 +702,7 @@ describe('InitCommand - profile and detection features', () => {
     // Set global config to custom profile
     saveGlobalConfig({
       featureFlags: {},
-      profile: 'custom',
+      profile: 'custom',
       workflows: ['explore', 'new', 'apply'],
     });
 
@@ -601,7 +722,7 @@ describe('InitCommand - profile and detection features', () => {
   it('should drop a retired workflow id (ff) from a stored custom profile with a warning, and still succeed', async () => {
     saveGlobalConfig({
       featureFlags: {},
-      profile: 'custom',
+      profile: 'custom',
       workflows: ['explore', 'ff', 'apply'],
     });
 

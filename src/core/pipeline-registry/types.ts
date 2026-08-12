@@ -14,6 +14,7 @@ import {
 } from '../threshold-resolver.js';
 import {
   DISPATCH_RUNTIMES,
+  hasRuntimeCapability,
   type DetectedHostRuntime,
   type DispatchRuntime,
 } from '../runtime-adapters.js';
@@ -610,7 +611,7 @@ export function resolveStageRuntimeConfig(
   } else if (roleDefault?.runtime !== undefined) {
     runtime = roleDefault.runtime;
     runtimeSource = 'agent';
-  } else if (runtimeContext.host.runtime !== 'unknown') {
+  } else if (hasRuntimeCapability(runtimeContext.host.runtime, 'canDispatch')) {
     runtime = runtimeContext.host.runtime;
     runtimeSource = 'host';
   } else {
@@ -695,6 +696,31 @@ export const DEFAULT_HANDOFF_CONFIG = {
   maxRelays: 3,
   stallLimit: 2,
 } as const;
+
+/**
+ * Built-in handoff-threshold default for a `codex` runtime. Codex hosts run
+ * a larger window (~250k) with low-loss native auto-compact, so a worker can
+ * productively use far more of its window before handing off than Claude's
+ * 0.5 default allows — handing off at 0.5 retires a worker that could have
+ * kept working through another compaction. Still overridable by any
+ * project/store/global `handoff.threshold` or bound scheme.
+ */
+export const DEFAULT_CODEX_HANDOFF_THRESHOLD = 0.85;
+
+/**
+ * Built-in handoff-threshold default for a runtime: Codex gets
+ * {@link DEFAULT_CODEX_HANDOFF_THRESHOLD}; every other runtime (including the
+ * claude/unknown fallback) gets {@link DEFAULT_HANDOFF_CONFIG.threshold}.
+ * This is the floor of threshold resolution — the value used only when no
+ * config layer, preset, or bound scheme supplies one.
+ */
+export function defaultHandoffThresholdForRuntime(
+  runtime: string | undefined
+): number {
+  return runtime === 'codex'
+    ? DEFAULT_CODEX_HANDOFF_THRESHOLD
+    : DEFAULT_HANDOFF_CONFIG.threshold;
+}
 
 export interface ResolvedStageHandoffConfig {
   threshold: ThresholdValue;
@@ -840,7 +866,7 @@ export function resolveStageHandoffConfig(
       globalRole: { value: globalRoleThreshold, source: 'global-role' },
       global: { value: configLayers?.globalThreshold, source: 'global-config' },
       preset: { value: presetThreshold, source: 'preset' },
-      default: { value: DEFAULT_HANDOFF_CONFIG.threshold, source: 'default' },
+      default: { value: defaultHandoffThresholdForRuntime(bindingRuntime), source: 'default' },
     },
   });
   const threshold = resolvedThreshold.threshold;
@@ -956,10 +982,10 @@ export function resolvePipelineReuseConfig(
     const roleModel = normalizeAgentRuntimeConfig(pipeline.agents?.[role])?.model;
     const presetThreshold = resolveModelPreset(roleModel)?.reuseThreshold;
     const declaredRuntime = normalizeAgentRuntimeConfig(pipeline.agents?.[role])?.runtime;
-    const fallbackRuntime =
-      thresholdContext?.host?.runtime && thresholdContext.host.runtime !== 'unknown'
-        ? thresholdContext.host.runtime
-        : 'claude';
+    const hostRuntime = thresholdContext?.host?.runtime;
+    const fallbackRuntime = hasRuntimeCapability(hostRuntime, 'canDispatch')
+      ? hostRuntime
+      : 'claude';
     return resolveThreshold({
       family: 'reuse',
       role,

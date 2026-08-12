@@ -1,0 +1,29 @@
+{
+  "change": "fix-archive-recovery-ownership",
+  "archivedAt": "2026-08-10T05:54:39.536Z",
+  "codeCommit": "ef02b21c1614d48a3b78d3491da0e2b04e46d790",
+  "planningBranch": "fix/archive-transaction-recovery-follow-up",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/review-cycle-report.md",
+      "sha256": "d57e4d7edfdfabbbe4fb1e64f557b2ab39d57a88fdd195eb20f7eac822617107"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "342cc1f021acc61629cfe311b5c642af79e73ade795093db447ceeed5e1997bf"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "a08cd04b753c67ae795714fe866bba2b0a062c92b17c9b7c3040b450c5a4c003"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

@@ -19,6 +19,7 @@ import {
   type ExecutionBindingResult,
 } from '../core/pipeline-registry/execution-binding.js';
 import { frozenExecutionRef } from '../core/learned-skills/context.js';
+import { describeDurableOwner } from '../core/learned-skills/owner-identity.js';
 import type { FrozenKnowledgeContext } from '../core/learned-skills/types.js';
 import {
   isSessionContextError,
@@ -103,12 +104,13 @@ import {
 import { tryContextEstimate, type ContextEstimate } from '../core/agent-context.js';
 import { validateChangeExists } from './workflow/shared.js';
 import { resolveChangeWorkDir } from '../core/change-work.js';
-import { ephemeraDir, resolveExecutionRoot } from '../core/file-placement.js';
+import { ephemeraDir } from '../core/file-placement.js';
 import {
   resolveRootForCommand,
-  isStoreSelectedRoot,
+  resolvedExecutionProjectRoot,
   type ResolvedOpenSpecRoot,
 } from '../core/root-selection.js';
+import type { ChangeSelector } from '../core/store-planning/index.js';
 import {
   formatPipelineExecutionNotice,
   formatPipelineRootSelectionNotice,
@@ -129,6 +131,7 @@ interface PipelineCommandOptions {
   forExecution?: boolean;
   store?: string;
   project?: string;
+  targetLine?: string;
   storePath?: string;
   planner?: string;
   implementer?: string;
@@ -140,6 +143,17 @@ interface PipelineCommandOptions {
 type PipelineAgentsOptions = PipelineCommandOptions;
 
 const STAGE_ROLES: StageRole[] = ['planner', 'implementer', 'reviewer', 'fixer', 'shipper'];
+
+/**
+ * A frozen knowledge owner as one readable token, for any record version.
+ * Version 3 names its owner by permanent identity (and carries the display
+ * alias alongside); versions 1 and 2 have only the display alias.
+ */
+function describeFrozenOwner(frozen: FrozenKnowledgeContext): string {
+  if (frozen.version === 3) return describeDurableOwner(frozen.owner);
+  const owner = frozen.owner;
+  return owner.type === 'global' ? 'global' : `${owner.type}:${owner.id}`;
+}
 
 /**
  * Serialized form of a single stage in `show` output: every field, with
@@ -232,13 +246,19 @@ export class PipelineCommand {
    * so callers early-return without further output (mirrors validate.ts:86-89).
    */
   private async resolveRoot(
-    options: PipelineCommandOptions
+    options: PipelineCommandOptions,
+    changeSelector?: ChangeSelector
   ): Promise<ResolvedOpenSpecRoot | null> {
     if (options.json) {
-      return resolveRootForCommand(options, { json: true, reporter: false });
+      return resolveRootForCommand(options, {
+        json: true,
+        reporter: false,
+        ...(changeSelector === undefined ? {} : { changeSelector }),
+      });
     }
     return resolveRootForCommand(options, {
       reporter: (notice) => console.error(formatPipelineRootSelectionNotice(notice)),
+      ...(changeSelector === undefined ? {} : { changeSelector }),
     });
   }
 
@@ -599,7 +619,10 @@ export class PipelineCommand {
    * Resume a change: compute next/remaining stages from its run-state file.
    */
   async resume(change: string | undefined, options: PipelineCommandOptions = {}): Promise<void> {
-    const root = await this.resolveRoot(options);
+    const root = await this.resolveRoot(
+      options,
+      change === undefined ? undefined : { changeId: change }
+    );
     if (!root) return;
     const projectRoot = root.path;
     const host = detectHostRuntime();
@@ -609,17 +632,22 @@ export class PipelineCommand {
 
     // Probe-only (ensure:false): resume is a read-only surface and must
     // never mint identity or write to the repo/registry (design D2).
-    const workDir = await resolveChangeWorkDir(projectRoot, changeName, { ensure: false });
+    const executionRoot = resolvedExecutionProjectRoot(root);
+    const workDir = executionRoot === undefined
+      ? null
+      : await resolveChangeWorkDir(executionRoot, changeName, { ensure: false });
 
     // Sticky-legacy chain (`file-placement` capability): the execution root's
     // ephemera directory is the terminal landing and is searched first, then
     // the legacy machine-home work directory, then the change directory.
-    const executionRoot = resolveExecutionRoot(projectRoot, {
-      storeSelected: isStoreSelectedRoot(root),
-    });
     const stateLocations = {
-      ephemeraDir: ephemeraDir(executionRoot, changeName),
+      ...(executionRoot === undefined
+        ? {}
+        : { ephemeraDir: ephemeraDir(executionRoot, changeName) }),
       workDir,
+      ...(root.planningScope?.kind === 'store-project'
+        ? { includeChangeDir: false }
+        : {}),
     };
 
     // Portfolio parent? The portfolio record is authoritative — resume reports
@@ -790,8 +818,11 @@ export class PipelineCommand {
       : ({ kind: 'absent' } as const);
     const runState = runStateRead.kind === 'ok' ? runStateRead.state : null;
 
-    // No run-state recorded yet (or not in usable form).
-    if (!runState || runState.pipeline.length === 0) {
+    // Three distinguishable states (designs D1–D3): no file at all, a located
+    // but unparseable file, and a valid file that names no pipeline. The third
+    // is a run that holds retention identity without claiming a pipeline it
+    // never ran, so it is reported as PRESENT — never as "no run-state".
+    if (!runState) {
       if (runStateRead.kind === 'invalid' && runStateLocation) {
         const result = {
           change: changeName,
@@ -826,6 +857,12 @@ export class PipelineCommand {
         completed: [] as string[],
         next: null,
         remaining: [] as string[],
+        // design D2: the deterministic location state for this change WOULD be
+        // created at, so a caller (retention preparation) can see where to look
+        // without re-deriving the sticky-legacy chain. `hasRunState` stays
+        // false and the note is unchanged — this is additive only, matching the
+        // invalid branch above, which already reports a path with no state.
+        runStateDir: stateLocations.ephemeraDir,
         note: getPipelineMessages('en').format('noRunStateNote'),
       };
       if (options.json) {
@@ -835,6 +872,46 @@ export class PipelineCommand {
       const messages = getPipelineMessages();
       console.log(messages.format('changeLabel', { change: changeName }));
       console.log(messages.format('noRunStateNote'));
+      if (stateLocations.ephemeraDir !== undefined) {
+        console.log(messages.format('runStateWouldLiveAt', {
+          path: stateLocations.ephemeraDir,
+        }));
+      }
+      return;
+    }
+
+    // Run-state present, no pipeline named (design D1). Rasen resolves NO
+    // pipeline definition here: there is no name to load, and inventing one
+    // would freeze a pipeline the run never executed.
+    if (runState.pipeline === undefined || runState.pipeline.length === 0) {
+      const result = {
+        change: changeName,
+        hasRunState: true as const,
+        runStateDir: runStateLocation!.dir,
+        pipeline: null,
+        completed: completedStages(runState),
+        next: null,
+        ready: [] as string[],
+        remaining: [] as string[],
+        ...(runState.knowledgeContext
+          ? { knowledgeContext: runState.knowledgeContext }
+          : {}),
+        ...(runState.retention ? { retention: runState.retention } : {}),
+        note: getPipelineMessages('en').format('noPipelineRunStateNote'),
+      };
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      const messages = getPipelineMessages();
+      console.log(messages.format('changeLabel', { change: changeName }));
+      console.log(messages.format('runStateReadFrom', { path: runStateLocation!.dir }));
+      console.log(messages.format('noPipelineRunStateNote'));
+      if (runState.knowledgeContext) {
+        console.log(messages.format('frozenKnowledgeOwner', {
+          owner: describeFrozenOwner(runState.knowledgeContext),
+        }));
+      }
       return;
     }
 

@@ -7,8 +7,10 @@ import {
 } from './project-config.js';
 import {
   deriveProjectDisplayName,
+  findProjectRegistryEntry,
   getProjectHomeDir,
   readProjectRegistryState,
+  refreshRegisteredProject,
   registerProject,
   resolveRegistrationRoot,
   type ProjectMode,
@@ -16,6 +18,7 @@ import {
 } from './project-registry.js';
 import { SKILL_NAMES, extractGeneratedByVersion, getConfiguredTools } from './shared/tool-detection.js';
 import { AI_TOOLS } from './config.js';
+import { normalizeProjectIdentity } from './store/project-records.js';
 import { resolveToolSkillsRoot } from './shared/tool-detection.js';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
@@ -117,19 +120,15 @@ export async function resolveProjectHome(
       return null;
     }
 
-    const canonicalPath = FileSystemUtils.canonicalizeExistingPath(projectRoot);
-    const state = await readProjectRegistryState(pathOptions);
-    // Path-exact first (a fallback-registered worktree entry is keyed at the
-    // worktree path), then a pierced-root retry (D1): a probe from a linked
-    // worktree finds the MAIN checkout's entry with no worktree-keyed entry.
-    let entry = state?.projects[canonicalPath];
-    if (!entry) {
-      const pierced = await resolveRegistrationRoot(canonicalPath);
-      if (pierced !== canonicalPath) {
-        entry = state?.projects[pierced];
-      }
+    const registered = await findProjectRegistryEntry(projectRoot, pathOptions);
+    if (!registered) {
+      return null;
     }
-    if (!entry) {
+    const { entry } = registered;
+    if (
+      normalizeProjectIdentity(entry.projectId) !==
+      normalizeProjectIdentity(config.projectId)
+    ) {
       return null;
     }
 
@@ -256,7 +255,7 @@ export async function touchProjectRegistry(
     }
 
     const cacheChanged = cacheInputs.tools !== undefined || cacheInputs.installedVersion !== undefined;
-    await registerProject(
+    await refreshRegisteredProject(
       {
         projectRoot,
         projectId: config.projectId,

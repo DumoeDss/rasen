@@ -79,8 +79,59 @@ describe('model-presets', () => {
       expect(resolveModelLimit(null)).toBe(DEFAULT_CONTEXT_LIMIT);
     });
 
+    it('defaults an unrecognized model id to a 1M window, not 200K', () => {
+      // Pinned as a LITERAL on purpose: asserting against DEFAULT_CONTEXT_LIMIT
+      // is tautological and passed just as happily when the default was 200000.
+      expect(DEFAULT_CONTEXT_LIMIT).toBe(1_000_000);
+
+      // The test ids are chosen to not match any preset in the registry.
+      // any preset (`claude-opus-99` is a future id absent from the registry; `glm` has no
+      // entry), so both ride the default — the exact case that reported every
+      // session as 5x more occupied than it was.
+      expect(resolveModelPreset('claude-opus-99')).toBeUndefined();
+      expect(resolveModelPreset('glm-5.2')).toBeUndefined();
+      expect(resolveModelLimit('claude-opus-99')).toBe(1_000_000);
+      expect(resolveModelLimit('glm-5.2')).toBe(1_000_000);
+    });
+
+    it('keeps haiku at 200K — the default does not swallow explicit presets', () => {
+      expect(resolveModelLimit('claude-haiku-4-5-20251001')).toBe(200_000);
+      expect(resolveModelLimit('gpt-5.6-sol')).toBe(272_000);
+    });
+
     it('now also resolves gpt-5 family windows via the registry', () => {
       expect(resolveModelLimit('gpt-5.6-sol')).toBe(272_000);
+    });
+
+    // The current Opus generation was measured against the conservative 200k
+    // default, reporting a 170k session as 85% full instead of 17% and
+    // recommending a handoff it did not need.
+    it('resolves the current Opus generation to its real 1M window', () => {
+      expect(resolveModelLimit('claude-opus-5')).toBe(1_000_000);
+      expect(resolveModelLimit('anthropic/claude-opus-5')).toBe(1_000_000);
+      expect(resolveModelLimit('us.anthropic.claude-opus-5-20260101')).toBe(1_000_000);
+    });
+
+    // The mirror-image defect, on the same list: `opus-4` in the 1M bucket
+    // swallowed 4.0/4.1/4.5, which are 200k models, so a 190k session reported
+    // 19% instead of 95% and `shouldHandoff` never fired. Fails OPEN, so it is
+    // the more damaging direction. Ground truth is the harness model cache that
+    // supplied the 1M families above: 4.0/4.1/4.5 are 200k on anthropic,
+    // google-vertex and zenmux alike; 4.6 and later are 1M.
+    it('keeps the earlier Opus 4 generations on their real 200k window', () => {
+      for (const id of [
+        'claude-opus-4-0',
+        'claude-opus-4-1',
+        'claude-opus-4-5',
+        'claude-opus-4-5-20251101',
+        'anthropic/claude-opus-4.5',
+      ]) {
+        expect(resolveModelLimit(id), id).toBe(200_000);
+      }
+      // …without demoting the generations that really do carry 1M.
+      for (const id of ['claude-opus-4-6', 'claude-opus-4-7', 'claude-opus-4-8']) {
+        expect(resolveModelLimit(id), id).toBe(1_000_000);
+      }
     });
   });
 });

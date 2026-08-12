@@ -5,6 +5,7 @@ import * as path from 'node:path';
 
 import {
   RASEN_SESSION_CONTEXT_ENV,
+  RUNTIME_CONTEXT_VERSION,
   buildRuntimeContext,
   planningRefFor,
   readSessionRuntimeContext,
@@ -35,7 +36,7 @@ describe('session runtime context', () => {
 
   function contextFor(sessionId: string): RuntimeContext {
     return {
-      version: 1,
+      version: RUNTIME_CONTEXT_VERSION,
       sessionId,
       planning: { type: 'store', id: 'team-store', root: path.join(tempDir, 'store') },
       execution: {
@@ -176,7 +177,12 @@ describe('session runtime context', () => {
       });
       fs.writeFileSync(
         written,
-        JSON.stringify({ version: 1, sessionId: 'session-5', planning: {}, execution: {} }),
+        JSON.stringify({
+          version: RUNTIME_CONTEXT_VERSION,
+          sessionId: 'session-5',
+          planning: {},
+          execution: {},
+        }),
         'utf-8'
       );
       expect(readSessionRuntimeContextFile(written)).toMatchObject({
@@ -194,6 +200,155 @@ describe('session runtime context', () => {
         'utf-8'
       );
       expect(readSessionRuntimeContextFile(written)).toMatchObject({ kind: 'ok' });
+    });
+  });
+
+  /**
+   * `store-planning-worktree-bindings` tasks 8.1-8.3, 8.6 and 8.7.
+   *
+   * A session freezes the COMPLETE pair, not just the two roots: without the
+   * worktree instance identity a later command cannot tell "the same worktree,
+   * addressed through another spelling" from "a different worktree". Facts that
+   * do not exist stay ABSENT — a planning-only session has no pair, and an
+   * unbound workspace has no pair identity.
+   */
+  describe('version 2: the frozen worktree pair', () => {
+    const planningWorktree = {
+      root: '/store--fix-a',
+      worktreeInstanceId: 'wt_planning',
+      ref: 'refs/heads/change/line-0.2/project-a/fix-a',
+      headOid: 'a'.repeat(40),
+    };
+    const executionWorktree = {
+      root: '/app-a--fix-a',
+      worktreeInstanceId: 'wt_execution',
+      ref: 'refs/heads/change/line-0.2/project-a/fix-a',
+      headOid: 'b'.repeat(40),
+    };
+
+    it('is version 2', () => {
+      expect(RUNTIME_CONTEXT_VERSION).toBe(2);
+    });
+
+    it('freezes both worktree sides, the Change instance, and the pair id', () => {
+      const built = buildRuntimeContext({
+        sessionId: 's-pair',
+        space: {
+          type: 'store',
+          id: 'team-store',
+          root: '/store',
+          planning: { storeId: 'team-store', projectId: 'project-a', targetLineId: 'line-0.2' },
+        },
+        execution: { kind: 'project', projectId: 'project-a', root: '/app-a' },
+        workspace: {
+          planning: planningWorktree,
+          execution: executionWorktree,
+          changeInstanceId: 'ci_abc',
+          workspacePairId: 'wp_abc',
+        },
+      });
+
+      expect(built?.version).toBe(2);
+      expect(built?.planning).toEqual({
+        type: 'store',
+        id: 'team-store',
+        projectId: 'project-a',
+        targetLineId: 'line-0.2',
+        root: '/store',
+        worktree: planningWorktree,
+      });
+      expect(built?.execution).toEqual({
+        kind: 'project',
+        projectId: 'project-a',
+        root: '/app-a',
+        worktree: executionWorktree,
+      });
+      expect(built?.changeInstanceId).toBe('ci_abc');
+      expect(built?.workspacePairId).toBe('wp_abc');
+      // The frozen shape survives the file round-trip unchanged.
+      const written = writeSessionRuntimeContext(built as RuntimeContext, {
+        globalDataDir: dataDir,
+      });
+      expect(readSessionRuntimeContextFile(written, { sessionId: 's-pair' })).toEqual({
+        kind: 'ok',
+        context: built,
+        path: written,
+      });
+    });
+
+    it('records no pair when none was resolved, rather than a null one', () => {
+      const built = buildRuntimeContext({
+        sessionId: 's-none',
+        space: { type: 'store', id: 'team-store', root: '/store' },
+        execution: { kind: 'project', projectId: 'project-a', root: '/app-a' },
+      });
+
+      expect(built?.planning).not.toHaveProperty('worktree');
+      expect(built?.execution).not.toHaveProperty('worktree');
+      expect(built).not.toHaveProperty('changeInstanceId');
+      expect(built).not.toHaveProperty('workspacePairId');
+      // Absence is representable and round-trips.
+      const written = writeSessionRuntimeContext(built as RuntimeContext, {
+        globalDataDir: dataDir,
+      });
+      expect(readSessionRuntimeContextFile(written, { sessionId: 's-none' })).toMatchObject({
+        kind: 'ok',
+      });
+    });
+
+    it('never attaches an execution worktree to a planning-only session', () => {
+      const built = buildRuntimeContext({
+        sessionId: 's-planning-only',
+        space: { type: 'store', id: 'team-store', root: '/store' },
+        execution: { kind: 'planning-only' },
+        workspace: { planning: planningWorktree, execution: executionWorktree },
+      });
+
+      expect(built?.execution).toEqual({ kind: 'planning-only' });
+      expect(built?.planning).toHaveProperty('worktree', planningWorktree);
+    });
+
+    it('reports a version-1 file as an unsupported version rather than parsing it partially', () => {
+      // A session started by an earlier build and still running across an
+      // upgrade. The repair is to restart the session; the file is
+      // machine-local and dies with it, so nothing durable is affected.
+      const written = writeSessionRuntimeContext(contextFor('session-v1'), {
+        globalDataDir: dataDir,
+      });
+      fs.writeFileSync(
+        written,
+        JSON.stringify({
+          version: 1,
+          sessionId: 'session-v1',
+          planning: { type: 'store', id: 'team-store', root: path.join(tempDir, 'store') },
+          execution: { kind: 'project', projectId: 'project-a', root: path.join(tempDir, 'checkout') },
+        }),
+        'utf-8'
+      );
+
+      const read = readSessionRuntimeContextFile(written);
+      expect(read).toMatchObject({ kind: 'broken', reason: 'unknown-version' });
+      // No partial context leaked out of the read.
+      expect(read).not.toHaveProperty('context');
+    });
+
+    it('rejects a frozen worktree with no instance identity, which is the whole point of freezing', () => {
+      const written = writeSessionRuntimeContext(contextFor('session-partial'), {
+        globalDataDir: dataDir,
+      });
+      const partial = contextFor('session-partial') as RuntimeContext;
+      fs.writeFileSync(
+        written,
+        JSON.stringify({
+          ...partial,
+          planning: { ...partial.planning, worktree: { root: '/store--fix-a' } },
+        }),
+        'utf-8'
+      );
+      expect(readSessionRuntimeContextFile(written)).toMatchObject({
+        kind: 'broken',
+        reason: 'invalid',
+      });
     });
   });
 

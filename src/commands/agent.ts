@@ -23,6 +23,7 @@ import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
+  isUnmeasurableWindow,
   probeAgentContextSafe,
   resolveHandoffThresholdReport,
   type AgentContextResult,
@@ -64,6 +65,7 @@ import { resolveEffectiveConfigWithMetadata } from '../core/effective-config.js'
 import { getChangeDir, resolveCurrentPlanningHomeSync } from '../core/planning-home.js';
 import type { ThresholdValue } from '../core/pipeline-registry/types.js';
 import type { WorkerContract } from '../core/worker-contracts.js';
+import { DISPATCH_ADAPTERS } from '../core/runtimes/dispatch-adapters.js';
 import { runAudit } from '../core/token-audit/audit.js';
 import { TranscriptFormatError } from '../core/token-audit/errors.js';
 import { isCodexAuditResult, isZedAuditResult, type AuditResult } from '../core/token-audit/types.js';
@@ -273,7 +275,11 @@ export class AgentCommand {
    * Environmental absence under `--latest` (no Claude projects directory / no
    * main-session transcript — a non-Claude host's normal state, e.g. a Codex
    * CLI LEAD) does NOT throw: it degrades gracefully, exit 0, because the
-   * probe is a non-blocking pre-flight for any host (design D2).
+   * probe is a non-blocking pre-flight for any host (design D2). An implicit
+   * `--latest` (no `--transcript`, no `--runtime`) on a recognized host with
+   * no context-probe adapter degrades the same way, with
+   * `reason: 'unsupported-host'` — refusing rather than reading another
+   * harness's transcript store.
    */
   async context(options: AgentContextOptions = {}): Promise<void> {
     const result = probeAgentContextSafe({
@@ -292,10 +298,16 @@ export class AgentCommand {
       return;
     }
 
+    // An unmeasurable window makes `pct` and `remainingTokens` placeholders
+    // rather than measurements, so the verdict layer is told to withhold rather
+    // than compare against them.
+    const unmeasurableWindow = isUnmeasurableWindow(result.limit, result.contextTokens);
     const handoff = await resolveHandoffThresholdReport(
       result.pct,
       result.remainingTokens,
-      result.runtime
+      result.runtime,
+      undefined,
+      unmeasurableWindow
     );
     for (const diagnostic of handoff.diagnostics ?? []) {
       console.warn(diagnostic.message);
@@ -306,14 +318,21 @@ export class AgentCommand {
       return;
     }
 
-    const pctDisplay = (result.pct * 100).toFixed(1);
     const thresholdDisplay = formatThresholdDisplay(handoff.threshold);
     const comparator = typeof handoff.threshold === 'number' ? '>=' : 'remaining <=';
-    const handoffVerdict = handoff.shouldHandoff
-      ? `handoff recommended (${comparator} ${thresholdDisplay}, ${handoff.thresholdSource})`
-      : `handoff not yet needed (${comparator} ${thresholdDisplay} not met, ${handoff.thresholdSource})`;
+    // `unknown` rather than `/0 (0.0%)`: printing a zero fraction beside a real
+    // occupancy reads as "empty" and contradicts the withheld verdict.
+    const occupancyDisplay = unmeasurableWindow
+      ? `context=${result.contextTokens}/unknown`
+      : `context=${result.contextTokens}/${result.limit} (${(result.pct * 100).toFixed(1)}%) remaining=${result.remainingTokens}`;
+    const handoffVerdict =
+      handoff.shouldHandoff === undefined
+        ? `handoff undetermined (context window unknown for model ${result.model}; ${thresholdDisplay} cannot be evaluated)`
+        : handoff.shouldHandoff
+          ? `handoff recommended (${comparator} ${thresholdDisplay}, ${handoff.thresholdSource})`
+          : `handoff not yet needed (${comparator} ${thresholdDisplay} not met, ${handoff.thresholdSource})`;
     console.log(
-      `runtime=${result.runtime} model=${result.model} context=${result.contextTokens}/${result.limit} (${pctDisplay}%) remaining=${result.remainingTokens} transcript=${result.transcript} ${handoffVerdict}`
+      `runtime=${result.runtime} model=${result.model} ${occupancyDisplay} transcript=${result.transcript} ${handoffVerdict}`
     );
   }
 
@@ -387,16 +406,17 @@ export class AgentCommand {
       return invalid(`--cwd does not exist or is unreadable: ${cwd}`);
     }
 
+    const adapter = DISPATCH_ADAPTERS.claude;
     const binary = resolveAgentCliBinary({
-      envVar: 'RASEN_CLAUDE_BIN',
-      binaryName: 'claude',
+      envVar: adapter.binaryEnvVar,
+      binaryName: adapter.defaultBinary,
     });
     if (!binary) {
       return emit(
         claudeFailureReceipt(
           contract,
           'runtime-unavailable',
-          'Claude Code CLI is unavailable. Install Claude Code or set RASEN_CLAUDE_BIN.',
+          `${adapter.installHint} is unavailable. Install ${adapter.cliLabel} or set ${adapter.binaryEnvVar}.`,
           { cwd }
         )
       );
@@ -585,6 +605,12 @@ export class AgentCommand {
     console.log(JSON.stringify(outcome));
   }
 
+  /**
+   * The probe receipt. `shouldHandoff` is omitted and `window: 'unknown'` is
+   * emitted instead when the reading measured occupancy but not the window it
+   * occupies, so a consumer branches on the field's PRESENCE rather than
+   * mistaking a withheld verdict for a below-threshold one.
+   */
   private toJson(
     result: AgentContextResult,
     handoff: HandoffThresholdReport
@@ -599,7 +625,8 @@ export class AgentCommand {
     transcript: string;
     threshold: ThresholdValue;
     thresholdSource: string;
-    shouldHandoff: boolean;
+    shouldHandoff?: boolean;
+    window?: 'unknown';
   } {
     return {
       available: true,
@@ -612,7 +639,8 @@ export class AgentCommand {
       transcript: result.transcript,
       threshold: handoff.threshold,
       thresholdSource: handoff.thresholdSource,
-      shouldHandoff: handoff.shouldHandoff,
+      ...(handoff.shouldHandoff === undefined ? {} : { shouldHandoff: handoff.shouldHandoff }),
+      ...(handoff.window === undefined ? {} : { window: handoff.window }),
     };
   }
 }

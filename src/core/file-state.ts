@@ -258,6 +258,25 @@ function pidIsAlive(pid: number): boolean {
   }
 }
 
+/**
+ * Does a lock file's recorded owner PROVE it is dead?
+ *
+ * True only when the content records a pid and the kernel affirmatively says
+ * that pid does not exist (ESRCH) — the same test `acquireOwnerAwareFileLock`
+ * applies before it steals. Unparseable content, an absent pid, EPERM, and any
+ * unexpected error all answer FALSE, so a caller of this predicate is never
+ * more permissive than the acquirer.
+ *
+ * Exported so a read-only "is this lock held?" probe can reflect the acquire
+ * protocol instead of treating file existence as ownership: a lock the
+ * acquirer would steal must not be reported as a blocking holder, or a crashed
+ * process leaves a precondition that no amount of waiting can satisfy.
+ */
+export function fileLockOwnerIsProvablyDead(content: string): boolean {
+  const pid = parsePidFromLockContent(content);
+  return pid !== undefined && !pidIsAlive(pid);
+}
+
 function isTransientWindowsLockOpenError(error: unknown): boolean {
   if (process.platform !== 'win32') return false;
   return ['EPERM', 'EACCES', 'EBUSY'].some((code) =>

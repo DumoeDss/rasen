@@ -1,61 +1,62 @@
 # 支持的工具
 
-rasen 兼容多种 AI 编程助手。当你运行 `rasen init` 时，rasen 会根据你激活的 profile/workflow 选择和交付模式来配置选定的工具。
+rasen 兼容多种 AI 编程助手。当你运行 `rasen init` 时，rasen 会根据你激活的 profile/workflow 选择来配置选定的工具。
 
 ## 工作原理
 
-对于每个选定的工具，rasen 可以安装：
+对于每个选定的工具，rasen 会安装：
 
-1. **Skills**（如果交付模式包含 skills）：`.../skills/rasen-*/SKILL.md`
-2. **Commands**（如果交付模式包含 commands）：工具特定的 `opsx-*` 命令文件
+1. **Skills**（始终安装）：`.../skills/rasen-*/SKILL.md`
 
-默认情况下，rasen 使用 `core` 配置文件，包含：
+skill 是唯一的交付形式——rasen 不再生成独立的、按工具区分的斜杠命令文件。所有原生支持发现项目 skill 的工具（Claude Code 以及 15 种以上的其他工具）都会自动识别它们；至于某个 skill 如何暴露为可调用的命令，请查阅该工具自己的文档。
+
+默认情况下，rasen 使用 `full` 配置文件，会安装全部工作流。如果你想精简到日常必需的那几个，可以切换到 `core` 配置文件：
 - `propose`
 - `explore`
 - `apply`
 - `sync`
 - `archive`
 
-你可以通过 `rasen config profile` 启用扩展工作流（`new`、`continue`、`verify`、`bulk-archive`、`onboard`），然后运行 `rasen update`。
+用 `rasen config profile` 切换配置文件（两个方向都可以），然后运行 `rasen update`。
 
 ## 工具目录参考
 
-| 工具 (ID) | Skills 路径模式 | Command 路径模式 |
-|-----------|---------------------|----------------------|
-| Amazon Q Developer (`amazon-q`) | `.amazonq/skills/rasen-*/SKILL.md` | `.amazonq/prompts/opsx-<id>.md` |
-| Antigravity (`antigravity`) | `.agent/skills/rasen-*/SKILL.md` | `.agent/workflows/opsx-<id>.md` |
-| Auggie (`auggie`) | `.augment/skills/rasen-*/SKILL.md` | `.augment/commands/opsx-<id>.md` |
-| IBM Bob Shell (`bob`) | `.bob/skills/rasen-*/SKILL.md` | `.bob/commands/opsx-<id>.md` |
-| Claude Code (`claude`) | `.claude/skills/rasen-*/SKILL.md` | `.claude/commands/opsx/<id>.md` |
-| Cline (`cline`) | `.cline/skills/rasen-*/SKILL.md` | `.clinerules/workflows/opsx-<id>.md` |
-| CodeBuddy (`codebuddy`) | `.codebuddy/skills/rasen-*/SKILL.md` | `.codebuddy/commands/opsx/<id>.md` |
-| Codex (`codex`) | `.codex/skills/rasen-*/SKILL.md` | `$CODEX_HOME/prompts/opsx-<id>.md`\* |
-| ForgeCode (`forgecode`) | `.forge/skills/rasen-*/SKILL.md` | 不生成（无 command 适配器；请使用基于 skill 的 `/rasen-*` 调用） |
-| Continue (`continue`) | `.continue/skills/rasen-*/SKILL.md` | `.continue/prompts/opsx-<id>.prompt` |
-| CoStrict (`costrict`) | `.cospec/skills/rasen-*/SKILL.md` | `.cospec/openspec/commands/opsx-<id>.md` |
-| Crush (`crush`) | `.crush/skills/rasen-*/SKILL.md` | `.crush/commands/opsx/<id>.md` |
-| Cursor (`cursor`) | `.cursor/skills/rasen-*/SKILL.md` | `.cursor/commands/opsx-<id>.md` |
-| Factory Droid (`factory`) | `.factory/skills/rasen-*/SKILL.md` | `.factory/commands/opsx-<id>.md` |
-| Gemini CLI (`gemini`) | `.gemini/skills/rasen-*/SKILL.md` | `.gemini/commands/opsx/<id>.toml` |
-| GitHub Copilot (`github-copilot`) | `.github/skills/rasen-*/SKILL.md` | `.github/prompts/opsx-<id>.prompt.md`\*\* |
-| iFlow (`iflow`) | `.iflow/skills/rasen-*/SKILL.md` | `.iflow/commands/opsx-<id>.md` |
-| Junie (`junie`) | `.junie/skills/rasen-*/SKILL.md` | `.junie/commands/opsx-<id>.md` |
-| Kilo Code (`kilocode`) | `.kilocode/skills/rasen-*/SKILL.md` | `.kilocode/workflows/opsx-<id>.md` |
-| Kimi CLI (`kimi`) | `.kimi/skills/rasen-*/SKILL.md` | 不生成（无 command 适配器；请使用基于 skill 的 `/skill:rasen-*` 调用） |
-| Kiro (`kiro`) | `.kiro/skills/rasen-*/SKILL.md` | `.kiro/prompts/opsx-<id>.prompt.md` |
-| Lingma (`lingma`) | `.lingma/skills/rasen-*/SKILL.md` | `.lingma/commands/opsx/<id>.md` |
-| Mistral Vibe (`vibe`) | `.vibe/skills/rasen-*/SKILL.md` | 不生成（无 command 适配器；请使用基于 skill 的 `/rasen-*` 调用） |
-| OpenCode (`opencode`) | `.opencode/skills/rasen-*/SKILL.md` | `.opencode/commands/opsx-<id>.md` |
-| Pi (`pi`) | `.pi/skills/rasen-*/SKILL.md` | `.pi/prompts/opsx-<id>.md` |
-| Qoder (`qoder`) | `.qoder/skills/rasen-*/SKILL.md` | `.qoder/commands/opsx/<id>.md` |
-| Qwen Code (`qwen`) | `.qwen/skills/rasen-*/SKILL.md` | `.qwen/commands/opsx-<id>.toml` |
-| RooCode (`roocode`) | `.roo/skills/rasen-*/SKILL.md` | `.roo/commands/opsx-<id>.md` |
-| Trae (`trae`) | `.trae/skills/rasen-*/SKILL.md` | 不生成（无 command 适配器；请使用基于 skill 的 `/rasen-*` 调用） |
-| Windsurf (`windsurf`) | `.windsurf/skills/rasen-*/SKILL.md` | `.windsurf/workflows/opsx-<id>.md` |
+| 工具 (ID) | Skills 路径模式 |
+|-----------|---------------------|
+| Amazon Q Developer (`amazon-q`) | `.amazonq/skills/rasen-*/SKILL.md` |
+| Antigravity (`antigravity`) | `.agent/skills/rasen-*/SKILL.md` |
+| Auggie (`auggie`) | `.augment/skills/rasen-*/SKILL.md` |
+| IBM Bob Shell (`bob`) | `.bob/skills/rasen-*/SKILL.md` |
+| Claude Code (`claude`) | `.claude/skills/rasen-*/SKILL.md` |
+| Cline (`cline`) | `.cline/skills/rasen-*/SKILL.md` |
+| CodeBuddy (`codebuddy`) | `.codebuddy/skills/rasen-*/SKILL.md` |
+| Codex (`codex`) | `.codex/skills/rasen-*/SKILL.md` |
+| ForgeCode (`forgecode`) | `.forge/skills/rasen-*/SKILL.md` |
+| Continue (`continue`) | `.continue/skills/rasen-*/SKILL.md` |
+| CoStrict (`costrict`) | `.cospec/skills/rasen-*/SKILL.md` |
+| Crush (`crush`) | `.crush/skills/rasen-*/SKILL.md` |
+| Cursor (`cursor`) | `.cursor/skills/rasen-*/SKILL.md` |
+| Factory Droid (`factory`) | `.factory/skills/rasen-*/SKILL.md` |
+| Gemini CLI (`gemini`) | `.gemini/skills/rasen-*/SKILL.md` |
+| GitHub Copilot (`github-copilot`) | `.github/skills/rasen-*/SKILL.md` |
+| Hermes (`hermes`) | `<HERMES_HOME 或 ~/.hermes>/skills/rasen-*/SKILL.md`（机器级全局目录，不在项目内） |
+| iFlow (`iflow`) | `.iflow/skills/rasen-*/SKILL.md` |
+| Junie (`junie`) | `.junie/skills/rasen-*/SKILL.md` |
+| Kilo Code (`kilocode`) | `.kilocode/skills/rasen-*/SKILL.md` |
+| Kimi CLI (`kimi`) | `.kimi/skills/rasen-*/SKILL.md` |
+| Kiro (`kiro`) | `.kiro/skills/rasen-*/SKILL.md` |
+| Lingma (`lingma`) | `.lingma/skills/rasen-*/SKILL.md` |
+| Mistral Vibe (`vibe`) | `.vibe/skills/rasen-*/SKILL.md` |
+| Oh My Pi (`omp`) | `.omp/skills/rasen-*/SKILL.md` |
+| OpenCode (`opencode`) | `.opencode/skills/rasen-*/SKILL.md` |
+| Pi (`pi`) | `.pi/skills/rasen-*/SKILL.md` |
+| Qoder (`qoder`) | `.qoder/skills/rasen-*/SKILL.md` |
+| Qwen Code (`qwen`) | `.qwen/skills/rasen-*/SKILL.md` |
+| RooCode (`roocode`) | `.roo/skills/rasen-*/SKILL.md` |
+| Trae (`trae`) | `.trae/skills/rasen-*/SKILL.md` |
+| Windsurf (`windsurf`) | `.windsurf/skills/rasen-*/SKILL.md` |
 
-\* Codex 的 command 安装在全局 Codex 主目录中（如果设置了 `$CODEX_HOME`，则为 `$CODEX_HOME/prompts/`，否则为 `~/.codex/prompts/`），而非你的项目目录。
-
-\*\* GitHub Copilot 的 prompt 文件在 IDE 扩展（VS Code、JetBrains、Visual Studio）中被识别为自定义斜杠命令。Copilot CLI 目前不直接使用 `.github/prompts/*.prompt.md`。
+此表不再列出 command 路径：per-tool 的 command 界面已停用，skill 是唯一的交付形式，`rasen init` 会主动清理遗留的 command 文件。
 
 ## 非交互式设置
 
@@ -63,7 +64,7 @@ rasen 兼容多种 AI 编程助手。当你运行 `rasen init` 时，rasen 会�
 
 ```bash
 # 配置特定工具
-rasen init --tools claude,cursor
+rasen init --tools claude,codex
 
 # 配置所有支持的工具
 rasen init --tools all
@@ -75,17 +76,20 @@ rasen init --tools none
 rasen init --profile core
 ```
 
-**可用的工具 ID（`--tools`）：** `amazon-q`、`antigravity`、`auggie`、`bob`、`claude`、`cline`、`codex`、`forgecode`、`codebuddy`、`continue`、`costrict`、`crush`、`cursor`、`factory`、`gemini`、`github-copilot`、`iflow`、`junie`、`kilocode`、`kimi`、`kiro`、`lingma`、`opencode`、`pi`、`qoder`、`qwen`、`roocode`、`trae`、`vibe`、`windsurf`
+**可安装的工具 ID（`--tools`）：** `claude`、`codex`、`hermes`、`omp`。`--tools all` 恰好展开为这四个。
+
+上表中的其他 ID 都是已识别但不提供安装的工具：rasen 需要针对每个 agent 适配 dispatch、worker 生命周期和 resume 行为，显式指定未适配的工具会失败，并给出"已识别但尚未适配"的提示——与"无法识别的 ID"错误不同。
 
 ## 依赖工作流的安装
 
 rasen 根据选定的工作流安装工作流产物：
 
-- **Core profile（默认）：** `propose`、`explore`、`apply`、`sync`、`archive`
+- **Full profile（默认）：** 全部工作流 ID
+- **Core profile：** `propose`、`explore`、`apply`、`sync`、`archive`
 - **自定义选择：** 所有工作流 ID 的任意子集：
   `propose`、`explore`、`new`、`continue`、`apply`、`sync`、`archive`、`bulk-archive`、`verify`、`onboard`
 
-换句话说，skill/command 的数量取决于 profile 和交付模式，并非固定不变。
+换句话说，skill 的数量取决于 profile，并非固定不变。
 
 ## 生成的 Skill 名称
 

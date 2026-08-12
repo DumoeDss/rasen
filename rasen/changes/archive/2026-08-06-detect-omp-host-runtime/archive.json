@@ -1,0 +1,29 @@
+{
+  "change": "detect-omp-host-runtime",
+  "archivedAt": "2026-08-06T05:02:05.043Z",
+  "codeCommit": "135f803285ac3afe588b808dcaba57b13fb214e7",
+  "planningBranch": "feature/runtime-adapter-interface-extraction",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/npm-pack-filename-gap-report.md",
+      "sha256": "6764abc27675702c8d9436cd4def6b3878533ea8de064bab9aa83d237b1e6ffb"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "cb73751853609e6b536a8676a86ef45ddfc7b6526a2cb919dee82c90a71ac960"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "d921268b5bd07af76be4ffeb31227002b990c8cbb65e59f5b8edd4c495e674c4"
+    },
+    {
+      "path": "evidence/verification-report.md",
+      "sha256": "acd1512c8befaa2053ac13568a7d82421bb261b66773cbd9b6d2c6a1e72099ed"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [],
+  "missing": []
+}

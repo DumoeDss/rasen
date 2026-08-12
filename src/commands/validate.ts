@@ -48,10 +48,12 @@ async function validatePipelineByName(
     // The codex availability probe is a pre-EXECUTION concern (it runs in
     // `pipeline run`'s preflight); surfacing it here makes every pipeline with
     // a codex role report invalid on machines without codex installed, including
-    // CI — even though the pipeline definition itself is well-formed.  The
-    // probeCodex stub keeps route validation (unsupported routes still fail)
-    // while skipping the binary availability check.
-    await validatePipelineForExecution(pipeline, projectRoot, { probeCodex: () => true });
+    // CI — even though the pipeline definition itself is well-formed.
+    // The codex probe stub keeps route validation (unsupported routes still
+    // fail) while skipping the binary availability check.
+    await validatePipelineForExecution(pipeline, projectRoot, {
+      probe: { codex: () => true },
+    });
   } catch (error) {
     const message =
       error instanceof PipelineLoadError && error.cause
@@ -82,6 +84,7 @@ interface ExecuteOptions {
   concurrency?: string;
   store?: string;
   project?: string;
+  targetLine?: string;
   storePath?: string;
 }
 
@@ -89,7 +92,7 @@ interface BulkItemResult {
   id: string;
   type: ItemType;
   valid: boolean;
-  issues: { level: 'ERROR' | 'WARNING' | 'INFO'; path: string; message: string }[];
+  issues: ValidationIssue[];
   durationMs: number;
 }
 
@@ -176,7 +179,10 @@ export class ValidateCommand {
     if (choice === 'pipelines') return this.runBulkValidation(root, { changes: false, specs: false, pipelines: true }, opts);
 
     // one
-    const [changes, specs] = await Promise.all([this.listChangeIds(root), getSpecIds(root.path)]);
+    const [changes, specs] = await Promise.all([
+      this.listChangeIds(root),
+      getSpecIds(root.path, root.specsDir),
+    ]);
     const pipelines = listPipelines(root.path);
     const items: { name: string; value: { type: ItemType; id: string } }[] = [];
     items.push(...changes.map(id => ({ name: `change/${id}`, value: { type: 'change' as const, id } })));
@@ -208,7 +214,10 @@ export class ValidateCommand {
       return;
     }
 
-    const [changes, specs] = await Promise.all([this.listChangeIds(root), getSpecIds(root.path)]);
+    const [changes, specs] = await Promise.all([
+      this.listChangeIds(root),
+      getSpecIds(root.path, root.specsDir),
+    ]);
     const pipelines = listPipelines(root.path);
     const isChange = changes.includes(itemName);
     const isSpec = specs.includes(itemName);
@@ -284,7 +293,10 @@ export class ValidateCommand {
     if (type === 'change') {
       const changeDir = path.join(root.changesDir, id);
       const start = Date.now();
-      const report = await validator.validateChangeDeltaSpecs(changeDir);
+      const report = await validator.validateChangeDeltaSpecs(
+        changeDir,
+        root.specsDir
+      );
       const durationMs = Date.now() - start;
       this.printReport('change', id, report, durationMs, opts.json, root);
       // Non-zero exit if invalid (keeps enriched output test semantics)
@@ -308,6 +320,14 @@ export class ValidateCommand {
     const label = labelForType(type);
     if (report.valid) {
       console.log(`${label} '${id}' is valid`);
+      for (const issue of report.issues) {
+        const issueLabel = issue.level === 'ERROR' ? 'ERROR' : issue.level;
+        const prefix =
+          issue.level === 'ERROR' ? '✗' : issue.level === 'WARNING' ? '⚠' : 'ℹ';
+        console.warn(
+          `${prefix} [${issueLabel}] ${issue.path}: ${issue.message}`
+        );
+      }
     } else {
       console.error(`${label} '${id}' has issues`);
       for (const issue of report.issues) {
@@ -342,7 +362,7 @@ export class ValidateCommand {
     const spinner = !opts.json && !opts.noInteractive ? ora('Validating...').start() : undefined;
     const [changeIds, specIds] = await Promise.all([
       scope.changes ? this.listChangeIds(root) : Promise.resolve<string[]>([]),
-      scope.specs ? getSpecIds(root.path) : Promise.resolve<string[]>([]),
+      scope.specs ? getSpecIds(root.path, root.specsDir) : Promise.resolve<string[]>([]),
     ]);
     const pipelineIds = scope.pipelines ? listPipelines(root.path) : [];
 
@@ -356,7 +376,10 @@ export class ValidateCommand {
       queue.push(async () => {
         const start = Date.now();
         const changeDir = path.join(root.changesDir, id);
-        const report = await validator.validateChangeDeltaSpecs(changeDir);
+        const report = await validator.validateChangeDeltaSpecs(
+          changeDir,
+          root.specsDir
+        );
         const durationMs = Date.now() - start;
         return { id, type: 'change' as const, valid: report.valid, issues: report.issues, durationMs };
       });
@@ -455,6 +478,22 @@ export class ValidateCommand {
       for (const res of results) {
         if (res.valid) console.log(`✓ ${res.type}/${res.id}`);
         else console.error(`✗ ${res.type}/${res.id}`);
+        for (const issue of res.issues) {
+          const prefix =
+            issue.level === 'ERROR'
+              ? '✗'
+              : issue.level === 'WARNING'
+                ? '⚠'
+                : 'ℹ';
+          const detail =
+            `${prefix} [${issue.level}] ${res.type}/${res.id} ` +
+            `${issue.path}: ${issue.message}`;
+          if (issue.level === 'ERROR') {
+            console.error(detail);
+          } else {
+            console.warn(detail);
+          }
+        }
       }
       console.log(`Totals: ${summary.totals.passed} passed, ${summary.totals.failed} failed (${summary.totals.items} items)`);
       const firstFailure = results.find((res) => !res.valid);

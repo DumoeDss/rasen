@@ -1,0 +1,45 @@
+{
+  "change": "store-planning-worktree-bindings",
+  "archivedAt": "2026-08-08T08:39:34.529Z",
+  "codeCommit": "fbfe78177b154db61e9f7ec2b55201fe000484ea",
+  "planningBranch": "feat/store-project-partitions-planning-worktrees",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/fix-report-r1.md",
+      "sha256": "f04627ea46684c14804fdd57c994db37606c61bde99af106246392f0ba9e5ec4"
+    },
+    {
+      "path": "evidence/fix-report-r2.md",
+      "sha256": "8931b8d0191362e73c1fe95236534bdb347732bd833f958fc5112a5e7617ef3a"
+    },
+    {
+      "path": "evidence/implementation-report.md",
+      "sha256": "e4554fb9cbfeba04beb8669eb3751d5eba6370f91ab8677d310321ed9936eafa"
+    },
+    {
+      "path": "evidence/review-report-r2.md",
+      "sha256": "bac6dad3fcc00860acf8d43abdb259f6f45aad65ab0e83880faf045d0e350568"
+    },
+    {
+      "path": "evidence/review-report-r3.md",
+      "sha256": "d8c2de5a9cdeba92780260f3bd217d98170dab07468eeb3261eb10e4f64fc4e7"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "6c60027fb8838c7813306ed41e270fd1d9f38042baba3834a26a5d19875349f5"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "a9b667d26ef90ebcc622392ba3d6407a45bfba22aab014c070780a6fc174a281"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

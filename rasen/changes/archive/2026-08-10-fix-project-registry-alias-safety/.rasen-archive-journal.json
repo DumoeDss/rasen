@@ -1,0 +1,4800 @@
+{
+  "schemaVersion": 2,
+  "transactionId": "92e38fce-3552-4334-9564-66413c43686a",
+  "planHash": "77c3343e90aeadafed65f1dc4f10c356e681a2e5b696ff1efc9b07fe5e74a3a2",
+  "change": "fix-project-registry-alias-safety",
+  "phase": "complete",
+  "activePath": "E:\\wt\\rasen-archive-follow-up\\rasen\\changes\\fix-project-registry-alias-safety",
+  "stagePath": "E:\\wt\\rasen-archive-follow-up\\rasen\\changes\\archive\\.rasen-archive-stage-92e38fce-3552-4334-9564-66413c43686a",
+  "finalPath": "E:\\wt\\rasen-archive-follow-up\\rasen\\changes\\archive\\2026-08-10-fix-project-registry-alias-safety",
+  "ephemeraDisposed": [
+    "auto-run.json"
+  ],
+  "phaseFingerprints": {
+    "payload-copied": {
+      "state": "verified",
+      "scope": "stage",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "02485e372e99c2506900b1c99b2f583dac3dc2c5bd96425e85c0afb45534a2d4",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "165c19261c3cb160f2c3b746659293a5fa5b588016a558238012d1fa32a42c20"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11908",
+            "sha256": "0aab90c05dd959a065cf7ab3b0ec9694f0b17ef2b3ca799dbaf804fddd2c70fe"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7064",
+            "sha256": "801a12857c10b901b984481e8b9bab21aa356956f32495764a01f9a9ab6a9e3d"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "21868",
+            "sha256": "40c33981d5fe17f503a2bf4c043310eee26291345aa6682f7d401a3bc5a6b217"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2280",
+            "sha256": "8e346b02561db4c42892c4c10d401fa8ed8b9a99f9a4b493fb4723449d59cc02"
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "executable": false,
+            "size": "963",
+            "sha256": "ec0fd650c877188f466255a5102555b65ac2e01efb813bb64cf1104723d1b8c2"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2164",
+            "sha256": "b5785791b6212006efc714a8eaf3d3bdb35c243801caced80340e1bf2e0beba1"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "139",
+            "sha256": "47ef1c78688a6465d5eb670b395bb8db1942097126f8d60b42fb7eb46c57f5f6"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3595",
+            "sha256": "2b1c475de382aeb503efe1cb91c702dc05b1ec4aff89e4d151537d908120ac78"
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1824",
+            "sha256": "a30ab8686a6186db96149ae3af0dc06a07835c63f4cf237ef10482ff2e261213"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3734",
+            "sha256": "3747e1d533e746f657b5568457856f31a960f1f81bcbc225682d7bd5d0a4c3bb"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "844424940670216",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "a8b3ebf8eeeffd82ead3a3bb0b4737cb058c220430e83565d5feae454c187470",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940670214",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1786280784943542500",
+              "ctimeNs": "1786280784958745000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174707880927",
+              "mode": "33206",
+              "size": "11908",
+              "mtimeNs": "1786282990998651600",
+              "ctimeNs": "1786282990998651600"
+            }
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "43065671447413306",
+              "mode": "33206",
+              "size": "7064",
+              "mtimeNs": "1786290210751455000",
+              "ctimeNs": "1786290210751455000"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20829148287270737",
+              "mode": "33206",
+              "size": "21868",
+              "mtimeNs": "1786289957236151500",
+              "ctimeNs": "1786289957236151500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224754326339",
+              "mode": "33206",
+              "size": "2280",
+              "mtimeNs": "1786290685611148900",
+              "ctimeNs": "1786290685611148900"
+            }
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "8725724288712336",
+              "mode": "33206",
+              "size": "963",
+              "mtimeNs": "1786286167957608700",
+              "ctimeNs": "1786286167957608700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9570149218844262",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2533274801030484",
+              "mode": "33206",
+              "size": "2164",
+              "mtimeNs": "1786282753422251300",
+              "ctimeNs": "1786282753422251300"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940670215",
+              "mode": "33206",
+              "size": "139",
+              "mtimeNs": "1786280784943542500",
+              "ctimeNs": "1786280784958745000"
+            }
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964064188",
+              "mode": "33206",
+              "size": "3595",
+              "mtimeNs": "1786282991003461500",
+              "ctimeNs": "1786282991003461500"
+            }
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2533274801038676",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964064190",
+              "mode": "33206",
+              "size": "1824",
+              "mtimeNs": "1786282891564351800",
+              "ctimeNs": "1786282891564351800"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964064189",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174707880928",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940774860",
+              "mode": "33206",
+              "size": "3734",
+              "mtimeNs": "1786286167959606800",
+              "ctimeNs": "1786286167959606800"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "02485e372e99c2506900b1c99b2f583dac3dc2c5bd96425e85c0afb45534a2d4",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "165c19261c3cb160f2c3b746659293a5fa5b588016a558238012d1fa32a42c20"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11908",
+            "sha256": "0aab90c05dd959a065cf7ab3b0ec9694f0b17ef2b3ca799dbaf804fddd2c70fe"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7064",
+            "sha256": "801a12857c10b901b984481e8b9bab21aa356956f32495764a01f9a9ab6a9e3d"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "21868",
+            "sha256": "40c33981d5fe17f503a2bf4c043310eee26291345aa6682f7d401a3bc5a6b217"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2280",
+            "sha256": "8e346b02561db4c42892c4c10d401fa8ed8b9a99f9a4b493fb4723449d59cc02"
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "executable": false,
+            "size": "963",
+            "sha256": "ec0fd650c877188f466255a5102555b65ac2e01efb813bb64cf1104723d1b8c2"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2164",
+            "sha256": "b5785791b6212006efc714a8eaf3d3bdb35c243801caced80340e1bf2e0beba1"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "139",
+            "sha256": "47ef1c78688a6465d5eb670b395bb8db1942097126f8d60b42fb7eb46c57f5f6"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3595",
+            "sha256": "2b1c475de382aeb503efe1cb91c702dc05b1ec4aff89e4d151537d908120ac78"
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1824",
+            "sha256": "a30ab8686a6186db96149ae3af0dc06a07835c63f4cf237ef10482ff2e261213"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3734",
+            "sha256": "3747e1d533e746f657b5568457856f31a960f1f81bcbc225682d7bd5d0a4c3bb"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "25895697868104731",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "c4d6766e3885b4568dfb2ffd4a3d2079bbf9bd4ce3f45f5268196ea688847367",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23080948100998172",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1786280784943542500",
+              "ctimeNs": "1786280784958745000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18295873496917022",
+              "mode": "33206",
+              "size": "11908",
+              "mtimeNs": "1786282990998651600",
+              "ctimeNs": "1786282990998651600"
+            }
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "12384898985993248",
+              "mode": "33206",
+              "size": "7064",
+              "mtimeNs": "1786290210751455000",
+              "ctimeNs": "1786290210751455000"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10696049125729313",
+              "mode": "33206",
+              "size": "21868",
+              "mtimeNs": "1786289957236151500",
+              "ctimeNs": "1786289957236151500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "6755399451780130",
+              "mode": "33206",
+              "size": "2280",
+              "mtimeNs": "1786290685611148900",
+              "ctimeNs": "1786290685611148900"
+            }
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074614805539",
+              "mode": "33206",
+              "size": "963",
+              "mtimeNs": "1786286167957608700",
+              "ctimeNs": "1786286167957608700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "14073748846257183",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749777830948",
+              "mode": "33206",
+              "size": "2164",
+              "mtimeNs": "1786282753422251300",
+              "ctimeNs": "1786282753422251300"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799824409637",
+              "mode": "33206",
+              "size": "139",
+              "mtimeNs": "1786280784943542500",
+              "ctimeNs": "1786280784958745000"
+            }
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567017",
+              "mode": "33206",
+              "size": "3595",
+              "mtimeNs": "1786282991003461500",
+              "ctimeNs": "1786282991003461500"
+            }
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567016",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567019",
+              "mode": "33206",
+              "size": "1824",
+              "mtimeNs": "1786282891564351800",
+              "ctimeNs": "1786282891564351800"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567018",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698983",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567020",
+              "mode": "33206",
+              "size": "3734",
+              "mtimeNs": "1786286167959606800",
+              "ctimeNs": "1786286167959606800"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "02485e372e99c2506900b1c99b2f583dac3dc2c5bd96425e85c0afb45534a2d4",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "165c19261c3cb160f2c3b746659293a5fa5b588016a558238012d1fa32a42c20"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11908",
+            "sha256": "0aab90c05dd959a065cf7ab3b0ec9694f0b17ef2b3ca799dbaf804fddd2c70fe"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7064",
+            "sha256": "801a12857c10b901b984481e8b9bab21aa356956f32495764a01f9a9ab6a9e3d"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "21868",
+            "sha256": "40c33981d5fe17f503a2bf4c043310eee26291345aa6682f7d401a3bc5a6b217"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2280",
+            "sha256": "8e346b02561db4c42892c4c10d401fa8ed8b9a99f9a4b493fb4723449d59cc02"
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "executable": false,
+            "size": "963",
+            "sha256": "ec0fd650c877188f466255a5102555b65ac2e01efb813bb64cf1104723d1b8c2"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2164",
+            "sha256": "b5785791b6212006efc714a8eaf3d3bdb35c243801caced80340e1bf2e0beba1"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "139",
+            "sha256": "47ef1c78688a6465d5eb670b395bb8db1942097126f8d60b42fb7eb46c57f5f6"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3595",
+            "sha256": "2b1c475de382aeb503efe1cb91c702dc05b1ec4aff89e4d151537d908120ac78"
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1824",
+            "sha256": "a30ab8686a6186db96149ae3af0dc06a07835c63f4cf237ef10482ff2e261213"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3734",
+            "sha256": "3747e1d533e746f657b5568457856f31a960f1f81bcbc225682d7bd5d0a4c3bb"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "25895697868104731",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "c4d6766e3885b4568dfb2ffd4a3d2079bbf9bd4ce3f45f5268196ea688847367",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23080948100998172",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1786280784943542500",
+              "ctimeNs": "1786280784958745000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18295873496917022",
+              "mode": "33206",
+              "size": "11908",
+              "mtimeNs": "1786282990998651600",
+              "ctimeNs": "1786282990998651600"
+            }
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "12384898985993248",
+              "mode": "33206",
+              "size": "7064",
+              "mtimeNs": "1786290210751455000",
+              "ctimeNs": "1786290210751455000"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10696049125729313",
+              "mode": "33206",
+              "size": "21868",
+              "mtimeNs": "1786289957236151500",
+              "ctimeNs": "1786289957236151500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "6755399451780130",
+              "mode": "33206",
+              "size": "2280",
+              "mtimeNs": "1786290685611148900",
+              "ctimeNs": "1786290685611148900"
+            }
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074614805539",
+              "mode": "33206",
+              "size": "963",
+              "mtimeNs": "1786286167957608700",
+              "ctimeNs": "1786286167957608700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "14073748846257183",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749777830948",
+              "mode": "33206",
+              "size": "2164",
+              "mtimeNs": "1786282753422251300",
+              "ctimeNs": "1786282753422251300"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799824409637",
+              "mode": "33206",
+              "size": "139",
+              "mtimeNs": "1786280784943542500",
+              "ctimeNs": "1786280784958745000"
+            }
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567017",
+              "mode": "33206",
+              "size": "3595",
+              "mtimeNs": "1786282991003461500",
+              "ctimeNs": "1786282991003461500"
+            }
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567016",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567019",
+              "mode": "33206",
+              "size": "1824",
+              "mtimeNs": "1786282891564351800",
+              "ctimeNs": "1786282891564351800"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567018",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698983",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567020",
+              "mode": "33206",
+              "size": "3734",
+              "mtimeNs": "1786286167959606800",
+              "ctimeNs": "1786286167959606800"
+            }
+          }
+        ]
+      }
+    },
+    "handoff-finalized": {
+      "state": "verified",
+      "scope": "stage",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "02485e372e99c2506900b1c99b2f583dac3dc2c5bd96425e85c0afb45534a2d4",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "165c19261c3cb160f2c3b746659293a5fa5b588016a558238012d1fa32a42c20"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11908",
+            "sha256": "0aab90c05dd959a065cf7ab3b0ec9694f0b17ef2b3ca799dbaf804fddd2c70fe"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7064",
+            "sha256": "801a12857c10b901b984481e8b9bab21aa356956f32495764a01f9a9ab6a9e3d"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "21868",
+            "sha256": "40c33981d5fe17f503a2bf4c043310eee26291345aa6682f7d401a3bc5a6b217"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2280",
+            "sha256": "8e346b02561db4c42892c4c10d401fa8ed8b9a99f9a4b493fb4723449d59cc02"
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "executable": false,
+            "size": "963",
+            "sha256": "ec0fd650c877188f466255a5102555b65ac2e01efb813bb64cf1104723d1b8c2"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2164",
+            "sha256": "b5785791b6212006efc714a8eaf3d3bdb35c243801caced80340e1bf2e0beba1"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "139",
+            "sha256": "47ef1c78688a6465d5eb670b395bb8db1942097126f8d60b42fb7eb46c57f5f6"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3595",
+            "sha256": "2b1c475de382aeb503efe1cb91c702dc05b1ec4aff89e4d151537d908120ac78"
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1824",
+            "sha256": "a30ab8686a6186db96149ae3af0dc06a07835c63f4cf237ef10482ff2e261213"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3734",
+            "sha256": "3747e1d533e746f657b5568457856f31a960f1f81bcbc225682d7bd5d0a4c3bb"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "25895697868104731",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "c4d6766e3885b4568dfb2ffd4a3d2079bbf9bd4ce3f45f5268196ea688847367",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23080948100998172",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1786280784943542500",
+              "ctimeNs": "1786280784958745000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18295873496917022",
+              "mode": "33206",
+              "size": "11908",
+              "mtimeNs": "1786282990998651600",
+              "ctimeNs": "1786282990998651600"
+            }
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "12384898985993248",
+              "mode": "33206",
+              "size": "7064",
+              "mtimeNs": "1786290210751455000",
+              "ctimeNs": "1786290210751455000"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10696049125729313",
+              "mode": "33206",
+              "size": "21868",
+              "mtimeNs": "1786289957236151500",
+              "ctimeNs": "1786289957236151500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "6755399451780130",
+              "mode": "33206",
+              "size": "2280",
+              "mtimeNs": "1786290685611148900",
+              "ctimeNs": "1786290685611148900"
+            }
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074614805539",
+              "mode": "33206",
+              "size": "963",
+              "mtimeNs": "1786286167957608700",
+              "ctimeNs": "1786286167957608700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "14073748846257183",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749777830948",
+              "mode": "33206",
+              "size": "2164",
+              "mtimeNs": "1786282753422251300",
+              "ctimeNs": "1786282753422251300"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799824409637",
+              "mode": "33206",
+              "size": "139",
+              "mtimeNs": "1786280784943542500",
+              "ctimeNs": "1786280784958745000"
+            }
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567017",
+              "mode": "33206",
+              "size": "3595",
+              "mtimeNs": "1786282991003461500",
+              "ctimeNs": "1786282991003461500"
+            }
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567016",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567019",
+              "mode": "33206",
+              "size": "1824",
+              "mtimeNs": "1786282891564351800",
+              "ctimeNs": "1786282891564351800"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567018",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698983",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567020",
+              "mode": "33206",
+              "size": "3734",
+              "mtimeNs": "1786286167959606800",
+              "ctimeNs": "1786286167959606800"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "02485e372e99c2506900b1c99b2f583dac3dc2c5bd96425e85c0afb45534a2d4",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "165c19261c3cb160f2c3b746659293a5fa5b588016a558238012d1fa32a42c20"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11908",
+            "sha256": "0aab90c05dd959a065cf7ab3b0ec9694f0b17ef2b3ca799dbaf804fddd2c70fe"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7064",
+            "sha256": "801a12857c10b901b984481e8b9bab21aa356956f32495764a01f9a9ab6a9e3d"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "21868",
+            "sha256": "40c33981d5fe17f503a2bf4c043310eee26291345aa6682f7d401a3bc5a6b217"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2280",
+            "sha256": "8e346b02561db4c42892c4c10d401fa8ed8b9a99f9a4b493fb4723449d59cc02"
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "executable": false,
+            "size": "963",
+            "sha256": "ec0fd650c877188f466255a5102555b65ac2e01efb813bb64cf1104723d1b8c2"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2164",
+            "sha256": "b5785791b6212006efc714a8eaf3d3bdb35c243801caced80340e1bf2e0beba1"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "139",
+            "sha256": "47ef1c78688a6465d5eb670b395bb8db1942097126f8d60b42fb7eb46c57f5f6"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3595",
+            "sha256": "2b1c475de382aeb503efe1cb91c702dc05b1ec4aff89e4d151537d908120ac78"
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1824",
+            "sha256": "a30ab8686a6186db96149ae3af0dc06a07835c63f4cf237ef10482ff2e261213"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3734",
+            "sha256": "3747e1d533e746f657b5568457856f31a960f1f81bcbc225682d7bd5d0a4c3bb"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "25895697868104731",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "c4d6766e3885b4568dfb2ffd4a3d2079bbf9bd4ce3f45f5268196ea688847367",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23080948100998172",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1786280784943542500",
+              "ctimeNs": "1786280784958745000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18295873496917022",
+              "mode": "33206",
+              "size": "11908",
+              "mtimeNs": "1786282990998651600",
+              "ctimeNs": "1786282990998651600"
+            }
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "12384898985993248",
+              "mode": "33206",
+              "size": "7064",
+              "mtimeNs": "1786290210751455000",
+              "ctimeNs": "1786290210751455000"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10696049125729313",
+              "mode": "33206",
+              "size": "21868",
+              "mtimeNs": "1786289957236151500",
+              "ctimeNs": "1786289957236151500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "6755399451780130",
+              "mode": "33206",
+              "size": "2280",
+              "mtimeNs": "1786290685611148900",
+              "ctimeNs": "1786290685611148900"
+            }
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074614805539",
+              "mode": "33206",
+              "size": "963",
+              "mtimeNs": "1786286167957608700",
+              "ctimeNs": "1786286167957608700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "14073748846257183",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749777830948",
+              "mode": "33206",
+              "size": "2164",
+              "mtimeNs": "1786282753422251300",
+              "ctimeNs": "1786282753422251300"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799824409637",
+              "mode": "33206",
+              "size": "139",
+              "mtimeNs": "1786280784943542500",
+              "ctimeNs": "1786280784958745000"
+            }
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567017",
+              "mode": "33206",
+              "size": "3595",
+              "mtimeNs": "1786282991003461500",
+              "ctimeNs": "1786282991003461500"
+            }
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567016",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567019",
+              "mode": "33206",
+              "size": "1824",
+              "mtimeNs": "1786282891564351800",
+              "ctimeNs": "1786282891564351800"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567018",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698983",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567020",
+              "mode": "33206",
+              "size": "3734",
+              "mtimeNs": "1786286167959606800",
+              "ctimeNs": "1786286167959606800"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "02485e372e99c2506900b1c99b2f583dac3dc2c5bd96425e85c0afb45534a2d4",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "165c19261c3cb160f2c3b746659293a5fa5b588016a558238012d1fa32a42c20"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11908",
+            "sha256": "0aab90c05dd959a065cf7ab3b0ec9694f0b17ef2b3ca799dbaf804fddd2c70fe"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7064",
+            "sha256": "801a12857c10b901b984481e8b9bab21aa356956f32495764a01f9a9ab6a9e3d"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "21868",
+            "sha256": "40c33981d5fe17f503a2bf4c043310eee26291345aa6682f7d401a3bc5a6b217"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2280",
+            "sha256": "8e346b02561db4c42892c4c10d401fa8ed8b9a99f9a4b493fb4723449d59cc02"
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "executable": false,
+            "size": "963",
+            "sha256": "ec0fd650c877188f466255a5102555b65ac2e01efb813bb64cf1104723d1b8c2"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2164",
+            "sha256": "b5785791b6212006efc714a8eaf3d3bdb35c243801caced80340e1bf2e0beba1"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "139",
+            "sha256": "47ef1c78688a6465d5eb670b395bb8db1942097126f8d60b42fb7eb46c57f5f6"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3595",
+            "sha256": "2b1c475de382aeb503efe1cb91c702dc05b1ec4aff89e4d151537d908120ac78"
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1824",
+            "sha256": "a30ab8686a6186db96149ae3af0dc06a07835c63f4cf237ef10482ff2e261213"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3734",
+            "sha256": "3747e1d533e746f657b5568457856f31a960f1f81bcbc225682d7bd5d0a4c3bb"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "25895697868104731",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "c4d6766e3885b4568dfb2ffd4a3d2079bbf9bd4ce3f45f5268196ea688847367",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23080948100998172",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1786280784943542500",
+              "ctimeNs": "1786280784958745000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18295873496917022",
+              "mode": "33206",
+              "size": "11908",
+              "mtimeNs": "1786282990998651600",
+              "ctimeNs": "1786282990998651600"
+            }
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "12384898985993248",
+              "mode": "33206",
+              "size": "7064",
+              "mtimeNs": "1786290210751455000",
+              "ctimeNs": "1786290210751455000"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10696049125729313",
+              "mode": "33206",
+              "size": "21868",
+              "mtimeNs": "1786289957236151500",
+              "ctimeNs": "1786289957236151500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "6755399451780130",
+              "mode": "33206",
+              "size": "2280",
+              "mtimeNs": "1786290685611148900",
+              "ctimeNs": "1786290685611148900"
+            }
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074614805539",
+              "mode": "33206",
+              "size": "963",
+              "mtimeNs": "1786286167957608700",
+              "ctimeNs": "1786286167957608700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "14073748846257183",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749777830948",
+              "mode": "33206",
+              "size": "2164",
+              "mtimeNs": "1786282753422251300",
+              "ctimeNs": "1786282753422251300"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799824409637",
+              "mode": "33206",
+              "size": "139",
+              "mtimeNs": "1786280784943542500",
+              "ctimeNs": "1786280784958745000"
+            }
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567017",
+              "mode": "33206",
+              "size": "3595",
+              "mtimeNs": "1786282991003461500",
+              "ctimeNs": "1786282991003461500"
+            }
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567016",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567019",
+              "mode": "33206",
+              "size": "1824",
+              "mtimeNs": "1786282891564351800",
+              "ctimeNs": "1786282891564351800"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567018",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698983",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567020",
+              "mode": "33206",
+              "size": "3734",
+              "mtimeNs": "1786286167959606800",
+              "ctimeNs": "1786286167959606800"
+            }
+          }
+        ]
+      }
+    },
+    "evidence-finalized": {
+      "state": "verified",
+      "scope": "stage",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "02485e372e99c2506900b1c99b2f583dac3dc2c5bd96425e85c0afb45534a2d4",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "165c19261c3cb160f2c3b746659293a5fa5b588016a558238012d1fa32a42c20"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11908",
+            "sha256": "0aab90c05dd959a065cf7ab3b0ec9694f0b17ef2b3ca799dbaf804fddd2c70fe"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7064",
+            "sha256": "801a12857c10b901b984481e8b9bab21aa356956f32495764a01f9a9ab6a9e3d"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "21868",
+            "sha256": "40c33981d5fe17f503a2bf4c043310eee26291345aa6682f7d401a3bc5a6b217"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2280",
+            "sha256": "8e346b02561db4c42892c4c10d401fa8ed8b9a99f9a4b493fb4723449d59cc02"
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "executable": false,
+            "size": "963",
+            "sha256": "ec0fd650c877188f466255a5102555b65ac2e01efb813bb64cf1104723d1b8c2"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2164",
+            "sha256": "b5785791b6212006efc714a8eaf3d3bdb35c243801caced80340e1bf2e0beba1"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "139",
+            "sha256": "47ef1c78688a6465d5eb670b395bb8db1942097126f8d60b42fb7eb46c57f5f6"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3595",
+            "sha256": "2b1c475de382aeb503efe1cb91c702dc05b1ec4aff89e4d151537d908120ac78"
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1824",
+            "sha256": "a30ab8686a6186db96149ae3af0dc06a07835c63f4cf237ef10482ff2e261213"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3734",
+            "sha256": "3747e1d533e746f657b5568457856f31a960f1f81bcbc225682d7bd5d0a4c3bb"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "25895697868104731",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "c4d6766e3885b4568dfb2ffd4a3d2079bbf9bd4ce3f45f5268196ea688847367",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23080948100998172",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1786280784943542500",
+              "ctimeNs": "1786280784958745000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18295873496917022",
+              "mode": "33206",
+              "size": "11908",
+              "mtimeNs": "1786282990998651600",
+              "ctimeNs": "1786282990998651600"
+            }
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "12384898985993248",
+              "mode": "33206",
+              "size": "7064",
+              "mtimeNs": "1786290210751455000",
+              "ctimeNs": "1786290210751455000"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10696049125729313",
+              "mode": "33206",
+              "size": "21868",
+              "mtimeNs": "1786289957236151500",
+              "ctimeNs": "1786289957236151500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "6755399451780130",
+              "mode": "33206",
+              "size": "2280",
+              "mtimeNs": "1786290685611148900",
+              "ctimeNs": "1786290685611148900"
+            }
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074614805539",
+              "mode": "33206",
+              "size": "963",
+              "mtimeNs": "1786286167957608700",
+              "ctimeNs": "1786286167957608700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "14073748846257183",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749777830948",
+              "mode": "33206",
+              "size": "2164",
+              "mtimeNs": "1786282753422251300",
+              "ctimeNs": "1786282753422251300"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799824409637",
+              "mode": "33206",
+              "size": "139",
+              "mtimeNs": "1786280784943542500",
+              "ctimeNs": "1786280784958745000"
+            }
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567017",
+              "mode": "33206",
+              "size": "3595",
+              "mtimeNs": "1786282991003461500",
+              "ctimeNs": "1786282991003461500"
+            }
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567016",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567019",
+              "mode": "33206",
+              "size": "1824",
+              "mtimeNs": "1786282891564351800",
+              "ctimeNs": "1786282891564351800"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567018",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698983",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567020",
+              "mode": "33206",
+              "size": "3734",
+              "mtimeNs": "1786286167959606800",
+              "ctimeNs": "1786286167959606800"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "2d909554a689802f7b73245171b3e90326bc64db8c6b4789821368af202905fb",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "211",
+            "sha256": "4b52e855469fa12624bcd599d02ad95b62d4a39a90ff33ac21ff875930268a90"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11908",
+            "sha256": "0aab90c05dd959a065cf7ab3b0ec9694f0b17ef2b3ca799dbaf804fddd2c70fe"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7064",
+            "sha256": "801a12857c10b901b984481e8b9bab21aa356956f32495764a01f9a9ab6a9e3d"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "21868",
+            "sha256": "40c33981d5fe17f503a2bf4c043310eee26291345aa6682f7d401a3bc5a6b217"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2561",
+            "sha256": "b4aa52ca3f746a63099b536bb2cdcb71cf9af001fac723db5a2e88fc585d9a0f"
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "executable": false,
+            "size": "963",
+            "sha256": "ec0fd650c877188f466255a5102555b65ac2e01efb813bb64cf1104723d1b8c2"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2164",
+            "sha256": "b5785791b6212006efc714a8eaf3d3bdb35c243801caced80340e1bf2e0beba1"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "139",
+            "sha256": "47ef1c78688a6465d5eb670b395bb8db1942097126f8d60b42fb7eb46c57f5f6"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3595",
+            "sha256": "2b1c475de382aeb503efe1cb91c702dc05b1ec4aff89e4d151537d908120ac78"
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1824",
+            "sha256": "a30ab8686a6186db96149ae3af0dc06a07835c63f4cf237ef10482ff2e261213"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3734",
+            "sha256": "3747e1d533e746f657b5568457856f31a960f1f81bcbc225682d7bd5d0a4c3bb"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "25895697868104731",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "021293517da55b10431ef8cc7c8f0492dc651f778c5a78013d3e4b414ea954c9",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23080948100998172",
+              "mode": "33206",
+              "size": "211",
+              "mtimeNs": "1786341615209686800",
+              "ctimeNs": "1786341615209686800"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18295873496917022",
+              "mode": "33206",
+              "size": "11908",
+              "mtimeNs": "1786282990998651600",
+              "ctimeNs": "1786282990998651600"
+            }
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "12384898985993248",
+              "mode": "33206",
+              "size": "7064",
+              "mtimeNs": "1786290210751455000",
+              "ctimeNs": "1786290210751455000"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10696049125729313",
+              "mode": "33206",
+              "size": "21868",
+              "mtimeNs": "1786289957236151500",
+              "ctimeNs": "1786289957236151500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "6755399451780130",
+              "mode": "33206",
+              "size": "2561",
+              "mtimeNs": "1786341615205884900",
+              "ctimeNs": "1786341615205884900"
+            }
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074614805539",
+              "mode": "33206",
+              "size": "963",
+              "mtimeNs": "1786286167957608700",
+              "ctimeNs": "1786286167957608700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "14073748846257183",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749777830948",
+              "mode": "33206",
+              "size": "2164",
+              "mtimeNs": "1786282753422251300",
+              "ctimeNs": "1786282753422251300"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799824409637",
+              "mode": "33206",
+              "size": "139",
+              "mtimeNs": "1786280784943542500",
+              "ctimeNs": "1786280784958745000"
+            }
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567017",
+              "mode": "33206",
+              "size": "3595",
+              "mtimeNs": "1786282991003461500",
+              "ctimeNs": "1786282991003461500"
+            }
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567016",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567019",
+              "mode": "33206",
+              "size": "1824",
+              "mtimeNs": "1786282891564351800",
+              "ctimeNs": "1786282891564351800"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567018",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698983",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567020",
+              "mode": "33206",
+              "size": "3734",
+              "mtimeNs": "1786286167959606800",
+              "ctimeNs": "1786286167959606800"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "2d909554a689802f7b73245171b3e90326bc64db8c6b4789821368af202905fb",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "211",
+            "sha256": "4b52e855469fa12624bcd599d02ad95b62d4a39a90ff33ac21ff875930268a90"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11908",
+            "sha256": "0aab90c05dd959a065cf7ab3b0ec9694f0b17ef2b3ca799dbaf804fddd2c70fe"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7064",
+            "sha256": "801a12857c10b901b984481e8b9bab21aa356956f32495764a01f9a9ab6a9e3d"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "21868",
+            "sha256": "40c33981d5fe17f503a2bf4c043310eee26291345aa6682f7d401a3bc5a6b217"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2561",
+            "sha256": "b4aa52ca3f746a63099b536bb2cdcb71cf9af001fac723db5a2e88fc585d9a0f"
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "executable": false,
+            "size": "963",
+            "sha256": "ec0fd650c877188f466255a5102555b65ac2e01efb813bb64cf1104723d1b8c2"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2164",
+            "sha256": "b5785791b6212006efc714a8eaf3d3bdb35c243801caced80340e1bf2e0beba1"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "139",
+            "sha256": "47ef1c78688a6465d5eb670b395bb8db1942097126f8d60b42fb7eb46c57f5f6"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3595",
+            "sha256": "2b1c475de382aeb503efe1cb91c702dc05b1ec4aff89e4d151537d908120ac78"
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1824",
+            "sha256": "a30ab8686a6186db96149ae3af0dc06a07835c63f4cf237ef10482ff2e261213"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3734",
+            "sha256": "3747e1d533e746f657b5568457856f31a960f1f81bcbc225682d7bd5d0a4c3bb"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "25895697868104731",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "021293517da55b10431ef8cc7c8f0492dc651f778c5a78013d3e4b414ea954c9",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23080948100998172",
+              "mode": "33206",
+              "size": "211",
+              "mtimeNs": "1786341615209686800",
+              "ctimeNs": "1786341615209686800"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18295873496917022",
+              "mode": "33206",
+              "size": "11908",
+              "mtimeNs": "1786282990998651600",
+              "ctimeNs": "1786282990998651600"
+            }
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "12384898985993248",
+              "mode": "33206",
+              "size": "7064",
+              "mtimeNs": "1786290210751455000",
+              "ctimeNs": "1786290210751455000"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10696049125729313",
+              "mode": "33206",
+              "size": "21868",
+              "mtimeNs": "1786289957236151500",
+              "ctimeNs": "1786289957236151500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "6755399451780130",
+              "mode": "33206",
+              "size": "2561",
+              "mtimeNs": "1786341615205884900",
+              "ctimeNs": "1786341615205884900"
+            }
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074614805539",
+              "mode": "33206",
+              "size": "963",
+              "mtimeNs": "1786286167957608700",
+              "ctimeNs": "1786286167957608700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "14073748846257183",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749777830948",
+              "mode": "33206",
+              "size": "2164",
+              "mtimeNs": "1786282753422251300",
+              "ctimeNs": "1786282753422251300"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799824409637",
+              "mode": "33206",
+              "size": "139",
+              "mtimeNs": "1786280784943542500",
+              "ctimeNs": "1786280784958745000"
+            }
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567017",
+              "mode": "33206",
+              "size": "3595",
+              "mtimeNs": "1786282991003461500",
+              "ctimeNs": "1786282991003461500"
+            }
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567016",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567019",
+              "mode": "33206",
+              "size": "1824",
+              "mtimeNs": "1786282891564351800",
+              "ctimeNs": "1786282891564351800"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567018",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698983",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567020",
+              "mode": "33206",
+              "size": "3734",
+              "mtimeNs": "1786286167959606800",
+              "ctimeNs": "1786286167959606800"
+            }
+          }
+        ]
+      }
+    },
+    "final-reserved": {
+      "state": "verified",
+      "scope": "final",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "2d909554a689802f7b73245171b3e90326bc64db8c6b4789821368af202905fb",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "211",
+            "sha256": "4b52e855469fa12624bcd599d02ad95b62d4a39a90ff33ac21ff875930268a90"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11908",
+            "sha256": "0aab90c05dd959a065cf7ab3b0ec9694f0b17ef2b3ca799dbaf804fddd2c70fe"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7064",
+            "sha256": "801a12857c10b901b984481e8b9bab21aa356956f32495764a01f9a9ab6a9e3d"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "21868",
+            "sha256": "40c33981d5fe17f503a2bf4c043310eee26291345aa6682f7d401a3bc5a6b217"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2561",
+            "sha256": "b4aa52ca3f746a63099b536bb2cdcb71cf9af001fac723db5a2e88fc585d9a0f"
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "executable": false,
+            "size": "963",
+            "sha256": "ec0fd650c877188f466255a5102555b65ac2e01efb813bb64cf1104723d1b8c2"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2164",
+            "sha256": "b5785791b6212006efc714a8eaf3d3bdb35c243801caced80340e1bf2e0beba1"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "139",
+            "sha256": "47ef1c78688a6465d5eb670b395bb8db1942097126f8d60b42fb7eb46c57f5f6"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3595",
+            "sha256": "2b1c475de382aeb503efe1cb91c702dc05b1ec4aff89e4d151537d908120ac78"
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1824",
+            "sha256": "a30ab8686a6186db96149ae3af0dc06a07835c63f4cf237ef10482ff2e261213"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3734",
+            "sha256": "3747e1d533e746f657b5568457856f31a960f1f81bcbc225682d7bd5d0a4c3bb"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "25895697868104731",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "021293517da55b10431ef8cc7c8f0492dc651f778c5a78013d3e4b414ea954c9",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23080948100998172",
+              "mode": "33206",
+              "size": "211",
+              "mtimeNs": "1786341615209686800",
+              "ctimeNs": "1786341615209686800"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18295873496917022",
+              "mode": "33206",
+              "size": "11908",
+              "mtimeNs": "1786282990998651600",
+              "ctimeNs": "1786282990998651600"
+            }
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "12384898985993248",
+              "mode": "33206",
+              "size": "7064",
+              "mtimeNs": "1786290210751455000",
+              "ctimeNs": "1786290210751455000"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10696049125729313",
+              "mode": "33206",
+              "size": "21868",
+              "mtimeNs": "1786289957236151500",
+              "ctimeNs": "1786289957236151500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "6755399451780130",
+              "mode": "33206",
+              "size": "2561",
+              "mtimeNs": "1786341615205884900",
+              "ctimeNs": "1786341615205884900"
+            }
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074614805539",
+              "mode": "33206",
+              "size": "963",
+              "mtimeNs": "1786286167957608700",
+              "ctimeNs": "1786286167957608700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "14073748846257183",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749777830948",
+              "mode": "33206",
+              "size": "2164",
+              "mtimeNs": "1786282753422251300",
+              "ctimeNs": "1786282753422251300"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799824409637",
+              "mode": "33206",
+              "size": "139",
+              "mtimeNs": "1786280784943542500",
+              "ctimeNs": "1786280784958745000"
+            }
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567017",
+              "mode": "33206",
+              "size": "3595",
+              "mtimeNs": "1786282991003461500",
+              "ctimeNs": "1786282991003461500"
+            }
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567016",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567019",
+              "mode": "33206",
+              "size": "1824",
+              "mtimeNs": "1786282891564351800",
+              "ctimeNs": "1786282891564351800"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567018",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698983",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917567020",
+              "mode": "33206",
+              "size": "3734",
+              "mtimeNs": "1786286167959606800",
+              "ctimeNs": "1786286167959606800"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "2d909554a689802f7b73245171b3e90326bc64db8c6b4789821368af202905fb",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "211",
+            "sha256": "4b52e855469fa12624bcd599d02ad95b62d4a39a90ff33ac21ff875930268a90"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11908",
+            "sha256": "0aab90c05dd959a065cf7ab3b0ec9694f0b17ef2b3ca799dbaf804fddd2c70fe"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7064",
+            "sha256": "801a12857c10b901b984481e8b9bab21aa356956f32495764a01f9a9ab6a9e3d"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "21868",
+            "sha256": "40c33981d5fe17f503a2bf4c043310eee26291345aa6682f7d401a3bc5a6b217"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2561",
+            "sha256": "b4aa52ca3f746a63099b536bb2cdcb71cf9af001fac723db5a2e88fc585d9a0f"
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "executable": false,
+            "size": "963",
+            "sha256": "ec0fd650c877188f466255a5102555b65ac2e01efb813bb64cf1104723d1b8c2"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2164",
+            "sha256": "b5785791b6212006efc714a8eaf3d3bdb35c243801caced80340e1bf2e0beba1"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "139",
+            "sha256": "47ef1c78688a6465d5eb670b395bb8db1942097126f8d60b42fb7eb46c57f5f6"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3595",
+            "sha256": "2b1c475de382aeb503efe1cb91c702dc05b1ec4aff89e4d151537d908120ac78"
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1824",
+            "sha256": "a30ab8686a6186db96149ae3af0dc06a07835c63f4cf237ef10482ff2e261213"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3734",
+            "sha256": "3747e1d533e746f657b5568457856f31a960f1f81bcbc225682d7bd5d0a4c3bb"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "1970324847511357",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "0cccbb7faf806e6922e0a81395dbbb7c89ca73bbbbe420284d3fee98fe57bd34",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224754541615",
+              "mode": "33206",
+              "size": "211",
+              "mtimeNs": "1786341615209686800",
+              "ctimeNs": "1786341615209686800"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649684673582",
+              "mode": "33206",
+              "size": "11908",
+              "mtimeNs": "1786282990998651600",
+              "ctimeNs": "1786282990998651600"
+            }
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749777830961",
+              "mode": "33206",
+              "size": "7064",
+              "mtimeNs": "1786290210751455000",
+              "ctimeNs": "1786290210751455000"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2533274801120306",
+              "mode": "33206",
+              "size": "21868",
+              "mtimeNs": "1786289957236151500",
+              "ctimeNs": "1786289957236151500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698995",
+              "mode": "33206",
+              "size": "2561",
+              "mtimeNs": "1786341615205884900",
+              "ctimeNs": "1786341615205884900"
+            }
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698996",
+              "mode": "33206",
+              "size": "963",
+              "mtimeNs": "1786286167957608700",
+              "ctimeNs": "1786286167957608700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2533274801120304",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698997",
+              "mode": "33206",
+              "size": "2164",
+              "mtimeNs": "1786282753422251300",
+              "ctimeNs": "1786282753422251300"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799824409654",
+              "mode": "33206",
+              "size": "139",
+              "mtimeNs": "1786280784943542500",
+              "ctimeNs": "1786280784958745000"
+            }
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847699001",
+              "mode": "33206",
+              "size": "3595",
+              "mtimeNs": "1786282991003461500",
+              "ctimeNs": "1786282991003461500"
+            }
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799824409656",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847699003",
+              "mode": "33206",
+              "size": "1824",
+              "mtimeNs": "1786282891564351800",
+              "ctimeNs": "1786282891564351800"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847699002",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698999",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847699004",
+              "mode": "33206",
+              "size": "3734",
+              "mtimeNs": "1786286167959606800",
+              "ctimeNs": "1786286167959606800"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "2d909554a689802f7b73245171b3e90326bc64db8c6b4789821368af202905fb",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "211",
+            "sha256": "4b52e855469fa12624bcd599d02ad95b62d4a39a90ff33ac21ff875930268a90"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11908",
+            "sha256": "0aab90c05dd959a065cf7ab3b0ec9694f0b17ef2b3ca799dbaf804fddd2c70fe"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7064",
+            "sha256": "801a12857c10b901b984481e8b9bab21aa356956f32495764a01f9a9ab6a9e3d"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "21868",
+            "sha256": "40c33981d5fe17f503a2bf4c043310eee26291345aa6682f7d401a3bc5a6b217"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2561",
+            "sha256": "b4aa52ca3f746a63099b536bb2cdcb71cf9af001fac723db5a2e88fc585d9a0f"
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "executable": false,
+            "size": "963",
+            "sha256": "ec0fd650c877188f466255a5102555b65ac2e01efb813bb64cf1104723d1b8c2"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2164",
+            "sha256": "b5785791b6212006efc714a8eaf3d3bdb35c243801caced80340e1bf2e0beba1"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "139",
+            "sha256": "47ef1c78688a6465d5eb670b395bb8db1942097126f8d60b42fb7eb46c57f5f6"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3595",
+            "sha256": "2b1c475de382aeb503efe1cb91c702dc05b1ec4aff89e4d151537d908120ac78"
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1824",
+            "sha256": "a30ab8686a6186db96149ae3af0dc06a07835c63f4cf237ef10482ff2e261213"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3734",
+            "sha256": "3747e1d533e746f657b5568457856f31a960f1f81bcbc225682d7bd5d0a4c3bb"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "1970324847511357",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "0cccbb7faf806e6922e0a81395dbbb7c89ca73bbbbe420284d3fee98fe57bd34",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224754541615",
+              "mode": "33206",
+              "size": "211",
+              "mtimeNs": "1786341615209686800",
+              "ctimeNs": "1786341615209686800"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649684673582",
+              "mode": "33206",
+              "size": "11908",
+              "mtimeNs": "1786282990998651600",
+              "ctimeNs": "1786282990998651600"
+            }
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749777830961",
+              "mode": "33206",
+              "size": "7064",
+              "mtimeNs": "1786290210751455000",
+              "ctimeNs": "1786290210751455000"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2533274801120306",
+              "mode": "33206",
+              "size": "21868",
+              "mtimeNs": "1786289957236151500",
+              "ctimeNs": "1786289957236151500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698995",
+              "mode": "33206",
+              "size": "2561",
+              "mtimeNs": "1786341615205884900",
+              "ctimeNs": "1786341615205884900"
+            }
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698996",
+              "mode": "33206",
+              "size": "963",
+              "mtimeNs": "1786286167957608700",
+              "ctimeNs": "1786286167957608700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2533274801120304",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698997",
+              "mode": "33206",
+              "size": "2164",
+              "mtimeNs": "1786282753422251300",
+              "ctimeNs": "1786282753422251300"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799824409654",
+              "mode": "33206",
+              "size": "139",
+              "mtimeNs": "1786280784943542500",
+              "ctimeNs": "1786280784958745000"
+            }
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847699001",
+              "mode": "33206",
+              "size": "3595",
+              "mtimeNs": "1786282991003461500",
+              "ctimeNs": "1786282991003461500"
+            }
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799824409656",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847699003",
+              "mode": "33206",
+              "size": "1824",
+              "mtimeNs": "1786282891564351800",
+              "ctimeNs": "1786282891564351800"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847699002",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698999",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847699004",
+              "mode": "33206",
+              "size": "3734",
+              "mtimeNs": "1786286167959606800",
+              "ctimeNs": "1786286167959606800"
+            }
+          }
+        ]
+      }
+    },
+    "accounting-finalized": {
+      "state": "verified",
+      "scope": "final",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "2d909554a689802f7b73245171b3e90326bc64db8c6b4789821368af202905fb",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "211",
+            "sha256": "4b52e855469fa12624bcd599d02ad95b62d4a39a90ff33ac21ff875930268a90"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11908",
+            "sha256": "0aab90c05dd959a065cf7ab3b0ec9694f0b17ef2b3ca799dbaf804fddd2c70fe"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7064",
+            "sha256": "801a12857c10b901b984481e8b9bab21aa356956f32495764a01f9a9ab6a9e3d"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "21868",
+            "sha256": "40c33981d5fe17f503a2bf4c043310eee26291345aa6682f7d401a3bc5a6b217"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2561",
+            "sha256": "b4aa52ca3f746a63099b536bb2cdcb71cf9af001fac723db5a2e88fc585d9a0f"
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "executable": false,
+            "size": "963",
+            "sha256": "ec0fd650c877188f466255a5102555b65ac2e01efb813bb64cf1104723d1b8c2"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2164",
+            "sha256": "b5785791b6212006efc714a8eaf3d3bdb35c243801caced80340e1bf2e0beba1"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "139",
+            "sha256": "47ef1c78688a6465d5eb670b395bb8db1942097126f8d60b42fb7eb46c57f5f6"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3595",
+            "sha256": "2b1c475de382aeb503efe1cb91c702dc05b1ec4aff89e4d151537d908120ac78"
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1824",
+            "sha256": "a30ab8686a6186db96149ae3af0dc06a07835c63f4cf237ef10482ff2e261213"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3734",
+            "sha256": "3747e1d533e746f657b5568457856f31a960f1f81bcbc225682d7bd5d0a4c3bb"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "1970324847511357",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "0cccbb7faf806e6922e0a81395dbbb7c89ca73bbbbe420284d3fee98fe57bd34",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224754541615",
+              "mode": "33206",
+              "size": "211",
+              "mtimeNs": "1786341615209686800",
+              "ctimeNs": "1786341615209686800"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649684673582",
+              "mode": "33206",
+              "size": "11908",
+              "mtimeNs": "1786282990998651600",
+              "ctimeNs": "1786282990998651600"
+            }
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749777830961",
+              "mode": "33206",
+              "size": "7064",
+              "mtimeNs": "1786290210751455000",
+              "ctimeNs": "1786290210751455000"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2533274801120306",
+              "mode": "33206",
+              "size": "21868",
+              "mtimeNs": "1786289957236151500",
+              "ctimeNs": "1786289957236151500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698995",
+              "mode": "33206",
+              "size": "2561",
+              "mtimeNs": "1786341615205884900",
+              "ctimeNs": "1786341615205884900"
+            }
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698996",
+              "mode": "33206",
+              "size": "963",
+              "mtimeNs": "1786286167957608700",
+              "ctimeNs": "1786286167957608700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2533274801120304",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698997",
+              "mode": "33206",
+              "size": "2164",
+              "mtimeNs": "1786282753422251300",
+              "ctimeNs": "1786282753422251300"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799824409654",
+              "mode": "33206",
+              "size": "139",
+              "mtimeNs": "1786280784943542500",
+              "ctimeNs": "1786280784958745000"
+            }
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847699001",
+              "mode": "33206",
+              "size": "3595",
+              "mtimeNs": "1786282991003461500",
+              "ctimeNs": "1786282991003461500"
+            }
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799824409656",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847699003",
+              "mode": "33206",
+              "size": "1824",
+              "mtimeNs": "1786282891564351800",
+              "ctimeNs": "1786282891564351800"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847699002",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698999",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847699004",
+              "mode": "33206",
+              "size": "3734",
+              "mtimeNs": "1786286167959606800",
+              "ctimeNs": "1786286167959606800"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "d654dac928362966f17bbf3e1b67390b67f65820c41eac2b49ee2ecc9e747aec",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "211",
+            "sha256": "4b52e855469fa12624bcd599d02ad95b62d4a39a90ff33ac21ff875930268a90"
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "executable": false,
+            "size": "986",
+            "sha256": "a8de5fde52c9c753ab757e80af26cdd58c067b29ff802b86e1b7ecf983992d55"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11908",
+            "sha256": "0aab90c05dd959a065cf7ab3b0ec9694f0b17ef2b3ca799dbaf804fddd2c70fe"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7064",
+            "sha256": "801a12857c10b901b984481e8b9bab21aa356956f32495764a01f9a9ab6a9e3d"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "21868",
+            "sha256": "40c33981d5fe17f503a2bf4c043310eee26291345aa6682f7d401a3bc5a6b217"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2561",
+            "sha256": "b4aa52ca3f746a63099b536bb2cdcb71cf9af001fac723db5a2e88fc585d9a0f"
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "executable": false,
+            "size": "963",
+            "sha256": "ec0fd650c877188f466255a5102555b65ac2e01efb813bb64cf1104723d1b8c2"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2164",
+            "sha256": "b5785791b6212006efc714a8eaf3d3bdb35c243801caced80340e1bf2e0beba1"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "139",
+            "sha256": "47ef1c78688a6465d5eb670b395bb8db1942097126f8d60b42fb7eb46c57f5f6"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3595",
+            "sha256": "2b1c475de382aeb503efe1cb91c702dc05b1ec4aff89e4d151537d908120ac78"
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1824",
+            "sha256": "a30ab8686a6186db96149ae3af0dc06a07835c63f4cf237ef10482ff2e261213"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3734",
+            "sha256": "3747e1d533e746f657b5568457856f31a960f1f81bcbc225682d7bd5d0a4c3bb"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "1970324847511357",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "052e200d2ca8fb7f402caaef81fc6e261cc3fda1286c130db843068a02500c8d",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224754541615",
+              "mode": "33206",
+              "size": "211",
+              "mtimeNs": "1786341615209686800",
+              "ctimeNs": "1786341615209686800"
+            }
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870802181",
+              "mode": "33206",
+              "size": "986",
+              "mtimeNs": "1786341615807066300",
+              "ctimeNs": "1786341615808501900"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649684673582",
+              "mode": "33206",
+              "size": "11908",
+              "mtimeNs": "1786282990998651600",
+              "ctimeNs": "1786282990998651600"
+            }
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749777830961",
+              "mode": "33206",
+              "size": "7064",
+              "mtimeNs": "1786290210751455000",
+              "ctimeNs": "1786290210751455000"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2533274801120306",
+              "mode": "33206",
+              "size": "21868",
+              "mtimeNs": "1786289957236151500",
+              "ctimeNs": "1786289957236151500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698995",
+              "mode": "33206",
+              "size": "2561",
+              "mtimeNs": "1786341615205884900",
+              "ctimeNs": "1786341615205884900"
+            }
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698996",
+              "mode": "33206",
+              "size": "963",
+              "mtimeNs": "1786286167957608700",
+              "ctimeNs": "1786286167957608700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2533274801120304",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698997",
+              "mode": "33206",
+              "size": "2164",
+              "mtimeNs": "1786282753422251300",
+              "ctimeNs": "1786282753422251300"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799824409654",
+              "mode": "33206",
+              "size": "139",
+              "mtimeNs": "1786280784943542500",
+              "ctimeNs": "1786280784958745000"
+            }
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847699001",
+              "mode": "33206",
+              "size": "3595",
+              "mtimeNs": "1786282991003461500",
+              "ctimeNs": "1786282991003461500"
+            }
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799824409656",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847699003",
+              "mode": "33206",
+              "size": "1824",
+              "mtimeNs": "1786282891564351800",
+              "ctimeNs": "1786282891564351800"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847699002",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698999",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847699004",
+              "mode": "33206",
+              "size": "3734",
+              "mtimeNs": "1786286167959606800",
+              "ctimeNs": "1786286167959606800"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "d654dac928362966f17bbf3e1b67390b67f65820c41eac2b49ee2ecc9e747aec",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "211",
+            "sha256": "4b52e855469fa12624bcd599d02ad95b62d4a39a90ff33ac21ff875930268a90"
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "executable": false,
+            "size": "986",
+            "sha256": "a8de5fde52c9c753ab757e80af26cdd58c067b29ff802b86e1b7ecf983992d55"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11908",
+            "sha256": "0aab90c05dd959a065cf7ab3b0ec9694f0b17ef2b3ca799dbaf804fddd2c70fe"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7064",
+            "sha256": "801a12857c10b901b984481e8b9bab21aa356956f32495764a01f9a9ab6a9e3d"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "21868",
+            "sha256": "40c33981d5fe17f503a2bf4c043310eee26291345aa6682f7d401a3bc5a6b217"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2561",
+            "sha256": "b4aa52ca3f746a63099b536bb2cdcb71cf9af001fac723db5a2e88fc585d9a0f"
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "executable": false,
+            "size": "963",
+            "sha256": "ec0fd650c877188f466255a5102555b65ac2e01efb813bb64cf1104723d1b8c2"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2164",
+            "sha256": "b5785791b6212006efc714a8eaf3d3bdb35c243801caced80340e1bf2e0beba1"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "139",
+            "sha256": "47ef1c78688a6465d5eb670b395bb8db1942097126f8d60b42fb7eb46c57f5f6"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3595",
+            "sha256": "2b1c475de382aeb503efe1cb91c702dc05b1ec4aff89e4d151537d908120ac78"
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1824",
+            "sha256": "a30ab8686a6186db96149ae3af0dc06a07835c63f4cf237ef10482ff2e261213"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3734",
+            "sha256": "3747e1d533e746f657b5568457856f31a960f1f81bcbc225682d7bd5d0a4c3bb"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "1970324847511357",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "052e200d2ca8fb7f402caaef81fc6e261cc3fda1286c130db843068a02500c8d",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224754541615",
+              "mode": "33206",
+              "size": "211",
+              "mtimeNs": "1786341615209686800",
+              "ctimeNs": "1786341615209686800"
+            }
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870802181",
+              "mode": "33206",
+              "size": "986",
+              "mtimeNs": "1786341615807066300",
+              "ctimeNs": "1786341615808501900"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649684673582",
+              "mode": "33206",
+              "size": "11908",
+              "mtimeNs": "1786282990998651600",
+              "ctimeNs": "1786282990998651600"
+            }
+          },
+          {
+            "path": "evidence/review-cycle-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749777830961",
+              "mode": "33206",
+              "size": "7064",
+              "mtimeNs": "1786290210751455000",
+              "ctimeNs": "1786290210751455000"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2533274801120306",
+              "mode": "33206",
+              "size": "21868",
+              "mtimeNs": "1786289957236151500",
+              "ctimeNs": "1786289957236151500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698995",
+              "mode": "33206",
+              "size": "2561",
+              "mtimeNs": "1786341615205884900",
+              "ctimeNs": "1786341615205884900"
+            }
+          },
+          {
+            "path": "evidence/windows-registry-root-selection.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698996",
+              "mode": "33206",
+              "size": "963",
+              "mtimeNs": "1786286167957608700",
+              "ctimeNs": "1786286167957608700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2533274801120304",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698997",
+              "mode": "33206",
+              "size": "2164",
+              "mtimeNs": "1786282753422251300",
+              "ctimeNs": "1786282753422251300"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799824409654",
+              "mode": "33206",
+              "size": "139",
+              "mtimeNs": "1786280784943542500",
+              "ctimeNs": "1786280784958745000"
+            }
+          },
+          {
+            "path": "specs/project-registry/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847699001",
+              "mode": "33206",
+              "size": "3595",
+              "mtimeNs": "1786282991003461500",
+              "ctimeNs": "1786282991003461500"
+            }
+          },
+          {
+            "path": "specs/project-registry",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799824409656",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847699003",
+              "mode": "33206",
+              "size": "1824",
+              "mtimeNs": "1786282891564351800",
+              "ctimeNs": "1786282891564351800"
+            }
+          },
+          {
+            "path": "specs/store-project-namespace",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847699002",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847698999",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847699004",
+              "mode": "33206",
+              "size": "3734",
+              "mtimeNs": "1786286167959606800",
+              "ctimeNs": "1786286167959606800"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "finalReservation": {
+    "identity": {
+      "dev": "3122291782",
+      "ino": "1970324847511357",
+      "mode": "16822",
+      "size": "0",
+      "mtimeNs": "0",
+      "ctimeNs": "0"
+    },
+    "entries": [
+      {
+        "path": ".openspec.yaml",
+        "kind": "file",
+        "expected": {
+          "path": ".openspec.yaml",
+          "kind": "file",
+          "executable": false,
+          "size": "211",
+          "sha256": "4b52e855469fa12624bcd599d02ad95b62d4a39a90ff33ac21ff875930268a90"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "3096224754541615",
+          "mode": "33206",
+          "size": "211",
+          "mtimeNs": "1786341615209686800",
+          "ctimeNs": "1786341615209686800"
+        }
+      },
+      {
+        "path": "design.md",
+        "kind": "file",
+        "expected": {
+          "path": "design.md",
+          "kind": "file",
+          "executable": false,
+          "size": "11908",
+          "sha256": "0aab90c05dd959a065cf7ab3b0ec9694f0b17ef2b3ca799dbaf804fddd2c70fe"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "3940649684673582",
+          "mode": "33206",
+          "size": "11908",
+          "mtimeNs": "1786282990998651600",
+          "ctimeNs": "1786282990998651600"
+        }
+      },
+      {
+        "path": "evidence",
+        "kind": "directory",
+        "expected": {
+          "path": "evidence",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "2533274801120304",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "evidence/review-cycle-report.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/review-cycle-report.md",
+          "kind": "file",
+          "executable": false,
+          "size": "7064",
+          "sha256": "801a12857c10b901b984481e8b9bab21aa356956f32495764a01f9a9ab6a9e3d"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "2814749777830961",
+          "mode": "33206",
+          "size": "7064",
+          "mtimeNs": "1786290210751455000",
+          "ctimeNs": "1786290210751455000"
+        }
+      },
+      {
+        "path": "evidence/review-report.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/review-report.md",
+          "kind": "file",
+          "executable": false,
+          "size": "21868",
+          "sha256": "40c33981d5fe17f503a2bf4c043310eee26291345aa6682f7d401a3bc5a6b217"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "2533274801120306",
+          "mode": "33206",
+          "size": "21868",
+          "mtimeNs": "1786289957236151500",
+          "ctimeNs": "1786289957236151500"
+        }
+      },
+      {
+        "path": "evidence/ship-log.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/ship-log.md",
+          "kind": "file",
+          "executable": false,
+          "size": "2561",
+          "sha256": "b4aa52ca3f746a63099b536bb2cdcb71cf9af001fac723db5a2e88fc585d9a0f"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1970324847698995",
+          "mode": "33206",
+          "size": "2561",
+          "mtimeNs": "1786341615205884900",
+          "ctimeNs": "1786341615205884900"
+        }
+      },
+      {
+        "path": "evidence/windows-registry-root-selection.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/windows-registry-root-selection.md",
+          "kind": "file",
+          "executable": false,
+          "size": "963",
+          "sha256": "ec0fd650c877188f466255a5102555b65ac2e01efb813bb64cf1104723d1b8c2"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1970324847698996",
+          "mode": "33206",
+          "size": "963",
+          "mtimeNs": "1786286167957608700",
+          "ctimeNs": "1786286167957608700"
+        }
+      },
+      {
+        "path": "proposal.md",
+        "kind": "file",
+        "expected": {
+          "path": "proposal.md",
+          "kind": "file",
+          "executable": false,
+          "size": "2164",
+          "sha256": "b5785791b6212006efc714a8eaf3d3bdb35c243801caced80340e1bf2e0beba1"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1970324847698997",
+          "mode": "33206",
+          "size": "2164",
+          "mtimeNs": "1786282753422251300",
+          "ctimeNs": "1786282753422251300"
+        }
+      },
+      {
+        "path": "README.md",
+        "kind": "file",
+        "expected": {
+          "path": "README.md",
+          "kind": "file",
+          "executable": false,
+          "size": "139",
+          "sha256": "47ef1c78688a6465d5eb670b395bb8db1942097126f8d60b42fb7eb46c57f5f6"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "2251799824409654",
+          "mode": "33206",
+          "size": "139",
+          "mtimeNs": "1786280784943542500",
+          "ctimeNs": "1786280784958745000"
+        }
+      },
+      {
+        "path": "specs",
+        "kind": "directory",
+        "expected": {
+          "path": "specs",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1970324847698999",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "specs/project-registry",
+        "kind": "directory",
+        "expected": {
+          "path": "specs/project-registry",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "2251799824409656",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "specs/project-registry/spec.md",
+        "kind": "file",
+        "expected": {
+          "path": "specs/project-registry/spec.md",
+          "kind": "file",
+          "executable": false,
+          "size": "3595",
+          "sha256": "2b1c475de382aeb503efe1cb91c702dc05b1ec4aff89e4d151537d908120ac78"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1970324847699001",
+          "mode": "33206",
+          "size": "3595",
+          "mtimeNs": "1786282991003461500",
+          "ctimeNs": "1786282991003461500"
+        }
+      },
+      {
+        "path": "specs/store-project-namespace",
+        "kind": "directory",
+        "expected": {
+          "path": "specs/store-project-namespace",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1970324847699002",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "specs/store-project-namespace/spec.md",
+        "kind": "file",
+        "expected": {
+          "path": "specs/store-project-namespace/spec.md",
+          "kind": "file",
+          "executable": false,
+          "size": "1824",
+          "sha256": "a30ab8686a6186db96149ae3af0dc06a07835c63f4cf237ef10482ff2e261213"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1970324847699003",
+          "mode": "33206",
+          "size": "1824",
+          "mtimeNs": "1786282891564351800",
+          "ctimeNs": "1786282891564351800"
+        }
+      },
+      {
+        "path": "tasks.md",
+        "kind": "file",
+        "expected": {
+          "path": "tasks.md",
+          "kind": "file",
+          "executable": false,
+          "size": "3734",
+          "sha256": "3747e1d533e746f657b5568457856f31a960f1f81bcbc225682d7bd5d0a4c3bb"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1970324847699004",
+          "mode": "33206",
+          "size": "3734",
+          "mtimeNs": "1786286167959606800",
+          "ctimeNs": "1786286167959606800"
+        }
+      }
+    ]
+  },
+  "specProgress": [
+    {
+      "actionId": "1ce3175f8c70f3100414a42cba1bd25aaf8b3684fc291a5e3e2de4260a2264b5",
+      "action": "update",
+      "target": "E:\\wt\\rasen-archive-follow-up\\rasen\\specs\\project-registry\\spec.md",
+      "backupOrQuarantine": "E:\\wt\\rasen-archive-follow-up\\rasen\\specs\\project-registry\\.rasen-archive-spec-92e38fce-3552-4334-9564-66413c43686a-1ce3175f8c70\\original",
+      "temporary": "E:\\wt\\rasen-archive-follow-up\\rasen\\specs\\project-registry\\.rasen-archive-spec-92e38fce-3552-4334-9564-66413c43686a-1ce3175f8c70\\result.tmp",
+      "state": "complete",
+      "claimIdentity": {
+        "dev": "3122291782",
+        "ino": "1970324847698989",
+        "mode": "16822",
+        "size": "0",
+        "mtimeNs": "0",
+        "ctimeNs": "0"
+      },
+      "temporaryIdentity": {
+        "dev": "3122291782",
+        "ino": "21955048194155549",
+        "mode": "33206",
+        "size": "22603",
+        "mtimeNs": "1786341615240030900",
+        "ctimeNs": "1786341615240030900"
+      },
+      "publishedIdentity": {
+        "dev": "3122291782",
+        "ino": "21955048194155549",
+        "mode": "33206",
+        "size": "22603",
+        "mtimeNs": "1786341615240030900",
+        "ctimeNs": "1786341615273383900"
+      }
+    },
+    {
+      "actionId": "7eb3bb0aef1e91b84594de7aecef9af2b347956c1256dafe95766bf90b010459",
+      "action": "update",
+      "target": "E:\\wt\\rasen-archive-follow-up\\rasen\\specs\\store-project-namespace\\spec.md",
+      "backupOrQuarantine": "E:\\wt\\rasen-archive-follow-up\\rasen\\specs\\store-project-namespace\\.rasen-archive-spec-92e38fce-3552-4334-9564-66413c43686a-7eb3bb0aef1e\\original",
+      "temporary": "E:\\wt\\rasen-archive-follow-up\\rasen\\specs\\store-project-namespace\\.rasen-archive-spec-92e38fce-3552-4334-9564-66413c43686a-7eb3bb0aef1e\\result.tmp",
+      "state": "complete",
+      "claimIdentity": {
+        "dev": "3122291782",
+        "ino": "1407374894090045",
+        "mode": "16822",
+        "size": "0",
+        "mtimeNs": "0",
+        "ctimeNs": "0"
+      },
+      "temporaryIdentity": {
+        "dev": "3122291782",
+        "ino": "2533274801120301",
+        "mode": "33206",
+        "size": "13084",
+        "mtimeNs": "1786341615305144600",
+        "ctimeNs": "1786341615305144600"
+      },
+      "publishedIdentity": {
+        "dev": "3122291782",
+        "ino": "2533274801120301",
+        "mode": "33206",
+        "size": "13084",
+        "mtimeNs": "1786341615305144600",
+        "ctimeNs": "1786341615336032800"
+      }
+    }
+  ],
+  "cleanerProgress": [
+    {
+      "path": "auto-run.json",
+      "state": "deleted"
+    }
+  ],
+  "sourceProgress": {
+    "state": "removed",
+    "quarantine": "E:\\wt\\rasen-archive-follow-up\\rasen\\changes\\.rasen-archive-source-92e38fce-3552-4334-9564-66413c43686a\\fix-project-registry-alias-safety"
+  },
+  "updatedAt": "2026-08-10T06:00:15.912Z"
+}

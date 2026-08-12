@@ -24,11 +24,16 @@ The CLI SHALL provide a built-in model-preset registry (`src/core/model-presets.
 
 ### Requirement: Registry is the single source of context-window sizes
 
-The context-limit map used by `rasen agent context` for Claude transcripts (`resolveModelLimit`) SHALL delegate to the model-preset registry, preserving its existing resolutions (haiku-family 200000; opus-4/sonnet-5/sonnet-4-6/fable/mythos 1000000) and its conservative 200000 default for unknown models.
+The context-limit map used by `rasen agent context` for Claude transcripts (`resolveModelLimit`) SHALL delegate to the model-preset registry (haiku-family 200000; opus-4/sonnet-5/sonnet-4-6/fable/mythos 1000000) and SHALL fall back to 1000000 for model ids the registry does not know.
 
-#### Scenario: Existing model-limit resolutions unchanged
-- **WHEN** `resolveModelLimit` is called with a model id it resolved before this change (e.g. one containing `haiku` or `fable`)
-- **THEN** it SHALL return the same limit as before, now sourced from the registry
+#### Scenario: Registry-backed model-limit resolutions
+- **WHEN** `resolveModelLimit` is called with a model id the registry knows (e.g. one containing `haiku` or `fable`)
+- **THEN** it SHALL return that preset's context window
+
+#### Scenario: Unknown model id falls back to the large-window default
+- **WHEN** `resolveModelLimit` is called with a model id no preset matches (e.g. a new family or a non-Anthropic id)
+- **THEN** it SHALL return 1000000
+- **AND** the caller SHALL be able to pin a different window with `--limit <n>`
 
 #### Scenario: Preset overridden by ordinary config
 - **WHEN** a pipeline configures any threshold value at stage, role, or pipeline level for a stage whose model has a preset

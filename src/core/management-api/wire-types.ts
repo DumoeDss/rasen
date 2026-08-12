@@ -250,6 +250,12 @@ export interface SessionSpaceWire {
   type: 'project' | 'store';
   id: string;
   root?: string;
+  planning?: {
+    storeUid?: string;
+    storeId?: string;
+    projectId?: string;
+    targetLineId?: string;
+  };
 }
 
 /** `POST /api/v1/changes` success response: the CLI-created change, as reported by its own `--json` output. */
@@ -902,3 +908,260 @@ export type ProfileMutationRequest =
 
 /** `POST /api/v1/profiles` success response: the normalized entry for create/update, or the deleted name. */
 export type ProfileMutationResponse = { profile: WireProfileEntry } | { deleted: string };
+
+// -----------------------------------------------------------------------
+// The Store aggregate route family (store-scoped-issues-management).
+//
+// These types are MIRRORED BY HAND into `packages/ui/src/api/types.ts`. The
+// mirror has no build-time import path and drifts silently, so the mirror and
+// its `satisfies` fixtures under `packages/ui/test/fixtures/` are part of this
+// contract rather than a follow-up: those fixtures are the only `tsc` tripwire
+// there is.
+//
+// Every aggregate response carries `unsearchedRefs` and a REQUIRED `complete`
+// flag. Neither is optional and neither is defaulted, so a partial answer can
+// never be consumed as a total one by omission.
+// -----------------------------------------------------------------------
+
+/** A Store ref an aggregate read could not open. NOT evidence of absence. */
+export interface WireUnsearchedRef {
+  targetLineId: string;
+  storeRef: string;
+  reason: string;
+}
+
+/** Carried by every aggregate response. */
+export interface WireAggregateCompleteness {
+  unsearchedRefs: readonly WireUnsearchedRef[];
+  complete: boolean;
+}
+
+/** A catalog that failed strict validation, reported rather than dropped. */
+export interface WireCatalogDiagnostic {
+  code: string;
+  message: string;
+  path: string;
+}
+
+/** An absolute path that locates something on THIS machine and grants nothing. */
+export interface WireInertLocalLocator {
+  root: string;
+  kind: 'planning-worktree';
+  portable: false;
+}
+
+export type WireFinalizationOutcome = 'landed' | 'superseded' | 'cancelled' | 'abandoned';
+
+export interface WireAggregateChangeEntry {
+  changeId: string;
+  changeInstanceId: string | null;
+  projectId: string;
+  targetLineId: string;
+  foundAtRef: string;
+  localLocator: WireInertLocalLocator | null;
+}
+
+export interface WireAggregateArchiveEntry {
+  changeId: string;
+  changeInstanceId: string | null;
+  projectId: string;
+  targetLineId: string;
+  entryName: string;
+  archiveDate: string | null;
+  /** Null for a relocated legacy record. Never inferred, defaulted, or upgraded. */
+  outcome: WireFinalizationOutcome | null;
+  legacyRecord: boolean;
+  foundAtRef: string;
+}
+
+/**
+ * One group of a Change aggregate, keyed by a validated project and target
+ * line. There is deliberately no flat listing: a consumer that had to recover
+ * an implicit group key could only recover it from a path.
+ */
+export interface WireChangeGroup {
+  projectId: string;
+  targetLineId: string;
+  active: readonly WireAggregateChangeEntry[];
+  archived: readonly WireAggregateArchiveEntry[];
+}
+
+/** `GET /api/v1/stores/:storeUid/projects/:projectId/lines/:targetLineId/changes`. */
+export interface StoreAggregateChangesResponse extends WireAggregateCompleteness {
+  groups: readonly WireChangeGroup[];
+}
+
+export interface WireProjectRollupEntry {
+  projectId: string;
+  roles: { planning: boolean; knowledge: boolean } | null;
+  diagnostic: WireCatalogDiagnostic | null;
+  targetLines: readonly string[];
+  activeChangeCount: number;
+  archivedChangeCount: number;
+}
+
+export interface WireTargetLineRollupEntry {
+  targetLineId: string;
+  storeRef: string | null;
+  diagnostic: WireCatalogDiagnostic | null;
+  projects: readonly string[];
+  activeChangeCount: number;
+  archivedChangeCount: number;
+}
+
+/** `GET /api/v1/stores/:storeUid/projects`. */
+export interface StoreProjectRollupResponse extends WireAggregateCompleteness {
+  storeId: string;
+  /** The Store's STABLE identity, which is how every Store-scoped call addresses it. */
+  storeUid: string;
+  projects: readonly WireProjectRollupEntry[];
+  targetLines: readonly WireTargetLineRollupEntry[];
+}
+
+export type WireIssueState = 'open' | 'resolved' | 'dropped';
+
+export interface WireIssueRecord {
+  version: 1;
+  id: string;
+  title: string;
+  state: WireIssueState;
+  reason: string | null;
+  createdAt: string;
+}
+
+/** One copy of an Issue record; `storeRef` is null for the local working tree. */
+export interface WireIssueRecordCopy {
+  storeRef: string | null;
+  targetLineId: string | null;
+  sha256: string;
+  record: WireIssueRecord | null;
+  diagnostic: string | null;
+}
+
+/** Every copy listed, none presented as the record. */
+export interface WireIssueDivergence {
+  copies: readonly WireIssueRecordCopy[];
+}
+
+export interface WireIssueSummary {
+  issueId: string;
+  /** Null exactly when the Issue is divergent. */
+  record: WireIssueRecord | null;
+  divergence: WireIssueDivergence | null;
+  revisionIds: readonly string[];
+  latestRevisionId: string | null;
+  refs: readonly string[];
+  uncommitted: boolean;
+}
+
+/** `GET /api/v1/stores/:storeUid/issues`. */
+export interface StoreIssueListResponse extends WireAggregateCompleteness {
+  issues: readonly WireIssueSummary[];
+}
+
+export type WirePlanNodeKind = 'change' | 'intent';
+
+export interface WirePlanNode {
+  nodeId: string;
+  kind: WirePlanNodeKind;
+  projectId: string;
+  targetLineId: string;
+  dependsOn: readonly string[];
+  /** `change` nodes only. Resolution is by this and never by `changeAlias`. */
+  changeInstanceId?: string;
+  /** Human convenience. Never resolved by. */
+  changeAlias?: string;
+  /** `intent` nodes only. */
+  summary?: string;
+}
+
+export interface WirePlanNodeClaimant {
+  changeId: string;
+  projectId: string;
+  targetLineId: string;
+  foundAtRef: string;
+  archived: boolean;
+}
+
+export type WirePlanNodeStatus = 'resolved' | 'unresolved' | 'ambiguous' | 'not-created';
+
+export interface WirePlanNodeResolution {
+  status: WirePlanNodeStatus;
+  claimants: readonly WirePlanNodeClaimant[];
+  searchedRefs: readonly string[];
+  localLocator: WireInertLocalLocator | null;
+  outcome: WireFinalizationOutcome | null;
+  archived: boolean;
+}
+
+export type WirePlanNodeReadiness =
+  | 'not-started'
+  | 'blocked'
+  | 'in-progress'
+  | 'finalized'
+  | 'unknown';
+
+export interface WireResolvedPlanNode {
+  node: WirePlanNode;
+  resolution: WirePlanNodeResolution;
+  readiness: WirePlanNodeReadiness;
+  blockedBy: readonly string[];
+}
+
+/** Derived at read time and never written back; the state stays operator-declared. */
+export interface WireIssueReadiness {
+  nodes: readonly WireResolvedPlanNode[];
+  readyToResolve: boolean;
+}
+
+export interface WireExecutionPlanRevision {
+  version: 1;
+  issueId: string;
+  revisionId: string;
+  supersedes: string | null;
+  createdAt: string;
+  contentSha256: string;
+  nodes: readonly WirePlanNode[];
+}
+
+/** `GET /api/v1/stores/:storeUid/issues/:issueId/plans/:revisionId`. */
+export interface StoreExecutionPlanResponse extends WireAggregateCompleteness {
+  issueId: string;
+  revisionId: string | null;
+  revision: WireExecutionPlanRevision | null;
+  /** Present when the addressed revision exists but does not validate. */
+  diagnostic: string | null;
+  readiness: WireIssueReadiness;
+}
+
+/** `GET /api/v1/stores/:storeUid/issues/:issueId`. */
+export interface StoreIssueDetailResponse extends WireAggregateCompleteness {
+  issue: WireIssueSummary;
+  plan: StoreExecutionPlanResponse | null;
+}
+
+/** `POST /api/v1/stores/:storeUid/issues`. */
+export interface StoreCreateIssueRequest {
+  issueId: string;
+  title: string;
+}
+
+/** `POST /api/v1/stores/:storeUid/issues/:issueId/plans`. */
+export interface StorePublishPlanRequest {
+  /** A YAML file holding a top-level `nodes:` list. The server assembles no graph. */
+  nodesFile: string;
+}
+
+/**
+ * `POST /api/v1/stores/:storeUid/projects/:projectId/lines/:targetLineId/changes`.
+ *
+ * The scope is in the PATH and is never in the body: a body-carried project
+ * would be a second place a scope could come from, and the whole point of this
+ * endpoint is that there is exactly one.
+ */
+export interface StoreCreateScopedChangeRequest {
+  changeId: string;
+  description?: string;
+  proposal?: string;
+  schema?: string;
+}

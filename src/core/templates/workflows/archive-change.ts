@@ -16,6 +16,8 @@ export function getArchiveChangeSkillTemplate(): SkillTemplate {
 
 ${STORE_SELECTION_GUIDANCE}
 
+**Store finalization hard gate:** inspect the first resolved CLI payload before any planning, Git, spec, or filesystem mutation. If root.scope.kind is 'store-project', the change is FINALIZED rather than merely archived: you MUST obtain exactly one explicitly declared outcome from the user — 'landed', 'superseded', 'cancelled', or 'abandoned' — and pass it as \`--outcome\`. NEVER choose one yourself, never infer one from a ship log, a merged pull request, or completed tasks, and never default to 'landed'. Every non-landed outcome additionally requires a non-empty \`--reason\`, and 'superseded' additionally requires \`--by <changeInstanceId>\`; pass them as command options rather than writing them into an artifact. A 'landed' outcome must PROVE its commit is reachable from the target line's code ref — if the CLI refuses, surface the diagnostic and stop; do not retry with another outcome and do not add \`--skip-specs\`. If root.scope.kind is 'legacy-store', REFUSE with 'legacy_flat_store_requires_migration' — the legacy flat Store planning tree is read-only until 'rasen store migrate-layout <store-id>' has migrated it. Any other scope archives as before, with no outcome required or recorded.
+
 **Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
 **Steps**
@@ -31,13 +33,13 @@ ${STORE_SELECTION_GUIDANCE}
 
 1.5. **Check for a prior archive, in-repo and legacy (before the status call, which requires the change directory to still exist)**
 
-   Run \`rasen list --json\` (reuse step 1's call if it already ran) and take \`root.path\` from its payload — this gives \`<root.path>/rasen/changes\` as \`changesDir\` without needing a successful status call.
+   Run \`rasen list --json\` (reuse step 1's call if it already ran) with the resolved selection. Read \`root.scope.paths["active-changes"]\` as \`changesDir\` and \`root.scope.paths["archive-line"]\` as \`archiveDir\`. These are typed scope locations and do not require a successful status call. If either is absent, stop with the scope diagnostic; never reconstruct it from \`root.path\`.
 
    **First, check whether \`<changesDir>/<name>\` still EXISTS as an active directory.** If it does, this step's archive scan does NOT apply — SKIP the rest of this step and proceed to step 2 normally. A currently-active directory means this name is not currently archived; it may also be a NEW change reusing a previously-archived name (see the recycled-name note below) — either way, an active directory always means "go to step 2", never "treat as already archived".
 
    **Only when \`<changesDir>/<name>\` does NOT exist**, scan the in-repo archive AND the legacy machine-home archive — bookkeeping always lands in-repo now, but archives written before the destination axis was retired still sit in the machine home and were never migrated, so re-invoking archive on an already-archived change must recognize wherever it actually landed, using directory presence and recorded facts (ground truth) rather than a status call, which would THROW "not found" for a change whose directory has already moved or been deleted:
 
-   a. **In-repo scan** (no CLI call needed): check whether \`<changesDir>/archive/\` contains a directory matching \`YYYY-MM-DD-<name>\` — the date prefix is unknown so match the pattern, but the segment AFTER the date must equal \`<name>\` EXACTLY (not merely end with it), to avoid a suffix collision with a differently-named change.
+   a. **In-repo scan** (no additional CLI call needed): check whether \`<archiveDir>/\` contains a directory matching \`YYYY-MM-DD-<name>\` — the date prefix is unknown so match the pattern, but the segment AFTER the date must equal \`<name>\` EXACTLY (not merely end with it), to avoid a suffix collision with a differently-named change.
    - **A match exists** → report the change as already archived at the matched path and STOP cleanly — do NOT call \`rasen status\` for this name; skip every remaining step (gates, sync, move).
    - **No match** → continue to (b); nothing has archived this change in-repo under this name (yet).
 
@@ -53,7 +55,7 @@ ${STORE_SELECTION_GUIDANCE}
 
    Parse the JSON to understand:
    - \`schemaName\`: The workflow being used
-   - \`planningHome\`, \`changeRoot\`, \`artifactPaths\`, and \`actionContext\`: path and scope context
+   - \`root.scope\`, \`changeRoot\`, \`artifactPaths\`, \`archive\`, and \`actionContext\`: typed path and scope context
    - \`artifacts\`: List of artifacts with their status (\`done\` or other)
 
    **If any artifacts are not \`done\`:**
@@ -67,20 +69,20 @@ ${STORE_SELECTION_GUIDANCE}
    - **No ship log exists** → proceed straight to step 3; nothing was recorded to gate on.
    - **Ship log exists and its \`Archived in ship:\` line IS present** → inconsistency: step 1.5's directory scan should already have caught this. Reaching here means the log claims an in-ship archive but the directory scan found nothing at the expected location (a partial/failed move, or a non-standard archive location) — do NOT proceed automatically. HARD STOP: surface the inconsistency for human triage (do not sync or move; do not silently treat it as either archived or not).
    - **Ship log exists and its \`Pruned:\` line IS present** (a legacy record only — nothing writes this token any more) → the same class of inconsistency: step 1.5b's tombstone scan should already have caught this and stopped before reaching step 2 at all. Reaching here means the log claims the change was pruned but step 1.5b missed it (a stale probe, a corrupted registry, or the recycled-name situation below). HARD STOP: surface the inconsistency for human triage — do NOT proceed, do NOT delete, do NOT silently treat it as either pruned or not.
-   - **Ship log exists, no \`Archived in ship:\` line, and its \`Mode:\` line is \`pr\`** → run the merge-confirmation gate (step 2.6) before continuing to step 3. This applies regardless of the currently-resolved \`archive.timing\` — a recorded \`pr\` delivery always needs its merge verified before archiving, whether the axis is \`on-merge\` or was later flipped.
+   - **Ship log exists, no \`Archived in ship:\` line, and its \`Mode:\` line is \`pr\`** → run the merge-confirmation gate (step 2.6) before continuing to step 3. This applies regardless of the currently-resolved \`archive.timing\` — a recorded \`pr\` delivery always needs its merge gate resolved before archiving, whether the axis is \`on-merge\` or was later flipped.
    - **Ship log exists, no \`Archived in ship:\` line, and its \`Mode:\` line is \`push\` or \`local\`** → proceed straight to step 3; there is no PR to verify.
    - **Ship log exists, no \`Archived in ship:\` line, \`Mode:\` line missing or unparseable, but a \`PR:\` URL IS present** → treat as a recorded \`pr\`-mode delivery (a PR URL only makes sense for a pr-mode ship) and run the merge-confirmation gate (step 2.6), same as the \`Mode: pr\` branch — closes the gap where a malformed log missing \`Mode:\` would otherwise skip the gate.
    - **Ship log exists, no \`Archived in ship:\` line, and NEITHER a parseable \`Mode:\` line NOR a \`PR:\` URL is present** → treat as nothing recorded; proceed straight to step 3, same as the no-ship-log case — there is nothing to gate on.
 
 2.6. **Merge-confirmation gate (recorded \`pr\`-mode delivery only)**
 
-   Extract the PR URL from the ship log's \`PR:\` field and run \`gh pr view <url> --json state,mergedAt\`.
-   - **\`MERGED\`** → proceed to step 3.
-   - **\`OPEN\`** → HARD GATE: REFUSE to archive by default with a message naming the unmerged PR. Proceed ONLY on an explicit override that names the unmerged condition (not the routine confirm). REFUSE outright in a non-interactive / dispatched context.
-   - **\`CLOSED\` without a merge** → HARD GATE: REFUSE and surface the rejected-delivery state for human decision — a rejected PR must never silently become an archived change.
-   - **Cannot verify** (\`gh\` missing/unauthenticated, network failure, unparseable output, or no PR URL in the ship log) → state that the merge cannot be verified and ask the human to explicitly confirm the merge; proceed ONLY on that explicit confirmation in an interactive context. REFUSE outright with the reason in a non-interactive / dispatched context, leaving the archive re-attemptable later. An unverifiable state is NEVER treated as merged.
+   Extract the PR URL from the ship log's \`PR:\` field and attempt \`gh pr view <url> --json state,mergedAt\` before any spec sync, intent creation, saved preview, or apply.
+   - **\`MERGED\` with a non-null \`mergedAt\`** → record that this invocation independently verified the recorded PR merge, mark this item's merge gate satisfied, then proceed to step 3.
+   - **\`OPEN\`** → HARD GATE: REFUSE by default and name the unmerged PR. In an interactive human session only, proceed after a separate explicit override that names this PR's known OPEN/unmerged condition (for example, "Archive anyway while PR <url> is OPEN"). Routine archive confirmation is not an override. In a non-interactive or dispatched context, REFUSE outright.
+   - **\`CLOSED\` without a merge** → HARD GATE: REFUSE and surface the rejected-delivery state for human decision. This state has no archive override.
+   - **Cannot verify** (\`gh\` missing/unauthenticated, network failure, unparseable output, no PR URL, or a response without a usable state) → say exactly why verification is unavailable and leave the change re-attemptable by default. In an interactive human session only, ask the human to explicitly confirm that this recorded PR is merged and treat that answer as the check; proceed only on that explicit confirmation. In a non-interactive or dispatched context, REFUSE outright. Never silently treat an unverifiable state as merged.
 
-   This is a check-on-invocation only — no polling, no background process. The CLI never shells to \`gh\`/git for this; the check runs agent-side.
+   This is a check-on-invocation only — no polling, no background process. The CLI never shells to \`gh\`/git for this; the check runs agent-side. Track which one permitted per-invocation resolution satisfied the merge gate: independent verification, a blocker-naming known-OPEN override, or the interactive cannot-verify merge confirmation.
 
 3. **Check task completion status (HARD GATE)**
 
@@ -105,6 +107,7 @@ ${STORE_SELECTION_GUIDANCE}
 3.6. **Check delivery precondition (soft)**
 
    Read \`ship-log.md\` from the change's evidence directory (\`evidenceDir\` from status JSON; sticky-legacy: a ship log that already lives in the legacy \`workDir\` or in the change directory — \`changeRoot\` — is read in place):
+   - **Present with a level-two \`## Archive\` heading** → HARD GATE before intent or saved-plan creation. The heading is reserved for archive transaction evidence; require the operator to remove or rename the change-authored section. Do not accept or preserve a token from this state.
    - **Absent** → soft-warn "This change has no ship log — archive without delivering?" with an explicit escape for changes that legitimately do not ship (e.g. spec-only); proceed on confirm.
    - **Present and its \`Status:\` line contains "delivery deferred to portfolio level"** (the marker ship writes in local mode) → soft note that parent-level portfolio delivery is still pending and archiving the child now may lose track of it; confirm to proceed. Minimal cross-reference only — no portfolio graph or parent lookup.
    - **Present and delivery completed** (PR created / branch pushed) → proceed without a delivery warning.
@@ -114,7 +117,7 @@ ${STORE_SELECTION_GUIDANCE}
    Use \`artifactPaths.specs.existingOutputPaths\` from status JSON to check for delta specs. If none exist, proceed without sync prompt.
 
    **If delta specs exist:**
-   - Compare each delta spec with its corresponding main spec, resolved under the \`specs/\` directory that is the sibling of \`planningHome.changesDir\` (from the status JSON in step 2), NOT a literal repo-relative \`rasen/specs/<capability>/spec.md\` — in a registered store this resolves to the store's specs
+   - Compare each delta spec with its corresponding main spec under \`root.scope.paths.specs\` from the status JSON. Require that typed project location; do not derive a sibling from \`planningHome.changesDir\` or use a repo-relative fallback.
    - Determine what changes would be applied (adds, modifications, removals, renames)
    - Show a combined summary before prompting
 
@@ -137,9 +140,9 @@ ${STORE_SELECTION_GUIDANCE}
 
 5. **Invoke the authoritative archive engine**
 
-   Run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.savedPreview}\` with the resolved store selector and \`--skip-specs\` only when step 4 chose not to sync. Inspect the immutable plan, require no blockers, and capture the exact \`planToken\`.
+   Run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.savedPreview}\` with the resolved store selector and \`--skip-specs\` only when step 4 chose not to sync. Parse its JSON even when the preview exits nonzero. Ordinarily require zero blockers. Only when step 2.6 satisfied this invocation's merge gate through one of its explicitly permitted resolutions, admit a preview whose blocker array contains exactly one blocker with the typed code \`archive_merge_confirmation_required\` (directly, or as the Store finalization blocker's nested \`archiveBlocker.code\`); reject that code when accompanied by any other blocker, and reject every other blocker. Capture the exact \`planToken\` without changing or regenerating the immutable plan.
 
-   After confirmation, run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.apply}\`. This is the only bookkeeping invocation. A blocked result stops before mutation. On a recoverable result, rerun that exact token command; never regenerate intent, resync specs, or replan.
+   After admitting either a zero-blocker preview or the sole typed merge blocker permitted above, run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.apply}\`. Only in the sole-merge-blocker case does the generated apply command's \`--yes\` supply the saved merge-gate assertion; on a zero-blocker plan it admits no blocker, and in neither case can it confirm any other blocker. This is the only bookkeeping invocation. Branch on the structured disposition, in this order: a result with \`manualRecoveryAction\` follows only that verified manual guidance (never replay, abort, or invent cleanup); \`recoverable\` reruns only its returned exact-token recovery command; \`abort-required\` runs only its returned \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.abort}\`, verifies completion, corrects the active change, and creates a fresh plan; \`blocked\` stops before mutation. Never replace a returned command with a generic command: exact saved-plan recovery/abort commands retain \`--yes\` when the engine includes it as the required assertion.
 
    Never create the archive directory, move the change, recursively remove the source, hand-write \`archive.json\`, or repair an engine journal in this workflow.
 
@@ -148,8 +151,8 @@ ${STORE_SELECTION_GUIDANCE}
    - **Ship suffix:** append \`; ship <short-sha>\` (or, with the specs clause dropped, \`(ship <short-sha>)\`) sourced from the ship log's recorded \`Commit:\` line (the log read in step 3.6) — omit the suffix entirely, never invent one, when the log records no \`Commit:\` (a never-shipped or spec-only change).
    - Four resulting forms: \`chore(rasen): archive <name> (specs synced; ship <short-sha>)\`, \`chore(rasen): archive <name> (specs synced)\`, \`chore(rasen): archive <name> (ship <short-sha>)\`, or plain \`chore(rasen): archive <name>\`.
    \`\`\`bash
-   git add -- "<changeRoot>" "<planningHome.changesDir>/archive" "<specsDir>"
-   git commit -m "chore(rasen): archive <name> (specs synced; ship <short-sha>)" -- "<changeRoot>" "<planningHome.changesDir>/archive" "<specsDir>"
+   git add -- "<changeRoot>" "<archive.archiveDir>" "<root.scope.paths.specs>"
+   git commit -m "chore(rasen): archive <name> (specs synced; ship <short-sha>)" -- "<changeRoot>" "<archive.archiveDir>" "<root.scope.paths.specs>"
    \`\`\`
 
 5.5. **Close the delivery chain without post-hash mutation**
@@ -177,7 +180,7 @@ ${STORE_SELECTION_GUIDANCE}
 
 **Change:** <change-name>
 **Schema:** <schema-name>
-**Archived to:** the archive path derived from \`planningHome.changesDir\`/YYYY-MM-DD-<name>/
+**Archived to:** <the exact archive path returned by the archive engine>
 **Specs:** ✓ Synced to main specs (or "No delta specs" or "Sync skipped")
 
 All artifacts complete. All tasks complete.
@@ -186,8 +189,8 @@ All artifacts complete. All tasks complete.
 **Guardrails**
 - Always prompt for change selection if not provided
 - Use artifact graph (rasen status --json) for completion checking
-- **Hard gates vs soft warnings (precedence).** REFUSE archive by default on the three HARD GATES — merge confirmation for a recorded \`pr\`-mode delivery (Step 2.6: an open or closed-unmerged PR, or an unverifiable merge state), a \`VERIFY VERDICT: BLOCKED\` verification report (Step 3.5), and incomplete tasks (Step 3): proceed only on an explicit blocker-naming override, and refuse outright non-interactively. The merge gate has TWO distinct proceed paths that must not be confused: the blocker-naming **override** applies ONLY to an OPEN PR (proceed despite a known-unmerged state); a SEPARATE **confirmation** path applies ONLY to an unverifiable merge state (the human's explicit assertion REPLACES the check, it does not override a known-bad one) — a closed-unmerged PR has NEITHER path and is refused outright. The "don't block archive on warnings — just inform and confirm" rule applies ONLY to SOFT warnings (incomplete non-task artifacts, unsynced delta specs, missing ship log, portfolio-deferred delivery); it does NOT cover the three hard gates.
-- **Already-archived no-op (Step 1.5), in-repo and legacy.** A change already found — in the in-repo \`<changesDir>/archive/\`, in the legacy \`<machineHome>/archive/\` left by the retired \`external\` destination, or via its ship-log tombstone (\`Archived in ship:\` / the legacy \`Pruned:\`) — is reported from that location or recorded outcome and never re-gated, re-synced, re-moved, or re-deleted. Detection happens BEFORE the status call, so a moved-or-deleted change directory never causes a hard failure. Step 2.5's \`Archived in ship:\`/\`Pruned:\`-present-but-not-caught-by-1.5 branches are defense-in-depth inconsistency checks, not the primary detection path.
+- **Hard gates vs soft warnings (precedence).** REFUSE archive by default on the three HARD GATES — merge confirmation for a recorded \`pr\`-mode delivery (Step 2.6), a \`VERIFY VERDICT: BLOCKED\` verification report (Step 3.5), and incomplete tasks (Step 3). A closed-unmerged PR has no archive override. A known-OPEN PR proceeds only in an interactive human session after a separate explicit override naming that PR's OPEN/unmerged condition; unavailable verification proceeds only in an interactive human session after explicit confirmation that the recorded PR is merged. Non-interactive or dispatched contexts refuse both cases outright. Neither form is routine archive confirmation, and neither waives a verification-report, task, preview, or other blocker. The "don't block archive on warnings — just inform and confirm" rule applies ONLY to SOFT warnings (incomplete non-task artifacts, unsynced delta specs, missing ship log, portfolio-deferred delivery); it does NOT cover the three hard gates.
+- **Already-archived no-op (Step 1.5), in-repo and legacy.** A change already found — in the scope-reported \`<archiveDir>/\`, in the legacy \`<machineHome>/archive/\` left by the retired \`external\` destination, or via its ship-log tombstone (\`Archived in ship:\` / the legacy \`Pruned:\`) — is reported from that location or recorded outcome and never re-gated, re-synced, re-moved, or re-deleted. Detection happens BEFORE the status call, so a moved-or-deleted change directory never causes a hard failure. Step 2.5's \`Archived in ship:\`/\`Pruned:\`-present-but-not-caught-by-1.5 branches are defense-in-depth inconsistency checks, not the primary detection path.
 - **Bookkeeping is always in-repo (Step 5).** The destination axis is retired: the change directory always moves to the planning root's archive directory, with the same date-prefix and collision rules as always. A legacy \`archive.destination: external\` or \`prune\` in the config changes nothing — this workflow never moves anything to the machine home and never deletes a change directory without an archive copy. The machine home enters this workflow only as Step 1.5b's read-only legacy probe.
 - **Final evidence is immutable (Step 5.5).** The engine writes the archive section before hashing; no workflow step appends a post-hash commit identifier or changes hashed evidence afterward.
 - Preserve .openspec.yaml when moving to archive (it moves with the directory)

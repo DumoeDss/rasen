@@ -22,6 +22,7 @@ import { registerSchemeCommand } from '../commands/scheme.js';
 import { registerKnowledgeCommand } from '../commands/knowledge.js';
 import { registerSchemaCommand } from '../commands/schema.js';
 import { PipelineCommand } from '../commands/pipeline.js';
+import { registerRetainCommand } from '../commands/retain.js';
 import { PipelineLibraryCommand } from '../commands/pipeline-library.js';
 import { formatPipelineError } from '../commands/pipeline-messages.js';
 import { AgentCommand } from '../commands/agent.js';
@@ -60,6 +61,7 @@ import type {
 } from '../core/completions/types.js';
 import type { CliLocale } from '../utils/locale.js';
 import { applyCliPresentation } from './commander-presentation.js';
+import { formatCliVersion } from '../core/shared/build-info.js';
 
 // Deliberate rejection path: --store-path stays registered (hidden) so the
 // resolver can explain that registering the path is the supported route,
@@ -140,7 +142,7 @@ const createCompletionCommand = (): CompletionCommand =>
 program
   .name('rasen')
   .description('')
-  .version(version, '-V, --version', '');
+  .version(formatCliVersion(version), '-V, --version', '');
 
 // Global options
 program.option('--no-color', '');
@@ -319,8 +321,9 @@ program
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
-  .action(async (options?: { specs?: boolean; changes?: boolean; sort?: string; long?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (options?: { specs?: boolean; changes?: boolean; sort?: string; long?: boolean; json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }) => {
     try {
       const root = await resolveRootForCommand(options ?? {}, {
         json: options?.json,
@@ -336,6 +339,9 @@ program
         sort,
         long: options?.long,
         json: options?.json,
+        changesDir: root.changesDir,
+        specsDir: root.specsDir,
+        ...(root.schemasDir === undefined ? {} : { schemasDir: root.schemasDir }),
         ...(options?.json ? { root: toRootOutput(root) } : {}),
       });
     } catch (error) {
@@ -370,10 +376,20 @@ const archiveCommand = program
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
+  .option('--outcome <outcome>', '')
+  .option('--reason <text>', '')
+  .option('--by <changeInstanceId>', '')
+  .option('--by-target-line <id>', '')
+  .option('--commit <oid>', '')
   .option('--keep-ephemera', '')
   .option('--dry-run', '')
   .option('--save-plan', '')
+  .addOption(
+    new Option('--finalization-preview-precondition <token>', '').hideHelp()
+  )
   .option('--apply-plan <token>', '')
+  .option('--abort-plan <token>', '')
   .option('--intent-template', '')
   .option('--intent-file <path>', '')
   .addOption(hiddenStorePathOption())
@@ -422,8 +438,9 @@ program
   .option('--no-interactive', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
-  .action(async (itemName?: string, options?: { all?: boolean; changes?: boolean; specs?: boolean; pipelines?: boolean; type?: string; strict?: boolean; json?: boolean; noInteractive?: boolean; concurrency?: string; store?: string; project?: string; storePath?: string }) => {
+  .action(async (itemName?: string, options?: { all?: boolean; changes?: boolean; specs?: boolean; pipelines?: boolean; type?: string; strict?: boolean; json?: boolean; noInteractive?: boolean; concurrency?: string; store?: string; project?: string; targetLine?: string; storePath?: string }) => {
     try {
       const validateCommand = new ValidateCommand();
       await validateCommand.execute(itemName, options);
@@ -449,6 +466,7 @@ program
   .option('-r, --requirement <id>', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   // Explicit registration required: allowUnknownOption would otherwise
   // silently swallow --store-path instead of rejecting it deliberately.
   .addOption(hiddenStorePathOption())
@@ -552,6 +570,7 @@ program
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (options: StatusOptions) => {
     try {
@@ -571,6 +590,7 @@ program
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (artifactId: string | undefined, options: InstructionsOptions) => {
     try {
@@ -586,6 +606,10 @@ program
     }
   });
 
+// `templates` and `schemas` intentionally remain standalone-only schema
+// tooling. They are outside the generated Store-selection command contract;
+// scoped workflow consumers receive their typed `project-schemas` location
+// from StorePlanning instead of adding selectors to these enumeration tools.
 // Templates command
 program
   .command('templates')
@@ -629,6 +653,7 @@ newCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
   // Removed options kept registered (hidden) so users get a deliberate
   // explanation instead of a generic unknown-option error.
@@ -654,8 +679,9 @@ pipelineCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
-  .action(async (options?: { json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (options?: { json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }) => {
     try {
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.list(options);
@@ -676,6 +702,7 @@ pipelineCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (name: string, options?: {
     planner?: string;
@@ -687,6 +714,7 @@ pipelineCmd
     forExecution?: boolean;
     store?: string;
     project?: string;
+    targetLine?: string;
     storePath?: string;
   }) => {
     try {
@@ -708,6 +736,7 @@ pipelineCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (
     name: string,
@@ -720,6 +749,7 @@ pipelineCmd
       json?: boolean;
       store?: string;
       project?: string;
+      targetLine?: string;
       storePath?: string;
     }
   ) => {
@@ -737,8 +767,9 @@ pipelineCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
-  .action(async (task: string, options?: { json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (task: string, options?: { json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }) => {
     try {
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.classify(task, options);
@@ -753,8 +784,9 @@ pipelineCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
-  .action(async (change: string, options?: { json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (change: string, options?: { json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }) => {
     try {
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.resume(change, options);
@@ -770,8 +802,9 @@ pipelineCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
-  .action(async (name: string, options: { output: string; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (name: string, options: { output: string; json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }) => {
     const pipelineLibraryCommand = new PipelineLibraryCommand();
     await pipelineLibraryCommand.init(name, options);
   });
@@ -782,8 +815,9 @@ pipelineCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
-  .action(async (nameOrPath: string, options: { json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (nameOrPath: string, options: { json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }) => {
     const pipelineLibraryCommand = new PipelineLibraryCommand();
     await pipelineLibraryCommand.validate(nameOrPath, options);
   });
@@ -795,8 +829,9 @@ pipelineCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
-  .action(async (sourcePath: string, options: { force?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (sourcePath: string, options: { force?: boolean; json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }) => {
     const pipelineLibraryCommand = new PipelineLibraryCommand();
     await pipelineLibraryCommand.import(sourcePath, options);
   });
@@ -808,8 +843,9 @@ pipelineCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
-  .action(async (name: string, destination: string, options: { force?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (name: string, destination: string, options: { force?: boolean; json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }) => {
     const pipelineLibraryCommand = new PipelineLibraryCommand();
     await pipelineLibraryCommand.export(name, destination, options);
   });
@@ -822,8 +858,9 @@ pipelineCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
-  .action(async (name: string, options: { from: string; force?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (name: string, options: { from: string; force?: boolean; json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }) => {
     const pipelineLibraryCommand = new PipelineLibraryCommand();
     await pipelineLibraryCommand.save(name, options);
   });
@@ -836,11 +873,15 @@ pipelineCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
-  .action(async (name: string, options: { yes?: boolean; force?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (name: string, options: { yes?: boolean; force?: boolean; json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }) => {
     const pipelineLibraryCommand = new PipelineLibraryCommand();
     await pipelineLibraryCommand.delete(name, options);
   });
+
+// Retain command group: prepare a change for a retention run
+registerRetainCommand(program);
 
 // Agent command group: introspect an agent's own runtime state
 const agentCmd = program

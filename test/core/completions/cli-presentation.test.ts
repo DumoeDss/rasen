@@ -63,6 +63,8 @@ describe.sequential('CLI presentation resolution', () => {
     const expectedEnglish = {
       'save-plan': 'Save the exact previewed archive plan and output an opaque apply token',
       'apply-plan': 'Apply or resume the exact saved archive plan without replanning',
+      'abort-plan':
+        'Abort the exact saved archive plan before it crosses a durable mutation boundary',
       'intent-template':
         'Output a complete archive intent template as JSON without changing files',
       'intent-file':

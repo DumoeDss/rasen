@@ -1,0 +1,49 @@
+{
+  "change": "store-planning-scope-routing",
+  "archivedAt": "2026-08-06T21:52:51.764Z",
+  "codeCommit": "42d6625d63828902c270409b27a7732204d321e9",
+  "planningBranch": "feat/store-project-partitions-planning-worktrees",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/caller-inventory.md",
+      "sha256": "55fed23b1141efb86c57dc162215abd8c7260c46a04b57f10ae04a7d2c2fe4e4"
+    },
+    {
+      "path": "evidence/review-cycle-report.md",
+      "sha256": "236fa4e4a88e0e509519e60b54c6d17390adb43d983c4325358fe68b52aec544"
+    },
+    {
+      "path": "evidence/review-report-r2.md",
+      "sha256": "ab226e52c4a45140858e0e84aa348938a99a9da31493c0864bdd34f893c27170"
+    },
+    {
+      "path": "evidence/review-report-r3.md",
+      "sha256": "7b5347d8886bbd2217954a8eaa8623f61194fe853d4cff2fd0a6decafeeb241d"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "e436897dc0b7517a93a34a07d378fb43f957698d6fdcf97e6bcbcbf4a1a58195"
+    },
+    {
+      "path": "evidence/sessions-ts-recollection.md",
+      "sha256": "24f650d7a33bc8069498ee33b3df06d20aa723bd8fba6e5849f32dd0d35d7362"
+    },
+    {
+      "path": "evidence/sessions-ts-reconstruction-verification.md",
+      "sha256": "2b18f0ffdd12d145f49f78ab6bfa3eeb87cc322772c9b12485b7efaf883075c7"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "9c07aad7f6e61de66b5fd4eedc23db6edb4a237a9e84bc36900839c9e82b11e8"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

@@ -36,22 +36,40 @@ export type WhitelistEntry = BoundedCliEntry | SupervisedLongRunnerEntry;
  * The whitelist table, enumerated by tier (change-submission spec's
  * requirement-level exactness rules):
  *
- * - `bounded-cli`: exactly fourteen entries — change submission
+ * - `bounded-cli`: exactly eighteen entries — change submission
  *   (`create-change`), the three space-creation ops
  *   (`create-project-space`, `register-store-space`, `setup-store-space`),
  *   the four workflow-library mutations (`import-workflow`, `init-workflow`,
  *   `export-workflow`, `delete-workflow`), the five pipeline-library
  *   mutations (`import-pipeline`, `init-pipeline`, `export-pipeline`,
- *   `delete-pipeline`, `save-pipeline` — pipeline-definition-api), and the
+ *   `delete-pipeline`, `save-pipeline` — pipeline-definition-api), the
  *   per-space workflow-enablement apply op (`workflow-enablement-update`,
- *   space-workflow-enablement design D5). Each is deterministic, bounded, and
- *   leaves no resident process.
+ *   space-workflow-enablement design D5), the Store change-finalization op
+ *   (`finalize-change`, store-finalization-outcomes-v2 decision 10 — a
+ *   read-only plan followed by one bounded apply, both through the CLI), and
+ *   the three Store-scoped ops `store-scoped-issues-management` adds:
+ *
+ *     `create-issue` — `POST /api/v1/stores/:storeUid/issues`. Writes ONE
+ *       Store-level Issue record. Bounded: one validated write under one lock,
+ *       no worktree, no Git verb at all.
+ *     `publish-execution-plan` — `POST .../issues/:issueId/plans`. Writes ONE
+ *       immutable revision after verifying every reference. Bounded for the
+ *       same reason, and a published revision is never rewritten.
+ *     `create-scoped-change` — `POST .../projects/:projectId/lines/
+ *       :targetLineId/changes`. The existing `create-change` op is NOT reused:
+ *       that one takes its scope from the server's launch project, and this one
+ *       requires the complete scope in the path and must never complete a
+ *       missing segment from a filter. Two admission entries keep the two
+ *       authority requirements separable.
+ *
+ *   Each is deterministic, bounded, and leaves no resident process.
  * - `supervised-long-runner`: exactly `auto` and `goal`.
  *
  * Each mutation endpoint admits only entries of its own operation set (the
  * space bridge serves only the three space ops, the workflow bridge only the
  * four workflow ops, the pipeline bridge only the five pipeline ops, the change
- * bridge only `create-change`).
+ * bridge only `create-change`, the finalization bridge only `finalize-change`,
+ * and the Store bridge only the three Store-scoped ops above).
  */
 export const WHITELIST: Readonly<Record<string, WhitelistEntry>> = Object.freeze({
   'create-change': { tier: 'bounded-cli', op: 'create-change' },
@@ -68,6 +86,10 @@ export const WHITELIST: Readonly<Record<string, WhitelistEntry>> = Object.freeze
   'delete-pipeline': { tier: 'bounded-cli', op: 'delete-pipeline' },
   'save-pipeline': { tier: 'bounded-cli', op: 'save-pipeline' },
   'workflow-enablement-update': { tier: 'bounded-cli', op: 'workflow-enablement-update' },
+  'finalize-change': { tier: 'bounded-cli', op: 'finalize-change' },
+  'create-issue': { tier: 'bounded-cli', op: 'create-issue' },
+  'publish-execution-plan': { tier: 'bounded-cli', op: 'publish-execution-plan' },
+  'create-scoped-change': { tier: 'bounded-cli', op: 'create-scoped-change' },
   auto: {
     tier: 'supervised-long-runner',
     op: 'auto',

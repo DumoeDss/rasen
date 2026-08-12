@@ -11,6 +11,64 @@ describe('top-level validate command', () => {
   const changesDir = path.join(testDir, 'rasen', 'changes');
   const specsDir = path.join(testDir, 'rasen', 'specs');
 
+  async function writeScenarioLossChange(changeId: string): Promise<void> {
+    const deltaDir = path.join(changesDir, changeId, 'specs', 'alpha');
+    await fs.mkdir(deltaDir, { recursive: true });
+    await fs.writeFile(
+      path.join(deltaDir, 'spec.md'),
+      [
+        '## MODIFIED Requirements',
+        '',
+        '### Requirement: Alpha module SHALL produce deterministic output',
+        'The alpha module SHALL produce refreshed deterministic output.',
+        '',
+        '#### Scenario: Replacement alpha run',
+        '- **WHEN** the replacement flow runs',
+        '- **THEN** refreshed output is returned',
+      ].join('\n'),
+      'utf8'
+    );
+  }
+
+  async function writeMultiErrorChange(changeId: string): Promise<void> {
+    const invalidRequirements = [
+      {
+        capability: 'alpha',
+        requirement: 'Alpha missing normative keyword',
+        scenario: 'Alpha invalid shape is reported',
+      },
+      {
+        capability: 'beta',
+        requirement: 'Beta missing normative keyword',
+        scenario: 'Beta invalid shape is reported',
+      },
+    ];
+
+    for (const fixture of invalidRequirements) {
+      const deltaDir = path.join(
+        changesDir,
+        changeId,
+        'specs',
+        fixture.capability
+      );
+      await fs.mkdir(deltaDir, { recursive: true });
+      await fs.writeFile(
+        path.join(deltaDir, 'spec.md'),
+        [
+          '## ADDED Requirements',
+          '',
+          `### Requirement: ${fixture.requirement}`,
+          'The system returns an invalid test result.',
+          '',
+          `#### Scenario: ${fixture.scenario}`,
+          '- **WHEN** strict validation runs',
+          '- **THEN** the independent error is reported',
+        ].join('\n'),
+        'utf8'
+      );
+    }
+  }
+
   beforeEach(async () => {
     await fs.mkdir(changesDir, { recursive: true });
     await fs.mkdir(specsDir, { recursive: true });
@@ -80,6 +138,234 @@ describe('top-level validate command', () => {
     expect(Array.isArray(json.items)).toBe(true);
     expect(json.summary?.totals?.items).toBeDefined();
     expect(json.version).toBe('1.0');
+  });
+
+  it('reports scenario-preservation warnings without failing direct validation', async () => {
+    await writeScenarioLossChange('scenario-loss-direct');
+
+    const result = await runCLI(
+      ['validate', 'scenario-loss-direct', '--type', 'change'],
+      { cwd: testDir }
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Change 'scenario-loss-direct' is valid");
+    expect(result.stderr).toContain('[WARNING]');
+    expect(result.stderr).toContain('Deterministic alpha run');
+  });
+
+  it('fails strict validation and emits structured scenario-loss metadata', async () => {
+    await writeScenarioLossChange('scenario-loss-strict');
+
+    const result = await runCLI(
+      [
+        'validate',
+        'scenario-loss-strict',
+        '--type',
+        'change',
+        '--strict',
+        '--json',
+      ],
+      { cwd: testDir }
+    );
+
+    expect(result.exitCode).toBe(1);
+    const json = JSON.parse(result.stdout);
+    expect(json.items[0]).toMatchObject({ valid: false });
+    expect(json.items[0].issues).toContainEqual(
+      expect.objectContaining({
+        level: 'ERROR',
+        code: 'spec_modified_scenarios_missing',
+        capability: 'alpha',
+        missingScenarios: ['Deterministic alpha run'],
+      })
+    );
+  });
+
+  it('renders every independent strict direct error in human output', async () => {
+    const changeId = 'multi-error-direct-human';
+    await writeMultiErrorChange(changeId);
+
+    const result = await runCLI(
+      ['validate', changeId, '--type', 'change', '--strict'],
+      { cwd: testDir }
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain(`Change '${changeId}' has issues`);
+    expect(result.stderr).toContain('alpha/spec.md');
+    expect(result.stderr).toContain(
+      'ADDED "Alpha missing normative keyword" must contain SHALL or MUST'
+    );
+    expect(result.stderr).toContain('beta/spec.md');
+    expect(result.stderr).toContain(
+      'ADDED "Beta missing normative keyword" must contain SHALL or MUST'
+    );
+  });
+
+  it('preserves every independent strict direct error and its JSON metadata', async () => {
+    const changeId = 'multi-error-direct-json';
+    await writeMultiErrorChange(changeId);
+
+    const result = await runCLI(
+      ['validate', changeId, '--type', 'change', '--strict', '--json'],
+      { cwd: testDir }
+    );
+
+    expect(result.exitCode).toBe(1);
+    const json = JSON.parse(result.stdout);
+    expect(json.items[0]).toMatchObject({
+      id: changeId,
+      type: 'change',
+      valid: false,
+    });
+    expect(json.items[0].issues).toEqual([
+      expect.objectContaining({
+        level: 'ERROR',
+        path: 'alpha/spec.md',
+        code: 'spec_delta_requirement_keyword_missing',
+        capability: 'alpha',
+        requirement: 'Alpha missing normative keyword',
+      }),
+      expect.objectContaining({
+        level: 'ERROR',
+        path: 'beta/spec.md',
+        code: 'spec_delta_requirement_keyword_missing',
+        capability: 'beta',
+        requirement: 'Beta missing normative keyword',
+      }),
+    ]);
+    expect(json.summary.totals).toEqual({ items: 1, passed: 0, failed: 1 });
+  });
+
+  it('includes advisory scenario-loss issues in bulk change validation', async () => {
+    await writeScenarioLossChange('scenario-loss-bulk');
+
+    const result = await runCLI(
+      ['validate', '--changes', '--json', '--concurrency', '1'],
+      { cwd: testDir }
+    );
+
+    expect(result.exitCode).toBe(0);
+    const json = JSON.parse(result.stdout);
+    const item = json.items.find(
+      (candidate: { id: string }) => candidate.id === 'scenario-loss-bulk'
+    );
+    expect(item).toMatchObject({ type: 'change', valid: true });
+    expect(item.issues).toContainEqual(
+      expect.objectContaining({
+        level: 'WARNING',
+        code: 'spec_modified_scenarios_missing',
+      })
+    );
+  });
+
+  it('renders strict scenario-preservation failures in human bulk output', async () => {
+    await writeScenarioLossChange('scenario-loss-bulk-strict');
+
+    const result = await runCLI(
+      ['validate', '--changes', '--strict', '--concurrency', '1'],
+      { cwd: testDir }
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('change/scenario-loss-bulk-strict');
+    expect(result.stderr).toContain('[ERROR]');
+    expect(result.stderr).toContain('Deterministic alpha run');
+  });
+
+  it('renders every error from the same strict bulk item in human output', async () => {
+    const changeId = 'multi-error-bulk-human';
+    await writeMultiErrorChange(changeId);
+
+    const result = await runCLI(
+      ['validate', '--changes', '--strict', '--concurrency', '1'],
+      { cwd: testDir }
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain(`change/${changeId} alpha/spec.md`);
+    expect(result.stderr).toContain('Alpha missing normative keyword');
+    expect(result.stderr).toContain(`change/${changeId} beta/spec.md`);
+    expect(result.stderr).toContain('Beta missing normative keyword');
+    expect(result.stdout).toContain(
+      'Totals: 2 passed, 1 failed (3 items)'
+    );
+  });
+
+  it('keeps a complete strict multi-error item and consistent bulk JSON summary', async () => {
+    const changeId = 'multi-error-bulk-json';
+    await writeMultiErrorChange(changeId);
+
+    const result = await runCLI(
+      [
+        'validate',
+        '--changes',
+        '--strict',
+        '--json',
+        '--concurrency',
+        '1',
+      ],
+      { cwd: testDir }
+    );
+
+    expect(result.exitCode).toBe(1);
+    const json = JSON.parse(result.stdout);
+    const item = json.items.find(
+      (candidate: { id: string }) => candidate.id === changeId
+    );
+    expect(item).toMatchObject({
+      id: changeId,
+      type: 'change',
+      valid: false,
+    });
+    expect(item.issues).toEqual([
+      expect.objectContaining({
+        code: 'spec_delta_requirement_keyword_missing',
+        capability: 'alpha',
+        requirement: 'Alpha missing normative keyword',
+      }),
+      expect.objectContaining({
+        code: 'spec_delta_requirement_keyword_missing',
+        capability: 'beta',
+        requirement: 'Beta missing normative keyword',
+      }),
+    ]);
+    expect(json.summary).toMatchObject({
+      totals: { items: 3, passed: 2, failed: 1 },
+      byType: {
+        change: { items: 3, passed: 2, failed: 1 },
+      },
+    });
+  });
+
+  it('renders every reconciliation error in human bulk output', async () => {
+    const changeId = 'missing-canonical-requirement';
+    const deltaDir = path.join(changesDir, changeId, 'specs', 'alpha');
+    await fs.mkdir(deltaDir, { recursive: true });
+    await fs.writeFile(
+      path.join(deltaDir, 'spec.md'),
+      [
+        '## MODIFIED Requirements',
+        '',
+        '### Requirement: Missing canonical rule',
+        'The system SHALL update a canonical rule.',
+        '',
+        '#### Scenario: Missing rule',
+        '- **WHEN** validation runs',
+        '- **THEN** the missing canonical rule is reported',
+      ].join('\n')
+    );
+
+    const result = await runCLI(
+      ['validate', '--changes', '--concurrency', '1'],
+      { cwd: testDir }
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain(
+      'MODIFIED failed for header "### Requirement: Missing canonical rule"'
+    );
   });
 
   it('validates only specs with --specs and respects --concurrency', async () => {

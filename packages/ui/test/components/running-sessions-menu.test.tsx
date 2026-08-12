@@ -16,8 +16,9 @@ vi.mock('../../src/api/client.js', () => ({
 
 import { RunningSessionsMenu } from '../../src/components/RunningSessionsMenu.js';
 import * as client from '../../src/api/client.js';
+import type { SessionListEntry } from '../../src/api/types.js';
 
-function liveEntry(id: string, changeName?: string) {
+function liveEntry(id: string, changeName?: string): SessionListEntry {
   return {
     session: {
       id,
@@ -41,6 +42,26 @@ function liveEntry(id: string, changeName?: string) {
           goalRun: { kind: 'absent' },
         }
       : { kind: 'absent' },
+  };
+}
+
+/**
+ * A live run whose joined run-state is PRESENT but names no pipeline — the
+ * record `rasen retain prepare` writes for a change that never ran a classified
+ * pipeline. It carries frozen retention identity the UI never reads, so on the
+ * wire the observable shape is simply "no pipeline, no stages".
+ */
+function retentionOnlyEntry(id: string, changeName: string) {
+  const entry = liveEntry(id, changeName);
+  return {
+    ...entry,
+    runState: {
+      name: changeName,
+      kind: 'ok' as const,
+      autoRun: { kind: 'ok' as const, state: {} },
+      portfolio: { kind: 'absent' as const },
+      goalRun: { kind: 'absent' as const },
+    },
   };
 }
 
@@ -115,5 +136,25 @@ describe('RunningSessionsMenu', () => {
     expect(link.getAttribute('href')).toBe('/p/proj_x/task/change-a');
     expect(link.textContent).toContain('task a');
     expect(link.textContent).toContain('small-feature');
+  });
+
+  // A change prepared by `rasen retain prepare` holds retention identity and
+  // names no pipeline. `describeStage` returns a bare `string`, so an unguarded
+  // read renders nothing at all and silently drops the change label.
+  it('falls back to the change label when the joined run-state names no pipeline', async () => {
+    vi.mocked(client.listSessions).mockResolvedValue({
+      sessions: [retentionOnlyEntry('a', 'change-a')],
+    });
+    await mountAt(container, '/p/proj_x/board');
+
+    const toggle = container.querySelector('.running-sessions-menu__toggle') as HTMLButtonElement;
+    await act(async () => {
+      toggle.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const link = container.querySelector('.running-sessions-menu__list a') as HTMLAnchorElement;
+    expect(link).not.toBeNull();
+    expect(link.textContent).toContain('change-a');
+    expect(link.textContent).not.toContain('undefined');
   });
 });

@@ -110,4 +110,118 @@ describe('store-migration CLI', () => {
     expect(okJson.eject.specs).toContain('billing');
     expect(fs.existsSync(path.join(repo, 'rasen', 'specs', 'billing'))).toBe(true);
   });
+
+  // Task 10.4 and design D13: BOTH doctors, identical codes and repair
+  // commands. `rasen doctor` is the obvious first command for a Store owner and
+  // `store doctor`'s findings do not replace it; it reported none of the nine
+  // new codes, so a Store owner was told nothing about flat refs, mixed
+  // residue, or an interrupted migration.
+  it('rasen doctor reports the same planning-layout codes and repairs as rasen store doctor', async () => {
+    writeSpec(storeRoot, 'billing', '## Purpose\n\np\n\n## Requirements\n\n- r\n');
+    fs.mkdirSync(path.join(storeRoot, 'rasen', 'changes', 'fix-a'), { recursive: true });
+    fs.writeFileSync(path.join(storeRoot, 'rasen', 'changes', 'fix-a', 'proposal.md'), '# fix-a\n');
+
+    const storeDoctor = await runCLI(['store', 'doctor', 'team-store', '--json'], {
+      cwd: tempDir,
+      env,
+    });
+    const storeFindings = (JSON.parse(storeDoctor.stdout).status as Array<{
+      code: string;
+      fix?: string;
+    }>).filter((entry) => entry.code.startsWith('store_layout_'));
+    expect(storeFindings.length).toBeGreaterThan(0);
+
+    const rootDoctor = await runCLI(['doctor', '--json'], { cwd: storeRoot, env });
+    const rootPayload = JSON.parse(rootDoctor.stdout) as {
+      storeLayout?: Array<{ code: string; fix?: string }>;
+    };
+    const rootFindings = (rootPayload.storeLayout ?? []).filter((entry) =>
+      entry.code.startsWith('store_layout_')
+    );
+
+    // Identical codes AND identical repairs — the same diagnoser answers both,
+    // so the two commands cannot drift apart.
+    expect(rootFindings.map((entry) => `${entry.code}|${entry.fix ?? ''}`).sort()).toEqual(
+      storeFindings.map((entry) => `${entry.code}|${entry.fix ?? ''}`).sort()
+    );
+
+    // And the human rendering carries the code, not only the prose.
+    const human = await runCLI(['doctor'], { cwd: storeRoot, env });
+    for (const finding of rootFindings) {
+      expect(human.stdout).toContain(finding.code);
+      if (finding.fix) expect(human.stdout).toContain(finding.fix);
+    }
+  });
+
+  // R2-1. The case above runs ambient, correctly — but against a LEGACY FLAT
+  // Store, which resolves as `legacy-store` and never meets the refusal. A
+  // MIGRATED Store resolves as a store aggregate, and doctor only asked for the
+  // `store-read` intent when `--store` was passed, so the single most likely
+  // invocation — stand in the Store you just migrated, type `rasen doctor` —
+  // exited 1 with `project_scope_required` and emitted no `storeLayout` at all.
+  // The fix for a "one surface is never proof" finding had itself been verified
+  // on one surface.
+  it('rasen doctor run ambient inside a MIGRATED store reports its layout findings', async () => {
+    const migrated = path.join(tempDir, 'migrated-store');
+    createOpenSpecRoot(migrated);
+    await registerStore({ id: 'migrated-store', localPath: migrated, globalDataDir });
+    fs.mkdirSync(path.join(migrated, '.rasen-store', 'projects'), { recursive: true });
+    fs.writeFileSync(
+      path.join(migrated, '.rasen-store', 'store.yaml'),
+      'version: 2\nuid: 44444444-5555-4666-8777-888888888888\nid: migrated-store\nlayoutVersion: 2\n'
+    );
+    fs.writeFileSync(
+      path.join(migrated, '.rasen-store', 'projects', 'elftia.yaml'),
+      [
+        'version: 2',
+        'projectId: elftia',
+        'roles:',
+        '  planning: true',
+        '  knowledge: true',
+        'planningBinding:',
+        '  state: unbound',
+        '',
+      ].join('\n')
+    );
+    // A partition with no catalog, so the Store has a real finding to report and
+    // the assertion cannot pass on an empty list.
+    fs.mkdirSync(path.join(migrated, 'rasen', 'projects', 'ghost', 'specs'), { recursive: true });
+    fs.writeFileSync(
+      path.join(migrated, 'rasen', 'projects', 'ghost', 'specs', 'spec.md'),
+      '# ghost\n'
+    );
+
+    const ambient = await runCLI(['doctor', '--json'], { cwd: migrated, env });
+    expect(ambient.exitCode).toBe(0);
+    const payload = JSON.parse(ambient.stdout) as {
+      storeLayout?: Array<{ code: string; fix?: string }>;
+    };
+    expect(payload.storeLayout, 'ambient doctor emitted no storeLayout key').toBeDefined();
+    expect((payload.storeLayout ?? []).map((entry) => entry.code)).toContain(
+      'store_layout_partition_orphan'
+    );
+
+    // Same codes and repairs as the explicit forms — the point of task 10.4.
+    const explicit = await runCLI(['doctor', '--store', 'migrated-store', '--json'], {
+      cwd: tempDir,
+      env,
+    });
+    const storeDoctor = await runCLI(['store', 'doctor', 'migrated-store', '--json'], {
+      cwd: tempDir,
+      env,
+    });
+    const key = (entry: { code: string; fix?: string }): string => `${entry.code}|${entry.fix ?? ''}`;
+    const ambientKeys = (payload.storeLayout ?? []).map(key).sort();
+    expect(
+      ((JSON.parse(explicit.stdout).storeLayout ?? []) as Array<{ code: string; fix?: string }>)
+        .map(key)
+        .sort()
+    ).toEqual(ambientKeys);
+    expect(
+      ((JSON.parse(storeDoctor.stdout).status ?? []) as Array<{ code: string; fix?: string }>)
+        .filter((entry) => entry.code.startsWith('store_layout_'))
+        .map(key)
+        .sort()
+    ).toEqual(ambientKeys);
+  });
 });

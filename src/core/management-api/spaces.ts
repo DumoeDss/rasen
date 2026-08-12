@@ -23,6 +23,10 @@ import type { ResolvedStoreRef } from '../store/identity-types.js';
 import { listStoreMembers } from '../store/membership.js';
 import { cachedGitWorktreeList } from '../store/worktree-inventory-cache.js';
 import { getActiveChangeIds } from '../../utils/item-discovery.js';
+import {
+  resolveProjectPlanningSpaceFromRoot,
+  type ResolvedSpace,
+} from '../config-api/project-addressing.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import type {
   ProjectSpaceEntry,
@@ -215,11 +219,13 @@ function sameStore(left: ResolvedStoreRef, right: ResolvedStoreRef): boolean {
 
 /**
  * `GET /api/v1/spaces/worktrees` handler (worktree-aware-spaces D3): the live
- * worktree inventory of an already-resolved space `root`, derived from
+ * worktree inventory of an already-resolved project scope, derived from
  * `git worktree list` at read time and never persisted. Each entry reports the
  * worktree's root, branch (null when detached), the main-checkout flag, and the
- * count of active changes in that worktree's OWN `rasen/changes` (same
- * active-change definition as the changes listing — `proposal.md` present). A
+ * count of active Changes in that worktree's effective project planning scope
+ * (same active-change definition as the changes listing — `proposal.md`
+ * present). Standalone worktrees may therefore differ; Store-bound worktrees
+ * share the verified project partition. A
  * non-git root yields an empty inventory, not an error. Read-only throughout.
  *
  * `root` is canonicalized (`canonicalizeOrResolve`, not the raw porcelain
@@ -232,19 +238,38 @@ function sameStore(left: ResolvedStoreRef, right: ResolvedStoreRef): boolean {
  * `path.resolve` for a deleted/prunable worktree root that no longer exists
  * on disk, still normalizing separators.
  */
-export async function handleSpaceWorktrees(root: string): Promise<SpaceWorktreesResponse> {
+export async function handleSpaceWorktrees(
+  space: ResolvedSpace
+): Promise<SpaceWorktreesResponse> {
+  // Only a root is needed, so a legacy flat Store space is answerable here for
+  // the same reason it is answerable for Changes: it is a real checkout with
+  // real worktrees. A Store v2 aggregate is screened out by the caller
+  // (`isStoreAggregateSpace`), not by the shape of this parameter.
+  const root = space.type === 'project' ? space.executionRoot ?? space.root : space.root;
   const inventory = await cachedGitWorktreeList(root);
   if (!inventory) {
     return { worktrees: [] };
   }
 
   const worktrees = await Promise.all(
-    inventory.map(async (worktree) => ({
-      root: canonicalizeOrResolve(worktree.root),
-      branch: worktree.branch,
-      isMain: worktree.isMain,
-      activeChangeCount: (await getActiveChangeIds(worktree.root)).length,
-    }))
+    inventory.map(async (worktree) => {
+      const resolved = await resolveProjectPlanningSpaceFromRoot(worktree.root);
+      const activeChangeCount =
+        resolved.ok && resolved.space.type === 'project'
+          ? (
+              await getActiveChangeIds(
+                resolved.space.root,
+                resolved.space.changesDir
+              )
+            ).length
+          : 0;
+      return {
+        root: canonicalizeOrResolve(worktree.root),
+        branch: worktree.branch,
+        isMain: worktree.isMain,
+        activeChangeCount,
+      };
+    })
   );
   return { worktrees };
 }

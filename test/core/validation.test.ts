@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { Validator } from '../../src/core/validation/validator.js';
@@ -529,11 +529,73 @@ The system will log all events.
       await fs.writeFile(specPath, deltaSpec);
 
       const validator = new Validator(true);
-      const report = await validator.validateChangeDeltaSpecs(changeDir);
+      const report = await validator.validateChangeDeltaSpecs(
+        changeDir,
+        path.join(testDir, 'shape-invalid-canonical')
+      );
 
       expect(report.valid).toBe(false);
       expect(report.summary.errors).toBeGreaterThan(0);
       expect(report.issues.some(i => i.message.includes('must contain SHALL or MUST'))).toBe(true);
+      expect(
+        report.issues.filter(
+          issue => issue.code === 'spec_target_validation_failed'
+        )
+      ).toHaveLength(0);
+    });
+
+    it('deduplicates only the equivalent projected issue for the same requirement', async () => {
+      const changeDir = path.join(testDir, 'projected-issue-deduplication');
+      const deltaPath = path.join(
+        changeDir,
+        'specs',
+        'projected-errors',
+        'spec.md'
+      );
+      await fs.mkdir(path.dirname(deltaPath), { recursive: true });
+      await fs.writeFile(
+        deltaPath,
+        [
+          '## ADDED Requirements',
+          '',
+          '### Requirement: Missing normative keyword',
+          'The system returns the first result.',
+          '',
+          '#### Scenario: First result is returned',
+          '- **WHEN** the first flow runs',
+          '- **THEN** a result is returned',
+          '',
+          '### Requirement: Empty projected scenario',
+          'The system SHALL return the second result.',
+          '',
+          '#### Scenario: Scenario heading without a body',
+        ].join('\n')
+      );
+
+      const report = await new Validator(true).validateChangeDeltaSpecs(
+        changeDir,
+        path.join(testDir, 'projected-issue-deduplication-canonical')
+      );
+
+      expect(
+        report.issues.filter(issue =>
+          issue.message.includes(
+            'ADDED "Missing normative keyword" must contain SHALL or MUST'
+          )
+        )
+      ).toHaveLength(1);
+      expect(
+        report.issues.filter(
+          issue => issue.code === 'spec_target_validation_failed'
+        )
+      ).toEqual([
+        expect.objectContaining({
+          source: deltaPath,
+          capability: 'projected-errors',
+          requirement: 'Empty projected scenario',
+          message: expect.stringContaining('at least one scenario'),
+        }),
+      ]);
     });
 
     it('should hint the author when ADDED requirement only has SHALL/MUST in the header', async () => {
@@ -707,6 +769,1039 @@ The system MUST support mixed case delta headers.
       expect(report.valid).toBe(true);
       expect(report.summary.errors).toBe(0);
     });
+
+    async function writeModifiedScenarioFixture(
+      changeName: string,
+      deltaScenarios: string[]
+    ): Promise<{ changeDir: string; canonicalSpecsDir: string }> {
+      const changeDir = path.join(testDir, changeName);
+      const deltaDir = path.join(changeDir, 'specs', 'inventory');
+      const canonicalSpecsDir = path.join(testDir, `${changeName}-canonical`);
+      const canonicalDir = path.join(canonicalSpecsDir, 'inventory');
+      await fs.mkdir(deltaDir, { recursive: true });
+      await fs.mkdir(canonicalDir, { recursive: true });
+      const scenario = (name: string, outcome: string): string =>
+        [
+          `#### Scenario: ${name}`,
+          '- **WHEN** inventory is checked',
+          `- **THEN** ${outcome}`,
+        ].join('\n');
+      await fs.writeFile(
+        path.join(canonicalDir, 'spec.md'),
+        [
+          '# Inventory',
+          '',
+          '## Purpose',
+          'The inventory specification defines stable stock behavior.',
+          '',
+          '## Requirements',
+          '',
+          '### Requirement: Inventory lookup',
+          'The system SHALL return inventory.',
+          '',
+          scenario('Alpha remains', 'alpha is returned'),
+          '',
+          scenario('Beta remains', 'beta is returned'),
+        ].join('\n')
+      );
+      await fs.writeFile(
+        path.join(deltaDir, 'spec.md'),
+        [
+          '## MODIFIED Requirements',
+          '',
+          '### Requirement: Inventory lookup',
+          'The system SHALL return refreshed inventory.',
+          '',
+          ...deltaScenarios,
+        ].join('\n')
+      );
+      return { changeDir, canonicalSpecsDir };
+    }
+
+    it('warns when a MODIFIED requirement omits canonical scenarios', async () => {
+      const fixture = await writeModifiedScenarioFixture(
+        'scenario-preservation-warning',
+        [
+          '#### Scenario: Alpha remains',
+          '- **WHEN** inventory is refreshed',
+          '- **THEN** updated alpha is returned',
+        ]
+      );
+
+      const report = await new Validator().validateChangeDeltaSpecs(
+        fixture.changeDir,
+        fixture.canonicalSpecsDir
+      );
+
+      expect(report.valid).toBe(true);
+      expect(report.summary).toMatchObject({ errors: 0, warnings: 1 });
+      expect(report.issues).toContainEqual(
+        expect.objectContaining({
+          level: 'WARNING',
+          path: 'inventory/spec.md',
+          code: 'spec_modified_scenarios_missing',
+          capability: 'inventory',
+          requirement: 'Inventory lookup',
+          missingScenarios: ['Beta remains'],
+        })
+      );
+      expect(report.issues[0].message).toContain(
+        'include every scenario that should survive'
+      );
+    });
+
+    it('promotes scenario-preservation warnings to errors in strict mode', async () => {
+      const fixture = await writeModifiedScenarioFixture(
+        'scenario-preservation-strict',
+        [
+          '#### Scenario: Alpha remains',
+          '- **WHEN** inventory is refreshed',
+          '- **THEN** updated alpha is returned',
+        ]
+      );
+
+      const report = await new Validator(true).validateChangeDeltaSpecs(
+        fixture.changeDir,
+        fixture.canonicalSpecsDir
+      );
+
+      expect(report.valid).toBe(false);
+      expect(report.summary).toMatchObject({ errors: 1, warnings: 0 });
+      expect(report.issues).toContainEqual(
+        expect.objectContaining({
+          level: 'ERROR',
+          code: 'spec_modified_scenarios_missing',
+          missingScenarios: ['Beta remains'],
+        })
+      );
+    });
+
+    it.each([
+      { label: 'backtick', fence: '```' },
+      { label: 'tilde', fence: '~~~' },
+    ])(
+      'strict validation rejects a $label-fenced heading that only appears to preserve a canonical scenario',
+      async ({ fence }) => {
+        const fixture = await writeModifiedScenarioFixture(
+          `scenario-preservation-fenced-${fence[0] === '`' ? 'backtick' : 'tilde'}`,
+          [
+            fence,
+            '#### Scenario: Beta remains',
+            '- **WHEN** the documentation example is read',
+            '- **THEN** it does not become visible behavior',
+            fence,
+            '',
+            '#### Scenario: Alpha remains',
+            '- **WHEN** inventory is refreshed',
+            '- **THEN** updated alpha is returned',
+          ]
+        );
+
+        const report = await new Validator(true).validateChangeDeltaSpecs(
+          fixture.changeDir,
+          fixture.canonicalSpecsDir
+        );
+
+        expect(report.valid).toBe(false);
+        expect(report.summary).toMatchObject({ errors: 1, warnings: 0 });
+        expect(report.issues).toEqual([
+          expect.objectContaining({
+            level: 'ERROR',
+            code: 'spec_modified_scenarios_missing',
+            path: 'inventory/spec.md',
+            capability: 'inventory',
+            requirement: 'Inventory lookup',
+            missingScenarios: ['Beta remains'],
+          }),
+        ]);
+      }
+    );
+
+    it('accepts a complete MODIFIED scenario inventory and new capabilities', async () => {
+      const fixture = await writeModifiedScenarioFixture(
+        'scenario-preservation-complete',
+        [
+          '#### Scenario: Alpha remains',
+          '- **WHEN** inventory is refreshed',
+          '- **THEN** updated alpha is returned',
+          '',
+          '#### Scenario: Beta remains',
+          '- **WHEN** inventory is checked',
+          '- **THEN** beta is returned',
+        ]
+      );
+      const newCapabilityDir = path.join(
+        fixture.changeDir,
+        'specs',
+        'new-capability'
+      );
+      await fs.mkdir(newCapabilityDir, { recursive: true });
+      await fs.writeFile(
+        path.join(newCapabilityDir, 'spec.md'),
+        [
+          '## ADDED Requirements',
+          '',
+          '### Requirement: New behavior',
+          'The system SHALL add new behavior.',
+          '',
+          '#### Scenario: New behavior works',
+          '- **WHEN** the new behavior runs',
+          '- **THEN** it succeeds',
+        ].join('\n')
+      );
+
+      const report = await new Validator(true).validateChangeDeltaSpecs(
+        fixture.changeDir,
+        fixture.canonicalSpecsDir
+      );
+
+      expect(report.valid).toBe(true);
+      expect(report.issues).toEqual([]);
+    });
+
+    it('allows a MODIFIED delta to repair a structurally valid semantic-invalid baseline', async () => {
+      const changeDir = path.join(testDir, 'repair-invalid-canonical');
+      const deltaDir = path.join(changeDir, 'specs', 'inventory');
+      const canonicalSpecsDir = path.join(
+        testDir,
+        'repair-invalid-canonical-specs'
+      );
+      const canonicalDir = path.join(canonicalSpecsDir, 'inventory');
+      await fs.mkdir(deltaDir, { recursive: true });
+      await fs.mkdir(canonicalDir, { recursive: true });
+      await fs.writeFile(
+        path.join(canonicalDir, 'spec.md'),
+        [
+          '# Inventory',
+          '',
+          '## Purpose',
+          'The inventory specification defines stock behavior.',
+          '',
+          '## Requirements',
+          '',
+          '### Requirement: Inventory lookup',
+          'Inventory is returned eventually.',
+        ].join('\n')
+      );
+      await fs.writeFile(
+        path.join(deltaDir, 'spec.md'),
+        [
+          '## MODIFIED Requirements',
+          '',
+          '### Requirement: Inventory lookup',
+          'The system SHALL return inventory.',
+          '',
+          '#### Scenario: Inventory exists',
+          '- **WHEN** inventory is checked',
+          '- **THEN** inventory is returned',
+        ].join('\n')
+      );
+
+      const report = await new Validator(true).validateChangeDeltaSpecs(
+        changeDir,
+        canonicalSpecsDir
+      );
+
+      expect(report.valid).toBe(true);
+      expect(report.issues).toEqual([]);
+    });
+
+    it('rejects canonical target drift after reconciliation analysis', async () => {
+      const changeDir = path.join(testDir, 'canonical-snapshot-drift');
+      const deltaPath = path.join(
+        changeDir,
+        'specs',
+        'inventory',
+        'spec.md'
+      );
+      const canonicalSpecsDir = path.join(
+        testDir,
+        'canonical-snapshot-drift-specs'
+      );
+      const canonicalPath = path.join(
+        canonicalSpecsDir,
+        'inventory',
+        'spec.md'
+      );
+      const scenario = [
+        '#### Scenario: Inventory exists',
+        '- **WHEN** inventory is checked',
+        '- **THEN** inventory is returned',
+      ].join('\n');
+      const canonical = [
+        '# Inventory',
+        '',
+        '## Purpose',
+        'The inventory specification defines stock behavior.',
+        '',
+        '## Requirements',
+        '',
+        '### Requirement: Inventory lookup',
+        'The system SHALL return inventory.',
+        '',
+        scenario,
+        '',
+        '#### Scenario: Existing secondary inventory',
+        '- **WHEN** secondary inventory is checked',
+        '- **THEN** the secondary value is returned',
+      ].join('\n');
+      const delta = [
+        '## MODIFIED Requirements',
+        '',
+        '### Requirement: Inventory lookup',
+        'The system SHALL return inventory.',
+        '',
+        scenario,
+      ].join('\n');
+      await fs.mkdir(path.dirname(deltaPath), { recursive: true });
+      await fs.mkdir(path.dirname(canonicalPath), { recursive: true });
+      await fs.writeFile(deltaPath, delta);
+      await fs.writeFile(canonicalPath, canonical);
+
+      const originalReadFile = fs.readFile.bind(fs);
+      let mutated = false;
+      const readSpy = vi
+        .spyOn(fs, 'readFile')
+        .mockImplementation(async file => {
+          const result = await originalReadFile(file);
+          if (!mutated && path.resolve(String(file)) === canonicalPath) {
+            mutated = true;
+            await fs.writeFile(
+              canonicalPath,
+              `${canonical}\n\n#### Scenario: Concurrent inventory\n- **WHEN** inventory changes\n- **THEN** the concurrent value is returned`
+            );
+          }
+          return result;
+        });
+
+      try {
+        const report = await new Validator().validateChangeDeltaSpecs(
+          changeDir,
+          canonicalSpecsDir
+        );
+        expect(report.valid).toBe(false);
+        expect(report.issues).toContainEqual(
+          expect.objectContaining({
+            code: 'spec_target_source_changed',
+            source: canonicalPath,
+          })
+        );
+        expect(report.issues).toContainEqual(
+          expect.objectContaining({
+            level: 'WARNING',
+            code: 'spec_modified_scenarios_missing',
+            missingScenarios: ['Existing secondary inventory'],
+          })
+        );
+      } finally {
+        readSpy.mockRestore();
+      }
+    });
+
+    it.each(['replace', 'remove'] as const)(
+      'rejects a delta that is %sd after its admitted validation snapshot',
+      async mutation => {
+        const changeDir = path.join(testDir, `delta-snapshot-${mutation}`);
+        const deltaPath = path.join(
+          changeDir,
+          'specs',
+          'inventory',
+          'spec.md'
+        );
+        const canonicalSpecsDir = path.join(
+          testDir,
+          `delta-snapshot-${mutation}-canonical`
+        );
+        const original = [
+          '## ADDED Requirements',
+          '',
+          '### Requirement: Inventory lookup',
+          'The system SHALL return inventory.',
+          '',
+          '#### Scenario: Inventory exists',
+          '- **WHEN** inventory is checked',
+          '- **THEN** inventory is returned',
+        ].join('\n');
+        await fs.mkdir(path.dirname(deltaPath), { recursive: true });
+        await fs.writeFile(deltaPath, original);
+
+        const originalReadFile = fs.readFile.bind(fs);
+        let mutated = false;
+        const readSpy = vi
+          .spyOn(fs, 'readFile')
+          .mockImplementation(async file => {
+            const result = await originalReadFile(file);
+            if (!mutated && path.resolve(String(file)) === deltaPath) {
+              mutated = true;
+              if (mutation === 'replace') {
+                await fs.writeFile(
+                  deltaPath,
+                  original.replace(
+                    'The system SHALL return inventory.',
+                    'The system SHALL return replaced inventory.'
+                  )
+                );
+              } else {
+                await fs.rm(deltaPath);
+              }
+            }
+            return result;
+          });
+
+        try {
+          const report = await new Validator(true).validateChangeDeltaSpecs(
+            changeDir,
+            canonicalSpecsDir
+          );
+
+          expect(report.valid).toBe(false);
+          expect(report.issues).toContainEqual(
+            expect.objectContaining({
+              level: 'ERROR',
+              code:
+                mutation === 'replace'
+                  ? 'spec_delta_source_changed'
+                  : 'spec_delta_read_failed',
+              source: deltaPath,
+            })
+          );
+        } finally {
+          readSpy.mockRestore();
+        }
+      }
+    );
+
+    it('rejects a delta file added after recursive discovery', async () => {
+      const changeDir = path.join(testDir, 'delta-set-addition');
+      const admittedPath = path.join(
+        changeDir,
+        'specs',
+        'inventory',
+        'spec.md'
+      );
+      const addedPath = path.join(
+        changeDir,
+        'specs',
+        'pricing',
+        'spec.md'
+      );
+      const canonicalSpecsDir = path.join(
+        testDir,
+        'delta-set-addition-canonical'
+      );
+      const delta = [
+        '## ADDED Requirements',
+        '',
+        '### Requirement: Inventory lookup',
+        'The system SHALL return inventory.',
+        '',
+        '#### Scenario: Inventory exists',
+        '- **WHEN** inventory is checked',
+        '- **THEN** inventory is returned',
+      ].join('\n');
+      await fs.mkdir(path.dirname(admittedPath), { recursive: true });
+      await fs.writeFile(admittedPath, delta);
+
+      const originalReadFile = fs.readFile.bind(fs);
+      let added = false;
+      const readSpy = vi
+        .spyOn(fs, 'readFile')
+        .mockImplementation(async file => {
+          const result = await originalReadFile(file);
+          if (!added && path.resolve(String(file)) === admittedPath) {
+            added = true;
+            await fs.mkdir(path.dirname(addedPath), { recursive: true });
+            await fs.writeFile(
+              addedPath,
+              delta.replaceAll('Inventory', 'Pricing').replaceAll(
+                'inventory',
+                'pricing'
+              )
+            );
+          }
+          return result;
+        });
+
+      try {
+        const report = await new Validator(true).validateChangeDeltaSpecs(
+          changeDir,
+          canonicalSpecsDir
+        );
+
+        expect(report.valid).toBe(false);
+        expect(report.issues).toContainEqual(
+          expect.objectContaining({
+            level: 'ERROR',
+            code: 'spec_delta_set_changed',
+            source: addedPath,
+          })
+        );
+      } finally {
+        readSpy.mockRestore();
+      }
+    });
+
+    it('rejects a structurally invalid canonical baseline', async () => {
+      const changeDir = path.join(testDir, 'invalid-canonical-change');
+      const deltaDir = path.join(changeDir, 'specs', 'inventory');
+      const canonicalSpecsDir = path.join(
+        testDir,
+        'invalid-canonical-specs'
+      );
+      const canonicalDir = path.join(canonicalSpecsDir, 'inventory');
+      await fs.mkdir(deltaDir, { recursive: true });
+      await fs.mkdir(canonicalDir, { recursive: true });
+      await fs.writeFile(
+        path.join(deltaDir, 'spec.md'),
+        [
+          '## MODIFIED Requirements',
+          '',
+          '### Requirement: Inventory lookup',
+          'The system SHALL return inventory.',
+          '',
+          '#### Scenario: Inventory exists',
+          '- **WHEN** inventory is checked',
+          '- **THEN** inventory is returned',
+        ].join('\n')
+      );
+      await fs.writeFile(
+        path.join(canonicalDir, 'spec.md'),
+        '# Inventory\n\n## Purpose\nCanonical baseline without requirements.'
+      );
+
+      const report = await new Validator().validateChangeDeltaSpecs(
+        changeDir,
+        canonicalSpecsDir
+      );
+
+      expect(report.valid).toBe(false);
+      expect(report.issues).toContainEqual(
+        expect.objectContaining({
+          level: 'ERROR',
+          code: 'spec_target_structure_invalid',
+          path: 'inventory/spec.md',
+        })
+      );
+    });
+
+    it('reports a canonical read failure once without claiming no deltas', async () => {
+      const changeDir = path.join(testDir, 'canonical-read-failure');
+      const deltaDir = path.join(changeDir, 'specs', 'inventory');
+      const canonicalSpecsDir = path.join(
+        testDir,
+        'canonical-read-failure-specs'
+      );
+      const canonicalPath = path.join(
+        canonicalSpecsDir,
+        'inventory',
+        'spec.md'
+      );
+      await fs.mkdir(deltaDir, { recursive: true });
+      await fs.mkdir(canonicalPath, { recursive: true });
+      await fs.writeFile(
+        path.join(deltaDir, 'spec.md'),
+        [
+          '## ADDED Requirements',
+          '',
+          '### Requirement: Inventory lookup',
+          'The system SHALL return inventory.',
+          '',
+          '#### Scenario: Inventory exists',
+          '- **WHEN** inventory is checked',
+          '- **THEN** inventory is returned',
+        ].join('\n')
+      );
+
+      const report = await new Validator().validateChangeDeltaSpecs(
+        changeDir,
+        canonicalSpecsDir
+      );
+
+      expect(
+        report.issues.filter(issue => issue.code === 'spec_target_read_failed')
+      ).toHaveLength(1);
+      expect(
+        report.issues.some(issue => issue.message.includes('No deltas found'))
+      ).toBe(false);
+    });
+
+    it('keeps the normalized nested capability identity when an admitted delta cannot be read', async () => {
+      const changeDir = path.join(testDir, 'nested-delta-read-failure');
+      const deltaPath = path.join(
+        changeDir,
+        'specs',
+        'area-one',
+        'nested-capability',
+        'spec.md'
+      );
+      const canonicalSpecsDir = path.join(
+        testDir,
+        'nested-delta-read-failure-canonical'
+      );
+      await fs.mkdir(path.dirname(deltaPath), { recursive: true });
+      await fs.writeFile(deltaPath, '## ADDED Requirements\n');
+
+      const originalReadFile = fs.readFile.bind(fs);
+      const readSpy = vi.spyOn(fs, 'readFile').mockImplementation(async file => {
+        if (path.resolve(String(file)) === path.resolve(deltaPath)) {
+          throw Object.assign(new Error('access denied by test'), {
+            code: 'EACCES',
+          });
+        }
+        return originalReadFile(file);
+      });
+
+      try {
+        const report = await new Validator(true).validateChangeDeltaSpecs(
+          changeDir,
+          canonicalSpecsDir,
+          { files: [deltaPath], issues: [] }
+        );
+
+        expect(
+          report.issues.filter(
+            issue => issue.code === 'spec_delta_read_failed'
+          )
+        ).toEqual([
+          expect.objectContaining({
+            level: 'ERROR',
+            path: 'area-one/nested-capability/spec.md',
+            code: 'spec_delta_read_failed',
+            source: deltaPath,
+            capability: 'area-one/nested-capability',
+          }),
+        ]);
+        expect(
+          report.issues.some(issue => issue.message.includes('No deltas found'))
+        ).toBe(false);
+      } finally {
+        readSpy.mockRestore();
+      }
+    });
+
+    it('keeps deterministic metadata for shape, unreadable, projected, and reconciliation failures together', async () => {
+      const changeDir = path.join(testDir, 'mixed-validation-metadata');
+      const canonicalSpecsDir = path.join(
+        testDir,
+        'mixed-validation-metadata-canonical'
+      );
+      const shapePath = path.join(
+        changeDir,
+        'specs',
+        'a-shape',
+        'spec.md'
+      );
+      const reconciliationPath = path.join(
+        changeDir,
+        'specs',
+        'b-reconciliation',
+        'spec.md'
+      );
+      const unreadablePath = path.join(
+        changeDir,
+        'specs',
+        'z-area',
+        'unreadable',
+        'spec.md'
+      );
+      const canonicalPath = path.join(
+        canonicalSpecsDir,
+        'b-reconciliation',
+        'spec.md'
+      );
+      await fs.mkdir(path.dirname(shapePath), { recursive: true });
+      await fs.mkdir(path.dirname(reconciliationPath), { recursive: true });
+      await fs.mkdir(path.dirname(unreadablePath), { recursive: true });
+      await fs.mkdir(path.dirname(canonicalPath), { recursive: true });
+      await fs.writeFile(
+        shapePath,
+        [
+          '## ADDED Requirements',
+          '',
+          '### Requirement: Missing normative keyword',
+          'The system returns the first result.',
+          '',
+          '#### Scenario: First result is returned',
+          '- **WHEN** the first flow runs',
+          '- **THEN** a result is returned',
+          '',
+          '### Requirement: Empty projected scenario',
+          'The system SHALL return the second result.',
+          '',
+          '#### Scenario: Scenario heading without a body',
+        ].join('\n')
+      );
+      await fs.writeFile(
+        reconciliationPath,
+        [
+          '## MODIFIED Requirements',
+          '',
+          '### Requirement: Existing inventory',
+          'The system SHALL return refreshed inventory.',
+          '',
+          '#### Scenario: Replacement inventory behavior',
+          '- **WHEN** inventory is queried',
+          '- **THEN** refreshed inventory is returned',
+        ].join('\n')
+      );
+      await fs.writeFile(
+        canonicalPath,
+        [
+          '# Inventory',
+          '',
+          '## Purpose',
+          'The inventory capability provides stable stock behavior.',
+          '',
+          '## Requirements',
+          '',
+          '### Requirement: Existing inventory',
+          'The system SHALL return inventory.',
+          '',
+          '#### Scenario: Canonical inventory behavior',
+          '- **WHEN** inventory is queried',
+          '- **THEN** inventory is returned',
+        ].join('\n')
+      );
+      await fs.writeFile(unreadablePath, '## ADDED Requirements\n');
+
+      const originalReadFile = fs.readFile.bind(fs);
+      const readSpy = vi.spyOn(fs, 'readFile').mockImplementation(async file => {
+        if (path.resolve(String(file)) === path.resolve(unreadablePath)) {
+          throw Object.assign(new Error('access denied by test'), {
+            code: 'EACCES',
+          });
+        }
+        return originalReadFile(file);
+      });
+
+      try {
+        const validate = () =>
+          new Validator(true).validateChangeDeltaSpecs(
+            changeDir,
+            canonicalSpecsDir
+          );
+        const first = await validate();
+        const second = await validate();
+        const signature = (report: typeof first) =>
+          report.issues.map(issue => ({
+            code: issue.code,
+            source: issue.source,
+            capability: issue.capability,
+            requirement: issue.requirement,
+          }));
+        const expected = [
+          {
+            code: 'spec_delta_requirement_keyword_missing',
+            source: shapePath,
+            capability: 'a-shape',
+            requirement: 'Missing normative keyword',
+          },
+          {
+            code: 'spec_delta_read_failed',
+            source: unreadablePath,
+            capability: 'z-area/unreadable',
+            requirement: undefined,
+          },
+          {
+            code: 'spec_target_validation_failed',
+            source: shapePath,
+            capability: 'a-shape',
+            requirement: 'Empty projected scenario',
+          },
+          {
+            code: 'spec_modified_scenarios_missing',
+            source: reconciliationPath,
+            capability: 'b-reconciliation',
+            requirement: 'Existing inventory',
+          },
+        ];
+
+        expect(first.valid).toBe(false);
+        expect(first.summary).toMatchObject({ errors: 4, warnings: 0 });
+        expect(signature(first)).toEqual(expected);
+        expect(signature(second)).toEqual(expected);
+      } finally {
+        readSpy.mockRestore();
+      }
+    });
+
+    const metadataRequirement = (name: string): string =>
+      [
+        `### Requirement: ${name}`,
+        `The system SHALL implement ${name}.`,
+        '',
+        `#### Scenario: ${name} works`,
+        '- **WHEN** the behavior runs',
+        '- **THEN** it succeeds',
+      ].join('\n');
+
+    const deltaIssueMetadataCases = [
+      {
+        name: 'no operations',
+        capability: 'no-operations',
+        content: '# Notes only\n\nThis file contains no delta operations.',
+        expected: [
+          { code: 'spec_delta_no_operations', requirement: undefined },
+        ],
+      },
+      {
+        name: 'missing text and scenarios in ADDED and MODIFIED',
+        capability: 'missing-shapes',
+        content: [
+          '## ADDED Requirements',
+          '',
+          '### Requirement: Added missing text',
+          '',
+          '#### Scenario: Added text is missing',
+          '- **WHEN** validation runs',
+          '- **THEN** missing text is reported',
+          '',
+          '### Requirement: Added missing scenarios',
+          'The system SHALL add behavior without a scenario.',
+          '',
+          '## MODIFIED Requirements',
+          '',
+          '### Requirement: Modified missing text',
+          '',
+          '#### Scenario: Modified text is missing',
+          '- **WHEN** validation runs',
+          '- **THEN** missing text is reported',
+          '',
+          '### Requirement: Modified missing scenarios',
+          'The system SHALL modify behavior without a scenario.',
+        ].join('\n'),
+        expected: [
+          {
+            code: 'spec_delta_requirement_text_missing',
+            requirement: 'Added missing text',
+          },
+          {
+            code: 'spec_delta_scenarios_missing',
+            requirement: 'Added missing scenarios',
+          },
+          {
+            code: 'spec_delta_requirement_text_missing',
+            requirement: 'Modified missing text',
+          },
+          {
+            code: 'spec_delta_scenarios_missing',
+            requirement: 'Modified missing scenarios',
+          },
+        ],
+      },
+      {
+        name: 'duplicate operation forms',
+        capability: 'duplicate-forms',
+        content: [
+          '## ADDED Requirements',
+          '',
+          metadataRequirement('Duplicate added'),
+          '',
+          metadataRequirement('Duplicate added'),
+          '',
+          '## MODIFIED Requirements',
+          '',
+          metadataRequirement('Duplicate modified'),
+          '',
+          metadataRequirement('Duplicate modified'),
+          '',
+          '## REMOVED Requirements',
+          '',
+          '### Requirement: Duplicate removed',
+          '### Requirement: Duplicate removed',
+          '',
+          '## RENAMED Requirements',
+          '',
+          '- FROM: `### Requirement: Duplicate rename source`',
+          '- TO: `### Requirement: Duplicate rename target`',
+          '- FROM: `### Requirement: Duplicate rename source`',
+          '- TO: `### Requirement: Duplicate rename target`',
+        ].join('\n'),
+        expected: [
+          {
+            code: 'spec_delta_duplicate_added',
+            requirement: 'Duplicate added',
+          },
+          {
+            code: 'spec_delta_duplicate_modified',
+            requirement: 'Duplicate modified',
+          },
+          {
+            code: 'spec_delta_duplicate_removed',
+            requirement: 'Duplicate removed',
+          },
+          {
+            code: 'spec_delta_duplicate_renamed_from',
+            requirement: 'Duplicate rename source',
+          },
+          {
+            code: 'spec_delta_duplicate_renamed_to',
+            requirement: 'Duplicate rename target',
+          },
+        ],
+      },
+      {
+        name: 'cross-section conflicts',
+        capability: 'cross-sections',
+        content: [
+          '## MODIFIED Requirements',
+          '',
+          metadataRequirement('Modified and removed'),
+          '',
+          metadataRequirement('Modified and added'),
+          '',
+          '## ADDED Requirements',
+          '',
+          metadataRequirement('Modified and added'),
+          '',
+          metadataRequirement('Added and removed'),
+          '',
+          '## REMOVED Requirements',
+          '',
+          '### Requirement: Modified and removed',
+          '### Requirement: Added and removed',
+        ].join('\n'),
+        expected: [
+          {
+            code: 'spec_delta_cross_section_conflict',
+            requirement: 'Modified and removed',
+          },
+          {
+            code: 'spec_delta_cross_section_conflict',
+            requirement: 'Modified and added',
+          },
+          {
+            code: 'spec_delta_cross_section_conflict',
+            requirement: 'Added and removed',
+          },
+        ],
+      },
+      {
+        name: 'rename conflicts',
+        capability: 'rename-conflicts',
+        content: [
+          '## MODIFIED Requirements',
+          '',
+          metadataRequirement('Old requirement'),
+          '',
+          '## ADDED Requirements',
+          '',
+          metadataRequirement('New requirement'),
+          '',
+          '## RENAMED Requirements',
+          '',
+          '- FROM: `### Requirement: Old requirement`',
+          '- TO: `### Requirement: New requirement`',
+        ].join('\n'),
+        expected: [
+          {
+            code: 'spec_modified_uses_renamed_source',
+            requirement: 'Old requirement',
+          },
+          {
+            code: 'spec_renamed_target_conflicts_added',
+            requirement: 'New requirement',
+          },
+        ],
+      },
+    ];
+
+    it.each(deltaIssueMetadataCases)(
+      'keeps stable metadata and order for $name errors',
+      async testCase => {
+        const changeDir = path.join(
+          testDir,
+          `delta-issue-metadata-${testCase.capability}`
+        );
+        const deltaPath = path.join(
+          changeDir,
+          'specs',
+          'area-one',
+          testCase.capability,
+          'spec.md'
+        );
+        await fs.mkdir(path.dirname(deltaPath), { recursive: true });
+        await fs.writeFile(deltaPath, testCase.content);
+
+        const validate = () =>
+          new Validator(true).validateChangeDeltaSpecs(changeDir);
+        const first = await validate();
+        const second = await validate();
+        const signature = (report: typeof first) =>
+          report.issues
+            .filter(issue => issue.source === deltaPath)
+            .map(issue => {
+              const hasRequirement = Object.prototype.hasOwnProperty.call(
+                issue,
+                'requirement'
+              );
+              return {
+                code: issue.code,
+                source: issue.source,
+                capability: issue.capability,
+                hasRequirement,
+                ...(hasRequirement ? { requirement: issue.requirement } : {}),
+              };
+            });
+        const capability = `area-one/${testCase.capability}`;
+        const expected = testCase.expected.map(issue => ({
+          code: issue.code,
+          source: deltaPath,
+          capability,
+          hasRequirement: issue.requirement !== undefined,
+          ...(issue.requirement === undefined
+            ? {}
+            : { requirement: issue.requirement }),
+        }));
+
+        expect(signature(first)).toEqual(expected);
+        expect(signature(second)).toEqual(expected);
+      }
+    );
+
+    it.skipIf(process.platform === 'win32')(
+      'does not claim no deltas when a discovered delta cannot be read',
+      async () => {
+        const changeDir = path.join(testDir, 'delta-read-failure');
+        const deltaPath = path.join(
+          changeDir,
+          'specs',
+          'inventory',
+          'spec.md'
+        );
+        const canonicalSpecsDir = path.join(
+          testDir,
+          'delta-read-failure-canonical'
+        );
+        await fs.mkdir(path.dirname(deltaPath), { recursive: true });
+        await fs.writeFile(deltaPath, '## ADDED Requirements\n');
+        await fs.chmod(deltaPath, 0o000);
+
+        let report;
+        try {
+          report = await new Validator().validateChangeDeltaSpecs(
+            changeDir,
+            canonicalSpecsDir
+          );
+        } finally {
+          await fs.chmod(deltaPath, 0o600);
+        }
+
+        expect(
+          report.issues.filter(
+            issue => issue.code === 'spec_delta_read_failed'
+          )
+        ).toHaveLength(1);
+        expect(
+          report.issues.some(
+            issue => issue.code === 'spec_reconciliation_failed'
+          )
+        ).toBe(false);
+        expect(
+          report.issues.some(issue => issue.message.includes('No deltas found'))
+        ).toBe(false);
+      }
+    );
   });
 
   // #1156 — the SHALL/MUST body-keyword hint applies to main specs too, with the

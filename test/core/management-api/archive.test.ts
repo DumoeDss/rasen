@@ -128,4 +128,43 @@ describe('management-api archive handler (design D1/D2)', () => {
 
     expect(snapshot(changesDir)).toEqual(before);
   });
+
+  it('reports narrowing when a project space has no archiveDir (Store v2 no target line)', async () => {
+    // A Store v2 project scope with no resolved target line supplies no
+    // archive-line path. The result states the narrowing instead of presenting
+    // an empty list as the complete answer.
+    const space = {
+      type: 'project' as const,
+      id: 'test',
+      name: 'test',
+      root: projectRoot,
+      projectHome: path.join(projectRoot, 'rasen'),
+      schemasDir: path.join(projectRoot, 'rasen', 'schemas'),
+      changesDir: path.join(projectRoot, 'rasen', 'changes'),
+      specsDir: path.join(projectRoot, 'rasen', 'specs'),
+      // archiveDir intentionally absent — simulates no resolved target line
+      planningScope: {
+        describe: () => ({
+          kind: 'store-project' as const,
+          paths: {
+            'project-home': path.join(projectRoot, 'rasen'),
+            'active-changes': path.join(projectRoot, 'rasen', 'changes'),
+          },
+        }),
+      },
+    };
+    const result = await handleArchive(space, null);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.narrowing).toBeDefined();
+    expect(result.narrowing!.dimension).toBe('target-line');
+  });
+
+  it('does NOT report narrowing for a standalone (string) input', async () => {
+    // Standalone always has archiveDir set by resolveProjectContentSpace.
+    const result = await handleArchive(projectRoot, null);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.narrowing).toBeUndefined();
+  });
 });

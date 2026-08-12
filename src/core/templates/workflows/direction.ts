@@ -37,11 +37,10 @@ Infer the action only when the user's wording is unambiguous. Otherwise ask one 
 
 Perform this preflight before every action.
 
-1. **Resolve the selected planning root through Rasen.**
-   - Honor any explicit Store/project selection and keep the same \`--store <id>\` or \`--project <id>\` flag on every relevant Rasen planning command.
-   - Run \`rasen context --json\` with that selection and use \`root.path\`; do not assume the shell's current directory is the planning root.
-   - Run \`rasen list --json\`. If a relevant Change exists, run \`rasen status --change "<name>" --json\` with the same selection and prefer its \`planningHome.root\` and \`planningHome.changesDir\`.
-   - Derive the experimental work area as the \`work\` sibling of the CLI-resolved changes directory. When no Change exists to expose \`planningHome.changesDir\`, inspect the resolved root with platform-native path APIs: a repo-local \`rasen/changes\` uses sibling \`rasen/work\`; a standalone planning root's \`changes\` uses sibling \`work\`. Do not invent a directory outside the selected root.
+1. **Resolve the selected planning scope through Rasen.**
+   - Honor any explicit Store/project/target-line selection and keep the same \`--store <id> --project <id> --target-line <id>\` facts on every relevant Rasen planning command.
+   - Run \`rasen context --json\` with that selection and read \`root.scope.paths["project-work"]\` as the experimental work area.
+   - Require a project scope and that absolute typed location. If it is absent, stop with the scope diagnostic; do not derive \`work\` from compatibility root fields, \`planningHome\`, the current directory, or sibling paths.
 2. **Use safe, native paths.**
    - Construct and compare paths with the host's platform-native path utilities, never by concatenating \`/\` or assuming POSIX separators.
    - Workstream and Slice ids must be portable slugs.

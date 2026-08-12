@@ -106,6 +106,8 @@ import { ensureClaudeAgentTeams } from './claude-settings.js';
 import { cleanupRetiredEditBoundaryArtifacts } from './retired-edit-boundary.js';
 import { migrateIfNeeded } from './migration.js';
 import { reconcileCodexProjectConfig, formatCodexConfigSummary, type CodexConfigReconcileResult } from './codex/index.js';
+import { detectOmpNestedInstallCapture, type OmpNestedInstallCapture } from './omp/project-context.js';
+import { ompNestedInstallCaptureReport } from './omp/project-context-locale.js';
 
 const require = createRequire(import.meta.url);
 const { version: OPENSPEC_VERSION } = require('../../package.json');
@@ -307,6 +309,16 @@ export class InitCommand {
       await this.createDirectoryStructure(openspecPath, extendMode);
     }
 
+    // Oh My Pi reads its project instructions and sticky rules from the nearest
+    // NON-EMPTY `.omp/` and does not continue upward, so newly populating one in
+    // a nested package takes over the enclosing tree's (design D5). Detected
+    // BEFORE the skills are written — afterwards `<projectPath>/.omp/` is
+    // populated either way and the "newly" half of the condition is unanswerable.
+    const ompCapture: OmpNestedInstallCapture | undefined =
+      validatedTools.some((tool) => tool.value === 'omp')
+        ? detectOmpNestedInstallCapture(projectPath)
+        : undefined;
+
     // Generate skills and commands for each tool
     const results = await this.generateSkillsAndCommands(projectPath, validatedTools);
 
@@ -369,7 +381,7 @@ export class InitCommand {
     ]);
 
     // Display success message
-    this.displaySuccessMessage(projectPath, validatedTools, results, configStatus, machineHome, learned, codexConfig);
+    this.displaySuccessMessage(projectPath, validatedTools, results, configStatus, machineHome, learned, codexConfig, ompCapture);
   }
 
   /**
@@ -1171,7 +1183,8 @@ export class InitCommand {
     configStatus: 'created' | 'exists' | 'skipped',
     machineHome: { homeDir: string } | { warning: string },
     learned: LearnedReconcileResult,
-    codexConfig?: CodexConfigReconcileResult
+    codexConfig?: CodexConfigReconcileResult,
+    ompCapture?: OmpNestedInstallCapture
   ): void {
     console.log();
     console.log(chalk.bold('Rasen Setup Complete'));
@@ -1265,6 +1278,17 @@ export class InitCommand {
               ? chalk.yellow(`  ⚠ ${line.text}`)
               : chalk.white(`  ${line.text}`);
         console.log(rendered);
+      }
+    }
+
+    // Oh My Pi nested install (omp-integration spec): the install completed, and
+    // these enclosing context files stopped loading as a consequence. Advisory
+    // by design — the alternative is taking over the enclosing tree silently.
+    if (ompCapture) {
+      for (const line of ompNestedInstallCaptureReport(ompCapture)) {
+        console.log(
+          line.tone === 'warn' ? chalk.yellow(`  ⚠ ${line.text}`) : chalk.dim(`  ${line.text}`)
+        );
       }
     }
 

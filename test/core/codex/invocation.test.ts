@@ -332,10 +332,18 @@ describe('formatShellInvocation', () => {
       effort: 'low',
     });
 
-  it('renders a POSIX shell command ending in < /dev/null', () => {
+  it('renders a POSIX shell command that sets the worker identity, ending in < /dev/null', () => {
     const rendered = formatShellInvocation(base());
     expect(rendered.endsWith('< /dev/null')).toBe(true);
-    expect(rendered.startsWith("'codex' 'exec'")).toBe(true);
+    // The identity leads the command, before the binary: a `codex exec` started
+    // beneath a bridged Claude worker inherits that worker's identity and would
+    // otherwise report `claude` while holding Codex's own fingerprints.
+    expect(rendered.startsWith("RASEN_AGENT_RUNTIME='codex' 'codex' 'exec'")).toBe(true);
+  });
+
+  it('renders the Windows identity assignment as a cmd-compatible prefix', () => {
+    const rendered = formatShellInvocation(base(), { shell: 'windows' });
+    expect(rendered.startsWith('set "RASEN_AGENT_RUNTIME=codex" &&')).toBe(true);
   });
 
   it('renders a Windows cmd command ending in < NUL', () => {
@@ -370,6 +378,7 @@ describe('formatShellInvocation', () => {
       args: ['exec', '--json', '-o', '/tmp/last.txt', 'no newline here'],
       stdin: 'ignore' as const,
       prompt: 'no newline here',
+      env: { RASEN_AGENT_RUNTIME: 'codex' } as const,
       warnings: [] as string[],
     };
     formatShellInvocation(singleLine, { shell: 'windows' });

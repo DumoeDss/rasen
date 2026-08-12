@@ -1,0 +1,11 @@
+schema: spec-driven
+created: 2026-08-05
+quality:
+  files:
+    - evidence/npm-pack-filename-gap-report.md
+    - evidence/review-report.md
+    - evidence/verification-report.md
+  metrics:
+    evidence/npm-pack-filename-gap-report.md: 0
+    evidence/review-report.md: 0
+    evidence/verification-report.md: 0

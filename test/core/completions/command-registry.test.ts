@@ -137,10 +137,32 @@ describe('root-inclusive CLI structure', () => {
       'upgrade-identity',
       'unregister',
       'remove',
+      // `store-layout-v2-migration` task 9.3: the layout migration sits
+      // immediately before adopt because adopt now requires layout v2.
+      'migrate-layout',
       'adopt',
       'eject',
       'list',
       'doctor',
+      // `store-planning-worktree-bindings` task 11.2: target-line authoring
+      // lives under `store` because a release line is Store-level content that
+      // outlives every workspace on it.
+      'target-line',
+      // `store-scoped-issues-management` task 8.1: a Store-level Issue is
+      // cross-project intent that references project Changes and owns none of
+      // them, so it is Store content and not a project-scoped group.
+      'issue',
+      // `store-scoped-issues-management` tasks 8.3-8.4: the aggregate reads.
+      // They answer questions that span more than one project, which no
+      // project-scoped surface can.
+      'changes',
+      'projects',
+      // `store-planning-worktree-bindings` task 11.1: the planning/execution
+      // worktree PAIR is Store content too, and `workspace` is a retired
+      // top-level group name (see `legacy-groups-removed.test.ts`) that stays
+      // retired, so the group is a `store` subcommand rather than a fourth
+      // top-level `work*` group.
+      'workspace',
     ]);
     expect(command('store', 'list')?.aliases).toEqual(['ls']);
     expect(command('workset', 'list')?.aliases).toEqual(['ls']);
@@ -187,6 +209,7 @@ describe('root-inclusive CLI structure', () => {
       'json',
       'store',
       'project',
+      'target-line',
     ]);
   });
 
@@ -194,6 +217,40 @@ describe('root-inclusive CLI structure', () => {
     const seen: string[] = [];
     const lifecycle: string[] = [];
     const pipeline: string[] = [];
+
+    /**
+     * `store-scoped-issues-management` task 8.2. Each of these resolves a STORE
+     * and requires no project and no target line, because the thing it
+     * addresses spans projects by construction:
+     *
+     *   store issue new|list|show|state — an Issue is Store-level cross-project
+     *     intent; demanding one project would contradict the resource.
+     *   store issue plan — takes `--project`/`--target-line`, but they scope a
+     *     plan NODE, not the command. It is listed here so the exemption is
+     *     about what the flags MEAN rather than whether they are present.
+     *   store changes / store projects — aggregate READS over every project;
+     *     the same two flags appear as narrowing filters.
+     *
+     * The list is enumerated rather than expressed as a `store ` prefix rule on
+     * purpose: a prefix rule would silently exempt every future Store
+     * subcommand, including one that really is project-scoped.
+     */
+    const storeLevelScoped = new Set([
+      'store issue new',
+      'store issue list',
+      'store issue show',
+      'store issue plan',
+      'store issue state',
+      'store changes',
+      'store projects',
+    ]);
+    /** The subset that must not carry the pair AT ALL, in either meaning. */
+    const requiresNoProjectSelector = new Set([
+      'store issue new',
+      'store issue list',
+      'store issue show',
+      'store issue state',
+    ]);
 
     function walk(definition: CommandDefinition, parentPath: string): void {
       for (const child of definition.subcommands ?? []) {
@@ -203,10 +260,31 @@ describe('root-inclusive CLI structure', () => {
         const flagNames = child.flags.map((flag) => flag.name);
         if (flagNames.includes('store')) {
           seen.push(commandPath);
-          expect(flagNames, `${commandPath} --project`).toContain('project');
+          // `store target-line ...` addresses a LINE, not a planning scope: the
+          // line is the positional operand, `list` is Store-wide, and
+          // `--project` selects which code locator is being read or edited. The
+          // triple would be meaningless there, so the pairing rule applies to
+          // planning-scoped commands only (`store-planning-worktree-bindings`
+          // task 11.2).
+          const lineScoped = commandPath.startsWith('store target-line ');
+          const storeLevel = storeLevelScoped.has(commandPath);
+          if (requiresNoProjectSelector.has(commandPath)) {
+            // The positive half of the exemption: these do not merely tolerate
+            // a missing project, they must not offer one, so a future edit
+            // cannot quietly turn a Store-level Issue command into a
+            // project-scoped one and still pass by being "exempt".
+            expect(flagNames, `${commandPath} --project`).not.toContain('project');
+            expect(flagNames, `${commandPath} --target-line`).not.toContain('target-line');
+          }
+          if (!lineScoped && !storeLevel) {
+            expect(flagNames, `${commandPath} --project`).toContain('project');
+          }
+          if (!commandPath.startsWith('knowledge ') && !lineScoped && !storeLevel) {
+            expect(flagNames, `${commandPath} --target-line`).toContain('target-line');
+          }
           if (commandPath.startsWith('pipeline ')) {
             pipeline.push(commandPath);
-          } else if (!commandPath.startsWith('knowledge ')) {
+          } else if (!commandPath.startsWith('knowledge ') && !lineScoped && !storeLevel) {
             lifecycle.push(commandPath);
           }
         }
@@ -222,8 +300,14 @@ describe('root-inclusive CLI structure', () => {
       'instructions',
       'list',
       'new change',
+      'retain prepare',
       'show',
       'status',
+      // `store-planning-worktree-bindings` task 11.1: preparing, inspecting,
+      // and removing the worktree pair is scoped by the same orthogonal triple.
+      'store workspace cleanup',
+      'store workspace plan',
+      'store workspace show',
       'validate',
       'work migrate',
     ]);
@@ -249,12 +333,28 @@ describe('root-inclusive CLI structure', () => {
       'pipeline delete',
       'pipeline save',
     ]);
-    const specializedSelectorCommands = new Set(['work migrate']);
+    // `rasen store workspace` prepares the worktree PAIR; the shared skill
+    // guidance teaches threading planning selectors through spec/Change
+    // commands, which this group is not one of. Naming it there would also
+    // re-baseline every pinned skill-template digest for copy that is not about
+    // specs or Changes.
+    const specializedSelectorCommands = new Set([
+      'work migrate',
+      'store workspace plan',
+      'store workspace show',
+      'store workspace cleanup',
+    ]);
     for (const commandPath of seen) {
       if (
         commandPath.startsWith('knowledge ') ||
+        commandPath.startsWith('store target-line ') ||
         deferredLibraryVerbs.has(commandPath) ||
-        specializedSelectorCommands.has(commandPath)
+        specializedSelectorCommands.has(commandPath) ||
+        // The Store-level Issue and aggregate commands are the counter-case to
+        // the shared selector guidance: that copy teaches threading the
+        // planning TRIPLE through spec and Change commands, and these commands
+        // exist precisely because some work has no single project.
+        storeLevelScoped.has(commandPath)
       ) {
         continue;
       }

@@ -1,0 +1,29 @@
+{
+  "change": "fix-spec-reconciliation-integrity",
+  "archivedAt": "2026-08-10T05:48:52.506Z",
+  "codeCommit": "fc1b52104c04578132aadb1dd496391f3d600867",
+  "planningBranch": "fix/archive-transaction-recovery-follow-up",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/review-cycle-report.md",
+      "sha256": "236a5ea3ba64a1f53973492fe352719e2f17f57fd7da73842815c24a219b1657"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "bbb91d889ec656836c22ac4c301ed84730ce19552455c5e08608df66915aa49b"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "f6b560778788fefa8b176497b06ff9b793e2888d1224db0b127941f17e51187b"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

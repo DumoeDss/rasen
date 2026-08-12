@@ -1,0 +1,29 @@
+{
+  "change": "fix-workspace-claim-portability",
+  "archivedAt": "2026-08-10T06:03:34.599Z",
+  "codeCommit": "195874b7fbdb1634029b1d436aea65afd77b4295",
+  "planningBranch": "fix/archive-transaction-recovery-follow-up",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/review-cycle-report.md",
+      "sha256": "2f1e3af2f63a2603c9f217c58340926e5af1abf25ca94b917c5133ad6c139a89"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "8f229f79fbc663d48ee18066759588967d730efc5de2a7da0656046872599bab"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "7e5ef2b97390a0b15009387cc8afa61a508485d63e4bfa6c8aceffa4868139fb"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}
