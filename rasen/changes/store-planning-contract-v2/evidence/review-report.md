@@ -1198,3 +1198,335 @@ pnpm exec vitest run test/ci-workflow-contract  ->  4 passed
 git status --porcelain                          ->  (empty, whole tree)
 .rasen-archive-stage-*                          ->  none
 ```
+
+---
+
+# Round 3 verification — scoped confirmation of the ladder fixes
+
+- Verifier: a fresh leaf worker. I wrote none of this code, authored none of the four fixes, and
+  applied none of them. Rounds 1-3 above are other workers' reports and are left untouched.
+- Scope: confirm N4, N5, N6, N7 are genuinely closed. This is **not** a fourth review round — no
+  re-sweep, no re-litigation of rounds 1-3. Findings recorded below outside that scope fell out of
+  the probes themselves.
+- Target: `27b59b6e`. HEAD advanced to `2d1fdb9f` mid-verification (LEAD commits touching only
+  `.rasen/**` ephemera); `git diff --name-only 27b59b6e..HEAD -- src/ test/` is **empty**, so every
+  measurement below stands at the current HEAD.
+- Every recorded result was re-run by me against committed bytes. Mutations restored from an
+  out-of-repo snapshot under `E:\tmp\verify-s1-snap`; `git checkout --` was never used.
+
+## Verdict summary
+
+| Finding | Verdict | Basis |
+| --- | --- | --- |
+| N4 Archive v2 cross-field null matrix | **RESOLVED** | probe O re-run: 11 RED by name where it previously reddened none; the three passive tests redden at the "only" clause itself |
+| N5 golden vectors for the derived identities | **RESOLVED** | probes K/L/M re-run; all five digests independently recomputed from the design preimage without importing the implementation |
+| N6 brand vocabulary completeness | **RESOLVED** | probes F/G re-run; exact-match claim independently confirmed; generator sound for its declared scope, with three named blind spots |
+| N7 parameterized test that discarded its parameter | **RESOLVED** | collapsed to one test; the recorded reason is true, not an excuse |
+
+New this round: **Blocker 0 | Major 0 | Minor 0 | Trivial 2** (V1, V2 below).
+
+---
+
+## N5 — RESOLVED
+
+### Probe K — bump all four identity domains `/v2` -> `/v3`
+
+Six Layer-0 suites: `6 failed | 241 passed (247)`. Enumerated by name:
+
+```
+FAIL ... > Store planning v2 identity golden vectors > pins the PlanningScopeId preimage to a known digest
+FAIL ... > Store planning v2 identity golden vectors > pins the ChangeInstanceId preimage to a known digest
+FAIL ... > Store planning v2 identity golden vectors > pins the 'planning' WorktreeInstanceId preimage to a known digest
+FAIL ... > Store planning v2 identity golden vectors > pins the 'execution' WorktreeInstanceId preimage to a known digest
+FAIL ... > Store planning v2 identity golden vectors > pins the WorkspacePairId preimage to a known digest
+FAIL ... > Store planning v2 identity golden vectors > accepts every golden digest through its own verifier
+```
+
+Matches the claim. **The load-bearing half of this result is the other 26 tests in that file staying
+green**: the pre-existing relational assertions are still exactly as blind as round 3 diagnosed, so
+the six new vectors are the entire discriminating power, not a duplicate of something already there.
+
+### Probe L — delete the `domain` field from all four preimages
+
+Six Layer-0 suites: `6 failed | 241 passed (247)`. The **same six**, by the same names.
+
+### Probe M — `storeUid` -> `storeUuid` in the scope preimage only, domain untouched
+
+```
+Tests  2 failed | 245 passed (247)
+
+FAIL ... > pins the PlanningScopeId preimage to a known digest
+FAIL ... > accepts every golden digest through its own verifier
+```
+
+**The localisation design is real, and I confirmed it by both measurement and construction.** The
+three untouched vectors stayed green because each takes pinned `GOLDEN.*` literals as input rather
+than chaining off the previous derivation — `deriveChangeInstanceId({ planningScopeId:
+GOLDEN.planningScopeId, ... })`, not `derivePlanningScopeId(...)`. Had the vectors been chained, a
+scope-preimage change would have smeared across all four and the failure set would have carried no
+diagnosis. It does: the RED set names the preimage that moved.
+
+### Provenance of the pinned digests — stronger than "generated at `eaefc01b`"
+
+The commit message's claim is trivially true and cannot be otherwise: `git diff --stat eaefc01b HEAD
+-- src/core/store` is empty, so the implementation at `eaefc01b` *is* the implementation at HEAD.
+There is no tree in which a laundered digest could have been generated.
+
+I did not stop there, because a golden vector generated from the implementation pins whatever the
+implementation does, correct or not. I recomputed all five digests **independently**, hand-rolling
+RFC 8785 for flat string maps (sorted keys, no whitespace) from the preimages design Decision 4
+specifies, in a standalone script that never imports `src/core/store`:
+
+```
+MATCH   ps   ps_384a664d...  (domain planning-scope/v2, storeUid, projectId, targetLineId)
+MATCH   ci   ci_4f060f98...  (domain change-instance/v2, planningScopeId, instanceSeed)
+MATCH   wt   wt_b752701b...  (domain worktree-instance/v2, planning role)
+MATCH   wt   wt_df70478e...  (domain worktree-instance/v2, execution role)
+MATCH   wp   wp_208017ab...  (domain workspace-pair/v2, ordered Change/planning/execution)
+```
+
+The vectors therefore pin the **designed** preimage, not merely the emitted one.
+
+### The comment
+
+Adequate, and load-bearing. It states the provenance (`eaefc01b`), that this pins today's format
+rather than proposing a new one, and — the instruction that matters — "do not 'fix' it by pasting in
+the new digest ... a change here is a breaking format change and needs a deliberate, versioned
+decision." Its durability cross-reference is not decorative: `writeChangeMetadata` really does write
+these identities to `.openspec.yaml` at `planning-identity-v2.test.ts:482` and `:530` in the same
+file, so a reader who follows the pointer finds the reason.
+
+## N4 — RESOLVED
+
+### Probe O — relax `z.null()` -> `z.any()` at the 8 cross-field sites across the five Archive variants
+
+I scoped the mutation to the Archive variants only (from `const ArchiveCommonShape` onward), leaving
+the two spec-action digest nulls at `finalization-v2.ts:224,241` untouched. `61 tests: 11 failed | 50
+passed`, enumerated by name:
+
+```
+FAIL ... > accepts passive superseded history only with null merge and unapplied empty spec sync
+FAIL ... > accepts passive cancelled  history only with null merge and unapplied empty spec sync
+FAIL ... > accepts passive abandoned  history only with null merge and unapplied empty spec sync
+FAIL ... > rejects 'a landed record carrying a reason'
+FAIL ... > rejects 'a landed record carrying a successor'
+FAIL ... > rejects 'a planning-only landed record carrying a code merge'
+FAIL ... > rejects 'a superseded record carrying a code merge'
+FAIL ... > rejects 'a cancelled record carrying a code merge'
+FAIL ... > rejects 'an abandoned record carrying a code merge'
+FAIL ... > rejects 'a cancelled record carrying a successor'
+FAIL ... > rejects 'an abandoned record carrying a successor'
+```
+
+Count and names both match. Previously this file reddened **nothing** under the same lever.
+
+**The three passive-history tests now redden for the "only" clause itself, not through accept-side
+sensitivity — verified, not assumed.** Probe O *widens* the schema, so the valid fixture those tests
+build is still accepted; the accept-side assertion above still passes. The failure is
+`finalization-v2.test.ts:242:9`, `expected [Function] to throw an error` — the newly added negative
+half asserting a passive record carrying a `codeMerge` is rejected. That is the word "only",
+literally. This is the exact defect shape round 1's M2 named, and it is closed here rather than
+renamed.
+
+## N6 — RESOLVED, with three named blind spots in the mechanism
+
+### Probe F — collapse all 9 formerly-unpinned brands to bare `string` at once
+
+| gate | result |
+| --- | --- |
+| `pnpm exec tsc --noEmit` | **exit 0 — still blind** |
+| `pnpm run test:types` | **exit 1, 9 type errors** |
+| six Layer-0 suites | `1 failed / 237 passed (238)` — see V1 |
+
+The 9 type errors land at `planning-foundation-consumer.test-d.ts` lines 68, 69, 70, 71, 72, 75, 78,
+79, 84 — which are exactly `TargetLineId`, `ChangeId`, `FullGitRef`, `GitOid`, `Sha256Digest`,
+`PlanningScopeId`, `ChangeInstanceSeed`, `WorktreeInstanceId`, `StorePlanningPath`: one per collapsed
+brand, no cascade, no misattribution, and no error at the seven brands I did not collapse. The
+`tsc --noEmit` exit 0 row is the part that matters — it proves the new gate closes a hole no existing
+gate can see.
+
+### Probe G — delete the `GitOid` pin
+
+`Tests 1 failed | 17 passed (18)`, named `pins GitOid against a bare string`, message:
+`GitOid is declared in src/core/store but has no expectTypeOf<string>().not.toMatchTypeOf<GitOid>()
+pin in planning-foundation-consumer.test-d.ts`. One test, named for the brand, message states the
+exact line to add. Confirmed.
+
+### Judgment on the generator's soundness
+
+I pressured the mechanism rather than taking its description, with four further probes.
+
+**The exact-match claim holds — confirmed, not taken.** I removed the `WorkspacePairId` pin while
+leaving `VerifiedWorkspacePairId` in place. Under substring matching the guard would have stayed
+green; it went RED naming `WorkspacePairId`. `pinnedBrands()` captures the type argument as `(\w+)`
+into a `Set` and tests exact membership, so this change's own recurring defect — a verified subtype
+satisfying a check meant for its base — cannot recur one level down inside the guard itself.
+
+**A 17th brand in the ordinary declaration form cannot arrive unpinned.** I appended a new
+`export type NewBrandId = string & { readonly [newBrandIdBrand]: true };` to `planning-validation.ts`:
+2 RED, `finds the whole declared vocabulary` and `pins NewBrandId against a bare string`. The
+mechanism does what it claims for the growth path it was built for. It also covers both declaration
+shapes actually present in the sources (`= string & {` root brands and `= Y & {` verified subtypes),
+including the four whose body is wrapped onto following lines.
+
+Three blind spots, all confirmed by measurement (recorded as V2, Trivial):
+
+1. **A commented-out pin still counts as present.** `pinnedBrands()` scans source text, so
+   `// expectTypeOf<string>().not.toMatchTypeOf<GitOid>();` leaves the guard at 18/18 green while the
+   assertion no longer runs. Deleting the pin is caught; commenting it out is not.
+2. **A brand declared with a line break after the `=` is invisible**, and the `toBe(16)` backstop
+   does *not* fire, because the regex still finds exactly 16. `export type NewBrandId =\n  string & {
+   ... };` leaves the guard at 18/18 green. There is no formatter gate that would normalise this: the
+   repo has no prettier config and `lint` is `eslint` only.
+3. **A brand declared in any `src/core/store` file outside the three hardcoded sources is invisible.**
+   Appending the same brand to `planning-catalogs.ts` leaves the guard at 18/18 green.
+
+Blind spot 3 is the one with a live consumer: S2 (`store-worktree-bindings-v2`) and S3
+(`store-issue-resources`) add new Store modules to this same directory, and a brand introduced there
+inherits none of this guard. That is worth carrying into those children as an inbound note rather
+than reopening this one — the guard is honest about its scope (`LAYER_0_BRAND_SOURCES` is right there
+in the file), it is strictly better than the hand-maintained list it replaced, and none of the three
+gaps is reachable without a deliberate act.
+
+**Verdict on the mechanism: sound for its declared scope.** It converts a property that was false
+(7 of 16 pinned under a comment claiming 16) into one that is enforced, and it fails by name with an
+actionable message. It is not a universal brand detector and does not claim to be.
+
+## N7 — RESOLVED
+
+`it.each(['win32','posix'])` is gone; `planning-validation-v2.test.ts` now carries a single
+`enforces Windows-representable path/ref components on every platform` with the identical body, and
+the suite count drops 43 -> 42 for that reason alone.
+
+**The recorded reason is true, not a convenient excuse.** I checked the signatures at committed
+bytes: `isFullGitRef(value: unknown)` (`planning-validation.ts:197`) and
+`isPortableRelativePath(value: unknown)` (`:251`) each take exactly one argument and no flavor. There
+was no per-flavor behavior for the parameter to select, so the two cases were provably the same test
+under two names that each claimed a guarantee neither exercised. Nothing was lost by collapsing it,
+and the replacement comment records why it must not be re-parameterized.
+
+## New findings (verification round)
+
+### V1 (Trivial) — the recorded probe-F "runtime stays green" row is inaccurate
+
+`evidence/fix-round-3-mutation-proofs.md` records, for probe F, `six Layer-0 suites | 217 passed |
+passes — runtime cannot see a type collapse`. Measured: a literal bare-string collapse of the 9
+brands leaves the six suites at `1 failed | 237 passed (238)`, RED at
+`Store planning v2 branded vocabulary is pinned exhaustively > finds the whole declared vocabulary`,
+with the total dropping 247 -> 238 because `it.each(declaredBrands())` generates 9 fewer cases.
+
+The reasoning behind the recorded row ("runtime cannot see a type collapse") is sound in general but
+no longer true of *this* suite, because the new guard reads the declarations as text. **The direction
+of the error is safe** — the mechanism is more sensitive than recorded, not less — and the two rows
+that carry probe F's argument (`tsc --noEmit` blind, `test:types` RED with 9) both reproduce exactly.
+This is an evidence-recording inaccuracy, not a defect in the fix. Worth correcting only so a future
+reader does not conclude the guard is insensitive to brand collapse.
+
+Incidentally this exposes a good property: the per-brand test count is dynamic, so a brand vanishing
+silently removes its own guard case — and `expect(brands.length).toBe(16)` is what catches that.
+
+### V2 (Trivial) — three blind spots in the completeness guard
+
+Enumerated and measured under "Judgment on the generator's soundness" above. Recommendation: carry
+blind spot 3 (a brand in a fourth Store module) into S2/S3 as an inbound note. No action needed on
+this child.
+
+## Invariance, task honesty, and suite arithmetic
+
+**Invariance — confirmed independently.**
+
+```
+git diff --stat eaefc01b HEAD -- src/core/store   ->  (empty)
+git diff --name-only eaefc01b..HEAD -- src/       ->  src/core/index.ts   (the only src edit)
+git diff --name-only 27b59b6e..HEAD -- src/ test/ ->  (empty)
+```
+
+All five Layer-0 contract sources are byte-identical to what round 1 reviewed. My pre-mutation
+snapshot hashes match round 3's recorded `RESTORED-EXACT` values for all five files, which
+corroborates that round's restore ledger from an independent snapshot.
+
+**Task honesty — confirmed.**
+
+- 35 `[x]`, 1 `[ ]` (6.5), **0 `[~]`** anywhere.
+- 6.5 is still `[ ]` with round 1's PARTIAL prose verbatim, and was **not touched** by `27b59b6e`.
+- 3.6 and 4.6 keep `[x]` with appended notes. **No requirement text was rewritten.** Every note is
+  strictly additive: in each hunk the removed line's full text is the exact prefix of the added line,
+  with the note appended after it. Nothing was softened, narrowed, or deleted to match what shipped.
+- Both notes are accurate against what I measured. 3.6's "bumping every domain `/v2` -> `/v3` — or
+  deleting the `domain` field outright — left the suite green" is what probes K and L show once the
+  vectors are removed from consideration, and the 26 still-green relational tests confirm it directly.
+  4.6's "three of its four properties" matches round 3's probe P finding that landed-only applied
+  spec sync was the one property already covered.
+- **4.4 carries no appended note** — it is unmodified. I judge this correct rather than an omission:
+  4.4 is the implementation task, its behavior was never wrong (round 3 confirmed the schema enforces
+  all four), and the gap was in verification, which is 4.6's task. 4.6's note names 4.4's claim
+  explicitly, so the record points at the right place from the right task.
+
+**Suite arithmetic — closes exactly.**
+
+```
+                              round 3   HEAD    delta
+planning-validation-v2          43       42     -1   (N7 collapse)
+planning-identity-v2            26       32     +6   (golden vectors)
+planning-layout-v2              55       55      0
+finalization-v2                 53       61     +8   (archive negatives)
+planning-foundation-purity      39       39      0
+planning-foundation-consumer     1       18     +17  (1 count + 16 per-brand)
+                               ---      ---
+                               217      247     +30
+```
+
+Corroborated at the wider scope: `pnpm exec vitest run test/core/store/` was `648 passed | 1 skipped`
+in round 3 and is `678 passed | 1 skipped` now — the same +30, no collateral movement.
+
+**Final gates, all run by me after the last restore:**
+
+```
+pnpm exec tsc --noEmit                     ->  exit 0
+pnpm run lint                              ->  exit 0
+pnpm run test:types                        ->  1 file / 5 tests / no type errors
+six Layer-0 suites                         ->  247 passed (247)
+pnpm exec vitest run test/core/store/      ->  31 files / 678 passed | 1 skipped
+git status --porcelain                     ->  (empty, whole tree)
+```
+
+## Ship recommendation
+
+**Ship this child.** N4, N5, N6 and N7 are all genuinely closed, confirmed by probes I re-ran myself
+against committed bytes rather than by reading the record. Nothing Blocker or Major is open. The two
+Trivials are an inaccurate row in a fix-evidence table (V1, safe direction) and three named,
+deliberate-act-only blind spots in a new guard (V2), one of which is worth carrying to S2/S3 as an
+inbound note.
+
+Two judgments the LEAD asked for specifically, since they outlive the individual assertions:
+
+- **The N5 localisation design is genuine.** Each vector consumes pinned literals, so the failure set
+  identifies which preimage moved instead of smearing across all four — and the digests match an
+  independent recomputation of the design's preimage, so they pin the contract rather than the code's
+  current opinion of it.
+- **The N6 generator is sound for its declared scope** and materially better than the hand-maintained
+  list it replaced, with three blind spots I have enumerated. It is not a universal brand detector.
+
+The only remaining open item on this child is task 6.5, whose CI run reference is structurally
+unavailable until the portfolio opens its PR — unchanged from round 1, and the intended state.
+
+## Mutation hygiene (verification round)
+
+Every mutation was applied to a file restored from an out-of-repo pristine snapshot under
+`E:\tmp\verify-s1-snap` and restored the same way; `git checkout --` was never used. Restoration
+verified byte-exact against the pre-mutation snapshots:
+
+```
+RESTORED-EXACT  5627d7c5...  src/core/store/planning-validation.ts          (probe F, H1, H2)
+RESTORED-EXACT  6de40f78...  src/core/store/planning-identity.ts            (probes K, L, M, F)
+RESTORED-EXACT  40ecab21...  src/core/store/planning-layout-v2.ts           (probe F)
+RESTORED-EXACT  63346fa9...  src/core/store/finalization-v2.ts              (probe O)
+RESTORED-EXACT  6262a35a...  src/core/index.ts                              (untouched)
+RESTORED-EXACT  21b437b0...  test/.../planning-foundation-consumer.test-d.ts (probes G, G2, G3)
+RESTORED-EXACT  ab03db32...  test/.../planning-foundation-consumer.test.ts  (untouched)
+```
+
+`planning-catalogs.ts` (probe H3, appended-to rather than snapshotted) was restored by removing the
+exact appended byte string and verified through `git status --porcelain`, which is empty for the
+whole tree. Per round 2's correction, working-tree sha256 is compared against the pre-mutation
+snapshot and never against `git show`.
