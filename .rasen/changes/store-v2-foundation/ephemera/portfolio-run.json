@@ -152,6 +152,19 @@
     "precedent": "Same shape as child 3's already-recorded deferral of test/core/store/store-issue-scope-intent.test.ts (7 cases, same later slice via store-finalization-fixture.ts).",
     "warningForS3": "The same upstream commit also touched show.ts and spec.ts, which is adjacent to child 3's territory. The S3 proposal MUST check for CLI-surface dependencies in the tests it plans to port, at propose time, rather than discovering them at implementation time as happened here."
   },
+  "gateMethodologyFinding": {
+    "discoveredAt": "S2's no-regression gate, 2026-08-13",
+    "what": "The single full-suite gate run is no longer trustworthy on this machine at default parallelism. It came back RED - 3 files / 6 tests failed out of 122 files - and every one of the six passed on a solo re-run. No regression existed.",
+    "numbers": {
+      "baselineAtS1Close": "110 files / 1511 passed / 0 failed / 299s",
+      "s2FullRunDefaultParallelism": "122 files / 1738 passed / 6 FAILED / 851s",
+      "soloReRuns": "store.test.ts + store-root-selection.test.ts -> 84 passed 0 failed; workspace-cleanup.test.ts -> 26 passed 0 failed"
+    },
+    "cause": "S2 adds suites an order of magnitude heavier than S1's pure unit tests - measured solo wall-clock: workspace-cleanup 166610ms, workspace-cli 166960ms, workspace-apply 109103ms - against a 30s testTimeout, pool 'forks', maxWorkers min(4, cpus), on Windows temp dirs with real Git worktrees.",
+    "theTriageTrap": "Two of the six failures were 30s timeouts and ONE was a hard assertion failure - `expected 1 to be +0`, a command exiting 1 instead of 0. That one also passed solo. So an assertion failure is NOT reliable evidence of a real defect on this machine: a busy filesystem makes commands genuinely fail, not merely run slow. The timeout-vs-assertion distinction does NOT separate contention from defect. Only a solo re-run does. Do not triage by failure shape.",
+    "ruleForS3": "S3 adds more heavy suites and will hit this harder. (1) Never triage a full-run failure by its shape - re-run the file solo before concluding anything. (2) Do not accept 'every file passes solo' AS the gate either; it is good evidence but a different claim from 'the suite passes'. Re-take the gate at reduced parallelism (VITEST_MAX_WORKERS=2) for a trustworthy single number. (3) Only one agent runs suites at a time - the LEAD owns the gate, workers hold.",
+    "alsoNote": "KNOWN_SLOW_TEST_WEIGHTS_MS entries help CI SHARDING but do nothing for a single local full run. S2 added three; S3 must measure and add its own for any suite of comparable weight or the macOS/Windows shards will skew."
+  },
   "inboundNotesFromS1": {
     "brandVocabularyGuardBlindSpot": {
       "appliesTo": [
