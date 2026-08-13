@@ -1717,6 +1717,170 @@
                   "description": "JSONで出力します"
                 }
               }
+            },
+            "target-line": {
+              "description": "ストアの変更とアーカイブを分割する安定したリリースラインを作成し、参照先を付け替えます",
+              "commands": {
+                "add": {
+                  "description": "ストア ref ロケーターを指定して新しいターゲットラインを作成します。ブランチ名からラインを推測することはありません",
+                  "options": {
+                    "store": {
+                      "description": "ターゲットラインを追加するストア"
+                    },
+                    "store-ref": {
+                      "description": "ラインが現在指すストアの完全な ref（例: refs/heads/release/0.2）"
+                    },
+                    "project": {
+                      "description": "コード ref ロケーターを併せて記録するプロジェクト"
+                    },
+                    "code-ref": {
+                      "description": "選択したプロジェクトのリポジトリにおける完全なコード ref"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "set-ref": {
+                  "description": "ロケーターをその場で付け替えます。ライン識別子は変わらず、改名もできません",
+                  "options": {
+                    "store": {
+                      "description": "ターゲットラインを保持するストア"
+                    },
+                    "store-ref": {
+                      "description": "ラインの新しい完全なストア ref"
+                    },
+                    "project": {
+                      "description": "コード ref ロケーターを編集するプロジェクト"
+                    },
+                    "code-ref": {
+                      "description": "選択したプロジェクトの新しい完全なコード ref"
+                    },
+                    "remove-code-ref": {
+                      "description": "選択したプロジェクトのコードロケーターを削除します（依存する進行中の変更がある場合は拒否）"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "list": {
+                  "description": "ストアに記録された全ターゲットラインを一覧します（ref が現在解決できないものも含む）",
+                  "options": {
+                    "store": {
+                      "description": "ターゲットラインを一覧するストア"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "show": {
+                  "description": "1 つのターゲットラインを表示し、ロケーターを具体的な ref とコミット ID に解決します",
+                  "options": {
+                    "store": {
+                      "description": "ターゲットラインを保持するストア"
+                    },
+                    "project": {
+                      "description": "ストア ref と併せてコード ref を解決するプロジェクト"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                }
+              }
+            },
+            "workspace": {
+              "description": "ストア計画ワークツリーとプロジェクト実行ワークツリーの束縛されたペアを準備・確認・削除します（個人用エディタービューの rasen workset とは別物です）",
+              "commands": {
+                "plan": {
+                  "description": "変更に必要なワークツリーペアを、何も書き込まず未充足の前提条件をすべて報告する不変の計画としてプレビューします",
+                  "options": {
+                    "store": {
+                      "description": "計画ワークツリーを所有するストア"
+                    },
+                    "project": {
+                      "description": "変更を所有するプロジェクト"
+                    },
+                    "target-line": {
+                      "description": "ペアを準備する安定したターゲットライン"
+                    },
+                    "change": {
+                      "description": "ペアを準備する対象の変更エイリアス"
+                    },
+                    "planning-worktree": {
+                      "description": "ストア計画ワークツリーの作成先（既定はストアチェックアウトの隣）"
+                    },
+                    "execution-worktree": {
+                      "description": "プロジェクト実行ワークツリーの作成先（既定はコードチェックアウトの隣）"
+                    },
+                    "existing-change": {
+                      "description": "新しく識別子を発行せず、既存の変更を新しいペアに束縛します"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "apply": {
+                  "description": "プレビュー済みの計画を ID で適用します。最初の書き込み前に凍結したコミット ID をすべて再検証します",
+                  "options": {
+                    "apply-plan": {
+                      "description": "rasen store workspace plan が生成した計画 ID"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "show": {
+                  "description": "解決済みのペア、束縛状態、検証結果を、権限を持たないロケーターとして報告します",
+                  "options": {
+                    "store": {
+                      "description": "計画ワークツリーを所有するストア"
+                    },
+                    "project": {
+                      "description": "変更を所有するプロジェクト"
+                    },
+                    "target-line": {
+                      "description": "ペアが属する安定したターゲットライン"
+                    },
+                    "change": {
+                      "description": "ペアを報告する対象の変更エイリアス"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "cleanup": {
+                  "description": "損失がないと証明できる削除のみをプレビューし実行します。強制も部分削除もありません",
+                  "options": {
+                    "store": {
+                      "description": "計画ワークツリーを所有するストア"
+                    },
+                    "project": {
+                      "description": "変更を所有するプロジェクト"
+                    },
+                    "target-line": {
+                      "description": "ペアが属する安定したターゲットライン"
+                    },
+                    "change": {
+                      "description": "ペアを削除する対象の変更エイリアス"
+                    },
+                    "include-untracked": {
+                      "description": "計画が列挙した未追跡ファイル（Git では復元できません）を受け入れます"
+                    },
+                    "apply-plan": {
+                      "description": "以前のプレビューが生成したクリーンアップ計画 ID"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                }
+              }
             }
           }
         },

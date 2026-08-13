@@ -467,6 +467,99 @@ const COMMANDS: readonly CommandDefinition[] = [
           COMMON_FLAGS.json,
         ],
       },
+      {
+        name: 'target-line',
+        flags: [],
+        subcommands: [
+          {
+            name: 'add',
+            acceptsPositional: true,
+            positionals: [{ name: 'target-line-id' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'store-ref', takesValue: true },
+              COMMON_FLAGS.project,
+              { name: 'code-ref', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'set-ref',
+            acceptsPositional: true,
+            positionals: [{ name: 'target-line-id' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'store-ref', takesValue: true },
+              COMMON_FLAGS.project,
+              { name: 'code-ref', takesValue: true },
+              { name: 'remove-code-ref' },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'list',
+            flags: [COMMON_FLAGS.store, COMMON_FLAGS.json],
+          },
+          {
+            name: 'show',
+            acceptsPositional: true,
+            positionals: [{ name: 'target-line-id' }],
+            flags: [COMMON_FLAGS.store, COMMON_FLAGS.project, COMMON_FLAGS.json],
+          },
+        ],
+      },
+      {
+        // The bound planning/execution worktree PAIR. `workspace` is a RETIRED
+        // top-level group name, and a pair is Store content in any case, so
+        // this group is a `store` subcommand rather than a fourth top-level
+        // `work*` group beside `work`, `workset`, and `workflow`.
+        name: 'workspace',
+        flags: [],
+        subcommands: [
+          {
+            name: 'plan',
+            flags: [
+              COMMON_FLAGS.store,
+              COMMON_FLAGS.project,
+              COMMON_FLAGS.targetLine,
+              { name: 'change', takesValue: true },
+              { name: 'planning-worktree', takesValue: true },
+              { name: 'execution-worktree', takesValue: true },
+              { name: 'existing-change' },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'apply',
+            flags: [
+              { name: 'apply-plan', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'show',
+            flags: [
+              COMMON_FLAGS.store,
+              COMMON_FLAGS.project,
+              COMMON_FLAGS.targetLine,
+              { name: 'change', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'cleanup',
+            flags: [
+              COMMON_FLAGS.store,
+              COMMON_FLAGS.project,
+              COMMON_FLAGS.targetLine,
+              { name: 'change', takesValue: true },
+              { name: 'include-untracked' },
+              { name: 'apply-plan', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+        ],
+      },
     ],
   },
   {

@@ -1717,6 +1717,170 @@
                   "description": "Output as JSON"
                 }
               }
+            },
+            "target-line": {
+              "description": "Author and re-point the stable release lines a store's changes and archives are partitioned by",
+              "commands": {
+                "add": {
+                  "description": "Author a new target line with its store ref locator; no line is ever inferred from a branch name",
+                  "options": {
+                    "store": {
+                      "description": "Store that gains the target line"
+                    },
+                    "store-ref": {
+                      "description": "Full store ref the line currently points at, for example refs/heads/release/0.2"
+                    },
+                    "project": {
+                      "description": "Project whose code ref locator is recorded alongside the line"
+                    },
+                    "code-ref": {
+                      "description": "Full code ref for the selected project in its own repository"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "set-ref": {
+                  "description": "Re-point a locator in place; the line identity never changes and is never renamed",
+                  "options": {
+                    "store": {
+                      "description": "Store holding the target line"
+                    },
+                    "store-ref": {
+                      "description": "New full store ref for the line"
+                    },
+                    "project": {
+                      "description": "Project whose code ref locator is being edited"
+                    },
+                    "code-ref": {
+                      "description": "New full code ref for the selected project"
+                    },
+                    "remove-code-ref": {
+                      "description": "Remove the selected project's code locator, refused while an active change depends on it"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "list": {
+                  "description": "List every target line recorded in the store, including ones whose refs do not currently resolve",
+                  "options": {
+                    "store": {
+                      "description": "Store to list target lines from"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "show": {
+                  "description": "Show one target line and resolve its locators to concrete refs and commit ids",
+                  "options": {
+                    "store": {
+                      "description": "Store holding the target line"
+                    },
+                    "project": {
+                      "description": "Project whose code ref is resolved alongside the store ref"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                }
+              }
+            },
+            "workspace": {
+              "description": "Prepare, inspect, and remove the bound store-planning and project-execution worktree pair (unrelated to rasen workset, which is a personal editor view)",
+              "commands": {
+                "plan": {
+                  "description": "Preview the worktree pair a change needs, as an immutable plan that writes nothing and reports every unsatisfied precondition",
+                  "options": {
+                    "store": {
+                      "description": "Store that owns the planning worktree"
+                    },
+                    "project": {
+                      "description": "Project that owns the change"
+                    },
+                    "target-line": {
+                      "description": "Stable target line the pair is prepared on"
+                    },
+                    "change": {
+                      "description": "Change alias the pair is prepared for"
+                    },
+                    "planning-worktree": {
+                      "description": "Destination for the store planning worktree; defaults beside the store checkout"
+                    },
+                    "execution-worktree": {
+                      "description": "Destination for the project execution worktree; defaults beside the code checkout"
+                    },
+                    "existing-change": {
+                      "description": "Bind an already created change to a newly prepared pair instead of reserving a new one"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "apply": {
+                  "description": "Apply a previewed plan by its id, revalidating every frozen commit id before the first write",
+                  "options": {
+                    "apply-plan": {
+                      "description": "Plan id produced by rasen store workspace plan"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "show": {
+                  "description": "Report the resolved pair, its binding state, and every verification finding, as inert locators",
+                  "options": {
+                    "store": {
+                      "description": "Store that owns the planning worktree"
+                    },
+                    "project": {
+                      "description": "Project that owns the change"
+                    },
+                    "target-line": {
+                      "description": "Stable target line the pair belongs to"
+                    },
+                    "change": {
+                      "description": "Change alias whose pair is reported"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "cleanup": {
+                  "description": "Preview and perform a removal that is provably lossless; there is no force and no partial removal",
+                  "options": {
+                    "store": {
+                      "description": "Store that owns the planning worktree"
+                    },
+                    "project": {
+                      "description": "Project that owns the change"
+                    },
+                    "target-line": {
+                      "description": "Stable target line the pair belongs to"
+                    },
+                    "change": {
+                      "description": "Change alias whose pair is removed"
+                    },
+                    "include-untracked": {
+                      "description": "Accept the untracked files the plan listed, which Git cannot restore"
+                    },
+                    "apply-plan": {
+                      "description": "Cleanup plan id produced by a previous preview"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                }
+              }
             }
           }
         },

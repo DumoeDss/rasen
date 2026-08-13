@@ -29,4 +29,8 @@ export const COMMON_FLAGS = {
     name: 'project',
     takesValue: true,
   } as FlagDefinition,
+  targetLine: {
+    name: 'target-line',
+    takesValue: true,
+  } as FlagDefinition,
 } as const;

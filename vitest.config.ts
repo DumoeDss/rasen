@@ -62,6 +62,12 @@ const KNOWN_SLOW_TEST_WEIGHTS_MS: Record<string, number> = {
   'test/core/management-api/workflow-enablement.test.ts': 15371,
   'test/commands/work.test.ts': 14611,
   'test/core/management-api/space-scoping.test.ts': 13318,
+  // Real Git worktrees + real filesystem fixtures (store-worktree-bindings-v2,
+  // task 6.9): the byte-size heuristic badly underestimates these, because the
+  // cost is worktree creation/removal wall-clock time, not source size.
+  'test/core/store/workspace-cleanup.test.ts': 166610,
+  'test/commands/workspace-cli.test.ts': 166960,
+  'test/core/store/workspace-apply.test.ts': 109103,
 };
 
 function listTestFiles(directory: string, root: string): TestFile[] {

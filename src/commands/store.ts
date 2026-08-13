@@ -37,6 +37,8 @@ import { findRepoPlanningRootSync } from '../core/planning-home.js';
 import { isInteractive } from '../utils/interactive.js';
 import { WORKSPACE_DIR_NAME } from '../core/config.js';
 import { runAdopt, runEject } from './store-migration.js';
+import { registerStoreTargetLineCommand } from './store-target-line.js';
+import { registerWorkspaceCommand } from './workspace.js';
 import {
   diagnoseMigrationDrift,
   migrateStoreMembership,
@@ -1561,6 +1563,12 @@ export function registerStoreCommand(program: Command): void {
     .action(async (id: string | undefined, options: StoreDoctorOptions) => {
       await storeCommand.doctor(id, options);
     });
+
+  registerStoreTargetLineCommand(store);
+  // The bound planning/execution worktree PAIR is Store content — a standalone
+  // project has no pair — and `workspace` is a retired top-level group name
+  // that must stay retired, so the group lives here rather than at the root.
+  registerWorkspaceCommand(store);
 
   const lifecycleRedirects = new Set(
     (COMMAND_REGISTRY.subcommands ?? []).filter(
