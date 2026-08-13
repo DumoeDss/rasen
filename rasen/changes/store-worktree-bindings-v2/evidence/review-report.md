@@ -347,3 +347,191 @@ c733a42f7e4b26f638731d7293298cf2edde139c2c0fe0ccffe70553611f3071  src/core/canon
 
 `git status --porcelain` is empty and no `.rasen-archive-stage-*` residue remains from the
 `archive --dry-run` probe. **The tree is byte-clean.**
+
+---
+
+# Round 2 verification
+
+Independent confirmation pass over the round-1 fixes at commit `7fcfa457`. I wrote none of this
+code and none of the fixes. Round 1 is closed and not re-litigated here. Every verdict below rests
+on a command I ran myself in this worktree; where I re-ran a cycle the record already claimed, I
+report my own measurement rather than the recorded one.
+
+## Minor 3 — shape-(b) digest anchors — RESOLVED
+
+Both mutation cycles re-run from scratch.
+
+**Cycle A — `plan.ts:794` anchor, serializer shift.** Mutated `src/core/canonical-json.ts`
+(`return result;` -> `` return `X${result}`; ``), the sole formatter both `canonicalBytes` call
+sites route through. Full suite, solo, foreground:
+
+```
+pnpm exec vitest run test/core/store/workspace-plan.test.ts
+-> 1 failed | 22 passed (23), 120.43s
+FAIL ... plan id is exactly sha256(canonicalBytes(body)) hex, over body and nothing else
+AssertionError at test/core/store/workspace-plan.test.ts:256
+Expected: "{"changeId":"redesign-routing","intent":"new-change","pathFlavor":"native","schemaVersion":1}"
+Received: "X{"changeId":"redesign-routing","intent":"new-change","pathFlavor":"native","schemaVersion":1}"
+```
+
+The failure is the new strengthening assertion and nothing else. The pre-existing full-body
+comparison at `:234-235` (`expect(plan.planId).toBe(expectedPlanId)`) **passed in the same run**
+under the same mutation — the blind spot round 1 described is reproduced and closed in a single
+measurement.
+
+**Cycle B — `cleanup.ts:251` anchor, serializer shift. This is a measurement the record did not
+contain.** The committed evidence proves this anchor with a *field perturbation*
+(`changeId` -> `` `${input.changeId}!` ``), not a serialization shift. I judge that proof
+**insufficient for the blind spot it claims to close**: perturbing a production value changes one
+side of the original comparison only, so it is exactly the class of break the un-strengthened anchor
+already caught — demonstrated by the disclosed 9-of-26 collateral, which is the old assertions
+firing correctly. It therefore leaves the symmetric-serializer case, the only case the
+strengthening exists for, unmeasured at that site. Because I was opening a `canonical-json.ts`
+window for Cycle A regardless, I measured it directly:
+
+```
+pnpm exec vitest run test/core/store/workspace-cleanup.test.ts -t "cleanup plan id is exactly sha256"
+-> 1 failed | 25 skipped (26), 30.53s
+AssertionError at test/core/store/workspace-cleanup.test.ts:398
+Expected: "{"applicable":true,"changeId":"redesign-routing","includeUntracked":false,"schemaVersion":1}"
+Received: "X{"applicable":true,"changeId":"redesign-routing","includeUntracked":false,"schemaVersion":1}"
+```
+
+The `cleanup.ts:251` strengthening **does** redden under a `canonicalBytes` shift. The blind spot is
+genuinely closed at both sites, by measurement rather than by inference from structural similarity.
+
+**Offline-pinned literals — confirmed genuinely offline.** In both assertions the expected side is a
+hardcoded string constant and only the received side calls `canonicalBytes`, so the comparison is
+asymmetric by construction; production's serializer cannot re-enter the expected side by any path.
+Beyond reading it, I recomputed both literals **without the `canonicalize` package at all**, using
+`JSON.stringify(o, Object.keys(o).sort())`:
+
+```
+{"changeId":"redesign-routing","intent":"new-change","pathFlavor":"native","schemaVersion":1}
+{"applicable":true,"changeId":"redesign-routing","includeUntracked":false,"schemaVersion":1}
+```
+
+Byte-identical to both pinned literals. They are correct RFC 8785 for these flat primitive shapes
+and independently derivable, not transcribed from a production run.
+
+**On the isolated run (question 3).** The implementer's use of a `-t`-filtered run as the
+authoritative proof is legitimate. The proposition under test is whether one assertion
+discriminates; the other 25 tests' outcomes are not evidence for or against it, and the RED message
+names the exact byte difference, so attribution is unambiguous. The 9-of-26 collateral was
+disclosed rather than hidden. What the isolation does obscure is not dishonesty but significance:
+the collateral is itself the signal that the chosen mutation was not specific to the new assertion,
+which is the basis of my judgment above that the field perturbation could not prove the claim. The
+serializer-shift run resolves that, and there it is 1 failed / 25 skipped with the old comparison
+passing.
+
+**Residual, recorded not charged.** Each pinned slice covers four flat primitives whose values are
+ASCII alphanumerics plus a hyphen, one integer and two booleans. These anchors therefore redden on
+key-ordering, whitespace and uniform-format shifts, but a serialization change confined to
+non-ASCII escaping or to nested object/array handling would still move both sides of the full-body
+comparison together and clear the pinned slice. The closure is real and is the closure that was
+asked for; it is not total over all serialization changes.
+
+**Revert and GREEN.** Restored both times by copying an out-of-repo pristine snapshot over the file
+(never `git checkout --`, which under this repo's `core.autocrlf` rewrites to CRLF). After each
+restore `sha256sum src/core/canonical-json.ts` = `c733a42f7e4b26f638731d7293298cf2edde139c2c0fe0ccffe70553611f3071`,
+matching pristine, and `git diff -- src/` empty. Solo GREEN at the restored tree:
+`workspace-cleanup` 26 passed (26) in 396.85s, `workspace-plan` 23 passed (23) in 102.66s.
+
+## Minor 1 — `statusFromError` disclosure — RESOLVED
+
+Verified the judgment independently rather than accepting it. `rasen/specs/` has zero occurrences of
+`change_error` and zero of `statusFromError`. Widening past the identifiers, twelve specs use
+"error code" / "taxonomy code" / "diagnostic code" language; the nearest neighbour,
+`rasen/specs/change-submission/spec.md`, governs an HTTP server surface (409 `no_project`, 409
+`busy`, 504 `cli_timeout`), not the CLI `--json` status seam that `statusFromError` feeds at
+`src/commands/workflow/new-change.ts:245`. `rasen/specs/change-creation/spec.md` contains no
+`status` language at all. No spec describes the old collapse-to-`change_error` behaviour, so
+disclosure in Impact is the correct instrument and "Modified Capabilities: None" stands.
+
+## Minor 2 — Decision 8 — RESOLVED (with one stale pointer, see new finding)
+
+The zero-caller claim holds. `assertTargetLineMatchesChange` appears at exactly four places in the
+tree: its definition at `src/core/store/target-lines.ts:263` and three test references
+(`test/core/store/target-lines.test.ts:22, :454, :472`). No production caller. Decision 8's body is
+precise on this ("zero production callers"); only its section heading is loose ("no caller"), since
+two tests do call it. The shipped re-point gate Decision 8 points to instead is real:
+`src/core/store/workspace/plan.ts:888` is the `identity.targetLineId !== input.scope.targetLineId`
+check throwing `target_line_mismatch`, exactly as recorded.
+
+## Trivial 4 — task 6.5 verdict — RESOLVED
+
+`src/core/workspace-migration.ts` and `rasen/specs/workspace-migration/spec.md` both exist, and
+`git diff 6b1c24d7..HEAD` over `src/core/workspace-migration.ts`,
+`test/core/workspace-migration.test.ts` and `rasen/specs/workspace-migration/` is empty — untouched
+by this child. The recorded verdict (does not belong to this child, correctly excluded) is accurate.
+
+## Trivial 5 — task 5.4 registration site — RESOLVED
+
+`git diff --stat 6b1c24d7..HEAD -- src/cli/index.ts` is empty; `src/commands/store.ts` is
+`1 file changed, 8 insertions(+)`, matching the corrected task's "+8 lines" exactly.
+
+## New finding (Trivial) — Decision 8's two test line references are stale by 23
+
+Decision 8 cites the shipped gate as "tested at `test/core/store/workspace-plan.test.ts:572`, with
+an accept-all control at `:558`". At HEAD those lines are inside a different test: the
+`target_line_mismatch` assertion is at `:607` (in `it('refuses to bind a Change frozen against
+another line')`, opening at `:595`) and the accept-all control is
+`it('verifies an already-minted identity under intent existing-change')` at `:581`. The offsets are
+exactly +23 — the same commit that wrote Decision 8 added 23 lines to that test file at `~:236`, so
+the references were computed against the pre-fix file and were stale on arrival. Confirmed against
+`git show 7fcfa457^:test/core/store/workspace-plan.test.ts`, where `:558` and `:572` are indeed
+those two `it(` openers. **Substance is correct — both named tests exist and are the right ones —
+only the pointers are off.** `plan.ts:888` in the same paragraph is accurate. Trivial; a
+documentation-only correction, no code implication.
+
+## Also confirmed
+
+- **No production drift.** `git diff --stat ad413c6f HEAD -- src/` is empty, and verified by hash
+  rather than by the diff alone: `canonical-json.ts` `c733a42f...`, `cleanup.ts` `9b08319f...`,
+  `plan.ts` `6ed6097b...`. All three match their pre-mutation values.
+- **No mutation residue.** `grep -rn "MUTATION-PROOF\|Must be reverted\|TEMP MUTATION" src/ test/`
+  returns nothing.
+- **Task honesty.** No `[~]` anywhere in `tasks.md`. 6.9 and 6.10 are `[ ]` with substantive
+  recorded reasons (Windows CI reference structurally unobtainable inside the child; 6.10 reserved
+  to the LEAD on a quiesced tree, with the implementer's started run explicitly killed unlanded and
+  no numbers reported from it). Both readings are honest.
+- `npx tsc --noEmit` clean.
+- `node bin/rasen.js validate store-worktree-bindings-v2 --type change --strict` ->
+  `Change 'store-worktree-bindings-v2' is valid`.
+
+## Operational observation for the LEAD (not a finding)
+
+`workspace-cleanup.test.ts` solo, unmutated, took **396.85s** on this machine — against the
+`KNOWN_SLOW_TEST_WEIGHTS_MS` entry of `166610` recorded under task 6.9. A first attempt to run it
+inside a mutation window exceeded a 420s bound and had to be killed. Whether that is machine load
+or a genuine underestimate, the sharding weight for this suite may be low by more than 2x, which is
+squarely task 6.9's concern.
+
+## Verdict
+
+| Finding | Verdict |
+| --- | --- |
+| Minor 1 (`statusFromError` disclosure) | RESOLVED |
+| Minor 2 (Decision 8 zero-caller record) | RESOLVED |
+| Minor 3 (shape-(b) anchor strengthening) | RESOLVED |
+| Trivial 4 (task 6.5 verdict) | RESOLVED |
+| Trivial 5 (task 5.4 registration site) | RESOLVED |
+
+New findings introduced by the delta: one Trivial (stale line pointers in Decision 8). No Blocker,
+no Major, no Minor.
+
+**Ship recommendation: SHIP.** All five round-1 findings are closed on evidence I re-measured
+myself, the substantive one (Minor 3) is closed at both sites against the actual failure class
+rather than a proxy, production is byte-identical to the pre-review baseline, and the static gates
+pass. The single new Trivial is a stale documentation pointer with no code implication and does not
+warrant another round.
+
+## Statement on tree state (round 2)
+
+I am **done mutating**. My two mutations both targeted `src/core/canonical-json.ts` and were each
+restored from an out-of-repo snapshot and confirmed byte-exact by
+`sha256sum` = `c733a42f7e4b26f638731d7293298cf2edde139c2c0fe0ccffe70553611f3071`. The snapshot file
+was outside the repository and has been deleted. `git diff --stat ad413c6f HEAD -- src/` is empty
+and `git status --porcelain` was empty immediately before this append. **The tree is byte-clean**;
+the only working-tree modification I leave behind is this report append, which I was instructed to
+write. I committed nothing and pushed nothing.
