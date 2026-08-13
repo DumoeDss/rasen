@@ -68,7 +68,17 @@
       "dependsOn": [
         "store-planning-contract-v2"
       ],
-      "status": "pending",
+      "status": "done",
+      "completion": {
+        "implemented": true,
+        "reviewClean": true,
+        "shipped": "local (501b8943)",
+        "archive": "pending - correctly blocked by tasks 6.9 and 6.10. Unblocks at portfolio delivery.",
+        "commits": "ad413c6f (implementation, 43 files) -> 29dd0b8b (verb-guard proof) -> 7fcfa457 (review fixes) -> 6113f288 (pointer correction) -> 501b8943 (ship log)",
+        "reviewSummary": "Round 1: 0 Blocker / 0 Major / 3 Minor / 2 Trivial. All five closed in ONE fix round. Round 2 verification: all five RESOLVED, one new Trivial corrected. Contrast with child 1, which needed three rounds plus an escalation-ladder attempt - the difference is that the digest-anchor requirement was written into tasks.md at propose time.",
+        "gates": "Main baseline 122 files / 1744 passed / 6 skipped / 0 failed at VITEST_MAX_WORKERS=2, vs 110 / 1511 / 0 at child 1's close. The child's four command suites, run separately because the frozen gate command missed them: 4 files / 26 passed / 2 skipped / 0 failed.",
+        "invariance": "git diff ad413c6f..HEAD -- src/ empty (every proof mutation byte-reverted, hash-verified). git diff origin/dev/0.1.7 -- src/core/store/workspace/ empty (13-file module byte-identical to the tip, this child's intended property)."
+      },
       "node": "S2",
       "delivers": "Layer 1: planning worktree bindings (workspace locks/registry/binding/cleanup/plan/apply) and target-line catalog operations. Required because issues/ imports workspace/{dependencies,locks,binding,registry}.",
       "touches": [

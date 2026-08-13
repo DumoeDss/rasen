@@ -190,10 +190,31 @@
       }
     },
     "ship": {
-      "status": "pending"
+      "status": "done",
+      "mode": "local",
+      "gateDecision": "auto-approved (global)",
+      "shipLog": "rasen/changes/store-worktree-bindings-v2/evidence/ship-log.md",
+      "commit": "501b8943",
+      "worker": {
+        "role": "shipper",
+        "runtime": "claude",
+        "dispatchMode": "native",
+        "agentId": "shipper-s2@session-54f71457",
+        "model": "sonnet",
+        "horizon": "ONE_SHOT"
+      },
+      "leadVerified": "No remote ref exists - git branch -r has zero matches for this branch. The ship log carries no '## Archive' heading, which would otherwise make a later rasen archive refuse with archive_recovery_required, and no 'Archived in ship:' line.",
+      "carriedForwardHonestly": [
+        "31/33, not complete: 6.9's CI run reference is structurally unavailable until the parent PR, and 6.10 is the LEAD's gate.",
+        "Seven deferred test cases with substitute coverage, including the honest note that planning_worktree_required does not exist in src/ at all so no substitute could reproduce it.",
+        "The session-runtime-context carve-out and why porting the version bump would break a live daemon.",
+        "workspace-cleanup.test.ts ran 396.85s solo against a 166610ms shard weight - a possible >2x underestimate, recorded rather than dropped."
+      ]
     },
     "archive": {
-      "status": "pending"
+      "status": "pending",
+      "reason": "Correctly blocked. LEAD-verified via node bin/rasen.js archive --dry-run --json: '2 task(s) are incomplete' - tasks 6.9 and 6.10. No archive worker was dispatched: the blocker is known and intended, so a dispatch would only return a refusal.",
+      "unblockedBy": "Portfolio delivery at the parent -> PR CI run -> record the reference in 6.9 -> archive."
     }
   }
 }
