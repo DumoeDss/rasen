@@ -163,7 +163,35 @@
     "cause": "S2 adds suites an order of magnitude heavier than S1's pure unit tests - measured solo wall-clock: workspace-cleanup 166610ms, workspace-cli 166960ms, workspace-apply 109103ms - against a 30s testTimeout, pool 'forks', maxWorkers min(4, cpus), on Windows temp dirs with real Git worktrees.",
     "theTriageTrap": "Two of the six failures were 30s timeouts and ONE was a hard assertion failure - `expected 1 to be +0`, a command exiting 1 instead of 0. That one also passed solo. So an assertion failure is NOT reliable evidence of a real defect on this machine: a busy filesystem makes commands genuinely fail, not merely run slow. The timeout-vs-assertion distinction does NOT separate contention from defect. Only a solo re-run does. Do not triage by failure shape.",
     "ruleForS3": "S3 adds more heavy suites and will hit this harder. (1) Never triage a full-run failure by its shape - re-run the file solo before concluding anything. (2) Do not accept 'every file passes solo' AS the gate either; it is good evidence but a different claim from 'the suite passes'. Re-take the gate at reduced parallelism (VITEST_MAX_WORKERS=2) for a trustworthy single number. (3) Only one agent runs suites at a time - the LEAD owns the gate, workers hold.",
-    "alsoNote": "KNOWN_SLOW_TEST_WEIGHTS_MS entries help CI SHARDING but do nothing for a single local full run. S2 added three; S3 must measure and add its own for any suite of comparable weight or the macOS/Windows shards will skew."
+    "alsoNote": "KNOWN_SLOW_TEST_WEIGHTS_MS entries help CI SHARDING but do nothing for a single local full run. S2 added three; S3 must measure and add its own for any suite of comparable weight or the macOS/Windows shards will skew.",
+    "gateCoverageBlindSpot": {
+      "what": "The LEAD's baseline gate command was fixed before S2 existed and names test/commands/store.test.ts and store-root-selection.test.ts individually rather than the directory. S2 added FOUR command-level suites - store-target-line-cli, store-v2-workspace-concurrency, store-v2-workspace-journey, workspace-cli - and the gate silently did not run any of them. A green gate therefore did not cover the child's own acceptance suites.",
+      "howItSurfaced": "Auditing the skipped count. The gate reported 5 newly skipped tests, all in workspace-baseline.test.ts, but the implementer had reported SEVEN deferred cases - 5 there and 2 in store-v2-workspace-journey.test.ts. The missing 2 were the tell that the journey suite had not run at all.",
+      "generalRule": "A gate command frozen at one point in time stops measuring whatever the subject grows afterwards, silently. Same disease as an assertion that cannot fail, one level up. Re-derive the gate's file list from the change's own diff each time rather than reusing a stale literal.",
+      "correctedGateForS3": "pnpm exec vitest run test/core/store test/core/change-run test/commands/store.test.ts test/commands/store-root-selection.test.ts test/cli-e2e/store-lifecycle.test.ts test/commands/store-target-line-cli.test.ts test/commands/store-v2-workspace-concurrency.test.ts test/commands/store-v2-workspace-journey.test.ts test/commands/workspace-cli.test.ts   -- and S3 must ADD its own new suites to this list, then verify by diffing the run's file count against the change's test-file additions."
+    }
+  },
+  "s2GateResult": {
+    "mainBaseline": {
+      "command": "VITEST_MAX_WORKERS=2 pnpm exec vitest run test/core/store test/core/change-run test/commands/store.test.ts test/commands/store-root-selection.test.ts test/cli-e2e/store-lifecycle.test.ts",
+      "result": "GREEN",
+      "testFiles": 122,
+      "passed": 1744,
+      "skipped": 6,
+      "failed": 0,
+      "durationSec": 1107,
+      "vsBaseline": "S1-close baseline was 110 files / 1511 passed / 1 skipped / 0 failed -> +12 files, +233 tests, NO regression"
+    },
+    "s2CommandSuites": {
+      "command": "VITEST_MAX_WORKERS=2 pnpm exec vitest run test/commands/{store-target-line-cli,store-v2-workspace-concurrency,store-v2-workspace-journey,workspace-cli}.test.ts",
+      "result": "GREEN",
+      "testFiles": 4,
+      "passed": 26,
+      "skipped": 2,
+      "failed": 0,
+      "note": "Run separately because the frozen baseline command did not cover them. See gateCoverageBlindSpot."
+    },
+    "deferredCaseAccounting": "7 deferred cases reconcile exactly: 5 skipped in workspace-baseline.test.ts plus 2 skipped in store-v2-workspace-journey.test.ts. The remaining 1 skip in the main run is pre-existing in project-records.test.ts."
   },
   "inboundNotesFromS1": {
     "brandVocabularyGuardBlindSpot": {
