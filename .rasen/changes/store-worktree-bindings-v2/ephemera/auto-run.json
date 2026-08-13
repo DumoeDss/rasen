@@ -150,6 +150,23 @@
     "review-loop": {
       "status": "in_progress",
       "round": 1,
+      "fixCommit": "7fcfa457",
+      "roundOneOutcome": {
+        "allFiveClosed": "Minor 1, Minor 2, Minor 3, Trivial 4, Trivial 5 - fixes delivered, awaiting non-author confirmation.",
+        "minor3Method": "Both shape-(b) anchors strengthened with an offline-pinned literal over their non-Git-fact field slice, each proved by its OWN measured RED/GREEN cycle rather than one inferred from the other. plan.ts:794 proved by mutating the shared serializer (RED 1/22, GREEN 23/23). cleanup.ts:251 proved by mutating cleanup.ts ITSELF (RED isolated at workspace-cleanup.test.ts:398, GREEN 26/26) - the LEAD's third option, keeping the blast radius inside an S2-owned file rather than taking a second window on a Layer-0 file five other anchors route through.",
+        "residualEvidenceWeakness": "cleanup.ts:251's closure was proved with a FIELD PERTURBATION, not a serializer shift - so its closure against the ORIGINAL blind spot is the least directly evidenced thing in this round, and that is a consequence of the LEAD's own blast-radius instruction. Explicitly handed to the round-2 verifier to judge, with permission to take one short foreground window on canonical-json.ts if it concludes the field-perturbation proof is insufficient. The LEAD deliberately did not pre-judge it, since the cheap route was the LEAD's own.",
+        "implementerDisclosures": [
+          "An unfiltered run of the cleanup.ts mutation showed 9 of 26 failing, because changeId feeds planId which several other tests re-derive independently. The implementer reported BOTH that number and the isolated single-test run it used as the authoritative proof, rather than only the flattering one.",
+          "During Anchor 1's shared-file mutation window it observed the pre-existing pinned-literal anchor at cleanup.ts:170 also redden. It explicitly labelled this 'supplementary context only, not offered as the required per-anchor proof' - refusing to let a real RED already in hand substitute for a measurement it owed, when doing so would have saved it an entire mutation cycle."
+        ],
+        "incidentDuringRound": {
+          "what": "The implementer idled mid-mutation with a live serializer mutation in src/core/canonical-json.ts - child 1's Layer-0 file, which five shape-(a) anchors route through.",
+          "howItWasCaught": "It had LABELLED the mutation in place with what it was and that it must be reverted. That label is the only reason the LEAD could tell in one look that this was an in-flight proof rather than someone actually changing the serializer. A silent mutate-and-restore habit would have left an unexplained edit to a Layer-0 file, indistinguishable from a real change.",
+          "whatTheImplementerDidRight": "It killed the in-flight background suite run BEFORE reverting, rather than letting it finish against a mutated file. That run would have produced a clean-looking result measured against a deliberately broken serializer - a false green that outlives the mutation.",
+          "leadResponse": "Froze all gate activity and committed nothing until the revert was independently verified by hash and by an empty `git diff HEAD -- src/`.",
+          "standingRule": "Never leave a mutation live across a background wait. Either run the proof in the foreground so the window closes when the run does, or revert first and re-mutate when ready to watch it. The window is the risk, not the mutation. And always label a mutation in place - it is what makes an incident diagnosable."
+        }
+      },
       "routing": "Fixes routed to the ORIGINAL implementer, not a separate fixer - unlike child 1. These five are disclosure/documentation accuracy plus one anchor-strengthening judgment, not the 'judgment about what counts as coverage' failure class that made a fresh fixer the right configuration for child 1. H.2 warm-continue guard applied: implementer at 14.1% against a 0.7 handoff threshold.",
       "items": {
         "Minor1": "src/commands/workflow/shared.ts:131-142 - statusFromError returns a StoreError's own code instead of change_error. Absent from 0.1.7, no task pins it, and proposal.md claims 'Modified Capabilities: None' while changing an observable error code. Disclosure defect, not correctness. Fix: disclose in Impact AND state explicitly whether any spec describes the old behaviour (if yes, it needs a spec delta).",
