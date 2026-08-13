@@ -377,6 +377,27 @@ describe('workspace cleanup', () => {
 
       expect(plan.planId).toBe(expectedPlanId);
       expect(plan.planId).toMatch(/^[0-9a-f]{64}$/u);
+
+      // STRENGTHENING (review round 1, Minor 3). Same reasoning as the sibling
+      // anchor at plan.ts:794 (workspace-plan.test.ts): the reconstruction above
+      // calls production's `canonicalBytes` on both sides, so it cannot notice a
+      // `canonicalBytes` serialization shift — that class of break moves the
+      // real `planId` and `expectedPlanId` together. `schemaVersion`, `changeId`,
+      // `includeUntracked`, and `applicable` carry no live Git fact in this
+      // scenario, so their canonical bytes are a fixed literal, computed offline
+      // and hardcoded here, independent of calling `canonicalBytes` again at
+      // test time. This reddens on a serialization shift the comparison above
+      // cannot detect.
+      expect(
+        canonicalBytes({
+          schemaVersion: reconstructedBody.schemaVersion,
+          changeId: reconstructedBody.changeId,
+          includeUntracked: reconstructedBody.includeUntracked,
+          applicable: reconstructedBody.applicable,
+        }).toString('utf8')
+      ).toBe(
+        '{"applicable":true,"changeId":"redesign-routing","includeUntracked":false,"schemaVersion":1}'
+      );
     }
   );
 

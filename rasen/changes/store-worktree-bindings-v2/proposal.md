@@ -100,6 +100,12 @@ here — see the deferral above. No existing capability's requirements change: t
 groups and Store content without altering Store registration, membership, root selection, file
 placement, or archive behavior.
 
+One shared seam's observable output does change — `statusFromError` in `src/commands/workflow/shared.ts`
+— see the last Impact bullet below for what and why. The judgment asked and answered: does any spec
+describe the old behavior? No — `rasen/specs/` has zero references to `change_error` or
+`statusFromError` — so this is a disclosure item, not a spec delta, and "Modified Capabilities: None"
+stands.
+
 ## Impact
 
 - **Adds** `src/core/store/workspace/**` (thirteen modules: plan, apply, cleanup, binding, identity,
@@ -120,3 +126,12 @@ placement, or archive behavior.
   outside the two planned worktree roots, and no management-API or UI surface.
 - **Unblocks** `store-issue-resources`, the last change of this portfolio, which imports the workspace
   dependency, lock, binding, and registry surfaces.
+- **Changes** `statusFromError` (`src/commands/workflow/shared.ts`, shared by every `--json` command in
+  this tree) to return a thrown `StoreError`'s own taxonomy code instead of collapsing it into the
+  generic `change_error`. Not present on `dev/0.1.7` — that file has no `StoreError` branch there. This
+  exists because the workspace and target-line command surfaces this change adds throw `StoreError`
+  subclasses (e.g. `WorkspaceGitCommandError`) on Git-level and preparation failures; without this
+  branch every one of them collapsed to the same generic code, hiding the actual failure from an agent
+  branching on it in `--json` mode. No task pinned this and no spec describes the old behavior (see
+  Modified Capabilities above), so it is disclosed here rather than carried as a spec delta.
+  Behaviorally additive — no consumer keys on the literal string `change_error`.

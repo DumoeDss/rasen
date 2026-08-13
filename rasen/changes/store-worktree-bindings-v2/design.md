@@ -214,6 +214,24 @@ Three rules carry the safety of this child and each is structural rather than ad
 The Git verb set is closed by an explicit constant plus a source guard, per the repo rule that
 generated or restricted sets are tracked by name in a constant rather than detected by pattern.
 
+### 8. `assertTargetLineMatchesChange` is published with no caller in this child, and that is recorded, not hidden
+
+`src/core/store/target-lines.ts:263` exports a re-point gate, `assertTargetLineMatchesChange`, that has
+zero production callers in this child. This is the same shape as Decision 6's two unenforced lock
+kinds — a published surface whose taker lives elsewhere — and gets the same treatment: recorded here
+rather than removed or left to look orphaned.
+
+It is not the enforcement gap it might look like. The re-point gate this child actually ships is a
+different code path, reachable at `workspace/plan.ts:888` (`target_line_mismatch`) and tested at
+`test/core/store/workspace-plan.test.ts:572`, with an accept-all control at `:558` proving the refusal
+is selector-disagreement-specific rather than an unresolvable-ref false positive. `assertTargetLineMatchesChange`
+is an unused duplicate of that same check, written for and consumed by the deferred scope-routing slice.
+
+Decision: **keep it published, name why it has no caller.** Removing it would break this child's
+byte-identity with the `dev/0.1.7` tip, an explicit property of this whole port (Decision 1). The
+enforcement this child is chartered to ship is proven at `plan.ts:888`, independent of this function
+ever being called.
+
 ## Risks / Trade-offs
 
 - [Risk] This is the first Git mutation in the workstream, on a user's real repositories. → Immutable
@@ -230,6 +248,11 @@ generated or restricted sets are tracked by name in a constant rather than detec
   suite's presence and result so the situation is visible rather than discovered.
 - [Risk] Two lock kinds have no taker, and the ordering assertion cannot tell. → Decision 6 and task
   6.4: name the taker of each kind in shipped code and record the unenforced ones as such.
+- [Risk] `assertTargetLineMatchesChange` (`target-lines.ts:263`) has no caller in this child, which
+  could read as an unenforced requirement. → Decision 8: the re-point gate this child actually ships
+  lives at `plan.ts:888` and is tested at `workspace-plan.test.ts:572` with an accept-all control at
+  `:558`; the unused function is a duplicate for the deferred scope-routing slice, kept for
+  byte-identity with the reference line rather than removed.
 - [Risk] Six digest sites, and the reference suite's own strongest plan scenario is relationally
   blind. → Decision 4 and tasks 6.1–6.3: pinned literal anchors per site, each walked back through
   its own reader.

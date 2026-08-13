@@ -233,6 +233,29 @@ describe('workspace plan construction', () => {
 
       expect(plan.planId).toBe(expectedPlanId);
       expect(plan.planId).toMatch(/^[0-9a-f]{64}$/u);
+
+      // STRENGTHENING (review round 1, Minor 3). The reconstruction above still
+      // calls production's `canonicalBytes` on both sides of the comparison, so
+      // it is symmetric under a `canonicalBytes` serialization shift (e.g. a key
+      // ordering or escaping change): that class of break moves the real
+      // `planId` and this test's `expectedPlanId` together, and neither
+      // reddens. This assertion does not share that blind spot: `schemaVersion`,
+      // `intent`, `changeId`, and `pathFlavor` carry no live Git fact for this
+      // fixture, so their canonical bytes are a fixed literal, computed offline
+      // with the real `canonicalize` package and hardcoded here — never
+      // recomputed at test time. A `canonicalBytes`/RFC 8785 serialization
+      // change reddens this line even though the full-body comparison above
+      // stays green.
+      expect(
+        canonicalBytes({
+          schemaVersion: reconstructedBody.schemaVersion,
+          intent: reconstructedBody.intent,
+          changeId: reconstructedBody.changeId,
+          pathFlavor: reconstructedBody.pathFlavor,
+        }).toString('utf8')
+      ).toBe(
+        '{"changeId":"redesign-routing","intent":"new-change","pathFlavor":"native","schemaVersion":1}'
+      );
     },
     10_000
   );
