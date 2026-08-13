@@ -119,7 +119,45 @@
       "digestAnchorMandate": "S2 has SIX digest sites (plan.ts:794, cleanup.ts:170 and :251, locks.ts:128, registry.ts:201, binding.ts:93, dependencies.ts:343). The 0.1.7 reference's own 'Equal inputs produce an identical plan' scenario is exactly the blind shape - it compares two derivations to each other. Tasks 6.1-6.3 require a pinned literal anchor per site, UNCHAINED, each walked back through its own reader, each mutation-proved. Child 1's most expensive lesson, applied at propose time instead of after three review rounds."
     },
     "verify": {
-      "status": "pending"
+      "status": "done",
+      "verifyPolicy": "standard",
+      "findings": "0 Blocker / 0 Major / 3 Minor / 2 Trivial - nothing blocks shipping",
+      "report": "rasen/changes/store-worktree-bindings-v2/evidence/review-report.md (committed c24d04e5)",
+      "worker": {
+        "role": "reviewer",
+        "runtime": "claude",
+        "dispatchMode": "native",
+        "agentId": "reviewer-s2@session-54f71457",
+        "model": "opus",
+        "horizon": "ONE_SHOT",
+        "horizonBasis": "Deliberately not parked - child 1's round-1 reviewer was lost to the keepalive beat cap while parked, after the LEAD delivered its next instruction over the wrong channel."
+      },
+      "authorIsNotVerifier": true,
+      "contrastWithChild1": "Child 1's round 1 produced FOUR Majors, all of the 'assertion that cannot fail' class, and took three review rounds plus an escalation-ladder attempt to close. Child 2 produced zero. The difference is that the digest-anchor requirement was written into tasks.md at PROPOSE time rather than discovered at review time - child 1's most expensive lesson, applied up front.",
+      "confirmedByNonAuthor": [
+        "All seven digest anchors re-proved by re-running the mutations, one suite at a time.",
+        "The three-shape claim holds, and shape (b) does discriminate a uniform formula shift at both plan.ts:794 and cleanup.ts:251.",
+        "No chaining - proved by MEASUREMENT as well as by reading: with binding.ts:93 mutated, the registry.ts:201 anchor in the SAME FILE stayed green, so breaks localise.",
+        "The implementer's retraction about the locks.ts:128 relational test was correct, measured not read: mutating locks.ts:130 in isolation turned that test RED.",
+        "The 27/54 breadth is real, not entanglement - the digest IS the carrier filename prefix, so base64's / and = break every content-addressed .intent/.backup/.claim path. The 27 that still pass are table-driven errno-tuple cases a digest change cannot reach.",
+        "The dead-code mutation is adequate for task 4.3 because the guard is a SCANNER (fs.readFileSync + withoutComments + regex) and never executes the adapter, so reachability is irrelevant by construction.",
+        "The session-runtime-context carve-out held: both files byte-untouched, RUNTIME_CONTEXT_VERSION still 1 at :33, both guards intact at :95 and :255.",
+        "Scope containment is BROADER than reported: target-lines.ts and both command files are also byte-identical to the 0.1.7 tip. Locale lockstep verified by KEY SET (1569 each, zero missing/extra either direction) and all 28 new keys genuinely translated (0/28 identical to English in ja or zh-cn)."
+      ],
+      "reviewerOwnInitiative": "Suspected `expect(attempts).toBe(1)` (task 3.3) was a tautology because withWorkspaceLocks calls the body once structurally at locks.ts:249. Mutated it to retry the body - it went RED. Genuine guard, no finding.",
+      "leadBriefPremiseCorrected": "The LEAD's dispatch asked the reviewer to verify the substitutes cover `planning_worktree_required`. That code does NOT exist in src/ at all - zero hits, every one a skipped test or comment. It is decided entirely by the deferred resolver, so no substitute could reproduce it. The implementer's substitute at workspace-baseline.test.ts:423 says exactly that and records the genuine discrepancy (S2's reader throws workspace_marker_conflict) rather than papering over it."
+    },
+    "review-loop": {
+      "status": "in_progress",
+      "round": 1,
+      "routing": "Fixes routed to the ORIGINAL implementer, not a separate fixer - unlike child 1. These five are disclosure/documentation accuracy plus one anchor-strengthening judgment, not the 'judgment about what counts as coverage' failure class that made a fresh fixer the right configuration for child 1. H.2 warm-continue guard applied: implementer at 14.1% against a 0.7 handoff threshold.",
+      "items": {
+        "Minor1": "src/commands/workflow/shared.ts:131-142 - statusFromError returns a StoreError's own code instead of change_error. Absent from 0.1.7, no task pins it, and proposal.md claims 'Modified Capabilities: None' while changing an observable error code. Disclosure defect, not correctness. Fix: disclose in Impact AND state explicitly whether any spec describes the old behaviour (if yes, it needs a spec delta).",
+        "Minor2": "target-lines.ts:263 assertTargetLineMatchesChange has zero production callers - an unused duplicate whose only caller is in the deferred scope-routing slice. NOT an unenforced requirement: the re-point gate ships separately at plan.ts:888 and is tested with an accept-all control. Fix: RECORD it as design Decision 6 already records the two untaken lock kinds. Do NOT remove - that would break this child's byte-identity with the 0.1.7 tip.",
+        "Minor3": "Shape-(b) anchors are blind to a canonicalBytes SERIALIZATION shift. Measured: prefixing canonicalBytes left plan.ts:794 GREEN while the locks.ts:128 pinned literal went RED. Decision 4 claims each anchor catches preimage OR serialization; shape (b) catches only the encoding half because it rehashes a body it reconstructs itself. Suite-level coverage survives (four pinned literals route through the same serializer). Fix: strengthen if cheap, otherwise NARROW Decision 4's claim to what shape (b) delivers and name where the serialization half is covered. Do not let the design claim a property the anchor lacks - that is this portfolio's defect class in prose form.",
+        "Trivial4": "Task 6.5's required verdict on test/core/workspace-migration.test.ts was never recorded; the reviewer independently confirmed the conclusion (pre-existing unrelated capability on both lines, correctly excluded).",
+        "Trivial5": "Task 5.4 names src/cli/index.ts, which this change does not modify; registration is via src/commands/store.ts (+8)."
+      }
     },
     "review-loop": {
       "status": "pending"
