@@ -5,7 +5,37 @@
       "status": "pending"
     },
     "apply": {
-      "status": "pending"
+      "status": "in_progress",
+      "gateDecision": "auto-approved (global)",
+      "worker": {
+        "role": "implementer",
+        "runtime": "claude",
+        "dispatchMode": "native",
+        "agentId": "implementer-s3@session-54f71457",
+        "model": "sonnet",
+        "horizon": "LOOP_BOUND"
+      },
+      "progress": "Sections 1-6 done; Section 7 (anti-blindness anchors, highest risk) in flight; Section 8 (gates) pending.",
+      "commits": [
+        "af6f3e9d issues/ + query/ landed, 5 ported suites green",
+        "8caafa11 / 9a489b93 command surface",
+        "b7568d6b management-api handlers",
+        "b13a6dc7 wire types + UI mirror + drift guard",
+        "72100ab3 UI components",
+        "52b8be1f deferral + substitute coverage"
+      ],
+      "notableFindings": {
+        "nulByteCorruption": "Two REAL production defects found while verifying: query/module.ts wrote the grouping-key separator as a RAW NUL byte instead of the two-character escape text, and issues/records.ts wrote CONTROL_PATTERN's hex escapes as raw bytes. The file's OWN comment had warned that a raw NUL makes Git classify the file as binary. LEAD-verified fixed: `file` now reports UTF-8 text where query/module.ts previously reported 'data'; a raw-control-byte grep over issues/** and query/** is empty. The transferable part is the DETECTION path - `file` reporting 'data', ripgrep refusing to grep a source file - because tsc and the test suites were both silent. A new variant of the known Write-tool mangling hazard, in hex/NUL-escape form rather than multibyte.",
+        "mirrorAbsenceGap": "The repo's existing satisfies-fixture tripwire (packages/ui/test/api/fixtures.test.ts) only proves an EXISTING mirror type is shape-compatible - it is SILENT when a wire type's mirror was never written at all, which is the exact failure mode it is relied on to prevent. New drift-guard test closes it, mutation-proved: renamed a mirror type -> RED 12/13 naming the type -> byte-exact revert, sha256-verified -> GREEN 13/13.",
+        "unrunTypecheck": "packages/ui carries a `typecheck` script (tsc --noEmit) that NO CI job invokes - CI runs only `vite build` (which does not type-check) and `vitest run`. That is why 8 type errors accumulated there predating this branch. LEAD-verified against .github/workflows/ci.yml and packages/ui/package.json. The 8 errors do NOT threaten portfolio delivery; the unrun script is the standing defect.",
+        "resolverAsymmetry": "stores.ts -> resolveStoreSpace -> resolveStoreBinding runs a STRICTER root-health check (requires rasen/config.yaml at the Store's registered root) than the CLI-side resolveRegisteredStore path does. A Store that works from the CLI can therefore fail over the API. Surfaced because child 2's shared store-workspace-fixture never writes that file - which real `rasen store setup` always does - and none of its 16 other consumers take the alias path. Recorded as an open question, not fixed: out of scope for this child.",
+        "scopeTsWasNeverTested": "The LEAD's task 6.2 assumed the deferred store-issue-scope-intent.test.ts was the sole coverage of issues/scope.ts behaviours. It was not: resolveIssueScope's worktree-root walk, assertIssueWriteLocation's refusal branch, and requireIssueScopeStore had ZERO coverage anywhere in the reference OR the ported tree - the deferred file does not exercise the refusal branch either. So the 'substitute' coverage written is the FIRST coverage that production code has ever had. Both guards mutation-proved. This is the standing rule that a defensive requirement may be protecting behaviour that was never tested - and taking the deferral evidence is what exposed it.",
+        "startupGates": "commander-presentation.ts HARD-CRASHES CLI startup on (a) a structural mismatch between the live Commander tree and command-registry.ts, and (b) missing English locale copy for any registered command or flag. The failure mode is a dead binary, not a failing test, so anything registering a new command surface must satisfy both."
+      },
+      "leadRulings": [
+        "CLI verb names follow the REFERENCE (plan/state under `store issue`; changes/projects directly under `store`, no aggregate group). The specs pin no CLI verb at all - every 'aggregate' in them is descriptive - so tasks.md 4.1/4.2's prose was the planner's paraphrase and simply wrong. Prose corrected rather than left standing, because child 2 shipped exactly that defect and it came back as a review finding.",
+        "UI components deliberately NOT nav-wired. Neither management-ui-shell (which governs how Store-scoped calls address their Store) nor board-ui (which governs mutation scope in an aggregate view) requires reachability, and wiring would modify shell structure in the divergent rim, against design Decision 3's additive-only rule. Recorded as a named follow-up rather than left implicit: a component that compiles, tests green and cannot be reached looks like delivered value from every angle except the one that matters."
+      ]
     },
     "verify": {
       "status": "pending"
