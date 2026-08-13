@@ -69,3 +69,8 @@ contains zero U+FFFD sequences.
 - `capstone-journeys` journey 3 sits close enough to its 30s per-test timeout to
   be fragile under load; worth a timeout bump or a split independent of this
   change.
+
+## Archive
+**Date:** 2026-08-13T10:44:49.968Z
+**Outcome:** archived at E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\rasen\changes\archive\2026-08-13-omnicross-inference-routing
+**Transaction:** 2ee33bab-5fff-4b3c-9a94-a3a5a77adae1
