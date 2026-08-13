@@ -76,6 +76,25 @@
         "treeStateAtDeath": "41 uncommitted paths, all the worker's, all present: 29 added, 8 modified, 4 added-then-modified. Nothing committed - HEAD was 4442a73c (LEAD bookkeeping). No work lost.",
         "revivalDiscipline": "Revival notice sent: the interrupted turn's claims about command results and file state are not to be trusted; re-verify rather than resume from memory. Specifically ordered to check whether a mutation was left in place (death could fall between injecting and reverting one), to re-verify the 4 added-then-modified files as most likely half-written, and to re-run rather than recall any proof it was about to report."
       },
+      "implementationCommit": "ad413c6f",
+      "committedByLead": "The implementer had 43 uncommitted paths and nothing on the branch, after already surviving one infra death. The LEAD committed it to remove that single point of loss, after verifying the state was coherent rather than mid-flight: tsc --noEmit exit 0, git diff --cached --check clean, and the implementer's own confirmation that no mutation was left in the tree. Authorship credited in the commit.",
+      "openEvidenceGap": {
+        "task": "4.3 - mutation-proof the Git verb guard",
+        "found": "By the implementer, auditing itself, AFTER having earlier reported 4.3 CONFIRMED.",
+        "what": "The task text requires 'Record both observations in the evidence directory.' There is no evidence/ directory under this change root and no inline RED/GREEN comment in test/core/store/workspace-git-verb-guard.test.ts - unlike 6.3's anchors, which do carry them. The earlier report described a real cycle (inserted reset into the adapter at dependencies.ts:1212, guard went RED naming file and verb, reverted, full guard suite 12 passed) but that observation was never persisted.",
+        "why it matters": "The task is ticked [x]. The implementer states it has no documented basis for the tick and cannot rule out that it rests on pre-outage belief. Work-done-but-evidence-unwritten and memory-contaminated are INDISTINGUISHABLE without the artifact - which is itself the defect. Same class as child 1's four Majors.",
+        "handling": "The implementer correctly flagged it rather than unticking unilaterally - unticking is a decision that needs evidence, not a guess. Ruling: re-run the cycle once the tree is released and WRITE both observations to the evidence directory. If the re-run does not reproduce RED, untick immediately."
+      },
+      "auditStrength": {
+        "6.13": "git show ad413c6f --numstat shows the ONLY file with deletions across all 43 is tasks.md (33/33); every src, test, locale and config file is purely additive. Zero forbidden Git write verbs, zero store-planning/ layout-migration/ issues/ query/ references, membership-layout.ts absent, zero branded-type patterns.",
+        "2.1": "git diff --stat origin/dev/0.1.7 -- src/core/store/workspace/ is EMPTY - the 13-file module is byte-identical to the 0.1.7 tip, which is the intended outcome for this child (design Decision 3 ports the tip) and, per the design's own logic, corroborates 2.3 and 2.4 without separate proof.",
+        "gates": "pnpm run build exit 0 and node bin/rasen.js validate --strict valid, both on the committed tree."
+      },
+      "anchorProofStatus": {
+        "alreadyCycledThisSession": "binding.ts:93, registry.ts:201, locks.ts:128, dependencies.ts:343 - real source-mutate/RED/revert/GREEN earlier this session; need fast re-confirm, not first-time proof.",
+        "needsFullCycleFresh": "cleanup.ts:170 no-entry branch - confirmed pinned-literal in SHAPE by reading the test, never observed RED.",
+        "thirdShape": "plan.ts:794 and the with-entry branch of cleanup.ts:251 embed live Git facts (frozen ref OIDs, worktree instance ids) that differ per machine and run, so a fixed literal is physically impossible. Those tests independently reconstruct the hashed body from the plan's own reported fields and rehash with their own createHash/canonicalBytes/digest calls, hardcoded independently of production's encoding - so a uniform formula shift (hex -> base64) still desyncs the two sides. This is a THIRD shape, neither pinned-literal nor relational, and the implementer was right to name it rather than force it into the LEAD's binary framing."
+      },
       "digestAnchorMandate": "S2 has SIX digest sites (plan.ts:794, cleanup.ts:170 and :251, locks.ts:128, registry.ts:201, binding.ts:93, dependencies.ts:343). The 0.1.7 reference's own 'Equal inputs produce an identical plan' scenario is exactly the blind shape - it compares two derivations to each other. Tasks 6.1-6.3 require a pinned literal anchor per site, UNCHAINED, each walked back through its own reader, each mutation-proved. Child 1's most expensive lesson, applied at propose time instead of after three review rounds."
     },
     "verify": {
