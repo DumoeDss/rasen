@@ -1,26 +1,26 @@
 ## 1. Layout Contract Debt from Child 1
 
-- [ ] 1.1 Add `IssueId` and `ExecutionPlanRevisionId` brands, their parsers/predicates, `formatExecutionPlanRevisionId`, `EXECUTION_PLAN_REVISION_WIDTH`, and the `invalid_issue_record` / `invalid_execution_plan` error codes to `src/core/store/planning-validation.ts` — the exact block child 1 deliberately left to this change.
-- [ ] 1.2 Add the four Store-level Issue addresses (`issue`, `issue-record`, `execution-plans`, `execution-plan`) to `src/core/store/planning-layout-v2.ts`. Each is its own address; none takes a project or target line, and supplying either must not change the result.
+- [x] 1.1 Add `IssueId` and `ExecutionPlanRevisionId` brands, their parsers/predicates, `formatExecutionPlanRevisionId`, `EXECUTION_PLAN_REVISION_WIDTH`, and the `invalid_issue_record` / `invalid_execution_plan` error codes to `src/core/store/planning-validation.ts` — the exact block child 1 deliberately left to this change.
+- [x] 1.2 Add the four Store-level Issue addresses (`issue`, `issue-record`, `execution-plans`, `execution-plan`) to `src/core/store/planning-layout-v2.ts`. Each is its own address; none takes a project or target line, and supplying either must not change the result.
 - [ ] 1.3 Extend `test/core/store/planning-layout-v2.test.ts` and `planning-validation-v2.test.ts` for the new surface, including Windows and POSIX flavors built with the matching platform path API, case-alias rejection, traversal and device-name rejection, and the unpadded / differently-padded / zero revision ordinal cases.
 - [ ] 1.4 Assert the two new brands are picked up by child 1's brand-vocabulary guard in `planning-foundation-consumer.test.ts` — the guard reads `planning-validation.ts`, so its counted vocabulary must move. If it does not move, the brands landed in a file the guard does not read; fix that rather than the assertion.
 
 ## 2. Issue Resources
 
-- [ ] 2.1 Add `src/core/store/issues/**` (11 files) at the **squash-base** state per design Context — exclude `migration-compiler.ts`, the `locks.ts` batch additions (`withIssueLockBatch`, `issueLockCanonicalBytes`, `heldIssueLockKeys`, the `onAcquired` seam), and the `reference-verification.ts` extraction. Reference verification stays inline in `module.ts`, which is the 520-line squash version.
-- [ ] 2.2 Implement `IssueRecordV1` and its states, and the three-method mutation surface `StoreIssues.{create,setState,publishPlan}` — refusing a duplicate identifier and an undefined state rather than overwriting or storing them.
-- [ ] 2.3 Implement `ExecutionPlanRevisionV1`: immutable revisions addressed by canonical zero-padded ordinal, never rewritten, with no gap or duplicate in the sequence, and `executionPlanDigest` over `executionPlanDigestBody`.
-- [ ] 2.4 Implement plan-node normalization and the graph checker: two spellings of one plan normalize to one plan, duplicates are refused rather than merged, and dangling dependencies and cycles are refused with the offending nodes named.
-- [ ] 2.5 Implement reference verification against committed Store evidence — a node naming an absent, uncommitted, or out-of-Store Change is refused with the reason named, and the working directory is never consulted as evidence.
-- [ ] 2.6 Implement the single Issue lock so all Issue mutation serializes through it, released even on failure, and a provably-dead owner does not permanently block a later operation.
+- [x] 2.1 Add `src/core/store/issues/**` (11 files) at the **squash-base** state per design Context — exclude `migration-compiler.ts`, the `locks.ts` batch additions (`withIssueLockBatch`, `issueLockCanonicalBytes`, `heldIssueLockKeys`, the `onAcquired` seam), and the `reference-verification.ts` extraction. Reference verification stays inline in `module.ts`, which is the 520-line squash version.
+- [x] 2.2 Implement `IssueRecordV1` and its states, and the three-method mutation surface `StoreIssues.{create,setState,publishPlan}` — refusing a duplicate identifier and an undefined state rather than overwriting or storing them.
+- [x] 2.3 Implement `ExecutionPlanRevisionV1`: immutable revisions addressed by canonical zero-padded ordinal, never rewritten, with no gap or duplicate in the sequence, and `executionPlanDigest` over `executionPlanDigestBody`.
+- [x] 2.4 Implement plan-node normalization and the graph checker: two spellings of one plan normalize to one plan, duplicates are refused rather than merged, and dangling dependencies and cycles are refused with the offending nodes named.
+- [x] 2.5 Implement reference verification against committed Store evidence — a node naming an absent, uncommitted, or out-of-Store Change is refused with the reason named, and the working directory is never consulted as evidence.
+- [x] 2.6 Implement the single Issue lock so all Issue mutation serializes through it, released even on failure, and a provably-dead owner does not permanently block a later operation.
 
 ## 3. Aggregate Query
 
-- [ ] 3.1 Add `src/core/store/query/**` (7 files) in the SAME change as `issues/**` — the bidirectional import cycle (`issues/module.ts` → `query/refs.js`, `query/issues-read.ts` → `issues/{records,plans,types}.js`) makes them one unit.
-- [ ] 3.2 Implement `StoreAggregateQuery.{listIssues,showIssue,issuesReferencing,resolveExecutionPlan,listProjects,listTargetLines,listChanges}`, with Changes grouped by project AND target line so one alias in two projects is two entries.
-- [ ] 3.3 Make every read lock-free and mutation-free: a read must complete while a mutation holds the Issue lock, and a full pass of every read operation must leave the Store byte-identical.
-- [ ] 3.4 Implement report-don't-refuse: one malformed Issue, project catalog, or Change yields a result carrying every readable item plus a named problem for the unreadable one — never a failed whole read, and never a silent omission.
-- [ ] 3.5 Make reads digest-aware: a resolved plan carries its ordinal and verified digest, and a revision whose stored digest does not match its content is reported unverifiable rather than returned as valid.
+- [x] 3.1 Add `src/core/store/query/**` (7 files) in the SAME change as `issues/**` — the bidirectional import cycle (`issues/module.ts` → `query/refs.js`, `query/issues-read.ts` → `issues/{records,plans,types}.js`) makes them one unit.
+- [x] 3.2 Implement `StoreAggregateQuery.{listIssues,showIssue,issuesReferencing,resolveExecutionPlan,listProjects,listTargetLines,listChanges}`, with Changes grouped by project AND target line so one alias in two projects is two entries.
+- [x] 3.3 Make every read lock-free and mutation-free: a read must complete while a mutation holds the Issue lock, and a full pass of every read operation must leave the Store byte-identical.
+- [x] 3.4 Implement report-don't-refuse: one malformed Issue, project catalog, or Change yields a result carrying every readable item plus a named problem for the unreadable one — never a failed whole read, and never a silent omission.
+- [ ] 3.5 Make reads digest-aware: a resolved plan carries its ordinal and verified digest, and a revision whose stored digest does not match its content is reported unverifiable rather than returned as valid. (Implemented in `plans.ts`/`issues-read.ts`, `tsc`-clean; NOT yet independently verified by a dedicated digest-mismatch test — deferred to land alongside the Section 7 read-side digest anchors, which exercise the same sites.)
 
 ## 4. Command Surface
 
