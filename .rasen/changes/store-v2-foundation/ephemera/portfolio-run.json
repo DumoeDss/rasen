@@ -146,6 +146,19 @@
     "S4-finalization": "src/core/store/finalization/** + src/core/store-planning/** - roadmap slice 'finalization + stored-plan' (L3+L5), not this slice. INBOUND ITEM: test/core/store/store-issue-scope-intent.test.ts (7 cases) is deferred to this slice from S3 - see children[2].deferredTest.",
     "S5-layout-migration": "src/core/store/layout-migration/** + layout-write-guard + migration-ops-v2 + consistency-gates - roadmap slice 'layout-migration' (L2), not this slice. INBOUND ITEM: membership-layout.ts moved here from S2 - see children[1].scopeChange."
   },
+  "leadBriefDefect": {
+    "what": "The LEAD's dispatch brief undercounted the capability set for ALL THREE children. It told each planner there were 2 capabilities; the real numbers were 3, 3 and 7 (S3 ported 6, correctly dropping store-planning-scope-routing which does not exist on this line).",
+    "rootCause": "The LEAD used the survey's `referenceSpecs` field as the inventory. That field is a SUMMARY, not a directory listing - it names the headline capabilities, not every spec file the prior-art change carries.",
+    "fix": "Always list the prior-art change's own specs/ directory (`git ls-tree -r --name-only origin/dev/0.1.7 -- rasen/changes/archive/<change>/specs/`) rather than trusting any summarised count, including the LEAD's own.",
+    "whyItMattered": "Each planner caught it and proposed the true set anyway, so nothing shipped short. But a planner that trusted the brief would have under-delivered by a whole capability three times running, and the omission was invisible from inside the brief.",
+    "generalForm": "A summarised count carried forward as an inventory is the documentation-layer version of this portfolio's recurring defect: a claim that reads as complete because nothing in it can reveal what it left out."
+  },
+  "plannerRetired": {
+    "when": "after S3's propose - all three children proposed",
+    "finalOccupancy": "29.8% at the S3 reuse decision, against a reuse threshold of 0.6; grew ~9pp per child (21.1% before S2, 29.8% before S3)",
+    "durableOutput": "rasen/changes/store-v2-foundation/planning-context.md sections 'From S1', 'From S2', 'From S3' - committed, so its knowledge survives its retirement.",
+    "note": "Persistent portfolio planner per Step B.1, warm-reused across all three proposes rather than respawned. Its per-commit attribution recipe produced a DIFFERENT correct answer for each child (never-the-tip / the-tip / the-squash-base-minus-a-later-slice), which is the evidence it was running the method rather than reusing an answer."
+  },
   "toolingHazard": {
     "what": "The bare `rasen` command on this machine is a GLOBALLY INSTALLED dev-local build at version 0.1.7 (dev.local 9472d7dc). This repo is 0.2.0. So `rasen ...` runs 0.1.7 code against 0.2.0 data.",
     "howItSurfaced": "The S2 implementer hit `error: unknown option '--target-line'` running ported upstream tests. The LEAD had earlier run `rasen new change --help`, seen `--target-line <id>` in the output, and read it as a fact about this branch - it was a fact about the global 0.1.7 binary. `git grep target-line -- src/cli/index.ts src/commands/change.ts` on this branch returns NOTHING.",
