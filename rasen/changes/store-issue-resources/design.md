@@ -178,11 +178,12 @@ requirements already carry all the new surface.
 frozen arrays element-wise. It keeps passing under any partial port, even when the ordering it encodes
 has no enforcement surface left — its own docstring names this failure mode.
 
-On this branch, after child 2: `workspace` is taken by `workspace/apply.ts` and `cleanup.ts`; `issue`
-is taken by this child; **`change` and `integration` have no taker at all**, because their taker is
-the finalization slice. Task 7.4 requires each kind's taker to be named in shipped code and the two
-with none to be recorded as unenforced-by-design. Comparing the arrays proves nothing about this
-child and must not be offered as evidence that ordering survived.
+On this branch, after child 2: `scope` and `workspace` are taken by `WorkspaceModule.apply()` and
+`applyCleanup()` (plus `scope` alone by `TargetLineModule`'s catalog writes); `issue` is taken by this
+child. **`change` and `integration` have no taker at all**, because their taker is the finalization
+slice. Task 7.5 requires each kind's taker to be named in shipped code and the two with none to be
+recorded as unenforced-by-design. Comparing the arrays proves nothing about this child and must not be
+offered as evidence that ordering survived. (Full taker table: `evidence/store-lock-order-takers.md`.)
 
 ### 5. New branded types: checked, and the answer is none in the module, two in the shared layer
 
@@ -207,6 +208,39 @@ shipping the behaviour untested is not.**
 only that file covers, and to author finalization-free equivalents driven through `StoreIssues` and
 the aggregate query directly — the same treatment child 2's seven deferred cases received. The file
 itself is handed forward as an inbound acceptance item for the finalization slice.
+
+### 7. The two UI components ship unwired; navigation is a named follow-up, not an oversight
+
+`StoreIssuesView.tsx` and `StoreAggregateBoard.tsx` (task 5.4) are complete, tested, and reachable only
+by direct import — neither is wired into `app.tsx`/`Layout.tsx`/`use-space.ts`'s `SWITCHABLE_SECTIONS`,
+so no user reaches either from the shell's navigation today.
+
+This is deliberate, not an omission, for three reasons:
+
+- **Neither spec requirement this child ships needs reachability to be satisfied.** The
+  `management-ui-shell` requirement this child adds ("Store-scoped calls address their Store by stable
+  identity through the same client seam") governs how a call is made once issued, not whether the view
+  that would issue it is on a menu. The `board-ui` requirement ("An aggregate view never submits a
+  mutation with an incomplete scope") governs the form's own behavior once rendered, which the suite
+  exercises directly against the component — again, independent of whether the shell links to it.
+  Neither requirement's scenarios mention navigation, a menu entry, or a route.
+- **Decision 3's additive-only rule is a positive reason not to wire it here, not just silence on the
+  question.** Wiring a new section into `SWITCHABLE_SECTIONS` touches shared shell state every other
+  section also depends on — exactly the kind of restructuring Decision 3 rules out for this child's rim
+  surface. Task 5.1 already established the pattern at the API layer (new `stores.ts`/`router.ts` paths
+  added with no existing endpoint's shape touched, and no CLI menu wiring implied by that); task 5.4
+  applies the identical discipline one layer up, in the UI shell.
+- **The honest risk is not "it doesn't work," it is that it looks like it does.** A component that
+  exists, compiles, has passing tests, and cannot be reached by any user looks exactly like delivered
+  value from every angle except the one that matters. Recording that plainly here — rather than only in
+  a suite's green checkmarks or a commit message — is what keeps a future reader from mistaking "shipped
+  and tested" for "usable."
+
+Follow-up, named rather than left implicit: wiring `StoreIssuesView`/`StoreAggregateBoard` into the
+shell's navigation is left for whichever future change first needs an operator to reach a Store's
+Issues or aggregate board from the UI — most naturally the same slice that wires Issue Dispatch or
+Execution Plan scheduling into the UI, since a reachable Issues view is more useful once there is
+something to dispatch from it.
 
 ## Risks / Trade-offs
 

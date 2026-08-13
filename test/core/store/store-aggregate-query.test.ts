@@ -842,6 +842,59 @@ describe('Store-level Issues, end to end', () => {
     expect(mainCopy?.sha256).not.toBe(releaseCopy?.sha256);
   });
 
+  it(
+    'reports a revision whose stored digest no longer matches its content as ' +
+      'unverifiable, never as valid (tasks 3.5, 7.4)',
+    async () => {
+      await issues(f).create({ ...scope, issueId: 'tampered', title: 'x' });
+      await issues(f).publishPlan({
+        ...scope,
+        issueId: 'tampered',
+        nodes: [intentNode('only-node', 'do the thing')],
+      });
+      commitStore('publish tampered plan');
+
+      // Confirm the committed revision really does carry a recorded digest,
+      // reading the same committed bytes `readRevision` reads via
+      // `RefReader.blob` -- not a working-tree shortcut.
+      const before = f.git(f.storeRoot, [
+        'show',
+        'main:rasen/issues/tampered/plans/0001.yaml',
+      ]);
+      expect(before).toContain('contentSha256:');
+
+      // Corrupt the revision's recorded body WITHOUT touching its recorded
+      // `contentSha256` line -- exactly what a hand-edit or a partial write
+      // would produce. The pinned-literal digest anchors (tasks 7.1/7.3)
+      // already prove `executionPlanDigest` itself is correct; this test
+      // proves the READ path (`resolveExecutionPlan` ->
+      // `resolvePlanIn` -> `readRevision` ->
+      // `parseExecutionPlanRevision(text, { verifyDigest: true })`) actually
+      // calls it on every read and refuses to hand back a plan whose bytes
+      // no longer match the digest it carries, rather than trusting the
+      // stored value once and never checking again (task 7.4's "a preimage
+      // change cannot hide behind a verifier that stopped checking").
+      const revisionPath = f.at('rasen', 'issues', 'tampered', 'plans', '0001.yaml');
+      const tampered = fs
+        .readFileSync(revisionPath, 'utf8')
+        .replace('do the thing', 'a different thing entirely');
+      expect(tampered).not.toBe(fs.readFileSync(revisionPath, 'utf8'));
+      fs.writeFileSync(revisionPath, tampered, 'utf8');
+      commitStore('tamper with the committed revision body');
+
+      const plan = await query().resolveExecutionPlan({ ...scope, issueId: 'tampered' });
+
+      // Reported unverifiable, not returned as a (wrongly) valid plan.
+      expect(plan.revision).toBeNull();
+      expect(plan.diagnostic).not.toBeNull();
+      expect(plan.diagnostic).toContain('contentSha256');
+      expect(plan.diagnostic).toContain('does not match');
+      // No readiness is derived for an unverifiable revision either -- it is
+      // refused, not silently downgraded to an empty-looking success.
+      expect(plan.readiness).toEqual({ nodes: [], readyToResolve: false });
+    }
+  );
+
   it('derives readiness without writing it back, and never auto-resolves an Issue', async () => {
     const instanceId = f.seedChange({
       root: f.storeRoot,
