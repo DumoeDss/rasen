@@ -1881,6 +1881,112 @@
                   }
                 }
               }
+            },
+            "issue": {
+              "description": "创建并查看仓库级 Issue——跨项目的意图，其生命周期比任何一个变更都长",
+              "commands": {
+                "new": {
+                  "description": "创建一个新 Issue；标题从不推断，必须显式指定",
+                  "options": {
+                    "store": {
+                      "description": "获得该 Issue 的仓库"
+                    },
+                    "title": {
+                      "description": "该 Issue 的简短人类可读标题"
+                    },
+                    "readme": {
+                      "description": "同时写入 Issue 记录旁的 README 模板"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                },
+                "list": {
+                  "description": "列出仓库中记录的 Issue；无法读取的会被报告，而不是被省略",
+                  "options": {
+                    "store": {
+                      "description": "要列出 Issue 的仓库"
+                    },
+                    "state": {
+                      "description": "仅限该状态的 Issue"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                },
+                "show": {
+                  "description": "显示单个 Issue 及其最新的 Execution Plan 修订版本（如有）",
+                  "options": {
+                    "store": {
+                      "description": "持有该 Issue 的仓库"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                },
+                "state": {
+                  "description": "转换 Issue 的状态；终态无法再次转换",
+                  "options": {
+                    "store": {
+                      "description": "持有该 Issue 的仓库"
+                    },
+                    "state": {
+                      "description": "Issue 的新状态"
+                    },
+                    "reason": {
+                      "description": "随该转换一起记录的原因"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                },
+                "plan": {
+                  "description": "根据 YAML 节点列表为某个 Issue 发布新的不可变 Execution Plan 修订版本",
+                  "options": {
+                    "store": {
+                      "description": "持有该 Issue 的仓库"
+                    },
+                    "from-file": {
+                      "description": "列出计划节点的 YAML 文件路径"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                }
+              }
+            },
+            "changes": {
+              "description": "按项目和目标线分组列出变更；无法读取的引用会被报告，而不是被省略",
+              "options": {
+                "store": {
+                  "description": "要列出变更的仓库"
+                },
+                "project": {
+                  "description": "仅限该项目（可重复指定）"
+                },
+                "target-line": {
+                  "description": "仅限该目标线（可重复指定）"
+                },
+                "json": {
+                  "description": "以 JSON 输出"
+                }
+              }
+            },
+            "projects": {
+              "description": "列出仓库的项目及其角色与活跃/已归档变更数",
+              "options": {
+                "store": {
+                  "description": "要列出项目的仓库"
+                },
+                "json": {
+                  "description": "以 JSON 输出"
+                }
+              }
             }
           }
         },

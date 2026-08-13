@@ -1881,6 +1881,112 @@
                   }
                 }
               }
+            },
+            "issue": {
+              "description": "Author and read Store-level Issues, cross-project intent that outlives any one change",
+              "commands": {
+                "new": {
+                  "description": "Create a new Issue; its title is never inferred and must be given explicitly",
+                  "options": {
+                    "store": {
+                      "description": "Store that gains the Issue"
+                    },
+                    "title": {
+                      "description": "Short human-readable title for the Issue"
+                    },
+                    "readme": {
+                      "description": "Also write a README stub alongside the Issue record"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "list": {
+                  "description": "List Issues recorded in the store, reporting any that could not be read rather than omitting them",
+                  "options": {
+                    "store": {
+                      "description": "Store to list Issues from"
+                    },
+                    "state": {
+                      "description": "Limit to Issues in this state"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "show": {
+                  "description": "Show one Issue and its latest Execution Plan revision, if any",
+                  "options": {
+                    "store": {
+                      "description": "Store holding the Issue"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "state": {
+                  "description": "Transition an Issue's state; a terminal state cannot be re-transitioned",
+                  "options": {
+                    "store": {
+                      "description": "Store holding the Issue"
+                    },
+                    "state": {
+                      "description": "New state for the Issue"
+                    },
+                    "reason": {
+                      "description": "Reason recorded alongside the transition"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "plan": {
+                  "description": "Publish a new immutable Execution Plan revision for an Issue from a YAML node list",
+                  "options": {
+                    "store": {
+                      "description": "Store holding the Issue"
+                    },
+                    "from-file": {
+                      "description": "Path to a YAML file listing the plan's nodes"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                }
+              }
+            },
+            "changes": {
+              "description": "List Changes grouped by project and target line, reporting any ref that could not be read rather than omitting it",
+              "options": {
+                "store": {
+                  "description": "Store to list Changes from"
+                },
+                "project": {
+                  "description": "Limit to this project (repeatable)"
+                },
+                "target-line": {
+                  "description": "Limit to this target line (repeatable)"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "projects": {
+              "description": "List the store's projects with their roles and active/archived change counts",
+              "options": {
+                "store": {
+                  "description": "Store to list projects from"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
             }
           }
         },

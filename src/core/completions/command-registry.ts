@@ -560,6 +560,84 @@ const COMMANDS: readonly CommandDefinition[] = [
           },
         ],
       },
+      {
+        // A Store-level Issue spans projects, so every sub-entry here takes
+        // only `--store` — never `--project`, never `--target-line`.
+        name: 'issue',
+        flags: [],
+        subcommands: [
+          {
+            name: 'new',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-id' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'title', takesValue: true },
+              { name: 'readme' },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'list',
+            flags: [
+              COMMON_FLAGS.store,
+              {
+                name: 'state',
+                takesValue: true,
+                completionValues: ['open', 'resolved', 'dropped'],
+              },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'show',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-id' }],
+            flags: [COMMON_FLAGS.store, COMMON_FLAGS.json],
+          },
+          {
+            name: 'state',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-id' }],
+            flags: [
+              COMMON_FLAGS.store,
+              {
+                name: 'state',
+                takesValue: true,
+                completionValues: ['open', 'resolved', 'dropped'],
+              },
+              { name: 'reason', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'plan',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-id' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'from-file', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+        ],
+      },
+      {
+        // The grouped-Changes read: deliberately a top-level `store` sibling,
+        // not a subcommand of a shared `aggregate` noun (see store-aggregate.ts).
+        name: 'changes',
+        flags: [
+          COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        // The per-project rollup read: same rationale as `changes` above.
+        name: 'projects',
+        flags: [COMMON_FLAGS.store, COMMON_FLAGS.json],
+      },
     ],
   },
   {

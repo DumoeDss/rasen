@@ -1881,6 +1881,112 @@
                   }
                 }
               }
+            },
+            "issue": {
+              "description": "ストアレベルのIssue（1つの変更よりも長く続く、プロジェクト横断の意図）を作成・参照します",
+              "commands": {
+                "new": {
+                  "description": "新しいIssueを作成します。タイトルは推測されず、明示的に指定する必要があります",
+                  "options": {
+                    "store": {
+                      "description": "Issueを追加するストア"
+                    },
+                    "title": {
+                      "description": "Issueの短い人間可読なタイトル"
+                    },
+                    "readme": {
+                      "description": "Issueレコードと合わせてREADMEのひな形も書き込みます"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "list": {
+                  "description": "ストアに記録されたIssueを一覧表示します。読み取れないものは省略せず報告します",
+                  "options": {
+                    "store": {
+                      "description": "Issueを一覧表示する対象のストア"
+                    },
+                    "state": {
+                      "description": "この状態のIssueに限定します"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "show": {
+                  "description": "1件のIssueと、存在する場合はその最新のExecution Planリビジョンを表示します",
+                  "options": {
+                    "store": {
+                      "description": "Issueを保持するストア"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "state": {
+                  "description": "Issueの状態を遷移します。終端状態からは再遷移できません",
+                  "options": {
+                    "store": {
+                      "description": "Issueを保持するストア"
+                    },
+                    "state": {
+                      "description": "Issueの新しい状態"
+                    },
+                    "reason": {
+                      "description": "遷移とともに記録する理由"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "plan": {
+                  "description": "YAMLのノード一覧から、Issueの新しい不変のExecution Planリビジョンを発行します",
+                  "options": {
+                    "store": {
+                      "description": "Issueを保持するストア"
+                    },
+                    "from-file": {
+                      "description": "計画のノードを列挙したYAMLファイルへのパス"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                }
+              }
+            },
+            "changes": {
+              "description": "変更をプロジェクトとターゲットラインでグループ化して一覧表示します。読み取れないrefは省略せず報告します",
+              "options": {
+                "store": {
+                  "description": "変更を一覧表示する対象のストア"
+                },
+                "project": {
+                  "description": "このプロジェクトに限定します（繰り返し指定可）"
+                },
+                "target-line": {
+                  "description": "このターゲットラインに限定します（繰り返し指定可）"
+                },
+                "json": {
+                  "description": "JSON で出力"
+                }
+              }
+            },
+            "projects": {
+              "description": "ストアのプロジェクトを、その役割とアクティブ/アーカイブ済みの変更数とともに一覧表示します",
+              "options": {
+                "store": {
+                  "description": "プロジェクトを一覧表示する対象のストア"
+                },
+                "json": {
+                  "description": "JSON で出力"
+                }
+              }
             }
           }
         },

@@ -24,9 +24,9 @@
 
 ## 4. Command Surface
 
-- [ ] 4.1 Add `rasen store issue` (`new`, `list`, `show`, `set-state`, `publish-plan`) in `src/commands/store-issue.ts`, with a machine-readable form whose content matches the human form.
-- [ ] 4.2 Add `rasen store aggregate` in `src/commands/store-aggregate.ts` with `--project` / `--target-line` filters, on the same terms.
-- [ ] 4.3 Register both groups in `src/cli/index.ts`, `src/core/completions/command-registry.ts`, and all three locale trees in ONE step. Verify locale lockstep by **key set**, not by count, and confirm every new key is genuinely translated rather than copied from English.
+- [x] 4.1 Add `rasen store issue` (`new`, `list`, `show`, `state`, `plan`) in `src/commands/store-issue.ts`, with a machine-readable form whose content matches the human form. (Reference CLI tests use `state`/`plan`, not `set-state`/`publish-plan`, and a separate `store changes`/`store projects` pair rather than a `store aggregate` group — implemented per the reference tests, which are authoritative; see task 4.2.)
+- [x] 4.2 Add `rasen store changes` / `rasen store projects` in `src/commands/store-aggregate.ts` with `--project` / `--target-line` filters, on the same terms. (Deliberately two top-level `store` siblings, not a `store aggregate` group — see the doc comment in the file.)
+- [x] 4.3 Register both groups in `src/commands/store.ts`, `src/core/completions/command-registry.ts`, and all three locale trees (`en.json`, `ja.json`, `zh-cn.json`) in one step. `src/cli/commander-presentation.ts` structurally cross-checks the live Commander tree against `command-registry.ts` at CLI startup and hard-crashes (`CliPresentationError: commander-structure-mismatch`) on any subcommand/flag mismatch, then separately requires English copy for every registered flag/command (`missing-english-copy`) — confirmed by direct reproduction of both failures before fixing them. Verified locale lockstep by key set (all three files edited with parallel key structure, each `ja`/`zh-cn` description a genuine translation, not copied from English) and confirmed via `node -e "JSON.parse(...)"` on all three files plus a clean `pnpm run build` + `node bin/rasen.js store issue --help` / `store changes --help` / `store projects --help` smoke check.
 
 ## 5. API and UI Rim (additive only)
 
