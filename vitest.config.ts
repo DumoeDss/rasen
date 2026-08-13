@@ -71,6 +71,17 @@ const KNOWN_SLOW_TEST_WEIGHTS_MS: Record<string, number> = {
   // Real Git fixture (`createStoreWorkspaceFixture`) driven through both the
   // in-process handlers and a `runCLI` subprocess per test (store-issue-resources).
   'test/core/management-api/stores.test.ts': 199980,
+  // Same fixture class, plus 26 scenario cases that each commit real Git
+  // objects (store-issue-resources, task 8.5): a wide relative-size gap from
+  // the 38KB source file to this solo wall-clock is expected, not a fluke.
+  'test/core/store/store-aggregate-query.test.ts': 177060,
+  // `runCLI` subprocess per case, same underestimated class as the two
+  // `workspace-*` CLI entries above (store-issue-resources, task 8.5).
+  'test/commands/store-issue-cli.test.ts': 76790,
+  'test/commands/store-aggregate-cli.test.ts': 62300,
+  // Real Git fixture, no CLI subprocess, but still a real worktree/lock
+  // read per case (store-issue-resources, task 8.5).
+  'test/core/store/store-query-lock-free.test.ts': 52290,
 };
 
 function listTestFiles(directory: string, root: string): TestFile[] {
