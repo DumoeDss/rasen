@@ -312,3 +312,60 @@ place for new brands.
 **P. `rasen validate --strict` requires SHALL/MUST on the FIRST LINE of a requirement's description**,
 not merely somewhere in the paragraph. A requirement whose opening line is scene-setting and whose
 SHALL lands on line 2 fails with `must contain SHALL or MUST`. Lead with the normative clause.
+
+### From S3 `store-issue-resources` (planner-1, same planner warm-reused)
+
+**Q. Three children, three different attribution answers — the recipe is the only reliable input.**
+S1 = "not the tip" (tip carried S3's code). S2 = "the tip" (every later commit was its own mandated
+fixup). S3 = **"the squash base, excluding a whole later roadmap slice"**. Only two commits touch
+S3's files: `0ede6cfb` (the five-child squash, creates them from zero) and `f4a48a36 feat(store):
+migrate coordinators to Store Issues` — the **coordinator-bridge slice**, which added +409 lines:
+`issues/migration-compiler.ts` +110 (new), `locks.ts` +70 (`withIssueLockBatch` etc.), and an
+**extraction** of reference verification out of `module.ts` into `reference-verification.ts` +156
+(`module.ts` shrank 520 → 441). All excluded.
+
+**R. The cleanest exclusion signal is source and its dedicated suite arriving in the SAME commit.**
+`f4a48a36` added `migration-compiler.ts` *and* the only suite for it, and the `locks.ts` batch code
+*and* the only cases for it (`store-issue-locks.test.ts` +93). So they leave together: nothing
+untested, no orphan test. This is the exact mirror of finding K — where S2's atomic block had a
+dedicated suite that arrived *separately* and therefore stayed. **The test/source co-arrival test is
+the discriminator, not the commit title and not the consumer count.**
+
+**S. Beware excluding an EXTRACTION — check what the base did before the refactor.** `f4a48a36` did
+not introduce reference verification (a named S3 deliverable); it moved it out of `module.ts`. The
+squash base performs it inline, covered by the base change's own tests, so excluding the extraction
+keeps the behaviour and loses only the file split. Likewise `issueLockCanonicalBytes` is an extraction
+of an inline expression — the lock filename digest is byte-identical either way. **Consequence to
+record openly: S3's `issues/module.ts` will NOT be byte-identical to `origin/dev/0.1.7`**, the first
+deliberate departure from the portfolio's byte-comparability preference. That is correct —
+comparability is a means of keeping the reference diffable, not a reason to import a later slice.
+
+**T. S3 has NO decomposition gap — measured at propose time, per the S2 mandate.** Grepped every S3
+test for `--target-line` / `new change` / `planning_worktree_required`: the only hits are
+`store issue new …` and `store aggregate --project/--target-line`, which are S3's OWN new command
+surface. Their whole import surface resolves to S1, S2, `test/helpers/run-cli.js`, and node builtins.
+**The propose-time CLI-surface scan is cheap and should now be standard** — two greps, and it converts
+S2's mid-implementation surprise into a recorded fact.
+
+**U. The brief undercounted the capability set for the THIRD time in a row.** S3's reference change
+carries SEVEN spec files, not the two named: `store-issue-resources` (8 ADDED, not 11 — the live spec
+has 11 because `f4a48a36` added 3), `store-aggregate-query` (7), `store-planning-layout-v2` (2 ADDED —
+**the debt S1 deliberately deferred to S3**, closing finding A), `store-planning-scope-routing` (1 —
+dropped, capability absent on 0.2.0), and the rim: `board-ui` (4), `management-http-api` (3),
+`management-ui-shell` (1) — all three of which DO exist on 0.2.0. **Always list the prior-art change's
+`specs/` directory; never take the brief's capability count as the inventory.**
+
+**V. A MODIFIED delta against a diverged rim capability is a trap; convert it to a bounded check.**
+The reference change amended `board-ui`'s member-chip-filter requirement and `management-http-api`'s
+loopback/bearer-security requirement. MODIFIED is whole-requirement replacement, and this repo's known
+failure mode is that a drifted heading or a missing scenario silently deletes content at archive time.
+S3 ships **ADDED-only** rim deltas and makes it a task to read the LIVE 0.2.0 text of both
+requirements, decide whether the new surface genuinely alters them on THIS line, and author the
+MODIFIED delta from the 0.2.0 text if so — never from the reference's.
+
+**W. The symmetric-anchor trap, stated as the mutation that discriminates.** An anchor whose expected
+value is produced by calling production's own serializer a second time is blind: a serializer change
+moves both sides together. Perturbing an INPUT field does not test this — it moves one side only and
+is the break the unstrengthened anchor already caught. The discriminating mutation is a change to the
+**serializer or preimage itself with inputs held fixed** (reorder a field, change a separator, drop a
+domain tag). S3's tasks state this explicitly for all five of its durable-format sites.
