@@ -3,6 +3,13 @@
 
 > rasen 如何驱动外部 AI CLI（Claude Code、Codex）作为 leaf-worker，以及 keepalive、token audit、learned-skills 知识系统。所有路径前缀 `src/core/`。`claude/` 与 `codex/` 是对称兄弟，都产出 `pipeline-registry/run-state.ts` 的 `RunStateWorker`（`dispatchMode:'exec-bridge'`）。
 
+## `omnicross/` — 每 stage 的多 Provider 推理路由
+
+- **关键文件**：`contracts.ts`（上游、frozen route、lease/failure 闭合契约）、`config.ts`（HTTP loopback + 非 secret revision + dispatch-time Admin env）、`inference-file.ts`（有界 `rasen.inference/1`）、`client.ts`（create/renew/release）、`launch-binding.ts`（Claude/Codex allowlist 归约）、`lease-execution.ts`（renew/abort/release finalizer）。
+- **核心边界**：Pipeline 仍由原有 `model` 链解析模型；`inference` 只选 `broker: omnicross` 和上游。routed stage 即使与 LEAD 同 runtime 也走 `claude-print` / `codex-exec` 子进程，未知 host fail closed。Admin token 与 route token 只存在于内存和子进程环境，绝不进入 Pipeline、Action、run-state 或 argv。
+- **冻结与恢复**：legacy `auto-run.json` 记录 `stages.<id>.frozenInference`；canonical `RuntimeExecutionProfile` / `RunAction.agent.inference` 记录同一 credential-free identity。每次 fresh/resume 重新创建 lease，但不重解当前 Pipeline/provider/model。
+- **连接**：`commands/agent.ts --inference-file` 是 CLI bridge；`frozen-action-executor/omnicross-lifecycle.ts` 是 canonical driver 共享缝；Claude/Codex runner 都接收 validated binding、`AbortSignal` 和 explicit secret redaction set。
+
 ## `claude/` — Claude Code leaf-worker 派发（`claude -p`）
 
 - **关键文件**：`runner.ts`（跑一轮有界 `claude -p`）、`invocation.ts`（建 argv + stdin prompt）、`result.ts`（JSON 结果信封→类型化 receipt）、`session-state.ts`（单 writer/session 锁 + CWD 绑定）、`identity.ts`（建 `RunStateWorker`）。

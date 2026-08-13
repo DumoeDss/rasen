@@ -37,6 +37,8 @@ import {
   resolveTrustedExecutionAdapterAuthority,
   type TrustedExecutionAdapterCatalog,
 } from './trusted-execution-adapters.js';
+import type { OmniCrossConnectionIdentity } from '../omnicross/contracts.js';
+import type { WorkerContract } from '../worker-contracts.js';
 
 /**
  * Resolve a prepared v1 Definition's stages into frozen RuntimeCapabilityBindings
@@ -280,6 +282,7 @@ function synthesizeEvaluatorPolicyStage(
     // owns the real numbers. Do not re-set them here.
     handoffTokenLimit: 10_000,
     reuseRoundLimit: 1,
+    workerContract: 'leaf',
     provenance: {
       role: 'definition',
       model: 'default',
@@ -508,6 +511,8 @@ function resolveV2AuthoredCapabilityBindings(
 export interface NativeV2ExecutionResolutionInputs extends EffectiveStageInputs {
   /** Ephemeral launch-only role choices; these top persisted config. */
   roleRuntimeOverrides?: Partial<Record<StageRole, AgentRuntime>>;
+  /** Resolved only when a routed stage is being frozen for launch. */
+  omnicrossConnection?: OmniCrossConnectionIdentity;
 }
 
 const EMPTY_NATIVE_V2_EXECUTION_INPUTS: NativeV2ExecutionResolutionInputs = {
@@ -547,6 +552,7 @@ function authoredAtomicStage(
     ...(execution.model !== undefined ? { model: execution.model } : {}),
     ...(execution.effort !== undefined ? { effort: execution.effort } : {}),
     ...(execution.handoff !== undefined ? { handoff: execution.handoff } : {}),
+    ...(execution.inference !== undefined ? { inference: execution.inference } : {}),
   };
 }
 
@@ -555,7 +561,8 @@ function resolveAuthoredAtomicPolicyStage(
   nodeId: string,
   node: AtomicStageNode,
   gate: boolean,
-  inputs: NativeV2ExecutionResolutionInputs
+  inputs: NativeV2ExecutionResolutionInputs,
+  workerContract: WorkerContract = 'leaf'
 ): EffectiveRunPolicy['stages'][number] {
   const execution = node.execution!;
   const stage = authoredAtomicStage(node, gate);
@@ -572,6 +579,9 @@ function resolveAuthoredAtomicPolicyStage(
     : 'invocation';
   const sandbox = execution.sandbox ??
     (execution.workspace.access === 'write' ? 'workspace-write' : 'read-only');
+  if (execution.inference !== undefined && effective.model.value === null) {
+    throw new Error(`OmniCross-routed stage "${nodeId}" has no effective model.`);
+  }
 
   return {
     nodeId,
@@ -592,6 +602,18 @@ function resolveAuthoredAtomicPolicyStage(
     // placeholder values/provenance while preserving authored reuse intent.
     handoffTokenLimit: 10_000,
     reuseRoundLimit: 1,
+    workerContract,
+    ...(execution.inference !== undefined && inputs.omnicrossConnection !== undefined
+      ? {
+          inference: {
+            broker: 'omnicross' as const,
+            runtime,
+            upstream: execution.inference.upstream,
+            model: effective.model.value!,
+            connection: inputs.omnicrossConnection,
+          },
+        }
+      : {}),
     provenance: {
       role: 'definition',
       model: effective.model.source,
@@ -691,7 +713,11 @@ export function resolveNativeV2PolicyStages(
             `declaration:${declaration.id}/node:${bodyNode.id}`,
             bodyNode,
             declarationGateTargets.has(bodyNode.id),
-            inputs
+            inputs,
+            node.goalCycleVariant === 'evaluate' &&
+              bodyNode.goalCyclePhase === 'judge'
+              ? 'evaluate'
+              : 'leaf'
           )
         );
       }
@@ -955,7 +981,10 @@ export function resolveRuntimeExecutionProfile(
     ? resolveNativeV2PolicyStages(prepared, nativeV2Inputs)
     : definitionRequiresV2Lowering(prepared)
       ? remapPolicyStagesForV2(prepared, policyStages)
-      : [...policyStages];
+      : policyStages.map((stage) => ({
+          ...stage,
+          workerContract: stage.workerContract ?? 'leaf',
+        }));
 
   const { teacherBindings, consultationBindings } = resolveConsultationBindings(
     prepared,
@@ -1107,7 +1136,15 @@ function remapPolicyStagesForV2(
         // work → fix (implementer/write), judge → review (reviewer/read).
         const phase = rcPhase ?? (gcPhase === 'work' ? 'fix' : gcPhase === 'judge' ? 'review' : 'review');
         const path = `declaration:${declaration.id}/node:${phaseNode.id}`;
-        remapped.push(synthesizeReviewCyclePolicyStage(path, phase));
+        remapped.push(
+          synthesizeReviewCyclePolicyStage(
+            path,
+            phase,
+            node.goalCycleVariant === 'evaluate' && gcPhase === 'judge'
+              ? 'evaluate'
+              : 'leaf'
+          )
+        );
       }
       continue;
     }
@@ -1125,12 +1162,17 @@ function remapPolicyStage(
   if (base === undefined) {
     return synthesizeDefaultPolicyStage(nodeId);
   }
-  return { ...base, nodeId };
+  return {
+    ...base,
+    nodeId,
+    workerContract: base.workerContract ?? 'leaf',
+  };
 }
 
 function synthesizeReviewCyclePolicyStage(
   nodeId: string,
-  phase: string
+  phase: string,
+  workerContract: WorkerContract = 'leaf'
 ): EffectiveRunPolicy['stages'][number] {
   const isFix = phase === 'fix';
   return {
@@ -1155,6 +1197,7 @@ function synthesizeReviewCyclePolicyStage(
     // not merely unchosen, it is directionally wrong as policy. Do not re-set.
     handoffTokenLimit: 10_000,
     reuseRoundLimit: 1,
+    workerContract,
     provenance: {
       role: 'definition',
       model: 'default',
@@ -1189,6 +1232,7 @@ function synthesizeDefaultPolicyStage(
     // the Session execution layer owns the real numbers. Do not re-set.
     handoffTokenLimit: 10_000,
     reuseRoundLimit: 1,
+    workerContract: 'leaf',
     provenance: {
       role: 'default',
       model: 'default',

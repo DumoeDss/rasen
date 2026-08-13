@@ -36,6 +36,7 @@ import {
 } from '../../fixtures/trusted-completion.js';
 import type { CanonicalRunRecord } from '../../../src/core/change-run/internal/record.js';
 import { projectRunView } from '../../../src/core/change-run/internal/projector.js';
+import { createAdmittingChangePipelineDriver } from '../../helpers/change-run-admission.js';
 
 const branded = <T>(value: string): T => value as T;
 const digest = (hex: string) =>
@@ -206,6 +207,7 @@ function createHarness(
     admissionKind: 'agent' | 'command' | 'host';
     profilePath?: string;
     input?: JsonValue;
+    renderedTurnInput?: string;
   }): RunAction => {
     if (
       descriptor.admissionKind !== 'agent' ||
@@ -287,7 +289,11 @@ function createHarness(
         attemptOrdinal: 0,
         expectedBeforeWorkspace: initial.currentWorkspaceRevision,
       },
-      { input: descriptor.input ?? {} }
+      {
+        renderedTurnInput:
+          descriptor.renderedTurnInput ?? 'trusted fixture prompt',
+        input: descriptor.input ?? {},
+      }
     );
   };
   return {
@@ -296,24 +302,24 @@ function createHarness(
     initial,
     buildAction,
     evidenceStore,
-    runtime: createChangePipelineRuntime({
+    runtime: createAdmittingChangePipelineDriver(createChangePipelineRuntime({
       store,
       plan: runtimePlan,
       initialRecord: initial,
       buildAction,
       evidenceStore,
-    }),
+    })),
   };
 }
 
 function restartHarness(harness: ReturnType<typeof createHarness>): void {
-  harness.runtime = createChangePipelineRuntime({
+  harness.runtime = createAdmittingChangePipelineDriver(createChangePipelineRuntime({
     store: harness.store,
     plan: harness.plan,
     initialRecord: harness.initial,
     buildAction: harness.buildAction,
     evidenceStore: harness.evidenceStore,
-  });
+  }));
 }
 
 function completionEvidence(

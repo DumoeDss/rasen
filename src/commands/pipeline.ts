@@ -38,6 +38,7 @@ import {
   resolveLegacyOwnerSignal,
   completedStages,
   stageWorkers,
+  frozenStageInference,
   stagesWithStatus,
   stagesLackingDurableHandle,
   detectDuplicateKeys,
@@ -152,12 +153,14 @@ import { statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import {
   requireConfigStoreLayer,
+  resolveEffectiveConfig,
   resolveConfigStoreLayer,
   resolveHandoffThresholdLayers,
   resolveModelConfigLayers,
   resolveEffortConfigLayers,
   resolveThresholdBindingLayers,
 } from '../core/effective-config.js';
+import { resolveOmniCrossConnectionFromEntries } from '../core/omnicross/config.js';
 import { loadThresholdSchemeSnapshot } from '../core/threshold-resolver.js';
 import { getGlobalConfig } from '../core/global-config.js';
 import {
@@ -213,9 +216,96 @@ interface PipelineCommandOptions {
   engine?: string;
   /** Internal UTF-8 JSON bridge used by workflow drivers. */
   inputFile?: string;
+  /** Internal trusted pre-admission prompt manifest used by workflow drivers. */
+  turnInputFile?: string;
 }
 
 const MAX_PIPELINE_START_INPUT_BYTES = 1024 * 1024;
+const MAX_AGENT_TURN_INPUT_MANIFEST_BYTES = 2 * 1024 * 1024;
+
+interface AgentTurnInputManifestEntry {
+  readonly candidateId: string;
+  readonly prompt: string;
+}
+
+export function readAgentTurnInputManifest(
+  inputFile: string | undefined,
+  authorizedEphemeraRoot?: string
+): ReadonlyMap<string, string> {
+  if (inputFile === undefined) return new Map();
+  if (authorizedEphemeraRoot === undefined) {
+    throw new ChangeRunRuntimeError(
+      'invalid_run_request',
+      'Agent turn-input admission requires the resolved change ephemera root.'
+    );
+  }
+  let decoded: unknown;
+  try {
+    decoded = readBoundedJsonWithinRoot(
+      authorizedEphemeraRoot,
+      path.resolve(inputFile),
+      MAX_AGENT_TURN_INPUT_MANIFEST_BYTES
+    );
+  } catch (error) {
+    throw new ChangeRunRuntimeError(
+      error instanceof InputReaderError && error.code === 'input_too_large'
+        ? 'input_too_large'
+        : 'invalid_run_request',
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+  if (
+    decoded === null ||
+    typeof decoded !== 'object' ||
+    Array.isArray(decoded) ||
+    Object.keys(decoded).some(
+      (key) => key !== 'format' && key !== 'candidates'
+    ) ||
+    (decoded as { format?: unknown }).format !== 'agent-turn-input-manifest/1' ||
+    !Array.isArray((decoded as { candidates?: unknown }).candidates)
+  ) {
+    throw new ChangeRunRuntimeError(
+      'invalid_run_request',
+      'Agent turn-input manifest must be a closed agent-turn-input-manifest/1 object.'
+    );
+  }
+  const entries = new Map<string, string>();
+  for (const raw of (decoded as { candidates: unknown[] }).candidates) {
+    if (
+      raw === null ||
+      typeof raw !== 'object' ||
+      Array.isArray(raw) ||
+      Object.keys(raw).some(
+        (key) => key !== 'candidateId' && key !== 'prompt'
+      )
+    ) {
+      throw new ChangeRunRuntimeError(
+        'invalid_run_request',
+        'Agent turn-input manifest entries must contain exactly candidateId and prompt.'
+      );
+    }
+    const entry = raw as Partial<AgentTurnInputManifestEntry>;
+    if (
+      typeof entry.candidateId !== 'string' ||
+      !/^candidate:[0-9a-f]{64}$/.test(entry.candidateId) ||
+      typeof entry.prompt !== 'string' ||
+      entry.prompt.length === 0
+    ) {
+      throw new ChangeRunRuntimeError(
+        'invalid_run_request',
+        'Agent turn-input manifest entry is malformed.'
+      );
+    }
+    if (entries.has(entry.candidateId)) {
+      throw new ChangeRunRuntimeError(
+        'candidate_stale',
+        `Agent turn-input manifest duplicates candidate ${entry.candidateId}.`
+      );
+    }
+    entries.set(entry.candidateId, entry.prompt);
+  }
+  return entries;
+}
 
 function deepFreezeJson<T>(value: T): T {
   if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -356,6 +446,7 @@ interface StageView {
   modelSource: ModelSource;
   effort: string | null;
   effortSource: EffortSource;
+  inference: PreparedExecutionStageView['inference'];
   handoff: ResolvedStageHandoffConfig;
 }
 
@@ -637,6 +728,13 @@ export class PipelineCommand {
       // at all, so capability discovery was silent for exactly the shapes
       // ECP-2 shipped. Report the same analysis the v1 path reports.
       const storeLayer = await requireConfigStoreLayer(projectRoot);
+      const v2HasInference = [
+        ...prepared.definition.root.nodes,
+        ...prepared.definition.declarations.flatMap((declaration) => declaration.graph.nodes),
+      ].some((node) => node.kind === 'AtomicStage' && node.execution?.inference !== undefined);
+      const omnicrossConnection = options.forExecution && v2HasInference
+        ? resolveOmniCrossConnectionFromEntries(resolveEffectiveConfig({ projectRoot, store: storeLayer }))
+        : undefined;
       const modelLayers = resolveModelConfigLayers(projectRoot, storeLayer?.storeRoot);
       const configLayers = resolveHandoffThresholdLayers(
         projectRoot,
@@ -665,6 +763,7 @@ export class PipelineCommand {
         thresholdContext,
         host,
         roleRuntimeOverrides,
+        ...(omnicrossConnection ? { omnicrossConnection } : {}),
       });
       const enginePolicy = this.resolveEnginePolicy(
         projectRoot,
@@ -725,6 +824,9 @@ export class PipelineCommand {
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
     const storeLayer = await requireConfigStoreLayer(projectRoot);
+    const omnicrossConnection = options.forExecution && pipeline.stages.some((stage) => stage.inference)
+      ? resolveOmniCrossConnectionFromEntries(resolveEffectiveConfig({ projectRoot, store: storeLayer }))
+      : undefined;
     const configLayers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
     const modelLayers = resolveModelConfigLayers(projectRoot, storeLayer?.storeRoot);
     const effortLayers = resolveEffortConfigLayers(projectRoot, storeLayer?.storeRoot);
@@ -761,7 +863,8 @@ export class PipelineCommand {
         basePolicy,
         thresholdContext,
         host,
-        executionStages.get(s.id)
+        executionStages.get(s.id),
+        omnicrossConnection
       )
     );
     const reuse: ResolvedReuseConfig = resolvePipelineReuseConfig(pipeline, thresholdContext);
@@ -948,8 +1051,8 @@ export class PipelineCommand {
 
   /**
    * Refuse a canonical mutation when the change is claimed by both engines.
-   * Used by `resume-run` (which admits Actions, so it mutates), `complete`,
-   * and `control`.
+   * Used by `resume-run` (which may settle non-agent frontier state), `admit`,
+   * `complete`, and `control`.
    */
   private async assertCanonicalMutationAllowed(
     changeId: string,
@@ -1064,6 +1167,19 @@ export class PipelineCommand {
     const prepared = execution.resolution.prepared;
     const isV2Authored = prepared.authoredVersion === 2;
     const storeLayer = await requireConfigStoreLayer(projectRoot);
+    const routedInferenceDeclared = isV2Authored
+      ? [
+          ...prepared.definition.root.nodes,
+          ...prepared.definition.declarations.flatMap((declaration) => declaration.graph.nodes),
+        ].some((node) => node.kind === 'AtomicStage' && node.execution?.inference !== undefined)
+      : (prepared.authoredSource as PipelineYaml).stages.some(
+          (stage) => stage.inference !== undefined
+        );
+    const omnicrossConnection = routedInferenceDeclared
+      ? resolveOmniCrossConnectionFromEntries(
+          resolveEffectiveConfig({ projectRoot, store: storeLayer })
+        )
+      : undefined;
     const modelLayers = resolveModelConfigLayers(
       projectRoot,
       storeLayer?.storeRoot
@@ -1115,6 +1231,12 @@ export class PipelineCommand {
         throw new Error(
           `Execution plan omitted stage "${stage.id}" from pipeline "${sourceDisplayName}".`
         );
+      }
+      if (resolved.inference !== null && resolved.model === undefined) {
+        throw new Error(`OmniCross-routed stage "${stage.id}" has no effective model.`);
+      }
+      if (resolved.inference !== null && omnicrossConnection === undefined) {
+        throw new Error(`OmniCross connection was not resolved for routed stage "${stage.id}".`);
       }
       const v1Pipeline = prepared.authoredSource as PipelineYaml;
       const roleDefault = stage.role
@@ -1173,6 +1295,17 @@ export class PipelineCommand {
         // are the Session execution layer's design output.
         handoffTokenLimit: 10_000,
         reuseRoundLimit: 1,
+        ...(resolved.inference !== null
+          ? {
+              inference: {
+                broker: 'omnicross' as const,
+                runtime: resolved.runtime,
+                upstream: resolved.inference.upstream,
+                model: resolved.model!,
+                connection: omnicrossConnection!,
+              },
+            }
+          : {}),
         provenance: {
           role: stage.role ? 'stage' : 'default',
           model: resolved.modelSource,
@@ -1366,6 +1499,7 @@ export class PipelineCommand {
           modelLayers,
           host,
           roleRuntimeOverrides,
+          ...(omnicrossConnection ? { omnicrossConnection } : {}),
         },
         registry.trustedExecutionAdapters,
         prepared.authoredVersion === 1
@@ -1416,6 +1550,39 @@ export class PipelineCommand {
       projectId,
       launchKey,
       stateLocations,
+    };
+  }
+
+  private resolveAgentTurnInputContext(
+    options: PipelineCommandOptions,
+    stateLocations: StateFileLocationOptions | undefined
+  ) {
+    const entries = readAgentTurnInputManifest(
+      options.turnInputFile,
+      stateLocations?.ephemeraDir ?? undefined
+    );
+    const unused = new Set(entries.keys());
+    return {
+      deliveryMode: 'grant' as const,
+      resolveAgentTurnInput: (candidate: Readonly<{ candidateId: string }>) => {
+        const prompt = entries.get(candidate.candidateId);
+        if (prompt === undefined) {
+          throw new ChangeRunRuntimeError(
+            'candidate_stale',
+            `Agent turn-input manifest has no prompt for candidate ${candidate.candidateId}.`
+          );
+        }
+        unused.delete(candidate.candidateId);
+        return prompt;
+      },
+      finalizeAgentTurnInputs: () => {
+        if (unused.size > 0) {
+          throw new ChangeRunRuntimeError(
+            'candidate_stale',
+            `Agent turn-input manifest contains stale or extra candidates: ${[...unused].join(', ')}.`
+          );
+        }
+      },
     };
   }
 
@@ -1601,7 +1768,7 @@ export class PipelineCommand {
     // registry, so a refusal leaves nothing behind at all.
     await this.assertCanonicalLaunchAllowed(changeId, policyRoot);
 
-    const { ctx, pipelineName: resolvedPipelineName, runId, projectRoot, projectId, launchKey } =
+    const { ctx, pipelineName: resolvedPipelineName, runId, projectRoot, projectId, launchKey, stateLocations } =
       await this.resolveRuntime(
         changeId,
         pipelineName,
@@ -1638,6 +1805,7 @@ export class PipelineCommand {
         nodeId: action.nodeId,
         kind: action.kind,
       })),
+      candidates: receipt.candidates,
     });
   }
 
@@ -1678,7 +1846,7 @@ export class PipelineCommand {
   }
 
   /**
-   * Resume a Run: grant the ready frontier (task 12.3/12.4).
+   * Resume a Run and preview its ready frontier (task 12.3/12.4).
    */
   async resumeRun(
     changeId: string,
@@ -1693,8 +1861,8 @@ export class PipelineCommand {
       launchKey,
       stateLocations,
     } = await this.resolveRuntime(changeId, pipelineName, options);
-    // ECP-5 (D8): resume-run ADMITS Actions, so it mutates — it rechecks
-    // ownership like any other canonical mutation.
+    // ECP-5 (D8): resume-run may settle a non-agent frontier, so it rechecks
+    // ownership like any other canonical mutation. Agent frontiers stop at preview.
     await this.assertCanonicalMutationAllowed(
       changeId,
       projectRoot,
@@ -1716,8 +1884,47 @@ export class PipelineCommand {
         nodeId: action.nodeId,
         kind: action.kind,
       })),
+      candidates: receipt.candidates,
     });
     void launchKey;
+  }
+
+  /** Admit the exact currently previewed agent frontier from private ephemera. */
+  async admit(
+    changeId: string,
+    runId: string,
+    options: PipelineCommandOptions = {}
+  ): Promise<void> {
+    if (options.turnInputFile === undefined) {
+      throw new ChangeRunRuntimeError(
+        'invalid_run_request',
+        'Agent admission requires --turn-input-file.'
+      );
+    }
+    const resolved = await this.resolveRuntimeForRun(changeId, runId, options);
+    await this.assertChangeNotArchived(changeId, resolved.projectRoot, runId);
+    await this.assertCanonicalMutationAllowed(
+      changeId,
+      resolved.projectRoot,
+      runId,
+      resolved.ctx.store,
+      resolved.stateLocations
+    );
+    const receipt = await resolved.ctx.facade.admit(
+      { change: { projectRoot: resolved.projectRoot, changeId }, runId: runId as never },
+      this.resolveAgentTurnInputContext(options, resolved.stateLocations)
+    );
+    this.printRunReceipt(options, {
+      runId,
+      disposition: receipt.disposition,
+      status: receipt.view.status,
+      actions: receipt.actions.map((action) => ({
+        actionId: action.actionId,
+        nodeId: action.nodeId,
+        kind: action.kind,
+      })),
+      candidates: receipt.candidates,
+    });
   }
 
   /**
@@ -2156,6 +2363,7 @@ export class PipelineCommand {
         nodeId: action.nodeId,
         kind: action.kind,
       })),
+      candidates: receipt.candidates,
     });
   }
 
@@ -2225,6 +2433,7 @@ export class PipelineCommand {
       runId,
       disposition: receipt.disposition,
       status: receipt.view.status,
+      candidates: receipt.candidates,
     });
   }
 
@@ -2799,6 +3008,7 @@ export class PipelineCommand {
     // session) with a transcript warm-seed fallback — a spawn `name` is a
     // non-durable dispatch label, never a resume handle.
     const workers = stageWorkers(runState);
+    const frozenInference = frozenStageInference(runState);
     // Enrich each worker whose recorded transcript is readable with a
     // best-effort context estimate. A probe MUST NOT fail resume: any read
     // error silently drops the estimate for that worker.
@@ -2862,6 +3072,7 @@ export class PipelineCommand {
       ready,
       remaining,
       workers: workersWithContext,
+      ...(Object.keys(frozenInference).length > 0 ? { frozenInference } : {}),
       inProgressStages,
       escalatedStages,
       openFindings,
@@ -3182,7 +3393,8 @@ export class PipelineCommand {
     basePolicy?: ResolvedGatePolicy,
     thresholdContext?: ThresholdResolutionContext,
     host: DetectedHostRuntime = { runtime: 'unknown', source: 'unknown' },
-    executionRuntime?: ExecutionStageRuntime
+    executionRuntime?: ExecutionStageRuntime,
+    omnicrossConnection?: ReturnType<typeof resolveOmniCrossConnectionFromEntries>
   ): StageView {
     const stageOverrides = this.stageConfigOverrides(stage, overrides);
     const runtime = executionRuntime ?? resolveStageRuntimeConfig(
@@ -3198,7 +3410,12 @@ export class PipelineCommand {
     // the built-in "gates on" default so effective equals the declared gate.
     const policy: ResolvedGatePolicy = basePolicy ?? { effective: 'on', source: 'default' };
     const maskedGate = resolveMaskedStageGate(stage.gate, overrides?.gates.get(stage.id), policy);
-    const route = resolveDispatchRoute(host.runtime, effectiveStageRuntime);
+    const route = resolveDispatchRoute(host.runtime, effectiveStageRuntime, {
+      externalInference: stage.inference !== undefined,
+    });
+    if (stage.inference !== undefined && runtime.model === undefined) {
+      throw new Error(`OmniCross-routed stage "${stage.id}" has no effective model.`);
+    }
     return {
       id: stage.id,
       kind: stage.kind,
@@ -3227,6 +3444,15 @@ export class PipelineCommand {
       modelSource: runtime.modelSource,
       effort: runtime.effort ?? null,
       effortSource: runtime.effortSource,
+      inference: stage.inference
+        ? {
+            broker: 'omnicross',
+            upstream: stage.inference.upstream,
+            runtime: effectiveStageRuntime,
+            model: runtime.model!,
+            ...(omnicrossConnection ? { connection: omnicrossConnection } : {}),
+          }
+        : null,
       handoff: resolveStageHandoffConfig(
         stage,
         pipeline,

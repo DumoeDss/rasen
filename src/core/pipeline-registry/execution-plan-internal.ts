@@ -16,6 +16,8 @@ import {
   type DefinitionPlanPayload,
 } from './definition-plan-internal.js';
 import type { PipelineYaml, Stage } from './types.js';
+import { FrozenInferenceRouteSchema } from '../omnicross/contracts.js';
+import { WorkerContractZodSchema } from '../worker-contracts.js';
 
 export type PlanIntegrityErrorCode =
   | 'unsupported_plan_version'
@@ -175,6 +177,9 @@ export function openDefinitionPlan(value: unknown): OpenedDefinitionPlan {
 }
 
 const DigestSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/);
+const BrandedDigestSchema = DigestSchema.transform(
+  (value): Digest => value as Digest
+);
 const SourceRevisionSchema = z.strictObject({
   layer: z.enum(['project', 'user', 'package']),
   kind: z.string().min(1).max(128),
@@ -202,7 +207,7 @@ const AttestationAuthoritySchema = z.strictObject({
   }),
 });
 
-const RuntimeCapabilityBindingSchema = z.strictObject({
+const RuntimeCapabilityBindingBaseShape = {
   nodeId: z.string().min(1).max(512),
   authoredCapability: z.strictObject({
     id: z.string().min(1).max(256),
@@ -213,7 +218,6 @@ const RuntimeCapabilityBindingSchema = z.strictObject({
     version: z.string().min(1).max(128),
     digest: DigestSchema,
   }),
-  actionKind: z.enum(['agent', 'command', 'host']),
   resultContract: z.strictObject({
     id: z.string().min(1).max(256),
     version: z.string().min(1).max(128),
@@ -242,7 +246,39 @@ const RuntimeCapabilityBindingSchema = z.strictObject({
   adapter: ArtifactSchema.extend({
     attestationAuthority: AttestationAuthoritySchema,
   }).strict(),
-});
+} as const;
+
+const RuntimeCapabilityBindingSchema = z.discriminatedUnion('actionKind', [
+  z.strictObject({
+    ...RuntimeCapabilityBindingBaseShape,
+    actionKind: z.literal('agent'),
+  }),
+  z.strictObject({
+    ...RuntimeCapabilityBindingBaseShape,
+    actionKind: z.literal('command'),
+    command: z.strictObject({
+      executable: z.strictObject({
+        identity: z.string().min(1).max(256),
+        contentDigest: BrandedDigestSchema,
+      }),
+      argv: z.array(z.string().max(64 * 1024)).max(256),
+      env: z.record(z.string().max(128), z.string().max(64 * 1024)),
+      workingDirectory: z
+        .string()
+        .min(1)
+        .max(1024)
+        .refine((value) => !value.startsWith('/') && !value.includes('\\')),
+      timeoutMs: z.number().int().positive().safe(),
+    }),
+  }),
+  z.strictObject({
+    ...RuntimeCapabilityBindingBaseShape,
+    actionKind: z.literal('host'),
+    host: z.strictObject({
+      operation: z.enum(['workspace-apply', 'verify', 'ship', 'archive']),
+    }),
+  }),
+]);
 
 const PolicyProvenanceSchema = z.strictObject({
   role: z.string().min(1).max(128),
@@ -292,6 +328,13 @@ const EffectiveRunPolicySchema = z.strictObject({
         .optional(),
       handoffTokenLimit: z.number().int().nonnegative().safe(),
       reuseRoundLimit: z.number().int().nonnegative().safe(),
+      /**
+       * Structured worker return selected from immutable Definition semantics.
+       * Optional only for decoding profiles written before this authority existed.
+       */
+      workerContract: WorkerContractZodSchema.optional(),
+      /** Credential-free logical route frozen at admission. */
+      inference: FrozenInferenceRouteSchema.optional(),
       provenance: PolicyProvenanceSchema,
     })
   ),

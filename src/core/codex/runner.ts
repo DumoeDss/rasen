@@ -3,7 +3,11 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { FileSystemUtils } from '../../utils/file-system.js';
-import { BoundedUtf8Capture, sanitizeAgentDiagnostic } from '../agent-diagnostics.js';
+import {
+  BoundedUtf8Capture,
+  sanitizeAgentDiagnostic,
+  sanitizeAgentDiagnosticValue,
+} from '../agent-diagnostics.js';
 import {
   DEFAULT_AGENT_STDIN_LIMIT_BYTES,
   endAgentCliStdin,
@@ -19,6 +23,7 @@ import { extractThreadId } from './exec-events.js';
 import {
   buildCodexExecInvocation,
   type CodexSandboxMode,
+  type ModelProviderOverride,
 } from './invocation.js';
 import { findRolloutPath } from './rollout.js';
 import {
@@ -55,6 +60,9 @@ export interface RunCodexExecOptions {
   maxStdinBytes?: number;
   maxLastMessageBytes?: number;
   env?: NodeJS.ProcessEnv;
+  providerOverride?: ModelProviderOverride;
+  signal?: AbortSignal;
+  secretValues?: Iterable<string>;
   spawn?: typeof spawnAgentCli;
   threadStateDir?: string;
   scratchParent?: string;
@@ -106,14 +114,22 @@ function diagnostics(
   stdout: string,
   stderr: string,
   exitCode?: number | null,
-  signal?: NodeJS.Signals | null
+  signal?: NodeJS.Signals | null,
+  secrets: readonly string[] = []
 ): CodexFailureReceipt['diagnostics'] {
   return {
     ...(typeof exitCode === 'number' ? { exitCode } : {}),
     ...(signal ? { signal } : {}),
-    ...(stdout ? { stdout: sanitizeAgentDiagnostic(stdout) } : {}),
-    ...(stderr ? { stderr: sanitizeAgentDiagnostic(stderr) } : {}),
+    ...(stdout ? { stdout: sanitizeAgentDiagnostic(stdout, undefined, secrets) } : {}),
+    ...(stderr ? { stderr: sanitizeAgentDiagnostic(stderr, undefined, secrets) } : {}),
   };
+}
+
+function abortFailureKind(signal: AbortSignal): 'cancelled' | 'route-lease-lost' {
+  return signal.reason && typeof signal.reason === 'object' &&
+    (signal.reason as { kind?: unknown }).kind === 'omnicross-route-lost'
+    ? 'route-lease-lost'
+    : 'cancelled';
 }
 
 async function readLastMessageBounded(
@@ -173,6 +189,15 @@ export async function runCodexExec(options: RunCodexExecOptions): Promise<CodexD
   const maxOutputBytes = options.maxOutputBytes ?? DEFAULT_OUTPUT_LIMIT_BYTES;
   const maxStdinBytes = options.maxStdinBytes ?? DEFAULT_AGENT_STDIN_LIMIT_BYTES;
   const maxLastMessageBytes = options.maxLastMessageBytes ?? DEFAULT_LAST_MESSAGE_LIMIT_BYTES;
+  const secrets = [...(options.secretValues ?? [])];
+  if (options.signal?.aborted) {
+    return codexFailureReceipt(
+      options.contract,
+      abortFailureKind(options.signal),
+      'The Codex worker was cancelled before spawn.',
+      { cwd: canonicalCwd }
+    );
+  }
   const stateOptions: CodexThreadStateOptions = {
     env: options.env ?? process.env,
     ...(options.threadStateDir ? { stateDir: options.threadStateDir } : {}),
@@ -208,6 +233,7 @@ export async function runCodexExec(options: RunCodexExecOptions): Promise<CodexD
     ...(options.model ? { model: options.model } : {}),
     ...(options.effort ? { effort: options.effort } : {}),
     ...(options.resumeThreadId ? { resume: { threadId: options.resumeThreadId } } : {}),
+    ...(options.providerOverride ? { providerOverride: options.providerOverride } : {}),
   });
   try {
     // Bound the fully assembled payload (including the flat-hierarchy guard),
@@ -248,6 +274,8 @@ export async function runCodexExec(options: RunCodexExecOptions): Promise<CodexD
     let killCancel: (() => void) | undefined;
     let terminationStarted = false;
     let stdinWrite: Promise<void> | undefined;
+    let aborted = false;
+    let abortListener: (() => void) | undefined;
 
     const terminate = (graceMs = 250) => {
       if (terminationStarted || typeof child?.pid !== 'number') return;
@@ -259,6 +287,7 @@ export async function runCodexExec(options: RunCodexExecOptions): Promise<CodexD
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
+      if (abortListener) options.signal?.removeEventListener('abort', abortListener);
       if (!terminationStarted) killCancel?.();
       await claim?.release();
       resolve(value);
@@ -281,6 +310,13 @@ export async function runCodexExec(options: RunCodexExecOptions): Promise<CodexD
       ));
       return;
     }
+
+    abortListener = () => {
+      aborted = true;
+      terminate();
+    };
+    if (options.signal?.aborted) abortListener();
+    else options.signal?.addEventListener('abort', abortListener, { once: true });
 
     timer = setTimeout(() => {
       timedOut = true;
@@ -344,42 +380,53 @@ export async function runCodexExec(options: RunCodexExecOptions): Promise<CodexD
           options.contract,
           'spawn-failed',
           failureError instanceof Error ? failureError.message : String(failureError),
-          { ...metadata, diagnostics: diagnostics(stdout, stderr, code, signal) }
+          { ...metadata, diagnostics: diagnostics(stdout, stderr, code, signal, secrets) }
+        ));
+        return;
+      }
+      if (aborted && options.signal) {
+        await finish(codexFailureReceipt(
+          options.contract,
+          abortFailureKind(options.signal),
+          abortFailureKind(options.signal) === 'route-lease-lost'
+            ? 'The Codex worker was terminated because its OmniCross route lease was lost.'
+            : 'The Codex worker was cancelled.',
+          { ...metadata, diagnostics: diagnostics(stdout, stderr, code, signal, secrets) }
         ));
         return;
       }
       if (timedOut) {
         await finish(codexFailureReceipt(options.contract, 'timeout', `Codex worker exceeded the ${timeoutMs}ms timeout.`, {
           ...metadata,
-          diagnostics: diagnostics(stdout, stderr, code, signal),
+          diagnostics: diagnostics(stdout, stderr, code, signal, secrets),
         }));
         return;
       }
       if (outputExceeded) {
         await finish(codexFailureReceipt(options.contract, 'output-limit', `Codex worker output exceeded the ${maxOutputBytes}-byte capture limit.`, {
           ...metadata,
-          diagnostics: diagnostics(stdout, stderr, code, signal),
+          diagnostics: diagnostics(stdout, stderr, code, signal, secrets),
         }));
         return;
       }
       if (code !== 0) {
         await finish(codexFailureReceipt(options.contract, 'nonzero-exit', `Codex worker exited with code ${String(code)}${signal ? ` (${signal})` : ''}.`, {
           ...metadata,
-          diagnostics: diagnostics(stdout, stderr, code, signal),
+          diagnostics: diagnostics(stdout, stderr, code, signal, secrets),
         }));
         return;
       }
       if (!options.resumeThreadId && !emittedThreadId) {
         await finish(codexFailureReceipt(options.contract, 'thread-id-missing', 'Codex fresh dispatch did not emit a non-empty thread.started.thread_id.', {
           ...metadata,
-          diagnostics: diagnostics(stdout, stderr, code, signal),
+          diagnostics: diagnostics(stdout, stderr, code, signal, secrets),
         }));
         return;
       }
       if (options.resumeThreadId && emittedThreadId && emittedThreadId !== options.resumeThreadId) {
         await finish(codexFailureReceipt(options.contract, 'thread-id-mismatch', `Codex resume emitted thread "${emittedThreadId}" instead of requested thread "${options.resumeThreadId}".`, {
           ...metadata,
-          diagnostics: diagnostics(stdout, stderr, code, signal),
+          diagnostics: diagnostics(stdout, stderr, code, signal, secrets),
         }));
         return;
       }
@@ -387,7 +434,7 @@ export async function runCodexExec(options: RunCodexExecOptions): Promise<CodexD
       if (!lastMessage.ok) {
         await finish(codexFailureReceipt(options.contract, lastMessage.kind, lastMessage.message, {
           ...metadata,
-          diagnostics: diagnostics(stdout, stderr, code, signal),
+          diagnostics: diagnostics(stdout, stderr, code, signal, secrets),
         }));
         return;
       }
@@ -426,5 +473,5 @@ export async function runCodexExec(options: RunCodexExecOptions): Promise<CodexD
   });
 
   attachCleanup(receipt, await cleanupScratch(scratch));
-  return receipt;
+  return sanitizeAgentDiagnosticValue(receipt, secrets);
 }

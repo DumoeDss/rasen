@@ -78,7 +78,7 @@ function action() {
         dirtyWorktreeDigest: digest('c'),
       },
     },
-    { input: {} as JsonValue }
+    { renderedTurnInput: 'trusted fixture prompt', input: {} as JsonValue }
   );
 }
 

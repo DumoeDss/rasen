@@ -43,13 +43,79 @@ function comparable(value: string): string {
   return process.platform === 'win32' ? normalized.toLocaleLowerCase('en-US') : normalized;
 }
 
-function isContained(root: string, target: string): boolean {
+/** The part of `target` below `root`, `''` when equal, null when outside. */
+function containedSuffix(root: string, target: string): string | null {
   const comparableRoot = comparable(root);
   const comparableTarget = comparable(target);
-  return (
-    comparableTarget === comparableRoot ||
-    comparableTarget.startsWith(`${comparableRoot}/`)
-  );
+  if (comparableTarget === comparableRoot) return '';
+  return comparableTarget.startsWith(`${comparableRoot}/`)
+    ? target.slice(root.length + 1)
+    : null;
+}
+
+function isContained(root: string, target: string): boolean {
+  return containedSuffix(root, target) !== null;
+}
+
+/**
+ * Is `candidate` this very root, reached under another name? The operating
+ * system routinely hands out two names for one directory: macOS reaches
+ * `/private/var` through `/var`, Windows exposes 8.3 aliases like `RUNNER~1`.
+ *
+ * The candidate must be a directory that resolves to the root's real path AND
+ * must not itself be a link. That second half is the boundary: it is the same
+ * rule the root's own entry is held to above, and it is what stops a link
+ * pointing INTO the root from letting an outside path in.
+ */
+function isRootUnderAnotherName(
+  candidate: string,
+  rootReal: string,
+  plumbing: SafePathPlumbing
+): boolean {
+  const stat = plumbing.lstat(candidate);
+  if (stat === null || !stat.isDirectory) return false;
+  if (stat.isSymbolicLink || stat.isReparsePoint) return false;
+  let candidateReal: string;
+  try {
+    candidateReal = normalize(plumbing.realpath(candidate));
+  } catch {
+    return false;
+  }
+  return comparable(candidateReal) === comparable(rootReal);
+}
+
+/**
+ * The target's suffix below the root, or null when the target is outside it.
+ *
+ * A caller may spell the path to the root differently than the resolver did —
+ * the CLI canonicalizes its roots (`realpath.native`), an operator or agent
+ * types whatever their shell handed them — so one directory arrives under two
+ * names and a purely lexical comparison rejects a target that is physically
+ * inside the root. When the lexical form does not match, ask instead whether
+ * some ANCESTOR of the target IS the root under another name.
+ *
+ * Only ancestors are resolved, never the part below the root: a symlink INSIDE
+ * the root still cannot resolve its way into containment, and every segment
+ * below the root remains subject to the per-component walk.
+ */
+function suffixBelowRoot(
+  normalizedRoot: string,
+  rootReal: string,
+  normalizedTarget: string,
+  plumbing: SafePathPlumbing
+): string | null {
+  const lexical = containedSuffix(normalizedRoot, normalizedTarget);
+  if (lexical !== null) return lexical;
+  const segments = normalizedTarget.split('/');
+  for (let depth = segments.length; depth > 0; depth -= 1) {
+    const ancestor = segments.slice(0, depth).join('/');
+    // A bare drive ('C:') or the empty POSIX root is above every safe root.
+    if (!ancestor.includes('/')) break;
+    if (isRootUnderAnotherName(ancestor, rootReal, plumbing)) {
+      return segments.slice(depth).join('/');
+    }
+  }
+  return null;
 }
 
 /** Real filesystem plumbing shared by runtime path consumers. */
@@ -85,6 +151,11 @@ export function createNodeSafePathPlumbing(): SafePathPlumbing {
  * non-regular file leaf. A parent directory that realpath resolves outside the
  * root (parent replacement) is rejected. Same-parent exclusive create/publish
  * uses the same containment check on the parent.
+ *
+ * Containment is a property of the directory, not of how it was spelled: a
+ * target reached through an OS alias of an ancestor ABOVE the root (macOS
+ * `/var` for `/private/var`, a Windows 8.3 name) is the same file and is
+ * accepted, while everything BELOW the root stays lexical and walked.
  */
 export function assertSafeRunPath(
   root: string,
@@ -112,17 +183,20 @@ export function assertSafeRunPath(
       'Safe path root must not be a reparse point.'
     );
   }
-  if (!isContained(normalizedRoot, normalizedTarget)) {
+  const rootReal = normalize(plumbing.realpath(normalizedRoot));
+  const relative = suffixBelowRoot(
+    normalizedRoot,
+    rootReal,
+    normalizedTarget,
+    plumbing
+  );
+  if (relative === null) {
     throw new SafePathError(
       'unsafe_path_escape',
       'Target lexical path escapes the safe root.'
     );
   }
 
-  const rootReal = normalize(plumbing.realpath(normalizedRoot));
-  const relative = comparable(normalizedTarget) === comparable(normalizedRoot)
-    ? ''
-    : normalizedTarget.slice(normalizedRoot.length + 1);
   const segments = relative.split('/').filter((segment) => segment.length > 0);
   let prefix = normalizedRoot;
   let missingAncestor = false;

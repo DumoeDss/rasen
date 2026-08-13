@@ -129,7 +129,12 @@ export const EvaluateGateZodSchema = z
   .strict();
 export type EvaluateGateResult = z.infer<typeof EvaluateGateZodSchema>;
 
-export type WorkerContract = 'leaf' | 'consultable-leaf' | 'evaluate';
+export const WorkerContractZodSchema = z.enum([
+  'leaf',
+  'consultable-leaf',
+  'evaluate',
+]);
+export type WorkerContract = z.infer<typeof WorkerContractZodSchema>;
 export type WorkerContractResult =
   | LeafReturn
   | ConsultableLeafReturn

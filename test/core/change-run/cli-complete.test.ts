@@ -42,6 +42,7 @@ import {
 } from './reconciler-fixture.js';
 import { reduceCanonicalRunRecord } from '../../../src/core/change-run/internal/reducer.js';
 import type { RuntimePlan } from '../../../src/core/change-run/internal/runtime-plan.js';
+import { admitPreviewedCandidates } from '../../helpers/change-run-admission.js';
 import type {
   ActionId,
   ChangeInstanceId,
@@ -125,15 +126,19 @@ async function buildStartedRuntime(
     evidenceStore,
   });
 
-  // Start grants the single non-gated action immediately.
-  const receipt = await facade.start(
+  const ref = {
+    change: { projectRoot: '/root', changeId: 'fixture-change' },
+    runId: plan.runId,
+  };
+  const preview = await facade.start(
     {
-      change: { projectRoot: '/root', changeId: 'fixture-change' },
+      change: ref.change,
       pipeline: 'linear',
       launchRequestId: branded(`launch:${'1'.repeat(60)}1111`),
     },
     { deliveryMode: 'grant' },
   );
+  const receipt = await admitPreviewedCandidates(facade, ref, preview);
   const grantedAction = receipt.actions[0];
   if (!grantedAction) throw new Error('fixture: start did not grant an action');
 

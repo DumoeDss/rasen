@@ -77,6 +77,16 @@ import type { WorkerContract } from '../core/worker-contracts.js';
 import { runAudit } from '../core/token-audit/audit.js';
 import { TranscriptFormatError } from '../core/token-audit/errors.js';
 import { isCodexAuditResult, isZedAuditResult, type AuditResult } from '../core/token-audit/types.js';
+import {
+  OmniCrossRouteError,
+  buildRoutedChildEnvironment,
+  createOmniCrossRouteLeaseClient,
+  crossCheckInferenceFile,
+  readInferenceFile,
+  resolveOmniCrossControlAuthority,
+  withOmniCrossRoute,
+  type RuntimeRouteBinding,
+} from '../core/omnicross/index.js';
 
 /** Human-readable rendering of a dual-form threshold for the text-mode verdict line. */
 function formatThresholdDisplay(threshold: ThresholdValue): string {
@@ -124,6 +134,7 @@ export interface AgentDispatchOptions {
   cwd?: string;
   timeoutMs?: number;
   resume?: string;
+  inferenceFile?: string;
   json?: boolean;
 }
 
@@ -386,6 +397,30 @@ export class AgentCommand {
       return invalid('--timeout-ms must be an integer between 1 and 86400000.');
     }
 
+    let inferenceFile: ReturnType<typeof readInferenceFile> | undefined;
+    if (options.inferenceFile !== undefined) {
+      try {
+        inferenceFile = readInferenceFile(path.resolve(options.inferenceFile));
+        crossCheckInferenceFile(inferenceFile, {
+          runtime: options.runtime,
+          model: options.model,
+          ...(options.resume ? { resumeSessionId: options.resume } : {}),
+        });
+      } catch (error) {
+        if (error instanceof OmniCrossRouteError) {
+          return emit({
+            ok: false,
+            runtime: options.runtime,
+            dispatchMode: 'exec-bridge',
+            bridge: options.runtime === 'codex' ? 'codex-exec' : 'claude-print',
+            contract,
+            failure: error.failure,
+          });
+        }
+        return invalid(error instanceof Error ? error.message : String(error));
+      }
+    }
+
     if (!options.promptFile?.trim()) {
       return invalid('--prompt-file is required.');
     }
@@ -440,10 +475,22 @@ export class AgentCommand {
       );
     }
 
-    try {
+    const runRuntime = async (
+      binding?: RuntimeRouteBinding,
+      signal?: AbortSignal
+    ): Promise<ClaudeDispatchReceipt | CodexDispatchReceipt> => {
+      const routedEnv = binding && inferenceFile
+        ? buildRoutedChildEnvironment(
+            process.env,
+            inferenceFile.route.connection.controlTokenEnv,
+            binding.env
+          )
+        : undefined;
       if (isCodex) {
-        return emit(
-          await runCodexExec({
+        if (binding && binding.runtime !== 'codex') {
+          throw new Error('OmniCross returned a Claude binding for a Codex dispatch.');
+        }
+        return runCodexExec({
             binary,
             prompt,
             contract,
@@ -453,8 +500,14 @@ export class AgentCommand {
             ...(options.model ? { model: options.model } : {}),
             ...(options.effort ? { effort: options.effort as LeafEffort } : {}),
             ...(options.resume ? { resumeThreadId: options.resume } : {}),
-          })
-        );
+            ...(binding ? { providerOverride: binding.providerOverride } : {}),
+            ...(routedEnv ? { env: routedEnv } : {}),
+            ...(signal ? { signal } : {}),
+            ...(binding ? { secretValues: binding.secretValues } : {}),
+          });
+      }
+      if (binding && binding.runtime !== 'claude') {
+        throw new Error('OmniCross returned a Codex binding for a Claude dispatch.');
       }
       const invocation = buildClaudePrintInvocation({
         prompt,
@@ -466,15 +519,66 @@ export class AgentCommand {
           : {}),
         ...(options.resume ? { resumeSessionId: options.resume } : {}),
       });
-      return emit(
-        await runClaudePrint({
+      return runClaudePrint({
           binary,
           invocation,
           cwd,
           timeoutMs,
-        })
+          ...(routedEnv ? { env: routedEnv } : {}),
+          ...(signal ? { signal } : {}),
+          ...(binding ? { secretValues: binding.secretValues } : {}),
+        });
+    };
+
+    try {
+      if (!inferenceFile) return emit(await runRuntime());
+
+      const authority = resolveOmniCrossControlAuthority(
+        inferenceFile.route.connection
       );
+      const routed = await withOmniCrossRoute({
+        route: inferenceFile.route,
+        attempt: inferenceFile.attempt,
+        client: createOmniCrossRouteLeaseClient({ authority }),
+        secretValues: [authority.controlToken],
+        run: runRuntime,
+      });
+      if (!routed.ok) {
+        return emit({
+          ok: false,
+          runtime: options.runtime,
+          dispatchMode: 'exec-bridge',
+          bridge: options.runtime === 'codex' ? 'codex-exec' : 'claude-print',
+          contract,
+          failure: routed.failure,
+          ...(routed.route ? { route: routed.route } : {}),
+          ...(routed.warnings ? { warnings: routed.warnings } : {}),
+        });
+      }
+      const receipt = routed.value as unknown as Record<string, unknown>;
+      return emit({
+        ...receipt,
+        route: routed.route,
+        ...((routed.warnings?.length ?? 0) > 0
+          ? {
+              warnings: [
+                ...(Array.isArray(receipt.warnings) ? receipt.warnings : []),
+                ...routed.warnings!,
+              ],
+            }
+          : {}),
+      });
     } catch (error) {
+      if (error instanceof OmniCrossRouteError) {
+        return emit({
+          ok: false,
+          runtime: options.runtime,
+          dispatchMode: 'exec-bridge',
+          bridge: options.runtime === 'codex' ? 'codex-exec' : 'claude-print',
+          contract,
+          failure: error.failure,
+        });
+      }
       return invalid(error instanceof Error ? error.message : String(error));
     }
   }

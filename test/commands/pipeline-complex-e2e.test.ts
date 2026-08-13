@@ -21,7 +21,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { promises as fs, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { runCLI } from '../helpers/run-cli.js';
+import { runPipelineCLIWithAdmission as runCLI } from '../helpers/pipeline-cli-admission.js';
 
 // Kernel internals — used ONLY for the two documented kernel-internal steps
 // (gate-wait commitment + effect observation). These fill the gap where no

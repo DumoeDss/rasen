@@ -2225,7 +2225,7 @@ stages:
         },
       });
       expect(showJson.boundedLoops[0].lifecycle.strategy.capability.version).toBe(
-        'sha256:9522e1108c941534a888d5a0230ba29f1b7719a75949411b36e05f664d95331b'
+        'sha256:1b1a8566322f14a02994b3274f4256def710a77c95ec7927e58daaf948520a87'
       );
     });
   });

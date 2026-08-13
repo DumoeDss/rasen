@@ -1758,14 +1758,28 @@ export interface RunControlRequestBody {
 /**
  * The sealed POST response (mirrors `RunControlResponse`): the committed view
  * + disposition + ALWAYS-empty action list. The bridge seals `deliveryMode:
- * 'defer'`: no executable Agent/Command/Host payload ever leaves via HTTP —
- * the first atomic grant happens on a later trusted CLI `resume-run`. The UI
- * replaces its local view from `view` and never expects executable actions.
+ * 'defer'`: no executable Agent/Command/Host payload ever leaves via HTTP. A
+ * trusted source driver may consume the prompt-free candidate preview and use
+ * the private CLI `pipeline admit` boundary. The UI replaces its local view
+ * from `view` and never expects executable actions.
  */
+export interface RunControlAgentCandidate {
+  format: 'change-run-agent-candidate/1';
+  candidateId: string;
+  runId: string;
+  recordVersion: number;
+  nodeId: string;
+  occurrence: number;
+  profilePath?: string;
+  input?: unknown;
+}
+
 export interface RunControlResponseBody {
   view: ChangeRunView;
   disposition: string;
   actions: readonly never[];
+  /** Additive for compatibility with management servers predating previews. */
+  candidates?: readonly RunControlAgentCandidate[];
 }
 
 /** An active invocation projected from the root-DAG frontier. */

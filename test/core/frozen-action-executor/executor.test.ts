@@ -15,6 +15,7 @@ import type {
   CommittedAction,
 } from '../../../src/core/change-run/internal/record.js';
 import {
+  makeBoundRecordAction,
   makeRecordAction,
   recordIds,
   recordRevision,
@@ -107,6 +108,164 @@ describe('executor dispatch - happy path', () => {
       expect(result.backend).toBe('hosted');
       expect(result.outcome.kind).toBe('succeeded');
     }
+  });
+});
+
+describe('executor dispatch - authenticated turn input', () => {
+  it('forwards exact authenticated bytes on a new unrouted hosted Action', async () => {
+    const turnInput = 'line one\r\n猫';
+    const action = makeBoundRecordAction(turnInput);
+    const committed = grantedCommitted();
+    const record = recordWith({ ...committed, action } as CommittedAction);
+    let received: string | undefined;
+    const result = await dispatchGrantedAction({
+      runRef,
+      grantedAction: action,
+      record,
+      expectedRecordVersion: 3,
+      workspaceRevision: recordRevision,
+      matrix: buildExecutionCapabilityMatrix({ hostPlatform: 'linux' }),
+      backends: {
+        hosted: {
+          kind: 'hosted',
+          async executeTurn(input) {
+            received = input.input;
+            return { turn: { ok: true, status: 'succeeded' }, daemonAlive: true };
+          },
+        },
+      },
+      requestedBackend: 'hosted',
+      maxInputBytes: 1024,
+      turnInput,
+    });
+    expect(result.kind).toBe('executed');
+    expect(received).toBe(turnInput);
+  });
+
+  it.each([
+    ['newline normalization', 'line one\r\nline two', 'line one\nline two'],
+    ['equal-JS-length multibyte mutation', '猫', 'a'],
+  ])('rejects a changed-only %s request before hosted execution', async (_case, trusted, changed) => {
+    const action = makeBoundRecordAction(trusted);
+    const committed = grantedCommitted();
+    const record = recordWith({ ...committed, action } as CommittedAction);
+    let calls = 0;
+    const result = await dispatchGrantedAction({
+      runRef,
+      grantedAction: action,
+      record,
+      expectedRecordVersion: 3,
+      workspaceRevision: recordRevision,
+      matrix: buildExecutionCapabilityMatrix({ hostPlatform: 'linux' }),
+      backends: {
+        hosted: {
+          kind: 'hosted',
+          async executeTurn() {
+            calls += 1;
+            return { turn: { ok: true, status: 'succeeded' }, daemonAlive: true };
+          },
+        },
+      },
+      requestedBackend: 'hosted',
+      maxInputBytes: 1024,
+      turnInput: changed,
+    });
+    expect(result).toMatchObject({
+      kind: 'execution-input-rejected',
+      code: 'execution_input_mismatch',
+      retryable: false,
+    });
+    expect(calls).toBe(0);
+  });
+
+  it('checks mismatch before the effective byte limit and before in-tool execution', async () => {
+    const action = makeBoundRecordAction('猫');
+    const committed = grantedCommitted();
+    const record = recordWith({ ...committed, action } as CommittedAction);
+    let calls = 0;
+    const result = await dispatchGrantedAction({
+      runRef,
+      grantedAction: action,
+      record,
+      expectedRecordVersion: 3,
+      workspaceRevision: recordRevision,
+      matrix: buildExecutionCapabilityMatrix({ hostPlatform: 'linux' }),
+      backends: {
+        'in-tool': {
+          kind: 'in-tool',
+          async executeTurn() {
+            calls += 1;
+            return { turn: { ok: true, status: 'succeeded' }, launcherAlive: true };
+          },
+        },
+      },
+      requestedBackend: 'in-tool',
+      maxInputBytes: 1,
+      turnInput: '犬',
+    });
+    expect(result).toMatchObject({
+      kind: 'execution-input-rejected',
+      code: 'execution_input_mismatch',
+    });
+    expect(calls).toBe(0);
+  });
+
+  it('rejects matching multibyte bytes over the effective limit before execution', async () => {
+    const action = makeBoundRecordAction('猫');
+    const committed = grantedCommitted();
+    const record = recordWith({ ...committed, action } as CommittedAction);
+    let calls = 0;
+    const result = await dispatchGrantedAction({
+      runRef,
+      grantedAction: action,
+      record,
+      expectedRecordVersion: 3,
+      workspaceRevision: recordRevision,
+      matrix: buildExecutionCapabilityMatrix({ hostPlatform: 'linux' }),
+      backends: {
+        'in-tool': {
+          kind: 'in-tool',
+          async executeTurn() {
+            calls += 1;
+            return { turn: { ok: true, status: 'succeeded' }, launcherAlive: true };
+          },
+        },
+      },
+      requestedBackend: 'in-tool',
+      maxInputBytes: 2,
+      turnInput: '猫',
+    });
+    expect(result).toMatchObject({
+      kind: 'execution-input-rejected',
+      code: 'execution_input_too_large',
+    });
+    expect(calls).toBe(0);
+  });
+
+  it('preserves historical unrouted request-rendered behavior', async () => {
+    const committed = grantedCommitted();
+    let received: string | undefined;
+    const result = await dispatchGrantedAction({
+      runRef,
+      grantedAction: committed.action,
+      record: recordWith(committed),
+      expectedRecordVersion: 3,
+      workspaceRevision: recordRevision,
+      matrix: buildExecutionCapabilityMatrix({ hostPlatform: 'linux' }),
+      backends: {
+        hosted: {
+          kind: 'hosted',
+          async executeTurn(input) {
+            received = input.input;
+            return { turn: { ok: true, status: 'succeeded' }, daemonAlive: true };
+          },
+        },
+      },
+      requestedBackend: 'hosted',
+      turnInput: 'historical caller-rendered prompt',
+    });
+    expect(result.kind).toBe('executed');
+    expect(received).toBe('historical caller-rendered prompt');
   });
 });
 

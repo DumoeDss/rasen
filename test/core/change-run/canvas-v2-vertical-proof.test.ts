@@ -22,7 +22,7 @@ import {
   CANVAS_V2_AUTHORING_DEFINITION,
   CANVAS_V2_AUTHORING_NAME,
 } from '../../../packages/ui/test/fixtures/canvas-v2-authoring.js';
-import { runCLI } from '../../helpers/run-cli.js';
+import { runPipelineCLIWithAdmission as runCLI } from '../../helpers/pipeline-cli-admission.js';
 import { computeCompletionReceiptDigest } from '../../../src/core/change-run/internal/completion.js';
 import { buildEvidenceRef } from '../../../src/core/change-run/internal/evidence.js';
 import { observeGitWorkspace } from '../../../src/core/change-run/internal/workspace-git.js';

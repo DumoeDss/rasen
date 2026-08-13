@@ -75,6 +75,7 @@ import {
   type ProductionExecutor,
   type TrustedCompletionProducerResolver,
 } from '../frozen-action-executor/index.js';
+import { createProductionRoutedTurnExecutor } from '../frozen-action-executor/index.js';
 
 const MAX_DISPATCH_BODY_BYTES = 2 * 1024 * 1024;
 
@@ -1306,6 +1307,9 @@ function createManagementExactTeacherAttemptModule(input: Readonly<{
                 disposition: 'idempotent' as const,
                 view: projectRunView(record, 'active', runtime.plan),
                 actions: Object.freeze([]),
+                // A settled Teacher advice receipt admits nothing, so it
+                // carries no agent candidates.
+                candidates: Object.freeze([]),
               }),
             }),
           });
@@ -1693,12 +1697,27 @@ export async function handleFrozenActionDispatch(input: Readonly<{
   }
 
   // --- Construct the production executor bound to the daemon's SessionHost + dispatch ---
+  const hostedSeam = envelope.hostedSeam as {
+    cwd: string;
+    backend: string;
+    limits: TurnLimits;
+  };
+  const executeRoutedTurn = createProductionRoutedTurnExecutor({
+    cwd: hostedSeam.cwd,
+    limits: hostedSeam.limits,
+  });
+  const hostedSeamOptions = {
+    cwd: hostedSeam.cwd,
+    backend: hostedSeam.backend,
+    limits: hostedSeam.limits,
+    executeRoutedTurn,
+  } as HostedBackendSeamOptions;
   const initialExecutor =
     teacherConsultation === undefined
       ? createProductionExecutor({
           hostPlatform: input.hostPlatform,
           host: input.host,
-          hostedSeamOptions: envelope.hostedSeam as HostedBackendSeamOptions,
+          hostedSeamOptions,
         })
       : undefined;
   const executor = consultationDriven
@@ -1722,8 +1741,26 @@ export async function handleFrozenActionDispatch(input: Readonly<{
     workspaceRevision,
     requestedBackend: envelope.requestedBackend as ExecutionBackendId | undefined,
     explicitDefaultBackend: envelope.explicitDefaultBackend as ExecutionBackendId | undefined,
+    // This face does NOT derive turn input server-side. Every Action reaching
+    // here keeps its caller-transported prompt, because its committed
+    // `agent.turnInput` is what authenticates those bytes. Deriving
+    // `canonicalJson(agent.input)` for a consultation-driven Action used to
+    // overwrite the eligible SOURCE implementer's LEAD-rendered prompt, which
+    // then failed its own binding with `execution_input_mismatch` before any
+    // backend and made `CONSULT` unreachable in production.
+    //
+    // The Teacher arm below is a BACKSTOP, currently unreachable: a granted
+    // Teacher is already refused ~95 lines above with
+    // `legacy_teacher_dispatch_forbidden` (pinned by
+    // `test/core/management-api/frozen-action-executor.test.ts`), so
+    // `teacherConsultation` is provably `undefined` here. The Teacher's bytes
+    // are actually kept server-derived by `executeOnce` in
+    // `createManagementExactTeacherAttemptModule`, which builds
+    // `canonicalJson(action.agent.input)` on its own path. Keep this arm so the
+    // Decision 13 property survives if that refusal is ever relaxed; do not
+    // read it as the control that enforces it today.
     turnInput:
-      consultationDriven && grantedAction.kind === 'agent'
+      teacherConsultation !== undefined && grantedAction.kind === 'agent'
         ? canonicalJson(grantedAction.agent.input)
         : envelope.turnInput,
   });

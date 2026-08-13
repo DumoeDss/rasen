@@ -21,7 +21,7 @@ import { promises as fs, readFileSync, readdirSync, writeFileSync, mkdirSync } f
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
-import { runCLI } from '../helpers/run-cli.js';
+import { runPipelineCLIWithAdmission as runCLI } from '../helpers/pipeline-cli-admission.js';
 
 // Kernel internals — used ONLY for the two documented kernel-internal steps
 // (gate-wait commitment + effect observation). These are NOT used to bypass

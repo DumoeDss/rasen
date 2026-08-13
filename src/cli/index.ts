@@ -774,6 +774,27 @@ pipelineCmd
   });
 
 pipelineCmd
+  .command('admit <change>')
+  .description('')
+  .requiredOption('--run <runId>', 'Exact Run ID')
+  .requiredOption('--turn-input-file <path>', 'Private candidate-bound prompt manifest')
+  .option('--json', '')
+  .option('--store <id>', '')
+  .option('--project <id>', '')
+  .addOption(hiddenStorePathOption())
+  .action(async (
+    change: string,
+    options: { run: string; turnInputFile: string; json?: boolean; store?: string; project?: string; storePath?: string }
+  ) => {
+    try {
+      const pipelineCommand = new PipelineCommand();
+      await pipelineCommand.admit(change, options.run, options);
+    } catch (error) {
+      failPipelineAction(error);
+    }
+  });
+
+pipelineCmd
   .command('cancel <change> <pipeline>')
   .description('')
   .option('--json', '')
@@ -997,6 +1018,7 @@ agentCmd
   .option('--cwd <directory>', '')
   .option('--timeout-ms <ms>', '', (value) => Number(value))
   .option('--resume <session-id>', '')
+  .option('--inference-file <path>', '')
   .option('--json', '')
   .action(async (options: {
     runtime?: string;
@@ -1008,6 +1030,7 @@ agentCmd
     cwd?: string;
     timeoutMs?: number;
     resume?: string;
+    inferenceFile?: string;
     json?: boolean;
   }) => {
     try {

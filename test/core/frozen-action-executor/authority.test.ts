@@ -5,7 +5,11 @@ import type {
   CanonicalRunRecord,
   CommittedAction,
 } from '../../../src/core/change-run/internal/record.js';
-import type { ExactChangeRunRef } from '../../../src/core/change-run/contracts.js';
+import {
+  decodeRunAction,
+  type ExactChangeRunRef,
+  type RunAction,
+} from '../../../src/core/change-run/contracts.js';
 import {
   makeRecordAction,
   recordIds,
@@ -47,6 +51,72 @@ const runRef: ExactChangeRunRef = {
   change: { projectRoot: '/root', changeId: 'fixture-change' },
   runId: recordIds.runId,
 };
+
+function routedAuthorityAction(): RunAction {
+  const action = makeRecordAction();
+  if (action.kind !== 'agent') throw new Error('expected agent Action');
+  return decodeRunAction({
+    ...action,
+    agent: {
+      ...action.agent,
+      workerContract: 'leaf',
+      inference: {
+        broker: 'omnicross',
+        runtime: 'codex',
+        upstream: { kind: 'provider', providerId: 'deepseek-api' },
+        model: action.agent.model,
+        connection: {
+          endpoint: 'http://127.0.0.1:8765',
+          controlTokenEnv: 'TEST_OMNICROSS_ADMIN',
+          requestTimeoutMs: 1_000,
+          leaseTtlSeconds: 60,
+          configRevision: recordIds.digest,
+        },
+      },
+    },
+  });
+}
+
+function withPathMutation(
+  source: unknown,
+  path: readonly string[],
+  replacement: unknown
+): unknown {
+  const candidate: unknown = structuredClone(source);
+  let cursor = candidate;
+  for (const segment of path.slice(0, -1)) {
+    if (cursor === null || typeof cursor !== 'object' || Array.isArray(cursor)) {
+      throw new Error(`Mutation path ${path.join('.')} is not an object path.`);
+    }
+    cursor = (cursor as Record<string, unknown>)[segment];
+  }
+  if (cursor === null || typeof cursor !== 'object' || Array.isArray(cursor)) {
+    throw new Error(`Mutation path ${path.join('.')} has no object parent.`);
+  }
+  (cursor as Record<string, unknown>)[path.at(-1)!] = replacement;
+  return candidate;
+}
+
+const AGENT_EXECUTION_MUTATIONS = [
+  ['role', ['agent', 'role'], 'reviewer'],
+  ['model', ['agent', 'model'], 'retargeted-model'],
+  ['reasoningEffort', ['agent', 'reasoningEffort'], 'low'],
+  ['runtime', ['agent', 'runtime'], 'claude'],
+  ['sandbox', ['agent', 'sandbox'], 'read-only'],
+  ['workerContract', ['agent', 'workerContract'], 'evaluate'],
+  ['inference upstream', ['agent', 'inference', 'upstream', 'providerId'], 'other-provider'],
+  ['inference model', ['agent', 'inference', 'model'], 'other-route-model'],
+  ['inference endpoint', ['agent', 'inference', 'connection', 'endpoint'], 'http://127.0.0.1:9876'],
+  ['inference control-token identity', ['agent', 'inference', 'connection', 'controlTokenEnv'], 'OTHER_ADMIN'],
+  ['inference timeout', ['agent', 'inference', 'connection', 'requestTimeoutMs'], 2_000],
+  ['inference lease TTL', ['agent', 'inference', 'connection', 'leaseTtlSeconds'], 120],
+  ['inference config revision', ['agent', 'inference', 'connection', 'configRevision'], `sha256:${'c'.repeat(64)}`],
+  ['input', ['agent', 'input'], { change: 'retargeted-change' }],
+  ['session reuse', ['agent', 'session', 'reuse'], 'same-invocation'],
+  ['session authored scope', ['agent', 'session', 'sessionReuseAuthored'], 'stage'],
+  ['session handoff limit', ['agent', 'session', 'handoffTokenLimit'], 20_000],
+  ['session round limit', ['agent', 'session', 'reuseRoundLimit'], 2],
+] as const;
 
 describe('granted-Action dispatch - authority validation against the Record', () => {
   it('dispatches a granted Action with every field validated against the Record', () => {
@@ -275,6 +345,65 @@ describe('per-field completion-binding mismatch (task 5.4)', () => {
     const result = validateWith({ policyDigest: branded(`sha256:${'d'.repeat(64)}`) });
     expect(result.kind).toBe('rejected');
     if (result.kind === 'rejected') expect(result.code).toBe('receipt_conflict');
+  });
+
+  it('a worker-contract mismatch fails closed receipt_conflict', () => {
+    const committedAction = makeRecordAction();
+    if (committedAction.kind !== 'agent') throw new Error('expected agent Action');
+    const leafAction: RunAction = {
+      ...committedAction,
+      agent: { ...committedAction.agent, workerContract: 'leaf' },
+    };
+    const committed = grantedCommitted({ action: leafAction });
+    const record = recordWith(committed);
+    const granted: RunAction = {
+      ...committedAction,
+      agent: { ...committedAction.agent, workerContract: 'evaluate' },
+    };
+    const result = validateGrantedAction({
+      runRef,
+      grantedAction: granted,
+      record,
+      expectedRecordVersion: 3,
+      workspaceRevision: recordRevision,
+    });
+    expect(result.kind).toBe('rejected');
+    if (result.kind === 'rejected') expect(result.code).toBe('receipt_conflict');
+  });
+
+  it.each(AGENT_EXECUTION_MUTATIONS)(
+    'rejects an independently mutated %s field under complete Action authority',
+    (_name, path, replacement) => {
+      const committedAction = routedAuthorityAction();
+      const grantedAction = decodeRunAction(
+        withPathMutation(committedAction, path, replacement)
+      );
+      const result = validateGrantedAction({
+        runRef,
+        grantedAction,
+        record: recordWith(grantedCommitted({ action: committedAction })),
+        expectedRecordVersion: 3,
+        workspaceRevision: recordRevision,
+      });
+      expect(result).toMatchObject({ kind: 'rejected', code: 'receipt_conflict' });
+    }
+  );
+
+  it('returns the Record-owned Action object after complete canonical equality', () => {
+    const committedAction = routedAuthorityAction();
+    const receiptCopy = decodeRunAction(structuredClone(committedAction));
+    const result = validateGrantedAction({
+      runRef,
+      grantedAction: receiptCopy,
+      record: recordWith(grantedCommitted({ action: committedAction })),
+      expectedRecordVersion: 3,
+      workspaceRevision: recordRevision,
+    });
+    expect(result.kind).toBe('dispatched');
+    if (result.kind === 'dispatched') {
+      expect(result.action).toBe(committedAction);
+      expect(result.action).not.toBe(receiptCopy);
+    }
   });
 });
 

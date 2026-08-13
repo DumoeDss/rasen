@@ -404,6 +404,24 @@ describe('closed change-run codecs', () => {
       }, NO_CONTINUATION_AUTHORITY)
     ).toThrowError(expect.objectContaining({ code: 'invalid_run_invariant' }));
 
+    const historical = decodeChangeRunReceipt({
+      format: 'change-run-receipt/1',
+      disposition: 'advanced',
+      view: view(),
+      actions: [action],
+    });
+    expect(historical.actions).toHaveLength(1);
+    expect(historical.candidates).toEqual([]);
+
+    const candidate = {
+      format: 'change-run-agent-candidate/1',
+      candidateId: `candidate:${'9'.repeat(64)}`,
+      runId: ids.runId,
+      recordVersion: 1,
+      nodeId: action.nodeId,
+      occurrence: 0,
+      input: { phase: 'review' },
+    };
     expect(
       decodeChangeRunReceipt({
         format: 'change-run-receipt/1',
@@ -412,6 +430,42 @@ describe('closed change-run codecs', () => {
         actions: [action],
       }, NO_CONTINUATION_AUTHORITY).actions
     ).toHaveLength(1);
+    expect(
+      decodeChangeRunReceipt({
+        format: 'change-run-receipt/1',
+        disposition: 'advanced',
+        view: view(),
+        actions: [],
+        candidates: [candidate],
+      }, NO_CONTINUATION_AUTHORITY).candidates
+    ).toEqual([candidate]);
+    expect(() =>
+      decodeChangeRunReceipt({
+        format: 'change-run-receipt/1',
+        disposition: 'advanced',
+        view: view(),
+        actions: [],
+        candidates: [{ ...candidate, prompt: 'must stay private' }],
+      }, NO_CONTINUATION_AUTHORITY)
+    ).toThrow(ChangeRunContractError);
+    expect(() =>
+      decodeChangeRunReceipt({
+        format: 'change-run-receipt/1',
+        disposition: 'advanced',
+        view: view(),
+        actions: [],
+        candidates: [candidate, candidate],
+      }, NO_CONTINUATION_AUTHORITY)
+    ).toThrowError(expect.objectContaining({ code: 'invalid_run_invariant' }));
+    expect(() =>
+      decodeChangeRunReceipt({
+        format: 'change-run-receipt/1',
+        disposition: 'advanced',
+        view: view(),
+        actions: [],
+        candidates: [{ ...candidate, recordVersion: 0 }],
+      }, NO_CONTINUATION_AUTHORITY)
+    ).toThrowError(expect.objectContaining({ code: 'invalid_run_invariant' }));
   });
 
   it('allows branch-local waits beside active Actions and forbids terminal overlap', () => {

@@ -23,7 +23,7 @@ declarations:
           kind: AtomicStage
           capability:
             id: skill:rasen-review
-            version: sha256:06a80842145868a2ffb43b9017225ec15c06b0b946e490c8daa6cb7a68b8e049
+            version: sha256:281717f5e3164dca91e21d9329ae812b8ee1263f656d605ef8b1d3d6bba0c7fc
           execution:
             version: 1
             role: reviewer
@@ -34,7 +34,7 @@ declarations:
           kind: AtomicStage
           capability:
             id: skill:rasen-review
-            version: sha256:06a80842145868a2ffb43b9017225ec15c06b0b946e490c8daa6cb7a68b8e049
+            version: sha256:281717f5e3164dca91e21d9329ae812b8ee1263f656d605ef8b1d3d6bba0c7fc
           execution:
             version: 1
             role: reviewer
@@ -44,7 +44,7 @@ declarations:
           kind: AtomicStage
           capability:
             id: skill:rasen-review-fix
-            version: sha256:737e61418515fb67d0bdf46626f80b0e0c418a38d7b931b9bf69d320a520cad0
+            version: sha256:fa102c0d009739407f98afffff477d336966b5c58b0f76dd9d16b50bab19476b
           execution:
             version: 1
             role: fixer
@@ -54,7 +54,7 @@ declarations:
           kind: AtomicStage
           capability:
             id: skill:rasen-review
-            version: sha256:06a80842145868a2ffb43b9017225ec15c06b0b946e490c8daa6cb7a68b8e049
+            version: sha256:281717f5e3164dca91e21d9329ae812b8ee1263f656d605ef8b1d3d6bba0c7fc
           execution:
             version: 1
             role: reviewer
@@ -76,7 +76,7 @@ root:
       kind: AtomicStage
       capability:
         id: skill:rasen-propose
-        version: sha256:f7948291bd23ca25d1856a828f62261698207025d1f8dd0929455fbc52ca41e0
+        version: sha256:950fbdbff5734ef2760fc9c04d60399e43caaf869a7f24ba11ddcbb2d6bb1907
       execution:
         version: 1
         role: planner
@@ -90,7 +90,7 @@ root:
       kind: AtomicStage
       capability:
         id: skill:rasen-apply-change
-        version: sha256:5f1665c92086b87a024161e9205bf27f89158b91fa69b144e48eb433865b6368
+        version: sha256:dd1b0845380d232d173d7c28873738aff2a798defc13b83bf1041a39d6a6a79f
       execution:
         version: 1
         role: implementer
@@ -112,7 +112,7 @@ root:
           requireMaterialChange: true
           capability:
             id: skill:rasen-review-cycle
-            version: sha256:4408724a34b151d6e2ee54f4324e6585c61a0764d355990a7105bb4235ae6df0
+            version: sha256:2689d5c85df54bf702f34337db8a51c90faf321d6c18b9e829f79dca89ea6e05
         exits:
           iterationLimit: { action: strategy }
           actionLimit: { action: fail, outcome: review-action-limit }
@@ -127,7 +127,7 @@ root:
       kind: AtomicStage
       capability:
         id: skill:rasen-ship
-        version: sha256:a2c069c2051ba9957df1f9cffea17f3ed93683a8ed5f7b29f5cf443a90e47450
+        version: sha256:35615d0bfd09e3fadef419a6ba6f28fe15f278fa981ec3af45beaacc6be1d965
       execution:
         version: 1
         role: shipper
@@ -142,7 +142,7 @@ root:
       kind: AtomicStage
       capability:
         id: skill:rasen-archive-change
-        version: sha256:76c36f451797c28fc0c5b78ccdd83cc2a26f194564f86c5f509841fb5b98b178
+        version: sha256:4883a8d8e4c61343c87e3e0bdd194bc5d48e8b4cbc7ded32738b7652bec93b13
       execution:
         version: 1
         role: shipper

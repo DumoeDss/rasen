@@ -249,6 +249,7 @@ export async function createCanonicalAcceptanceRun(
         expectedBeforeWorkspace: record.currentWorkspaceRevision,
       },
       {
+        renderedTurnInput: 'trusted acceptance fixture prompt',
         input:
           agentInput
           ?? candidate.input

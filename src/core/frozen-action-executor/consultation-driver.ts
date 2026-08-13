@@ -108,7 +108,14 @@ export function createProductionConsultationDriver(
         : 'The selected execution authority became unavailable.';
     }
     if (result.kind === 'executed') return result.outcome.message;
-    return result.message;
+    // Routed dispatch carries its reason under `failure`; the input-rejection
+    // variants carry a bare `message`. Narrow explicitly so a newly added
+    // variant fails to compile here rather than silently losing its reason.
+    if (result.kind === 'route-failed') return result.failure.message;
+    if ('message' in result && typeof result.message === 'string') {
+      return result.message;
+    }
+    return `Dispatch failed: ${result.kind}`;
   };
 
   const activeTeacherFor = (action: RunAction) => {

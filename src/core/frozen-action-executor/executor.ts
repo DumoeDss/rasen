@@ -30,6 +30,8 @@ import {
   digestContinuationInput,
 } from '../change-run/consultation-contracts.js';
 import { canonicalJson } from '../change-run/internal/identity.js';
+import { validateTurnInputBytes } from '../session-host/contracts.js';
+import { deriveAgentTurnInputBinding } from '../change-run/internal/actions.js';
 import {
   type BackendSelection,
   type ExecutionBackendId,
@@ -48,6 +50,39 @@ import {
   type InFlightDispatchLedger,
 } from './authority.js';
 import { decideReuse, resolveReusePolicy } from './reuse-policy.js';
+import type {
+  OmniCrossFailure,
+  RuntimeRouteBinding,
+  SafeRouteLeaseMetadata,
+} from '../omnicross/index.js';
+import type { RoutedActionLifecycle } from './omnicross-lifecycle.js';
+
+export interface AgentBackendTurnInput {
+  readonly action: RunAction;
+  readonly input: string;
+  readonly sessionId?: string;
+  readonly requestId?: string;
+  readonly sandbox: 'read-only' | 'workspace-write';
+  readonly authority?: Readonly<{
+    invocationId: string;
+    role: string;
+    workspaceInstanceId: string;
+    backend: 'hosted';
+  }>;
+  readonly handoffTokens?: number;
+  readonly routeBinding?: RuntimeRouteBinding;
+  readonly signal?: AbortSignal;
+}
+
+type BackendTurnExecutionResult =
+  | {
+      readonly turn: TurnResult | undefined;
+      readonly daemonAlive: boolean;
+    }
+  | {
+      readonly turn: TurnResult | undefined;
+      readonly launcherAlive: boolean;
+    };
 
 /**
  * The hosted-backend seam. The executor drives one turn and reads the owning
@@ -56,20 +91,7 @@ import { decideReuse, resolveReusePolicy } from './reuse-policy.js';
  */
 export interface HostedBackendSeam {
   readonly kind: 'hosted';
-  executeTurn(input: Readonly<{
-    action: RunAction;
-    input: string;
-    sessionId?: string;
-    requestId?: string;
-    sandbox: 'read-only' | 'workspace-write';
-    authority?: Readonly<{
-      invocationId: string;
-      role: string;
-      workspaceInstanceId: string;
-      backend: 'hosted';
-    }>;
-    handoffTokens?: number;
-  }>): Promise<{
+  executeTurn(input: Readonly<AgentBackendTurnInput>): Promise<{
     readonly turn: TurnResult | undefined;
     readonly daemonAlive: boolean;
   }>;
@@ -97,7 +119,7 @@ export interface HostedBackendSeam {
  */
 export interface InToolBackendSeam {
   readonly kind: 'in-tool';
-  executeTurn(input: Readonly<{ action: RunAction; input: string }>): Promise<{
+  executeTurn(input: Readonly<AgentBackendTurnInput>): Promise<{
     readonly turn: TurnResult | undefined;
     readonly launcherAlive: boolean;
   }>;
@@ -123,6 +145,9 @@ export interface DispatchGrantedActionOptions {
   /** True only for Actions whose frozen profile path is consultation-eligible. */
   readonly requiresContinuableTurns?: boolean;
   readonly inFlight?: InFlightDispatchLedger;
+  readonly routedActionLifecycle?: RoutedActionLifecycle;
+  /** Shared authenticated-turn UTF-8 bound, supplied by the production face. */
+  readonly maxInputBytes?: number;
   /**
    * The input the backend turn executes. The executor does not interpret it;
    * it forwards the frozen Action's authored input verbatim.
@@ -130,8 +155,21 @@ export interface DispatchGrantedActionOptions {
   readonly turnInput: string;
 }
 
+export type ExecutionInputRejectionCode =
+  | 'execution_input_authority_missing'
+  | 'execution_input_mismatch'
+  | 'execution_input_too_large';
+
+export interface ExecutionInputRejection {
+  readonly kind: 'execution-input-rejected';
+  readonly code: ExecutionInputRejectionCode;
+  readonly message: string;
+  readonly retryable: false;
+}
+
 export type ExecutionDispatchResult =
   | (AuthorityValidationResult & { readonly kind: 'rejected' | 'duplicate' })
+  | ExecutionInputRejection
   | {
       readonly kind: 'authority-unavailable';
       readonly selection: BackendSelection;
@@ -141,6 +179,14 @@ export type ExecutionDispatchResult =
       readonly backend: ExecutionBackendId;
       readonly selection: BackendSelection;
       readonly outcome: ActionOutcome;
+    }
+  | {
+      readonly kind: 'route-failed';
+      readonly backend: ExecutionBackendId;
+      readonly selection: BackendSelection;
+      readonly failure: OmniCrossFailure;
+      readonly route?: SafeRouteLeaseMetadata;
+      readonly warnings?: readonly string[];
     };
 
 export interface DispatchContinuationOptions {
@@ -187,6 +233,59 @@ export async function dispatchGrantedAction(
     return { ...validation, kind: 'duplicate' };
   }
 
+  // Complete Action equality above yields the Record-owned Action. Authenticate
+  // the sibling transport bytes before backend selection or any lifecycle work.
+  const action = validation.action;
+  const routedAction =
+    action.kind === 'agent'
+    && action.agent.inference !== undefined;
+  if (action.kind === 'agent') {
+    const authority = action.agent.turnInput;
+    if (authority === undefined) {
+      if (routedAction) {
+        return {
+          kind: 'execution-input-rejected',
+          code: 'execution_input_authority_missing',
+          message:
+            'The routed frozen Action predates executable turn-input authority and cannot be executed safely.',
+          retryable: false,
+        };
+      }
+      // Historical unrouted compatibility: preserve its prior request-rendered
+      // behavior. No authority is inferred from agent.input or current content.
+    } else {
+      // Length + digest are the whole transport check. The rendering contract
+      // is NOT passed here on purpose: it is excluded from the digest preimage,
+      // so supplying it could not affect either compared field and would only
+      // suggest to a later reader that it participates in authentication. The
+      // contract is authority, but it is enforced by complete canonical Action
+      // equality against the Record, not by this comparison.
+      const transported = deriveAgentTurnInputBinding(options.turnInput);
+      if (
+        transported.utf8ByteLength !== authority.utf8ByteLength ||
+        transported.contentDigest !== authority.contentDigest
+      ) {
+        return {
+          kind: 'execution-input-rejected',
+          code: 'execution_input_mismatch',
+          message: 'Transported turnInput does not match the committed Action authority.',
+          retryable: false,
+        };
+      }
+      if (
+        options.maxInputBytes !== undefined &&
+        !validateTurnInputBytes(options.turnInput, options.maxInputBytes).ok
+      ) {
+        return {
+          kind: 'execution-input-rejected',
+          code: 'execution_input_too_large',
+          message: 'Authenticated turnInput exceeds maxInputBytes.',
+          retryable: false,
+        };
+      }
+    }
+  }
+
   const selection = resolveBackendSelection({
     matrix: options.matrix,
     requested: options.requestedBackend,
@@ -216,25 +315,83 @@ export async function dispatchGrantedAction(
     };
   }
 
-  const turn = await backend.executeTurn({
-    action: options.grantedAction,
-    input: options.turnInput,
-    sandbox:
-      options.grantedAction.kind === 'agent' &&
-      options.grantedAction.agent.sandbox === 'read-only'
-        ? 'read-only'
-        : 'workspace-write',
-    ...(options.grantedAction.kind === 'agent'
+  // Validation returns the Action owned by the canonical Record. Never dispatch
+  // the caller's receipt object, even after complete equality validation: the
+  // Record remains the sole object authority at the execution boundary. The
+  // sandbox and authority facts below are therefore derived from `action`, not
+  // from `options.grantedAction`.
+  const sandbox =
+    action.kind === 'agent' && action.agent.sandbox === 'read-only'
+      ? ('read-only' as const)
+      : ('workspace-write' as const);
+  const authorityFields =
+    action.kind === 'agent'
       ? {
           authority: {
-            invocationId: options.grantedAction.invocationId,
-            role: options.grantedAction.agent.role,
+            invocationId: action.invocationId,
+            role: action.agent.role,
             workspaceInstanceId: options.record.workspaceInstanceId,
             backend: 'hosted' as const,
           },
         }
-      : {}),
-  });
+      : {};
+  let turn: BackendTurnExecutionResult;
+  if (routedAction) {
+    if (options.routedActionLifecycle === undefined) {
+      return {
+        kind: 'route-failed',
+        backend: selection.backend,
+        selection,
+        failure: {
+          kind: 'invalid-config',
+          message: 'No OmniCross Route Lease lifecycle is wired for this executor.',
+          retryable: false,
+        },
+      };
+    }
+    if (action.agent.workerContract === undefined) {
+      return {
+        kind: 'route-failed',
+        backend: selection.backend,
+        selection,
+        failure: {
+          kind: 'invalid-input',
+          message:
+            'The routed frozen Action predates worker-contract authority and cannot be executed safely.',
+          retryable: false,
+        },
+      };
+    }
+    const routed = await options.routedActionLifecycle.execute<BackendTurnExecutionResult>({
+      action,
+      run: (routeBinding, signal) => backend.executeTurn({
+        action,
+        input: options.turnInput,
+        sandbox,
+        ...authorityFields,
+        routeBinding,
+        signal,
+      }),
+    });
+    if (!routed.ok) {
+      return {
+        kind: 'route-failed',
+        backend: selection.backend,
+        selection,
+        failure: routed.failure,
+        ...(routed.route ? { route: routed.route } : {}),
+        ...(routed.warnings ? { warnings: routed.warnings } : {}),
+      };
+    }
+    turn = routed.value;
+  } else {
+    turn = await backend.executeTurn({
+      action,
+      input: options.turnInput,
+      sandbox,
+      ...authorityFields,
+    });
+  }
   const liveness = livenessFor(backend, turn);
   const outcome = reconcileActionOutcome({ liveness, turn: turn.turn });
 

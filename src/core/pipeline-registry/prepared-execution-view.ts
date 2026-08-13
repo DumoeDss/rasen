@@ -34,7 +34,9 @@ import type {
   Stage,
   StageRole,
   VerifyPolicy,
+  StageInference,
 } from './types.js';
+import type { OmniCrossConnectionIdentity } from '../omnicross/contracts.js';
 
 export interface PreparedExecutionStageView {
   readonly id: string;
@@ -60,6 +62,13 @@ export interface PreparedExecutionStageView {
     source: string;
   }>;
   readonly handoff: Readonly<EffectiveStageConfig['handoff']>;
+  readonly inference: Readonly<{
+    broker: 'omnicross';
+    upstream: StageInference['upstream'];
+    runtime: AgentRuntime;
+    model: string;
+    connection?: OmniCrossConnectionIdentity;
+  }> | null;
 }
 
 /**
@@ -178,6 +187,7 @@ function stageFromAtomic(node: AtomicStageNode, gate: boolean): Stage {
     ...(execution.model ? { model: execution.model } : {}),
     ...(execution.effort ? { effort: execution.effort } : {}),
     ...(execution.handoff ? { handoff: execution.handoff } : {}),
+    ...(execution.inference ? { inference: execution.inference } : {}),
   };
 }
 
@@ -192,6 +202,9 @@ function projectNativeStage(
   inputs: PreparedExecutionViewInputs
 ): PreparedExecutionStageView {
   const execution = node.execution!;
+  if (execution.inference !== undefined && policy.model === 'default') {
+    throw new Error(`OmniCross-routed stage "${node.id}" has no effective model.`);
+  }
   const stage = stageFromAtomic(node, gate);
   const effective = resolveEffectiveStage(
     stage,
@@ -200,7 +213,8 @@ function projectNativeStage(
   );
   const route = resolveDispatchRoute(
     inputs.host?.runtime ?? 'unknown',
-    policy.runtime as AgentRuntime
+    policy.runtime as AgentRuntime,
+    { externalInference: execution.inference !== undefined }
   );
   return {
     id: node.id,
@@ -240,6 +254,17 @@ function projectNativeStage(
       source: policy.provenance.sessionReuse,
     },
     handoff: effective.handoff,
+    inference: execution.inference
+      ? {
+          broker: 'omnicross',
+          upstream: execution.inference.upstream,
+          runtime: policy.runtime as AgentRuntime,
+          model: policy.model,
+          ...(inputs.omnicrossConnection
+            ? { connection: inputs.omnicrossConnection }
+            : {}),
+        }
+      : null,
   };
 }
 
@@ -319,8 +344,12 @@ function projectNativeV2Stages(
 
 function legacyPolicyStage(
   stage: Stage,
-  effective: ReturnType<typeof resolveEffectiveStage>
+  effective: ReturnType<typeof resolveEffectiveStage>,
+  inputs: PreparedExecutionViewInputs
 ): PreparedExecutionStageView {
+  if (stage.inference !== undefined && effective.model.value === null) {
+    throw new Error(`OmniCross-routed stage "${stage.id}" has no effective model.`);
+  }
   const workspace = stage.role === 'reviewer' ? 'read' : 'write';
   const sandbox = effective.runtime.value && stage.sandbox
     ? stage.sandbox
@@ -352,6 +381,17 @@ function legacyPolicyStage(
       source: reuse === undefined ? 'default' : 'stage',
     },
     handoff: effective.handoff,
+    inference: stage.inference && effective.model.value
+      ? {
+          broker: 'omnicross',
+          upstream: stage.inference.upstream,
+          runtime: effective.runtime.value,
+          model: effective.model.value,
+          ...(inputs.omnicrossConnection
+            ? { connection: inputs.omnicrossConnection }
+            : {}),
+        }
+      : null,
   };
 }
 
@@ -455,7 +495,7 @@ export function projectPreparedPipelineExecutionView(
     : (() => {
         const pipeline = authored as PipelineYaml;
         return pipeline.stages.map((stage) =>
-          legacyPolicyStage(stage, resolveEffectiveStage(stage, pipeline, inputs))
+          legacyPolicyStage(stage, resolveEffectiveStage(stage, pipeline, inputs), inputs)
         );
       })();
   const buildOrder = prepared.authoredVersion === 2

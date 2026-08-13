@@ -18,6 +18,10 @@ import { buildAgentAction } from '../../../src/core/change-run/internal/actions.
 import { startRecord, fixtureDigests } from './reconciler-fixture.js';
 import type { RunId, Digest, RunAction, JsonValue } from '../../../src/core/change-run/contracts.js';
 import { withTestAttestationAuthority } from '../../fixtures/trusted-completion.js';
+import {
+  admitPreviewedCandidates,
+  createAdmittingChangePipelineDriver,
+} from '../../helpers/change-run-admission.js';
 
 const branded = <T>(value: string): T => value as T;
 const COMPLETE_EXECUTION = {
@@ -109,7 +113,7 @@ function setupFacade() {
   const capByPath = new Map(capabilities.map((c) => [c.nodeId, c] as const));
   const polByPath = new Map(policyStages.map((s) => [s.nodeId, s] as const));
 
-  const buildAction = (desc: { nodeId: string; occurrence: number; admissionKind: 'agent' | 'command' | 'host'; profilePath?: string; input?: JsonValue }): RunAction => {
+  const buildAction = (desc: { nodeId: string; occurrence: number; admissionKind: 'agent' | 'command' | 'host'; profilePath?: string; input?: JsonValue; renderedTurnInput?: string }): RunAction => {
     const hierarchicalPath = desc.profilePath ?? plan.nodes.find((n) => n.nodeId === desc.nodeId)?.hierarchicalPath;
     if (hierarchicalPath === undefined) throw new Error(`No path for ${desc.nodeId}`);
     const cap = capByPath.get(hierarchicalPath);
@@ -129,25 +133,42 @@ function setupFacade() {
         attemptOrdinal: 0,
         expectedBeforeWorkspace: initialRecord.currentWorkspaceRevision,
       },
-      { input: desc.input ?? { change: 'test' } }
+      {
+        renderedTurnInput: desc.renderedTurnInput ?? 'trusted fixture prompt',
+        input: desc.input ?? { change: 'test' },
+      }
     );
   };
 
   const store = createInMemoryRunStore();
-  const facade = createChangePipelineRuntime({ store, plan, initialRecord, buildAction });
-  return { plan, facade, store };
+  const runtime = createChangePipelineRuntime({
+    store,
+    plan,
+    initialRecord,
+    buildAction,
+  });
+  const facade = createAdmittingChangePipelineDriver(runtime);
+  return { plan, runtime, facade, store };
 }
 
 describe('ECP-2 Real dogfood — Custom Composite via facade', () => {
-  it('success path: start admits stage A, view shows running', async () => {
-    const { facade } = setupFacade();
+  it('success path: start previews stage A, then explicit admission shows running', async () => {
+    const { runtime } = setupFacade();
 
-    // Start the Run.
-    const startReceipt = await facade.start({}, { deliveryMode: 'grant' });
+    const startReceipt = await runtime.start({}, { deliveryMode: 'grant' });
     expect(startReceipt.disposition).toBe('created');
+    expect(startReceipt.actions).toHaveLength(0);
+    expect(startReceipt.candidates).toHaveLength(1);
+
+    const admittedReceipt = await admitPreviewedCandidates(
+      runtime,
+      { change: startReceipt.view.change, runId: startReceipt.view.runId },
+      startReceipt
+    );
     // The CompositeRef inlines 3 body stages. Stage A has no deps → admitted.
-    expect(startReceipt.actions).toHaveLength(1);
-    expect(startReceipt.view.status).toBe('running');
+    expect(admittedReceipt.disposition).toBe('advanced');
+    expect(admittedReceipt.actions).toHaveLength(1);
+    expect(admittedReceipt.view.status).toBe('running');
   });
 
   it('recovery path: resume after start → stage A still active', async () => {

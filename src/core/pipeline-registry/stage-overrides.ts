@@ -46,6 +46,7 @@ import {
   type StageRole,
   type ThresholdValue,
   type ThresholdResolutionContext,
+  type StageInference,
 } from './types.js';
 import {
   hasRuntimeCapability,
@@ -92,6 +93,7 @@ export interface ExecutionStageRuntime extends ResolvedStageRuntimeConfig {
   role: StageRole | null;
   dispatchMode: DispatchMode;
   bridge?: DispatchBridge;
+  inference: StageInference | null;
 }
 
 export interface PipelineExecutionPlan {
@@ -141,13 +143,16 @@ export function resolvePipelineExecutionPlan(
             runtimeSource: 'invocation' as const,
           }
         : resolvedRuntime;
-      const route = resolveDispatchRoute(inputs.host.runtime, runtime.runtime);
+      const route = resolveDispatchRoute(inputs.host.runtime, runtime.runtime, {
+        externalInference: stage.inference !== undefined,
+      });
       return {
         id: stage.id,
         role: stage.role ?? null,
         ...runtime,
         dispatchMode: route.mode,
         ...(route.bridge ? { bridge: route.bridge } : {}),
+        inference: stage.inference ?? null,
       };
     }),
   };
@@ -389,6 +394,8 @@ export interface EffectiveStageConfig {
   runtime: { value: AgentRuntime; source: RuntimeSource };
   dispatchMode: DispatchMode;
   bridge?: DispatchBridge;
+  /** Credential-free authored route selection; runtime/model remain effective siblings. */
+  inference: StageInference | null;
 }
 
 /** The per-root resolution inputs a pipeline's effective per-stage values are computed against. */
@@ -449,7 +456,9 @@ export function resolveEffectiveStage(
     inputs.overrides.gates.get(stage.id),
     inputs.basePolicy
   );
-  const route = resolveDispatchRoute(host.runtime, runtime.runtime);
+  const route = resolveDispatchRoute(host.runtime, runtime.runtime, {
+    externalInference: stage.inference !== undefined,
+  });
   return {
     id: stage.id,
     role: stage.role ?? null,
@@ -467,5 +476,6 @@ export function resolveEffectiveStage(
     runtime: { value: runtime.runtime, source: runtime.runtimeSource },
     dispatchMode: route.mode,
     ...(route.bridge ? { bridge: route.bridge } : {}),
+    inference: stage.inference ?? null,
   };
 }

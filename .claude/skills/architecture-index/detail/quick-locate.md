@@ -33,6 +33,7 @@
 | ECP v2 定义图（Canvas 共享缝） | `src/core/pipeline-registry/definition.ts` |
 | pipeline run-state（resume / 可观测） | `src/core/pipeline-registry/run-state.ts`（`auto-run.json` 契约） |
 | pipeline stage 有效配置（config 层 + CLI flag） | `src/core/pipeline-registry/stage-overrides.ts` |
+| pipeline 的多 Provider 推理选择 / frozen route | `src/core/omnicross/` + `pipeline-registry/{types,prepared-execution-view,run-state}.ts` |
 | `.rasenpkg` 打包 / 安装 | `src/core/workflow-package/{codec,transaction}.ts` |
 | `rasen pipeline` / `pipeline-library` 命令 | `src/commands/pipeline.ts` / `pipeline-library.ts` |
 | `rasen workflow-library` 命令 | `src/commands/workflow-library.ts`（委托 `core/workflow-library.ts`） |
@@ -45,6 +46,8 @@
 | **Agent 派发（驱动 Claude/Codex）** | |
 | 派发一轮 Claude Code | `src/core/claude/runner.ts`（`runClaudePrint`）+ `invocation.ts`（argv + GUARD） |
 | 派发一轮 Codex | `src/core/codex/runner.ts`（`runCodexExec`）+ `invocation.ts` |
+| OmniCross lease / descriptor / inference file | `src/core/omnicross/`（`config` → `client` → `launch-binding` → `lease-execution`） |
+| frozen Action 的 OmniCross 执行缝 | `src/core/frozen-action-executor/omnicross-lifecycle.ts` + `executor.ts` |
 | Codex 线程死亡检测 / warm-seed | `src/core/codex/lifecycle.ts` |
 | keepalive beat（parked worker 保 prompt cache） | `src/core/keepalive/index.ts`（`rasen agent wait` 调它） |
 | token 花费审计 | `src/core/token-audit/audit.ts`（`runAudit`，Claude/Codex/Zed） |

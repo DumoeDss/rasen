@@ -376,6 +376,49 @@ stages:
     );
   });
 
+  it('fails execution preflight for an OmniCross-routed stage on an unknown host', async () => {
+    const p = pipeline(`
+name: unknown-host-routed
+stages:
+  - id: ship
+    skill: ${KNOWN_SKILL}
+    runtime: codex
+    model: deepseek-chat
+    inference:
+      broker: omnicross
+      upstream:
+        kind: provider
+        providerId: deepseek-api
+`);
+    await expect(validatePipelineForExecution(p, undefined, {
+      host: UNKNOWN_HOST,
+      reporter: false,
+    })).rejects.toMatchObject({ code: 'pipeline_runtime_route_unsupported' });
+  });
+
+  it('probes the process bridge for a same-host OmniCross-routed stage', async () => {
+    const p = pipeline(`
+name: codex-native-routed
+stages:
+  - id: ship
+    skill: ${KNOWN_SKILL}
+    runtime: codex
+    model: deepseek-chat
+    inference:
+      broker: omnicross
+      upstream:
+        kind: provider
+        providerId: deepseek-api
+`);
+    const probeCodex = vi.fn(() => true);
+    await validatePipelineForExecution(p, undefined, {
+      host: CODEX_HOST,
+      probeCodex,
+      probeClaude: vi.fn(() => false),
+    });
+    expect(probeCodex).toHaveBeenCalledTimes(1);
+  });
+
   it('validates persisted per-role runtime instances instead of ignoring configuration', async () => {
     const projectRoot = path.join(tempDir, 'configured-project');
     fs.mkdirSync(path.join(projectRoot, 'rasen'), { recursive: true });

@@ -25,7 +25,8 @@
 语义核心。stage DAG + roles + loops + gates + run-state。
 
 - **关键文件**：`types.ts`（`Stage`/`PipelineYaml`/`HandoffConfig`/`ReuseConfig`/`StageLoop`）、`definition.ts`（**ECP v2 定义图**：`AtomicStage`/`CompositeRef`/`BoundedLoop`/`Choice`/`FanOut`/`Join`/`Gate`/`Finish` — registry/管理/Canvas 共享的权威语义缝）、`pipeline.ts`（`loadPipeline`/`parsePipeline`/`PipelineValidationError`）、`resolver.ts`（`loadPipelineByName`/`listPipelines`/路径解析）、`run-state.ts`（`RunState`：`auto-run.json` 契约，resume/可观测）、`stage-overrides.ts`（`resolvePipelineStageOverrides`：config 层 project>store>global + CLI flag 合并）、`graph.ts`（`PipelineGraph`：Kahn 拓扑序 + ready/blocked 查询）、`profile-resolver.ts`（从 profile 层解析 pipeline 定义）。
-- **核心**：`Stage = {id, kind:'standard'|'decompose', skill?, childPipeline?, role?, requires[], gate, loop?}`；`StageLoop` 判别联合 `review-cycle`（有界 review→fix）/ `goal`（measure XOR evaluate 门，maxRounds）；`PortfolioState`（多 change portfolio run）；`WorkerContract = 'leaf'|'evaluate'`。
+- **核心**：`Stage = {id, kind:'standard'|'decompose', skill?, childPipeline?, role?, requires[], gate, loop?, inference?}`；`inference` 是闭合的 credential-free OmniCross 上游选择，模型仍来自既有 `model` 优先级；`PreparedExecutionStageView.inference` 合并 effective runtime/model/非 secret connection identity。`StageLoop` 判别联合 `review-cycle`（有界 review→fix）/ `goal`（measure XOR evaluate 门，maxRounds）；`PortfolioState`（多 change portfolio run）；`WorkerContract = 'leaf'|'evaluate'`。
+- **路由恢复**：`run-state.ts` 只允许 `frozenInference`，`pipeline resume` 返回 frozen map；lease id、token、launch descriptor 不属于 run-state。canonical profile/Action 的对应冻结由 `execution-plan-internal.ts` / `change-run/internal/actions.ts` 完成。
 - **连接**：CLI `pipeline`（list/show/start/status/resume/cancel）+ `pipeline-library`（init/validate/import/export/delete）直接消费；管理 API `/api/v1/pipelines` 消费 resolver/validator；`definition.ts` ECP v2 模型与 UI Canvas 共享做可视化编辑。
 
 ## `config-api/` — 配置 HTTP 路由（`/api/v1/*` 配置键 + 静态资产）
