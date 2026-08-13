@@ -36,9 +36,22 @@ is the machine record telling the truth — do not clear it, do not tick those t
 
 ## Next action
 
-1. **Finish S3.** It is mid-`apply`: Sections 1–6 done, Section 7 (anti-blindness anchors) in
-   flight, Section 8 (gates) pending. Its `auto-run.json` carries per-section state and six
-   recorded findings. Then verify → review-loop → ship `local`, exactly as S1 and S2 ran.
+1. **Finish S3.** It is late in `apply`: **Sections 1–7 complete** (all 39 tasks' substance, including
+   the five durable-format anchors, each mutation-proved with a mutation targeting the property the
+   anchor exists for). **Section 8 (gates) is nearly done** — 8.4 (intended-divergence record), 8.6
+   (Windows verification), 8.8 (diff audit: `src/` is pure addition, 28 files / 6048 insertions /
+   **0 deletions**, zero out-of-scope paths) all closed; 8.5 partially done (4 of 6 new suites have
+   measured `KNOWN_SLOW_TEST_WEIGHTS_MS` entries); 8.2/8.3 (the re-derived gate) was running at
+   handoff time; 8.7 (`tsc`/lint/build/validate) pending.
+
+   **One item was open at handoff:** the gate run showed `test/commands/store.test.ts` at 2/50 failed,
+   both timing out at almost exactly the 30000ms `testTimeout`. That is the contention signature, but
+   **do not conclude it without a solo re-run** — the standing rule here is that failure shape does
+   not separate contention from defect (a hard assertion failure once passed solo too). The
+   implementer had explicitly deferred that judgment pending the solo run.
+
+   Its `auto-run.json` carries per-section state and six recorded findings. Then verify →
+   review-loop → ship `local`, exactly as S1 and S2 ran.
 2. **Portfolio delivery** at the parent: resolve the mode, open **one** PR, get CI green.
 3. **Then archive all three children** — the PR's CI run reference is what unblocks the deliberately
    incomplete tasks (S1 6.5, S2 6.9/6.10, and S3's equivalent).
