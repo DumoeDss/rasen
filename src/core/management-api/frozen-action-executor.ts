@@ -1741,18 +1741,24 @@ export async function handleFrozenActionDispatch(input: Readonly<{
     workspaceRevision,
     requestedBackend: envelope.requestedBackend as ExecutionBackendId | undefined,
     explicitDefaultBackend: envelope.explicitDefaultBackend as ExecutionBackendId | undefined,
-    // Only a Teacher turn is server-derived. Its executable bytes are the
-    // canonical serialization of the frozen `teacher-consultation/invocation/1`
-    // envelope, which ECP rendered and bound at admission, so deriving them here
-    // reproduces the committed binding exactly and no caller may substitute the
-    // question the bound Teacher is asked.
+    // This face does NOT derive turn input server-side. Every Action reaching
+    // here keeps its caller-transported prompt, because its committed
+    // `agent.turnInput` is what authenticates those bytes. Deriving
+    // `canonicalJson(agent.input)` for a consultation-driven Action used to
+    // overwrite the eligible SOURCE implementer's LEAD-rendered prompt, which
+    // then failed its own binding with `execution_input_mismatch` before any
+    // backend and made `CONSULT` unreachable in production.
     //
-    // Every other consultation-driven Action — above all the eligible SOURCE
-    // implementer — keeps its caller-transported prompt. Its committed
-    // `agent.turnInput` binds the LEAD's real driver-rendered base prompt, so
-    // substituting `canonicalJson(agent.input)` here would authenticate against
-    // the wrong bytes and reject the dispatch with `execution_input_mismatch`
-    // before any backend, making `CONSULT` unreachable in production.
+    // The Teacher arm below is a BACKSTOP, currently unreachable: a granted
+    // Teacher is already refused ~95 lines above with
+    // `legacy_teacher_dispatch_forbidden` (pinned by
+    // `test/core/management-api/frozen-action-executor.test.ts`), so
+    // `teacherConsultation` is provably `undefined` here. The Teacher's bytes
+    // are actually kept server-derived by `executeOnce` in
+    // `createManagementExactTeacherAttemptModule`, which builds
+    // `canonicalJson(action.agent.input)` on its own path. Keep this arm so the
+    // Decision 13 property survives if that refusal is ever relaxed; do not
+    // read it as the control that enforces it today.
     turnInput:
       teacherConsultation !== undefined && grantedAction.kind === 'agent'
         ? canonicalJson(grantedAction.agent.input)

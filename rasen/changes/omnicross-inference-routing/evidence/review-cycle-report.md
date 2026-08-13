@@ -448,3 +448,94 @@ reports `isDirectory: false` for a link, so real-filesystem tests are structural
 this guard, while the `SafePathStat` contract models a junction as `isDirectory: true` plus
 `isReparsePoint: true`. Only synthetic plumbing discriminates it. Both mutations reverted;
 16/16 pass.
+
+## Round 7 — FIXER response
+
+Responds to "Round 7 - independent re-review of the Round 6 repairs (`4d510c0d`)" in
+`evidence/review-report.md` (0 Blocker, 0 Major, 3 Minor). The reviewer independently
+re-derived that Round 6's Blocker 1 and Major 1 are closed and regression-guarded; those
+dispositions are accepted as verified and not restated here.
+
+### Minor 1 — the Teacher substitution branch is unreachable and Decision 14 documents it as a live control: `resolved`
+
+Independently confirmed before acting: `teacherConsultation` is a `const` at
+`frozen-action-executor.ts:1651`, and line 1661 returns
+`badRequest('legacy_teacher_dispatch_forbidden')` for any granted Teacher, so at the
+dispatch ternary it is provably `undefined`. The finding is correct, and the mechanism
+sentence in Decision 14 was wrong: what repaired Blocker 1 was **removing** the
+`consultationDriven` condition, not adding a narrower one.
+
+Kept the arm rather than deleting it, and labelled it. The primary control is the 1661
+refusal, which is pinned by `test/core/management-api/frozen-action-executor.test.ts:789`;
+the Teacher's bytes stay server-derived through `executeOnce` in
+`createManagementExactTeacherAttemptModule`. The code comment now names both and states
+plainly that the arm is an unreachable backstop for the day the refusal is relaxed.
+Decision 14's second paragraph is rewritten to match.
+
+Deleting the arm was the reviewer's other option and was rejected: relaxing the 1661
+refusal would then silently hand a Teacher's question to the caller, which is the exact
+property Decision 13 exists to hold.
+
+### Minor 2 — the narrowing moves historical unbound consultation-eligible source Actions to caller-supplied bytes: `documented, not behaviourally changed`
+
+Accepted as correct, including the reviewer's point that the *old* daemon substitution was
+overriding the executor requirement rather than implementing it. Decision 14 now states the
+consequence explicitly: a consultation-eligible source Action committed before
+`agent.turnInput` existed has no binding, takes the documented historical-unrouted path,
+and executes its caller-transported bytes; this is a third enforcement mode beside digest
+comparison and server-side construction, and it applies only to Records predating the
+binding — dev-local Records on an unreleased 0.2.0.
+
+No refusal was added. Adding one would contradict the shipped requirement that a historical
+unbound Action "SHALL retain its prior caller-rendered turn behavior". No test was added for
+this path; it is recorded as an accepted, documented gap rather than closed.
+
+### Minor 3 — two guards proved by one test each, and the mint state untested: `resolved`
+
+Split into a second test rather than extended in place. The blocked-state assertions throw
+first, so a second phase appended to that test is unreachable under exactly the mutation it
+would need to survive — measured, not assumed: with the `admit()` refusal disabled, the
+combined test failed at the blocked-state assertion and never executed the released phase.
+
+`refuses a manifest that would otherwise mint the Teacher once the sponsored read is free`
+now makes `reserveConsultationRead` releasable, frees it, and calls `admit` in the state
+where admission would genuinely build and grant a Teacher from a driver manifest.
+
+*Mutation MUT-J3*: disable the `admit()` runtime-owned refusal →
+`expected undefined to be an instance of ChangeRunRuntimeError`, i.e. **`admit` succeeded**
+rather than merely producing a different message. That is the spec clause "SHALL NOT ...
+admit the Teacher under them" reached by test instead of by construction. Reverted;
+`facade-runtime.ts` verified byte-identical to `4d510c0d`.
+
+### Checks and results
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Consultation journey | `npx vitest run .../consultation-facade-journey.test.ts` | **31/31 passed** (was 30; +1 new test) |
+| Journey + Management API + frozen-action executor | `npx vitest run` over the three paths | **67 files / 836 passed, 1 skipped** |
+| MUT-J3 (mint-state discrimination) | as above | `admit` succeeded under mutation → RED; reverted |
+| Typecheck | `npx tsc --noEmit` | clean |
+| Whitespace | `git diff --check` | clean |
+| `facade-runtime.ts` after mutation | `git diff --stat` | empty; identical to `4d510c0d` |
+
+### Evidence the reviewer could not have
+
+Round 7 records that `canvas-v2-vertical-proof` passes locally with and without the
+safe-path repair, so local runs are not evidence, and that the literal Windows 8.3 shape was
+not constructed. Both limitations are correct for a local reviewer. The CI run for
+`4d510c0d` supplies what they could not: **macos-bash-shard-3** and **windows-pwsh-shard-2**
+— the two jobs where that test failed with `Target lexical path escapes the safe root` — are
+green, along with all 18 checks. That is the evidence the repair addresses the original
+failure on both aliasing platforms.
+
+### Residual concerns carried forward
+
+1. `consultationReconcileCandidates`'s global short-circuit is load-bearing for four safety
+   arguments across Decisions 13 and 14 and is still not stated in the design. Flagged by
+   the fixer, Round 6, and Round 7; still unaddressed.
+2. No test pins the historical unbound consultation-eligible source path (Minor 2).
+3. Nothing at the daemon face asserts that a *wrong* caller `turnInput` for a
+   consultation-eligible source is refused. The mismatch guard is proven directly in
+   `test/core/frozen-action-executor/executor.test.ts` and the routed Management API tests,
+   so this is a composition gap rather than an unguarded rule.
+4. The bytes changed in this response are themselves unreviewed.

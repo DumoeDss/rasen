@@ -1408,17 +1408,22 @@ describe('attested Teacher consultation Facade journey', () => {
     // consultation commits as `requested` and the Teacher candidate stays on
     // the frontier behind a workspace-reservation wait. That is the one window
     // where a driver could reach `admit` for runtime-owned work.
+    // Releasable, so the second phase can reach the state where admission would
+    // otherwise succeed in minting the Teacher.
+    let sponsoredReadConflicts = true;
     const fx = fixture({
       wrapReservations: (registry) =>
         Object.freeze({
           ...registry,
-          reserveConsultationRead: () =>
-            Object.freeze({
-              code: 'workspace-reservation-sponsor-mismatch' as const,
-              message: 'fixture forces the sponsored Teacher read to conflict',
-              workspaceInstanceId: 'workspace-instance:' + '3'.repeat(64),
-              holders: [],
-            }) as never,
+          reserveConsultationRead: (entry, sponsor) =>
+            sponsoredReadConflicts
+              ? (Object.freeze({
+                  code: 'workspace-reservation-sponsor-mismatch' as const,
+                  message: 'fixture forces the sponsored Teacher read to conflict',
+                  workspaceInstanceId: 'workspace-instance:' + '3'.repeat(64),
+                  holders: [],
+                }) as never)
+              : registry.reserveConsultationRead(entry, sponsor),
         }),
     });
     const { runtime, consulted } = await startAndConsult(fx);
@@ -1463,6 +1468,67 @@ describe('attested Teacher consultation Facade journey', () => {
     // silently discard `resolveAgentTurnInput`.
     const after = fx.store.load(fx.plan.runId);
     expect(after.recordVersion).toBe(blocked.recordVersion);
+    expect(JSON.stringify(after)).not.toContain(callerAuthored);
+
+  });
+
+  it('refuses a manifest that would otherwise mint the Teacher once the sponsored read is free', async () => {
+    // The clause the blocked state alone cannot reach: with the conflict
+    // released the Teacher candidate is genuinely admissible, so absent the
+    // refusal this `admit` builds and grants a Teacher Action from a driver
+    // manifest. Kept as its own test because the blocked-state assertions above
+    // throw first and would hide whether this state is reached at all.
+    let sponsoredReadConflicts = true;
+    const fx = fixture({
+      wrapReservations: (registry) =>
+        Object.freeze({
+          ...registry,
+          reserveConsultationRead: (entry, sponsor) =>
+            sponsoredReadConflicts
+              ? (Object.freeze({
+                  code: 'workspace-reservation-sponsor-mismatch' as const,
+                  message: 'fixture forces the sponsored Teacher read to conflict',
+                  workspaceInstanceId: 'workspace-instance:' + '3'.repeat(64),
+                  holders: [],
+                }) as never)
+              : registry.reserveConsultationRead(entry, sponsor),
+        }),
+    });
+    const { runtime, consulted } = await startAndConsult(fx);
+    expect(consulted.actions).toEqual([]);
+    const blocked = fx.store.load(fx.plan.runId);
+
+    sponsoredReadConflicts = false;
+    const callerAuthored = 'caller-authored Teacher question after release';
+    let rejected: unknown;
+    try {
+      await runtime.admit(
+        {
+          change: { projectRoot: '/root', changeId: 'fixture-change' },
+          runId: fx.plan.runId,
+        },
+        { deliveryMode: 'grant', resolveAgentTurnInput: () => callerAuthored }
+      );
+    } catch (error) {
+      rejected = error;
+    }
+    expect(rejected).toBeInstanceOf(ChangeRunRuntimeError);
+    expect((rejected as ChangeRunRuntimeError).code).toBe('candidate_stale');
+    expect((rejected as ChangeRunRuntimeError).message).toContain(
+      'runtime-owned consultation Teacher'
+    );
+
+    // No Teacher was minted and nothing advanced. Without the refusal the
+    // manifest is accepted, the reservation now succeeds, and a Teacher Action
+    // is admitted and granted on this exact call.
+    const after = fx.store.load(fx.plan.runId);
+    expect(after.recordVersion).toBe(blocked.recordVersion);
+    expect(
+      Object.values(after.actions).some(
+        (entry) =>
+          entry.action.kind === 'agent' && entry.action.agent.role === 'teacher'
+      )
+    ).toBe(false);
     expect(JSON.stringify(after)).not.toContain(callerAuthored);
   });
 

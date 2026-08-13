@@ -1111,3 +1111,286 @@ implementation defect against the shipped spec, not a missing delta.
    separate safety arguments in this change and is not called out in the design. If a
    future change lets consultation candidates coexist with DAG candidates, the blanket
    `admit` refusal silently becomes a denial of service on unrelated admission.
+
+## Round 7 - independent re-review of the Round 6 repairs (`4d510c0d`)
+
+Reviewer: independent (not the author of the change, and not the author of the Round 6
+repairs). Diff reviewed: `git diff ab790c63..4d510c0d` (17 files, +1258/-49). The tree is
+committed; the working tree was empty at start and is empty at finish.
+
+Green CI was not treated as evidence. Every property below was re-derived from the current
+bytes, and every guard relied on was mutated to prove it discriminates. Repairs written in
+the direction of a Round 6 finding were not assumed to close it.
+
+### Round 7 severity counts
+
+| Severity | Count |
+| --- | ---: |
+| Blocker | 0 |
+| Major | 0 |
+| Minor | 3 |
+
+**No Blocker and no Major were found.** The three Minors are documentation-versus-code
+accuracy, one undocumented behavioural consequence of the narrowing, and one Round 6
+coverage gap that the repair explicitly declined to close.
+
+### Round 6 disposition, established independently
+
+| Round 6 finding | Status | Proof |
+| --- | --- | --- |
+| **Blocker 1** - consultation-eligible source Action can never execute through the daemon face | **CLOSED and regression-guarded** | *MUT-A*: restore the `consultationDriven` keying, change nothing else -> **3 RED**, all through the real HTTP daemon face. Reverted. |
+| **Major 1** - `resolveDispatchRoute` `canDispatch` guard has no discriminating test | **CLOSED and regression-guarded** | *MUT-G*: revert the routed branch to `if (host === 'unknown')` -> **4 RED** (`omp`/`zed` x `claude`/`codex`). In Round 6 the same mutation was green across 62 tests. Reverted. |
+| **Minor 1** - primary Decision 13 test has no discriminating assertion for either guard in its title | **PARTIALLY closed** | The vacuity is fixed and the test is now *stronger* than suggested: it pins `no agent candidates to admit`, which distinguishes the two same-code rejections instead of blurring them. But the coverage gap stands - see Minor 3 below. |
+| **Minor 2** - spec scenario overclaims the executor's transport assertion for a Teacher | **CLOSED** | The amended `AND` now says the exact-Teacher route pins its bytes "by server-side construction from the committed Action rather than by a transport comparison". *MUT-I* confirms the split precisely: a one-byte drift in `renderConsultationTeacherTurn` turns **4 RED**, all on the driver route, while the three real-HTTP exact-Teacher tests stay **green** - exactly what the new wording predicts. |
+| **Minor 3** - the executor's `renderingContract` argument is inert and reads as authentication | **CLOSED** | Argument removed, replaced by a comment that states why. *MUT-H*: fold the contract into the digest preimage with the argument now absent -> **5 RED** (2 in `actions.test.ts` including the pinned literal, 3 end-to-end journeys). Nothing silently passes; the removal is inert for current behaviour and louder if the preimage exclusion is ever broken. |
+
+---
+
+### Minor 1 - The daemon face's Teacher substitution branch is unreachable, and Decision 14 documents it as a live control
+
+**Anchors:** `src/core/management-api/frozen-action-executor.ts:1651` (the `const`),
+`:1661-1666` (the early refusal), `:1755-1760` (the new ternary);
+`rasen/changes/omnicross-inference-routing/design.md` Decision 14.
+
+`teacherConsultation` is a `const` declared at 1651 and never reassigned. At line 1757 it is
+provably `undefined`: any granted Action that *is* the bound Teacher already returned
+`badRequest('legacy_teacher_dispatch_forbidden')` at 1661, ~95 lines earlier. The new
+discriminator therefore never selects the substitution branch. The face's effective
+behaviour is `turnInput: envelope.turnInput`, unconditionally. (The same variable is used
+again at 1716, `teacherConsultation === undefined ? createProductionExecutor(...) : undefined`,
+which for the same reason always takes the true branch - that one predates this commit, but
+it shows the discriminator is vestigial everywhere below 1666.)
+
+**Failure scenario.** Not a runtime failure - a maintenance trap. Decision 14 states "The
+face therefore derives server-side **only when the granted Action is the bound Teacher**"
+and "Trusting `envelope.turnInput` uniformly was rejected: that would hand the Teacher's
+question back to the caller and undo Decision 13." Both sentences present this ternary as
+the control that keeps the Teacher's question out of caller hands. It is not. The real
+controls are the `legacy_teacher_dispatch_forbidden` refusal at 1661 and
+`createManagementExactTeacherAttemptModule.executeOnce` (`:795-826`), which constructs
+`input: canonicalJson(context.action.agent.input)` server-side on its own path. A
+maintainer who later relaxes the 1661 refusal - which the design nowhere marks as
+load-bearing - would believe this branch still protects the Teacher. It happens to, but
+only by coincidence of ordering, and nothing tests that ordering.
+
+**Proof.** *MUT-A2*: replace the entire substituted expression with the literal
+`'REVIEW-PROBE-DEAD-BRANCH'` (a value that could not authenticate against any binding).
+
+```
+npx vitest run consultation-facade-journey.test.ts management-api/frozen-action-executor.test.ts
+Test Files 2 passed | Tests 54 passed
+```
+
+If the branch executed on any covered path, that literal would have produced
+`execution_input_mismatch`. Reverted.
+
+**Suggested fix:** either delete the dead branch and say plainly that the face never
+derives server-side because the Teacher is refused here outright, or keep it and label it a
+backstop behind `legacy_teacher_dispatch_forbidden`, naming that refusal as the primary
+control. Decision 14's second paragraph should be corrected either way.
+
+---
+
+### Minor 2 - The narrowing silently moves historical consultation-eligible source Actions from Record-derived bytes to caller-supplied bytes
+
+**Anchors:** `src/core/management-api/frozen-action-executor.ts:1755-1760`;
+`src/core/frozen-action-executor/executor.ts:242-256`.
+
+A consultation-eligible source Action committed before `agent.turnInput` existed has
+`turnInput === undefined`, and if unrouted also `inference === undefined`. The executor then
+takes its documented "historical unrouted compatibility" path: no authority check, and
+`options.turnInput` is executed verbatim. Before `4d510c0d` the daemon replaced that value
+with `canonicalJson(agent.input)`, so caller text was discarded for every consultation-driven
+Action. It is now executed.
+
+**Failure scenario.** A caller dispatches a pre-binding consultation-eligible source Action
+through `POST /api/v1/frozen-action-executor/dispatch` with an arbitrary `turnInput`. The
+agent executes the caller's text. Previously the same request ran the Record-derived
+serialization and the caller's text was inert.
+
+This is defensible - the executor requirement explicitly says "A historical unrouted Action
+without the binding SHALL remain decodable and retain its prior caller-rendered turn
+behavior", so the old daemon substitution was the thing overriding the spec. But the change
+is undocumented: Decision 14 discusses only Actions whose "own turn-input binding already
+authenticates" the bytes, and the new scenario's second `AND` ("substituting other bytes
+would fail its own turn-input authority") silently presupposes a binding exists. The
+deleted test literal `'caller text is not the consultation authority'` asserted the
+opposite property, and nothing replaced it.
+
+**Proof.** Trace, not mutation: `participatesInConsultation` is irrelevant to the new
+ternary, so `turnInput: envelope.turnInput`; `executor.ts:244` sees `authority === undefined`
+and `routedAction === false`, falls through the historical-compatibility comment with no
+rejection, and `backend.executeTurn({ input: options.turnInput })` receives the caller
+string. No test exercises a consultation-eligible source Action without a binding.
+
+**Scope:** only Records committed before the turn-input binding landed. On an unreleased
+0.2.0 that is dev-local Records, not shipped installations.
+
+**Suggested fix:** one sentence in Decision 14 stating that the historical unbound case
+falls back to caller-rendered behaviour by design, and either a test pinning that or an
+explicit refusal for consultation-eligible Actions lacking a binding.
+
+---
+
+### Minor 3 - Two guards are still proved by a single test, and the state where admission would actually mint the Teacher remains untested
+
+**Anchors:** `test/core/change-run/consultation-facade-journey.test.ts` (the blocked-Teacher
+test); `src/core/change-run/internal/facade-runtime.ts:283-285`, `:995-1000`.
+
+Round 6 raised this; the repair fixed the honesty problem but declined the coverage one, and
+says so in `review-cycle-report.md` residual concern 2. Re-measured on the new tree:
+
+- *MUT-K* (remove `!isConsultationTeacherCandidate` from `previewAgentCandidates`) -> **1 RED**
+- *MUT-J* (disable the `admit()` runtime-owned refusal) -> **1 RED**,
+  `expected 'The supplied candidate manifest does ...' to contain 'runtime-owned consultation Teacher'`
+
+Both RED come from the same single test, and each from a single assertion inside it. The
+spec scenario's second clause - "SHALL NOT ... admit the Teacher **under them**" - is still
+never reached: the fixture's `reserveConsultationRead` conflicts forever, so admission never
+gets to the state where, absent the guard, it would mint a Teacher Action under caller
+bytes. Every proof of that clause is by construction, not by test.
+
+The first test's new `expect(message).toContain('no agent candidates to admit')` is a real
+improvement and the comment explaining why the Teacher-specific message would be *false*
+there is correct - I confirmed it by MUT-J, where that test stays green because the generic
+emptiness rejection is genuinely what fires. It adds state-pinning, not guard coverage.
+
+**Suggested fix (unchanged from Round 6):** release the forced conflict, re-run `admit`,
+assert `candidate_stale` with the runtime-owned message and an unchanged `recordVersion`.
+
+---
+
+### `safe-path.ts` - containment independently established
+
+The lead asked for independent establishment that nothing outside the root can now get in.
+I wrote nine adversarial real-filesystem cases against the shipped
+`createNodeSafePathPlumbing` (temporary file, since deleted) rather than relying on the
+author's set. **9/9 pass:**
+
+| Probe | Shape | Result |
+| --- | --- | --- |
+| P1 | chained alias above the root (`hop2` -> `hop1` -> `physical`) | accepted; `realpath` proves same file |
+| P2 | alias to the root's PARENT, then a sibling of the root | `unsafe_path_escape` |
+| P3 | raw `../../../outside` spelled through an alias of the root | `unsafe_path_escape` |
+| P3b | raw `../../../outside` from a lexically contained path | `unsafe_path_escape` |
+| P4 | link inside the root, reached through an alias | `unsafe_symlink_component` |
+| P5 | alias resolving to a prefix-sibling (`ephemera-elsewhere`) | `unsafe_path_escape` |
+| P6 | alias-spelled ROOT with an outside target | `unsafe_path_escape` |
+| P7 | deep non-existent outside path (ancestor probing) | `unsafe_path_escape`, no crash |
+| P8 | root with trailing separator, mixed separators, alias-spelled target | accepted; outside target still refused |
+
+P3/P3b matter because `normalize()` does **not** collapse `..` - only `path.join`/`resolve`
+do, and two of the three call sites do not use them. The raw traversal survives into
+`assertSafeRunPath` and is caught by the per-component `isContained(rootReal, prefixReal)`
+check, not by the new alias logic. (My first attempt at P3 used `path.join`, which silently
+collapsed the `..` and tested nothing; the corrected version uses raw strings.)
+
+**Guard discrimination, measured:**
+
+- *MUT-SP1* (drop the whole directory+link rejection in `isRootUnderAnotherName`) -> **3 RED**,
+  including the real-filesystem "links INTO the root" escape test.
+- *MUT-C* (drop **only** the explicit `isSymbolicLink || isReparsePoint` clause, keeping
+  `!isDirectory`) -> **2 RED**, both synthetic; the real-filesystem escape test stays green.
+- *MUT-D* (weaken root identity from `===` to `startsWith`) -> **1 RED**, the sibling-prefix
+  test - the "root spelled so as to collide with a sibling prefix" case.
+
+I independently reproduce the fixer's MUT-SP1/MUT-SP2 numbers exactly, including the
+important asymmetry they recorded: on a real filesystem Node's `lstat` reports
+`isDirectory: false` for a link, so real-filesystem tests are structurally blind to the
+explicit link clause and only synthetic plumbing discriminates it. Both clauses are present
+and each is proven by the tests that can see it. `createNodeSafePathPlumbing` can never
+emit `isDirectory: true` together with `isReparsePoint: true`, so that clause is
+defence-in-depth for a future injected adapter - which the adapter's own comment already
+says.
+
+**Structural argument** (why the relaxation cannot admit an outsider): the alias branch
+returns a suffix only when some ancestor's `realpath` **equals** `rootReal` and that
+ancestor is a non-link directory - which means that ancestor *is* the root. Everything after
+it is walked from `normalizedRoot` with per-component symlink/reparse/type checks and a
+`realpath` containment test, so the walked path is inside the root by construction. Nothing
+below the root is resolved.
+
+**One residual worth recording** (not a finding): the walk validates
+`normalizedRoot + '/' + relative` while the caller performs I/O on the original
+alias-spelled `target`. The alias ancestors themselves are never walked. The one consumer
+where this matters, `readBoundedJsonWithinRoot`, calls `assertSafeRunPath` both before and
+after the read, and the post-check re-resolves the alias - so a swapped alias is detected.
+`assertCoordinationPathStable` adds inode/size identity. `validateLocalTarget` pre-resolves
+with `path.resolve`. The window is the same class the reader already documents.
+
+---
+
+### Consultation fixture - vacuity check
+
+The lead's specific concern: a filter that can no longer match anything passes exactly like
+one that correctly finds nothing. Each changed assertion site, compared before and after:
+
+| Site | Assertion | Can it still match? |
+| --- | --- | --- |
+| `sourceInputs.filter(resume\|unavailable)` -> `toEqual([])` (x2) | negative | **Yes.** Continuations are always `canonicalJson` envelopes and decode normally; only the source's prose turn yields `{}`. |
+| `teacherInputs.filter(invocation/1)` -> `toHaveLength(2)` | positive | **Yes** - inherently non-vacuous. |
+| `sourceInputs.filter(unavailable/1)` -> `toHaveLength(1)` | positive | **Yes** - inherently non-vacuous. |
+
+**Proof.** *MUT-B*: make `decodeTurnContract`'s fallback return
+`{ contract: 'teacher-consultation/resume/1' }` instead of `{}`, so a prose turn is
+misclassified as a continuation envelope.
+
+```
+Failed Tests 2
+  retains unsafe exact authority without advice, continuation, or reservation release
+    AssertionError: expected [ Array(1) ] to deeply equal []
+  fails closed when a delayed child creates an early ignored path during the final fence
+    AssertionError: expected [ Array(1) ] to deeply equal []
+```
+
+The two negative `toEqual([])` filters see and reject an injected match, so they retain
+discriminating power over the source transport stream. Reverted.
+
+**What was genuinely lost, and what replaced it.** `HttpConsultationTransport.send`
+previously threw on any non-JSON turn, which was an implicit assertion that every turn on
+that seam is JSON. That assertion had to go once the source's turn became prose - it is
+what made the fixture structurally unable to represent the production shape. Its
+replacement is the executor's `execution_input_mismatch` check plus MUT-A's demonstration
+that the daemon-face composition is now covered end to end. Coverage moved; it did not
+vanish. One narrower loss has no replacement: the three daemon tests previously sent
+`'caller text is not the consultation authority'` and asserted the dispatch **still
+succeeded**, i.e. that caller text was ignored. Nothing at the daemon face now asserts that
+a *wrong* caller `turnInput` for a consultation-eligible source is refused. The mismatch
+guard itself remains proven directly in `test/core/frozen-action-executor/executor.test.ts`
+and the routed Management API tests, so this is a composition gap, not an unguarded rule.
+
+---
+
+### Round 7 checks and outcomes
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Safe-path + routed matrix + actions (baseline) | `npx vitest run safe-path.test.ts omnicross-inference.test.ts actions.test.ts` | **45 passed** (safe-path 16, actions 12, omnicross 17) |
+| Consultation journey (baseline) | `npx vitest run consultation-facade-journey.test.ts` | **30/30 passed**, 60.3s |
+| Adversarial containment probe (mine, since deleted) | `npx vitest run zz-r7-safepath-probe.test.ts` | **9/9 passed** |
+| change-run + management-api + frozen-action-executor | `npx vitest run test/core/change-run/ test/core/management-api/ test/core/frozen-action-executor/` | **142 files / 1577 passed, 1 skipped**, 424.4s |
+| `canvas-v2-vertical-proof` (the test that motivated the safe-path repair) | inside the run above | **passes**, 410.7s - but it also passed here *before* the repair, so this is not evidence the CI failure is fixed |
+| Typecheck | `npx tsc --noEmit` | clean |
+| Lint (5 changed files) | `npx eslint ...` | clean |
+| Whitespace | `git diff --check` | clean |
+| Working tree after 10 mutations + 2 temporary files | `git diff --stat` | **empty**; only the pre-existing untracked `.rasen/` remains |
+| **Full suite** | `pnpm test` | **NOT EXECUTED** - the lead directed avoiding it; the fixer records 8400/2 with both failures passing in isolation. Not independently confirmed. |
+| Original CI failure that motivated `safe-path` | `canvas-v2-vertical-proof` on macos-shard-3 / windows-shard-2 | **NOT REPRODUCIBLE locally** - it passes here with and without the repair. The fixer states the same limitation. Only CI can establish that the original failure is gone. |
+| Windows 8.3 short-name aliasing (`RUNNER~1`) | - | **NOT EXERCISED.** My probes used junctions, which drive the same code path (a real non-link directory ancestor whose `realpath` differs from its spelling), but the literal 8.3 shape - the one the design cites - was not constructed. |
+
+### Residual concerns
+
+1. Decision 14's mechanism description is wrong in a way that survives review because the
+   outcome is right (Minor 1). The change's own history already contains one finding of this
+   exact shape (Round 5 N4). A comment that names the wrong guard is worse than no comment,
+   because it retires the reader's suspicion.
+2. `consultationReconcileCandidates`'s global short-circuit is now load-bearing for four
+   safety arguments across Decisions 13 and 14 and is still not stated in the design. Both
+   the fixer and Round 6 flagged it; it remains unaddressed.
+3. Two Decision 13 guards depend on one test that depends on one fixture behaviour
+   (`reserveConsultationRead` always conflicting). If that fixture is ever simplified, both
+   guards go silently unprotected.
+4. The turn-input authority story now has three distinct enforcement mechanisms for three
+   Action classes - digest comparison (bound), server-side construction (Teacher), and
+   caller-rendered passthrough (historical unbound) - and no single document states all
+   three. Minor 2 is the gap that falls between them.
