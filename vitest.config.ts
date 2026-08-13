@@ -68,6 +68,9 @@ const KNOWN_SLOW_TEST_WEIGHTS_MS: Record<string, number> = {
   'test/core/store/workspace-cleanup.test.ts': 166610,
   'test/commands/workspace-cli.test.ts': 166960,
   'test/core/store/workspace-apply.test.ts': 109103,
+  // Real Git fixture (`createStoreWorkspaceFixture`) driven through both the
+  // in-process handlers and a `runCLI` subprocess per test (store-issue-resources).
+  'test/core/management-api/stores.test.ts': 199980,
 };
 
 function listTestFiles(directory: string, root: string): TestFile[] {
