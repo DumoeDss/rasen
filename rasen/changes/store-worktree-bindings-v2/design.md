@@ -223,7 +223,7 @@ rather than removed or left to look orphaned.
 
 It is not the enforcement gap it might look like. The re-point gate this child actually ships is a
 different code path, reachable at `workspace/plan.ts:888` (`target_line_mismatch`) and tested at
-`test/core/store/workspace-plan.test.ts:572`, with an accept-all control at `:558` proving the refusal
+`test/core/store/workspace-plan.test.ts:595`, with an accept-all control at `:581` (the `target_line_mismatch` assertion itself is at `:607`) proving the refusal
 is selector-disagreement-specific rather than an unresolvable-ref false positive. `assertTargetLineMatchesChange`
 is an unused duplicate of that same check, written for and consumed by the deferred scope-routing slice.
 
@@ -250,8 +250,8 @@ ever being called.
   6.4: name the taker of each kind in shipped code and record the unenforced ones as such.
 - [Risk] `assertTargetLineMatchesChange` (`target-lines.ts:263`) has no caller in this child, which
   could read as an unenforced requirement. → Decision 8: the re-point gate this child actually ships
-  lives at `plan.ts:888` and is tested at `workspace-plan.test.ts:572` with an accept-all control at
-  `:558`; the unused function is a duplicate for the deferred scope-routing slice, kept for
+  lives at `plan.ts:888` and is tested at `workspace-plan.test.ts:595` with an accept-all control at
+  `:581`; the unused function is a duplicate for the deferred scope-routing slice, kept for
   byte-identity with the reference line rather than removed.
 - [Risk] Six digest sites, and the reference suite's own strongest plan scenario is relationally
   blind. → Decision 4 and tasks 6.1–6.3: pinned literal anchors per site, each walked back through
