@@ -57,7 +57,28 @@
       }
     },
     "apply": {
-      "status": "in_progress",
+      "status": "done",
+      "commits": [
+        "ad413c6f (implementation, 43 files, committed by the LEAD to protect uncommitted work)",
+        "29dd0b8b (evidence: verb-guard mutation proof)"
+      ],
+      "tasksComplete": "31/33 - 6.9 and 6.10 deliberately open, both LEAD-ruled",
+      "anchorProofs": {
+        "allSevenFreshlyProvedThisPass": "Not one was a recall. Every revert was sha256-verified against its pristine hash before the GREEN re-run.",
+        "cleanup.ts:170 no-entry": "first-time full cycle - .digest('hex') -> .digest('base64'), RED named the pinned-literal anchor, zero collateral, GREEN 26/26",
+        "binding.ts:93": "RED named the pinned literal, 0 collateral",
+        "registry.ts:201": "RED named the pinned literal, 0 collateral; combined suite 17/17",
+        "locks.ts:128": "RED = 2 failures, not 1 - the pinned-literal anchor AND the adjacent relational test; GREEN 12/12",
+        "dependencies.ts:343": "RED = 27 of 54, far wider than the others because this digest is load-bearing across the whole atomic-write recovery/durability surface rather than one call site; GREEN 54/54"
+      },
+      "implementerSelfCorrection": {
+        "what": "The implementer had told the LEAD that the relational test adjacent to locks.ts:128 was blind to a uniform hex->base64 shift. On direct re-read this pass it RETRACTED that: the test compares against a test-local digestFor() helper that independently hardcodes .digest('hex'), so an isolated production mutation desyncs both sides and both go RED. The residual danger is narrower - only a COORDINATED change touching production formula and helper together.",
+        "whyNoteworthy": "The retraction runs against its own interest. Calling a test blind is the safe, rigorous-looking claim; walking it back is the harder direction. Flagged to the reviewer as a pressure-test item precisely because it is comfortable to believe.",
+        "mechanism": "An independently-hardcoded test-local helper is the same discriminating mechanism as the 'third shape' - it does not move when production moves."
+      },
+      "task43EvidenceGapClosed": "Re-ran the verb-guard cycle with an unreachable dead-code mutation (`if (Date.now() < 0) { await spawnGit(cwd, ['reset','--hard']); }`). RED reproduced: guard named file and verb exactly, plus one expected collateral in a sibling test that re-scans the same source. Evidence written to evidence/verb-guard-mutation-proof.md in S1's format. [x] therefore stands - no untick needed.",
+      "suiteConfirmation": "12 core files re-run solo this pass: 221 passed / 5 skipped / 0 failed. Plus the LEAD's own post-release run of the 4 command suites (26 passed / 2 skipped). Full 16-file owned surface: 247 passed / 7 skipped / 0 failed. Deferred-case count reconciles exactly: 5 (workspace-baseline) + 2 (journey) = 7.",
+      "leadVerifiedOnClose": "git diff --stat ad413c6f HEAD -- src/ test/ is EMPTY (every mutation byte-reverted), evidence/verb-guard-mutation-proof.md present, git status --porcelain empty.",
       "gateDecision": "auto-approved (global)",
       "worker": {
         "role": "implementer",
