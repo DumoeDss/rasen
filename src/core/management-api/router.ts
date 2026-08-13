@@ -21,6 +21,20 @@ import { derivePlanningSpaceId } from '../change-run/internal/identity.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { handleChanges } from './changes.js';
 import { handleArchive } from './archive.js';
+import {
+  resolveStoreSpace,
+  handleStoreProjects,
+  handleStoreTargetLines,
+  handleStoreChanges,
+  handleStoreIssues,
+  handleStoreIssue,
+  handleStoreIssueReferences,
+  handleStoreExecutionPlan,
+  handleStoreIssueCreate,
+  handleStoreIssueSetState,
+  handleStorePublishPlan,
+  type StoreChangesFilter,
+} from './stores.js';
 import { handleRuns, handleRunDetail } from './runs.js';
 import { handleRunControl, createProductionRunControlSpawner, type RunControlSpawner } from './run-control.js';
 import { handleTaskDetail } from './task-detail.js';
@@ -308,6 +322,14 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/themes/import',
   '/api/v1/frozen-action-executor/dispatch',
   '/api/v1/frozen-action-executor/continue',
+  '/api/v1/stores/projects',
+  '/api/v1/stores/target-lines',
+  '/api/v1/stores/changes',
+  '/api/v1/stores/issues',
+  '/api/v1/stores/issue',
+  '/api/v1/stores/issue-state',
+  '/api/v1/stores/issue-references',
+  '/api/v1/stores/execution-plan',
 ]);
 
 const SESSION_ID_PATH_PREFIX = '/api/v1/sessions/';
@@ -1212,6 +1234,212 @@ export function createManagementRouter(
       }
       const home = await resolveHomeForRoot(space.root ?? null);
       const result = await handleArchive(space.root, home);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    // Store aggregate paths (store-issue-resources): reads and Issue/Execution
+    // Plan mutations scoped to a Store's stable identity, never a display
+    // alias — `resolveStoreSpace` (not `resolveRequestSpace`, which discards
+    // `uid`) resolves the `space=store:<id>` selector and carries the uid
+    // through to every handler below.
+    if (pathname === '/api/v1/stores/projects') {
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const result = await handleStoreProjects(space.space);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/target-lines') {
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const result = await handleStoreTargetLines(space.space);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/changes') {
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const filter: StoreChangesFilter = {
+        ...(url.searchParams.getAll('project').length > 0
+          ? { projects: url.searchParams.getAll('project') }
+          : {}),
+        ...(url.searchParams.getAll('targetLine').length > 0
+          ? { targetLines: url.searchParams.getAll('targetLine') }
+          : {}),
+        ...(url.searchParams.getAll('outcome').length > 0
+          ? { outcomes: url.searchParams.getAll('outcome') as StoreChangesFilter['outcomes'] }
+          : {}),
+        ...(url.searchParams.get('state') === 'active' || url.searchParams.get('state') === 'archived'
+          ? { state: url.searchParams.get('state') as 'active' | 'archived' }
+          : {}),
+      };
+      const result = await handleStoreChanges(space.space, filter);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/issues' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const result = await handleStoreIssueCreate(
+        space.space,
+        (body.value ?? {}) as { issueId?: unknown; title?: unknown; readme?: unknown }
+      );
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/issues') {
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const stateParam = url.searchParams.get('state') ?? undefined;
+      const state =
+        stateParam === 'open' || stateParam === 'resolved' || stateParam === 'dropped' ? stateParam : undefined;
+      const result = await handleStoreIssues(space.space, state);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/issue') {
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const result = await handleStoreIssue(space.space, url.searchParams.get('issueId') ?? undefined);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/issue-state' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const result = await handleStoreIssueSetState(
+        space.space,
+        (body.value ?? {}) as { issueId?: unknown; state?: unknown; reason?: unknown }
+      );
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/issue-references') {
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const result = await handleStoreIssueReferences(
+        space.space,
+        url.searchParams.get('changeInstanceId') ?? undefined
+      );
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/execution-plan' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const result = await handleStorePublishPlan(
+        space.space,
+        (body.value ?? {}) as { issueId?: unknown; nodes?: unknown }
+      );
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/execution-plan') {
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const result = await handleStoreExecutionPlan(
+        space.space,
+        url.searchParams.get('issueId') ?? undefined,
+        url.searchParams.get('revisionId') ?? undefined
+      );
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
         return;
