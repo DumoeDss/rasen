@@ -44,6 +44,15 @@ import type {
 } from '../workflow-registry/index.js';
 import type { WorkflowKind } from '../workflow-registry/types.js';
 import type { WorkflowUsage, WorkflowValidationSummary } from '../workflow-library.js';
+import type {
+  ProjectRollup,
+  TargetLineRollup,
+  GroupedChanges,
+  IssueSummaryPage,
+  IssueDetail,
+  ResolvedExecutionPlan,
+} from '../store/query/types.js';
+import type { IssueRecordResult, ExecutionPlanResult } from '../store/issues/types.js';
 
 /** A registered project, or the server's launch project. Mirrors config-api's `ProjectRef`. */
 export interface ProjectRef {
@@ -1384,4 +1393,76 @@ export function decodeReusableSessionApiResponse(
     return null;
   }
   return decoded.data as ReusableSessionApiResponse;
+}
+
+// -----------------------------------------------------------------------
+// Store aggregate (store-issue-resources) — `GET`/`POST /api/v1/stores/*`.
+// Every read/mutation handler in `stores.ts` sends its `StoreHandlerResult`
+// UNWRAPPED (`sendJson(res, 200, result.response)`, `router.ts`) — the wire
+// body is exactly the handler's own return type, never a hand-authored
+// envelope. Re-declaring these shapes here would be a second source of truth
+// the domain type could drift out from under, so each response type below is
+// a direct alias, not a redeclaration; only the three POST request bodies
+// are wire-specific, because an HTTP body is untrusted JSON and each field's
+// wire type is the OPTIONAL, loosely-typed shape `stores.ts` itself validates
+// at runtime (`typeof body.x === '...'`), not the complete domain input type.
+// -----------------------------------------------------------------------
+
+/** `GET /api/v1/stores/projects` response. */
+export type StoreProjectsResponse = ProjectRollup;
+
+/** `GET /api/v1/stores/target-lines` response. */
+export type StoreTargetLinesResponse = TargetLineRollup;
+
+/** `GET /api/v1/stores/changes` response. */
+export type StoreChangesResponse = GroupedChanges;
+
+/** `GET /api/v1/stores/issues` response. */
+export type StoreIssuesResponse = IssueSummaryPage;
+
+/** `GET /api/v1/stores/issue` response. */
+export type StoreIssueDetailResponse = IssueDetail;
+
+/** `GET /api/v1/stores/issue-references` response. */
+export type StoreIssueReferencesResponse = IssueSummaryPage;
+
+/** `GET /api/v1/stores/execution-plan` response. */
+export type StoreExecutionPlanResponse = ResolvedExecutionPlan;
+
+/** `POST /api/v1/stores/issues` and `POST /api/v1/stores/issue-state` response — both write one Issue record. */
+export type StoreIssueRecordResponse = IssueRecordResult;
+
+/** `POST /api/v1/stores/execution-plan` response. */
+export type StoreExecutionPlanPublishResponse = ExecutionPlanResult;
+
+/** `POST /api/v1/stores/issues` request body. */
+export interface StoreIssueCreateRequest {
+  issueId?: string;
+  title?: string;
+  readme?: boolean;
+}
+
+/** `POST /api/v1/stores/issue-state` request body. */
+export interface StoreIssueSetStateRequest {
+  issueId?: string;
+  state?: string;
+  reason?: string;
+}
+
+/** One node of a `POST /api/v1/stores/execution-plan` request body — the untrusted-JSON counterpart of `ExecutionPlanNodeInput`. */
+export interface StoreExecutionPlanNodeInput {
+  nodeId?: string;
+  kind?: string;
+  projectId?: string;
+  targetLineId?: string;
+  changeInstanceId?: string;
+  changeAlias?: string;
+  summary?: string;
+  dependsOn?: string[];
+}
+
+/** `POST /api/v1/stores/execution-plan` request body. */
+export interface StoreExecutionPlanPublishRequest {
+  issueId?: string;
+  nodes?: StoreExecutionPlanNodeInput[];
 }
