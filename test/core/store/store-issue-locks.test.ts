@@ -109,6 +109,20 @@ describe('the issue lock key', () => {
       issueLockFileName(issueLockKey({ storeUid: STORE_UID, issueId: 'alpha' }))
     );
   });
+
+  it('pins the exact filename digest for a known key (task 7.1 — not a self-comparison)', () => {
+    // The two cases above compare the function against ITSELF, so neither can
+    // ever go red: a broken digest still equals itself. This pins a LITERAL,
+    // hand-derived from `canonicalBytes({ domain: 'issue-lock/v1', kind:
+    // 'issue', material: { storeUid, issueId } })` — RFC 8785 sorts object
+    // keys alphabetically at every level, so the preimage's key order is
+    // `domain, kind, material` with `material` itself sorted to
+    // `issueId, storeUid` — hashed independently of this file's other calls.
+    const name = issueLockFileName(issueLockKey({ storeUid: STORE_UID, issueId: 'alpha' }));
+    expect(name).toBe(
+      'issue-5035d9c00ec743d636932bb5064bf92965d50780a20db746bacd5bc8f90728fb.lock'
+    );
+  });
 });
 
 describe('holding the issue lock', () => {

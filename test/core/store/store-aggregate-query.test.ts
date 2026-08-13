@@ -7,6 +7,7 @@
  * way the "an unreadable ref is not absence" and "one Change reachable from two
  * refs is one Change" claims mean anything.
  */
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -127,6 +128,63 @@ describe('the Store aggregate query', () => {
       group.active.map(entry => entry.changeInstanceId)
     );
     expect(new Set(instances).size).toBe(2);
+  });
+
+  it('collapses one Change reachable from two refs, and un-collapses on a byte difference (task 7.1)', async () => {
+    // `collectCommittedChanges`'s de-dup key is
+    // `instanceId project changeId digest` (`refs.ts:520`), so this is the
+    // ONLY test in this suite that exercises `digest` as a DISCRIMINATOR
+    // rather than as an opaque value. It never calls `changeEvidence` or
+    // reads `.digest` — it only observes `listChanges`'s public shape — so a
+    // broken digest (wrong bytes hashed, wrong algorithm, or one silently
+    // dropped from the key) shows up here as a wrong ENTRY COUNT, which no
+    // pinned-literal hex string would catch on its own.
+    seedAndCommit('elftia', LINE_MAIN, 'shared-change', 'c9'.repeat(16));
+    // `release/0.2` now names the exact same commit as `main`: the Change's
+    // directory is reachable, byte-for-byte, from BOTH refs.
+    f.git(f.storeRoot, ['branch', '-f', 'release/0.2', 'main']);
+
+    const collapsed = await query().listChanges({
+      ...scope,
+      projects: ['elftia'],
+      targetLines: [LINE_MAIN],
+    });
+    const collapsedGroup = collapsed.groups.find(
+      group => group.projectId === 'elftia' && group.targetLineId === LINE_MAIN
+    );
+    // One Change, byte-identical on two refs, is one Change — not two.
+    expect(collapsedGroup?.active.map(entry => entry.changeId)).toEqual(['shared-change']);
+
+    // Now make `release/0.2`'s copy byte-DIFFERENT WITHOUT touching identity:
+    // a trailing comment line, which `ChangeMetadataSchema` never looks at.
+    f.git(f.storeRoot, ['checkout', 'release/0.2']);
+    const recordPath = f.at(
+      'rasen',
+      'projects',
+      'elftia',
+      'changes',
+      'shared-change',
+      '.openspec.yaml'
+    );
+    fs.appendFileSync(recordPath, '# diverged on release/0.2\n', 'utf8');
+    commitStore('diverge the committed bytes, not the identity');
+    f.git(f.storeRoot, ['checkout', 'main']);
+
+    const diverged = await query().listChanges({
+      ...scope,
+      projects: ['elftia'],
+      targetLines: [LINE_MAIN],
+    });
+    const divergedGroup = diverged.groups.find(
+      group => group.projectId === 'elftia' && group.targetLineId === LINE_MAIN
+    );
+    // Same identity, different committed bytes on each ref: two claimants now,
+    // not one — the digest half of the key is doing real work above, not
+    // riding along on the identity half.
+    expect(divergedGroup?.active).toHaveLength(2);
+    expect(new Set(divergedGroup?.active.map(entry => entry.foundAtRef))).toEqual(
+      new Set(['refs/heads/main', 'refs/heads/release/0.2'])
+    );
   });
 
   it('finds a Change whose instanceSeed is all digits', async () => {
@@ -732,6 +790,9 @@ describe('Store-level Issues, end to end', () => {
   it('reports a divergent Issue with every copy and picks no winner', async () => {
     await issues(f).create({ ...scope, issueId: 'divergent', title: 'from main' });
     commitStore('issue on main');
+    // Read back the COMMITTED blob, the same bytes `collectIssues` reads via
+    // `RefReader.blob`, not the working-tree file `create()` just wrote.
+    const mainText = f.git(f.storeRoot, ['show', 'main:rasen/issues/divergent/issue.yaml']);
 
     // A second Store ref carrying a byte-different record for the same id.
     f.git(f.storeRoot, ['checkout', 'release/0.2']);
@@ -743,6 +804,10 @@ describe('Store-level Issues, end to end', () => {
       'utf8'
     );
     commitStore('issue on release/0.2');
+    const releaseText = f.git(f.storeRoot, [
+      'show',
+      'release/0.2:rasen/issues/divergent/issue.yaml',
+    ]);
     f.git(f.storeRoot, ['checkout', 'main']);
 
     const page = await query().listIssues(scope);
@@ -753,6 +818,28 @@ describe('Store-level Issues, end to end', () => {
     expect(divergent?.record).toBeNull();
     const titles = divergent?.divergence?.copies.map(copy => copy.record?.title) ?? [];
     expect(titles).toEqual(expect.arrayContaining(['from main', 'from the release line']));
+
+    // Anchor (task 7.1): `digestOf` in `query/issues-read.ts` is unexported
+    // and reachable only through `collectIssues`/`listIssues`/`showIssue`, so
+    // this is necessarily an integration-style anchor rather than a pure unit
+    // test. It is not blind: `mainText`/`releaseText` are read independently
+    // via `git show`, and hashed here with this test's OWN `crypto` call —
+    // never by calling `digestOf` or `collectIssues` a second time. A
+    // mutation that hashed the wrong bytes, a substring, or a different
+    // algorithm inside `digestOf` would diverge from these two independently
+    // computed digests without touching them.
+    const mainCopy = divergent?.divergence?.copies.find(
+      copy => copy.storeRef === 'refs/heads/main'
+    );
+    const releaseCopy = divergent?.divergence?.copies.find(
+      copy => copy.storeRef === 'refs/heads/release/0.2'
+    );
+    expect(mainCopy?.sha256).toBe(createHash('sha256').update(mainText, 'utf8').digest('hex'));
+    expect(releaseCopy?.sha256).toBe(
+      createHash('sha256').update(releaseText, 'utf8').digest('hex')
+    );
+    // And the two differ, which is the whole reason this Issue is divergent.
+    expect(mainCopy?.sha256).not.toBe(releaseCopy?.sha256);
   });
 
   it('derives readiness without writing it back, and never auto-resolves an Issue', async () => {
