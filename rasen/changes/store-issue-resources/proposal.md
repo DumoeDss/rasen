@@ -59,6 +59,15 @@ for.
   untested and no test orphaned.
 - The **scope-routing** requirement the reference change also carried. That capability does not exist
   on this line.
+- `test/core/store/store-issue-scope-intent.test.ts` (7 cases). It drives `issues/scope.ts` only
+  indirectly, through `StorePlanning.open({ intent: 'store-issue' })`, and its fixture imports
+  `finalization/**` on top of `store-planning/**` — both a later roadmap slice. The file is deferred,
+  not dropped: `issues/scope.ts`'s own behaviour ships with finalization-free substitute coverage
+  authored in this change (`test/core/store/store-issue-scope.test.ts`), and the deferred file itself
+  is handed forward as an **inbound acceptance item for the finalization slice** — alongside
+  `membership-layout.ts`, the item this portfolio's second change (`store-worktree-bindings-v2`) handed
+  forward to the layout-migration slice for the same reason: a real production consumer graph that
+  belongs to a later roadmap slice, not this one.
 
 ## Capabilities
 
