@@ -10,8 +10,10 @@ import type {
   ChangeId,
   ChangeInstanceId,
   ChangeInstanceSeed,
+  ExecutionPlanRevisionId,
   FullGitRef,
   GitOid,
+  IssueId,
   PlanningScopeId,
   PortableRelativePath,
   ProjectId,
@@ -48,8 +50,11 @@ describe('public Store planning foundation type surface', () => {
   });
 
   // EVERY branded name in the Layer-0 vocabulary is pinned against a bare
-  // `string` individually — all 16, not only the ones that happen to appear in
-  // the assertions above.
+  // `string` individually — all 18, not only the ones that happen to appear in
+  // the assertions above. `IssueId` and `ExecutionPlanRevisionId` are
+  // `store-issue-resources`'s two additions to `planning-validation.ts`
+  // (task 1.1); the guard below must count them or the vocabulary moved to a
+  // file it does not read.
   //
   // Pinning only the derived parameters leaves the underlying brands free:
   // collapsing `ChangeInstanceId` to `string` keeps `VerifiedChangeInstanceId`
@@ -71,6 +76,8 @@ describe('public Store planning foundation type surface', () => {
     expectTypeOf<string>().not.toMatchTypeOf<GitOid>();
     expectTypeOf<string>().not.toMatchTypeOf<Sha256Digest>();
     expectTypeOf<string>().not.toMatchTypeOf<PortableRelativePath>();
+    expectTypeOf<string>().not.toMatchTypeOf<IssueId>();
+    expectTypeOf<string>().not.toMatchTypeOf<ExecutionPlanRevisionId>();
     // planning-identity.ts
     expectTypeOf<string>().not.toMatchTypeOf<PlanningScopeId>();
     expectTypeOf<string>().not.toMatchTypeOf<StorePlanningChangeInstanceId>();

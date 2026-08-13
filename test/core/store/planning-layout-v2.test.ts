@@ -554,4 +554,84 @@ describe('pure Store planning layout v2', () => {
       }
     }
   );
+
+  // Task 1.3 — the layout-contract debt child 1 deferred: the four Store-level
+  // Issue addresses this change adds to `planning-layout-v2.ts` get the same
+  // win32/posix parity, case-alias, traversal, and device-name coverage every
+  // other address kind above gets. `store-issue-layout.test.ts` covers this
+  // ground in far more depth through the Issue module itself; these few cases
+  // exist so the GENERIC layout entry point — `resolveStorePlanningLayoutV2Path`
+  // — is proven directly, the same way `store-metadata`/`project-catalog` are
+  // proven directly above rather than only through a higher-level consumer.
+  it.each([
+    { flavor: 'win32' as const, api: path.win32, root: 'C:\\stores\\example' },
+    { flavor: 'posix' as const, api: path.posix, root: '/stores/example' },
+  ])(
+    'resolves every Store-level Issue address under $flavor semantics, rooted below rasen/issues',
+    ({ flavor, api, root }) => {
+      const issueId = 'refresh-cache';
+      expect(
+        resolveStorePlanningLayoutV2Path(root, { kind: 'issue', issueId }, flavor)
+      ).toBe(api.resolve(root, 'rasen', 'issues', issueId));
+      expect(
+        resolveStorePlanningLayoutV2Path(root, { kind: 'issue-record', issueId }, flavor)
+      ).toBe(api.resolve(root, 'rasen', 'issues', issueId, 'issue.yaml'));
+      expect(
+        resolveStorePlanningLayoutV2Path(root, { kind: 'execution-plans', issueId }, flavor)
+      ).toBe(api.resolve(root, 'rasen', 'issues', issueId, 'plans'));
+      expect(
+        resolveStorePlanningLayoutV2Path(
+          root,
+          { kind: 'execution-plan', issueId, revisionId: '0007' },
+          flavor
+        )
+      ).toBe(api.resolve(root, 'rasen', 'issues', issueId, 'plans', '0007.yaml'));
+    }
+  );
+
+  it('rejects a case-alias, traversal, or Windows-reserved Issue id on every Issue address kind', () => {
+    for (const issueId of ['Refresh-Cache', '../escape', 'con', 'nul.plan']) {
+      const addresses = [
+        { kind: 'issue' as const, issueId },
+        { kind: 'issue-record' as const, issueId },
+        { kind: 'execution-plans' as const, issueId },
+        { kind: 'execution-plan' as const, issueId, revisionId: '0001' },
+      ];
+      for (const address of addresses) {
+        expect(
+          () => resolveStorePlanningLayoutV2Path('/store', address, 'posix'),
+          `${address.kind} with issueId ${JSON.stringify(issueId)}`
+        ).toThrow(StorePlanningValidationError);
+      }
+    }
+  });
+
+  it.each(['1', '001', '00001', '0000', '000a', '-0001'])(
+    'rejects a non-canonical Execution Plan revision ordinal %j at the layout entry point',
+    revisionId => {
+      expect(() =>
+        resolveStorePlanningLayoutV2Path(
+          '/store',
+          { kind: 'execution-plan', issueId: 'refresh-cache', revisionId },
+          'posix'
+        )
+      ).toThrow(StorePlanningValidationError);
+    }
+  );
+
+  it('resolves an Issue address the same way regardless of a project or target line elsewhere in scope', () => {
+    // The address type takes no `projectId`/`targetLineId` for these kinds.
+    // Casting past that proves the RUNTIME behaviour, not just the type: the
+    // switch case above destructures only `issueId`, so extra fields already
+    // in scope when a caller assembles the address cannot change the result.
+    const bareAddress = { kind: 'issue-record' as const, issueId: 'refresh-cache' };
+    const addressWithExtraFields = {
+      ...bareAddress,
+      projectId: PROJECT_ID,
+      targetLineId: 'line-0.2',
+    } as typeof bareAddress;
+    expect(resolveStorePlanningLayoutV2Path('/store', addressWithExtraFields, 'posix')).toBe(
+      resolveStorePlanningLayoutV2Path('/store', bareAddress, 'posix')
+    );
+  });
 });

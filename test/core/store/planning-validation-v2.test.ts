@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  EXECUTION_PLAN_REVISION_WIDTH,
   WINDOWS_RESERVED_DEVICE_NAMES,
+  formatExecutionPlanRevisionId,
   isChangeId,
+  isExecutionPlanRevisionId,
   isFullGitRef,
   isGitOid,
+  isIssueId,
   isPortableRelativePath,
   isProjectId,
   isSha256Digest,
@@ -74,6 +78,77 @@ describe('Store planning v2 portable validators', () => {
     expect(isProjectId('com0')).toBe(true);
     expect(isProjectId('lpt0')).toBe(true);
   });
+
+  // Task 1.1's brands: `IssueId` is a Store-level identifier on the same
+  // portable canonical-segment contract as a v2 project id, and
+  // `ExecutionPlanRevisionId` is the zero-padded ordinal that addresses one
+  // immutable revision. Both are validated here through the same public
+  // surface as every other brand in this file, and neither reaches this
+  // suite through `store-issue-layout.test.ts`'s dedicated layout coverage —
+  // this is the validator-only contract, independent of any filesystem join.
+  it.each(['refresh-cache', 'issue-2', UUID])(
+    'accepts canonical Issue id %s',
+    value => {
+      expect(isIssueId(value)).toBe(true);
+    }
+  );
+
+  it.each([
+    '',
+    '.',
+    '..',
+    'Refresh-Cache',
+    'issue/name',
+    'issue\\name',
+    'issue' + String.fromCharCode(0) + 'name',
+    'issue.',
+    'issue ',
+    '../escape',
+    'con',
+  ])('rejects non-canonical or unsafe Issue id %j', value => {
+    expect(isIssueId(value)).toBe(false);
+  });
+
+  it('rejects every Windows reserved device name as an Issue id too', () => {
+    for (const name of WINDOWS_RESERVED_DEVICE_NAMES) {
+      expect(isIssueId(name), name).toBe(false);
+    }
+    expect(isIssueId('com0')).toBe(true);
+  });
+
+  it('formats an Execution Plan revision ordinal at the fixed canonical width', () => {
+    expect(EXECUTION_PLAN_REVISION_WIDTH).toBe(4);
+    expect(formatExecutionPlanRevisionId(1)).toBe('0001');
+    expect(formatExecutionPlanRevisionId(42)).toBe('0042');
+    expect(formatExecutionPlanRevisionId(9999)).toBe('9999');
+  });
+
+  it.each(['0001', '0042', '9999'])(
+    'accepts a canonical Execution Plan revision ordinal %s',
+    value => {
+      expect(isExecutionPlanRevisionId(value)).toBe(true);
+    }
+  );
+
+  it.each([
+    '1', // unpadded
+    '001', // under-padded
+    '00001', // over-padded
+    '0000', // zero ordinal — there is no zeroth revision
+    '000a', // non-digit
+    '-0001', // signed
+    ' 0001', // leading whitespace
+    '0001 ', // trailing whitespace
+  ])('rejects a non-canonical Execution Plan revision ordinal %j', value => {
+    expect(isExecutionPlanRevisionId(value)).toBe(false);
+  });
+
+  it.each([0, -1, 1.5, 10000])(
+    'refuses to mint an out-of-range or non-integer revision ordinal %s',
+    ordinal => {
+      expect(() => formatExecutionPlanRevisionId(ordinal)).toThrow();
+    }
+  );
 
   it('accepts only conservative full Git refs', () => {
     for (const value of [

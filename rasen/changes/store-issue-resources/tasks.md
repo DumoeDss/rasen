@@ -2,8 +2,8 @@
 
 - [x] 1.1 Add `IssueId` and `ExecutionPlanRevisionId` brands, their parsers/predicates, `formatExecutionPlanRevisionId`, `EXECUTION_PLAN_REVISION_WIDTH`, and the `invalid_issue_record` / `invalid_execution_plan` error codes to `src/core/store/planning-validation.ts` — the exact block child 1 deliberately left to this change.
 - [x] 1.2 Add the four Store-level Issue addresses (`issue`, `issue-record`, `execution-plans`, `execution-plan`) to `src/core/store/planning-layout-v2.ts`. Each is its own address; none takes a project or target line, and supplying either must not change the result.
-- [ ] 1.3 Extend `test/core/store/planning-layout-v2.test.ts` and `planning-validation-v2.test.ts` for the new surface, including Windows and POSIX flavors built with the matching platform path API, case-alias rejection, traversal and device-name rejection, and the unpadded / differently-padded / zero revision ordinal cases.
-- [ ] 1.4 Assert the two new brands are picked up by child 1's brand-vocabulary guard in `planning-foundation-consumer.test.ts` — the guard reads `planning-validation.ts`, so its counted vocabulary must move. If it does not move, the brands landed in a file the guard does not read; fix that rather than the assertion.
+- [x] 1.3 Extend `test/core/store/planning-layout-v2.test.ts` and `planning-validation-v2.test.ts` for the new surface, including Windows and POSIX flavors built with the matching platform path API, case-alias rejection, traversal and device-name rejection, and the unpadded / differently-padded / zero revision ordinal cases.
+- [x] 1.4 Assert the two new brands are picked up by child 1's brand-vocabulary guard in `planning-foundation-consumer.test.ts` — the guard reads `planning-validation.ts`, so its counted vocabulary must move. If it does not move, the brands landed in a file the guard does not read; fix that rather than the assertion.
 
 ## 2. Issue Resources
 
