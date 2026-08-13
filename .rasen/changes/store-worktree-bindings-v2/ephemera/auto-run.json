@@ -69,6 +69,13 @@
         "horizon": "LOOP_BOUND",
         "freshNotReused": "Step G.1 cross-child implementer reuse does NOT apply: child 1's implementer was already retired at its close, and this is a fresh worker for a new child."
       },
+      "infraDeath": {
+        "when": "mid-implementation, after the decomposition-gap ruling was issued",
+        "cause": "API Error: 502 fetch failed [cause: other side closed (UND_ERR_SOCKET)] - server-side transient",
+        "classification": "H.4a (b) infra/transient death, NOT context death. Durable context intact, same session, so revival used the same route-specific handle (Claude-native SendMessage) and consumed NEITHER maxRelays NOR stallLimit.",
+        "treeStateAtDeath": "41 uncommitted paths, all the worker's, all present: 29 added, 8 modified, 4 added-then-modified. Nothing committed - HEAD was 4442a73c (LEAD bookkeeping). No work lost.",
+        "revivalDiscipline": "Revival notice sent: the interrupted turn's claims about command results and file state are not to be trusted; re-verify rather than resume from memory. Specifically ordered to check whether a mutation was left in place (death could fall between injecting and reverting one), to re-verify the 4 added-then-modified files as most likely half-written, and to re-run rather than recall any proof it was about to report."
+      },
       "digestAnchorMandate": "S2 has SIX digest sites (plan.ts:794, cleanup.ts:170 and :251, locks.ts:128, registry.ts:201, binding.ts:93, dependencies.ts:343). The 0.1.7 reference's own 'Equal inputs produce an identical plan' scenario is exactly the blind shape - it compares two derivations to each other. Tasks 6.1-6.3 require a pinned literal anchor per site, UNCHAINED, each walked back through its own reader, each mutation-proved. Child 1's most expensive lesson, applied at propose time instead of after three review rounds."
     },
     "verify": {
