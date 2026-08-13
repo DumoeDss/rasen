@@ -1741,8 +1741,20 @@ export async function handleFrozenActionDispatch(input: Readonly<{
     workspaceRevision,
     requestedBackend: envelope.requestedBackend as ExecutionBackendId | undefined,
     explicitDefaultBackend: envelope.explicitDefaultBackend as ExecutionBackendId | undefined,
+    // Only a Teacher turn is server-derived. Its executable bytes are the
+    // canonical serialization of the frozen `teacher-consultation/invocation/1`
+    // envelope, which ECP rendered and bound at admission, so deriving them here
+    // reproduces the committed binding exactly and no caller may substitute the
+    // question the bound Teacher is asked.
+    //
+    // Every other consultation-driven Action — above all the eligible SOURCE
+    // implementer — keeps its caller-transported prompt. Its committed
+    // `agent.turnInput` binds the LEAD's real driver-rendered base prompt, so
+    // substituting `canonicalJson(agent.input)` here would authenticate against
+    // the wrong bytes and reject the dispatch with `execution_input_mismatch`
+    // before any backend, making `CONSULT` unreachable in production.
     turnInput:
-      consultationDriven && grantedAction.kind === 'agent'
+      teacherConsultation !== undefined && grantedAction.kind === 'agent'
         ? canonicalJson(grantedAction.agent.input)
         : envelope.turnInput,
   });

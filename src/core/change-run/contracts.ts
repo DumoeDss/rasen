@@ -249,10 +249,36 @@ const EffectDescriptorSchema = z.strictObject({
   }),
 });
 
+/**
+ * Which trusted renderer produced the bound bytes.
+ *
+ * `rasen.driver-rendered-turn/1` is the source LEAD's complete base prompt,
+ * composed from role instructions, workflow/skill text, artifact paths,
+ * handoff clauses, and task context. The runtime cannot reproduce it, so it
+ * arrives through the quiescent candidate-preview → manifest → admit protocol.
+ *
+ * `rasen.runtime-derived-consultation-turn/1` is the canonical JSON of a
+ * frozen `teacher-consultation/invocation/1` envelope that the reconciler
+ * derives from committed Record facts alone. No driver authors it, so it is
+ * admitted directly by `consult()` rather than previewed; the consultation
+ * spec forbids a LEAD-authored relay on that data path. Its executable
+ * authority comes from `agent.input` being covered by complete canonical
+ * Action equality — the binding restates it so every newly admitted agent
+ * Action carries turn-input authority under one uniform invariant.
+ */
+const AgentTurnRenderingContractSchema = z.enum([
+  'rasen.driver-rendered-turn/1',
+  'rasen.runtime-derived-consultation-turn/1',
+]);
+
+export type AgentTurnRenderingContract = z.infer<
+  typeof AgentTurnRenderingContractSchema
+>;
+
 const FrozenAgentTurnInputSchema = z.strictObject({
   format: z.literal('agent-turn-input/1'),
   mediaType: z.literal('text/plain;charset=utf-8'),
-  renderingContract: z.literal('rasen.driver-rendered-turn/1'),
+  renderingContract: AgentTurnRenderingContractSchema,
   utf8ByteLength: SafeIntegerSchema,
   contentDigest: DigestSchema,
 });

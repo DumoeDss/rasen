@@ -35,7 +35,12 @@ import type { WorkspaceManifest } from './workspace.js';
 import { deriveWorkspaceRevision } from './workspace.js';
 import { createChangePipelineRuntime } from './facade-runtime.js';
 import type { ChangePipelineRuntime } from '../facade.js';
-import type { JsonValue, NodeId, RunAction } from '../contracts.js';
+import type {
+  AgentTurnRenderingContract,
+  JsonValue,
+  NodeId,
+  RunAction,
+} from '../contracts.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { WORKSPACE_DIR_NAME } from '../../config.js';
@@ -452,6 +457,7 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
     profilePath?: string;
     input?: JsonValue;
     renderedTurnInput?: string;
+    renderingContract?: AgentTurnRenderingContract;
   }): RunAction => {
     // Bounded-loop phase admits (review-cycle) carry a profilePath to look
     // up the capability/stage binding directly — no plan-node lookup needed.
@@ -499,12 +505,15 @@ export function prepareRuntimeContext(input: RuntimeContextInput): RuntimeContex
       case 'agent':
         if (descriptor.renderedTurnInput === undefined) {
           throw new Error(
-            `Trusted driver rendering is required before admitting agent Action ${descriptor.nodeId}.`
+            `Trusted rendering is required before admitting agent Action ${descriptor.nodeId}.`
           );
         }
         return buildAgentAction(buildContext, identity, {
           input: actionInput,
           renderedTurnInput: descriptor.renderedTurnInput,
+          ...(descriptor.renderingContract === undefined
+            ? {}
+            : { renderingContract: descriptor.renderingContract }),
         });
       case 'command':
         return buildCommandAction(buildContext, identity, {
@@ -583,6 +592,7 @@ export function openStoredRuntimeContext(
     profilePath?: string;
     input?: JsonValue;
     renderedTurnInput?: string;
+    renderingContract?: AgentTurnRenderingContract;
   }): RunAction => {
     const hierarchicalPath =
       descriptor.profilePath ??
@@ -624,12 +634,15 @@ export function openStoredRuntimeContext(
       case 'agent':
         if (descriptor.renderedTurnInput === undefined) {
           throw new Error(
-            `Trusted driver rendering is required before admitting agent Action ${descriptor.nodeId}.`
+            `Trusted rendering is required before admitting agent Action ${descriptor.nodeId}.`
           );
         }
         return buildAgentAction(buildContext, identity, {
           input: actionInput,
           renderedTurnInput: descriptor.renderedTurnInput,
+          ...(descriptor.renderingContract === undefined
+            ? {}
+            : { renderingContract: descriptor.renderingContract }),
         });
       case 'command':
         return buildCommandAction(buildContext, identity, {

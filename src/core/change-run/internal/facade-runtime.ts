@@ -104,8 +104,10 @@ export interface RuntimeDeps {
     readonly admissionKind: 'agent' | 'command' | 'host';
     readonly profilePath?: string;
     readonly input?: import('../contracts.js').JsonValue;
-    /** Exact trusted driver-rendered bytes, required for every admitted agent Action. */
+    /** Exact trusted rendered bytes, required for every admitted agent Action. */
     readonly renderedTurnInput?: string;
+    /** Which trusted renderer produced `renderedTurnInput`; defaults to the driver. */
+    readonly renderingContract?: import('../contracts.js').AgentTurnRenderingContract;
   }) => RunAction;
   /**
    * Optional mutation guard invoked before every mutating operation
@@ -211,6 +213,61 @@ function candidateDescriptor(
   });
 }
 
+/**
+ * The rendering contract for a Teacher turn ECP renders itself. See
+ * `AgentTurnRenderingContract` in the public contracts: labelling these bytes
+ * `rasen.driver-rendered-turn/1` would record a falsehood, because no driver
+ * ever sees them.
+ */
+const CONSULTATION_TURN_RENDERING_CONTRACT =
+  'rasen.runtime-derived-consultation-turn/1' as const;
+
+/**
+ * A consultation Teacher candidate is runtime-owned. The reconciler derives its
+ * complete `teacher-consultation/invocation/1` envelope from committed Record
+ * facts (the attested CONSULT step plus the frozen binding), so ECP renders the
+ * exact executable bytes itself and admits the Teacher directly.
+ *
+ * These bytes are `canonicalJson` of the frozen `agent.input`, which is exactly
+ * what the consultation driver transports at dispatch, so the executor's
+ * length/digest transport check authenticates it unchanged. This is NOT the
+ * forbidden `JSON.stringify(agent.input)` backfill: that prohibition is about
+ * the executor inventing authority at dispatch time for an Action that lacks a
+ * binding. Here the runtime is the contemporaneous author at admission time,
+ * and the work itself is already authorized by `agent.input` being covered by
+ * complete canonical Action equality.
+ *
+ * Routing this through the driver-rendered candidate manifest instead would
+ * violate `ecp-consultation-runtime` ("SHALL NOT require a LEAD Action or
+ * LEAD-authored relay" on the consultation data path) and would let the LEAD
+ * rewrite the question the bound Teacher is asked.
+ */
+function isConsultationTeacherCandidate(
+  candidate: ReconcilerNextAction
+): candidate is Extract<
+  ReconcilerNextAction,
+  { kind: 'admit' }
+> & { readonly consultationTeacher: { readonly consultationId: string } } {
+  return candidate.kind === 'admit' && candidate.consultationTeacher !== undefined;
+}
+
+function renderConsultationTeacherTurn(
+  candidate: Extract<ReconcilerNextAction, { kind: 'admit' }>
+): string {
+  if (candidate.input === undefined) {
+    throw new Error(
+      'facade admission failed: a consultation Teacher candidate carries no frozen invocation envelope to render.'
+    );
+  }
+  return canonicalJson(candidate.input);
+}
+
+/**
+ * Agent candidates the trusted source driver must render before admission.
+ * Runtime-owned consultation Teacher candidates are deliberately excluded: they
+ * are not previewable work, and exposing them here would invite a driver to
+ * author the Teacher's turn through `admit`.
+ */
 function previewAgentCandidates(
   record: CanonicalRunRecord,
   plan: RuntimePlan
@@ -223,7 +280,9 @@ function previewAgentCandidates(
     reconciled.actions
       .filter(
         (candidate): candidate is Extract<ReconcilerNextAction, { kind: 'admit' }> =>
-          candidate.kind === 'admit' && candidate.admissionKind === 'agent'
+          candidate.kind === 'admit' &&
+          candidate.admissionKind === 'agent' &&
+          !isConsultationTeacherCandidate(candidate)
       )
       .map((candidate) => candidateDescriptor(record, candidate))
   );
@@ -504,23 +563,35 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
               ? { input: candidate.input }
               : {}),
           };
+          // Runtime-owned consultation Teacher: ECP is the trusted renderer, so
+          // this candidate does NOT stop at the driver's quiescent preview
+          // boundary. Every face (`consult`, `complete`, `control`, `start`,
+          // `resume-run`, `admit`) admits it identically.
+          const runtimeRenderedTurnInput = isConsultationTeacherCandidate(candidate)
+            ? renderConsultationTeacherTurn(candidate)
+            : undefined;
           if (
             candidate.admissionKind === 'agent' &&
+            runtimeRenderedTurnInput === undefined &&
             !('resolveAgentTurnInput' in context)
           ) {
             break;
           }
           const renderedTurnInput =
-            candidate.admissionKind === 'agent' &&
+            runtimeRenderedTurnInput ??
+            (candidate.admissionKind === 'agent' &&
             'resolveAgentTurnInput' in context
               ? context.resolveAgentTurnInput(
                   candidateDescriptor(workingRecord, candidate)
                 )
-              : undefined;
+              : undefined);
           const action = deps.buildAction({
             ...actionDescriptor,
             admissionKind: candidate.admissionKind,
             ...(renderedTurnInput === undefined ? {} : { renderedTurnInput }),
+            ...(runtimeRenderedTurnInput === undefined
+              ? {}
+              : { renderingContract: CONSULTATION_TURN_RENDERING_CONTRACT }),
           });
           // Cross-Run reservation check. The reconciler has already decided
           // this candidate is admissible within THIS Run; the registry is the
@@ -916,6 +987,16 @@ export function createChangePipelineRuntime(deps: RuntimeDeps): ChangePipelineRu
       const reconciled = reconcile(deps.plan, record);
       if (!reconciled.ok) {
         throw new Error(`facade reconcile failed: ${reconciled.failure.message}`);
+      }
+      // A runtime-owned consultation Teacher is never admissible from a driver
+      // manifest. While a consultation is open the reconciler yields only
+      // consultation candidates, so this rejects the whole call rather than
+      // silently admitting the Teacher under caller-authored bytes.
+      if (reconciled.actions.some(isConsultationTeacherCandidate)) {
+        throw new ChangeRunRuntimeError(
+          'candidate_stale',
+          'The current Run frontier is a runtime-owned consultation Teacher, which ECP renders and admits directly; it cannot be admitted from a turn-input manifest.'
+        );
       }
       const agentCandidates = reconciled.actions.filter(
         (candidate): candidate is Extract<ReconcilerNextAction, { kind: 'admit' }> =>

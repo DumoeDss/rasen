@@ -69,7 +69,7 @@ Reconciliation and resume SHALL use the frozen agent Action's inference identity
 - **AND** SHALL not persist or reuse the old token
 
 ### Requirement: Canonical agent Actions authenticate their executable turn input
-Every newly admitted canonical agent Action SHALL bind the exact trusted driver-rendered base turn input by a closed versioned rendering contract, exact UTF-8 byte length, and domain-separated content digest under normal Action authority. The structured `agent.input` SHALL retain its orchestration meaning and SHALL NOT be treated as an executable prompt unless a future rendering contract explicitly defines that meaning. A frozen-action dispatch request MAY transport the rendered string, but the request string SHALL be only an assertion: the executor SHALL compare its exact UTF-8 length and digest with the Record-owned binding before backend selection, Route Lease acquisition, SessionHost generation creation/resume, launcher execution, or process spawn. Claude/Codex runtime-owned contract and flat-hierarchy framing SHALL continue to derive from the committed worker contract and runtime rather than caller text.
+Every newly admitted canonical agent Action SHALL bind the exact trusted rendered base turn input by a closed versioned rendering contract identifying its renderer, exact UTF-8 byte length, and domain-separated content digest under normal Action authority. The structured `agent.input` SHALL retain its orchestration meaning and SHALL NOT be treated as an executable prompt unless a future rendering contract explicitly defines that meaning. A frozen-action dispatch request MAY transport the rendered string, but the request string SHALL be only an assertion: the executor SHALL compare its exact UTF-8 length and digest with the Record-owned binding before backend selection, Route Lease acquisition, SessionHost generation creation/resume, launcher execution, or process spawn. Claude/Codex runtime-owned contract and flat-hierarchy framing SHALL continue to derive from the committed worker contract and runtime rather than caller text.
 
 The authority check SHALL apply to hosted and in-tool backends, whether routed or unrouted. A mismatch SHALL return typed non-retryable `execution_input_mismatch`; a matching authenticated input that exceeds the effective shared UTF-8 turn bound SHALL return typed non-retryable `execution_input_too_large`. A historical routed Action without the binding SHALL return typed non-retryable `execution_input_authority_missing` before lease or process. A historical unrouted Action without the binding SHALL remain decodable and retain its prior caller-rendered turn behavior. The executor SHALL NOT backfill either historical case from current Pipeline/skill content or by serializing `agent.input`.
 
@@ -105,7 +105,7 @@ The authority check SHALL apply to hosted and in-tool backends, whether routed o
 - **AND** leaf/evaluate result schemas SHALL remain selected only by the separately frozen `workerContract`
 
 ### Requirement: Agent admission uses a stable quiescent candidate preview
-The canonical runtime SHALL expose each ready agent candidate as a closed prompt-free preview before creating any Action authority. `start`, `resume`, `complete`, and `control` SHALL stop at that preview boundary whenever the next executable candidate is an agent, while still settling durable waits, terminal transitions, and non-agent command/host candidates. A preview SHALL identify the Run, canonical head Record version, node, occurrence, optional frozen profile path, and structured orchestration input with a runtime-derived candidate identity bound to the complete descriptor and current head digest. The preview and its prompt SHALL NOT be persisted in the canonical Record, run-state, evidence, logs, or telemetry.
+The canonical runtime SHALL expose each ready driver-rendered agent candidate as a closed prompt-free preview before creating any Action authority. `start`, `resume`, `complete`, and `control` SHALL stop at that preview boundary whenever the next executable candidate is a driver-rendered agent, while still settling durable waits, terminal transitions, and non-agent command/host candidates. A preview SHALL identify the Run, canonical head Record version, node, occurrence, optional frozen profile path, and structured orchestration input with a runtime-derived candidate identity bound to the complete descriptor and current head digest. The preview and its prompt SHALL NOT be persisted in the canonical Record, run-state, evidence, logs, or telemetry.
 
 A trusted source workflow SHALL render the complete base prompt for the exact preview and place bounded UTF-8 strings in private ephemera under the closed `agent-turn-input-manifest/1` contract. A subsequent explicit admission operation SHALL re-reconcile the same head, require exact one-to-one coverage of the entire current agent frontier, verify every candidate identity and Record version, and atomically build, admit, and grant the Actions. Only the Action builder SHALL compute the `agent-turn-input/1` length and digest. Admission SHALL reject stale, missing, duplicate, extra, wrong-Run, or wrong-candidate manifests before Action construction or Record mutation.
 
@@ -140,3 +140,32 @@ A trusted source workflow SHALL render the complete base prompt for the exact pr
 #### Scenario: Legacy prompt-file dispatch is used
 - **WHEN** a caller invokes legacy `rasen agent dispatch --prompt-file`
 - **THEN** the candidate-preview protocol SHALL not alter its byte-for-byte prompt-file behavior
+
+### Requirement: Runtime-rendered agent turns bind their own trusted renderer
+An agent turn whose complete executable bytes are deterministically derivable from committed Record facts SHALL be rendered and admitted by the runtime itself rather than previewed to a driver. The canonical consultation Teacher turn is such a turn: its bytes are the canonical serialization of the frozen `teacher-consultation/invocation/1` envelope that reconciliation derives from the attested source request and the frozen consultation binding. The runtime SHALL bind those exact bytes under the same `agent-turn-input/1` authority as driver-rendered turns, and SHALL label them with a distinct rendering contract so the Record identifies the actual author. The rendering contract SHALL participate in Action authority but SHALL NOT enter the turn-input digest preimage, so transport authentication remains exact UTF-8 length and digest for every contract.
+
+The runtime SHALL NOT expose a runtime-rendered candidate as a preview candidate, and explicit admission SHALL reject a manifest that reaches one with typed `candidate_stale` before Action construction or Record mutation, rather than accepting the caller's rendered bytes and discarding them. Continuation grants remain outside Action admission and keep their existing Record-owned input digest and derived request identity.
+
+#### Scenario: Consultation admits its bound Teacher directly
+- **WHEN** an attested source `CONSULT` step commits a consultation
+- **THEN** the runtime SHALL render the frozen invocation envelope, bind it as `agent-turn-input/1` under the runtime-derived consultation rendering contract, and admit and grant the Teacher in the same Record revision
+- **AND** the bound length and digest SHALL equal those of the exact bytes every consultation dispatch path transports, whether or not that path also re-verifies them; on the exact-Teacher route the bytes are pinned by server-side construction from the committed Action rather than by a transport comparison
+
+#### Scenario: Teacher turn is not offered to a driver
+- **WHEN** a lifecycle receipt is projected while a consultation Teacher candidate is on the frontier, including while its sponsored read is blocked by a workspace reservation
+- **THEN** the receipt SHALL NOT list that candidate as previewable work
+
+#### Scenario: Manifest reaches a runtime-rendered candidate
+- **WHEN** explicit admission is invoked while the frontier holds a consultation Teacher candidate
+- **THEN** admission SHALL return typed `candidate_stale` naming the runtime-owned candidate before Action construction or Record mutation
+- **AND** SHALL NOT silently ignore the caller's rendered bytes or admit the Teacher under them
+
+#### Scenario: A consultation-eligible source keeps its caller-transported prompt
+- **WHEN** a consultation-eligible source agent Action is dispatched through the daemon face with the exact driver-rendered bytes its committed binding authenticates
+- **THEN** the face SHALL forward those transported bytes rather than substituting a server-derived serialization of `agent.input`
+- **AND** the Action SHALL execute and remain able to return a `CONSULT` step, because substituting other bytes would fail its own turn-input authority before any backend
+
+#### Scenario: Rendering contract does not domain-separate the bytes
+- **WHEN** the same exact UTF-8 bytes are bound under the driver-rendered and runtime-derived consultation contracts
+- **THEN** the bound `utf8ByteLength` and `contentDigest` SHALL be identical
+- **AND** the two Actions SHALL still differ in canonical bytes, so a relabelled Action fails complete receipt equality

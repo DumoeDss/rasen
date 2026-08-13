@@ -17,6 +17,7 @@ import {
   type RuntimeCapabilityBinding,
 } from '../../../src/core/pipeline-registry/execution-plan-internal.js';
 import { prepareRuntimeContext } from '../../../src/core/change-run/internal/runtime-context.js';
+import { admitPreviewedCandidates } from '../../helpers/change-run-admission.js';
 import {
   deriveChangeInstanceId,
   derivePlanningSpaceId,
@@ -667,7 +668,11 @@ describe('prepareRuntimeContext (launch wiring, real fs + git)', () => {
       'b'
     );
 
-    const firstReceipt = await first.facade.start(
+    // Agent admission is quiescent: `start` previews, the trusted driver
+    // renders, `admit` builds and grants. The cross-Run reservation check runs
+    // during admission, so both Runs must cross that boundary for the second
+    // one to observe the first Run's lease.
+    const firstPreview = await first.facade.start(
       {
         change: { projectRoot: repo, changeId: 'first-change' },
         pipeline: WRITE_ONLY.name,
@@ -675,14 +680,24 @@ describe('prepareRuntimeContext (launch wiring, real fs + git)', () => {
       },
       { deliveryMode: 'grant' }
     );
+    const firstReceipt = await admitPreviewedCandidates(
+      first.facade,
+      { change: { projectRoot: repo, changeId: 'first-change' }, runId: firstRunId },
+      firstPreview
+    );
     expect(firstReceipt.actions).toHaveLength(1);
-    const secondReceipt = await second.facade.start(
+    const secondPreview = await second.facade.start(
       {
         change: { projectRoot: repo, changeId: 'second-change' },
         pipeline: WRITE_ONLY.name,
         launchRequestId: branded('second-launch') as never,
       },
       { deliveryMode: 'grant' }
+    );
+    const secondReceipt = await admitPreviewedCandidates(
+      second.facade,
+      { change: { projectRoot: repo, changeId: 'second-change' }, runId: secondRunId },
+      secondPreview
     );
     expect(secondReceipt.actions).toEqual([]);
     expect(secondReceipt.view.status).toBe('waiting');

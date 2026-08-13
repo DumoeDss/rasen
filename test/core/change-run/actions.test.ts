@@ -153,6 +153,45 @@ describe('buildAgentAction (6.1/6.4)', () => {
     expect(JSON.stringify(action)).not.toMatch(/private|pkcs8|BEGIN PRIVATE KEY/i);
   });
 
+  it('labels the trusted renderer without letting the label enter the digest preimage', () => {
+    const renderedTurnInput = 'trusted fixture prompt\n雪';
+    const driverRendered = buildAgentAction(ctx('agent'), identity, {
+      renderedTurnInput,
+      input: { change: 'fixture' },
+    });
+    const runtimeRendered = buildAgentAction(ctx('agent'), identity, {
+      renderedTurnInput,
+      input: { change: 'fixture' },
+      renderingContract: 'rasen.runtime-derived-consultation-turn/1',
+    });
+    if (driverRendered.kind !== 'agent' || runtimeRendered.kind !== 'agent') {
+      throw new Error('expected agent Actions');
+    }
+
+    // The label records WHO authored the bytes; it must never domain-separate
+    // them. Folding it into the preimage would silently invalidate every
+    // Action already committed under the driver contract, and would break the
+    // executor's transport check for consultation Teachers, whose bytes are
+    // authenticated by length + digest alone.
+    expect(runtimeRendered.agent.turnInput?.contentDigest).toBe(
+      driverRendered.agent.turnInput?.contentDigest
+    );
+    expect(runtimeRendered.agent.turnInput?.utf8ByteLength).toBe(
+      driverRendered.agent.turnInput?.utf8ByteLength
+    );
+    expect(driverRendered.agent.turnInput?.renderingContract).toBe(
+      'rasen.driver-rendered-turn/1'
+    );
+    expect(runtimeRendered.agent.turnInput?.renderingContract).toBe(
+      'rasen.runtime-derived-consultation-turn/1'
+    );
+    // The label IS authority: it participates in the Action's canonical bytes,
+    // so a relabelled Action is a different Action under receipt equality.
+    expect(JSON.stringify(runtimeRendered)).not.toBe(
+      JSON.stringify(driverRendered)
+    );
+  });
+
   it('keeps historical Actions decodable but rejects invalid worker contracts', () => {
     const action = buildAgentAction(ctx('agent'), identity, { renderedTurnInput: 'trusted fixture prompt', input: {} });
     if (action.kind !== 'agent') throw new Error('expected agent Action');

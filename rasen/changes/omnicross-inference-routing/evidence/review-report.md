@@ -804,3 +804,310 @@ accepted-known non-blocking Minors with follow-ups recorded above. N4, N5 and N6
 fixed. Verification state at ship: full suite 8176 passed / 59 skipped / 1 flaky
 (`capstone-journeys` journey 3, passes in isolation); `test/core/change-run/`
 714/714 on the final tree; `tsc --noEmit` clean; `git diff --check` clean.
+
+## Round 6 - post-rebase independent re-review (Decision 13 + rebased seams)
+
+Reviewer: independent (not the author). Tree: worktree
+`OpenSpec-code-wt-omnicross-inference-routing`, branch `feat/omnicross-inference-routing`,
+HEAD `ab790c63`, base `dev/0.2.0` (merge-base `34d91322`), **plus the uncommitted
+Decision 13 working-tree change** (11 files, +421/-22).
+
+Per the dispatch brief, **no conclusion from rounds 1-5 was carried forward**. Every
+property below was re-derived from the current bytes, and every guard relied on was
+mutated to prove it discriminates.
+
+### Round 6 severity counts
+
+| Severity | Count |
+| --- | ---: |
+| Blocker | 1 |
+| Major | 1 |
+| Minor | 3 |
+
+### Files reviewed
+
+**P1 (uncommitted Decision 13 delta), read in full:**
+
+- `src/core/change-run/contracts.ts` (rendering-contract enum, `FrozenAgentTurnInputSchema`)
+- `src/core/change-run/internal/actions.ts` (`deriveAgentTurnInputBinding`, `bindAgentTurnInput`, `buildAgentAction`)
+- `src/core/change-run/internal/facade-runtime.ts` (`isConsultationTeacherCandidate`, `renderConsultationTeacherTurn`, `previewAgentCandidates`, `receipt`, the shared admit loop, `admit`)
+- `src/core/change-run/internal/runtime-context.ts` (both `buildAction` closures)
+- `src/core/frozen-action-executor/executor.ts` (turn-input authority block)
+- `test/core/change-run/actions.test.ts`, `consultation-facade-journey.test.ts`, `runtime-context.test.ts`
+
+**Supporting reads for the same claims:**
+
+- `src/core/change-run/internal/reconciler.ts` (`consultationReconcileCandidates`, `reconcile` short-circuit)
+- `src/core/change-run/internal/consultation-lifecycle.ts` (`teacherInvocationForRun`)
+- `src/core/change-run/internal/identity.ts` (`canonicalJson`)
+- `src/core/frozen-action-executor/consultation-driver.ts`, `exact-teacher-attempt-module.ts`
+- `src/core/management-api/frozen-action-executor.ts`, `router.ts`
+- `src/core/runtime-adapters.ts` (P2: `resolveDispatchRoute`)
+- `rasen/specs/ecp-consultation-runtime/spec.md` (shipped)
+
+---
+
+### Blocker 1 - A consultation-eligible source Action can never execute through the shipped daemon face
+
+**Anchors:**
+
+- `src/core/management-api/frozen-action-executor.ts:152-164` (`participatesInConsultation`)
+- `src/core/management-api/frozen-action-executor.ts:1744-1747` (turn-input substitution)
+- `src/core/frozen-action-executor/executor.ts:242-274` (authority check)
+- `src/core/change-run/internal/actions.ts:390-404` (`consultation.eligible: true`)
+- `src/core/change-run/internal/runtime-context.ts:474-476` (`consultationBinding` matched by `sourceProfilePath`)
+- `src/core/management-api/router.ts:1474-1481` (route wiring)
+
+**Failure scenario.** A consultation-bound pipeline (e.g. teacher-advisor) reaches its
+implementer stage. That stage is an ordinary driver-rendered agent candidate, so the LEAD
+previews it, renders its real base prompt, and admits it through
+`rasen pipeline admit --turn-input-file`. The committed Action therefore carries
+`agent.turnInput` bound to the LEAD's prompt under `rasen.driver-rendered-turn/1`, and -
+because its `hierarchicalPath` equals the binding's `sourceProfilePath` -
+`agent.consultation.eligible === true`.
+
+The granted Action is then dispatched to `POST /api/v1/frozen-action-executor/dispatch`
+with the correct prompt in `envelope.turnInput`. `participatesInConsultation()` returns
+`true` on `agent.consultation.eligible` alone, so line 1744 **discards the caller's bytes
+and substitutes `canonicalJson(grantedAction.agent.input)`**. `dispatchGrantedAction`
+then compares that substitution against the committed binding, mismatches, and returns
+non-retryable `execution_input_mismatch` before backend selection, lease acquisition, or
+any process. No `CONSULT` step can ever be produced, so the entire shipped
+`ecp-consultation-runtime` lifecycle is unreachable through this face.
+
+The substitution at 1744-1747 is **base behaviour** (`git show dev/0.2.0:...` shows the
+identical expression); this branch introduced the authority check that now collides with
+it. Neither side is wrong alone; the integration is.
+
+**Why the suite does not catch it - and the mutation that proves that.**
+`test/core/change-run/consultation-facade-journey.test.ts:645-646` renders every candidate
+as `JSON.stringify(candidate.input ?? { change: 'fixture-change' })`, which for the flat
+fixture input is byte-identical to `canonicalJson(agent.input)`. One journey additionally
+hardcodes `turnInput: JSON.stringify(sourceAction.agent.input)` at line 908. The fixture
+is therefore a LEAD that renders exactly the thing task 7.5 forbids production from
+deriving.
+
+*Mutation MUT-6*: prefix the fixture renderer with a single realistic prompt line
+(`'You are the implementer.' + newlines + ...`), changing nothing in `src/`.
+
+```
+Failed Tests 5
+  drives the production CONSULT -> Teacher -> exact continuation loop from canonical receipts
+    AssertionError: expected 'execution-input-rejected' to be 'executed'
+    at consultation-facade-journey.test.ts:910
+  bounds production Teacher infrastructure retries and releases each sponsored read ...
+  production management server consultation authority > drives CONSULT -> Teacher -> exact
+    continuation over real HTTP without a resolver override
+  production management server consultation authority > retains unsafe exact authority ...
+  production management server consultation authority > fails closed when a delayed child ...
+```
+
+Three of the five go through the **real HTTP daemon face**, i.e. exactly the production
+path. Mutation reverted; tree restored.
+
+*Independent reproduction* (temporary test, since deleted): a `makeBoundRecordAction`
+Action carrying `agent.consultation.eligible: true` and a real prompt binding, dispatched
+through `dispatchGrantedAction` with `canonicalJson(agent.input)` as `turnInput`, returns
+`execution-input-rejected` / `execution_input_mismatch` / `retryable: false` with zero
+backend calls; the same Action with the real prompt executes and the backend receives the
+prompt verbatim. 2/2 passed.
+
+**Note on scope.** This is not a Decision 13 defect - Decision 13 is about the *Teacher*.
+It is the *source* Action, and it is reachable on `dev/0.2.0` plus this branch today.
+
+---
+
+### Major 1 - The `resolveDispatchRoute` `canDispatch` guard has no discriminating test
+
+**Anchors:** `src/core/runtime-adapters.ts:167-181`;
+`test/core/pipeline-registry/omnicross-inference.test.ts:160-184`;
+`test/core/runtime-adapters.test.ts:185-189`.
+
+The handoff flags this as a deliberate rebase correctness catch - base replaced
+`host === 'unknown'` with `hasRuntimeCapability(host, 'canDispatch')`, and the
+`externalInference` branch was aligned to match so an `omp` (Oh My Pi) host cannot reach
+the `claude-print` bridge. **The resolution is correct.** `RUNTIME_ADAPTERS` marks both
+`omp` and `zed` `canDispatch: false`, both branches guard identically, and
+`KNOWN_DISPATCH_ROUTES` is only indexed after the guard.
+
+It is also completely unprotected.
+
+*Mutation MUT-7*: revert the routed branch to `if (host === 'unknown')`, which restores
+exactly the hazard `detectHostRuntime` documents.
+
+```
+npx tsc --noEmit                       -> clean (0 errors)
+test/core/runtime-adapters.test.ts     -> 25 passed
+omnicross-inference.test.ts            -> 13 passed
+execution-validation.test.ts           -> 24 passed
+Test Files 3 passed | Tests 62 passed
+```
+
+The routed matrix at `omnicross-inference.test.ts:161-166` covers only `claude`/`codex`
+hosts, and the "fails closed" case at 175-183 covers only `'unknown'`. The one `omp`
+assertion (`runtime-adapters.test.ts:186-188`) exercises the **non-routed** branch.
+`omp` with `externalInference: true` - the branch that was changed - is never asserted. A
+one-line regression reintroduces a documented mis-route with a fully green suite.
+Mutation reverted.
+
+**Suggested fix:** add `resolveDispatchRoute('omp', 'claude', { externalInference: true })`
+and the `zed` equivalent to the routed matrix, pinned to
+`{ host, target, mode: 'unsupported' }`.
+
+---
+
+### Minor 1 - The primary Decision 13 test contains no discriminating assertion for either guard in its title
+
+**Anchor:** `test/core/change-run/consultation-facade-journey.test.ts:1285-1351`
+("renders the bound Teacher turn itself and never offers it to the driver manifest").
+
+*Mutation MUT-1*: delete `&& !isConsultationTeacherCandidate(candidate)` from
+`previewAgentCandidates` (`facade-runtime.ts:283-285`).
+
+```
+Failed Tests 1
+  refuses to admit a blocked Teacher from a driver manifest ...
+    AssertionError: expected [ { ...(8) } ] to deeply equal []
+  PASS renders the bound Teacher turn itself and never offers it to the driver manifest
+```
+
+*Mutation MUT-2*: disable the whole `admit()` Teacher refusal (`facade-runtime.ts:995-1000`).
+
+```
+Failed Tests 1
+  refuses to admit a blocked Teacher from a driver manifest ...
+    AssertionError: expected 'The supplied candidate manifest does ...'
+                    to contain 'runtime-owned consultation Teacher'
+  PASS renders the bound Teacher turn itself and never offers it to the driver manifest 16ms
+```
+
+Both guards survive **only** because the second test exists. In the first test the
+consultation has already advanced to `teacher-active` by the time the receipt is
+projected, so `reconcile` returns no candidates regardless of the filter; and its
+`admit()` call already hits the pre-existing generic `candidate_stale`
+("no agent candidates to admit"), so asserting only `code === 'candidate_stale'` cannot
+tell the new guard from the old one. Its `.message` is never asserted.
+
+Both guards *are* proven - by exactly one assertion each, in the blocked-state test. The
+spec scenario "Manifest reaches a runtime-rendered candidate" is therefore backed by a
+single `toContain`, and the scenario's second clause ("SHALL NOT ... admit the Teacher
+under them") is never reached: the fixture's `reserveConsultationRead` conflicts forever,
+so the state where the reservation frees and `admit` would otherwise succeed in minting
+the Teacher is untested.
+
+**Suggested fix:** assert `.message` in the first test too, and add a case that releases
+the forced conflict and then calls `admit`, asserting `candidate_stale` and an unchanged
+`recordVersion`.
+
+---
+
+### Minor 2 - The spec scenario overclaims: the executor's transport assertion never runs for a Teacher in production
+
+**Anchors:** `rasen/changes/omnicross-inference-routing/specs/frozen-action-session-executor/spec.md`
+(scenario "Consultation admits its bound Teacher directly", second `AND`);
+`src/core/frozen-action-executor/consultation-driver.ts:324-330`;
+`src/core/management-api/frozen-action-executor.ts:795-826`.
+
+The scenario asserts the bound length/digest equal the driver's dispatch bytes
+"**so the executor's transport assertion authenticates the real request**". The bytes do
+match (established below), but on the shipped path the assertion is not executed:
+`dispatchAction` short-circuits to `exactTeacherAttemptModule.executeAndSettle` whenever
+that module is present, and the Management API always supplies it. `executeOnce` then
+sends `input: canonicalJson(context.action.agent.input)` straight to
+`exactTeacherHost.dispatch` - `dispatchGrantedAction` is never entered, so
+`agent.turnInput` is never compared to anything. The transport check is exercised only
+where `exactTeacherAttemptModule` is undefined, which is fixtures.
+
+This does not weaken authority - the production bytes are derived server-side from the
+committed Action, so they are pinned by construction rather than by check. But the
+consequence is real: `executeOnce` canonicalises the **reloaded, Zod-decoded**
+`agent.input`, while admission canonicalised the **pre-decode in-memory**
+`candidate.input`. If those ever diverged, nothing would notice, and the Record would
+carry a digest that does not describe the bytes the Teacher actually received. The design
+doc's "honest limits" paragraph records the tautology but not this.
+
+**Suggested fix:** reword the scenario to state where the assertion applies, or route the
+exact-Teacher send through the same length/digest comparison.
+
+---
+
+### Minor 3 - The executor's new `renderingContract` argument is inert and reads as if it authenticates
+
+**Anchor:** `src/core/frozen-action-executor/executor.ts:260-263`.
+
+```ts
+const transported = deriveAgentTurnInputBinding(
+  options.turnInput,
+  authority.renderingContract
+);
+```
+
+The second parameter cannot affect either compared field: it is excluded from the digest
+preimage by design (proved by MUT-5 below), and only `utf8ByteLength` / `contentDigest`
+are compared. The call is therefore a no-op that invites a future reader to believe the
+contract participates in transport authentication, while the comment above it says the
+opposite of what the code appears to do. Passing nothing (or asserting the contract
+separately) would be clearer. No behavioural defect.
+
+---
+
+### Properties independently established (with the mutation that proves each)
+
+| Claim | Receipt |
+| --- | --- |
+| Admission bytes equal the driver's dispatch bytes end-to-end | **MUT-3**: `renderConsultationTeacherTurn` returns `canonicalJson(input) + ' '` -> **4 RED**, including three full CONSULT/Teacher/continuation journeys that run through the real `dispatchGrantedAction`. A one-byte drift is caught. |
+| The Record labels the real author (no false `driver-rendered` claim) | **MUT-4**: set `CONSULTATION_TURN_RENDERING_CONTRACT` to `rasen.driver-rendered-turn/1` -> **1 RED**. |
+| The contract does not enter the digest preimage; historical digests are unchanged | **MUT-5**: `.update(renderingContract)` into the preimage -> **2 RED**, one of them a pinned literal (`sha256:97fd6028...` expected, `sha256:a873c7aa...` produced). Golden-vector, not relational. |
+| Runtime-owned Teachers are excluded from the preview surface, including while blocked by a workspace reservation | **MUT-1** -> 1 RED (see Minor 1 for the coverage caveat). |
+| `admit()` refuses a manifest reaching a Teacher before Action construction or Record mutation | **MUT-2** -> 1 RED (same caveat). |
+| No caller-controlled input can reach the Teacher's executable bytes on any face | Traced, not mutated. `facade-runtime.ts:580-587` gives `runtimeRenderedTurnInput` unconditional precedence over `context.resolveAgentTurnInput`, on the single shared admit loop used by `start`, `resume`, `complete`, `control`, `consult` and `admit`; `admit` additionally refuses. `reconciler.ts:208-216` short-circuits the whole reconcile while any consultation is open, so a Teacher candidate can never be co-present with a driver-rendered one. `consultationTeacher` is set at exactly one place (`reconciler.ts:1391`). |
+| Historical Actions still decode; old canonical bytes unchanged | `FrozenAgentTurnInputSchema` widened `z.literal` to `z.enum` containing the old literal; `deriveAgentTurnInputBinding` / `bindAgentTurnInput` default to `rasen.driver-rendered-turn/1`; `buildAgentAction` omits the key only when the caller omits it. No other file in `src/`, `test/`, `packages/` or `schemas/` pins the literal, so there is no mirrored schema to drift. |
+| The blanket `admit` refusal cannot starve legitimate admission | Same reconcile short-circuit: `reconcile` returns *only* consultation candidates when `record.consultations` holds a non-`continued`/`closed` entry, so "reject the whole call" and "reject the Teacher" are the same set. |
+| `resolveDispatchRoute` resolution is semantically correct | Read `RUNTIME_ADAPTERS` (`omp`/`zed` = `canDispatch: false`), both branches, and `KNOWN_DISPATCH_ROUTES` typing. Correct - but see Major 1 for its lack of protection. |
+
+### Does the change need an `ecp-consultation-runtime` MODIFIED delta?
+
+**No delta is required for Decision 13 itself.** The shipped requirements it touches -
+"directly admit the bound Teacher Action", "SHALL NOT require a LEAD Action or
+LEAD-authored relay", "Worker output and driver input SHALL NOT select or replace the
+Teacher authority", "Teacher Action identities SHALL be deterministic from committed Run
+facts" - are all preserved or strengthened by rendering in the runtime; the added
+`agent.turnInput` field is additive and deterministic. Routing the Teacher through the
+manifest, the alternative the design rejected, is what would have needed a MODIFIED delta.
+
+Blocker 1, however, makes the shipped requirement "An eligible active source Action SHALL
+be able to return a strict `CONSULT` worker step" unsatisfiable in production. That is an
+implementation defect against the shipped spec, not a missing delta.
+
+### Round 6 checks and outcomes
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Change-run suite (baseline, unmutated) | `npx vitest run test/core/change-run/` | **76 files / 762 tests passed**, 366.9s |
+| Executor + Management API suites | `npx vitest run test/core/frozen-action-executor/ test/core/management-api/` | **67 files / 807 passed, 1 skipped**, 141.9s (includes the 2 temporary repro tests, since deleted) |
+| Consultation journey (mutation harness baseline) | `npx vitest run .../consultation-facade-journey.test.ts` | **30/30 passed**, 56.8s |
+| Pipeline-registry subset (MUT-7 harness) | `npx vitest run runtime-adapters + omnicross-inference + execution-validation` | **62/62 passed** |
+| Typecheck | `npx tsc --noEmit` | clean |
+| Lint (5 changed src files) | `npx eslint ...` | clean |
+| Whitespace | `git diff --check` | clean |
+| Working tree restored after 7 mutations | `git diff --stat` | **11 files, +421/-22** - identical to the state received |
+| **Full suite** | `pnpm test` | **NOT EXECUTED** (~30 min). The 27 consultation failures the lead-6 handoff describes are resolved on this tree (journey 30/30; the `runtime-context` case is inside the green change-run 762). The remaining known-flaky set was not re-measured here. |
+| Real Oh My Pi host behaviour (Major 1) | - | **NOT EXECUTED.** No `omp` host available; the finding rests on code reading plus the mutation showing zero test coverage, not on an observed mis-route. |
+| Record serialize/deserialize golden vector for the Teacher envelope | - | **NOT EXECUTED as a dedicated test.** Derived: `canonicalJson` sorts keys and drops `undefined`, `z.json()` preserves JSON values, and `teacherInvocationForRun` emits only strings/ints/arrays, so a round trip is byte-stable. MUT-3 shows the journeys (which reload the Record) are sensitive to a one-byte drift. That is not the same as a pinned literal. |
+
+### Residual concerns
+
+1. **Blocker 1 has a second-order cost**: whatever fix is chosen (drop the substitution and
+   trust `envelope.turnInput`; or narrow `participatesInConsultation` so the *source*
+   Action keeps its caller-transported prompt) changes what the daemon sends to a real
+   agent. It needs its own discriminating test with a **realistic** prompt - not
+   `JSON.stringify(agent.input)`. The journey fixture's renderer should change at the same
+   time; as long as it renders canonical JSON, this class of defect stays invisible.
+2. **Test line 908's hardcoded `turnInput: JSON.stringify(sourceAction.agent.input)`**
+   encodes the forbidden derivation directly in a test named "production".
+3. The Decision 13 design and code comments are unusually candid about the tautology, but
+   the *spec text* is not (Minor 2). Specs are what the archive keeps.
+4. `consultationReconcileCandidates`'s global short-circuit is load-bearing for three
+   separate safety arguments in this change and is not called out in the design. If a
+   future change lets consultation candidates coexist with DAG candidates, the blanket
+   `admit` refusal silently becomes a denial of service on unrelated admission.

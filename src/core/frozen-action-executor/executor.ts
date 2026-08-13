@@ -254,6 +254,12 @@ export async function dispatchGrantedAction(
       // Historical unrouted compatibility: preserve its prior request-rendered
       // behavior. No authority is inferred from agent.input or current content.
     } else {
+      // Length + digest are the whole transport check. The rendering contract
+      // is NOT passed here on purpose: it is excluded from the digest preimage,
+      // so supplying it could not affect either compared field and would only
+      // suggest to a later reader that it participates in authentication. The
+      // contract is authority, but it is enforced by complete canonical Action
+      // equality against the Record, not by this comparison.
       const transported = deriveAgentTurnInputBinding(options.turnInput);
       if (
         transported.utf8ByteLength !== authority.utf8ByteLength ||

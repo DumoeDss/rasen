@@ -183,4 +183,27 @@ describe('routed host × target matrix', () => {
       });
     }
   );
+
+  // `omp` and `zed` are RECOGNIZED hosts that cannot dispatch, which makes them
+  // the only inputs that separate the routed guard's two candidate conditions.
+  // Every case above is satisfied by either `!hasRuntimeCapability(host,
+  // 'canDispatch')` or `host === 'unknown'`; only these tell them apart.
+  // Without them, reverting the guard to an `unknown` check leaves the whole
+  // suite green while routing a non-dispatching host to the claude-print
+  // bridge — the exact residual hazard `detectHostRuntime` documents.
+  it.each([
+    ['omp', 'claude'],
+    ['omp', 'codex'],
+    ['zed', 'claude'],
+    ['zed', 'codex'],
+  ] as const)(
+    'fails closed for recognized non-dispatching host %s -> %s routed stages',
+    (host, target) => {
+      expect(resolveDispatchRoute(host, target, { externalInference: true })).toEqual({
+        host,
+        target,
+        mode: 'unsupported',
+      });
+    }
+  );
 });

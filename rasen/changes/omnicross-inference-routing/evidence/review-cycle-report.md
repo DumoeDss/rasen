@@ -306,3 +306,145 @@ Executed gates on the final tree:
 | Prompt/secret persistence scan | No rendered prompt body, route token, control token, or credential-like assignment found in canonical change/run-state artifacts. |
 
 Tasks 7.1–7.8 are checked only after the complete dynamic and static gate set above passed. Final independent re-review remains the last review-loop exit condition.
+
+## Round 6 — FIXER response to the post-rebase independent re-review
+
+Responds to "Round 6 - post-rebase independent re-review (Decision 13 + rebased seams)" in
+`evidence/review-report.md` (1 Blocker, 1 Major, 3 Minor). Every disposition below was
+proved by mutation from a reachable state, not by inspection.
+
+### Blocker 1 — a consultation-eligible source Action can never execute through the shipped daemon face: `resolved`
+
+The daemon face keyed its server-side turn-input derivation on
+`participatesInConsultation()`, which is true for the eligible **source** implementer as
+well as the Teacher. The source's committed binding holds the LEAD's driver-rendered
+prompt, so substituting `canonicalJson(agent.input)` failed this change's own transport
+authentication with `execution_input_mismatch` before any backend, making `CONSULT`
+unreachable in production.
+
+`src/core/management-api/frozen-action-executor.ts` now derives server-side **only** when
+the granted Action is the bound Teacher (`teacherConsultation !== undefined`, already
+computed upstream for the hosted-seam guard). Every other consultation-driven Action keeps
+its caller-transported bytes, which its own `agent.turnInput` binding authenticates.
+Trusting `envelope.turnInput` uniformly was rejected: it would hand the Teacher's question
+back to the caller and undo Decision 13.
+
+The reviewer's diagnosis that the fixture hid this was correct, and the masking ran deeper
+than the renderer:
+
+1. The admitting driver's renderer emitted `JSON.stringify(candidate.input)` — byte-identical
+   to the substitution. Replaced with `fixtureDriverPrompt()`, a realistic prose base prompt
+   that is deliberately not canonical JSON.
+2. `HttpConsultationTransport.send` opened with `JSON.parse(turn.input)`, so a prose prompt
+   threw and surfaced as `backend-spawn-failed`. The fake backend was structurally usable
+   only by a driver that rendered canonical JSON. It now tolerates a non-JSON turn, which
+   restores the production distinction: prose is the source's turn, a JSON envelope is the
+   Teacher's or a continuation's.
+3. Three assertion sites re-parsed every recorded turn. `decodeTurnContract()` yields an
+   empty object for a prose turn, so contract filters stay exact.
+
+Diagnosis note: the transported prompt's byte length matched its binding exactly
+(167 = 167) while the dispatch still failed, which ruled out turn-input authentication as
+the cause and located the JSON assumption instead.
+
+*Mutation MUT-B1*: restore the `consultationDriven` keying, changing nothing else.
+**3 RED**, all three through the real HTTP daemon face. Before the fixture repair the same
+mutation — that is, the shipped code — was fully green. Mutation reverted.
+
+Recorded as Decision 14 in `design.md` and task 7.10; a new spec scenario
+("A consultation-eligible source keeps its caller-transported prompt") states the contract.
+
+### Major 1 — the `resolveDispatchRoute` `canDispatch` guard has no discriminating test: `resolved`
+
+`omp` and `zed` are recognized hosts that cannot dispatch, which makes them the only inputs
+separating the guard's two candidate conditions; every prior case was satisfied by either.
+Added four pinned cases to the routed matrix in
+`test/core/pipeline-registry/omnicross-inference.test.ts`.
+
+*Mutation MUT-7 replay*: revert the routed branch to `if (host === 'unknown')`. Previously
+green across 62 tests; now **4 RED**. Mutation reverted; 58 pass restored.
+
+### Minor 1 — the primary Decision 13 test contains no discriminating assertion: `resolved, but not as suggested`
+
+The suggested repair — assert `.message` in the first test too — was applied and **failed**:
+by that point the consultation is `teacher-active`, the Teacher is already admitted and the
+frontier is empty, so `admit` reaches the pre-existing generic emptiness rejection. The
+Teacher-specific message is not merely unasserted there, it is untrue.
+
+The first test now pins the generic message (`no agent candidates to admit`) with a comment
+recording why this state cannot reach the runtime-owned refusal, so the two same-code
+rejections are distinguished rather than blurred. The runtime-owned refusal remains proved
+by the blocked-Teacher test, which is the only state that reaches it.
+
+The reviewer's second suggestion — release the forced reservation conflict and re-admit —
+is **not implemented**; that path remains untested and is recorded below.
+
+### Minor 2 — the spec scenario overclaims the transport assertion: `resolved`
+
+Correct: on the shipped path `dispatchAction` short-circuits to
+`exactTeacherAttemptModule.executeAndSettle` whenever the module is present, and the
+Management API always supplies it, so `dispatchGrantedAction` is never entered for a
+Teacher and the length/digest comparison does not run. The scenario now states that the
+exact-Teacher route pins its bytes by server-side construction from the committed Action
+rather than by a transport comparison.
+
+### Minor 3 — the executor's `renderingContract` argument is inert: `resolved`
+
+The argument is removed. The comment now records why it is deliberately *not* passed: the
+contract is excluded from the digest preimage, so supplying it could not affect either
+compared field; it is authority, enforced by complete canonical Action equality, not by
+this comparison.
+
+### Checks and results
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Consultation journey + executor + Management API | focused `vitest run` over the three paths | **67 files / 835 passed, 1 skipped** |
+| Routed matrix + runtime adapters + safe-path | focused `vitest run` over the three files | **58 passed** |
+| Full suite | `npx vitest run` | **8400 passed / 2 failed / 59 skipped (8461)** |
+| Both full-suite failures re-run in isolation | `capstone-journeys`, `legacy-groups-removed` | **Both pass** (2/2 and 6/6); each timed out at ~30 s under parallel load only |
+| Typecheck | `npx tsc --noEmit` | clean |
+| Lint | `npx eslint <changed src + test>` | clean |
+| Whitespace | `git diff --check` | clean |
+| Change validation | `node bin/rasen.js validate omnicross-inference-routing --strict` | valid |
+
+### Residual concerns
+
+1. The safe-root alias repair below **cannot be proved locally**: `canvas-v2-vertical-proof`
+   passes on this machine and failed only in the CI path-alias environment. Synthetic
+   plumbing proves the alias logic; only CI can prove the original failure is gone. It is
+   not claimed as verified.
+2. The reviewer's untested state stands: releasing the forced `reserveConsultationRead`
+   conflict and then calling `admit` — the case where admission would otherwise mint the
+   Teacher — has no coverage.
+3. `consultationReconcileCandidates`'s global short-circuit remains load-bearing for three
+   separate safety arguments and is still not called out in the design.
+4. All mutations in this round were executed by the LEAD and by two subagents of this
+   session. The standing limitation that separately dispatched `rasen agent` workers are
+   refused `pnpm`/`npx`/`node -e` at the permission layer is unchanged.
+
+### Separate defect fixed in the same pass: safe-root rejects alias-spelled roots
+
+Not from the review; found by enumerating PR #156's per-job CI failures.
+`canvas-v2-vertical-proof` failed on macos-shard-3 and windows-shard-2 with
+`Target lexical path escapes the safe root.` The containment test in `assertSafeRunPath`
+was purely lexical and ran before the realpath walk, so one directory spelled two ways
+(macOS `/var` vs `/private/var`, Windows 8.3 names) was rejected. That test file is touched
+by this branch — it was switched to the Decision 12 admission helper — and
+`_orchestration.ts` directs real LEADs to the same path, so this is a product defect, not a
+test artifact.
+
+`safe-path.ts` now asks, when the lexical form does not match, whether some **ancestor** of
+the target *is* the root under another name: a non-link directory whose realpath equals the
+root's. Only ancestors are resolved; everything below the root stays lexical and walked, so
+a link inside the root still cannot resolve its way into containment, and a link pointing
+into the root is refused because the link itself is not accepted as the root.
+
+*Mutation MUT-SP1* (drop the whole link rejection): **3 RED**, including a real-filesystem
+escape test. *Mutation MUT-SP2* (drop **only** the explicit symlink/reparse rejection,
+keeping `!isDirectory`): **2 RED**, both from synthetic-plumbing tests, with the
+real-filesystem test green. That second result is the important one — node's `lstat`
+reports `isDirectory: false` for a link, so real-filesystem tests are structurally blind to
+this guard, while the `SafePathStat` contract models a junction as `isDirectory: true` plus
+`isReparsePoint: true`. Only synthetic plumbing discriminates it. Both mutations reverted;
+16/16 pass.
