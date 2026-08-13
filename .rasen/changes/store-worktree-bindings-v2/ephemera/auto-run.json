@@ -159,9 +159,6 @@
         "Trivial5": "Task 5.4 names src/cli/index.ts, which this change does not modify; registration is via src/commands/store.ts (+8)."
       }
     },
-    "review-loop": {
-      "status": "pending"
-    },
     "ship": {
       "status": "pending"
     },
