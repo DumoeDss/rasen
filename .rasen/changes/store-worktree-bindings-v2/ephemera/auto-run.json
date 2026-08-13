@@ -148,9 +148,22 @@
       "leadBriefPremiseCorrected": "The LEAD's dispatch asked the reviewer to verify the substitutes cover `planning_worktree_required`. That code does NOT exist in src/ at all - zero hits, every one a skipped test or comment. It is decided entirely by the deferred resolver, so no substitute could reproduce it. The implementer's substitute at workspace-baseline.test.ts:423 says exactly that and records the genuine discrepancy (S2's reader throws workspace_marker_conflict) rather than papering over it."
     },
     "review-loop": {
-      "status": "in_progress",
-      "round": 1,
+      "status": "done",
+      "outcome": "CLEAN - 0 Blocker / 0 Major. Five findings closed in one fix round, all confirmed RESOLVED by a non-author who re-ran the measurements. Ship recommended.",
+      "round": 2,
       "fixCommit": "7fcfa457",
+      "roundTwoVerification": {
+        "verdict": "All five RESOLVED. One new Trivial (stale line pointers in design Decision 8), corrected by the LEAD at 6113f288.",
+        "theSubstantiveResult": "The verifier OVERTURNED the LEAD's own methodological shortcut, and was right. The LEAD had instructed that cleanup.ts:251's strengthening be proved by mutating cleanup.ts itself rather than taking a second window on the shared Layer-0 serializer - correct about blast radius, WRONG about sufficiency. The verifier's reasoning: perturbing changeId moves only ONE side of the original comparison, which is exactly the class of break the un-strengthened anchor already caught (the disclosed 9-of-26 collateral IS the old assertions firing correctly). The symmetric-serializer case - the only case the strengthening exists for - was therefore unmeasured at that site. Since it was opening a canonical-json.ts window for the plan.ts anchor anyway, it measured the cleanup case directly at marginal cost: 1 failed / 25 skipped, failing at workspace-cleanup.test.ts:398 with `Received: \"X{\"applicable\":true,...`. Both sites now closed by MEASUREMENT, not structural inference.",
+        "leadLesson": "The LEAD deliberately did not pre-judge this, precisely because the cheap route was the LEAD's own. That is why it got caught. A shortcut authored by the orchestrator is the one least likely to be challenged unless the challenge is explicitly invited.",
+        "beyondRequirement": [
+          "Verified the pinned literals are genuinely offline by recomputing BOTH without the canonicalize package (JSON.stringify with sorted keys) - byte-identical to both pins. An independent reimplementation check, not a code read.",
+          "Independently grepped rasen/specs/ for the Minor 1 judgment: zero hits for change_error or statusFromError; the nearest spec (change-submission) governs an HTTP surface, not the CLI --json seam statusFromError feeds. Judgment upheld on its own evidence.",
+          "Judged the isolated-single-test proof legitimate with a precise distinction: 'What isolation obscured was significance, not honesty' - the 9-of-26 was disclosed, and the collateral is the signal that the mutation was not specific to the new assertion."
+        ],
+        "honestResidualNotCharged": "Each pinned slice is four flat ASCII/int/bool primitives, so these anchors redden on key-ordering, whitespace and uniform-format shifts, but a change confined to non-ASCII escaping or nested-structure handling would still clear them. Recorded as real closure, not total.",
+        "operationalFinding": "workspace-cleanup.test.ts ran 396.85s solo against its KNOWN_SLOW_TEST_WEIGHTS_MS entry of 166610 - possibly a >2x underestimate. Load or genuine underestimate is unresolved; recorded as an open item under task 6.9's concern rather than dropped."
+      },
       "roundOneOutcome": {
         "allFiveClosed": "Minor 1, Minor 2, Minor 3, Trivial 4, Trivial 5 - fixes delivered, awaiting non-author confirmation.",
         "minor3Method": "Both shape-(b) anchors strengthened with an offline-pinned literal over their non-Git-fact field slice, each proved by its OWN measured RED/GREEN cycle rather than one inferred from the other. plan.ts:794 proved by mutating the shared serializer (RED 1/22, GREEN 23/23). cleanup.ts:251 proved by mutating cleanup.ts ITSELF (RED isolated at workspace-cleanup.test.ts:398, GREEN 26/26) - the LEAD's third option, keeping the blast radius inside an S2-owned file rather than taking a second window on a Layer-0 file five other anchors route through.",
