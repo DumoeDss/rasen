@@ -101,6 +101,7 @@ function wireStagesFromPreparedView(
     leadReview: stage.leadReview,
     effectiveSandbox: stage.sandbox,
     sessionReuse: stage.sessionReuse,
+    inference: stage.inference,
   }));
 }
 
@@ -441,6 +442,14 @@ export async function handleListPipelines(
           effectiveRuntime: { value: eff.runtime.value, source: eff.runtime.source },
           dispatchMode: eff.dispatchMode,
           bridge: eff.bridge ?? null,
+          inference: eff.inference && eff.model.value
+            ? {
+                broker: 'omnicross',
+                upstream: eff.inference.upstream,
+                runtime: eff.runtime.value,
+                model: eff.model.value,
+              }
+            : null,
         };
       }),
       ...preparationFields(preparation),
@@ -632,6 +641,14 @@ export async function handlePipelineDetail(
         },
         dispatchMode: eff.dispatchMode,
         bridge: eff.bridge ?? null,
+        inference: eff.inference && eff.model.value
+          ? {
+              broker: 'omnicross',
+              upstream: eff.inference.upstream,
+              runtime: eff.runtime.value,
+              model: eff.model.value,
+            }
+          : null,
       })),
       ...preparationFields(preparation),
     };

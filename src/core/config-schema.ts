@@ -73,6 +73,17 @@ export const GlobalConfigSchema = z
         engine: z.enum(RUNS_ENGINE_POLICIES).optional(),
       })
       .optional(),
+    omnicross: z
+      .object({
+        endpoint: z.string().min(1).optional(),
+        controlTokenEnv: z
+          .string()
+          .regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/)
+          .optional(),
+        requestTimeoutMs: z.number().int().min(100).max(60_000).optional(),
+        leaseTtlSeconds: z.number().int().min(30).max(3_600).optional(),
+      })
+      .optional(),
     // Keepalive gate for `rasen agent wait` (cli-agent-wait spec): per-runtime
     // enablement plus the context-size floor below which parking a worker is
     // not worth a beat.

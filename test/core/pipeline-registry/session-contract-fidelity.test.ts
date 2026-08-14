@@ -137,7 +137,10 @@ function actionFor(authored?: AuthoredScope) {
     executionProfileDigest: branded(`sha256:${'5'.repeat(64)}`),
     policyDigest: branded(`sha256:${'6'.repeat(64)}`),
   };
-  const action = buildAgentAction(ctx, identity, { input: { change: 'fixture' } });
+  const action = buildAgentAction(ctx, identity, {
+    renderedTurnInput: 'trusted fixture prompt',
+    input: { change: 'fixture' },
+  });
   return action as Extract<typeof action, { kind: 'agent' }>;
 }
 

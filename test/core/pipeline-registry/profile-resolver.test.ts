@@ -314,7 +314,7 @@ describe('resolveCapabilityBindings (3.4 profile construction)', () => {
         attemptOrdinal: 0,
         expectedBeforeWorkspace: fixtureWorkspaceRevision,
       },
-      { input: {} }
+      { renderedTurnInput: 'trusted fixture prompt', input: {} }
     );
     const firstAction = build(first);
     const secondAction = build(second);

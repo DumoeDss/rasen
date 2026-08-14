@@ -14,32 +14,124 @@ import type {
   SessionHostView,
   SessionRecoveryReport,
 } from '../../../src/core/session-host/contracts.js';
-import type { ExactChangeRunRef } from '../../../src/core/change-run/contracts.js';
+import {
+  decodeRunAction,
+  type ExactChangeRunRef,
+} from '../../../src/core/change-run/contracts.js';
+import type { RunAction } from '../../../src/core/change-run/contracts.js';
 import { DEFAULT_EXECUTOR_POLICY_BLOCK } from '../../../src/core/frozen-action-executor/reuse-policy.js';
 import type {
   CanonicalRunRecord,
   CommittedAction,
 } from '../../../src/core/change-run/internal/record.js';
 import {
+  makeBoundRecordAction,
   makeRecordAction,
   recordIds,
   recordRevision,
 } from '../change-run/record-fixture.js';
 import { buildGrantedConsultationFixture } from '../change-run/consultation-fixture.js';
+import {
+  computeOmniCrossConfigRevision,
+  OmniCrossRouteError,
+  type OmniCrossRouteLeaseClient,
+} from '../../../src/core/omnicross/index.js';
+import { createRoutedActionLifecycle } from '../../../src/core/frozen-action-executor/omnicross-lifecycle.js';
 
 const runRef: ExactChangeRunRef = {
   change: { projectRoot: '/root', changeId: 'fixture-change' },
   runId: recordIds.runId,
 };
 
-function grantedCommitted(): CommittedAction {
+function grantedCommitted(action: RunAction = makeRecordAction()): CommittedAction {
   return {
-    action: makeRecordAction(),
+    action,
     attemptOrdinal: 0,
     deliveryState: 'granted',
     state: 'active',
     effects: [],
   } as CommittedAction;
+}
+
+function routedAction(turnInput = 'do the work'): RunAction {
+  const base = {
+    endpoint: 'http://127.0.0.1:8765',
+    controlTokenEnv: 'TEST_OMNICROSS_ADMIN',
+    requestTimeoutMs: 1_000,
+    leaseTtlSeconds: 60,
+  };
+  const action = makeBoundRecordAction(turnInput);
+  if (action.kind !== 'agent') throw new Error('fixture must be an agent action');
+  return {
+    ...action,
+    agent: {
+      ...action.agent,
+      model: 'deepseek-chat',
+      workerContract: 'leaf',
+      inference: {
+        broker: 'omnicross',
+        runtime: 'codex',
+        upstream: { kind: 'provider', providerId: 'deepseek-api' },
+        model: 'deepseek-chat',
+        connection: {
+          ...base,
+          configRevision: computeOmniCrossConfigRevision(base),
+        },
+      },
+    },
+  };
+}
+
+function routeClient(options: { failCreate?: boolean } = {}): {
+  client: OmniCrossRouteLeaseClient;
+  calls: string[];
+} {
+  const calls: string[] = [];
+  return {
+    calls,
+    client: {
+      async create(request) {
+        calls.push('create');
+        if (options.failCreate) {
+          throw new OmniCrossRouteError({
+            kind: 'daemon-unavailable',
+            message: 'fake daemon unavailable',
+            retryable: false,
+          });
+        }
+        return {
+          schemaVersion: 'omnicross.route-lease/1',
+          leaseId: 'lease-canonical',
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          runtime: request.runtime,
+          upstream: request.upstream,
+          model: request.model,
+          launch: {
+            env: { OMNICROSS_CODEX_ROUTE_TOKEN: 'canonical-route-token' },
+            extraArgs: [
+              '-c', 'model_provider="omnicross"',
+              '-c', 'model_providers.omnicross.name="omnicross"',
+              '-c', 'model_providers.omnicross.base_url="http://127.0.0.1:8766/openai"',
+              '-c', 'model_providers.omnicross.wire_api="responses"',
+              '-c', 'model_providers.omnicross.env_key="OMNICROSS_CODEX_ROUTE_TOKEN"',
+              '-c', 'disable_response_storage=true',
+            ],
+          },
+        };
+      },
+      async renew() {
+        throw new Error('renew not expected');
+      },
+      async release(leaseId) {
+        calls.push('release');
+        return {
+          schemaVersion: 'omnicross.route-lease.release/1',
+          leaseId,
+          released: true,
+        };
+      },
+    },
+  };
 }
 
 function recordWith(committed: CommittedAction): CanonicalRunRecord {
@@ -230,6 +322,304 @@ describe('production executor - driver-face parity over the WIRED production pat
     // The matrix is built at construction, before any dispatch/Run.
     expect(executor.matrix.hostPlatform).toBe('linux');
     expect(Object.keys(executor.matrix.cells)).toHaveLength(6);
+  });
+});
+
+describe('production executor - frozen OmniCross Action lifecycle', () => {
+  it('keeps old Actions readable and rejects secret-bearing routed Actions', () => {
+    const legacy = makeRecordAction();
+    expect(decodeRunAction(JSON.parse(JSON.stringify(legacy)))).toEqual(legacy);
+    const routed = routedAction();
+    expect(decodeRunAction(JSON.parse(JSON.stringify(routed)))).toEqual(routed);
+    const secret = structuredClone(routed) as unknown as {
+      agent: { inference: Record<string, unknown> };
+    };
+    secret.agent.inference.routeToken = 'forbidden';
+    expect(() => decodeRunAction(secret)).toThrow();
+  });
+
+  it('fails closed before leasing a historical routed Action without turn-input authority', async () => {
+    const current = routedAction('must not run');
+    if (current.kind !== 'agent') throw new Error('expected agent Action');
+    const legacy = structuredClone(current) as unknown as {
+      agent: { turnInput?: unknown };
+    };
+    delete legacy.agent.turnInput;
+    const action = decodeRunAction(legacy);
+    const route = routeClient();
+    const executor = createProductionExecutor({
+      hostPlatform: 'linux',
+      host: stubHost(settledOk),
+      hostedSeamOptions: {
+        cwd: '/root',
+        backend: 'claude',
+        limits: LIMITS,
+        executeRoutedTurn: async () => ({ ok: true, status: 'succeeded' }),
+      },
+      routedActionLifecycle: createRoutedActionLifecycle({
+        env: { TEST_OMNICROSS_ADMIN: 'canonical-admin-token' },
+        createClient: () => route.client,
+      }),
+    });
+
+    await expect(executor.dispatch({
+      runRef,
+      grantedAction: action,
+      record: recordWith(grantedCommitted(action)),
+      expectedRecordVersion: 3,
+      workspaceRevision: recordRevision,
+      requestedBackend: 'hosted',
+      turnInput: 'must not run',
+    })).resolves.toMatchObject({
+      kind: 'execution-input-rejected',
+      code: 'execution_input_authority_missing',
+      retryable: false,
+    });
+    expect(route.calls).toEqual([]);
+  });
+
+  it('fails closed before leasing an old routed Action without worker-contract authority', async () => {
+    const current = routedAction('must not run');
+    if (current.kind !== 'agent') throw new Error('expected agent Action');
+    const legacy = structuredClone(current) as unknown as {
+      agent: {
+        workerContract?: 'leaf' | 'evaluate';
+        turnInput?: unknown;
+      };
+    };
+    delete legacy.agent.workerContract;
+    // This fixture isolates the historical worker-contract check. Historical
+    // routed Actions without turn-input authority have their own earlier result.
+    legacy.agent.turnInput = current.agent.turnInput;
+    const action = decodeRunAction(legacy);
+    const route = routeClient();
+    const executor = createProductionExecutor({
+      hostPlatform: 'linux',
+      host: stubHost(settledOk),
+      hostedSeamOptions: {
+        cwd: '/root',
+        backend: 'claude',
+        limits: LIMITS,
+        executeRoutedTurn: async () => ({ ok: true, status: 'succeeded' }),
+      },
+      routedActionLifecycle: createRoutedActionLifecycle({
+        env: { TEST_OMNICROSS_ADMIN: 'canonical-admin-token' },
+        createClient: () => route.client,
+      }),
+    });
+
+    await expect(executor.dispatch({
+      runRef,
+      grantedAction: action,
+      record: recordWith(grantedCommitted(action)),
+      expectedRecordVersion: 3,
+      workspaceRevision: recordRevision,
+      requestedBackend: 'hosted',
+      turnInput: 'must not run',
+    })).resolves.toMatchObject({
+      kind: 'route-failed',
+      failure: { kind: 'invalid-input', retryable: false },
+    });
+    expect(route.calls).toEqual([]);
+  });
+
+  it('rejects oversized hosted routed input before leasing or calling the backend', async () => {
+    const action = routedAction('猫');
+    const route = routeClient();
+    let routedTurns = 0;
+    const executor = createProductionExecutor({
+      hostPlatform: 'linux',
+      host: stubHost(settledOk),
+      hostedSeamOptions: {
+        cwd: '/root',
+        backend: 'claude',
+        limits: { ...LIMITS, maxInputBytes: 2 },
+        executeRoutedTurn: async () => {
+          routedTurns += 1;
+          return { ok: true, status: 'succeeded' };
+        },
+      },
+      routedActionLifecycle: createRoutedActionLifecycle({
+        env: { TEST_OMNICROSS_ADMIN: 'canonical-admin-token' },
+        createClient: () => route.client,
+      }),
+    });
+
+    await expect(executor.dispatch({
+      runRef,
+      grantedAction: action,
+      record: recordWith(grantedCommitted(action)),
+      expectedRecordVersion: 3,
+      workspaceRevision: recordRevision,
+      requestedBackend: 'hosted',
+      turnInput: '猫',
+    })).resolves.toMatchObject({
+      kind: 'execution-input-rejected',
+      code: 'execution_input_too_large',
+      retryable: false,
+    });
+    expect(route.calls).toEqual([]);
+    expect(routedTurns).toBe(0);
+  });
+
+  it('acquires from the frozen Action, injects one binding, and releases', async () => {
+    const action = routedAction('do routed work');
+    const committed = grantedCommitted(action);
+    const record = recordWith(committed);
+    const route = routeClient();
+    let routedTurns = 0;
+    const executor = createProductionExecutor({
+      hostPlatform: 'linux',
+      host: stubHost(settledOk),
+      hostedSeamOptions: {
+        cwd: '/root',
+        backend: 'claude',
+        limits: LIMITS,
+        executeRoutedTurn: async ({ binding }) => {
+          routedTurns += 1;
+          expect(binding.runtime).toBe('codex');
+          if (binding.runtime === 'codex') {
+            expect(binding.env.OMNICROSS_CODEX_ROUTE_TOKEN).toBe('canonical-route-token');
+          }
+          return { ok: true, status: 'succeeded' };
+        },
+      },
+      routedActionLifecycle: createRoutedActionLifecycle({
+        env: { TEST_OMNICROSS_ADMIN: 'canonical-admin-token' },
+        createClient: () => route.client,
+      }),
+    });
+    const result = await executor.dispatch({
+      runRef,
+      grantedAction: action,
+      record,
+      expectedRecordVersion: 3,
+      workspaceRevision: recordRevision,
+      requestedBackend: 'hosted',
+      turnInput: 'do routed work',
+    });
+    expect(result).toMatchObject({
+      kind: 'executed',
+      outcome: { kind: 'succeeded' },
+    });
+    expect(routedTurns).toBe(1);
+    expect(route.calls).toEqual(['create', 'release']);
+  });
+
+  it('returns a typed route failure and never calls the backend when create fails', async () => {
+    const action = routedAction('must not run');
+    const committed = grantedCommitted(action);
+    const record = recordWith(committed);
+    const route = routeClient({ failCreate: true });
+    let routedTurns = 0;
+    const executor = createProductionExecutor({
+      hostPlatform: 'linux',
+      host: stubHost(settledOk),
+      hostedSeamOptions: {
+        cwd: '/root',
+        backend: 'claude',
+        limits: LIMITS,
+        executeRoutedTurn: async () => {
+          routedTurns += 1;
+          return { ok: true, status: 'succeeded' };
+        },
+      },
+      routedActionLifecycle: createRoutedActionLifecycle({
+        env: { TEST_OMNICROSS_ADMIN: 'canonical-admin-token' },
+        createClient: () => route.client,
+      }),
+    });
+    const result = await executor.dispatch({
+      runRef,
+      grantedAction: action,
+      record,
+      expectedRecordVersion: 3,
+      workspaceRevision: recordRevision,
+      requestedBackend: 'hosted',
+      turnInput: 'must not run',
+    });
+    expect(result).toMatchObject({
+      kind: 'route-failed',
+      failure: { kind: 'daemon-unavailable' },
+    });
+    expect(routedTurns).toBe(0);
+    expect(route.calls).toEqual(['create']);
+  });
+
+  it('maps missing control authority to route-failed without rejecting or calling the backend', async () => {
+    const action = routedAction('must not run');
+    const record = recordWith(grantedCommitted(action));
+    let routedTurns = 0;
+    let clientCreations = 0;
+    const executor = createProductionExecutor({
+      hostPlatform: 'linux',
+      host: stubHost(settledOk),
+      hostedSeamOptions: {
+        cwd: '/root',
+        backend: 'claude',
+        limits: LIMITS,
+        executeRoutedTurn: async () => {
+          routedTurns += 1;
+          return { ok: true, status: 'succeeded' };
+        },
+      },
+      routedActionLifecycle: createRoutedActionLifecycle({
+        env: {},
+        createClient: () => {
+          clientCreations += 1;
+          return routeClient().client;
+        },
+      }),
+    });
+    await expect(executor.dispatch({
+      runRef,
+      grantedAction: action,
+      record,
+      expectedRecordVersion: 3,
+      workspaceRevision: recordRevision,
+      requestedBackend: 'hosted',
+      turnInput: 'must not run',
+    })).resolves.toMatchObject({
+      kind: 'route-failed',
+      failure: { kind: 'invalid-config' },
+    });
+    expect(clientCreations).toBe(0);
+    expect(routedTurns).toBe(0);
+  });
+
+  it('injects the route binding through the in-tool driver face and releases', async () => {
+    const action = routedAction('do routed work');
+    const record = recordWith(grantedCommitted(action));
+    const route = routeClient();
+    let routedTurns = 0;
+    const executor = createProductionExecutor({
+      hostPlatform: 'linux',
+      launcherLivenessProbe: () => true,
+      executeInToolRoutedTurn: async ({ binding, signal }) => {
+        routedTurns += 1;
+        expect(signal.aborted).toBe(false);
+        expect(binding).toMatchObject({ runtime: 'codex' });
+        return { ok: true, status: 'succeeded' };
+      },
+      routedActionLifecycle: createRoutedActionLifecycle({
+        env: { TEST_OMNICROSS_ADMIN: 'canonical-admin-token' },
+        createClient: () => route.client,
+      }),
+    });
+    await expect(executor.dispatch({
+      runRef,
+      grantedAction: action,
+      record,
+      expectedRecordVersion: 3,
+      workspaceRevision: recordRevision,
+      requestedBackend: 'in-tool',
+      turnInput: 'do routed work',
+    })).resolves.toMatchObject({
+      kind: 'executed',
+      outcome: { kind: 'succeeded' },
+    });
+    expect(routedTurns).toBe(1);
+    expect(route.calls).toEqual(['create', 'release']);
   });
 });
 

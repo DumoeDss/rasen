@@ -31,7 +31,12 @@ import {
   digestContinuationInput,
   digestTeacherConsultationAdvice,
 } from '../../../src/core/change-run/consultation-contracts.js';
-import { buildAgentAction } from '../../../src/core/change-run/internal/actions.js';
+import {
+  buildAgentAction,
+  deriveAgentTurnInputBinding,
+} from '../../../src/core/change-run/internal/actions.js';
+import { ChangeRunRuntimeError } from '../../../src/core/change-run/facade.js';
+import type { AgentTurnRenderingContract } from '../../../src/core/change-run/contracts.js';
 import {
   createCanonicalReceiptContinuationAuthority,
   decodeCanonicalRunRecord,
@@ -40,6 +45,7 @@ import {
 import { createBoundedEvidenceStore } from '../../../src/core/change-run/internal/evidence.js';
 import { createFilesystemEvidenceStore } from '../../../src/core/change-run/internal/evidence-store-fs.js';
 import { createChangePipelineRuntime } from '../../../src/core/change-run/internal/facade-runtime.js';
+import { createAdmittingChangePipelineDriver } from '../../helpers/change-run-admission.js';
 import { createHostEvidenceWriter } from '../../../src/core/change-run/internal/host-evidence-writer.js';
 import {
   canonicalJson,
@@ -51,7 +57,10 @@ import {
   createRuntimePlan,
   type RuntimePlan,
 } from '../../../src/core/change-run/internal/runtime-plan.js';
-import { createWorkspaceReservationRegistry } from '../../../src/core/change-run/internal/reservations.js';
+import {
+  createWorkspaceReservationRegistry,
+  type WorkspaceReservationRegistry,
+} from '../../../src/core/change-run/internal/reservations.js';
 import {
   openStoredRuntimeContext,
   runtimeServiceReservationRegistry,
@@ -505,12 +514,57 @@ function taskLoopRuntimePlan(profile: RuntimeExecutionProfile): RuntimePlan {
   });
 }
 
+/**
+ * A realistic driver-rendered base prompt: role framing plus the structured
+ * payload, exactly as a LEAD composes one.
+ *
+ * Deliberately NOT `canonicalJson(agent.input)`. A fixture that renders
+ * canonical JSON is byte-identical to a server-side `canonicalJson(agent.input)`
+ * substitution, so any defect that swaps the driver's prompt for that
+ * substitution stays invisible while the suite reports green. Keeping these
+ * bytes distinct is what makes the source Action's transport authority
+ * observable.
+ */
+function fixtureDriverPrompt(input: unknown): string {
+  return [
+    'You are the implementer for the consultation fixture.',
+    'Follow the workflow instructions and return a strict consultable-leaf result.',
+    `payload=${canonicalJson(input ?? { change: 'fixture-change' })}`,
+  ].join('\n');
+}
+
+/**
+ * Decode a recorded backend turn for assertions.
+ *
+ * Only runtime-derived envelopes carry a `contract`; the source implementer's
+ * turn is a driver-rendered prose prompt and carries none. Yielding an empty
+ * object keeps every contract filter below exact, instead of making a perfectly
+ * valid prose turn crash the assertion.
+ */
+function decodeTurnContract<T extends object>(input: string): Partial<T> {
+  try {
+    const decoded: unknown = JSON.parse(input);
+    return decoded !== null && typeof decoded === 'object' && !Array.isArray(decoded)
+      ? (decoded as Partial<T>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
 function fixture(
   options: Readonly<{
     boundedLoop?: boolean;
     taskLoop?: boolean;
     verifyHostedTurnReceipt?: (receipt: HostedTurnReceipt) => boolean;
     storeRoot?: string;
+    /**
+     * Wrap the default registry, e.g. to force the sponsored Teacher read to
+     * conflict so the consultation stays `requested` with no Teacher Action.
+     */
+    wrapReservations?: (
+      registry: WorkspaceReservationRegistry
+    ) => WorkspaceReservationRegistry;
   }> = {}
 ) {
   const profile = options.taskLoop === true
@@ -544,7 +598,9 @@ function fixture(
           maxRunBytes: 1024 * 1024,
           maxEntries: 32,
         });
-  const reservations = createWorkspaceReservationRegistry();
+  const baseReservations = createWorkspaceReservationRegistry();
+  const reservations =
+    options.wrapReservations?.(baseReservations) ?? baseReservations;
   const capabilityByPath = new Map(
     profile.capabilities.map((entry) => [entry.nodeId, entry] as const)
   );
@@ -557,6 +613,8 @@ function fixture(
     admissionKind: 'agent' | 'command' | 'host';
     profilePath?: string;
     input?: JsonValue;
+    renderedTurnInput?: string;
+    renderingContract?: AgentTurnRenderingContract;
   }): RunAction => {
     const path = descriptor.profilePath ?? 'source';
     const boundCapability = capabilityByPath.get(path);
@@ -567,6 +625,7 @@ function fixture(
     const sourceBinding = profile.consultations?.find(
       (entry) => entry.sourceProfilePath === path
     );
+    const actionInput = descriptor.input ?? { change: 'fixture-change' };
     return buildAgentAction(
       {
         capability: boundCapability,
@@ -584,20 +643,45 @@ function fixture(
         attemptOrdinal: 0,
         expectedBeforeWorkspace: fixtureWorkspaceRevision,
       },
-      { input: descriptor.input ?? { change: 'fixture-change' } }
+      {
+        input: actionInput,
+        // FIXTURE CHOICE, not production behaviour: these journeys dispatch
+        // `JSON.stringify(action.agent.input)` as the turn input, so the
+        // fixture "trusted driver" renders exactly those bytes and the
+        // executor's transport assertion matches. Production MUST NOT derive
+        // turn-input authority from `JSON.stringify(agent.input)`.
+        renderedTurnInput:
+          descriptor.renderedTurnInput ?? JSON.stringify(actionInput),
+        // Mirror production: the runtime labels a Teacher turn it rendered
+        // itself, and the fixture must not relabel it as driver-rendered.
+        ...(descriptor.renderingContract === undefined
+          ? {}
+          : { renderingContract: descriptor.renderingContract }),
+      }
     );
   };
+  // Agent Actions are no longer admitted by `start`/`resume`/`complete`: they
+  // are previewed as prompt-free candidates and admitted only against trusted
+  // rendered bytes. These journeys assert consultation behaviour rather than
+  // the admission boundary, so they drive the runtime through the canonical
+  // preview -> render -> admit driver instead of restating it per test.
   const makeRuntime = () =>
-    createChangePipelineRuntime({
-      store,
-      plan,
-      initialRecord,
-      executionProfile: profile,
-      evidenceStore,
-      reservationRegistry: reservations,
-      verifyHostedTurnReceipt: options.verifyHostedTurnReceipt ?? (() => true),
-      buildAction,
-    });
+    createAdmittingChangePipelineDriver(
+      // These journeys dispatch `JSON.stringify(action.agent.input)`, so the
+      // fixture driver renders exactly those bytes. Production never derives
+      // turn-input authority this way.
+      createChangePipelineRuntime({
+        store,
+        plan,
+        initialRecord,
+        executionProfile: profile,
+        evidenceStore,
+        reservationRegistry: reservations,
+        verifyHostedTurnReceipt: options.verifyHostedTurnReceipt ?? (() => true),
+        buildAction,
+      }),
+      (candidate) => fixtureDriverPrompt(candidate.input)
+    );
   const writer = createHostEvidenceWriter({
     runId: plan.runId,
     runStore: store,
@@ -857,7 +941,7 @@ describe('attested Teacher consultation Facade journey', () => {
       expectedRecordVersion: fx.store.load(fx.plan.runId).recordVersion,
       workspaceRevision: sourceAction.expectedBeforeWorkspace,
       requestedBackend: 'hosted',
-      turnInput: JSON.stringify(sourceAction.agent.input),
+      turnInput: fixtureDriverPrompt(sourceAction.agent.input),
     });
     expect(initial.kind).toBe('executed');
     const driven = await createProductionConsultationDriver({
@@ -1045,7 +1129,7 @@ describe('attested Teacher consultation Facade journey', () => {
       expectedRecordVersion: fx.store.load(fx.plan.runId).recordVersion,
       workspaceRevision: sourceAction.expectedBeforeWorkspace,
       requestedBackend: 'hosted',
-      turnInput: JSON.stringify(sourceAction.agent.input),
+      turnInput: fixtureDriverPrompt(sourceAction.agent.input),
     });
     const driven = await createProductionConsultationDriver({
       runRef,
@@ -1234,6 +1318,219 @@ describe('attested Teacher consultation Facade journey', () => {
       ).toEqual([]);
     }
   );
+
+  it('renders the bound Teacher turn itself and never offers it to the driver manifest', async () => {
+    const fx = fixture();
+    const { runtime, consulted } = await startAndConsult(fx);
+
+    // ECP is the trusted renderer for this turn: `consult()` admits the bound
+    // Teacher directly, with no preview, manifest, or `admit` call in between.
+    // ecp-consultation-runtime forbids a LEAD-authored relay on this path.
+    expect(consulted.actions).toHaveLength(1);
+    const teacher = consulted.actions[0]!;
+    if (teacher.kind !== 'agent') throw new Error('expected an agent Teacher Action');
+    expect(teacher.agent.role).toBe('teacher');
+
+    // The committed binding covers the EXACT bytes the consultation driver
+    // transports at dispatch (`canonicalJson(action.agent.input)`), so the
+    // executor's transport assertion authenticates the real request rather
+    // than a separate rendering that only happens to exist.
+    const dispatchedBytes = canonicalJson(teacher.agent.input);
+    expect(teacher.agent.turnInput).toEqual(
+      deriveAgentTurnInputBinding(
+        dispatchedBytes,
+        'rasen.runtime-derived-consultation-turn/1'
+      )
+    );
+    expect(teacher.agent.turnInput?.utf8ByteLength).toBe(
+      Buffer.byteLength(dispatchedBytes, 'utf8')
+    );
+
+    // Truthful labelling: no driver authored these bytes, so the Record must
+    // not claim `rasen.driver-rendered-turn/1`.
+    expect(teacher.agent.turnInput?.renderingContract).toBe(
+      'rasen.runtime-derived-consultation-turn/1'
+    );
+    const sourceAction = Object.values(fx.store.load(fx.plan.runId).actions).find(
+      (entry) =>
+        entry.action.kind === 'agent' && entry.action.agent.role === 'implementer'
+    )?.action;
+    if (sourceAction?.kind !== 'agent') throw new Error('expected the source Action');
+    expect(sourceAction.agent.turnInput?.renderingContract).toBe(
+      'rasen.driver-rendered-turn/1'
+    );
+
+    // The Teacher is runtime-owned work, so it is never presented to the driver
+    // as renderable candidate work.
+    expect(consulted.candidates).toEqual([]);
+
+    // A driver that calls `admit` anyway is refused; its rendered bytes must
+    // never reach the Record (ecp-consultation-runtime: no field is silently
+    // ignored, and no caller may substitute the Teacher's question).
+    const callerAuthored = 'caller-authored Teacher question';
+    let rejected: unknown;
+    try {
+      await runtime.admit(
+        {
+          change: { projectRoot: '/root', changeId: 'fixture-change' },
+          runId: fx.plan.runId,
+        },
+        { deliveryMode: 'grant', resolveAgentTurnInput: () => callerAuthored }
+      );
+    } catch (error) {
+      rejected = error;
+    }
+    expect(rejected).toBeInstanceOf(ChangeRunRuntimeError);
+    expect((rejected as ChangeRunRuntimeError).code).toBe('candidate_stale');
+    // Pin WHICH rejection this state produces. By now the consultation is
+    // `teacher-active`, so the Teacher has already been admitted and the
+    // frontier is empty: this call reaches the generic emptiness rejection, NOT
+    // the runtime-owned Teacher refusal. Asserting the code alone would blur
+    // the two, and asserting the Teacher-specific message here would be simply
+    // false. The runtime-owned refusal is exercised by the blocked-Teacher test
+    // below, which is the only state that reaches it.
+    expect((rejected as ChangeRunRuntimeError).message).toContain(
+      'no agent candidates to admit'
+    );
+
+    const record = fx.store.load(fx.plan.runId);
+    expect(
+      Object.values(record.actions).filter(
+        (entry) =>
+          entry.action.kind === 'agent' && entry.action.agent.role === 'teacher'
+      )
+    ).toHaveLength(1);
+    expect(JSON.stringify(record)).not.toContain(callerAuthored);
+  });
+
+  it('refuses to admit a blocked Teacher from a driver manifest instead of silently dropping the caller bytes', async () => {
+    // Reachable un-admitted Teacher: the sponsored read conflicts, so the
+    // consultation commits as `requested` and the Teacher candidate stays on
+    // the frontier behind a workspace-reservation wait. That is the one window
+    // where a driver could reach `admit` for runtime-owned work.
+    // Releasable, so the second phase can reach the state where admission would
+    // otherwise succeed in minting the Teacher.
+    let sponsoredReadConflicts = true;
+    const fx = fixture({
+      wrapReservations: (registry) =>
+        Object.freeze({
+          ...registry,
+          reserveConsultationRead: (entry, sponsor) =>
+            sponsoredReadConflicts
+              ? (Object.freeze({
+                  code: 'workspace-reservation-sponsor-mismatch' as const,
+                  message: 'fixture forces the sponsored Teacher read to conflict',
+                  workspaceInstanceId: 'workspace-instance:' + '3'.repeat(64),
+                  holders: [],
+                }) as never)
+              : registry.reserveConsultationRead(entry, sponsor),
+        }),
+    });
+    const { runtime, consulted } = await startAndConsult(fx);
+
+    // Precondition: no Teacher Action exists yet.
+    expect(consulted.actions).toEqual([]);
+    const blocked = fx.store.load(fx.plan.runId);
+    expect(
+      Object.values(blocked.actions).some(
+        (entry) =>
+          entry.action.kind === 'agent' && entry.action.agent.role === 'teacher'
+      )
+    ).toBe(false);
+    expect(
+      blocked.waits.some((wait) => wait.kind === 'workspace-reservation')
+    ).toBe(true);
+    // The blocked Teacher is still runtime-owned work, so it is not offered
+    // to the driver for rendering.
+    expect(consulted.candidates).toEqual([]);
+
+    const callerAuthored = 'caller-authored blocked Teacher question';
+    let rejected: unknown;
+    try {
+      await runtime.admit(
+        {
+          change: { projectRoot: '/root', changeId: 'fixture-change' },
+          runId: fx.plan.runId,
+        },
+        { deliveryMode: 'grant', resolveAgentTurnInput: () => callerAuthored }
+      );
+    } catch (error) {
+      rejected = error;
+    }
+    expect(rejected).toBeInstanceOf(ChangeRunRuntimeError);
+    expect((rejected as ChangeRunRuntimeError).code).toBe('candidate_stale');
+    expect((rejected as ChangeRunRuntimeError).message).toContain(
+      'runtime-owned consultation Teacher'
+    );
+
+    // Nothing moved, and the caller's bytes reached neither a Record nor an
+    // Action. Without the refusal the runtime would accept the manifest and
+    // silently discard `resolveAgentTurnInput`.
+    const after = fx.store.load(fx.plan.runId);
+    expect(after.recordVersion).toBe(blocked.recordVersion);
+    expect(JSON.stringify(after)).not.toContain(callerAuthored);
+
+  });
+
+  it('refuses a manifest that would otherwise mint the Teacher once the sponsored read is free', async () => {
+    // The clause the blocked state alone cannot reach: with the conflict
+    // released the Teacher candidate is genuinely admissible, so absent the
+    // refusal this `admit` builds and grants a Teacher Action from a driver
+    // manifest. Kept as its own test because the blocked-state assertions above
+    // throw first and would hide whether this state is reached at all.
+    let sponsoredReadConflicts = true;
+    const fx = fixture({
+      wrapReservations: (registry) =>
+        Object.freeze({
+          ...registry,
+          reserveConsultationRead: (entry, sponsor) =>
+            sponsoredReadConflicts
+              ? (Object.freeze({
+                  code: 'workspace-reservation-sponsor-mismatch' as const,
+                  message: 'fixture forces the sponsored Teacher read to conflict',
+                  workspaceInstanceId: 'workspace-instance:' + '3'.repeat(64),
+                  holders: [],
+                }) as never)
+              : registry.reserveConsultationRead(entry, sponsor),
+        }),
+    });
+    const { runtime, consulted } = await startAndConsult(fx);
+    expect(consulted.actions).toEqual([]);
+    const blocked = fx.store.load(fx.plan.runId);
+
+    sponsoredReadConflicts = false;
+    const callerAuthored = 'caller-authored Teacher question after release';
+    let rejected: unknown;
+    try {
+      await runtime.admit(
+        {
+          change: { projectRoot: '/root', changeId: 'fixture-change' },
+          runId: fx.plan.runId,
+        },
+        { deliveryMode: 'grant', resolveAgentTurnInput: () => callerAuthored }
+      );
+    } catch (error) {
+      rejected = error;
+    }
+    expect(rejected).toBeInstanceOf(ChangeRunRuntimeError);
+    expect((rejected as ChangeRunRuntimeError).code).toBe('candidate_stale');
+    expect((rejected as ChangeRunRuntimeError).message).toContain(
+      'runtime-owned consultation Teacher'
+    );
+
+    // No Teacher was minted and nothing advanced. Without the refusal the
+    // manifest is accepted, the reservation now succeeds, and a Teacher Action
+    // is admitted and granted on this exact call.
+    const after = fx.store.load(fx.plan.runId);
+    expect(after.recordVersion).toBe(blocked.recordVersion);
+    expect(
+      Object.values(after.actions).some(
+        (entry) =>
+          entry.action.kind === 'agent' && entry.action.agent.role === 'teacher'
+      )
+    ).toBe(false);
+    expect(JSON.stringify(after)).not.toContain(callerAuthored);
+  });
 
   it('drives CONSULT -> direct Teacher -> exact source continuation -> DONE without a LEAD Action', async () => {
     const durableReceipts = new Set<string>();
@@ -2195,7 +2492,14 @@ class HttpConsultationTransport implements AgentSessionTransport {
   send(turn: BackendTurn) {
     this.inputs.push(turn);
     const backendSessionId = this.backendSessionId;
-    const parsed = JSON.parse(turn.input) as {
+    // Production sends two shapes down this seam: a runtime-derived JSON
+    // envelope (the Teacher's `teacher-consultation/invocation/1`, and the
+    // `resume/1` / `unavailable/1` continuations), and the source implementer's
+    // driver-rendered base prompt, which is prose and does not parse as JSON.
+    // Treating a non-JSON turn as a hard failure would make this backend usable
+    // only by a driver that renders canonical JSON — exactly the shape that
+    // hides a swapped source prompt.
+    type ConsultationTurn = {
       contract?: string;
       consultationId?: string;
       teacherAttempt?: number;
@@ -2205,6 +2509,16 @@ class HttpConsultationTransport implements AgentSessionTransport {
         teacherAttempt?: number;
       };
     };
+    let parsed: ConsultationTurn;
+    try {
+      const decoded: unknown = JSON.parse(turn.input);
+      parsed =
+        decoded !== null && typeof decoded === 'object' && !Array.isArray(decoded)
+          ? (decoded as ConsultationTurn)
+          : {};
+    } catch {
+      parsed = {};
+    }
     const invocation = parsed.teacherConsultation;
     if (invocation?.contract === 'teacher-consultation/invocation/1') {
       this.onTeacherInvocation?.(invocation.teacherAttempt ?? 0);
@@ -2504,7 +2818,7 @@ describe('production management server consultation authority', () => {
           expectedRecordVersion: head.recordVersion,
           workspaceRevision: sourceAction.expectedBeforeWorkspace,
           requestedBackend: 'hosted',
-          turnInput: 'caller text is not the consultation authority',
+          turnInput: fixtureDriverPrompt(sourceAction.agent.input),
           hostedSeam: {
             cwd: projectRoot,
             backend: backend.id,
@@ -3546,7 +3860,7 @@ describe('production management server consultation authority', () => {
           expectedRecordVersion: head.recordVersion,
           workspaceRevision: sourceAction.expectedBeforeWorkspace,
           requestedBackend: 'hosted',
-          turnInput: 'caller text is not the consultation authority',
+          turnInput: fixtureDriverPrompt(sourceAction.agent.input),
           hostedSeam: {
             cwd: projectRoot,
             backend: backend.id,
@@ -3585,7 +3899,7 @@ describe('production management server consultation authority', () => {
       ).toEqual([]);
 
       const sourceInputs = backend.transports.flatMap((transport) =>
-        transport.inputs.map((turn) => JSON.parse(turn.input) as { contract?: string })
+        transport.inputs.map((turn) => decodeTurnContract<{ contract: string }>(turn.input))
       );
       expect(
         sourceInputs.filter((entry) =>
@@ -3751,7 +4065,7 @@ describe('production management server consultation authority', () => {
           expectedRecordVersion: head.recordVersion,
           workspaceRevision: sourceAction.expectedBeforeWorkspace,
           requestedBackend: 'hosted',
-          turnInput: 'caller text is not the consultation authority',
+          turnInput: fixtureDriverPrompt(sourceAction.agent.input),
           hostedSeam: {
             cwd: projectRoot,
             backend: backend.id,
@@ -3804,10 +4118,12 @@ describe('production management server consultation authority', () => {
       );
       expect(reservationSnapshots[1]).not.toContain(failedTeacherActionIds[0]);
       const teacherInputs = exactTeacher.backend.transports.flatMap((transport) =>
-        transport.inputs.map((turn) => JSON.parse(turn.input) as {
-          contract?: string;
-          teacherConsultation?: { contract?: string };
-        })
+        transport.inputs.map((turn) =>
+          decodeTurnContract<{
+            contract: string;
+            teacherConsultation: { contract?: string };
+          }>(turn.input)
+        )
       );
       expect(
         teacherInputs.filter(
@@ -3817,9 +4133,7 @@ describe('production management server consultation authority', () => {
         )
       ).toHaveLength(2);
       const sourceInputs = backend.transports.flatMap((transport) =>
-        transport.inputs.map((turn) => JSON.parse(turn.input) as {
-          contract?: string;
-        })
+        transport.inputs.map((turn) => decodeTurnContract<{ contract: string }>(turn.input))
       );
       expect(
         sourceInputs.filter(

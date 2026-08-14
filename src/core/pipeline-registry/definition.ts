@@ -6,6 +6,7 @@ import {
   PipelineYamlSchema,
   StageHandoffConfigSchema,
   StageRoleSchema,
+  StageInferenceSchema,
   VerifyPolicySchema,
   type AgentRuntime,
   type AgentRuntimeSandbox,
@@ -14,6 +15,7 @@ import {
   type PipelineYaml,
   type StageHandoffConfig,
   type StageRole,
+  type StageInference,
   type VerifyPolicy,
 } from './types.js';
 import { validateLegacyPipelineDefinition } from './legacy-validation.js';
@@ -82,6 +84,7 @@ export interface AtomicStageExecutionV1 {
   readonly sandbox?: AgentRuntimeSandbox;
   readonly sessionReuse?: AgentRuntimeSessionReuse;
   readonly handoff?: StageHandoffConfig;
+  readonly inference?: StageInference;
 }
 
 export interface CompositeRefNode extends DefinitionNodeBase {
@@ -1013,6 +1016,7 @@ const ATOMIC_EXECUTION_KEYS = new Set([
   'sandbox',
   'sessionReuse',
   'handoff',
+  'inference',
 ]);
 
 function executionDiagnostic(
@@ -1143,6 +1147,19 @@ function readAtomicStageExecution(
         executionDiagnostic(
           diagnostics,
           `${path}/handoff${suffix.length > 0 ? `/${suffix}` : ''}`,
+          issue.message
+        );
+      }
+    }
+  }
+  if (value.inference !== undefined) {
+    const parsed = StageInferenceSchema.safeParse(value.inference);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
+        const suffix = issue.path.map((segment) => pointerSegment(String(segment))).join('/');
+        executionDiagnostic(
+          diagnostics,
+          `${path}/inference${suffix.length > 0 ? `/${suffix}` : ''}`,
           issue.message
         );
       }

@@ -240,6 +240,7 @@ describe('root-inclusive CLI structure', () => {
       'work migrate',
     ]);
     expect(pipeline.sort()).toEqual([
+      'pipeline admit',
       'pipeline agents',
       'pipeline cancel',
       'pipeline classify',

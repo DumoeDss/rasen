@@ -20,13 +20,19 @@
  * surfaces it for the reconciliation to mint `execution-lost`.
  */
 
-import type {
-  SessionHost,
-  SessionHostOutcome,
-  TurnLimits,
+import {
+  validateTurnInputBytes,
+  type SessionHost,
+  type SessionHostOutcome,
+  type TurnLimits,
 } from '../session-host/contracts.js';
 import type { RunAction } from '../change-run/contracts.js';
 import { deriveFreshStepRequestId } from '../change-run/consultation-contracts.js';
+import { sanitizeAgentDiagnosticValue } from '../agent-diagnostics.js';
+import { resolveAgentCliBinary } from '../agent-cli-process.js';
+import { buildClaudePrintInvocation, runClaudePrint } from '../claude/index.js';
+import { runCodexExec } from '../codex/index.js';
+import { LEAF_EFFORTS, type LeafEffort } from '../pipeline-registry/types.js';
 import {
   buildExecutionCapabilityMatrix,
   type ExecutionCapabilityMatrix,
@@ -43,6 +49,15 @@ import {
   type InToolBackendSeam,
 } from './executor.js';
 import type { DispatchGrantedActionOptions } from './executor.js';
+import {
+  createRoutedActionLifecycle,
+  type RoutedActionLifecycle,
+} from './omnicross-lifecycle.js';
+import {
+  buildRoutedChildEnvironment,
+  OmniCrossRouteError,
+  type RuntimeRouteBinding,
+} from '../omnicross/index.js';
 
 /**
  * Map a `SessionHostOutcome` (from an `execute` dispatch) into the executor's
@@ -117,6 +132,13 @@ export function turnResultFromHostOutcome(
   };
 }
 
+export type RoutedTurnExecutor = (input: Readonly<{
+  action: RunAction;
+  input: string;
+  binding: RuntimeRouteBinding;
+  signal: AbortSignal;
+}>) => Promise<TurnResult>;
+
 export interface HostedBackendSeamOptions {
   /**
    * The canonical cwd hosted Sessions execute in. Bound at seam construction so
@@ -138,6 +160,8 @@ export interface HostedBackendSeamOptions {
    * construct the seam with `false` for a scope whose owning daemon is gone.
    */
   readonly daemonAlive?: boolean;
+  /** Route-aware process bridge owned by the hosted driver face. */
+  readonly executeRoutedTurn?: RoutedTurnExecutor;
 }
 
 /**
@@ -165,11 +189,31 @@ export function createHostedBackendSeamFromSessionHost(
         backend: 'hosted';
       }>;
       handoffTokens?: number;
+      routeBinding?: RuntimeRouteBinding;
+      signal?: AbortSignal;
     }>) {
       // The requestId binds this turn in the host registry. It is derived from
       // the frozen Action identity so a replay re-derives the same id and the
       // host's idempotent-settled path applies.
       const requestId = input.requestId ?? actionExecuteRequestId(input.action);
+      if (input.routeBinding) {
+        if (!input.signal || !options.executeRoutedTurn) {
+          throw new OmniCrossRouteError({
+            kind: 'invalid-config',
+            message: 'The hosted executor has no route-aware child-process bridge.',
+            retryable: false,
+          });
+        }
+        return {
+          turn: await options.executeRoutedTurn({
+            action: input.action,
+            input: input.input,
+            binding: input.routeBinding,
+            signal: input.signal,
+          }),
+          daemonAlive,
+        };
+      }
       const outcome = await host.dispatch({
         op: 'execute',
         requestId,
@@ -218,6 +262,157 @@ export function createHostedBackendSeamFromSessionHost(
  */
 export type LauncherLivenessProbe = () => boolean;
 
+export type InToolRoutedTurnExecutor = (input: Readonly<{
+  action: RunAction;
+  input: string;
+  binding: RuntimeRouteBinding;
+  signal: AbortSignal;
+}>) => Promise<TurnResult | undefined>;
+
+export interface ProductionRoutedTurnExecutorOptions {
+  readonly cwd: string;
+  readonly limits: TurnLimits;
+  readonly env?: NodeJS.ProcessEnv;
+}
+
+function routedTurnFailure(code: string): TurnResult {
+  return { ok: false, code, ambiguous: false, requestUnfinished: false };
+}
+
+/**
+ * Build the real route-aware Claude/Codex process bridge used by production
+ * frozen-Action driver faces. The frozen Action supplies runtime/model/sandbox/
+ * effort, while the validated one-attempt binding supplies only the closed
+ * route environment/provider override. The Admin credential is removed from
+ * the child environment and no user credential file is consulted or changed.
+ */
+export function createProductionRoutedTurnExecutor(
+  options: ProductionRoutedTurnExecutorOptions
+): RoutedTurnExecutor {
+  return async ({ action, input, binding, signal }) => {
+    if (action.kind !== 'agent' || action.agent.inference === undefined) {
+      throw new OmniCrossRouteError({
+        kind: 'invalid-input',
+        message: 'The production route-aware process bridge requires a routed agent Action.',
+        retryable: false,
+      });
+    }
+    const workerContract = action.agent.workerContract;
+    if (workerContract === undefined) {
+      throw new OmniCrossRouteError({
+        kind: 'invalid-input',
+        message:
+          'The routed frozen Action predates worker-contract authority and cannot be executed safely.',
+        retryable: false,
+      });
+    }
+    const inputValidation = validateTurnInputBytes(input, options.limits.maxInputBytes);
+    if (!inputValidation.ok) {
+      throw new OmniCrossRouteError({
+        kind: 'invalid-input',
+        message: inputValidation.message,
+        retryable: false,
+      });
+    }
+    const runtime = action.agent.runtime.toLowerCase();
+    if (runtime !== binding.runtime || action.agent.inference.runtime !== binding.runtime) {
+      throw new OmniCrossRouteError({
+        kind: 'invalid-input',
+        message: 'The validated route binding runtime does not match the frozen agent Action.',
+        retryable: false,
+      });
+    }
+    const binary = resolveAgentCliBinary({
+      envVar: binding.runtime === 'codex' ? 'RASEN_CODEX_BIN' : 'RASEN_CLAUDE_BIN',
+      binaryName: binding.runtime === 'codex' ? 'codex' : 'claude',
+      env: options.env ?? process.env,
+    });
+    if (binary === null) {
+      throw new OmniCrossRouteError({
+        kind: 'invalid-config',
+        message: `${binding.runtime === 'codex' ? 'Codex' : 'Claude Code'} CLI is unavailable for the routed frozen Action.`,
+        retryable: false,
+      });
+    }
+    const childEnv = buildRoutedChildEnvironment(
+      options.env ?? process.env,
+      action.agent.inference.connection.controlTokenEnv,
+      binding.env
+    );
+    const sandbox = action.agent.sandbox;
+    if (sandbox !== 'read-only' && sandbox !== 'workspace-write') {
+      throw new OmniCrossRouteError({
+        kind: 'invalid-input',
+        message: `The frozen agent Action has unsupported sandbox ${sandbox}.`,
+        retryable: false,
+      });
+    }
+    const effort = action.agent.reasoningEffort;
+    if (!LEAF_EFFORTS.includes(effort as LeafEffort)) {
+      throw new OmniCrossRouteError({
+        kind: 'invalid-input',
+        message: `The frozen agent Action has unsupported reasoning effort ${effort}.`,
+        retryable: false,
+      });
+    }
+
+    if (binding.runtime === 'codex') {
+      const receipt = await runCodexExec({
+        binary,
+        prompt: input,
+        contract: workerContract,
+        sandbox,
+        cwd: options.cwd,
+        model: action.agent.model,
+        effort: effort as LeafEffort,
+        timeoutMs: options.limits.timeoutMs,
+        maxOutputBytes: options.limits.maxOutputBytes,
+        env: childEnv,
+        providerOverride: binding.providerOverride,
+        signal,
+        secretValues: binding.secretValues,
+      });
+      return receipt.ok
+        ? {
+            ok: true,
+            status: 'succeeded',
+            result: sanitizeAgentDiagnosticValue(
+              receipt.result,
+              binding.secretValues
+            ),
+          }
+        : routedTurnFailure(receipt.failure.kind);
+    }
+
+    const receipt = await runClaudePrint({
+      binary,
+      invocation: buildClaudePrintInvocation({
+        prompt: input,
+        contract: workerContract,
+        sandbox,
+        model: action.agent.model,
+        effort: effort as LeafEffort,
+      }),
+      cwd: options.cwd,
+      timeoutMs: options.limits.timeoutMs,
+      maxOutputBytes: options.limits.maxOutputBytes,
+      env: childEnv,
+      signal,
+      secretValues: binding.secretValues,
+    });
+    return receipt.ok
+      ? {
+          ok: true,
+          status: 'succeeded',
+          result: sanitizeAgentDiagnosticValue(
+            receipt.result,
+            binding.secretValues
+          ),
+        }
+      : routedTurnFailure(receipt.failure.kind);
+  };
+}
+
 /**
  * Wrap a launcher-liveness probe as the executor's `InToolBackendSeam`. The
  * in-tool backend's turn is whatever the launcher settled (the host tool owns
@@ -225,13 +420,37 @@ export type LauncherLivenessProbe = () => boolean;
  */
 export function createInToolBackendSeamFromLauncherLiveness(
   probe: LauncherLivenessProbe,
-  settle?: () => TurnResult | undefined
+  settle?: () => TurnResult | undefined,
+  executeRoutedTurn?: InToolRoutedTurnExecutor
 ) {
   return {
     kind: 'in-tool' as const,
-    async executeTurn() {
+    async executeTurn(input: Readonly<{
+      action: RunAction;
+      input: string;
+      routeBinding?: RuntimeRouteBinding;
+      signal?: AbortSignal;
+    }>) {
+      let turn: TurnResult | undefined;
+      if (input.routeBinding) {
+        if (!input.signal || !executeRoutedTurn) {
+          throw new OmniCrossRouteError({
+            kind: 'invalid-config',
+            message: 'The in-tool executor has no route-aware child-process bridge.',
+            retryable: false,
+          });
+        }
+        turn = await executeRoutedTurn({
+          action: input.action,
+          input: input.input,
+          binding: input.routeBinding,
+          signal: input.signal,
+        });
+      } else {
+        turn = settle?.();
+      }
       return {
-        turn: settle?.(),
+        turn,
         launcherAlive: probe(),
       };
     },
@@ -257,9 +476,13 @@ export function actionExecuteRequestId(action: RunAction): string {
 export interface ProductionExecutorOptions {
   readonly hostPlatform: string;
   readonly hostedTierStatus?: HostedTierStatus;
+  /** Shared dispatch-time bound for faces that do not wire a SessionHost. */
+  readonly maxInputBytes?: number;
   readonly host?: SessionHost;
   readonly hostedSeamOptions?: HostedBackendSeamOptions;
   readonly launcherLivenessProbe?: LauncherLivenessProbe;
+  readonly executeInToolRoutedTurn?: InToolRoutedTurnExecutor;
+  readonly routedActionLifecycle?: RoutedActionLifecycle;
 }
 
 /**
@@ -294,10 +517,14 @@ export function createProductionExecutor(
   }
   if (options.launcherLivenessProbe !== undefined) {
     backends['in-tool'] = createInToolBackendSeamFromLauncherLiveness(
-      options.launcherLivenessProbe
+      options.launcherLivenessProbe,
+      undefined,
+      options.executeInToolRoutedTurn
     );
   }
   const frozenBackends: ExecutorBackends = Object.freeze(backends);
+  const routedActionLifecycle = options.routedActionLifecycle
+    ?? createRoutedActionLifecycle();
   return Object.freeze({
     matrix,
     backends: frozenBackends,
@@ -306,6 +533,12 @@ export function createProductionExecutor(
         ...dispatchOptions,
         matrix,
         backends: frozenBackends,
+        routedActionLifecycle,
+        ...(options.maxInputBytes !== undefined
+          ? { maxInputBytes: options.maxInputBytes }
+          : options.hostedSeamOptions !== undefined
+            ? { maxInputBytes: options.hostedSeamOptions.limits.maxInputBytes }
+            : {}),
       }),
     dispatchContinuation: (
       dispatchOptions: Omit<DispatchContinuationOptions, 'matrix' | 'backends'>

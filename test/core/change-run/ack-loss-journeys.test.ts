@@ -45,7 +45,7 @@ import type { RunStimulus, RunReductionResult } from '../../../src/core/change-r
 import type { RuntimePlan } from '../../../src/core/change-run/internal/runtime-plan.js';
 import type { JsonValue } from '../../../src/core/change-run/index.js';
 
-import { runCLI } from '../../helpers/run-cli.js';
+import { runPipelineCLIWithAdmission as runCLI } from '../../helpers/pipeline-cli-admission.js';
 import { freezeProductionPreparedPipelineRegistry } from '../../../src/core/pipeline-registry/prepared-registry.js';
 import { resolveRuntimeExecutionProfile } from '../../../src/core/pipeline-registry/profile-resolver.js';
 import { lowerRuntimePlan } from '../../../src/core/change-run/internal/lowerer.js';

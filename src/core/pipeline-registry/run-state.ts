@@ -14,6 +14,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
+import { FrozenInferenceRouteSchema, type FrozenInferenceRoute } from '../omnicross/contracts.js';
 import { AgentRuntimeSandboxSchema, AgentRuntimeSchema } from './types.js';
 import { RETENTION_MODES, type RetentionMode } from '../retention.js';
 import { hasRuntimeCapability } from '../runtime-adapters.js';
@@ -150,6 +151,8 @@ export type StageHandoffRecord = z.infer<typeof StageHandoffRecordSchema>;
 
 export const RunStateStageSchema = z.object({
   status: StageStatusSchema,
+  /** Frozen logical route only; live lease/token/descriptor fields are closed out. */
+  frozenInference: FrozenInferenceRouteSchema.optional(),
   worker: z.union([z.string(), RunStateWorkerSchema]).optional(),
   note: z.string().optional(),
   handoffs: z.array(StageHandoffRecordSchema).optional(),
@@ -161,6 +164,16 @@ export const RunStateStageSchema = z.object({
   gateDecision: z.string().optional(),
 }).passthrough();
 export type RunStateStage = z.infer<typeof RunStateStageSchema>;
+
+export function frozenStageInference(
+  state: RunState
+): Record<string, FrozenInferenceRoute> {
+  const out: Record<string, FrozenInferenceRoute> = {};
+  for (const [stageId, stage] of Object.entries(state.stages ?? {})) {
+    if (stage.frozenInference !== undefined) out[stageId] = stage.frozenInference;
+  }
+  return out;
+}
 
 /**
  * Session-level handoff pointer: written when a whole session (the LEAD)

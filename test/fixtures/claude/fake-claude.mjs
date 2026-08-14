@@ -44,7 +44,15 @@ process.stdin.on('end', () => {
     case 'success':
       writeEnvelope({
         status: 'DONE',
-        summary: JSON.stringify({ prompt, args, cwd: process.cwd() }),
+        summary: JSON.stringify({
+          prompt,
+          args,
+          cwd: process.cwd(),
+          baseUrl: process.env.ANTHROPIC_BASE_URL,
+          authToken: process.env.ANTHROPIC_AUTH_TOKEN,
+          model: process.env.ANTHROPIC_MODEL,
+          adminEnv: process.env.OMNICROSS_ADMIN_TOKEN,
+        }),
       });
       break;
     case 'handoff':
@@ -57,6 +65,18 @@ process.stdin.on('end', () => {
     case 'evaluate':
       writeEnvelope({ satisfied: false, gaps: ['fixture gap'], summary: 'checked' });
       break;
+    case 'evaluate-many': {
+      const secret = process.env.ANTHROPIC_AUTH_TOKEN ?? 'missing-route-secret';
+      writeEnvelope({
+        satisfied: false,
+        gaps: Array.from(
+          { length: 105 },
+          (_, index) => `gap-${index + 1}: nested route value ${secret}`
+        ),
+        summary: `checked nested route value ${secret}`,
+      });
+      break;
+    }
     case 'nonzero':
       process.stderr.write('fixture nonzero stderr');
       process.exitCode = 7;

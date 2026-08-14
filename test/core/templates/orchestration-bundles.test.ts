@@ -464,6 +464,10 @@ describe('selective orchestration bundles', () => {
         expect(stepE).toContain('#### E.1 — Reconciler engine');
         expect(stepE).toContain('pipeline resume-run');
         expect(stepE).toContain('rasen pipeline start <change> <pipeline> --json');
+        expect(stepE).toContain('agent-turn-input-manifest/1');
+        expect(stepE).toContain(
+          'rasen pipeline admit <change> --run <runId> --turn-input-file <ephemeraDir>/agent-turn-input.json --json'
+        );
         // ECP-5 (task 7.7): this asserted the phantom `--action-id` flag,
         // so the guard test itself carried the defect. The real invocation:
         expect(stepE).toContain(
@@ -559,9 +563,11 @@ describe('selective orchestration bundles', () => {
         expect(reconcilerBranch).toContain(
           'rasen pipeline complete <change> --run <runId> --from <receipt.json> --json'
         );
-        // …and it says where the next action actually comes from, since
-        // `resume-run` correctly reports zero in a healthy sequential drive.
-        expect(reconcilerBranch).toContain('RECOVERY seam');
+        // …and it says where the next preview comes from under the explicit
+        // preview → render → admit protocol.
+        expect(reconcilerBranch).toContain(
+          'Completion commits the result and returns the next `candidates[]`'
+        );
       }
     });
 

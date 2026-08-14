@@ -70,13 +70,13 @@ Start the canonical ReviewCycle Run:
 rasen pipeline start <change-name> bug-fix --json
 \`\`\`
 
-If a Run already exists, resume it:
+If a Run already exists, reproduce its current quiescent preview:
 
 \`\`\`
 rasen pipeline resume-run <change-name> bug-fix --json
 \`\`\`
 
-The Run\'s reconciler admits each ReviewCycle phase (review, triage, fix, re-review) in the correct order, enforces the round cap, checks actor separation, and escalates when exhausted. You do NOT track rounds or phases yourself.
+\`start\`, \`resume-run\`, \`complete\`, and \`control\` stop at a prompt-free \`candidates[]\` preview whenever an agent phase is ready. They do not admit that phase. The Run\'s reconciler orders ReviewCycle phases (review, triage, fix, re-review), enforces the round cap, checks actor separation, and escalates when exhausted. You do NOT track rounds or phases yourself.
 
 ## 3. Read the canonical progress
 
@@ -88,16 +88,22 @@ rasen pipeline status <change-name> bug-fix --json
 
 The response includes a \`review-cycle\` section with: \`round\`, \`phase\`, \`outcome\`, \`findings\`, \`actors\`, \`waitReason\`, \`maxRounds\`. This is the ONE source of truth — read it, do not duplicate it.
 
-## 4. Compose per-phase agent briefs
+## 4. Render and admit each phase
 
-For each admitted phase action, compose a brief from the canonical state:
+For each prompt-free candidate, compose the complete brief from these trusted source instructions, the frozen candidate descriptor, and canonical state:
 
 - **review**: delegate to \`rasen-review\` against the current diff
 - **triage**: classify findings by severity and disposition
 - **fix**: route findings to a role-isolated fixer (NOT the reviewer)
 - **re-review**: delegate to \`rasen-review\` with the fix delta, by an independent verifier (NOT the fixer)
 
-The reconciler enforces author != verifier; you do not check it yourself.
+Write every candidate and complete prompt exactly once to private ephemera using \`agent-turn-input-manifest/1\`, then run:
+
+\`\`\`
+rasen pipeline admit <change-name> --run <runId> --turn-input-file <private-manifest-path> --json
+\`\`\`
+
+Only \`admit\` creates and grants the Actions. Dispatch each returned Action with prompt bytes identical to the manifest bytes authenticated at admission. A stale, wrong, missing, duplicate, or extra candidate fails closed; obtain a fresh preview instead of repairing an old id. Never put prompt bodies in run-state, Records, logs, evidence, or telemetry. The reconciler enforces author != verifier; you do not check it yourself.
 
 ## 5. Complete each phase
 

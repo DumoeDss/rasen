@@ -52,6 +52,8 @@ export interface ModelProviderOverride {
   baseUrl: string;
   wireApi?: string;
   envKey?: string;
+  /** Route-scoped Responses proxies must not rely on Codex response-id storage. */
+  disableResponseStorage?: boolean;
 }
 
 export interface CodexTemplateOptions {
@@ -222,6 +224,9 @@ export function buildCodexExecInvocation(
       args.push('-c', `model_providers.${override.name}.env_key=${tomlQuote(override.envKey)}`);
     }
     args.push('-c', `model_provider=${tomlQuote(override.name)}`);
+    if (override.disableResponseStorage !== undefined) {
+      args.push('-c', `disable_response_storage=${String(override.disableResponseStorage)}`);
+    }
   }
 
   args.push(prompt);

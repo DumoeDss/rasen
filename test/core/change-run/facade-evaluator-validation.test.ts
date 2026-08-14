@@ -43,6 +43,7 @@ import {
   attestTestCompletion,
   stageTestCompletion,
 } from '../../fixtures/trusted-completion.js';
+import { admitPreviewedCandidates } from '../../helpers/change-run-admission.js';
 
 const branded = <T>(value: string): T => value as T;
 
@@ -168,14 +169,19 @@ async function startAt(plan: RuntimePlan, evaluatorPath: string): Promise<Harnes
     },
     evidenceStore,
   });
-  const receipt = await facade.start(
+  const ref = {
+    change: { projectRoot: '/root', changeId: 'fixture-change' },
+    runId: plan.runId,
+  };
+  const preview = await facade.start(
     {
-      change: { projectRoot: '/root', changeId: 'fixture-change' },
+      change: ref.change,
       pipeline: 'evaluator-validation',
       launchRequestId: branded(`launch:${'1'.repeat(60)}1111`),
     },
     { deliveryMode: 'grant' }
   );
+  const receipt = await admitPreviewedCandidates(facade, ref, preview);
   const granted = receipt.actions[0];
   if (granted === undefined) throw new Error('fixture: start granted no action');
   const evaluatorNodeId = plan.nodes.find(

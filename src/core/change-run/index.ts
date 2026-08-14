@@ -11,6 +11,7 @@ export {
   decodeWorkspaceRevision,
   type ActionId,
   type ActorRef,
+  type AgentTurnInputCandidate,
   type AttemptId,
   type ChangeInstanceId,
   type ChangeRef,
@@ -96,6 +97,7 @@ export {
 export {
   ChangeRunRuntimeError,
   exactChangeRunRef,
+  type AdmitAgentCandidatesContext,
   type ChangePipelineRuntime,
   type ChangeRunRuntimeErrorCode,
   type ResumeChangePipeline,

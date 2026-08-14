@@ -12,9 +12,11 @@ import {
   createRuntimeExecutionProfile,
   observeRuntimeDrift,
   openDefinitionPlan,
+  openRuntimeExecutionProfile,
   openRuntimeExecutionPlan,
   sealRuntimeExecutionPlan,
 } from '../../../src/core/pipeline-registry/execution-plan-internal.js';
+import { computeOmniCrossConfigRevision } from '../../../src/core/omnicross/index.js';
 
 const BUG_FIX = {
   version: 1,
@@ -233,6 +235,90 @@ describe('runtime execution profile sealing', () => {
     expect(() => createRuntimeExecutionProfile(input as never)).toThrow(
       PlanIntegrityError
     );
+  });
+
+  it('binds the frozen worker contract into policy and profile digests while decoding old profiles', () => {
+    const base = profile();
+    const leaf = createRuntimeExecutionProfile({
+      sourceRevision: base.sourceRevision,
+      capabilities: base.capabilities,
+      policy: {
+        ...base.policy,
+        stages: base.policy.stages.map((stage) => ({
+          ...stage,
+          workerContract: 'leaf' as const,
+        })),
+      },
+    });
+    const evaluate = createRuntimeExecutionProfile({
+      sourceRevision: leaf.sourceRevision,
+      capabilities: leaf.capabilities,
+      policy: {
+        ...leaf.policy,
+        stages: leaf.policy.stages.map((stage, index) =>
+          index === 0 ? { ...stage, workerContract: 'evaluate' as const } : stage
+        ),
+      },
+    });
+
+    expect(evaluate.policyDigest).not.toBe(leaf.policyDigest);
+    expect(evaluate.profileDigest).not.toBe(leaf.profileDigest);
+    const old = createRuntimeExecutionProfile({
+      sourceRevision: base.sourceRevision,
+      capabilities: base.capabilities,
+      policy: {
+        ...base.policy,
+        stages: base.policy.stages.map((stage) => {
+          const legacy = { ...stage };
+          delete legacy.workerContract;
+          return legacy;
+        }),
+      },
+    });
+    expect(openRuntimeExecutionProfile(JSON.parse(JSON.stringify(old)))).toEqual(old);
+    expect(old.policy.stages[0]).not.toHaveProperty('workerContract');
+  });
+
+  it('seals credential-free inference into the profile digest and reopens it exactly', () => {
+    const base = profile();
+    const connection = {
+      endpoint: 'http://127.0.0.1:8765',
+      controlTokenEnv: 'OMNICROSS_ADMIN_TOKEN',
+      requestTimeoutMs: 5_000,
+      leaseTtlSeconds: 600,
+    };
+    const routed = createRuntimeExecutionProfile({
+      sourceRevision: base.sourceRevision,
+      capabilities: base.capabilities,
+      policy: {
+        ...base.policy,
+        stages: base.policy.stages.map((stage, index) => index === 0
+          ? {
+              ...stage,
+              model: 'deepseek-chat',
+              inference: {
+                broker: 'omnicross' as const,
+                runtime: 'codex' as const,
+                upstream: { kind: 'provider' as const, providerId: 'deepseek-api' },
+                model: 'deepseek-chat',
+                connection: {
+                  ...connection,
+                  configRevision: computeOmniCrossConfigRevision(connection),
+                },
+              },
+            }
+          : stage),
+      },
+    });
+    expect(routed.policyDigest).not.toBe(base.policyDigest);
+    expect(routed.profileDigest).not.toBe(base.profileDigest);
+    expect(openRuntimeExecutionProfile(JSON.parse(JSON.stringify(routed)))).toEqual(routed);
+
+    const withSecret = structuredClone(routed) as unknown as {
+      policy: { stages: Array<{ inference?: Record<string, unknown> }> };
+    };
+    withSecret.policy.stages[0]!.inference!.token = 'forbidden';
+    expect(() => createRuntimeExecutionProfile(withSecret as never)).toThrow(PlanIntegrityError);
   });
 
   it('reports source/capability/policy drift without replacing the frozen profile', () => {

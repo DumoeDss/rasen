@@ -115,6 +115,64 @@ function gatedSuccessorPlan(runIdChar: string): RuntimePlan {
  * for the two-Run contention test — each Run contributes one writer against
  * a shared WorkspaceInstanceId.
  */
+function agentSuccessorPlan(runIdChar: string): RuntimePlan {
+  return createRuntimePlan({
+    runId: branded<RunId>(`run:${runIdChar.repeat(64)}`),
+    pipeline: 'agent-successor',
+    planDigest: branded(seedDigest(runIdChar)),
+    profileDigest: branded(seedDigest('5')),
+    sourceRevisionDigest: branded(seedDigest('6')),
+    capabilityDigest: branded(seedDigest('7')),
+    policyDigest: branded(seedDigest('8')),
+    implicitFinishOutcome: 'agent-successor-completed',
+    nodes: [
+      {
+        kind: 'atomic',
+        hierarchicalPath: 'root/a',
+        requires: [],
+        admissionKind: 'agent',
+        workspace: { access: 'write' },
+      },
+      {
+        kind: 'atomic',
+        hierarchicalPath: 'root/b',
+        requires: ['root/a'],
+        admissionKind: 'agent',
+        workspace: { access: 'write' },
+      },
+    ],
+  } as RuntimePlanInput);
+}
+
+function parallelReaderPlan(runIdChar: string): RuntimePlan {
+  return createRuntimePlan({
+    runId: branded<RunId>(`run:${runIdChar.repeat(64)}`),
+    pipeline: 'parallel-readers',
+    planDigest: branded(seedDigest(runIdChar + '0')),
+    profileDigest: branded(seedDigest(runIdChar + '1')),
+    sourceRevisionDigest: branded(seedDigest(runIdChar + '2')),
+    capabilityDigest: branded(seedDigest(runIdChar + '3')),
+    policyDigest: branded(seedDigest(runIdChar + '4')),
+    implicitFinishOutcome: 'parallel-readers-completed',
+    nodes: [
+      {
+        kind: 'atomic',
+        hierarchicalPath: 'root/a',
+        requires: [],
+        admissionKind: 'agent',
+        workspace: { access: 'read' },
+      },
+      {
+        kind: 'atomic',
+        hierarchicalPath: 'root/b',
+        requires: [],
+        admissionKind: 'agent',
+        workspace: { access: 'read' },
+      },
+    ],
+  } as RuntimePlanInput);
+}
+
 function singleWriterPlan(runIdChar: string): RuntimePlan {
   return createRuntimePlan({
     runId: branded<RunId>(`run:${runIdChar.repeat(64)}`),
@@ -356,6 +414,16 @@ const resumeRequest = (plan: RuntimePlan) => ({
   runId: plan.runId,
 });
 
+const admitAgentFrontier = (
+  runtime: ReturnType<typeof createChangePipelineRuntime>,
+  plan: RuntimePlan
+) =>
+  runtime.admit(resumeRequest(plan), {
+    deliveryMode: 'grant',
+    resolveAgentTurnInput: (candidate) =>
+      `trusted test prompt for ${candidate.candidateId}`,
+  });
+
 async function startSingleWriter(runIdChar: string) {
   const plan = singleWriterPlan(runIdChar);
   const store = createInMemoryRunStore();
@@ -370,8 +438,9 @@ async function startSingleWriter(runIdChar: string) {
     buildAction: buildActionForPlan(plan),
     evidenceStore,
   });
-  const started = await runtime.start(startRequest(plan), { deliveryMode: 'grant' });
-  const action = started.actions[0]!;
+  await runtime.start(startRequest(plan), { deliveryMode: 'grant' });
+  const admitted = await admitAgentFrontier(runtime, plan);
+  const action = admitted.actions[0]!;
   return { plan, store, evidenceStore, runtime, action };
 }
 
@@ -448,8 +517,9 @@ describe('public observation completion dispatch', () => {
         return legacy;
       },
     });
-    const started = await runtime.start(startRequest(plan), { deliveryMode: 'grant' });
-    const action = started.actions[0]!;
+    await runtime.start(startRequest(plan), { deliveryMode: 'grant' });
+    const admitted = await admitAgentFrontier(runtime, plan);
+    const action = admitted.actions[0]!;
     observeWorkspaceEffect(store, plan, action);
     const before = store.load(plan.runId);
     const beforeDigest = digestCanonicalRunRecord(before);
@@ -768,8 +838,9 @@ describe('complete settles the candidate batch (Gap A)', () => {
       deliveryMode: 'grant',
     });
     expect(started.disposition).toBe('created');
-    expect(started.actions).toHaveLength(1);
-    const actionA = started.actions[0]!;
+    expect(started.actions).toEqual([]);
+    const admitted = await admitAgentFrontier(runtime, plan);
+    const actionA = admitted.actions[0]!;
     expect(actionA.nodeId).toBe(
       plan.nodes.find((n) => n.kind === 'atomic' && n.hierarchicalPath === 'root/a')!
         .nodeId
@@ -804,6 +875,121 @@ describe('complete settles the candidate batch (Gap A)', () => {
     // Controls for the new Gate wait are exposed.
     const controlKinds = root.allowedControls.map((c: { kind: string }) => c.kind);
     expect(controlKinds).toContain('decision');
+  });
+});
+
+describe('agent completion stops at a stable successor preview', () => {
+  it('commits the predecessor result without auto-admitting its agent successor', async () => {
+    const plan = agentSuccessorPlan('c');
+    const store = createInMemoryRunStore();
+    const evidenceStore = createBoundedEvidenceStore({
+      maxRunBytes: 1024 * 1024,
+      maxEntries: 64,
+    });
+    const runtime = createChangePipelineRuntime({
+      store,
+      plan,
+      initialRecord: startRecordFor(plan, SHARED_WORKSPACE),
+      buildAction: buildActionForPlan(plan),
+      evidenceStore,
+    });
+
+    const started = await runtime.start(startRequest(plan), {
+      deliveryMode: 'grant',
+    });
+    expect(started.actions).toEqual([]);
+    expect(started.candidates).toHaveLength(1);
+
+    const admitted = await runtime.admit(resumeRequest(plan), {
+      deliveryMode: 'grant',
+      resolveAgentTurnInput: () => 'trusted predecessor prompt',
+    });
+    const actionA = admitted.actions[0]!;
+    observeWorkspaceEffect(store, plan, actionA);
+
+    const completed = await runtime.complete(
+      buildCompletion(store.load(plan.runId), actionA, evidenceStore),
+      { deliveryMode: 'grant' }
+    );
+
+    expect(completed.actions).toEqual([]);
+    expect(completed.candidates).toHaveLength(1);
+    expect(Object.keys(store.load(plan.runId).actions)).toHaveLength(1);
+
+    const resumed = await runtime.resume(resumeRequest(plan), {
+      deliveryMode: 'grant',
+    });
+    expect(resumed.candidates).toEqual(completed.candidates);
+    expect(Object.keys(store.load(plan.runId).actions)).toHaveLength(1);
+  });
+});
+
+describe('agent frontier admission is atomic', () => {
+  it('rolls back every pending reservation when an exact fan-out cannot be granted', async () => {
+    const plan = parallelReaderPlan('d');
+    const store = createInMemoryRunStore();
+    const registry = createWorkspaceReservationRegistry();
+    const canonicalBuildAction = buildActionForPlan(plan);
+    let builds = 0;
+    const runtime = createChangePipelineRuntime({
+      store,
+      plan,
+      initialRecord: startRecordFor(plan, SHARED_WORKSPACE),
+      buildAction: (descriptor) => {
+        builds += 1;
+        if (builds === 2) {
+          throw new Error(`action build failed for ${descriptor.nodeId}`);
+        }
+        return canonicalBuildAction(descriptor);
+      },
+      reservationRegistry: registry,
+    });
+
+    const started = await runtime.start(startRequest(plan), {
+      deliveryMode: 'grant',
+    });
+    expect(started.actions).toEqual([]);
+    expect(started.candidates).toHaveLength(2);
+    expect(registry.snapshot(SHARED_WORKSPACE)).toEqual([]);
+    const beforeAdmission = store.load(plan.runId);
+
+    await expect(
+      Promise.resolve().then(() =>
+        runtime.admit(resumeRequest(plan), {
+          deliveryMode: 'grant',
+          resolveAgentTurnInput: (candidate) =>
+            `trusted prompt for ${candidate.candidateId}`,
+        })
+      )
+    ).rejects.toThrow(
+      `action build failed for ${started.candidates[1]!.nodeId}`
+    );
+
+    const afterRejectedAdmission = store.load(plan.runId);
+    expect(afterRejectedAdmission).toEqual(beforeAdmission);
+    expect(Object.keys(afterRejectedAdmission.actions)).toHaveLength(0);
+    expect(afterRejectedAdmission.recordVersion).toBe(0);
+    expect(registry.snapshot(SHARED_WORKSPACE)).toEqual([]);
+    expect(
+      registry
+        .snapshot(SHARED_WORKSPACE)
+        .some((entry) => entry.state === 'final')
+    ).toBe(false);
+
+    builds = 2;
+    const admitted = await runtime.admit(resumeRequest(plan), {
+      deliveryMode: 'grant',
+      resolveAgentTurnInput: (candidate) =>
+        `trusted prompt for ${candidate.candidateId}`,
+    });
+    expect(admitted.actions).toHaveLength(2);
+    expect(admitted.candidates).toEqual([]);
+    expect(store.load(plan.runId).recordVersion).toBe(1);
+    expect(Object.keys(store.load(plan.runId).actions)).toHaveLength(2);
+    expect(registry.snapshot(SHARED_WORKSPACE)).toHaveLength(2);
+    expect(
+      registry.snapshot(SHARED_WORKSPACE).every((entry) => entry.state === 'final')
+    ).toBe(true);
   });
 });
 
@@ -845,37 +1031,31 @@ describe('await-workspace commits a durable wait (Gap B)', () => {
       deliveryMode: 'grant',
     });
     expect(startedA.disposition).toBe('created');
-    expect(startedA.actions).toHaveLength(1);
-    const actionA = startedA.actions[0]!;
+    expect(startedA.actions).toEqual([]);
+    const admittedA = await admitAgentFrontier(runtimeA, planA);
+    const actionA = admittedA.actions[0]!;
     expect(registry.isBusy(SHARED_WORKSPACE)).toBe(true);
 
-    // ---- Run B starts second: its writer is blocked behind a durable
-    // workspace-reservation wait. No conflicting write is committed. The
-    // `start` disposition is 'created' (the Run IS created); the projected
-    // view's status reflects the waiting state. ----
+    // ---- Run B starts second: it receives a prompt-free preview. Exact
+    // admission covers that agent frontier, then atomically reconciles the
+    // registry conflict into a durable non-agent wait without minting an Action. ----
     const startedB = await runtimeB.start(startRequest(planB), {
       deliveryMode: 'grant',
     });
     expect(startedB.disposition).toBe('created');
     expect(startedB.actions).toEqual([]);
-    expect(startedB.view.status).toBe('waiting');
-    const startedBRoot = rootOf(startedB);
-    const reservationWaits = startedBRoot.waits.filter(
-      (w: { kind: string }) => w.kind === 'workspace-reservation'
+    expect(startedB.candidates).toHaveLength(1);
+    const waitingB = await admitAgentFrontier(runtimeB, planB);
+    expect(waitingB.disposition).toBe('waiting');
+    expect(waitingB.actions).toEqual([]);
+    expect(waitingB.candidates).toHaveLength(1);
+    expect(waitingB.candidates[0]!.candidateId).not.toBe(
+      startedB.candidates[0]!.candidateId
     );
-    expect(reservationWaits.length).toBe(1);
-    const reservation = reservationWaits[0]!;
-    expect(reservation.workspaceInstanceId).toBe(SHARED_WORKSPACE);
-    // The wait carries only stable local candidate identity — no ActionId or
-    // AttemptId (the blocked candidate has not been admitted).
-    expect(reservation.intents.length).toBe(1);
-    const intent = reservation.intents[0]!;
-    expect(intent.access).toBe('write');
-    expect('actionId' in intent).toBe(false);
-    expect('attemptId' in intent).toBe(false);
-    // Run B's writer was NOT admitted (no conflicting write).
     const recordB = storeB.load(planB.runId);
     expect(Object.keys(recordB.actions)).toHaveLength(0);
+    expect(recordB.waits).toHaveLength(1);
+    expect(recordB.waits[0]).toMatchObject({ kind: 'workspace-reservation' });
 
     // ---- Run A completes its writer: the reservation is released and the
     // post-complete settle reaches the implicit finish. ----
@@ -893,23 +1073,11 @@ describe('await-workspace commits a durable wait (Gap B)', () => {
     expect(completedA.disposition).toBe('terminal');
     expect(registry.isBusy(SHARED_WORKSPACE)).toBe(false);
 
-    // ---- Run B resumes: the pre-pass sees the workspace free and
-    // auto-resumes the wait; the admit pass then admits Run B's writer in
-    // the SAME revision. No conflicting write ever occurred. ----
-    const resumedB = await runtimeB.resume(resumeRequest(planB), {
-      deliveryMode: 'grant',
-    });
-    expect(resumedB.actions).toHaveLength(1);
-    expect(resumedB.disposition).toBe('advanced');
-
-    // The workspace-reservation wait is gone from the resumed Record.
-    const resumedRecordB = storeB.load(planB.runId);
-    const remainingReservations = resumedRecordB.waits.filter(
-      (w) => w.kind === 'workspace-reservation'
-    );
-    expect(remainingReservations).toHaveLength(0);
-    // Run B's writer IS now admitted.
-    expect(Object.keys(resumedRecordB.actions)).toHaveLength(1);
+    // ---- Run B's unchanged preview is now admissible as one atomic grant. ----
+    const admittedB = await admitAgentFrontier(runtimeB, planB);
+    expect(admittedB.actions).toHaveLength(1);
+    expect(admittedB.disposition).toBe('advanced');
+    expect(Object.keys(storeB.load(planB.runId).actions)).toHaveLength(1);
   });
 
   it('keeps the workspace-reservation wait idempotent while the workspace stays held', async () => {
@@ -935,31 +1103,23 @@ describe('await-workspace commits a durable wait (Gap B)', () => {
     });
 
     // A holds the workspace.
-    const startedA = await runtimeA.start(startRequest(planA), {
-      deliveryMode: 'grant',
-    });
-    expect(startedA.actions).toHaveLength(1);
+    await runtimeA.start(startRequest(planA), { deliveryMode: 'grant' });
+    const admittedA = await admitAgentFrontier(runtimeA, planA);
+    expect(admittedA.actions).toHaveLength(1);
 
-    // B is blocked; the wait is committed.
+    // B's exact agent manifest commits one durable wait. Further previews do
+    // not churn that wait or its candidate identity while A still owns the workspace.
     const startedB = await runtimeB.start(startRequest(planB), {
       deliveryMode: 'grant',
     });
-    const versionAfterStart = startedB.view.recordVersion;
-    const waitIdAfterStart = rootOf(startedB).waits.find(
-      (w: { kind: string }) => w.kind === 'workspace-reservation'
-    )!.waitId;
-
-    // B resumes while A still holds the lease. The settle re-derives the
-    // SAME waitId, sees it already in the Record, and skips the suspend
-    // stimulus — no new version (the "retryable and non-churning" scenario).
+    const waitingB = await admitAgentFrontier(runtimeB, planB);
+    const versionAfterWait = waitingB.view.recordVersion;
+    expect(waitingB.disposition).toBe('waiting');
     const resumedB = await runtimeB.resume(resumeRequest(planB), {
       deliveryMode: 'grant',
     });
-    expect(resumedB.view.recordVersion).toBe(versionAfterStart);
-    const waitIdAfterResume = rootOf(resumedB).waits.find(
-      (w: { kind: string }) => w.kind === 'workspace-reservation'
-    )!.waitId;
-    expect(waitIdAfterResume).toBe(waitIdAfterStart);
+    expect(resumedB.view.recordVersion).toBe(versionAfterWait);
+    expect(resumedB.candidates).toEqual(waitingB.candidates);
     expect(resumedB.actions).toEqual([]);
   });
 
@@ -1005,9 +1165,10 @@ describe('await-workspace commits a durable wait (Gap B)', () => {
     const started = await runtime.start(startRequest(plan), {
       deliveryMode: 'grant',
     });
-    // Exactly one writer is admitted (lower NodeId). The other is blocked
-    // behind a workspace-reservation wait.
-    expect(started.actions).toHaveLength(1);
+    // The selected agent writer remains a prompt-free candidate. The other is
+    // durably blocked behind a workspace-reservation wait.
+    expect(started.actions).toEqual([]);
+    expect(started.candidates).toHaveLength(1);
     const startedRoot = rootOf(started);
     const reservation = startedRoot.waits.find(
       (w: { kind: string }) => w.kind === 'workspace-reservation'

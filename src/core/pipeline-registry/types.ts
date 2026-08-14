@@ -19,6 +19,19 @@ import {
   type DispatchRuntime,
 } from '../runtime-adapters.js';
 import { CONSULTATION_SERVER_LIMITS } from '../change-run/consultation-contracts.js';
+import {
+  OmniCrossUpstreamSchema,
+  StageInferenceSchema,
+  type OmniCrossUpstream,
+  type StageInference,
+} from '../omnicross/contracts.js';
+
+export {
+  OmniCrossUpstreamSchema,
+  StageInferenceSchema,
+  type OmniCrossUpstream,
+  type StageInference,
+};
 
 export type { ThresholdValue };
 
@@ -365,6 +378,10 @@ export const StageSchema = z
     sandbox: AgentRuntimeSandboxSchema.optional(),
     model: z.string().min(1).optional(),
     effort: LeafEffortSchema.optional(),
+    // Credential-free inference intent. The effective model remains the
+    // existing stage/role/config-resolved `model`; inference never owns a
+    // second model precedence chain.
+    inference: StageInferenceSchema.optional(),
     // Per-stage context-handoff overrides. Resolved against the pipeline block
     // and built-in defaults by resolveStageHandoffConfig. `roles` is not
     // accepted here — it is pipeline-level config.
@@ -377,6 +394,13 @@ export const StageSchema = z
         code: 'custom',
         path: ['skill'],
         message: 'skill field is required',
+      });
+    }
+    if (stage.kind === 'decompose' && stage.inference !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['inference'],
+        message: 'inference is valid only on standard agent stages',
       });
     }
   });

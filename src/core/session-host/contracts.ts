@@ -475,6 +475,21 @@ function invalid(message: string): SessionHostCommandValidation {
   return { ok: false, code: 'invalid-input', message };
 }
 
+export type TurnInputValidation =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly code: 'invalid-input'; readonly message: string };
+
+/** Shared UTF-8 input bound used by hosted and routed hosted turns. */
+export function validateTurnInputBytes(
+  input: string,
+  maxInputBytes: number
+): TurnInputValidation {
+  if (Buffer.byteLength(input, 'utf8') > maxInputBytes) {
+    return { ok: false, code: 'invalid-input', message: 'input exceeds maxInputBytes.' };
+  }
+  return { ok: true };
+}
+
 export function validateSessionHostCommand(
   value: unknown
 ): SessionHostCommandValidation {
@@ -671,9 +686,11 @@ export function validateSessionHostCommand(
     ) {
       return invalid('limits exceed the server-owned hosted Session bounds.');
     }
-    if (Buffer.byteLength(command.input, 'utf8') > Number(limits.maxInputBytes)) {
-      return invalid('input exceeds maxInputBytes.');
-    }
+    const inputValidation = validateTurnInputBytes(
+      command.input,
+      Number(limits.maxInputBytes)
+    );
+    if (!inputValidation.ok) return invalid(inputValidation.message);
     return { ok: true, command: command as unknown as SessionHostCommand };
   }
   if (command.op === 'cancel' || command.op === 'retire') {

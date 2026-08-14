@@ -22,6 +22,7 @@ import type {
   WorkspaceRevision,
 } from '../change-run/contracts.js';
 import type { CanonicalRunRecord, CommittedAction } from '../change-run/internal/record.js';
+import { canonicalJson } from '../change-run/internal/identity.js';
 
 /**
  * The typed rejection codes. These map onto the Facade's existing error codes
@@ -68,9 +69,9 @@ export interface ValidateGrantedActionOptions {
   readonly runRef: ExactChangeRunRef;
   /**
    * The granted frozen Action, exactly as the Facade returned it in its receipt.
-   * This is the SOLE authority source: invocation, effect, workspace, profile,
-   * adapter, and capability identity are read from it and the committed Record.
-   * No chat history, live Definition, or caller self-report is accepted here.
+   * It is an untrusted transport copy until its complete canonical form matches
+   * the Record-owned Action. No chat history, live Definition, or other caller
+   * self-report is accepted as authority here.
    */
   readonly grantedAction: RunAction;
   readonly record: CanonicalRunRecord;
@@ -89,40 +90,14 @@ export interface ValidateGrantedActionOptions {
   readonly inFlight?: InFlightDispatchLedger;
 }
 
-function sameActionIdentity(
+function sameCanonicalAction(
   granted: RunAction,
   committed: RunAction
 ): boolean {
-  return (
-    granted.actionId === committed.actionId &&
-    granted.invocationId === committed.invocationId &&
-    granted.runId === committed.runId &&
-    granted.nodeId === committed.nodeId &&
-    granted.attemptId === committed.attemptId &&
-    granted.kind === committed.kind
-  );
-}
-
-function sameAuthority(
-  granted: RunAction,
-  committed: RunAction
-): boolean {
-  // The frozen authority fields a completion must bind to. A granted ActionView
-  // whose capability, profile, evidence contract, policy, or workspace does not
-  // match the committed Record is a receipt conflict: the executor rebuilds no
-  // field, so a mismatch means the granted view is not this Record's Action.
-  return (
-    granted.executionProfileDigest === committed.executionProfileDigest &&
-    granted.policyDigest === committed.policyDigest &&
-    granted.resultContractDigest === committed.resultContractDigest &&
-    granted.evidenceContractDigest === committed.evidenceContractDigest &&
-    granted.capability.id === committed.capability.id &&
-    granted.capability.contractVersion === committed.capability.contractVersion &&
-    granted.capability.contractDigest === committed.capability.contractDigest &&
-    JSON.stringify(granted.effects) === JSON.stringify(committed.effects) &&
-    JSON.stringify(granted.expectedBeforeWorkspace) ===
-      JSON.stringify(committed.expectedBeforeWorkspace)
-  );
+  // Both values have already passed the same closed RunAction decoder. Compare
+  // their complete canonical representation so every present and future Action
+  // field is authority-bearing without maintaining a second field allowlist.
+  return canonicalJson(granted) === canonicalJson(committed);
 }
 
 /**
@@ -170,39 +145,30 @@ export function validateGrantedAction(
     };
   }
 
-  // (4) Identity + authority binding: the granted ActionView must be the exact
-  // Action the Record admits (identity) and must carry the same frozen
-  // authority (capability/profile/evidence/policy/workspace/effects). A mismatch
-  // means the granted view is not this Record's Action — a receipt conflict,
-  // never a silent re-derivation.
-  if (!sameActionIdentity(grantedAction, committed.action)) {
+  // (4) Full canonical binding: the receipt must be byte-semantically equal to
+  // the complete Action admitted by the Record. This binds all execution input,
+  // route, runtime, session, completion, workspace, and future closed fields in
+  // one comparison instead of maintaining a security-sensitive subset list.
+  if (!sameCanonicalAction(grantedAction, committed.action)) {
     return {
       kind: 'rejected',
       code: 'receipt_conflict',
-      message: 'Granted ActionView identity does not match the committed Action.',
-    };
-  }
-  if (!sameAuthority(grantedAction, committed.action)) {
-    return {
-      kind: 'rejected',
-      code: 'receipt_conflict',
-      message:
-        'Granted ActionView authority (capability/profile/evidence/policy/workspace/effects) does not match the committed Action.',
+      message: 'Granted ActionView does not match the complete committed Action.',
     };
   }
 
   // (5) Workspace: the executor's actual workspace revision must match the
-  // granted Action's expected-before-workspace tree digest. A wrong workspace
+  // committed Action's expected-before-workspace tree digest. A wrong workspace
   // fails closed BEFORE any backend process receives input.
   if (
     workspaceRevision.treeDigest !==
-    grantedAction.expectedBeforeWorkspace.treeDigest
+    committed.action.expectedBeforeWorkspace.treeDigest
   ) {
     return {
       kind: 'rejected',
       code: 'workspace-scope-mismatch',
       message:
-        'The executor workspace revision does not match the granted ActionView expectedBeforeWorkspace.',
+        'The executor workspace revision does not match the committed Action expectedBeforeWorkspace.',
     };
   }
 
@@ -239,7 +205,7 @@ export function validateGrantedAction(
 
   return {
     kind: 'dispatched',
-    action: grantedAction,
+    action: committed.action,
     committed,
     recordVersion: record.recordVersion,
   };

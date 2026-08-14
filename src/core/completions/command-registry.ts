@@ -1520,6 +1520,18 @@ const COMMANDS: readonly CommandDefinition[] = [
         flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
       },
       {
+        name: 'admit',
+        acceptsPositional: true,
+        positionals: [{ name: 'change', type: 'change-id' }],
+        flags: [
+          { name: 'run', takesValue: true },
+          { name: 'turn-input-file', takesValue: true },
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
+        ],
+      },
+      {
         name: 'cancel',
         acceptsPositional: true,
         positionals: [
@@ -1694,6 +1706,7 @@ const COMMANDS: readonly CommandDefinition[] = [
           { name: 'cwd', takesValue: true },
           { name: 'timeout-ms', takesValue: true },
           { name: 'resume', takesValue: true },
+          { name: 'inference-file', takesValue: true },
           COMMON_FLAGS.json,
         ],
       },

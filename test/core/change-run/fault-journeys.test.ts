@@ -29,18 +29,24 @@ import {
   writeFileSync,
   readFileSync,
   existsSync,
+  linkSync,
   mkdirSync,
-  renameSync,
+  unlinkSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  PublishError,
   publishAtomic,
   PublishFault,
+  stagingPathFor,
   type PublishPlumbing,
 } from '../../../src/core/change-run/internal/publish-atomic.js';
-import { createFilesystemRunStore } from '../../../src/core/change-run/internal/run-store-fs.js';
+import {
+  FILESYSTEM_PLUMBING,
+  createFilesystemRunStore,
+} from '../../../src/core/change-run/internal/run-store-fs.js';
 import {
   RunStoreError,
   createInMemoryRunStore,
@@ -163,10 +169,16 @@ function gateDecided(
 }
 
 /**
- * A real-filesystem-backed PublishPlumbing that stages to a temp file, fsyncs
- * (no-op on most test fs but structurally present), and renames into place with
- * O_EXCL semantics. A fault injector throws at the named boundary so crash
- * recovery is provable against real fs state (residue, final presence).
+ * A real-filesystem-backed PublishPlumbing mirroring the production adapter in
+ * `run-store-fs.ts`: stage to a temp file, fsync (no-op on most test fs but
+ * structurally present), then publish by exclusive-create hard link. A fault
+ * injector throws at the named boundary so crash recovery is provable against
+ * real fs state (residue, final presence).
+ *
+ * `linkSync` — not `renameSync` — is what production uses, and the difference
+ * is load-bearing: POSIX rename silently replaces an existing target, so a
+ * rename-based double here would model a publication boundary the product does
+ * not have and would hide replacement races on POSIX.
  */
 function realFilesystemPlumbing(root: string): PublishPlumbing {
   return Object.freeze({
@@ -175,10 +187,12 @@ function realFilesystemPlumbing(root: string): PublishPlumbing {
     writeStaging: (p: string, bytes: Uint8Array) => writeFileSync(p, bytes),
     fsync: () => undefined,
     publish: (stagingPath: string, targetPath: string) => {
-      if (existsSync(targetPath)) {
-        throw Object.assign(new Error('EEXIST'), { code: 'EEXIST' });
+      linkSync(stagingPath, targetPath);
+      try {
+        unlinkSync(stagingPath);
+      } catch {
+        /* inert residue */
       }
-      renameSync(stagingPath, targetPath);
     },
     removeStaging: (p: string) => {
       try {
@@ -244,7 +258,7 @@ describe('15.6 — store publish crash journeys', () => {
     const retry = publishAtomic(p, staging, target, bytes);
     expect(retry.published).toBe(true);
     expect(existsSync(target)).toBe(true);
-    expect(p.exists(staging)).toBe(false); // staging cleaned by rename
+    expect(p.exists(staging)).toBe(false); // staging name dropped after the link
   });
 
   it('after-fsync-before-publish crash leaves durable staging but NO final; retry publishes', () => {
@@ -288,20 +302,20 @@ describe('15.6 — store publish crash journeys', () => {
   });
 
   it('concurrent same-target publish resolves to exactly one durable final (O_EXCL race)', () => {
-    // Two plumings over the same root. The second publish's rename races the
-    // first; publishAtomic detects the now-present final and treats it as
-    // idempotent success rather than a hard failure.
+    // Two publishers over the same root, each staging to its own path exactly
+    // as production does. Identical content is the idempotent case: the loser
+    // observes the present final and accepts it because the bytes match.
     const p = realFilesystemPlumbing(root);
     const target = join(root, 'run-race', 'record-v0.json');
     mkdirSync(join(root, 'run-race'), { recursive: true });
 
     // First publish wins.
-    const stagingA = `${target}.staging-a`;
+    const stagingA = stagingPathFor(target);
     const resultA = publishAtomic(p, stagingA, target, bytes);
     expect(resultA.published).toBe(true);
 
     // Second publish with identical content sees the final present.
-    const stagingB = `${target}.staging-b`;
+    const stagingB = stagingPathFor(target);
     const resultB = publishAtomic(p, stagingB, target, bytes);
     expect(resultB.alreadyPresent).toBe(true);
     expect(resultB.published).toBe(false);
@@ -309,6 +323,101 @@ describe('15.6 — store publish crash journeys', () => {
     // Exactly one final file exists.
     expect(existsSync(target)).toBe(true);
     expect(readFileSync(target, 'utf8')).toBe('{"record":1}');
+  });
+
+  it('a losing publisher with DIFFERENT bytes is refused, not reported present', () => {
+    // The discriminating half of the race: same version, different content.
+    // Accepting this as idempotent is what let a caller receive a success
+    // receipt for a Record it did not durably write.
+    const p = realFilesystemPlumbing(root);
+    const target = join(root, 'run-race-diff', 'record-v0.json');
+    mkdirSync(join(root, 'run-race-diff'), { recursive: true });
+
+    const winner = encoder.encode('{"record":1}');
+    const loser = encoder.encode('{"record":2}');
+    expect(publishAtomic(p, stagingPathFor(target), target, winner).published).toBe(true);
+
+    const loserStaging = stagingPathFor(target);
+    expect(() => publishAtomic(p, loserStaging, target, loser)).toThrowError(
+      expect.objectContaining<Partial<PublishError>>({
+        code: 'publish_target_exists',
+      })
+    );
+    // The winner's bytes survive and the loser leaves no residue behind.
+    expect(readFileSync(target, 'utf8')).toBe('{"record":1}');
+    expect(existsSync(loserStaging)).toBe(false);
+  });
+
+  it('the production publish verb refuses an existing final instead of replacing it', () => {
+    // Asserts the real adapter, not a double. Every in-process store path
+    // checks `exists` before publishing, so the replace-vs-refuse distinction
+    // is unreachable through the store API and only visible here.
+    //
+    // WHAT THIS DOES AND DOES NOT DISCRIMINATE: it fails if the verb loses
+    // exclusivity — a bare rename replaces the target on BOTH platforms
+    // (Windows libuv passes MOVEFILE_REPLACE_EXISTING), so this goes red
+    // everywhere, not just on POSIX. It does NOT distinguish `link` from a
+    // rename guarded by an `exists` precheck: both refuse a target that is
+    // already present at call time. The reason to prefer link is the TOCTOU
+    // window a precheck leaves open between the check and the rename, and that
+    // window is not observable from outside one synchronous call.
+    const dir = join(root, 'run-verb');
+    mkdirSync(dir, { recursive: true });
+    const target = join(dir, 'record-v0.json');
+    writeFileSync(target, '{"winner":true}');
+    const staging = stagingPathFor(target);
+    writeFileSync(staging, '{"loser":true}');
+
+    // Pin the refusal to exclusive-create, not merely "some error": a verb
+    // that failed for any other reason would satisfy a bare toThrowError().
+    expect(() => FILESYSTEM_PLUMBING.publish(staging, target)).toThrowError(
+      expect.objectContaining({ code: 'EEXIST' })
+    );
+    expect(readFileSync(target, 'utf8')).toBe('{"winner":true}');
+    // The staged bytes were not published under any name.
+    expect(readFileSync(staging, 'utf8')).toBe('{"loser":true}');
+  });
+
+  it('a publisher interleaved between staging and publish keeps its OWN bytes', () => {
+    // The lost-update interleaving: B stages while A is between its staging
+    // write and its publish. With a staging path derived from the target
+    // alone, B's write would truncate A's staging file and A would publish
+    // B's bytes while returning published:true. Per-attempt staging paths are
+    // what make each publisher's staged bytes exclusively its own.
+    const p = realFilesystemPlumbing(root);
+    const target = join(root, 'run-interleave', 'record-v0.json');
+    mkdirSync(join(root, 'run-interleave'), { recursive: true });
+
+    const bytesA = encoder.encode('{"record":"A"}');
+    const bytesB = encoder.encode('{"record":"B"}');
+    const stagingA = stagingPathFor(target);
+    const stagingB = stagingPathFor(target);
+    expect(stagingA).not.toBe(stagingB);
+
+    // B's staging write lands inside A's post-write / pre-publish window.
+    let interleaved = false;
+    const interleaving: PublishPlumbing = {
+      ...p,
+      fsync: () => {
+        if (interleaved) return;
+        interleaved = true;
+        writeFileSync(stagingB, bytesB);
+      },
+    };
+
+    const resultA = publishAtomic(interleaving, stagingA, target, bytesA);
+    expect(interleaved).toBe(true);
+    expect(resultA.published).toBe(true);
+    // A published A's bytes, not B's.
+    expect(readFileSync(target, 'utf8')).toBe('{"record":"A"}');
+
+    // B then loses the race and is refused rather than told it succeeded.
+    expect(() => publishAtomic(p, stagingB, target, bytesB)).toThrowError(
+      expect.objectContaining<Partial<PublishError>>({
+        code: 'publish_target_exists',
+      })
+    );
+    expect(readFileSync(target, 'utf8')).toBe('{"record":"A"}');
   });
 });
 
@@ -681,8 +790,12 @@ describe('15.6 — corrupt/gapped/duplicate/over-width revision fails closed', (
     const store = createFilesystemRunStore(root);
     store.create(plan.runId, startRecord(plan));
 
-    // A staging/temp file is ignored by headVersion.
+    // A staging/temp file is ignored by headVersion — including residue under
+    // the grammar the production adapter actually mints, not just a
+    // hand-written approximation of it.
     writeFileSync(join(runDir(plan.runId), 'record-v0.json.staging'), 'tmp');
+    writeFileSync(stagingPathFor(join(runDir(plan.runId), 'record-v0.json')), 'tmp');
+    writeFileSync(stagingPathFor(join(runDir(plan.runId), 'record-v1.json')), 'tmp');
     writeFileSync(join(runDir(plan.runId), '.tmp-other'), 'tmp');
 
     // The store still loads v0 cleanly (temp files ignored).

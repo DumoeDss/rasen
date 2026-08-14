@@ -21,12 +21,12 @@ declarations:
       nodes:
         - id: work
           kind: AtomicStage
-          capability: { id: skill:rasen-goal-iterate, version: sha256:9522e1108c941534a888d5a0230ba29f1b7719a75949411b36e05f664d95331b }
+          capability: { id: skill:rasen-goal-iterate, version: sha256:1b1a8566322f14a02994b3274f4256def710a77c95ec7927e58daaf948520a87 }
           execution: { version: 1, role: implementer, workspace: { access: write } }
           goalCyclePhase: work
         - id: judge
           kind: AtomicStage
-          capability: { id: skill:rasen-goal-judge, version: sha256:944c21e977d795c1ee2c67f5a0ad0534e8b40a8c1f746ecd83ae89a4e51de40c }
+          capability: { id: skill:rasen-goal-judge, version: sha256:2ae0f1918512979d732b3f1b881c85530cc1447ea53cabfd76811bf68e6f9b1e }
           execution: { version: 1, role: reviewer, workspace: { access: read } }
           goalCyclePhase: judge
       connections:
@@ -35,7 +35,7 @@ root:
   nodes:
     - id: define-goal
       kind: AtomicStage
-      capability: { id: skill:rasen-goal-plan, version: sha256:2c24bd2b0f8661f24bf94553aa15926ace8fa36c71900953e5a68c8c34606ce2 }
+      capability: { id: skill:rasen-goal-plan, version: sha256:610dd104f26d8b622fe42cb0e25ea08c4678427f1188d3fe1e6dc05a44192463 }
       execution: { version: 1, role: planner, workspace: { access: write } }
     - { id: gate:define-goal, kind: Gate, outcomes: [approved, rejected], dispositions: { approved: proceed, rejected: escalate }, target: define-goal }
     - id: iterate
@@ -49,7 +49,7 @@ root:
         strategy:
           maxAttempts: 1
           requireMaterialChange: true
-          capability: { id: skill:rasen-goal-iterate, version: sha256:9522e1108c941534a888d5a0230ba29f1b7719a75949411b36e05f664d95331b }
+          capability: { id: skill:rasen-goal-iterate, version: sha256:1b1a8566322f14a02994b3274f4256def710a77c95ec7927e58daaf948520a87 }
         exits:
           iterationLimit: { action: strategy }
           actionLimit: { action: fail, outcome: goal-action-limit }
@@ -62,16 +62,16 @@ root:
         needs_fix: { action: continue }
     - id: ship
       kind: AtomicStage
-      capability: { id: skill:rasen-ship, version: sha256:a2c069c2051ba9957df1f9cffea17f3ed93683a8ed5f7b29f5cf443a90e47450 }
+      capability: { id: skill:rasen-ship, version: sha256:35615d0bfd09e3fadef419a6ba6f28fe15f278fa981ec3af45beaacc6be1d965 }
       execution: { version: 1, role: shipper, workspace: { access: write }, model: sonnet }
     - { id: gate:ship, kind: Gate, outcomes: [approved, rejected], dispositions: { approved: proceed, rejected: escalate }, target: ship }
     - id: retain
       kind: AtomicStage
-      capability: { id: skill:rasen-retain, version: sha256:4b28b97d4cefc2e3b9fed896439e5360d1697d7da39df109f9f3d6d06b2d8bd4 }
+      capability: { id: skill:rasen-retain, version: sha256:baa284d853a6153df7dcdca336b5d410bc987cd852c6aa2354f6218de8e3f66f }
       execution: { version: 1, role: reviewer, workspace: { access: write }, model: sonnet }
     - id: archive
       kind: AtomicStage
-      capability: { id: skill:rasen-archive-change, version: sha256:76c36f451797c28fc0c5b78ccdd83cc2a26f194564f86c5f509841fb5b98b178 }
+      capability: { id: skill:rasen-archive-change, version: sha256:4883a8d8e4c61343c87e3e0bdd194bc5d48e8b4cbc7ded32738b7652bec93b13 }
       execution: { version: 1, role: shipper, workspace: { access: write }, model: sonnet }
     - { id: finish, kind: Finish, outcome: completed }
   connections:

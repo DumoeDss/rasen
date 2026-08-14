@@ -16,6 +16,7 @@ import type {
   PipelineYaml,
   PreparedExecutionCapabilityPathView,
   PreparedExecutionPolicyPathView,
+  PreparedExecutionStageView,
   PreparedBoundedLoopPolicy,
   StageRole,
   ThresholdValue,
@@ -144,6 +145,8 @@ export interface WirePipelineStage {
     authored?: 'none' | 'stage' | 'run-planner' | 'review-thread';
     source: string;
   };
+  /** Credential-free resolved inference selection; null when unconfigured. */
+  inference?: PreparedExecutionStageView['inference'];
 }
 
 /**

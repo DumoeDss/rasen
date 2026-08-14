@@ -85,6 +85,8 @@ export {
   type DispatchContinuationOptions,
   type DispatchGrantedActionOptions,
   type ExecutionDispatchResult,
+  type ExecutionInputRejection,
+  type ExecutionInputRejectionCode,
   type ExecutorBackends,
   type ExecutorBackendSeam,
   type HostedBackendSeam,
@@ -107,11 +109,15 @@ export {
   createHostedBackendSeamFromSessionHost,
   createInToolBackendSeamFromLauncherLiveness,
   createProductionExecutor,
+  createProductionRoutedTurnExecutor,
   turnResultFromHostOutcome,
   type HostedBackendSeamOptions,
   type LauncherLivenessProbe,
   type ProductionExecutor,
   type ProductionExecutorOptions,
+  type ProductionRoutedTurnExecutorOptions,
+  type RoutedTurnExecutor,
+  type InToolRoutedTurnExecutor,
 } from './production-executor.js';
 
 export {
@@ -185,3 +191,9 @@ export {
   createExactTeacherAttemptPersistence,
   type ExactTeacherAttemptPersistenceOptions,
 } from './exact-teacher-attempt-persistence.js';
+export {
+  createRoutedActionLifecycle,
+  type RoutedActionLifecycle,
+  type RoutedActionLifecycleOptions,
+  type RoutedActionTurnInput,
+} from './omnicross-lifecycle.js';

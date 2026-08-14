@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -10,10 +12,11 @@ import {
 } from '../../../src/core/change-run/internal/actions.js';
 import type { RuntimeCapabilityBinding } from '../../../src/core/pipeline-registry/execution-plan-internal.js';
 import { deriveNodeId } from '../../../src/core/change-run/internal/identity.js';
-import type {
-  Digest,
-  RunId,
-  WorkspaceInstanceId,
+import {
+  decodeRunAction,
+  type Digest,
+  type RunId,
+  type WorkspaceInstanceId,
 } from '../../../src/core/change-run/index.js';
 import { TEST_ATTESTATION_AUTHORITY } from '../../fixtures/trusted-completion.js';
 
@@ -86,6 +89,7 @@ function ctx(actionKind: 'agent' | 'command' | 'host'): ActionBuildContext {
       sessionReuse: 'never',
       handoffTokenLimit: 10_000,
       reuseRoundLimit: 1,
+      workerContract: 'evaluate',
       provenance: {
         role: 'stage',
         model: 'default',
@@ -113,7 +117,14 @@ const identity: ActionIdentity = {
 
 describe('buildAgentAction (6.1/6.4)', () => {
   it('builds a closed agent action from the trusted capability + policy', () => {
+    const renderedTurnInput = 'trusted fixture prompt\n雪';
+    const expectedTurnInputDigest = createHash('sha256')
+      .update('agent-turn-input/1', 'utf8')
+      .update(Buffer.from([0]))
+      .update(renderedTurnInput, 'utf8')
+      .digest('hex');
     const action = buildAgentAction(ctx('agent'), identity, {
+      renderedTurnInput,
       input: { change: 'fixture' },
     });
     expect(action.kind).toBe('agent');
@@ -122,6 +133,14 @@ describe('buildAgentAction (6.1/6.4)', () => {
     expect(action.capability.contractId).toBe('apply-change');
     expect(action.agent.role).toBe('implementer');
     expect(action.agent.model).toBe('sonnet');
+    expect(action.agent.workerContract).toBe('evaluate');
+    expect(action.agent.turnInput).toEqual({
+      format: 'agent-turn-input/1',
+      mediaType: 'text/plain;charset=utf-8',
+      renderingContract: 'rasen.driver-rendered-turn/1',
+      utf8ByteLength: Buffer.byteLength(renderedTurnInput, 'utf8'),
+      contentDigest: `sha256:${expectedTurnInputDigest}`,
+    });
     expect(action.agent.session.reuse).toBe('never');
     expect(action.workspace.access).toBe('write');
     expect(action.effects[0]!.operation.operationKey).toBe(
@@ -134,15 +153,89 @@ describe('buildAgentAction (6.1/6.4)', () => {
     expect(JSON.stringify(action)).not.toMatch(/private|pkcs8|BEGIN PRIVATE KEY/i);
   });
 
+  it('labels the trusted renderer without letting the label enter the digest preimage', () => {
+    const renderedTurnInput = 'trusted fixture prompt\n雪';
+    const driverRendered = buildAgentAction(ctx('agent'), identity, {
+      renderedTurnInput,
+      input: { change: 'fixture' },
+    });
+    const runtimeRendered = buildAgentAction(ctx('agent'), identity, {
+      renderedTurnInput,
+      input: { change: 'fixture' },
+      renderingContract: 'rasen.runtime-derived-consultation-turn/1',
+    });
+    if (driverRendered.kind !== 'agent' || runtimeRendered.kind !== 'agent') {
+      throw new Error('expected agent Actions');
+    }
+
+    // The label records WHO authored the bytes; it must never domain-separate
+    // them. Folding it into the preimage would silently invalidate every
+    // Action already committed under the driver contract, and would break the
+    // executor's transport check for consultation Teachers, whose bytes are
+    // authenticated by length + digest alone.
+    expect(runtimeRendered.agent.turnInput?.contentDigest).toBe(
+      driverRendered.agent.turnInput?.contentDigest
+    );
+    expect(runtimeRendered.agent.turnInput?.utf8ByteLength).toBe(
+      driverRendered.agent.turnInput?.utf8ByteLength
+    );
+    expect(driverRendered.agent.turnInput?.renderingContract).toBe(
+      'rasen.driver-rendered-turn/1'
+    );
+    expect(runtimeRendered.agent.turnInput?.renderingContract).toBe(
+      'rasen.runtime-derived-consultation-turn/1'
+    );
+    // The label IS authority: it participates in the Action's canonical bytes,
+    // so a relabelled Action is a different Action under receipt equality.
+    expect(JSON.stringify(runtimeRendered)).not.toBe(
+      JSON.stringify(driverRendered)
+    );
+  });
+
+  it('keeps historical Actions decodable but rejects invalid worker contracts', () => {
+    const action = buildAgentAction(ctx('agent'), identity, { renderedTurnInput: 'trusted fixture prompt', input: {} });
+    if (action.kind !== 'agent') throw new Error('expected agent Action');
+    const legacy = structuredClone(action) as Record<string, unknown> & {
+      agent: Record<string, unknown>;
+    };
+    delete legacy.agent.workerContract;
+    expect(decodeRunAction(legacy)).toMatchObject({ kind: 'agent' });
+
+    const invalid = structuredClone(action) as Record<string, unknown> & {
+      agent: Record<string, unknown>;
+    };
+    invalid.agent.workerContract = 'gate-ish';
+    expect(() => decodeRunAction(invalid)).toThrow();
+  });
+
+  it('keeps historical omission decodable but never mints an unbound new Action', () => {
+    const action = buildAgentAction(ctx('agent'), identity, {
+      renderedTurnInput: 'trusted fixture prompt',
+      input: {},
+    });
+    if (action.kind !== 'agent') throw new Error('expected agent Action');
+    const historical = structuredClone(action) as Record<string, unknown> & {
+      agent: Record<string, unknown>;
+    };
+    delete historical.agent.turnInput;
+    expect(decodeRunAction(historical)).toMatchObject({ kind: 'agent' });
+    expect(() =>
+      buildAgentAction(ctx('agent'), identity, {
+        renderedTurnInput: '',
+        input: {},
+      })
+    ).toThrowError(ActionBuildError);
+  });
+
   it('rejects a capability bound to a different action kind', () => {
     expect(() =>
-      buildAgentAction(ctx('command'), identity, { input: { ok: true } })
+      buildAgentAction(ctx('command'), identity, { renderedTurnInput: 'trusted fixture prompt', input: { ok: true } })
     ).toThrowError(ActionBuildError);
   });
 
   it('derives identity from the frozen meaning, never trusting caller-supplied IDs', () => {
-    const a = buildAgentAction(ctx('agent'), identity, { input: {} });
-    const replay = buildAgentAction(ctx('agent'), identity, { input: {} });
+    const a = buildAgentAction(ctx('agent'), identity, { renderedTurnInput: 'trusted fixture prompt', input: {} });
+    const replay = buildAgentAction(ctx('agent'), identity, { renderedTurnInput: 'trusted fixture prompt', input: {} });
     // Same frozen meaning -> identical canonical identity (ActionId/AttemptId/EffectId).
     expect(replay.actionId).toBe(a.actionId);
     expect(replay.attemptId).toBe(a.attemptId);

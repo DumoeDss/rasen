@@ -32,6 +32,7 @@ import {
   attestTestCompletion,
   stageTestCompletion,
 } from '../../fixtures/trusted-completion.js';
+import { createAdmittingChangePipelineDriver } from '../../helpers/change-run-admission.js';
 
 const branded = <T>(value: string): T => value as T;
 const digest = (char: string) =>
@@ -179,6 +180,7 @@ function createHarness(maxIterations = 3, withStrategy = false) {
     admissionKind: 'agent' | 'command' | 'host';
     profilePath?: string;
     input?: JsonValue;
+    renderedTurnInput?: string;
   }): RunAction => {
     if (descriptor.admissionKind !== 'agent' || descriptor.profilePath === undefined) {
       throw new Error('ReviewCycle fixture expects one profile-bound Agent action.');
@@ -252,7 +254,11 @@ function createHarness(maxIterations = 3, withStrategy = false) {
         attemptOrdinal: 0,
         expectedBeforeWorkspace: initial.currentWorkspaceRevision,
       },
-      { input: descriptor.input ?? {} }
+      {
+        renderedTurnInput:
+          descriptor.renderedTurnInput ?? 'trusted fixture prompt',
+        input: descriptor.input ?? {},
+      }
     );
   };
   return {
@@ -261,24 +267,24 @@ function createHarness(maxIterations = 3, withStrategy = false) {
     initial,
     buildAction,
     evidenceStore,
-    runtime: createChangePipelineRuntime({
+    runtime: createAdmittingChangePipelineDriver(createChangePipelineRuntime({
       store,
       plan: runtimePlan,
       initialRecord: initial,
       buildAction,
       evidenceStore,
-    }),
+    })),
   };
 }
 
 function restartHarness(harness: ReturnType<typeof createHarness>): void {
-  harness.runtime = createChangePipelineRuntime({
+  harness.runtime = createAdmittingChangePipelineDriver(createChangePipelineRuntime({
     store: harness.store,
     plan: harness.plan,
     initialRecord: harness.initial,
     buildAction: harness.buildAction,
     evidenceStore: harness.evidenceStore,
-  });
+  }));
 }
 
 function completionEvidence(
