@@ -1,5 +1,12 @@
 {
   "parent": "store-v2-foundation",
+  "sessionHandoff": {
+    "path": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\store-v2-foundation\\rasen\\work\\issue-centered-automation-platform\\store-v2-onto-020\\handoff\\lead-2.md",
+    "n": 2,
+    "pct": 0.701,
+    "afterStage": "S3 apply (35/39 tasks, Section 8 gates in flight)",
+    "at": "2026-08-14T00:00:00Z"
+  },
   "gatePolicy": {
     "effective": "off",
     "source": "global"
