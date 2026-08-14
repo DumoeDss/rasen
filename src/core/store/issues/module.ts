@@ -449,7 +449,28 @@ export class StoreIssuesModule implements StoreIssues {
       }
 
       const found = resolved.evidence;
-      if (found === null) continue;
+      if (found === null) {
+        // Resolved by the machine workspace index ALONE. That index is a
+        // locator and authority for nothing (`references.ts`'s header table),
+        // so it answers a READ and never a publication: a revision is durable,
+        // portable Store content, and one naming a Change that is committed on
+        // no Store ref would be a published claim no other clone can check.
+        // The resolver is left reporting exactly what it found; the decision
+        // that committed evidence is required belongs to the mutation.
+        const locator = resolved.localLocator?.root ?? '(a local planning worktree)';
+        throw issueRefusal(
+          'issue_reference_uncommitted',
+          `Change instance '${node.changeInstanceId}' referenced by node '${node.nodeId}' exists only as a local planning worktree on this machine (${locator}); no committed Change metadata under this Store's target-line refs derives it. Refs searched: ${
+            reader.searchedRefs.join(', ') || '(none)'
+          }.`,
+          {
+            expected: "the Change committed under one of this Store's target-line refs",
+            actual: 'a local planning worktree on this machine only',
+            target: node.nodeId,
+            fix: "Land the Change on its target line so the Store carries it, or declare the node as an intent until the Change exists. A machine-local worktree is never evidence for a published plan.",
+          }
+        );
+      }
       if (found.storeUid !== scope.storeUid) {
         throw issueRefusal(
           'issue_reference_foreign_store',

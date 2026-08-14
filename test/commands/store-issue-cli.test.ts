@@ -160,6 +160,91 @@ describe('rasen store issue CLI', () => {
     expect(jsonResult.issue.issueId).toBe('show-test');
   });
 
+  it('refuses --state outside the defined vocabulary instead of filtering to nothing (round-1 TRIVIAL-3)', async () => {
+    await runCLI(
+      ['store', 'issue', 'new', 'filter-test', '--store', f.storeId, '--title', 'Filter Test', '--json'],
+      { cwd: f.storeRoot, env: f.env }
+    );
+
+    const bogus = await runCLI(
+      ['store', 'issue', 'list', '--store', f.storeId, '--state', 'closed'],
+      { cwd: f.storeRoot, env: f.env }
+    );
+    // "No Issues found." for an undefined state reads as an answer about the
+    // Store when it is an answer about the flag.
+    expect(bogus.exitCode).not.toBe(0);
+    const said = `${bogus.stdout}${bogus.stderr}`;
+    expect(said).toContain('closed');
+    expect(said).toContain('open');
+    expect(said).toContain('resolved');
+    expect(said).toContain('dropped');
+    expect(said).not.toContain('No Issues found.');
+
+    // A defined state still filters rather than refusing.
+    const defined = expectOk(
+      await runCLI(['store', 'issue', 'list', '--store', f.storeId, '--state', 'open'], {
+        cwd: f.storeRoot,
+        env: f.env,
+      })
+    );
+    expect(defined.stdout).toContain('filter-test');
+  });
+
+  it("carries the plan digest into the human form, not only --json (management-http-api 'both forms agree')", async () => {
+    await runCLI(
+      ['store', 'issue', 'new', 'digest-test', '--store', f.storeId, '--title', 'Digest Test', '--json'],
+      { cwd: f.storeRoot, env: f.env }
+    );
+    const nodesFile = f.beside('digest-nodes.yaml');
+    f.write(
+      nodesFile,
+      [
+        'nodes:',
+        '  - nodeId: intent-a',
+        '    kind: intent',
+        `    projectId: ${PROJECT}`,
+        `    targetLineId: ${LINE}`,
+        '    summary: An intent node',
+        '    dependsOn: []',
+        '',
+      ].join('\n')
+    );
+    const published = parseJson(
+      expectOk(
+        await runCLI(
+          ['store', 'issue', 'plan', 'digest-test', '--store', f.storeId, '--from-file', nodesFile, '--json'],
+          { cwd: f.storeRoot, env: f.env }
+        )
+      )
+    );
+    f.git(f.storeRoot, ['add', 'rasen/issues/']);
+    f.git(f.storeRoot, ['commit', '-m', 'seed digest-test']);
+
+    const digest: string = published.revision.contentSha256;
+    expect(digest).toMatch(/^[0-9a-f]{64}$/u);
+
+    const human = expectOk(
+      await runCLI(['store', 'issue', 'show', 'digest-test', '--store', f.storeId], {
+        cwd: f.storeRoot,
+        env: f.env,
+      })
+    );
+    const machine = parseJson(
+      expectOk(
+        await runCLI(['store', 'issue', 'show', 'digest-test', '--store', f.storeId, '--json'], {
+          cwd: f.storeRoot,
+          env: f.env,
+        })
+      )
+    );
+
+    // The SAME digest in both forms, taken from the machine form rather than
+    // recomputed here, so this cannot pass by both sides agreeing on a wrong
+    // value the test itself supplied.
+    expect(machine.plan.revision.contentSha256).toBe(digest);
+    expect(human.stdout).toContain(digest);
+  });
+
   it('transitions Issue state to resolved and to dropped with a reason', async () => {
     await runCLI(
       ['store', 'issue', 'new', 'state-test', '--store', f.storeId, '--title', 'State Test', '--json'],

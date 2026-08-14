@@ -31,6 +31,7 @@ import {
   handleStoreIssueSetState,
   handleStorePublishPlan,
   findIncompletePlanNodeScopes,
+  findInvalidPlanNodes,
   type ResolvedStoreSpace,
 } from '../../../src/core/management-api/stores.js';
 import { runCLI } from '../../helpers/run-cli.js';
@@ -254,6 +255,38 @@ describe('Store aggregate HTTP bridge (stores.ts)', () => {
     });
   });
 
+  describe('findInvalidPlanNodes (round-1 MINOR-2, pure)', () => {
+    it('accepts each defined kind carrying the field that kind requires', () => {
+      expect(
+        findInvalidPlanNodes([
+          { nodeId: 'n1', kind: 'intent', summary: 'do the thing' },
+          { nodeId: 'n2', kind: 'change', changeInstanceId: `ci_${'1'.repeat(64)}` },
+        ])
+      ).toEqual([]);
+    });
+
+    it('names an undefined kind rather than silently treating it as an intent', () => {
+      // `normalizePlanNodes` branches on `kind === "change"` and treats
+      // everything else as an intent, so an unrecognized kind used to reach
+      // `assertPortableIssueText(undefined, ...)` and throw a TypeError.
+      expect(findInvalidPlanNodes([{ nodeId: 'n1', kind: 'task', summary: 'x' }])).toEqual([
+        { nodeId: 'n1', problem: 'kind must be "change" or "intent", not "task"' },
+      ]);
+      expect(findInvalidPlanNodes([{ nodeId: 'n1' }])).toEqual([
+        { nodeId: 'n1', problem: 'kind must be "change" or "intent", not null' },
+      ]);
+    });
+
+    it('names the field each kind is missing, and an unnamed node as unnamed', () => {
+      expect(findInvalidPlanNodes([{ nodeId: 'n1', kind: 'intent' }])).toEqual([
+        { nodeId: 'n1', problem: 'an intent node requires a summary string' },
+      ]);
+      expect(findInvalidPlanNodes([{ kind: 'change' }])).toEqual([
+        { nodeId: '(unnamed node)', problem: 'a change node requires a changeInstanceId string' },
+      ]);
+    });
+  });
+
   describe('handleStorePublishPlan — complete-scope enforcement (task 5.3)', () => {
     let space: ResolvedStoreSpace;
 
@@ -325,6 +358,30 @@ describe('Store aggregate HTTP bridge (stores.ts)', () => {
       if (result.ok) return;
       expect(result.code).toBe('store_query_scope_incomplete');
       // The well-scoped node was not published either — this is a whole-request refusal.
+      expect(
+        fs.existsSync(path.join(f.storeRoot, 'rasen', 'issues', 'plan-issue', 'plans', '0001.yaml'))
+      ).toBe(false);
+    });
+
+    it('refuses an undefined node kind as a 400 naming the field, never a 500 (round-1 MINOR-2)', async () => {
+      // A fully-scoped node whose `kind` the product does not define. Before
+      // the fix this reached `normalizePlanNodes`, which assumed intent, and
+      // `assertPortableIssueText(undefined, ...)` threw a TypeError that
+      // `mapThrown` could only report as 500 `store_query_failed` — an
+      // internal error for a request that is simply not accepted.
+      const result = await handleStorePublishPlan(space, {
+        issueId: 'plan-issue',
+        nodes: [
+          { nodeId: 'task-node', kind: 'task', projectId: PROJECT, targetLineId: LINE },
+        ],
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.status).toBe(400);
+      expect(result.code).toBe('plan_node_invalid');
+      expect(result.message).toContain('task-node');
+      expect(result.message).toContain('kind');
+      // Nothing was written; the refusal precedes every write.
       expect(
         fs.existsSync(path.join(f.storeRoot, 'rasen', 'issues', 'plan-issue', 'plans', '0001.yaml'))
       ).toBe(false);

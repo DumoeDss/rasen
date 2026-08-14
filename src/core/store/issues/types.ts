@@ -51,6 +51,15 @@ export type StoreIssueErrorCode =
   | 'issue_state_transition_refused'
   /** No evidence anywhere for a referenced Change instance. */
   | 'issue_reference_unresolved'
+  /**
+   * The only evidence is a machine-local planning worktree: the Change exists
+   * on disk here and is committed on no Store ref. Distinct from
+   * `issue_reference_unresolved` because the two say different true things —
+   * one found nothing, the other found something that is authority for
+   * nothing — and a refusal that named the wrong one would be a lie about
+   * what was searched.
+   */
+  | 'issue_reference_uncommitted'
   /** Several claimants for one Change instance. Every one listed, none chosen. */
   | 'issue_reference_ambiguous'
   /** The reference's declared scope disagrees with committed identity. */
@@ -86,7 +95,12 @@ export interface IssueRecordV1 {
   readonly id: IssueId;
   readonly title: string;
   readonly state: IssueState;
-  /** Required for `dropped`, null otherwise. */
+  /**
+   * Required for `dropped`. Permitted but not required in every other state:
+   * a reason given while resolving is portable-checked and carried through
+   * rather than discarded, since dropping the operator's own words to satisfy
+   * a shape rule would be an edit nobody asked for.
+   */
   readonly reason: string | null;
   readonly createdAt: string;
 }

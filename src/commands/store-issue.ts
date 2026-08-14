@@ -15,6 +15,7 @@ import { parse as parseYaml } from 'yaml';
 
 import { StoreError } from '../core/store/errors.js';
 import {
+  ISSUE_STATES,
   StoreIssuesModuleInstance,
   issueError,
   type ExecutionPlanNodeInput,
@@ -98,6 +99,12 @@ function renderIssueList(page: IssueSummaryPage): void {
     const state = summary.record?.state ?? (summary.divergence ? '(divergent)' : '(unknown)');
     const title = summary.record?.title ?? '';
     console.log(`${summary.issueId}  [${state}]  ${title}`);
+    // A divergence the JSON form reports copy-by-copy, with each copy's
+    // digest, must not reach a person as the bare word "(divergent)": a fact
+    // reported to a program is never silently dropped from the human form.
+    for (const copy of summary.divergence?.copies ?? []) {
+      console.log(`    ${copy.storeRef ?? '(local checkout)'}  ${copy.sha256}`);
+    }
   }
   if (!page.complete) {
     console.log('');
@@ -118,14 +125,34 @@ function renderIssueDetail(detail: IssueDetail): void {
     console.log(
       `  DIVERGENT: ${summary.divergence.copies.length} differing copies across Store refs.`
     );
+    // Every copy with its digest, the same facts `--json` carries. Naming the
+    // count alone would leave a person unable to see WHICH copies differ, and
+    // no winner is picked here either.
+    for (const copy of summary.divergence.copies) {
+      console.log(`    ${copy.storeRef ?? '(local checkout)'}  ${copy.sha256}`);
+    }
   }
   console.log(`  revisions: ${summary.revisionIds.join(', ') || '(none)'}`);
   if (detail.plan) {
     console.log(`  latest plan: revision ${detail.plan.revisionId ?? '(none)'}`);
+    // The revision's own content digest, which the machine form has always
+    // carried. A digest a program can read and a person cannot is exactly the
+    // asymmetry "both forms agree" forbids.
+    if (detail.plan.revision) {
+      console.log(`  plan digest: ${detail.plan.revision.contentSha256}`);
+    }
+    if (detail.plan.diagnostic !== null) {
+      console.log(`  plan PROBLEM: ${detail.plan.diagnostic}`);
+    }
   }
   if (!detail.complete) {
     console.log('');
     console.log(`INCOMPLETE: ${detail.unsearchedRefs.length} ref(s) could not be read.`);
+    // The per-ref reason, as the list rendering already does. An unreadable
+    // ref is never absence, so the reason is the whole point of the report.
+    for (const ref of detail.unsearchedRefs) {
+      console.log(`  ${ref.targetLineId} (${ref.storeRef}): ${ref.reason}`);
+    }
   }
 }
 
@@ -170,6 +197,17 @@ export function registerStoreIssueCommand(store: Command): void {
     .option('--json', '')
     .action(async (options: StoreIssueOptions) => {
       try {
+        // A state outside the defined vocabulary filters to nothing, which
+        // reads as "no Issues" rather than as "that is not a state". Refused
+        // here naming the vocabulary, the same way the mutation surface
+        // refuses an undefined state rather than storing it.
+        if (options.state !== undefined && !ISSUE_STATES.includes(options.state as IssueState)) {
+          throw new StoreError(
+            `'${options.state}' is not a defined Issue state.`,
+            'issue_state_undefined',
+            { fix: `Filter with --state ${ISSUE_STATES.join('|')}, or omit --state.` }
+          );
+        }
         const page = await StoreAggregateQuery.listIssues({
           ...(options.store === undefined ? {} : { store: options.store }),
           startPath: process.cwd(),

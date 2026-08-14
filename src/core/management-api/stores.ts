@@ -155,6 +155,7 @@ function statusForIssueCode(code: StoreIssueErrorCode): number {
     case 'issue_record_divergent':
     case 'issue_state_transition_refused':
     case 'issue_reference_unresolved':
+    case 'issue_reference_uncommitted':
     case 'issue_reference_ambiguous':
     case 'issue_reference_scope_conflict':
     case 'issue_reference_foreign_store':
@@ -392,6 +393,64 @@ export function findIncompletePlanNodeScopes(
   return incomplete;
 }
 
+export interface InvalidPlanNode {
+  readonly nodeId: string;
+  readonly problem: string;
+}
+
+/**
+ * The per-node facts `normalizePlanNodes` ASSUMES rather than checks.
+ *
+ * `normalizePlanNodes` branches on `input.kind === 'change'` and otherwise
+ * treats the node as an intent, so an HTTP body carrying `kind: "task"` (or no
+ * kind at all) reaches `assertPortableIssueText(undefined, ...)` and throws a
+ * `TypeError`, which `mapThrown` can only report as a 500 `store_query_failed`.
+ * Nothing is written — the failure precedes every write — so this is purely
+ * about telling an untrusted caller WHICH field of its own body is wrong
+ * instead of reporting an internal error for a request the product simply does
+ * not accept.
+ *
+ * Deliberately kept out of `findIncompletePlanNodeScopes`: that function
+ * answers one spec requirement (a Store-scoped mutation carries its complete
+ * scope, and a sole candidate never fills a gap) and folding a second rule
+ * into it would make its refusal message answer two questions at once.
+ */
+export function findInvalidPlanNodes(
+  nodes: readonly {
+    nodeId?: unknown;
+    kind?: unknown;
+    changeInstanceId?: unknown;
+    summary?: unknown;
+  }[]
+): readonly InvalidPlanNode[] {
+  const invalid: InvalidPlanNode[] = [];
+  for (const node of nodes) {
+    const nodeId =
+      typeof node.nodeId === 'string' && node.nodeId.length > 0 ? node.nodeId : '(unnamed node)';
+    if (node.kind !== 'change' && node.kind !== 'intent') {
+      invalid.push({
+        nodeId,
+        problem: `kind must be "change" or "intent", not ${JSON.stringify(node.kind ?? null)}`,
+      });
+      continue;
+    }
+    if (
+      node.kind === 'change' &&
+      (typeof node.changeInstanceId !== 'string' || node.changeInstanceId.length === 0)
+    ) {
+      invalid.push({ nodeId, problem: 'a change node requires a changeInstanceId string' });
+      continue;
+    }
+    if (
+      node.kind === 'intent' &&
+      (typeof node.summary !== 'string' || node.summary.length === 0)
+    ) {
+      invalid.push({ nodeId, problem: 'an intent node requires a summary string' });
+    }
+  }
+  return invalid;
+}
+
 export async function handleStorePublishPlan(
   space: ResolvedStoreSpace,
   body: { issueId?: unknown; nodes?: unknown }
@@ -413,7 +472,14 @@ export async function handleStorePublishPlan(
       message: 'Publishing an execution plan requires a "nodes" array.',
     };
   }
-  const rawNodes = body.nodes as readonly { nodeId?: unknown; projectId?: unknown; targetLineId?: unknown }[];
+  const rawNodes = body.nodes as readonly {
+    nodeId?: unknown;
+    kind?: unknown;
+    projectId?: unknown;
+    targetLineId?: unknown;
+    changeInstanceId?: unknown;
+    summary?: unknown;
+  }[];
   const incomplete = findIncompletePlanNodeScopes(rawNodes);
   if (incomplete.length > 0) {
     const detail = incomplete
@@ -426,6 +492,19 @@ export async function handleStorePublishPlan(
       message:
         `A Store-scoped project mutation carries its complete scope — Store, project, and target line — ` +
         `and this one does not: ${detail}.`,
+    };
+  }
+  const invalid = findInvalidPlanNodes(rawNodes);
+  if (invalid.length > 0) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'plan_node_invalid',
+      message:
+        `An execution plan node declares a kind the product does not define, or omits the ` +
+        `field that kind requires: ${invalid
+          .map((entry) => `node ${entry.nodeId}: ${entry.problem}`)
+          .join('; ')}.`,
     };
   }
   return run(() =>
