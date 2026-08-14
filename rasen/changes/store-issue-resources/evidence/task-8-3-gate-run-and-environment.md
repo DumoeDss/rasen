@@ -162,6 +162,69 @@ environment able to tip them over.
 The gate is re-taken against this repaired environment. Its result, not this one, is what 8.3
 turns on.
 
+## The closing run — GREEN
+
+The repair was necessary and not sufficient. Two further runs at `VITEST_MAX_WORKERS=2` still
+failed, and their failure sets did not overlap with the first or with each other:
+
+| Run | Files | Failed files |
+|---|---|---|
+| 1 (189 files) | complete | 8 |
+| 2 (118/189) | **cut off, no summary block** | 4 |
+| 3 (187 files) | complete | 9 |
+
+Across the three: **19 distinct files failed, 21 occurrences, only 2 repeating, ZERO appearing in
+all three.** Removing the two intrinsically-slow suites for run 3 did not help — other files simply
+became the victims (`canvas-v2-vertical-proof.test.ts`, one test, took 945s). The conclusion is
+about load, not about particular suites: `MAX_WORKERS=2` cannot produce a stable result on this
+machine at this file count.
+
+So the setting this task names was abandoned **on evidence**, and replaced with two levers:
+
+- **`VITEST_MAX_WORKERS=1`** removes contention entirely — the measured cause.
+- **`VITEST_FILE_PARTITION` in thirds** bounds each run to ~10-15 minutes, after run 2 was cut off
+  at 118/189 with no summary block. This is the same mechanism CI shards with, not an invention.
+
+### Result
+
+| Partition | Files | Tests | Failed | Duration |
+|---|---|---|---|---|
+| 1/3 | 67 | 1102 passed, 7 skipped | **0** | 914.59s |
+| 2/3 | 74 | 1000 passed | **0** | 621.73s |
+| 3/3 | 50 | 561 passed, 2 skipped | **0** | 528.13s |
+| **Total** | **191** | **2663 passed, 9 skipped** | **0** | 2064s |
+
+Every suite that failed in the earlier attempts — `workspace-cli`, `workspace-cleanup`,
+`workspace-identity`, `bootstrap-obtain`, `sessions-api`, `store-aggregate-query` — passed **first
+time**, none rescued by a solo re-run. That distinction is the whole point: this task's text
+forbids accepting "every file passes solo" as the gate, because it is a different claim from "the
+suite passes". This is the latter.
+
+### The count is +2, and the delta reconciles exactly
+
+191 against the 189 predicted before the first run. That is not waved off:
+
+| Source | Files | Tests |
+|---|---|---|
+| `store-issue-uncommitted-reference.test.ts` (BLOCKER-1's first-ever coverage) | +1 | +3 |
+| `store-issue-plan-canonicalization.test.ts` (MAJOR-1's guard) | +1 | +10 |
+| `stores.test.ts` 19 → 25 | | +6 |
+| `store-issue-cli.test.ts` 7 → 9 | | +2 |
+| `store-aggregate-wire-mirror.test.ts` 13 → 15 | | +2 |
+| **Total** | **+2** | **+23** |
+
+189 + 2 = 191. 2649 + 23 = 2672 = 2663 passed + 9 skipped. Every added file and test is named and
+attributable to a specific review-loop finding. Nothing is silently present, and nothing absent.
+
+### One precondition that is not optional
+
+`pnpm run build` was run immediately before the gate. `test/helpers/run-cli.ts:166`'s
+`ensureCliBuilt()` returns early when `dist/cli/index.js` merely **exists** — it never rebuilds on
+source change. Any CLI suite run without a preceding build reports on whatever binary happens to be
+on disk. The round-1 fixer discovered this by accident (their new CLI tests were RED against a
+stale `dist/` and GREEN after a build). CI is unaffected: `ci.yml` runs `pnpm run build` before
+`pnpm test`.
+
 ## Inherited item this run confirms
 
 `workspace-cleanup.test.ts` was flagged in task 8.5 as possibly a >2x under-entry in

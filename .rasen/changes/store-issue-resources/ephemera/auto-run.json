@@ -19,7 +19,7 @@
       "evidenceForDone": "All 9 artifacts present on disk. `node bin/rasen.js validate 'store-issue-resources' --type change --strict` PASSES, re-run by the LEAD this session rather than taken on report. The LEAD's propose-time rulings survive under stages.apply.leadRulings, and handoff/lead-2.md records the three-child decomposition that produced this child."
     },
     "apply": {
-      "status": "in_progress",
+      "status": "done",
       "gateDecision": "auto-approved (global)",
       "worker": {
         "role": "implementer",
@@ -29,7 +29,7 @@
         "model": "sonnet",
         "horizon": "LOOP_BOUND"
       },
-      "progress": "Sections 1-7 complete. Section 8: 8.1/8.4/8.5/8.6/8.7/8.8 closed; 8.2 closed on its derivation half with the file-count verification half explicitly open; 8.3 is the ONLY task with unstarted substance. 38 of 39 ticked. 8.3 (the re-derived gate run at VITEST_MAX_WORKERS=2, plus the solo re-run of test/commands/store.test.ts that settles the deferred 2/50 contention-vs-defect verdict) is deferred by operator direction: finish development first, take the long-running gates later. It is deferred, NOT waived -- verify and review-loop should not be treated as reachable until it is taken.",
+      "progress": "COMPLETE: 39/39, `rasen list --changes` reports the change Complete. All eight Section-8 gates closed, 8.3 last and GREEN. Two review rounds ran after apply's substance was done (round 1: 1 Blocker / 2 Major / 3 Minor / 3 Trivial; round 2 after fixes: 0 Blocker / 0 Major, 2 new Minor/Trivial), plus a second fix round for the operator's MAJOR-1 ruling. Both fix rounds were verified by the LEAD re-running their mutations rather than reading them: the wire-mirror completeness direction RED 1/15, and removing the node sort RED 3/10 while the 7.1 digest anchors stayed GREEN -- one mutation establishing both that the guard discriminates and that the anchors genuinely bypass the normalizer. Two tasks were found ticked while partly false (2.4's node-ordering clause and 2.5's uncommitted clause); both records were corrected in place rather than closed with new tasks.",
       "commits": [
         "af6f3e9d issues/ + query/ landed, 5 ported suites green",
         "8caafa11 / 9a489b93 command surface",
