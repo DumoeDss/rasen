@@ -31,6 +31,7 @@
  */
 import { createStoreQueryByUid } from '../store/query/module.js';
 import { StoreIssuesModuleInstance } from '../store/issues/module.js';
+import { findPlanNodeSchemaProblems } from '../store/issues/plans.js';
 import { isStoreIssueError } from '../store/issues/diagnostics.js';
 import { resolveStoreBinding } from '../store/identity.js';
 import { isValidStoreUid } from '../store/identity-types.js';
@@ -399,16 +400,16 @@ export interface InvalidPlanNode {
 }
 
 /**
- * The per-node facts `normalizePlanNodes` ASSUMES rather than checks.
+ * Which node kind this is, and the one field that kind cannot do without,
+ * answered in the product's own voice.
  *
- * `normalizePlanNodes` branches on `input.kind === 'change'` and otherwise
- * treats the node as an intent, so an HTTP body carrying `kind: "task"` (or no
- * kind at all) reaches `assertPortableIssueText(undefined, ...)` and throws a
- * `TypeError`, which `mapThrown` can only report as a 500 `store_query_failed`.
- * Nothing is written — the failure precedes every write — so this is purely
- * about telling an untrusted caller WHICH field of its own body is wrong
- * instead of reporting an internal error for a request the product simply does
- * not accept.
+ * `normalizePlanNodes` now runs `NodeSchema` itself, so the 500 this check was
+ * introduced against is closed at the core as well. It stays because a wrong
+ * `kind` is the one node defect worth naming as a product fact ("kind must be
+ * change or intent") rather than as a discriminated-union parser message, and
+ * because it runs first: a body caught here never has to be explained twice.
+ * `findPlanNodeSchemaProblems` below it covers everything else the schema
+ * declares.
  *
  * Deliberately kept out of `findIncompletePlanNodeScopes`: that function
  * answers one spec requirement (a Store-scoped mutation carries its complete
@@ -503,6 +504,26 @@ export async function handleStorePublishPlan(
       message:
         `An execution plan node declares a kind the product does not define, or omits the ` +
         `field that kind requires: ${invalid
+          .map((entry) => `node ${entry.nodeId}: ${entry.problem}`)
+          .join('; ')}.`,
+    };
+  }
+  // Everything else `NodeSchema` declares, reported rather than thrown. The
+  // core enforces the identical schema for every caller, but it enforces it by
+  // THROWING a `StorePlanningValidationError`, which is not a `StoreIssueError`
+  // and so reaches `mapThrown` as a 500 — an internal-fault status for a body
+  // the product simply does not accept. Running the non-throwing twin here is
+  // what turns that into the 400 an untrusted caller is owed.
+  const schemaProblems = findPlanNodeSchemaProblems(
+    rawNodes as unknown as readonly ExecutionPlanNodeInput[]
+  );
+  if (schemaProblems.length > 0) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'plan_node_invalid',
+      message:
+        `An execution plan node does not satisfy the node schema: ${schemaProblems
           .map((entry) => `node ${entry.nodeId}: ${entry.problem}`)
           .join('; ')}.`,
     };

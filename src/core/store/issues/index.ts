@@ -30,11 +30,13 @@ export {
 export {
   checkExecutionPlanGraph,
   executionPlanDigest,
+  findPlanNodeSchemaProblems,
   normalizePlanNodes,
   parseExecutionPlanRevision,
   serializeExecutionPlanRevision,
   validateExecutionPlanRevision,
   type GraphViolation,
+  type PlanNodeSchemaProblem,
 } from './plans.js';
 export {
   STORE_LOCK_ORDER,

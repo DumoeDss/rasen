@@ -387,6 +387,62 @@ describe('Store aggregate HTTP bridge (stores.ts)', () => {
       ).toBe(false);
     });
 
+    it('refuses a summary past the declared maximum as a 400, never a 500 (round-2 MINOR-R2-1)', async () => {
+      // Round 2 measured this body as a 500 `store_query_failed` carrying
+      // `revision: nodes.0.summary: Too big` — `NodeSchema`'s `max(500)` was
+      // declared but bypassed by `normalizePlanNodes`'s cast, so the limit was
+      // first enforced at serialize time, deep past the boundary, as a
+      // `StorePlanningValidationError` that `mapThrown` can only call internal.
+      const result = await handleStorePublishPlan(space, {
+        issueId: 'plan-issue',
+        nodes: [
+          {
+            nodeId: 'long-summary',
+            kind: 'intent',
+            projectId: PROJECT,
+            targetLineId: LINE,
+            summary: 'x'.repeat(501),
+          },
+        ],
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.status).toBe(400);
+      expect(result.code).toBe('plan_node_invalid');
+      expect(result.message).toContain('long-summary');
+      expect(result.message).toContain('summary');
+      expect(
+        fs.existsSync(path.join(f.storeRoot, 'rasen', 'issues', 'plan-issue', 'plans', '0001.yaml'))
+      ).toBe(false);
+    });
+
+    it('refuses a non-string nodeId as a 400, never a 500 (round-2 MINOR-R2-1)', async () => {
+      // The other measured body: a numeric `nodeId` reached
+      // `assertPortableSegment` and raised `value.includes is not a function`,
+      // reported as 500 `store_query_failed`.
+      const result = await handleStorePublishPlan(space, {
+        issueId: 'plan-issue',
+        nodes: [
+          {
+            nodeId: 7,
+            kind: 'intent',
+            projectId: PROJECT,
+            targetLineId: LINE,
+            summary: 'Numeric identifier',
+          },
+        ],
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.status).toBe(400);
+      expect(result.code).toBe('plan_node_invalid');
+      expect(result.message).toContain('nodeId');
+      expect(result.message).not.toContain('value.includes is not a function');
+      expect(
+        fs.existsSync(path.join(f.storeRoot, 'rasen', 'issues', 'plan-issue', 'plans', '0001.yaml'))
+      ).toBe(false);
+    });
+
     it('the published revision resolves back through handleStoreExecutionPlan with a verified digest', async () => {
       await handleStorePublishPlan(space, {
         issueId: 'plan-issue',

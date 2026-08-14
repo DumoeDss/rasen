@@ -426,35 +426,136 @@ export function serializeExecutionPlanRevision(value: ExecutionPlanRevisionV1): 
 }
 
 /**
- * Normalizes an authored node into the validated shape, without touching the
- * graph or any Store evidence. `dependsOn` defaults to empty rather than being
- * inferred from declaration order — an implicit chain would be a plan nobody
- * wrote.
+ * Ordering by code point, deliberately NOT `localeCompare`.
+ *
+ * The order this decides is a digest preimage, so it has to be the same order
+ * on every machine that ever publishes. `localeCompare` is a locale-sensitive
+ * collation whose result depends on the runtime's ICU data, which would make
+ * one published plan mint two digests on two machines: exactly the thing an
+ * immutable published digest must never do. Node identifiers and dependency
+ * names are both `parseChangeId` kebab ids (`[a-z0-9-]`), so code-point order
+ * here coincides with byte order in the UTF-8 the digest actually hashes.
+ *
+ * `checkExecutionPlanGraph` above uses `localeCompare` for the order it names
+ * offending nodes IN A MESSAGE, which is human-facing and covers no bytes.
+ */
+function compareCodePoints(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+/**
+ * The candidate object `NodeSchema` is run against: exactly the declared
+ * fields, `dependsOn` defaulted, and `kind` carried through VERBATIM.
+ *
+ * Carrying `kind` verbatim is the point. Rewriting an unrecognized kind into
+ * `intent` is what let a node the product does not define reach
+ * `assertPortableIssueText(undefined, ...)` and raise a `TypeError` instead of
+ * being named. `dependsOn` is passed through rather than spread, so a caller
+ * that sends a string gets a typed refusal rather than a dependency per
+ * character, and one that sends a number gets a refusal rather than a
+ * `TypeError` out of the spread.
+ */
+function planNodeCandidate(input: ExecutionPlanNodeInput): unknown {
+  const raw = input as unknown as Record<string, unknown>;
+  const base = {
+    nodeId: raw.nodeId,
+    kind: raw.kind,
+    projectId: raw.projectId,
+    targetLineId: raw.targetLineId,
+    dependsOn: raw.dependsOn ?? [],
+  };
+  return raw.kind === 'change'
+    ? {
+        ...base,
+        changeInstanceId: raw.changeInstanceId,
+        ...(raw.changeAlias === undefined ? {} : { changeAlias: raw.changeAlias }),
+      }
+    : { ...base, summary: raw.summary };
+}
+
+export interface PlanNodeSchemaProblem {
+  readonly nodeId: string;
+  readonly problem: string;
+}
+
+/**
+ * `NodeSchema` run over authored nodes and REPORTED rather than thrown.
+ *
+ * The same gate `normalizePlanNodes` enforces, in the non-throwing shape an
+ * untrusted-input boundary needs: a caller that must answer "your body is
+ * wrong" with its own status code cannot use a throw, because the throw
+ * arrives indistinguishable from an internal fault. Both go through
+ * `planNodeCandidate` and the one `NodeSchema`, so the two surfaces cannot
+ * drift into disagreeing about what a node is.
+ */
+export function findPlanNodeSchemaProblems(
+  inputs: readonly ExecutionPlanNodeInput[]
+): readonly PlanNodeSchemaProblem[] {
+  const problems: PlanNodeSchemaProblem[] = [];
+  inputs.forEach(input => {
+    const result = NodeSchema.safeParse(planNodeCandidate(input));
+    if (result.success) return;
+    const nodeId = (input as unknown as Record<string, unknown>).nodeId;
+    problems.push({
+      nodeId: typeof nodeId === 'string' && nodeId.length > 0 ? nodeId : '(unnamed node)',
+      problem: formatZodIssues(result.error),
+    });
+  });
+  return problems;
+}
+
+/** One node, through the schema it declares, before any semantic parsing. */
+function parsePlanNode(
+  input: ExecutionPlanNodeInput,
+  index: number
+): z.output<typeof NodeSchema> {
+  const result = NodeSchema.safeParse(planNodeCandidate(input));
+  if (!result.success) {
+    throw planError(`nodes[${index}]`, formatZodIssues(result.error), result.error);
+  }
+  return result.data;
+}
+
+/** A node with its `dependsOn` in canonical order; every other field is kept. */
+function canonicalizeDependsOn(node: ExecutionPlanNode): ExecutionPlanNode {
+  const dependsOn = Object.freeze([...node.dependsOn].sort(compareCodePoints));
+  return node.kind === 'change'
+    ? Object.freeze({ ...node, dependsOn })
+    : Object.freeze({ ...node, dependsOn });
+}
+
+/**
+ * Normalizes authored nodes into the validated CANONICAL shape, without
+ * touching the graph or any Store evidence. `dependsOn` defaults to empty
+ * rather than being inferred from declaration order — an implicit chain would
+ * be a plan nobody wrote.
+ *
+ * Canonical means two spellings of one plan are one plan: nodes are ordered by
+ * `nodeId` and every node's `dependsOn` is ordered, so a plan re-authored with
+ * its nodes listed in a different order publishes the same digest instead of a
+ * second revision that differs in nothing.
+ *
+ * The ordering is sited HERE, at the publication boundary this function's one
+ * production caller is (`publishPlan`), and NOWHERE on the read or serialize
+ * path. Reads verify the recorded digest against the STORED node order, so a
+ * reader that re-ordered would report every revision published before this
+ * rule as a digest mismatch, and a re-ordering serializer would do the same to
+ * its own round trip. Publication is the only moment at which a plan's
+ * canonical form can be decided without rewriting history.
+ *
+ * The schema runs here too, on every caller's behalf. `NodeSchema` was
+ * declared and then bypassed by a cast, which left its rules (a summary at
+ * most 500 characters, a string `nodeId`, a `dependsOn` array of strings)
+ * enforced only much later at serialize time, or not at all before a
+ * `TypeError`. Enforcing at normalization refuses the same inputs the
+ * serializer already refused, but earlier, by field name, and before a single
+ * Git ref is read.
  */
 export function normalizePlanNodes(
   inputs: readonly ExecutionPlanNodeInput[]
 ): readonly ExecutionPlanNode[] {
-  return inputs.map((input, index) =>
-    validateNode(
-      (input.kind === 'change'
-        ? {
-            nodeId: input.nodeId,
-            kind: 'change' as const,
-            projectId: input.projectId,
-            targetLineId: input.targetLineId,
-            changeInstanceId: input.changeInstanceId,
-            ...(input.changeAlias === undefined ? {} : { changeAlias: input.changeAlias }),
-            dependsOn: [...(input.dependsOn ?? [])],
-          }
-        : {
-            nodeId: input.nodeId,
-            kind: 'intent' as const,
-            projectId: input.projectId,
-            targetLineId: input.targetLineId,
-            summary: input.summary,
-            dependsOn: [...(input.dependsOn ?? [])],
-          }) as z.output<typeof NodeSchema>,
-      index
-    )
-  );
+  return inputs
+    .map((input, index) => validateNode(parsePlanNode(input, index), index))
+    .map(canonicalizeDependsOn)
+    .sort((left, right) => compareCodePoints(left.nodeId, right.nodeId));
 }
