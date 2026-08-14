@@ -74,7 +74,13 @@ const KNOWN_SLOW_TEST_WEIGHTS_MS: Record<string, number> = {
   // Same fixture class, plus 26 scenario cases that each commit real Git
   // objects (store-issue-resources, task 8.5): a wide relative-size gap from
   // the 38KB source file to this solo wall-clock is expected, not a fluke.
-  'test/core/store/store-aggregate-query.test.ts': 177060,
+  // Measured TWICE, 1.8x apart on the same machine: 314950ms under task 8.1
+  // and 177060ms under task 8.5. The higher observation is entered, for the
+  // same reason task 8.5 flags `workspace-cleanup` above as under-entered --
+  // a shard planner that underestimates a heavy file skews the whole shard,
+  // whereas overestimating it only costs balance. Do not lower this to the
+  // faster observation without re-measuring on a quiesced tree.
+  'test/core/store/store-aggregate-query.test.ts': 314950,
   // `runCLI` subprocess per case, same underestimated class as the two
   // `workspace-*` CLI entries above (store-issue-resources, task 8.5).
   'test/commands/store-issue-cli.test.ts': 76790,
@@ -82,6 +88,13 @@ const KNOWN_SLOW_TEST_WEIGHTS_MS: Record<string, number> = {
   // Real Git fixture, no CLI subprocess, but still a real worktree/lock
   // read per case (store-issue-resources, task 8.5).
   'test/core/store/store-query-lock-free.test.ts': 52290,
+  // Smallest absolute cost of this change's entries, but the worst RELATIVE
+  // skew in the table: 5949 bytes of source implies a 595ms fallback, while
+  // three of its five cases each build a real second Git worktree, measured
+  // twice at 16150ms and 15960ms solo (store-issue-resources, task 8.5). The
+  // higher observation is entered deliberately — under-entering is the failure
+  // mode the `workspace-cleanup` entry above already demonstrates.
+  'test/core/store/store-issue-scope.test.ts': 16150,
 };
 
 function listTestFiles(directory: string, root: string): TestFile[] {
