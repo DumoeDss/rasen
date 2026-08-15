@@ -1,0 +1,4495 @@
+{
+  "schemaVersion": 2,
+  "transactionId": "df2fcf2b-830a-4105-8b49-fa646735d81a",
+  "planHash": "ca731dc34a7ff4bfc5a075fc51f8211422f9e1791f91bc5593649f31e6725ec3",
+  "change": "store-worktree-bindings-v2",
+  "phase": "complete",
+  "activePath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\fix-ci-shard3\\rasen\\changes\\store-worktree-bindings-v2",
+  "stagePath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\fix-ci-shard3\\rasen\\changes\\archive\\.rasen-archive-stage-df2fcf2b-830a-4105-8b49-fa646735d81a",
+  "finalPath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\fix-ci-shard3\\rasen\\changes\\archive\\2026-08-15-store-worktree-bindings-v2",
+  "ephemeraDisposed": [
+    "auto-run.json"
+  ],
+  "phaseFingerprints": {
+    "payload-copied": {
+      "state": "verified",
+      "scope": "stage",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "f589ba0ce6e0b60afd58590bcce2691eb064f88067c78a39dc21fce245a30434",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "42",
+            "sha256": "efb85837fb57f8be2704994254353cc00715fafb26c19b42fbd85f371a047788"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "20404",
+            "sha256": "b1aa4bbf801785226acadfe29569cec63a1bdac935f3acf8dcc124150edf31ca"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9240",
+            "sha256": "1168e623c6572159a841c076bf3f492c0487e69d0f98bb2c5003bfb3086050a7"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "34898",
+            "sha256": "4a3ee5c54092bd4b5d426029f2c75fdd9f371973db8b7fc846a84db1b24cfa94"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8061",
+            "sha256": "d34e9fb71a0f1b86919c91a0405176c7b0b1fceabadb72e7b8503e3847a5fad7"
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3511",
+            "sha256": "263465a503f977520998db941fd59c1aacec01ae095dd53e08c1f44791b8ba77"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "10670",
+            "sha256": "15ded9fe6a42f75fa7e6d1647ee684afde1aaf36159981a78cbdb1427e7a76a0"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "19636",
+            "sha256": "7a7fb624b088d6a318ec29d6646687b3f8458feeef8362f5e2552b3b0ddb02c8"
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4221",
+            "sha256": "6f3b232e0a54c07749e25b2fd05bab9aa0e9c66719957425c5fb1437d8a621aa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "17166",
+            "sha256": "882b83c022154691b42d6e773c013832e0eae1d6a7da16306ecf6dd8eba67263"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "562949963406456",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "40c91352690869d12abbb479a9ec1a5be9e5cce27c57b8b604fa393e81ef0d02",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949963406457",
+              "mode": "33206",
+              "size": "42",
+              "mtimeNs": "1786777936093655500",
+              "ctimeNs": "1786777936093655500"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949963406458",
+              "mode": "33206",
+              "size": "20404",
+              "mtimeNs": "1786777936095251300",
+              "ctimeNs": "1786777936095251300"
+            }
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949963406460",
+              "mode": "33206",
+              "size": "9240",
+              "mtimeNs": "1786777936096800200",
+              "ctimeNs": "1786777936096800200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949963406461",
+              "mode": "33206",
+              "size": "34898",
+              "mtimeNs": "1786777936097931000",
+              "ctimeNs": "1786777936097931000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949963406462",
+              "mode": "33206",
+              "size": "8061",
+              "mtimeNs": "1786777936101038200",
+              "ctimeNs": "1786777936101038200"
+            }
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949963406463",
+              "mode": "33206",
+              "size": "3511",
+              "mtimeNs": "1786777936102050700",
+              "ctimeNs": "1786777936102050700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949963406459",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949963406464",
+              "mode": "33206",
+              "size": "10670",
+              "mtimeNs": "1786777936103560400",
+              "ctimeNs": "1786777936103560400"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949963406467",
+              "mode": "33206",
+              "size": "19636",
+              "mtimeNs": "1786777936106218100",
+              "ctimeNs": "1786777936106218100"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949963406466",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949963406469",
+              "mode": "33206",
+              "size": "4221",
+              "mtimeNs": "1786777936109411900",
+              "ctimeNs": "1786777936109411900"
+            }
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949963406468",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949963406465",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949963406470",
+              "mode": "33206",
+              "size": "17166",
+              "mtimeNs": "1786782193043439700",
+              "ctimeNs": "1786782193043439700"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "f589ba0ce6e0b60afd58590bcce2691eb064f88067c78a39dc21fce245a30434",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "42",
+            "sha256": "efb85837fb57f8be2704994254353cc00715fafb26c19b42fbd85f371a047788"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "20404",
+            "sha256": "b1aa4bbf801785226acadfe29569cec63a1bdac935f3acf8dcc124150edf31ca"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9240",
+            "sha256": "1168e623c6572159a841c076bf3f492c0487e69d0f98bb2c5003bfb3086050a7"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "34898",
+            "sha256": "4a3ee5c54092bd4b5d426029f2c75fdd9f371973db8b7fc846a84db1b24cfa94"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8061",
+            "sha256": "d34e9fb71a0f1b86919c91a0405176c7b0b1fceabadb72e7b8503e3847a5fad7"
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3511",
+            "sha256": "263465a503f977520998db941fd59c1aacec01ae095dd53e08c1f44791b8ba77"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "10670",
+            "sha256": "15ded9fe6a42f75fa7e6d1647ee684afde1aaf36159981a78cbdb1427e7a76a0"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "19636",
+            "sha256": "7a7fb624b088d6a318ec29d6646687b3f8458feeef8362f5e2552b3b0ddb02c8"
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4221",
+            "sha256": "6f3b232e0a54c07749e25b2fd05bab9aa0e9c66719957425c5fb1437d8a621aa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "17166",
+            "sha256": "882b83c022154691b42d6e773c013832e0eae1d6a7da16306ecf6dd8eba67263"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "3096224749231385",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "cf5ad9d3829ff6283451bf576ae2bc581db551332def1734fbdb79ebec2c9886",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231397",
+              "mode": "33206",
+              "size": "42",
+              "mtimeNs": "1786777936093655500",
+              "ctimeNs": "1786777936093655500"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231400",
+              "mode": "33206",
+              "size": "20404",
+              "mtimeNs": "1786777936095251300",
+              "ctimeNs": "1786777936095251300"
+            }
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231405",
+              "mode": "33206",
+              "size": "9240",
+              "mtimeNs": "1786777936096800200",
+              "ctimeNs": "1786777936096800200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231406",
+              "mode": "33206",
+              "size": "34898",
+              "mtimeNs": "1786777936097931000",
+              "ctimeNs": "1786777936097931000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231409",
+              "mode": "33206",
+              "size": "8061",
+              "mtimeNs": "1786777936101038200",
+              "ctimeNs": "1786777936101038200"
+            }
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231411",
+              "mode": "33206",
+              "size": "3511",
+              "mtimeNs": "1786777936102050700",
+              "ctimeNs": "1786777936102050700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231402",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231413",
+              "mode": "33206",
+              "size": "10670",
+              "mtimeNs": "1786777936103560400",
+              "ctimeNs": "1786777936103560400"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231421",
+              "mode": "33206",
+              "size": "19636",
+              "mtimeNs": "1786777936106218100",
+              "ctimeNs": "1786777936106218100"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231418",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231424",
+              "mode": "33206",
+              "size": "4221",
+              "mtimeNs": "1786777936109411900",
+              "ctimeNs": "1786777936109411900"
+            }
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231423",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231416",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231428",
+              "mode": "33206",
+              "size": "17166",
+              "mtimeNs": "1786782193043439700",
+              "ctimeNs": "1786782193043439700"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "f589ba0ce6e0b60afd58590bcce2691eb064f88067c78a39dc21fce245a30434",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "42",
+            "sha256": "efb85837fb57f8be2704994254353cc00715fafb26c19b42fbd85f371a047788"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "20404",
+            "sha256": "b1aa4bbf801785226acadfe29569cec63a1bdac935f3acf8dcc124150edf31ca"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9240",
+            "sha256": "1168e623c6572159a841c076bf3f492c0487e69d0f98bb2c5003bfb3086050a7"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "34898",
+            "sha256": "4a3ee5c54092bd4b5d426029f2c75fdd9f371973db8b7fc846a84db1b24cfa94"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8061",
+            "sha256": "d34e9fb71a0f1b86919c91a0405176c7b0b1fceabadb72e7b8503e3847a5fad7"
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3511",
+            "sha256": "263465a503f977520998db941fd59c1aacec01ae095dd53e08c1f44791b8ba77"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "10670",
+            "sha256": "15ded9fe6a42f75fa7e6d1647ee684afde1aaf36159981a78cbdb1427e7a76a0"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "19636",
+            "sha256": "7a7fb624b088d6a318ec29d6646687b3f8458feeef8362f5e2552b3b0ddb02c8"
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4221",
+            "sha256": "6f3b232e0a54c07749e25b2fd05bab9aa0e9c66719957425c5fb1437d8a621aa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "17166",
+            "sha256": "882b83c022154691b42d6e773c013832e0eae1d6a7da16306ecf6dd8eba67263"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "3096224749231385",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "cf5ad9d3829ff6283451bf576ae2bc581db551332def1734fbdb79ebec2c9886",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231397",
+              "mode": "33206",
+              "size": "42",
+              "mtimeNs": "1786777936093655500",
+              "ctimeNs": "1786777936093655500"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231400",
+              "mode": "33206",
+              "size": "20404",
+              "mtimeNs": "1786777936095251300",
+              "ctimeNs": "1786777936095251300"
+            }
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231405",
+              "mode": "33206",
+              "size": "9240",
+              "mtimeNs": "1786777936096800200",
+              "ctimeNs": "1786777936096800200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231406",
+              "mode": "33206",
+              "size": "34898",
+              "mtimeNs": "1786777936097931000",
+              "ctimeNs": "1786777936097931000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231409",
+              "mode": "33206",
+              "size": "8061",
+              "mtimeNs": "1786777936101038200",
+              "ctimeNs": "1786777936101038200"
+            }
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231411",
+              "mode": "33206",
+              "size": "3511",
+              "mtimeNs": "1786777936102050700",
+              "ctimeNs": "1786777936102050700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231402",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231413",
+              "mode": "33206",
+              "size": "10670",
+              "mtimeNs": "1786777936103560400",
+              "ctimeNs": "1786777936103560400"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231421",
+              "mode": "33206",
+              "size": "19636",
+              "mtimeNs": "1786777936106218100",
+              "ctimeNs": "1786777936106218100"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231418",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231424",
+              "mode": "33206",
+              "size": "4221",
+              "mtimeNs": "1786777936109411900",
+              "ctimeNs": "1786777936109411900"
+            }
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231423",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231416",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231428",
+              "mode": "33206",
+              "size": "17166",
+              "mtimeNs": "1786782193043439700",
+              "ctimeNs": "1786782193043439700"
+            }
+          }
+        ]
+      }
+    },
+    "handoff-finalized": {
+      "state": "verified",
+      "scope": "stage",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "f589ba0ce6e0b60afd58590bcce2691eb064f88067c78a39dc21fce245a30434",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "42",
+            "sha256": "efb85837fb57f8be2704994254353cc00715fafb26c19b42fbd85f371a047788"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "20404",
+            "sha256": "b1aa4bbf801785226acadfe29569cec63a1bdac935f3acf8dcc124150edf31ca"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9240",
+            "sha256": "1168e623c6572159a841c076bf3f492c0487e69d0f98bb2c5003bfb3086050a7"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "34898",
+            "sha256": "4a3ee5c54092bd4b5d426029f2c75fdd9f371973db8b7fc846a84db1b24cfa94"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8061",
+            "sha256": "d34e9fb71a0f1b86919c91a0405176c7b0b1fceabadb72e7b8503e3847a5fad7"
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3511",
+            "sha256": "263465a503f977520998db941fd59c1aacec01ae095dd53e08c1f44791b8ba77"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "10670",
+            "sha256": "15ded9fe6a42f75fa7e6d1647ee684afde1aaf36159981a78cbdb1427e7a76a0"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "19636",
+            "sha256": "7a7fb624b088d6a318ec29d6646687b3f8458feeef8362f5e2552b3b0ddb02c8"
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4221",
+            "sha256": "6f3b232e0a54c07749e25b2fd05bab9aa0e9c66719957425c5fb1437d8a621aa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "17166",
+            "sha256": "882b83c022154691b42d6e773c013832e0eae1d6a7da16306ecf6dd8eba67263"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "3096224749231385",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "cf5ad9d3829ff6283451bf576ae2bc581db551332def1734fbdb79ebec2c9886",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231397",
+              "mode": "33206",
+              "size": "42",
+              "mtimeNs": "1786777936093655500",
+              "ctimeNs": "1786777936093655500"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231400",
+              "mode": "33206",
+              "size": "20404",
+              "mtimeNs": "1786777936095251300",
+              "ctimeNs": "1786777936095251300"
+            }
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231405",
+              "mode": "33206",
+              "size": "9240",
+              "mtimeNs": "1786777936096800200",
+              "ctimeNs": "1786777936096800200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231406",
+              "mode": "33206",
+              "size": "34898",
+              "mtimeNs": "1786777936097931000",
+              "ctimeNs": "1786777936097931000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231409",
+              "mode": "33206",
+              "size": "8061",
+              "mtimeNs": "1786777936101038200",
+              "ctimeNs": "1786777936101038200"
+            }
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231411",
+              "mode": "33206",
+              "size": "3511",
+              "mtimeNs": "1786777936102050700",
+              "ctimeNs": "1786777936102050700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231402",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231413",
+              "mode": "33206",
+              "size": "10670",
+              "mtimeNs": "1786777936103560400",
+              "ctimeNs": "1786777936103560400"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231421",
+              "mode": "33206",
+              "size": "19636",
+              "mtimeNs": "1786777936106218100",
+              "ctimeNs": "1786777936106218100"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231418",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231424",
+              "mode": "33206",
+              "size": "4221",
+              "mtimeNs": "1786777936109411900",
+              "ctimeNs": "1786777936109411900"
+            }
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231423",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231416",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231428",
+              "mode": "33206",
+              "size": "17166",
+              "mtimeNs": "1786782193043439700",
+              "ctimeNs": "1786782193043439700"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "f589ba0ce6e0b60afd58590bcce2691eb064f88067c78a39dc21fce245a30434",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "42",
+            "sha256": "efb85837fb57f8be2704994254353cc00715fafb26c19b42fbd85f371a047788"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "20404",
+            "sha256": "b1aa4bbf801785226acadfe29569cec63a1bdac935f3acf8dcc124150edf31ca"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9240",
+            "sha256": "1168e623c6572159a841c076bf3f492c0487e69d0f98bb2c5003bfb3086050a7"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "34898",
+            "sha256": "4a3ee5c54092bd4b5d426029f2c75fdd9f371973db8b7fc846a84db1b24cfa94"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8061",
+            "sha256": "d34e9fb71a0f1b86919c91a0405176c7b0b1fceabadb72e7b8503e3847a5fad7"
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3511",
+            "sha256": "263465a503f977520998db941fd59c1aacec01ae095dd53e08c1f44791b8ba77"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "10670",
+            "sha256": "15ded9fe6a42f75fa7e6d1647ee684afde1aaf36159981a78cbdb1427e7a76a0"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "19636",
+            "sha256": "7a7fb624b088d6a318ec29d6646687b3f8458feeef8362f5e2552b3b0ddb02c8"
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4221",
+            "sha256": "6f3b232e0a54c07749e25b2fd05bab9aa0e9c66719957425c5fb1437d8a621aa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "17166",
+            "sha256": "882b83c022154691b42d6e773c013832e0eae1d6a7da16306ecf6dd8eba67263"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "3096224749231385",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "cf5ad9d3829ff6283451bf576ae2bc581db551332def1734fbdb79ebec2c9886",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231397",
+              "mode": "33206",
+              "size": "42",
+              "mtimeNs": "1786777936093655500",
+              "ctimeNs": "1786777936093655500"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231400",
+              "mode": "33206",
+              "size": "20404",
+              "mtimeNs": "1786777936095251300",
+              "ctimeNs": "1786777936095251300"
+            }
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231405",
+              "mode": "33206",
+              "size": "9240",
+              "mtimeNs": "1786777936096800200",
+              "ctimeNs": "1786777936096800200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231406",
+              "mode": "33206",
+              "size": "34898",
+              "mtimeNs": "1786777936097931000",
+              "ctimeNs": "1786777936097931000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231409",
+              "mode": "33206",
+              "size": "8061",
+              "mtimeNs": "1786777936101038200",
+              "ctimeNs": "1786777936101038200"
+            }
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231411",
+              "mode": "33206",
+              "size": "3511",
+              "mtimeNs": "1786777936102050700",
+              "ctimeNs": "1786777936102050700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231402",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231413",
+              "mode": "33206",
+              "size": "10670",
+              "mtimeNs": "1786777936103560400",
+              "ctimeNs": "1786777936103560400"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231421",
+              "mode": "33206",
+              "size": "19636",
+              "mtimeNs": "1786777936106218100",
+              "ctimeNs": "1786777936106218100"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231418",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231424",
+              "mode": "33206",
+              "size": "4221",
+              "mtimeNs": "1786777936109411900",
+              "ctimeNs": "1786777936109411900"
+            }
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231423",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231416",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231428",
+              "mode": "33206",
+              "size": "17166",
+              "mtimeNs": "1786782193043439700",
+              "ctimeNs": "1786782193043439700"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "f589ba0ce6e0b60afd58590bcce2691eb064f88067c78a39dc21fce245a30434",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "42",
+            "sha256": "efb85837fb57f8be2704994254353cc00715fafb26c19b42fbd85f371a047788"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "20404",
+            "sha256": "b1aa4bbf801785226acadfe29569cec63a1bdac935f3acf8dcc124150edf31ca"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9240",
+            "sha256": "1168e623c6572159a841c076bf3f492c0487e69d0f98bb2c5003bfb3086050a7"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "34898",
+            "sha256": "4a3ee5c54092bd4b5d426029f2c75fdd9f371973db8b7fc846a84db1b24cfa94"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8061",
+            "sha256": "d34e9fb71a0f1b86919c91a0405176c7b0b1fceabadb72e7b8503e3847a5fad7"
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3511",
+            "sha256": "263465a503f977520998db941fd59c1aacec01ae095dd53e08c1f44791b8ba77"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "10670",
+            "sha256": "15ded9fe6a42f75fa7e6d1647ee684afde1aaf36159981a78cbdb1427e7a76a0"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "19636",
+            "sha256": "7a7fb624b088d6a318ec29d6646687b3f8458feeef8362f5e2552b3b0ddb02c8"
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4221",
+            "sha256": "6f3b232e0a54c07749e25b2fd05bab9aa0e9c66719957425c5fb1437d8a621aa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "17166",
+            "sha256": "882b83c022154691b42d6e773c013832e0eae1d6a7da16306ecf6dd8eba67263"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "3096224749231385",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "cf5ad9d3829ff6283451bf576ae2bc581db551332def1734fbdb79ebec2c9886",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231397",
+              "mode": "33206",
+              "size": "42",
+              "mtimeNs": "1786777936093655500",
+              "ctimeNs": "1786777936093655500"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231400",
+              "mode": "33206",
+              "size": "20404",
+              "mtimeNs": "1786777936095251300",
+              "ctimeNs": "1786777936095251300"
+            }
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231405",
+              "mode": "33206",
+              "size": "9240",
+              "mtimeNs": "1786777936096800200",
+              "ctimeNs": "1786777936096800200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231406",
+              "mode": "33206",
+              "size": "34898",
+              "mtimeNs": "1786777936097931000",
+              "ctimeNs": "1786777936097931000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231409",
+              "mode": "33206",
+              "size": "8061",
+              "mtimeNs": "1786777936101038200",
+              "ctimeNs": "1786777936101038200"
+            }
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231411",
+              "mode": "33206",
+              "size": "3511",
+              "mtimeNs": "1786777936102050700",
+              "ctimeNs": "1786777936102050700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231402",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231413",
+              "mode": "33206",
+              "size": "10670",
+              "mtimeNs": "1786777936103560400",
+              "ctimeNs": "1786777936103560400"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231421",
+              "mode": "33206",
+              "size": "19636",
+              "mtimeNs": "1786777936106218100",
+              "ctimeNs": "1786777936106218100"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231418",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231424",
+              "mode": "33206",
+              "size": "4221",
+              "mtimeNs": "1786777936109411900",
+              "ctimeNs": "1786777936109411900"
+            }
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231423",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231416",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231428",
+              "mode": "33206",
+              "size": "17166",
+              "mtimeNs": "1786782193043439700",
+              "ctimeNs": "1786782193043439700"
+            }
+          }
+        ]
+      }
+    },
+    "evidence-finalized": {
+      "state": "verified",
+      "scope": "stage",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "f589ba0ce6e0b60afd58590bcce2691eb064f88067c78a39dc21fce245a30434",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "42",
+            "sha256": "efb85837fb57f8be2704994254353cc00715fafb26c19b42fbd85f371a047788"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "20404",
+            "sha256": "b1aa4bbf801785226acadfe29569cec63a1bdac935f3acf8dcc124150edf31ca"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9240",
+            "sha256": "1168e623c6572159a841c076bf3f492c0487e69d0f98bb2c5003bfb3086050a7"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "34898",
+            "sha256": "4a3ee5c54092bd4b5d426029f2c75fdd9f371973db8b7fc846a84db1b24cfa94"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8061",
+            "sha256": "d34e9fb71a0f1b86919c91a0405176c7b0b1fceabadb72e7b8503e3847a5fad7"
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3511",
+            "sha256": "263465a503f977520998db941fd59c1aacec01ae095dd53e08c1f44791b8ba77"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "10670",
+            "sha256": "15ded9fe6a42f75fa7e6d1647ee684afde1aaf36159981a78cbdb1427e7a76a0"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "19636",
+            "sha256": "7a7fb624b088d6a318ec29d6646687b3f8458feeef8362f5e2552b3b0ddb02c8"
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4221",
+            "sha256": "6f3b232e0a54c07749e25b2fd05bab9aa0e9c66719957425c5fb1437d8a621aa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "17166",
+            "sha256": "882b83c022154691b42d6e773c013832e0eae1d6a7da16306ecf6dd8eba67263"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "3096224749231385",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "cf5ad9d3829ff6283451bf576ae2bc581db551332def1734fbdb79ebec2c9886",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231397",
+              "mode": "33206",
+              "size": "42",
+              "mtimeNs": "1786777936093655500",
+              "ctimeNs": "1786777936093655500"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231400",
+              "mode": "33206",
+              "size": "20404",
+              "mtimeNs": "1786777936095251300",
+              "ctimeNs": "1786777936095251300"
+            }
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231405",
+              "mode": "33206",
+              "size": "9240",
+              "mtimeNs": "1786777936096800200",
+              "ctimeNs": "1786777936096800200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231406",
+              "mode": "33206",
+              "size": "34898",
+              "mtimeNs": "1786777936097931000",
+              "ctimeNs": "1786777936097931000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231409",
+              "mode": "33206",
+              "size": "8061",
+              "mtimeNs": "1786777936101038200",
+              "ctimeNs": "1786777936101038200"
+            }
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231411",
+              "mode": "33206",
+              "size": "3511",
+              "mtimeNs": "1786777936102050700",
+              "ctimeNs": "1786777936102050700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231402",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231413",
+              "mode": "33206",
+              "size": "10670",
+              "mtimeNs": "1786777936103560400",
+              "ctimeNs": "1786777936103560400"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231421",
+              "mode": "33206",
+              "size": "19636",
+              "mtimeNs": "1786777936106218100",
+              "ctimeNs": "1786777936106218100"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231418",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231424",
+              "mode": "33206",
+              "size": "4221",
+              "mtimeNs": "1786777936109411900",
+              "ctimeNs": "1786777936109411900"
+            }
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231423",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231416",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231428",
+              "mode": "33206",
+              "size": "17166",
+              "mtimeNs": "1786782193043439700",
+              "ctimeNs": "1786782193043439700"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "d57629ddb66b7150d58a57c00de957fc6c5e55bac1afd73f141ec4f5334c820e",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "b1777431ad8d42b9049ad7b3af43297208315fbffda6b290407ce93d4cd0b3dd"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "20404",
+            "sha256": "b1aa4bbf801785226acadfe29569cec63a1bdac935f3acf8dcc124150edf31ca"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9240",
+            "sha256": "1168e623c6572159a841c076bf3f492c0487e69d0f98bb2c5003bfb3086050a7"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "34898",
+            "sha256": "4a3ee5c54092bd4b5d426029f2c75fdd9f371973db8b7fc846a84db1b24cfa94"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8409",
+            "sha256": "969caa1ddf7d140f39ce519a46283f1a0ed4b2089eb5c1146ce9a093c9086923"
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3511",
+            "sha256": "263465a503f977520998db941fd59c1aacec01ae095dd53e08c1f44791b8ba77"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "10670",
+            "sha256": "15ded9fe6a42f75fa7e6d1647ee684afde1aaf36159981a78cbdb1427e7a76a0"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "19636",
+            "sha256": "7a7fb624b088d6a318ec29d6646687b3f8458feeef8362f5e2552b3b0ddb02c8"
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4221",
+            "sha256": "6f3b232e0a54c07749e25b2fd05bab9aa0e9c66719957425c5fb1437d8a621aa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "17166",
+            "sha256": "882b83c022154691b42d6e773c013832e0eae1d6a7da16306ecf6dd8eba67263"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "3096224749231385",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "b0f29a8386f92f539a65a45b42d4250b3a5a148175e58c080bd6105fa9f7556a",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231397",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786782258437293600",
+              "ctimeNs": "1786782258437293600"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231400",
+              "mode": "33206",
+              "size": "20404",
+              "mtimeNs": "1786777936095251300",
+              "ctimeNs": "1786777936095251300"
+            }
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231405",
+              "mode": "33206",
+              "size": "9240",
+              "mtimeNs": "1786777936096800200",
+              "ctimeNs": "1786777936096800200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231406",
+              "mode": "33206",
+              "size": "34898",
+              "mtimeNs": "1786777936097931000",
+              "ctimeNs": "1786777936097931000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231409",
+              "mode": "33206",
+              "size": "8409",
+              "mtimeNs": "1786782258428954900",
+              "ctimeNs": "1786782258428954900"
+            }
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231411",
+              "mode": "33206",
+              "size": "3511",
+              "mtimeNs": "1786777936102050700",
+              "ctimeNs": "1786777936102050700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231402",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231413",
+              "mode": "33206",
+              "size": "10670",
+              "mtimeNs": "1786777936103560400",
+              "ctimeNs": "1786777936103560400"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231421",
+              "mode": "33206",
+              "size": "19636",
+              "mtimeNs": "1786777936106218100",
+              "ctimeNs": "1786777936106218100"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231418",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231424",
+              "mode": "33206",
+              "size": "4221",
+              "mtimeNs": "1786777936109411900",
+              "ctimeNs": "1786777936109411900"
+            }
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231423",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231416",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231428",
+              "mode": "33206",
+              "size": "17166",
+              "mtimeNs": "1786782193043439700",
+              "ctimeNs": "1786782193043439700"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "d57629ddb66b7150d58a57c00de957fc6c5e55bac1afd73f141ec4f5334c820e",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "b1777431ad8d42b9049ad7b3af43297208315fbffda6b290407ce93d4cd0b3dd"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "20404",
+            "sha256": "b1aa4bbf801785226acadfe29569cec63a1bdac935f3acf8dcc124150edf31ca"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9240",
+            "sha256": "1168e623c6572159a841c076bf3f492c0487e69d0f98bb2c5003bfb3086050a7"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "34898",
+            "sha256": "4a3ee5c54092bd4b5d426029f2c75fdd9f371973db8b7fc846a84db1b24cfa94"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8409",
+            "sha256": "969caa1ddf7d140f39ce519a46283f1a0ed4b2089eb5c1146ce9a093c9086923"
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3511",
+            "sha256": "263465a503f977520998db941fd59c1aacec01ae095dd53e08c1f44791b8ba77"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "10670",
+            "sha256": "15ded9fe6a42f75fa7e6d1647ee684afde1aaf36159981a78cbdb1427e7a76a0"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "19636",
+            "sha256": "7a7fb624b088d6a318ec29d6646687b3f8458feeef8362f5e2552b3b0ddb02c8"
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4221",
+            "sha256": "6f3b232e0a54c07749e25b2fd05bab9aa0e9c66719957425c5fb1437d8a621aa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "17166",
+            "sha256": "882b83c022154691b42d6e773c013832e0eae1d6a7da16306ecf6dd8eba67263"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "3096224749231385",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "b0f29a8386f92f539a65a45b42d4250b3a5a148175e58c080bd6105fa9f7556a",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231397",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786782258437293600",
+              "ctimeNs": "1786782258437293600"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231400",
+              "mode": "33206",
+              "size": "20404",
+              "mtimeNs": "1786777936095251300",
+              "ctimeNs": "1786777936095251300"
+            }
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231405",
+              "mode": "33206",
+              "size": "9240",
+              "mtimeNs": "1786777936096800200",
+              "ctimeNs": "1786777936096800200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231406",
+              "mode": "33206",
+              "size": "34898",
+              "mtimeNs": "1786777936097931000",
+              "ctimeNs": "1786777936097931000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231409",
+              "mode": "33206",
+              "size": "8409",
+              "mtimeNs": "1786782258428954900",
+              "ctimeNs": "1786782258428954900"
+            }
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231411",
+              "mode": "33206",
+              "size": "3511",
+              "mtimeNs": "1786777936102050700",
+              "ctimeNs": "1786777936102050700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231402",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231413",
+              "mode": "33206",
+              "size": "10670",
+              "mtimeNs": "1786777936103560400",
+              "ctimeNs": "1786777936103560400"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231421",
+              "mode": "33206",
+              "size": "19636",
+              "mtimeNs": "1786777936106218100",
+              "ctimeNs": "1786777936106218100"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231418",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231424",
+              "mode": "33206",
+              "size": "4221",
+              "mtimeNs": "1786777936109411900",
+              "ctimeNs": "1786777936109411900"
+            }
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231423",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231416",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231428",
+              "mode": "33206",
+              "size": "17166",
+              "mtimeNs": "1786782193043439700",
+              "ctimeNs": "1786782193043439700"
+            }
+          }
+        ]
+      }
+    },
+    "final-reserved": {
+      "state": "verified",
+      "scope": "final",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "d57629ddb66b7150d58a57c00de957fc6c5e55bac1afd73f141ec4f5334c820e",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "b1777431ad8d42b9049ad7b3af43297208315fbffda6b290407ce93d4cd0b3dd"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "20404",
+            "sha256": "b1aa4bbf801785226acadfe29569cec63a1bdac935f3acf8dcc124150edf31ca"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9240",
+            "sha256": "1168e623c6572159a841c076bf3f492c0487e69d0f98bb2c5003bfb3086050a7"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "34898",
+            "sha256": "4a3ee5c54092bd4b5d426029f2c75fdd9f371973db8b7fc846a84db1b24cfa94"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8409",
+            "sha256": "969caa1ddf7d140f39ce519a46283f1a0ed4b2089eb5c1146ce9a093c9086923"
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3511",
+            "sha256": "263465a503f977520998db941fd59c1aacec01ae095dd53e08c1f44791b8ba77"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "10670",
+            "sha256": "15ded9fe6a42f75fa7e6d1647ee684afde1aaf36159981a78cbdb1427e7a76a0"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "19636",
+            "sha256": "7a7fb624b088d6a318ec29d6646687b3f8458feeef8362f5e2552b3b0ddb02c8"
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4221",
+            "sha256": "6f3b232e0a54c07749e25b2fd05bab9aa0e9c66719957425c5fb1437d8a621aa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "17166",
+            "sha256": "882b83c022154691b42d6e773c013832e0eae1d6a7da16306ecf6dd8eba67263"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "3096224749231385",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "b0f29a8386f92f539a65a45b42d4250b3a5a148175e58c080bd6105fa9f7556a",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231397",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786782258437293600",
+              "ctimeNs": "1786782258437293600"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231400",
+              "mode": "33206",
+              "size": "20404",
+              "mtimeNs": "1786777936095251300",
+              "ctimeNs": "1786777936095251300"
+            }
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231405",
+              "mode": "33206",
+              "size": "9240",
+              "mtimeNs": "1786777936096800200",
+              "ctimeNs": "1786777936096800200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231406",
+              "mode": "33206",
+              "size": "34898",
+              "mtimeNs": "1786777936097931000",
+              "ctimeNs": "1786777936097931000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231409",
+              "mode": "33206",
+              "size": "8409",
+              "mtimeNs": "1786782258428954900",
+              "ctimeNs": "1786782258428954900"
+            }
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231411",
+              "mode": "33206",
+              "size": "3511",
+              "mtimeNs": "1786777936102050700",
+              "ctimeNs": "1786777936102050700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231402",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231413",
+              "mode": "33206",
+              "size": "10670",
+              "mtimeNs": "1786777936103560400",
+              "ctimeNs": "1786777936103560400"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231421",
+              "mode": "33206",
+              "size": "19636",
+              "mtimeNs": "1786777936106218100",
+              "ctimeNs": "1786777936106218100"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231418",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231424",
+              "mode": "33206",
+              "size": "4221",
+              "mtimeNs": "1786777936109411900",
+              "ctimeNs": "1786777936109411900"
+            }
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231423",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231416",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224749231428",
+              "mode": "33206",
+              "size": "17166",
+              "mtimeNs": "1786782193043439700",
+              "ctimeNs": "1786782193043439700"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "d57629ddb66b7150d58a57c00de957fc6c5e55bac1afd73f141ec4f5334c820e",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "b1777431ad8d42b9049ad7b3af43297208315fbffda6b290407ce93d4cd0b3dd"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "20404",
+            "sha256": "b1aa4bbf801785226acadfe29569cec63a1bdac935f3acf8dcc124150edf31ca"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9240",
+            "sha256": "1168e623c6572159a841c076bf3f492c0487e69d0f98bb2c5003bfb3086050a7"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "34898",
+            "sha256": "4a3ee5c54092bd4b5d426029f2c75fdd9f371973db8b7fc846a84db1b24cfa94"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8409",
+            "sha256": "969caa1ddf7d140f39ce519a46283f1a0ed4b2089eb5c1146ce9a093c9086923"
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3511",
+            "sha256": "263465a503f977520998db941fd59c1aacec01ae095dd53e08c1f44791b8ba77"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "10670",
+            "sha256": "15ded9fe6a42f75fa7e6d1647ee684afde1aaf36159981a78cbdb1427e7a76a0"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "19636",
+            "sha256": "7a7fb624b088d6a318ec29d6646687b3f8458feeef8362f5e2552b3b0ddb02c8"
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4221",
+            "sha256": "6f3b232e0a54c07749e25b2fd05bab9aa0e9c66719957425c5fb1437d8a621aa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "17166",
+            "sha256": "882b83c022154691b42d6e773c013832e0eae1d6a7da16306ecf6dd8eba67263"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "3377699725942139",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "9029cbfcc34d39d8ced8c658744a6175cfb8840504c27968440d8f3d7572f2d5",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099539",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786782258437293600",
+              "ctimeNs": "1786782258437293600"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099541",
+              "mode": "33206",
+              "size": "20404",
+              "mtimeNs": "1786777936095251300",
+              "ctimeNs": "1786777936095251300"
+            }
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099543",
+              "mode": "33206",
+              "size": "9240",
+              "mtimeNs": "1786777936096800200",
+              "ctimeNs": "1786777936096800200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099544",
+              "mode": "33206",
+              "size": "34898",
+              "mtimeNs": "1786777936097931000",
+              "ctimeNs": "1786777936097931000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099545",
+              "mode": "33206",
+              "size": "8409",
+              "mtimeNs": "1786782258428954900",
+              "ctimeNs": "1786782258428954900"
+            }
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099546",
+              "mode": "33206",
+              "size": "3511",
+              "mtimeNs": "1786777936102050700",
+              "ctimeNs": "1786777936102050700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099542",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099547",
+              "mode": "33206",
+              "size": "10670",
+              "mtimeNs": "1786777936103560400",
+              "ctimeNs": "1786777936103560400"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099554",
+              "mode": "33206",
+              "size": "19636",
+              "mtimeNs": "1786777936106218100",
+              "ctimeNs": "1786777936106218100"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099549",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099560",
+              "mode": "33206",
+              "size": "4221",
+              "mtimeNs": "1786777936109411900",
+              "ctimeNs": "1786777936109411900"
+            }
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099559",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099548",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "6192449493047601",
+              "mode": "33206",
+              "size": "17166",
+              "mtimeNs": "1786782193043439700",
+              "ctimeNs": "1786782193043439700"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "d57629ddb66b7150d58a57c00de957fc6c5e55bac1afd73f141ec4f5334c820e",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "b1777431ad8d42b9049ad7b3af43297208315fbffda6b290407ce93d4cd0b3dd"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "20404",
+            "sha256": "b1aa4bbf801785226acadfe29569cec63a1bdac935f3acf8dcc124150edf31ca"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9240",
+            "sha256": "1168e623c6572159a841c076bf3f492c0487e69d0f98bb2c5003bfb3086050a7"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "34898",
+            "sha256": "4a3ee5c54092bd4b5d426029f2c75fdd9f371973db8b7fc846a84db1b24cfa94"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8409",
+            "sha256": "969caa1ddf7d140f39ce519a46283f1a0ed4b2089eb5c1146ce9a093c9086923"
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3511",
+            "sha256": "263465a503f977520998db941fd59c1aacec01ae095dd53e08c1f44791b8ba77"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "10670",
+            "sha256": "15ded9fe6a42f75fa7e6d1647ee684afde1aaf36159981a78cbdb1427e7a76a0"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "19636",
+            "sha256": "7a7fb624b088d6a318ec29d6646687b3f8458feeef8362f5e2552b3b0ddb02c8"
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4221",
+            "sha256": "6f3b232e0a54c07749e25b2fd05bab9aa0e9c66719957425c5fb1437d8a621aa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "17166",
+            "sha256": "882b83c022154691b42d6e773c013832e0eae1d6a7da16306ecf6dd8eba67263"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "3377699725942139",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "9029cbfcc34d39d8ced8c658744a6175cfb8840504c27968440d8f3d7572f2d5",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099539",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786782258437293600",
+              "ctimeNs": "1786782258437293600"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099541",
+              "mode": "33206",
+              "size": "20404",
+              "mtimeNs": "1786777936095251300",
+              "ctimeNs": "1786777936095251300"
+            }
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099543",
+              "mode": "33206",
+              "size": "9240",
+              "mtimeNs": "1786777936096800200",
+              "ctimeNs": "1786777936096800200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099544",
+              "mode": "33206",
+              "size": "34898",
+              "mtimeNs": "1786777936097931000",
+              "ctimeNs": "1786777936097931000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099545",
+              "mode": "33206",
+              "size": "8409",
+              "mtimeNs": "1786782258428954900",
+              "ctimeNs": "1786782258428954900"
+            }
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099546",
+              "mode": "33206",
+              "size": "3511",
+              "mtimeNs": "1786777936102050700",
+              "ctimeNs": "1786777936102050700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099542",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099547",
+              "mode": "33206",
+              "size": "10670",
+              "mtimeNs": "1786777936103560400",
+              "ctimeNs": "1786777936103560400"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099554",
+              "mode": "33206",
+              "size": "19636",
+              "mtimeNs": "1786777936106218100",
+              "ctimeNs": "1786777936106218100"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099549",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099560",
+              "mode": "33206",
+              "size": "4221",
+              "mtimeNs": "1786777936109411900",
+              "ctimeNs": "1786777936109411900"
+            }
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099559",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099548",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "6192449493047601",
+              "mode": "33206",
+              "size": "17166",
+              "mtimeNs": "1786782193043439700",
+              "ctimeNs": "1786782193043439700"
+            }
+          }
+        ]
+      }
+    },
+    "accounting-finalized": {
+      "state": "verified",
+      "scope": "final",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "d57629ddb66b7150d58a57c00de957fc6c5e55bac1afd73f141ec4f5334c820e",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "b1777431ad8d42b9049ad7b3af43297208315fbffda6b290407ce93d4cd0b3dd"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "20404",
+            "sha256": "b1aa4bbf801785226acadfe29569cec63a1bdac935f3acf8dcc124150edf31ca"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9240",
+            "sha256": "1168e623c6572159a841c076bf3f492c0487e69d0f98bb2c5003bfb3086050a7"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "34898",
+            "sha256": "4a3ee5c54092bd4b5d426029f2c75fdd9f371973db8b7fc846a84db1b24cfa94"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8409",
+            "sha256": "969caa1ddf7d140f39ce519a46283f1a0ed4b2089eb5c1146ce9a093c9086923"
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3511",
+            "sha256": "263465a503f977520998db941fd59c1aacec01ae095dd53e08c1f44791b8ba77"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "10670",
+            "sha256": "15ded9fe6a42f75fa7e6d1647ee684afde1aaf36159981a78cbdb1427e7a76a0"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "19636",
+            "sha256": "7a7fb624b088d6a318ec29d6646687b3f8458feeef8362f5e2552b3b0ddb02c8"
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4221",
+            "sha256": "6f3b232e0a54c07749e25b2fd05bab9aa0e9c66719957425c5fb1437d8a621aa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "17166",
+            "sha256": "882b83c022154691b42d6e773c013832e0eae1d6a7da16306ecf6dd8eba67263"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "3377699725942139",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "9029cbfcc34d39d8ced8c658744a6175cfb8840504c27968440d8f3d7572f2d5",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099539",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786782258437293600",
+              "ctimeNs": "1786782258437293600"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099541",
+              "mode": "33206",
+              "size": "20404",
+              "mtimeNs": "1786777936095251300",
+              "ctimeNs": "1786777936095251300"
+            }
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099543",
+              "mode": "33206",
+              "size": "9240",
+              "mtimeNs": "1786777936096800200",
+              "ctimeNs": "1786777936096800200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099544",
+              "mode": "33206",
+              "size": "34898",
+              "mtimeNs": "1786777936097931000",
+              "ctimeNs": "1786777936097931000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099545",
+              "mode": "33206",
+              "size": "8409",
+              "mtimeNs": "1786782258428954900",
+              "ctimeNs": "1786782258428954900"
+            }
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099546",
+              "mode": "33206",
+              "size": "3511",
+              "mtimeNs": "1786777936102050700",
+              "ctimeNs": "1786777936102050700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099542",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099547",
+              "mode": "33206",
+              "size": "10670",
+              "mtimeNs": "1786777936103560400",
+              "ctimeNs": "1786777936103560400"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099554",
+              "mode": "33206",
+              "size": "19636",
+              "mtimeNs": "1786777936106218100",
+              "ctimeNs": "1786777936106218100"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099549",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099560",
+              "mode": "33206",
+              "size": "4221",
+              "mtimeNs": "1786777936109411900",
+              "ctimeNs": "1786777936109411900"
+            }
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099559",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099548",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "6192449493047601",
+              "mode": "33206",
+              "size": "17166",
+              "mtimeNs": "1786782193043439700",
+              "ctimeNs": "1786782193043439700"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "c5a8d5c25edbc782a390cd67d6d6a22ea35709e1974b942b681dee9b6d27cbc8",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "b1777431ad8d42b9049ad7b3af43297208315fbffda6b290407ce93d4cd0b3dd"
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "executable": false,
+            "size": "986",
+            "sha256": "8490c254dbe2183f44be7c0ae615d0811867b055371910ed25a6df1b168da6c0"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "20404",
+            "sha256": "b1aa4bbf801785226acadfe29569cec63a1bdac935f3acf8dcc124150edf31ca"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9240",
+            "sha256": "1168e623c6572159a841c076bf3f492c0487e69d0f98bb2c5003bfb3086050a7"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "34898",
+            "sha256": "4a3ee5c54092bd4b5d426029f2c75fdd9f371973db8b7fc846a84db1b24cfa94"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8409",
+            "sha256": "969caa1ddf7d140f39ce519a46283f1a0ed4b2089eb5c1146ce9a093c9086923"
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3511",
+            "sha256": "263465a503f977520998db941fd59c1aacec01ae095dd53e08c1f44791b8ba77"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "10670",
+            "sha256": "15ded9fe6a42f75fa7e6d1647ee684afde1aaf36159981a78cbdb1427e7a76a0"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "19636",
+            "sha256": "7a7fb624b088d6a318ec29d6646687b3f8458feeef8362f5e2552b3b0ddb02c8"
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4221",
+            "sha256": "6f3b232e0a54c07749e25b2fd05bab9aa0e9c66719957425c5fb1437d8a621aa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "17166",
+            "sha256": "882b83c022154691b42d6e773c013832e0eae1d6a7da16306ecf6dd8eba67263"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "3377699725942139",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "8557b93b66a5285357d17e9f50f35356a6790b095dcb0a0ca9508637f1901e4e",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099539",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786782258437293600",
+              "ctimeNs": "1786782258437293600"
+            }
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "6473924469758261",
+              "mode": "33206",
+              "size": "986",
+              "mtimeNs": "1786782259021359400",
+              "ctimeNs": "1786782259023101300"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099541",
+              "mode": "33206",
+              "size": "20404",
+              "mtimeNs": "1786777936095251300",
+              "ctimeNs": "1786777936095251300"
+            }
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099543",
+              "mode": "33206",
+              "size": "9240",
+              "mtimeNs": "1786777936096800200",
+              "ctimeNs": "1786777936096800200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099544",
+              "mode": "33206",
+              "size": "34898",
+              "mtimeNs": "1786777936097931000",
+              "ctimeNs": "1786777936097931000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099545",
+              "mode": "33206",
+              "size": "8409",
+              "mtimeNs": "1786782258428954900",
+              "ctimeNs": "1786782258428954900"
+            }
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099546",
+              "mode": "33206",
+              "size": "3511",
+              "mtimeNs": "1786777936102050700",
+              "ctimeNs": "1786777936102050700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099542",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099547",
+              "mode": "33206",
+              "size": "10670",
+              "mtimeNs": "1786777936103560400",
+              "ctimeNs": "1786777936103560400"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099554",
+              "mode": "33206",
+              "size": "19636",
+              "mtimeNs": "1786777936106218100",
+              "ctimeNs": "1786777936106218100"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099549",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099560",
+              "mode": "33206",
+              "size": "4221",
+              "mtimeNs": "1786777936109411900",
+              "ctimeNs": "1786777936109411900"
+            }
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099559",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099548",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "6192449493047601",
+              "mode": "33206",
+              "size": "17166",
+              "mtimeNs": "1786782193043439700",
+              "ctimeNs": "1786782193043439700"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "c5a8d5c25edbc782a390cd67d6d6a22ea35709e1974b942b681dee9b6d27cbc8",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "b1777431ad8d42b9049ad7b3af43297208315fbffda6b290407ce93d4cd0b3dd"
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "executable": false,
+            "size": "986",
+            "sha256": "8490c254dbe2183f44be7c0ae615d0811867b055371910ed25a6df1b168da6c0"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "20404",
+            "sha256": "b1aa4bbf801785226acadfe29569cec63a1bdac935f3acf8dcc124150edf31ca"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9240",
+            "sha256": "1168e623c6572159a841c076bf3f492c0487e69d0f98bb2c5003bfb3086050a7"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "34898",
+            "sha256": "4a3ee5c54092bd4b5d426029f2c75fdd9f371973db8b7fc846a84db1b24cfa94"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8409",
+            "sha256": "969caa1ddf7d140f39ce519a46283f1a0ed4b2089eb5c1146ce9a093c9086923"
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3511",
+            "sha256": "263465a503f977520998db941fd59c1aacec01ae095dd53e08c1f44791b8ba77"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "10670",
+            "sha256": "15ded9fe6a42f75fa7e6d1647ee684afde1aaf36159981a78cbdb1427e7a76a0"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "19636",
+            "sha256": "7a7fb624b088d6a318ec29d6646687b3f8458feeef8362f5e2552b3b0ddb02c8"
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4221",
+            "sha256": "6f3b232e0a54c07749e25b2fd05bab9aa0e9c66719957425c5fb1437d8a621aa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "17166",
+            "sha256": "882b83c022154691b42d6e773c013832e0eae1d6a7da16306ecf6dd8eba67263"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "3377699725942139",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "8557b93b66a5285357d17e9f50f35356a6790b095dcb0a0ca9508637f1901e4e",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099539",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786782258437293600",
+              "ctimeNs": "1786782258437293600"
+            }
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "6473924469758261",
+              "mode": "33206",
+              "size": "986",
+              "mtimeNs": "1786782259021359400",
+              "ctimeNs": "1786782259023101300"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099541",
+              "mode": "33206",
+              "size": "20404",
+              "mtimeNs": "1786777936095251300",
+              "ctimeNs": "1786777936095251300"
+            }
+          },
+          {
+            "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099543",
+              "mode": "33206",
+              "size": "9240",
+              "mtimeNs": "1786777936096800200",
+              "ctimeNs": "1786777936096800200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099544",
+              "mode": "33206",
+              "size": "34898",
+              "mtimeNs": "1786777936097931000",
+              "ctimeNs": "1786777936097931000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099545",
+              "mode": "33206",
+              "size": "8409",
+              "mtimeNs": "1786782258428954900",
+              "ctimeNs": "1786782258428954900"
+            }
+          },
+          {
+            "path": "evidence/verb-guard-mutation-proof.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099546",
+              "mode": "33206",
+              "size": "3511",
+              "mtimeNs": "1786777936102050700",
+              "ctimeNs": "1786777936102050700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099542",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099547",
+              "mode": "33206",
+              "size": "10670",
+              "mtimeNs": "1786777936103560400",
+              "ctimeNs": "1786777936103560400"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099554",
+              "mode": "33206",
+              "size": "19636",
+              "mtimeNs": "1786777936106218100",
+              "ctimeNs": "1786777936106218100"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099549",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs/store-target-lines/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099560",
+              "mode": "33206",
+              "size": "4221",
+              "mtimeNs": "1786777936109411900",
+              "ctimeNs": "1786777936109411900"
+            }
+          },
+          {
+            "path": "specs/store-target-lines",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099559",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799819099548",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "6192449493047601",
+              "mode": "33206",
+              "size": "17166",
+              "mtimeNs": "1786782193043439700",
+              "ctimeNs": "1786782193043439700"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "finalReservation": {
+    "identity": {
+      "dev": "3122291782",
+      "ino": "3377699725942139",
+      "mode": "16822",
+      "size": "0",
+      "mtimeNs": "0",
+      "ctimeNs": "0"
+    },
+    "entries": [
+      {
+        "path": ".openspec.yaml",
+        "kind": "file",
+        "expected": {
+          "path": ".openspec.yaml",
+          "kind": "file",
+          "executable": false,
+          "size": "134",
+          "sha256": "b1777431ad8d42b9049ad7b3af43297208315fbffda6b290407ce93d4cd0b3dd"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "2251799819099539",
+          "mode": "33206",
+          "size": "134",
+          "mtimeNs": "1786782258437293600",
+          "ctimeNs": "1786782258437293600"
+        }
+      },
+      {
+        "path": "design.md",
+        "kind": "file",
+        "expected": {
+          "path": "design.md",
+          "kind": "file",
+          "executable": false,
+          "size": "20404",
+          "sha256": "b1aa4bbf801785226acadfe29569cec63a1bdac935f3acf8dcc124150edf31ca"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "2251799819099541",
+          "mode": "33206",
+          "size": "20404",
+          "mtimeNs": "1786777936095251300",
+          "ctimeNs": "1786777936095251300"
+        }
+      },
+      {
+        "path": "evidence",
+        "kind": "directory",
+        "expected": {
+          "path": "evidence",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "2251799819099542",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+          "kind": "file",
+          "executable": false,
+          "size": "9240",
+          "sha256": "1168e623c6572159a841c076bf3f492c0487e69d0f98bb2c5003bfb3086050a7"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "2251799819099543",
+          "mode": "33206",
+          "size": "9240",
+          "mtimeNs": "1786777936096800200",
+          "ctimeNs": "1786777936096800200"
+        }
+      },
+      {
+        "path": "evidence/review-report.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/review-report.md",
+          "kind": "file",
+          "executable": false,
+          "size": "34898",
+          "sha256": "4a3ee5c54092bd4b5d426029f2c75fdd9f371973db8b7fc846a84db1b24cfa94"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "2251799819099544",
+          "mode": "33206",
+          "size": "34898",
+          "mtimeNs": "1786777936097931000",
+          "ctimeNs": "1786777936097931000"
+        }
+      },
+      {
+        "path": "evidence/ship-log.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/ship-log.md",
+          "kind": "file",
+          "executable": false,
+          "size": "8409",
+          "sha256": "969caa1ddf7d140f39ce519a46283f1a0ed4b2089eb5c1146ce9a093c9086923"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "2251799819099545",
+          "mode": "33206",
+          "size": "8409",
+          "mtimeNs": "1786782258428954900",
+          "ctimeNs": "1786782258428954900"
+        }
+      },
+      {
+        "path": "evidence/verb-guard-mutation-proof.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/verb-guard-mutation-proof.md",
+          "kind": "file",
+          "executable": false,
+          "size": "3511",
+          "sha256": "263465a503f977520998db941fd59c1aacec01ae095dd53e08c1f44791b8ba77"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "2251799819099546",
+          "mode": "33206",
+          "size": "3511",
+          "mtimeNs": "1786777936102050700",
+          "ctimeNs": "1786777936102050700"
+        }
+      },
+      {
+        "path": "proposal.md",
+        "kind": "file",
+        "expected": {
+          "path": "proposal.md",
+          "kind": "file",
+          "executable": false,
+          "size": "10670",
+          "sha256": "15ded9fe6a42f75fa7e6d1647ee684afde1aaf36159981a78cbdb1427e7a76a0"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "2251799819099547",
+          "mode": "33206",
+          "size": "10670",
+          "mtimeNs": "1786777936103560400",
+          "ctimeNs": "1786777936103560400"
+        }
+      },
+      {
+        "path": "specs",
+        "kind": "directory",
+        "expected": {
+          "path": "specs",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "2251799819099548",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "specs/store-planning-worktree-bindings",
+        "kind": "directory",
+        "expected": {
+          "path": "specs/store-planning-worktree-bindings",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "2251799819099549",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "specs/store-planning-worktree-bindings/spec.md",
+        "kind": "file",
+        "expected": {
+          "path": "specs/store-planning-worktree-bindings/spec.md",
+          "kind": "file",
+          "executable": false,
+          "size": "19636",
+          "sha256": "7a7fb624b088d6a318ec29d6646687b3f8458feeef8362f5e2552b3b0ddb02c8"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "2251799819099554",
+          "mode": "33206",
+          "size": "19636",
+          "mtimeNs": "1786777936106218100",
+          "ctimeNs": "1786777936106218100"
+        }
+      },
+      {
+        "path": "specs/store-target-lines",
+        "kind": "directory",
+        "expected": {
+          "path": "specs/store-target-lines",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "2251799819099559",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "specs/store-target-lines/spec.md",
+        "kind": "file",
+        "expected": {
+          "path": "specs/store-target-lines/spec.md",
+          "kind": "file",
+          "executable": false,
+          "size": "4221",
+          "sha256": "6f3b232e0a54c07749e25b2fd05bab9aa0e9c66719957425c5fb1437d8a621aa"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "2251799819099560",
+          "mode": "33206",
+          "size": "4221",
+          "mtimeNs": "1786777936109411900",
+          "ctimeNs": "1786777936109411900"
+        }
+      },
+      {
+        "path": "tasks.md",
+        "kind": "file",
+        "expected": {
+          "path": "tasks.md",
+          "kind": "file",
+          "executable": false,
+          "size": "17166",
+          "sha256": "882b83c022154691b42d6e773c013832e0eae1d6a7da16306ecf6dd8eba67263"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "6192449493047601",
+          "mode": "33206",
+          "size": "17166",
+          "mtimeNs": "1786782193043439700",
+          "ctimeNs": "1786782193043439700"
+        }
+      }
+    ]
+  },
+  "specProgress": [
+    {
+      "actionId": "2c05bea39427e0639dc9362ab62b03e18ca43b0be554fe358fd5ef725dd8a1a9",
+      "action": "create",
+      "target": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\fix-ci-shard3\\rasen\\specs\\store-planning-worktree-bindings\\spec.md",
+      "backupOrQuarantine": null,
+      "temporary": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\fix-ci-shard3\\rasen\\specs\\store-planning-worktree-bindings\\.rasen-archive-spec-df2fcf2b-830a-4105-8b49-fa646735d81a-2c05bea39427\\result.tmp",
+      "state": "complete",
+      "claimIdentity": {
+        "dev": "3122291782",
+        "ino": "2814749772520814",
+        "mode": "16822",
+        "size": "0",
+        "mtimeNs": "0",
+        "ctimeNs": "0"
+      },
+      "temporaryIdentity": {
+        "dev": "3122291782",
+        "ino": "3659174702652781",
+        "mode": "33206",
+        "size": "19395",
+        "mtimeNs": "1786782258479482800",
+        "ctimeNs": "1786782258479482800"
+      },
+      "publishedIdentity": {
+        "dev": "3122291782",
+        "ino": "3659174702652781",
+        "mode": "33206",
+        "size": "19395",
+        "mtimeNs": "1786782258479482800",
+        "ctimeNs": "1786782258488430200"
+      }
+    },
+    {
+      "actionId": "3b6e27012cae51261e32833e05145c18c43c7fd4c8707b3b78aebff743fce422",
+      "action": "create",
+      "target": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\fix-ci-shard3\\rasen\\specs\\store-target-lines\\spec.md",
+      "backupOrQuarantine": null,
+      "temporary": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\fix-ci-shard3\\rasen\\specs\\store-target-lines\\.rasen-archive-spec-df2fcf2b-830a-4105-8b49-fa646735d81a-3b6e27012cae\\result.tmp",
+      "state": "complete",
+      "claimIdentity": {
+        "dev": "3122291782",
+        "ino": "2814749772520827",
+        "mode": "16822",
+        "size": "0",
+        "mtimeNs": "0",
+        "ctimeNs": "0"
+      },
+      "temporaryIdentity": {
+        "dev": "3122291782",
+        "ino": "2251799819099521",
+        "mode": "33206",
+        "size": "4267",
+        "mtimeNs": "1786782258518129400",
+        "ctimeNs": "1786782258518129400"
+      },
+      "publishedIdentity": {
+        "dev": "3122291782",
+        "ino": "2251799819099521",
+        "mode": "33206",
+        "size": "4267",
+        "mtimeNs": "1786782258518129400",
+        "ctimeNs": "1786782258525387200"
+      }
+    }
+  ],
+  "cleanerProgress": [
+    {
+      "path": "auto-run.json",
+      "state": "deleted"
+    }
+  ],
+  "sourceProgress": {
+    "state": "removed",
+    "quarantine": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\fix-ci-shard3\\rasen\\changes\\.rasen-archive-source-df2fcf2b-830a-4105-8b49-fa646735d81a\\store-worktree-bindings-v2"
+  },
+  "updatedAt": "2026-08-15T08:24:19.187Z"
+}

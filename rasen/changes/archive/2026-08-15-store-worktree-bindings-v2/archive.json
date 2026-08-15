@@ -1,0 +1,33 @@
+{
+  "change": "store-worktree-bindings-v2",
+  "archivedAt": "2026-08-15T08:24:17.216Z",
+  "codeCommit": "af259a8109f32ae385c221937ad3c48e16a5defd",
+  "planningBranch": "chore/archive-store-v2-slice-1",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/digest-anchor-strengthening-mutation-proof.md",
+      "sha256": "1168e623c6572159a841c076bf3f492c0487e69d0f98bb2c5003bfb3086050a7"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "4a3ee5c54092bd4b5d426029f2c75fdd9f371973db8b7fc846a84db1b24cfa94"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "969caa1ddf7d140f39ce519a46283f1a0ed4b2089eb5c1146ce9a093c9086923"
+    },
+    {
+      "path": "evidence/verb-guard-mutation-proof.md",
+      "sha256": "263465a503f977520998db941fd59c1aacec01ae095dd53e08c1f44791b8ba77"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

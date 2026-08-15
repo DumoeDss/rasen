@@ -98,3 +98,9 @@ the portfolio level unresolved; it should not be read as a clean run history.
 - Delivery for the `store-v2-foundation` portfolio happens once, at the
   parent, after `store-worktree-bindings-v2` and `store-issue-resources` are
   also terminal.
+
+## Archive
+**Date:** 2026-08-15T08:23:50.307Z
+**Ship commit:** 6b7ddcfbb9b3adecf55be3f845b3cc115c5d5223
+**Outcome:** archived at E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\fix-ci-shard3\rasen\changes\archive\2026-08-15-store-planning-contract-v2
+**Transaction:** e09d547b-2eaa-4edd-b469-f0ff3ac2eeec

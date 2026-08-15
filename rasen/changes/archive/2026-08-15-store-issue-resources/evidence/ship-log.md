@@ -139,3 +139,9 @@ what supplies the run reference unblocking child 1's task 6.5, child 2's task
 dependency order (child 1 → child 2 → child 3), which is required rather than
 stylistic: this change's archive projection lists `store-planning-layout-v2` as a
 CREATE, meaning child 1 has not yet archived the capability both of them touch.
+
+## Archive
+**Date:** 2026-08-15T08:24:43.350Z
+**Ship commit:** 0d4149fea3c91b0b37a77ff5dbd9d0e0e41822f1
+**Outcome:** archived at E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\fix-ci-shard3\rasen\changes\archive\2026-08-15-store-issue-resources
+**Transaction:** 101ce721-e580-4541-9acb-b873e11373bf
