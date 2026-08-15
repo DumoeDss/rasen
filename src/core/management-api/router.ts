@@ -10,7 +10,11 @@ import type * as http from 'node:http';
 import * as path from 'node:path';
 
 import type { ConfigApiContext } from '../config-api/router.js';
-import { resolveSpaceSelector, type ResolvedSpace } from '../config-api/project-addressing.js';
+import {
+  resolveProjectPlanningSpaceFromRoot,
+  resolveSpaceSelector,
+  type ResolvedSpace,
+} from '../config-api/project-addressing.js';
 import type { ProjectHome } from '../project-home.js';
 import {
   getProjectRegistryPath,
@@ -89,6 +93,13 @@ import {
   type FinalizeChangeRequestBody,
 } from './finalize.js';
 import { isStoreAggregateSpace } from './project-space.js';
+import {
+  createStoreMutator,
+  matchStoreRoute,
+  serveStoreRead,
+  storeRouteAdmitsMethod,
+  type StoreMutationBody,
+} from './stores-routes.js';
 import { createSpaceCreator } from './create-space.js';
 import {
   handleWorkflowDependenciesRead,
@@ -533,6 +544,8 @@ function isMethodAdmitted(pathname: string, method: string | undefined): boolean
     // L3+L5: the finalize path is POST-only; GET/PUT/DELETE are all 405.
     return method === 'POST';
   }
+  const storeRoute = matchStoreRoute(pathname);
+  if (storeRoute !== null) return storeRouteAdmitsMethod(storeRoute, method);
   if (pathname === '/api/v1/local-paths/resolve') return method === 'GET';
   if (pathname === '/api/v1/local-paths/choose') return method === 'POST';
   if (pathname === '/api/v1/themes') return method === 'GET';
@@ -710,7 +723,8 @@ export function isManagementPath(pathname: string): boolean {
     matchPipelineIdPath(stripped) !== null ||
     matchAuditIdPath(stripped) !== null ||
     matchRunDetailPath(stripped) !== null ||
-    matchStoreFinalizePath(stripped) !== null
+    matchStoreFinalizePath(stripped) !== null ||
+    matchStoreRoute(stripped) !== null
   );
 }
 
@@ -764,6 +778,9 @@ export function createManagementRouter(
   // One submitter per server instance (design D3's cap-1 concurrency is
   // per-server state, closed over here rather than module-scoped).
   const submitChange = createChangeSubmitter(context);
+  // The Store aggregate route family's mutation bridge (L7): every store
+  // mutation writes only by spawning the CLI through the bounded whitelist.
+  const mutateStore = createStoreMutator(context);
   // The Store change-finalization bridge (L3+L5): spawns the same bounded-cli
   // `finalize-change` op the CLI itself runs, so its refusals arrive here
   // structurally rather than by duplication.
@@ -895,10 +912,31 @@ export function createManagementRouter(
   // pre-space clients). Read-only — resolution never mutates any registry.
   const resolveRequestSpace = async (selector: string | undefined): Promise<RequestSpaceResolution> => {
     if (!selector) {
-      return { ok: true, root: context.launchProjectRoot ?? undefined };
+      // Omitted selector falls back to the launch project, resolved as a
+      // planning space (0.1.7's shape): a bound execution checkout reads its
+      // STORE's partition, not its own stale local tree, and the space object
+      // (not the bare root) carries the planning facts downstream handlers
+      // partition reads with.
+      if (!context.launchProjectRoot) return { ok: true, root: undefined };
+      const launchResolved = await resolveProjectPlanningSpaceFromRoot(context.launchProjectRoot);
+      return launchResolved.ok
+        ? { ok: true, root: launchResolved.space.root, space: launchResolved.space }
+        : launchResolved;
     }
     const resolved = await resolveSpaceSelector(selector);
     if (!resolved.ok) return resolved;
+    // Every project-content endpoint this resolver serves answers one
+    // project's planning content; a Store aggregate cannot select a project
+    // implicitly (L7, planning-space-addressing D6), so it is refused here —
+    // once — rather than per endpoint.
+    if (isStoreAggregateSpace(resolved.space)) {
+      return {
+        ok: false,
+        status: 400,
+        code: 'project_scope_required',
+        message: 'Project content requires a project planning scope; a Store aggregate cannot select a project implicitly.',
+      };
+    }
     return { ok: true, root: resolved.space.root, space: resolved.space };
   };
 
@@ -1129,6 +1167,53 @@ export function createManagementRouter(
     // GET, PUT, and DELETE on the finalize path are all 405: the path is a
     // management path (the gate admits it), so it must be answered here
     // rather than falling through to the static/UI routing.
+    // The Store aggregate route family (L7, path-scoped by store uid). Every
+    // scope segment comes from the PATH. The `space` selector, the query
+    // filters, the session, and the launch project are all read from nowhere
+    // for scope here — the only query parameters consulted are the aggregate
+    // read's own narrowing filters, which never reach a mutation.
+    const storeRoute = matchStoreRoute(pathname);
+    if (storeRoute !== null) {
+      const sendStoreResult = (result: Awaited<ReturnType<typeof serveStoreRead>>): void => {
+        if (!result.ok) {
+          res.writeHead(result.status, JSON_HEADERS);
+          res.end(
+            JSON.stringify({
+              error: {
+                code: result.code,
+                message: result.message,
+                ...(result.fix === undefined ? {} : { fix: result.fix }),
+                ...(result.cliExitCode === undefined ? {} : { cliExitCode: result.cliExitCode }),
+                ...(result.stderr === undefined ? {} : { stderr: result.stderr }),
+              },
+            })
+          );
+          return;
+        }
+        sendJson(res, result.status, result.response);
+      };
+
+      if (req.method === 'GET') {
+        const outcomes = url.searchParams.getAll('outcome');
+        const state = url.searchParams.get('state');
+        sendStoreResult(
+          await serveStoreRead(storeRoute, {
+            ...(outcomes.length === 0 ? {} : { outcomes }),
+            ...(state === null ? {} : { state }),
+          })
+        );
+        return;
+      }
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      sendStoreResult(await mutateStore(storeRoute, (body.value ?? {}) as StoreMutationBody));
+      return;
+    }
+
     const finalizeScope = matchStoreFinalizePath(pathname);
     if (finalizeScope !== null && req.method !== 'POST') {
       res.writeHead(405, JSON_HEADERS);
@@ -1330,7 +1415,7 @@ export function createManagementRouter(
         return;
       }
       const home = await resolveHomeForRoot(space.root ?? null);
-      const result = await handleChanges(space.root, home);
+      const result = await handleChanges(space.space ?? space.root, home);
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
         return;
@@ -1348,7 +1433,7 @@ export function createManagementRouter(
         return;
       }
       const home = await resolveHomeForRoot(space.root ?? null);
-      const result = await handleArchive(space.root, home);
+      const result = await handleArchive(space.space ?? space.root, home);
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
         return;
@@ -1785,7 +1870,7 @@ export function createManagementRouter(
         return;
       }
       const home = await resolveHomeForRoot(space.root ?? null);
-      const result = await handleTaskDetail(space.root, home, taskId);
+      const result = await handleTaskDetail(space.space ?? space.root, home, taskId);
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
         return;

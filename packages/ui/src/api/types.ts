@@ -160,7 +160,12 @@ export type ThresholdSchemeListEntry =
   | { name: string; valid: false; error: string };
 
 export type ThresholdBindingScope = 'project' | 'store' | 'global';
-export type ThresholdBindingRow = 'claude' | 'codex' | 'default';
+/**
+ * Mirrors the CLI's binding rows, which the server derives from
+ * `canProbeContext` — `omp` joined when Oh My Pi gained a context reader — so a
+ * new probe-capable runtime means widening this union in lockstep.
+ */
+export type ThresholdBindingRow = 'claude' | 'codex' | 'omp' | 'default';
 
 export interface ThresholdBindingMetadata {
   scope: ThresholdBindingScope;
