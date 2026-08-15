@@ -29,6 +29,7 @@ import {
   type HandoffThresholdReport,
 } from '../core/agent-context.js';
 import { resolveAgentCliBinary } from '../core/agent-cli-process.js';
+import { DISPATCH_ADAPTERS } from '../core/runtimes/dispatch-adapters.js';
 import {
   buildClaudePrintInvocation,
   claudeFailureReceipt,
@@ -445,9 +446,16 @@ export class AgentCommand {
     }
 
     const isCodex = options.runtime === 'codex';
+    // L4 tail: the claude-print path's binary facts (env var, default binary,
+    // install hint, label) come from the DISPATCH_ADAPTERS registry, so they
+    // can never disagree with the registry the rest of the dispatch surface
+    // reads. The codex branch keeps this line's own RASEN_CODEX_BIN surface:
+    // the registry's codex entry deliberately declares no `binaryEnvVar`
+    // (playbook-owned — Rasen never resolves the binary).
+    const claudeAdapter = DISPATCH_ADAPTERS.claude;
     const binary = resolveAgentCliBinary({
-      envVar: isCodex ? 'RASEN_CODEX_BIN' : 'RASEN_CLAUDE_BIN',
-      binaryName: isCodex ? 'codex' : 'claude',
+      envVar: isCodex ? 'RASEN_CODEX_BIN' : claudeAdapter.binaryEnvVar,
+      binaryName: isCodex ? 'codex' : claudeAdapter.defaultBinary,
     });
     if (!binary) {
       return emit(isCodex
@@ -460,7 +468,7 @@ export class AgentCommand {
         : claudeFailureReceipt(
           contract,
           'runtime-unavailable',
-          'Claude Code CLI is unavailable. Install Claude Code or set RASEN_CLAUDE_BIN.',
+          `${claudeAdapter.installHint} is unavailable. Install ${claudeAdapter.cliLabel} or set ${claudeAdapter.binaryEnvVar}.`,
           { cwd }
         )
       );
