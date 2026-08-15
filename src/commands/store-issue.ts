@@ -26,6 +26,7 @@ import {
 } from '../core/store/issues/index.js';
 import {
   StoreAggregateQuery,
+  type AggregateProblem,
   type IssueDetail,
   type IssueSummaryPage,
 } from '../core/store/query/index.js';
@@ -91,6 +92,25 @@ function renderPlanWrite(result: ExecutionPlanResult): void {
   renderCommitSuggestions(result.suggestedCommits);
 }
 
+/**
+ * Items that were read and could not be understood, in the HUMAN form — the
+ * same list the JSON form carries under `problems`. A malformed Issue whose id
+ * appears without its reason is exactly the "the item survives, the why does
+ * not" failure this reporting exists to close.
+ */
+function renderProblems(problems: readonly AggregateProblem[]): void {
+  if (problems.length === 0) return;
+  console.log('');
+  console.log(`UNREADABLE: ${problems.length} item(s) were found and could not be read.`);
+  for (const problem of problems) {
+    console.log(
+      `  ${problem.kind} ${problem.itemId} (${problem.storeRef ?? '(local checkout)'}: ${
+        problem.path
+      }): ${problem.reason}`
+    );
+  }
+}
+
 function renderIssueList(page: IssueSummaryPage): void {
   if (page.issues.length === 0) {
     console.log('No Issues found.');
@@ -99,6 +119,12 @@ function renderIssueList(page: IssueSummaryPage): void {
     const state = summary.record?.state ?? (summary.divergence ? '(divergent)' : '(unknown)');
     const title = summary.record?.title ?? '';
     console.log(`${summary.issueId}  [${state}]  ${title}`);
+    // The reason there is no record, on the item's own line. `(unknown)` names
+    // the fact and hides the cause; the machine form carries the cause, so the
+    // human form does too.
+    if (summary.diagnostic !== null) {
+      console.log(`    unreadable record: ${summary.diagnostic}`);
+    }
     // A divergence the JSON form reports copy-by-copy, with each copy's
     // digest, must not reach a person as the bare word "(divergent)": a fact
     // reported to a program is never silently dropped from the human form.
@@ -106,13 +132,14 @@ function renderIssueList(page: IssueSummaryPage): void {
       console.log(`    ${copy.storeRef ?? '(local checkout)'}  ${copy.sha256}`);
     }
   }
-  if (!page.complete) {
+  if (page.unsearchedRefs.length > 0) {
     console.log('');
     console.log(`INCOMPLETE: ${page.unsearchedRefs.length} ref(s) could not be read.`);
     for (const ref of page.unsearchedRefs) {
       console.log(`  ${ref.targetLineId} (${ref.storeRef}): ${ref.reason}`);
     }
   }
+  renderProblems(page.problems);
 }
 
 function renderIssueDetail(detail: IssueDetail): void {
@@ -121,7 +148,14 @@ function renderIssueDetail(detail: IssueDetail): void {
   if (summary.record) {
     console.log(`  state: ${summary.record.state}`);
     console.log(`  title: ${summary.record.title}`);
-  } else if (summary.divergence) {
+  }
+  // Independent of the two branches around it, not an `else`: an Issue can be
+  // divergent AND carry an unreadable copy, and reporting only the first fact
+  // reached would drop the other from the human form alone.
+  if (summary.diagnostic !== null) {
+    console.log(`  unreadable record: ${summary.diagnostic}`);
+  }
+  if (summary.divergence) {
     console.log(
       `  DIVERGENT: ${summary.divergence.copies.length} differing copies across Store refs.`
     );
@@ -145,7 +179,7 @@ function renderIssueDetail(detail: IssueDetail): void {
       console.log(`  plan PROBLEM: ${detail.plan.diagnostic}`);
     }
   }
-  if (!detail.complete) {
+  if (detail.unsearchedRefs.length > 0) {
     console.log('');
     console.log(`INCOMPLETE: ${detail.unsearchedRefs.length} ref(s) could not be read.`);
     // The per-ref reason, as the list rendering already does. An unreadable
@@ -154,6 +188,7 @@ function renderIssueDetail(detail: IssueDetail): void {
       console.log(`  ${ref.targetLineId} (${ref.storeRef}): ${ref.reason}`);
     }
   }
+  renderProblems(detail.problems);
 }
 
 export function registerStoreIssueCommand(store: Command): void {
@@ -218,6 +253,7 @@ export function registerStoreIssueCommand(store: Command): void {
             issues: page.issues,
             complete: page.complete,
             unsearchedRefs: page.unsearchedRefs,
+            problems: page.problems,
           });
           return;
         }
@@ -245,6 +281,7 @@ export function registerStoreIssueCommand(store: Command): void {
             plan: detail.plan,
             complete: detail.complete,
             unsearchedRefs: detail.unsearchedRefs,
+            problems: detail.problems,
           });
           return;
         }

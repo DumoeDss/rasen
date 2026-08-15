@@ -9,7 +9,11 @@
  *
  * A query never ASSERTS a state it cannot prove. It reports the unproven as
  * unproven (`unresolved`, `ambiguous`, `divergent`), names the refs it did and
- * did not reach, and marks the whole result incomplete. The mutation that
+ * did not reach and the items it reached and could not read, and marks the
+ * whole result incomplete. Nothing is ever dropped for being broken, and a
+ * declared project or target line that holds nothing is reported present and
+ * empty rather than omitted — an absent group and an empty one are different
+ * answers. The mutation that
  * touches the same references — publishing a revision — refuses outright
  * instead. Same fail-closed invariant, two correct expressions, stated here so
  * whoever writes the next handler does not have to infer it.
@@ -29,6 +33,7 @@ import {
 import {
   collectIssues,
   divergenceOf,
+  presentedDiagnostic,
   presentedRecord,
   readRevision,
 } from './issues-read.js';
@@ -53,6 +58,7 @@ import {
 import type {
   AggregateArchiveEntry,
   AggregateChangeEntry,
+  AggregateCompleteness,
   ChangeGroup,
   ChangeQuery,
   ExecutionPlanSelector,
@@ -165,6 +171,22 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
     };
   }
 
+  /**
+   * The completeness block every result carries, taken from the one reader
+   * that did the reading.
+   *
+   * Built in a single place so no method can report a ref it could not search
+   * and quietly forget an item it could not read, or the other way round:
+   * `complete` is false for either, and both lists travel with it.
+   */
+  private completeness(context: QueryContext): AggregateCompleteness {
+    return {
+      unsearchedRefs: context.reader.unsearchedRefs,
+      problems: context.reader.problems,
+      complete: context.reader.complete,
+    };
+  }
+
   // ---------------------------------------------------------------------------
   // Rollups
   // ---------------------------------------------------------------------------
@@ -192,8 +214,7 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
       storeId: context.store.storeId,
       storeUid: context.store.storeUid,
       projects,
-      unsearchedRefs: context.reader.unsearchedRefs,
-      complete: context.reader.complete,
+      ...this.completeness(context),
     };
   }
 
@@ -218,8 +239,7 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
       storeId: context.store.storeId,
       storeUid: context.store.storeUid,
       targetLines,
-      unsearchedRefs: context.reader.unsearchedRefs,
-      complete: context.reader.complete,
+      ...this.completeness(context),
     };
   }
 
@@ -230,11 +250,7 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
   async listChanges(input: ChangeQuery): Promise<GroupedChanges> {
     const context = await this.open(input);
     const groups = await this.collectGroups(context, input);
-    return {
-      groups,
-      unsearchedRefs: context.reader.unsearchedRefs,
-      complete: context.reader.complete,
-    };
+    return { groups, ...this.completeness(context) };
   }
 
   /**
@@ -245,6 +261,10 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
    * A Change's group comes from its COMMITTED identity, never from the ref it
    * happened to be read on: a Change frozen against `line-0.2` that is also
    * reachable from `main` after a merge still belongs to `line-0.2`.
+   *
+   * The GROUP SET is the declared (project, target line) matrix plus any pair
+   * committed evidence names, so an empty declared pair is present and empty
+   * and an unexpected pair is never dropped for being undeclared.
    */
   private async collectGroups(
     context: QueryContext,
@@ -284,6 +304,39 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
       buckets.set(key, created);
       return created;
     };
+
+    // Every DECLARED (project, target line) pair, bucketed BEFORE any evidence
+    // is placed, so a pair that holds no Change is reported present and empty
+    // rather than omitted. Iterating found evidence alone can only ever emit a
+    // group somebody already put a Change in, which makes "this project has
+    // nothing" and "this project does not exist" the same answer.
+    //
+    // The pairs come from the target-line catalogs, the only declaration of
+    // which projects live on which line — the same relation `listProjects`
+    // reports as a project's `targetLines`, so the two surfaces cannot
+    // disagree about what exists. Two exclusions, both because an empty group
+    // is a claim that somebody looked:
+    //
+    //   - a line whose ref could not be READ seeds nothing. Its Changes are
+    //     unknown, not absent; the ref is in `unsearchedRefs` and the result
+    //     is incomplete.
+    //   - a project the line names but the Store has no catalog for seeds
+    //     nothing either, because `collectCommittedChanges` only searches the
+    //     projects the Store declares, so nobody looked there.
+    //
+    // The entry filters (`state`, `outcomes`) deliberately do NOT narrow this:
+    // they select which ENTRIES populate a group, not which groups exist.
+    const searchedRefs = new Set(context.reader.searchedRefs);
+    const declaredProjects = new Set(context.projectIds);
+    for (const line of context.targetLines) {
+      if (line.catalog === null || !searchedRefs.has(line.catalog.storeRef)) continue;
+      if (lineFilter !== null && !lineFilter.has(line.catalog.id)) continue;
+      for (const projectId of Object.keys(line.catalog.projects)) {
+        if (!declaredProjects.has(projectId)) continue;
+        if (projectFilter !== null && !projectFilter.has(projectId)) continue;
+        bucketFor(projectId, line.catalog.id);
+      }
+    }
 
     for (const candidate of evidence.committed) {
       if (projectFilter !== null && !projectFilter.has(candidate.projectId)) continue;
@@ -415,11 +468,7 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
       input.state === undefined
         ? issues
         : issues.filter(issue => issue.record?.state === input.state);
-    return {
-      issues: filtered,
-      unsearchedRefs: context.reader.unsearchedRefs,
-      complete: context.reader.complete,
-    };
+    return { issues: filtered, ...this.completeness(context) };
   }
 
   async issuesReferencing(
@@ -443,11 +492,7 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
       );
       if (references) matched.push(issue);
     }
-    return {
-      issues: matched,
-      unsearchedRefs: context.reader.unsearchedRefs,
-      complete: context.reader.complete,
-    };
+    return { issues: matched, ...this.completeness(context) };
   }
 
   private async summaries(context: QueryContext): Promise<readonly IssueSummary[]> {
@@ -460,6 +505,11 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
     return contents.map(content => ({
       issueId: content.issueId,
       record: presentedRecord(content.copies),
+      // The reason the record is null, carried on the ITEM. `collectIssues`
+      // has already reported the same failure as a result-level problem; both
+      // exist because a caller reading one Issue's summary should not have to
+      // search a Store-wide list to learn why its record is missing.
+      diagnostic: presentedDiagnostic(content.copies),
       divergence: divergenceOf(content.copies),
       revisionIds: content.revisionIds,
       latestRevisionId: content.revisionIds.at(-1) ?? null,
@@ -481,6 +531,7 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
         issue: {
           issueId: input.issueId,
           record: null,
+          diagnostic: null,
           divergence: null,
           revisionIds: [],
           latestRevisionId: null,
@@ -488,20 +539,14 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
           uncommitted: false,
         },
         plan: null,
-        unsearchedRefs: context.reader.unsearchedRefs,
-        complete: context.reader.complete,
+        ...this.completeness(context),
       };
     }
     const plan =
       issue.latestRevisionId === null
         ? null
         : await this.resolvePlanIn(context, input.issueId, issue.latestRevisionId);
-    return {
-      issue,
-      plan,
-      unsearchedRefs: context.reader.unsearchedRefs,
-      complete: context.reader.complete,
-    };
+    return { issue, plan, ...this.completeness(context) };
   }
 
   async resolveExecutionPlan(input: ExecutionPlanSelector): Promise<ResolvedExecutionPlan> {
@@ -519,8 +564,7 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
         revision: null,
         diagnostic: null,
         readiness: { nodes: [], readyToResolve: false },
-        unsearchedRefs: context.reader.unsearchedRefs,
-        complete: context.reader.complete,
+        ...this.completeness(context),
       };
     }
     return this.resolvePlanIn(context, input.issueId, revisionId);
@@ -546,8 +590,7 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
         revision: null,
         diagnostic: read.diagnostic,
         readiness: { nodes: [], readyToResolve: false },
-        unsearchedRefs: context.reader.unsearchedRefs,
-        complete: context.reader.complete,
+        ...this.completeness(context),
       };
     }
     const evidence = await gatherReferenceEvidence(this.dependencies, {
@@ -563,8 +606,7 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
       revision: read.revision,
       diagnostic: null,
       readiness,
-      unsearchedRefs: context.reader.unsearchedRefs,
-      complete: context.reader.complete,
+      ...this.completeness(context),
     };
   }
 

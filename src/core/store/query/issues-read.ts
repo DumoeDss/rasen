@@ -83,6 +83,29 @@ export async function collectIssues(
   storeCheckoutRoot: string
 ): Promise<readonly IssueContent[]> {
   const byId = new Map<string, { copies: IssueRecordCopy[]; revisions: Set<string> }>();
+  /**
+   * A copy that does not parse is an item that WAS read and cannot be
+   * understood, so it is reported on the reader alongside the unsearched refs:
+   * the id alone would say an Issue is unreadable without ever saying why, and
+   * the summary's own `diagnostic` cannot carry the sole-copy case for a caller
+   * that only looks at the result's problems.
+   */
+  const noteIfUnreadable = (
+    issueId: string,
+    copy: IssueRecordCopy,
+    filePath: string
+  ): IssueRecordCopy => {
+    if (copy.diagnostic !== null) {
+      reader.recordProblem({
+        kind: 'issue',
+        itemId: issueId,
+        storeRef: copy.storeRef,
+        path: filePath,
+        reason: copy.diagnostic,
+      });
+    }
+    return copy;
+  };
   const bucket = (issueId: string) => {
     const existing = byId.get(issueId);
     if (existing !== undefined) return existing;
@@ -98,7 +121,11 @@ export async function collectIssues(
       const entry = bucket(issueId);
       if (text !== null) {
         entry.copies.push(
-          copyFrom(text, target.storeRef, target.targetLineId, issueRecordBlobPath(issueId))
+          noteIfUnreadable(
+            issueId,
+            copyFrom(text, target.storeRef, target.targetLineId, issueRecordBlobPath(issueId)),
+            issueRecordBlobPath(issueId)
+          )
         );
       }
       for (const name of await reader.childBlobs(
@@ -122,7 +149,11 @@ export async function collectIssues(
     if (recordPath === null) continue;
     const text = await dependencies.fs.readText(recordPath);
     const entry = bucket(issueId);
-    if (text !== null) entry.copies.push(copyFrom(text, null, null, recordPath));
+    if (text !== null) {
+      entry.copies.push(
+        noteIfUnreadable(issueId, copyFrom(text, null, null, recordPath), recordPath)
+      );
+    }
     const plansDir = safeIssuePlansPath(storeCheckoutRoot, issueId);
     if (plansDir === null) continue;
     for (const name of await dependencies.fs.listNames(plansDir)) {
@@ -187,6 +218,21 @@ export function presentedRecord(copies: readonly IssueRecordCopy[]): IssueRecord
   const committed = copies.find(copy => copy.storeRef !== null && copy.record !== null);
   if (committed?.record != null) return committed.record;
   return copies.find(copy => copy.record !== null)?.record ?? null;
+}
+
+/**
+ * WHY no record is presented, when a copy is the reason.
+ *
+ * The diagnostic is captured per copy already; without this it dies inside
+ * `IssueContent` and the summary reports an Issue whose record is null with no
+ * reason attached — the id survives and the why does not. Committed copies are
+ * named first, matching the presentation order.
+ */
+export function presentedDiagnostic(copies: readonly IssueRecordCopy[]): string | null {
+  if (presentedRecord(copies) !== null) return null;
+  const committed = copies.find(copy => copy.storeRef !== null && copy.diagnostic !== null);
+  if (committed?.diagnostic != null) return committed.diagnostic;
+  return copies.find(copy => copy.diagnostic !== null)?.diagnostic ?? null;
 }
 
 export interface RevisionRead {

@@ -20,6 +20,7 @@ import type {
  */
 export const storeChangesFixture = {
   unsearchedRefs: [],
+  problems: [],
   complete: true,
   groups: [
     {
@@ -63,6 +64,7 @@ export const storeChangesFixture = {
 
 export const storeIssuesFixture = {
   unsearchedRefs: [],
+  problems: [],
   complete: true,
   issues: [
     {
@@ -75,6 +77,7 @@ export const storeIssuesFixture = {
         reason: null,
         createdAt: '2026-01-01T00:00:00.000Z',
       },
+      diagnostic: null,
       divergence: null,
       revisionIds: ['0001'],
       latestRevisionId: '0001',
@@ -92,10 +95,12 @@ export const storeIssuesFixture = {
  */
 export const storeIssueDetailFixture = {
   unsearchedRefs: [],
+  problems: [],
   complete: true,
   issue: storeIssuesFixture.issues[0],
   plan: {
     unsearchedRefs: [],
+    problems: [],
     complete: true,
     issueId: 'iss_1',
     revisionId: '0001',
@@ -181,6 +186,7 @@ export const storeIssueDetailFixture = {
 /** Exactly one project — the "sole candidate is not adopted as scope" fixture. */
 export const storeProjectsFixture = {
   unsearchedRefs: [],
+  problems: [],
   complete: true,
   storeId: 'store_x',
   storeUid: 'uid_x',
@@ -199,6 +205,7 @@ export const storeProjectsFixture = {
 /** Exactly one target line — the "sole candidate is not adopted as scope" fixture. */
 export const storeTargetLinesFixture = {
   unsearchedRefs: [],
+  problems: [],
   complete: true,
   storeId: 'store_x',
   storeUid: 'uid_x',

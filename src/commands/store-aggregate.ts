@@ -11,7 +11,11 @@
  */
 import { Command } from 'commander';
 
-import type { GroupedChanges, ProjectRollup } from '../core/store/query/index.js';
+import type {
+  AggregateProblem,
+  GroupedChanges,
+  ProjectRollup,
+} from '../core/store/query/index.js';
 import { StoreAggregateQuery } from '../core/store/query/index.js';
 import { emitFailure, printJson } from './shared-output.js';
 
@@ -27,12 +31,39 @@ function collect(value: string, previous: readonly string[]): string[] {
   return [...previous, value];
 }
 
+/**
+ * The items that were read and could not be understood, in the HUMAN form.
+ *
+ * A problem the JSON form carries and the human form does not would be a fact
+ * available to a program and hidden from a person — the exact asymmetry "both
+ * forms agree" forbids. Each line names the item, where it was read from, and
+ * why, because "one Change is unreadable" without the why is not a report.
+ */
+function renderProblems(problems: readonly AggregateProblem[]): void {
+  if (problems.length === 0) return;
+  console.log('');
+  console.log(`UNREADABLE: ${problems.length} item(s) were found and could not be read.`);
+  for (const problem of problems) {
+    console.log(
+      `  ${problem.kind} ${problem.itemId} (${problem.storeRef ?? '(local checkout)'}: ${
+        problem.path
+      }): ${problem.reason}`
+    );
+  }
+}
+
 function renderGroupedChanges(result: GroupedChanges): void {
   if (result.groups.length === 0) {
     console.log('No Changes found.');
   }
   for (const group of result.groups) {
     console.log(`${group.projectId} / ${group.targetLineId}`);
+    if (group.active.length === 0 && group.archived.length === 0) {
+      // A declared pair that holds nothing is PRESENT and empty. Printing the
+      // header alone would leave a reader unable to tell it apart from a group
+      // whose entries the renderer dropped.
+      console.log('  (no Changes)');
+    }
     for (const entry of group.active) {
       console.log(`  ${entry.changeId}  (active, ${entry.foundAtRef})`);
     }
@@ -41,13 +72,14 @@ function renderGroupedChanges(result: GroupedChanges): void {
       console.log(`  ${entry.changeId}  (archived ${entry.archiveDate ?? '(no date)'}, ${outcome})`);
     }
   }
-  if (!result.complete) {
+  if (result.unsearchedRefs.length > 0) {
     console.log('');
     console.log(`INCOMPLETE: ${result.unsearchedRefs.length} ref(s) could not be read.`);
     for (const ref of result.unsearchedRefs) {
       console.log(`  ${ref.targetLineId} (${ref.storeRef}): ${ref.reason}`);
     }
   }
+  renderProblems(result.problems);
 }
 
 function renderProjectRollup(result: ProjectRollup): void {
@@ -71,10 +103,11 @@ function renderProjectRollup(result: ProjectRollup): void {
       }`
     );
   }
-  if (!result.complete) {
+  if (result.unsearchedRefs.length > 0) {
     console.log('');
     console.log(`INCOMPLETE: ${result.unsearchedRefs.length} ref(s) could not be read.`);
   }
+  renderProblems(result.problems);
 }
 
 export function registerStoreAggregateCommand(store: Command): void {
@@ -100,6 +133,7 @@ export function registerStoreAggregateCommand(store: Command): void {
             groups: result.groups,
             complete: result.complete,
             unsearchedRefs: result.unsearchedRefs,
+            problems: result.problems,
           });
           return;
         }
@@ -127,6 +161,7 @@ export function registerStoreAggregateCommand(store: Command): void {
             projects: result.projects,
             complete: result.complete,
             unsearchedRefs: result.unsearchedRefs,
+            problems: result.problems,
           });
           return;
         }

@@ -2227,9 +2227,23 @@ export interface StoreCatalogDiagnostic {
   path: string;
 }
 
+/**
+ * An item the query reached and could not read — a Change whose committed
+ * metadata does not validate, an Issue record that does not parse. Not the
+ * same as an unsearched ref, where the bytes were never reached at all.
+ */
+export interface StoreAggregateProblem {
+  kind: 'change' | 'issue';
+  itemId: string;
+  storeRef: string | null;
+  path: string;
+  reason: string;
+}
+
 /** Carried by every Store aggregate read response. */
 export interface StoreAggregateCompleteness {
   unsearchedRefs: { targetLineId: string; storeRef: string; reason: string }[];
+  problems: StoreAggregateProblem[];
   complete: boolean;
 }
 
@@ -2332,6 +2346,8 @@ export interface StoreIssueDivergence {
 export interface StoreIssueSummary {
   issueId: string;
   record: StoreIssueRecordWire | null;
+  /** Why no record is presented, when a copy that does not read is the reason. */
+  diagnostic: string | null;
   divergence: StoreIssueDivergence | null;
   revisionIds: string[];
   latestRevisionId: string | null;

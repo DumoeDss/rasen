@@ -45,4 +45,10 @@ export {
   type ReferenceEvidence,
   type ReferenceResolution,
 } from './references.js';
-export { collectIssues, divergenceOf, presentedRecord, readRevision } from './issues-read.js';
+export {
+  collectIssues,
+  divergenceOf,
+  presentedDiagnostic,
+  presentedRecord,
+  readRevision,
+} from './issues-read.js';

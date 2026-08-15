@@ -15,6 +15,11 @@
  *   - **An unreadable ref is not absence.** It is recorded in `unsearchedRefs`,
  *     it sets `complete: false`, and it never lets a real reference be reported
  *     as unresolved.
+ *   - **An unreadable ITEM is not absence either.** A blob that is there and
+ *     does not parse is recorded in `problems`, sets `complete: false`, and is
+ *     never dropped on the floor — the two failures are kept apart because
+ *     "nobody could look" and "we looked and it is broken" call for different
+ *     repairs.
  */
 import { createHash } from 'node:crypto';
 import * as path from 'node:path';
@@ -38,8 +43,9 @@ import {
   type StoreTargetLineCatalogV1,
 } from '../planning-foundation.js';
 import { issueError } from '../issues/diagnostics.js';
+import { formatZodIssues } from '../../zod-issues.js';
 import type { StoreQueryDependencies } from './dependencies.js';
-import type { CatalogDiagnostic, UnsearchedRef } from './types.js';
+import type { AggregateProblem, CatalogDiagnostic, UnsearchedRef } from './types.js';
 
 /**
  * Store resolution and catalog listing need only the read-only filesystem, so
@@ -335,6 +341,7 @@ export class RefReader {
   private readonly trees = new Map<string, readonly string[] | null>();
   private readonly resolved = new Map<string, string | null>();
   private readonly unsearched: UnsearchedRef[] = [];
+  private readonly unread: AggregateProblem[] = [];
   private readonly searched = new Set<string>();
 
   constructor(
@@ -399,9 +406,34 @@ export class RefReader {
     return blobNames((await this.tree(ref, portablePath)) ?? []);
   }
 
+  /**
+   * Records an item that WAS read and does not parse.
+   *
+   * De-duplicated on (kind, ref, path), because the same blob is offered once
+   * per ref that reaches it and reporting one file twice would read as two
+   * broken items. Two refs carrying different broken copies of one path are
+   * still two problems, which is the honest count.
+   */
+  recordProblem(problem: AggregateProblem): void {
+    const duplicate = this.unread.some(
+      entry =>
+        entry.kind === problem.kind &&
+        entry.storeRef === problem.storeRef &&
+        entry.path === problem.path
+    );
+    if (duplicate) return;
+    this.unread.push(problem);
+  }
+
   get unsearchedRefs(): readonly UnsearchedRef[] {
     return [...this.unsearched].sort((left, right) =>
       left.storeRef.localeCompare(right.storeRef)
+    );
+  }
+
+  get problems(): readonly AggregateProblem[] {
+    return [...this.unread].sort((left, right) =>
+      `${left.storeRef ?? ''}:${left.path}`.localeCompare(`${right.storeRef ?? ''}:${right.path}`)
     );
   }
 
@@ -410,7 +442,32 @@ export class RefReader {
   }
 
   get complete(): boolean {
-    return this.unsearched.length === 0;
+    return this.unsearched.length === 0 && this.unread.length === 0;
+  }
+
+  /**
+   * Reports a Change whose committed metadata was read and does not read back,
+   * and answers `null` so the caller can carry on with the rest of the Store.
+   *
+   * The null is what keeps one malformed Change from failing the whole answer;
+   * the recorded problem is what keeps it from vanishing. Only ever called
+   * when the BYTES ARE THERE and do not parse — an entry with no
+   * `.openspec.yaml` at all is not a Change this query ever saw, and reporting
+   * every legacy archive entry that predates the identity block as a broken
+   * item would be a false alarm on real Stores.
+   */
+  private unreadableChange(
+    input: { readonly ref: string; readonly blobPath: string; readonly changeId: string },
+    reason: string
+  ): null {
+    this.recordProblem({
+      kind: 'change',
+      itemId: input.changeId,
+      storeRef: input.ref,
+      path: input.blobPath,
+      reason,
+    });
+    return null;
   }
 
   /** Reads and re-derives one candidate Change's committed identity. */
@@ -428,13 +485,27 @@ export class RefReader {
     let raw: unknown;
     try {
       raw = parseYaml(text);
-    } catch {
-      return null;
+    } catch (error) {
+      return this.unreadableChange(
+        input,
+        `the committed Change metadata is not valid YAML: ${diagnosticMessage(error)}`
+      );
     }
     const parsed = ChangeMetadataSchema.safeParse(raw);
-    if (!parsed.success) return null;
+    if (!parsed.success) {
+      return this.unreadableChange(
+        input,
+        `the committed Change metadata does not validate: ${formatZodIssues(parsed.error)}`
+      );
+    }
     const identity = parsed.data.identity;
-    if (identity === undefined) return null;
+    if (identity === undefined) {
+      return this.unreadableChange(
+        input,
+        'the committed Change metadata carries no v2 identity block, so this Change has no ' +
+          'project or target line to be grouped under'
+      );
+    }
     return {
       changeInstanceId: identity.instanceId,
       storeUid: identity.storeUid,

@@ -48,9 +48,45 @@ export interface UnsearchedRef {
   readonly reason: string;
 }
 
+/**
+ * An item the query REACHED and could not read.
+ *
+ * Distinct from an `UnsearchedRef`, where the bytes were never reached at all.
+ * Both lower completeness; neither ever removes the item from the answer. When
+ * the thing that failed to parse is the item's own identity — a Change whose
+ * committed metadata does not validate has no validated (project, line) key to
+ * be grouped under — this report IS the item's report, which is why it names
+ * the item, where it was read from, and why.
+ *
+ * A catalog is deliberately NOT reported here: an invalid project or
+ * target-line catalog already appears as its own rollup entry carrying a
+ * `CatalogDiagnostic`, because a catalog keeps a readable identity (its file
+ * name) even when its content does not validate.
+ */
+export interface AggregateProblem {
+  /** What kind of item could not be read. */
+  readonly kind: 'change' | 'issue';
+  /** The item as it is addressed: a Change alias, an Issue id. */
+  readonly itemId: string;
+  /** The Store ref the bytes came from; null for the local checkout. */
+  readonly storeRef: string | null;
+  /** Where the unreadable bytes are: a blob path on `storeRef`, or a local path. */
+  readonly path: string;
+  /** Why it could not be read. */
+  readonly reason: string;
+}
+
 /** Carried by every aggregate result. Never optional, never defaulted. */
 export interface AggregateCompleteness {
   readonly unsearchedRefs: readonly UnsearchedRef[];
+  /**
+   * Items that were reached and could not be read. Non-optional for the same
+   * reason `complete` is: a caller who never has to ask for the problems
+   * cannot forget to, and an item that is reported here is an item that was
+   * not silently omitted.
+   */
+  readonly problems: readonly AggregateProblem[];
+  /** False when a ref went unsearched OR an item went unread. */
   readonly complete: boolean;
 }
 
@@ -215,8 +251,19 @@ export interface IssueDivergence {
 
 export interface IssueSummary {
   readonly issueId: string;
-  /** Null exactly when the Issue is divergent. */
+  /**
+   * Null when the Issue is divergent (no copy is chosen) AND when no copy
+   * could be read at all. `diagnostic` distinguishes the two, so a null record
+   * is never a fact without a reason.
+   */
   readonly record: IssueRecordV1 | null;
+  /**
+   * Why no record is presented: the reason the copy that would have been
+   * presented could not be read, committed copies first. Null when a record IS
+   * presented, and null when every copy read but they disagree — that is a
+   * divergence, which `divergence` reports copy by copy instead.
+   */
+  readonly diagnostic: string | null;
   readonly divergence: IssueDivergence | null;
   readonly revisionIds: readonly string[];
   readonly latestRevisionId: string | null;

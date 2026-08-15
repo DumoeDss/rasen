@@ -164,9 +164,20 @@ describe('Store aggregate HTTP bridge (stores.ts)', () => {
       expect(rollup.targetLines.map((t) => t.targetLineId)).toEqual([LINE]);
     });
 
-    it('lists grouped Changes (empty — none seeded) via handleStoreChanges', async () => {
+    it('lists the declared group as present and empty (none seeded) via handleStoreChanges', async () => {
       const grouped = unwrap(await handleStoreChanges(space, {}));
-      expect(grouped.groups).toEqual([]);
+      // The end-to-end reachability of the board's empty group: the fixture
+      // declares one project on one target line and holds no Change, and the
+      // SERVER answers with that pair, present and empty. Previously this
+      // returned `[]` — the UI's "a group with zero Changes is rendered, not
+      // hidden" test fed the component a group its own server could never
+      // produce.
+      expect(
+        grouped.groups.map((group) => `${group.projectId}/${group.targetLineId}`)
+      ).toEqual([`${PROJECT}/${LINE}`]);
+      expect(grouped.groups[0]?.active).toEqual([]);
+      expect(grouped.groups[0]?.archived).toEqual([]);
+      expect(grouped.complete).toBe(true);
     });
 
     it('every read path leaves the Store Git tree byte-identical', async () => {
