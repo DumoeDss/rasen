@@ -164,7 +164,9 @@ describe('scene-bridge coordinator migration fixture', () => {
     )!;
     const revision = parseExecutionPlanRevision(revisionFile.content, { verifyDigest: true });
     const minted = plan.mintedIdentities.find((entry) => entry.oldAlias === 'scene-render-worker')!;
-    expect(revision.nodes[0]).toMatchObject({
+    // This line keeps slice 1's plan-node canonicalization, so nodes are
+    // ordered by id and indexing [0] is not stable — address by nodeId.
+    expect(revision.nodes.find((node) => node.nodeId === 'render-worker')).toMatchObject({
       kind: 'change',
       projectId: 'scene-bridge',
       targetLineId: 'line-0.1',
@@ -577,7 +579,7 @@ describe('scene-bridge coordinator migration fixture', () => {
       fs.readFileSync(f.issueAt(ACTIVE, 'plans', '0001.yaml'), 'utf8'),
       { verifyDigest: true }
     );
-    expect(revision.nodes[0]).toMatchObject({
+    expect(revision.nodes.find((node) => node.nodeId === 'render-worker')).toMatchObject({
       kind: 'change',
       projectId: 'scene-bridge',
       targetLineId: 'line-0.1',

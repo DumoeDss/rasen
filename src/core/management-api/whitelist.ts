@@ -57,6 +57,9 @@ export const WHITELIST: Readonly<Record<string, WhitelistEntry>> = Object.freeze
   'create-change': { tier: 'bounded-cli', op: 'create-change' },
   // L3+L5: the Store change-finalization bridge's single bounded op.
   'finalize-change': { tier: 'bounded-cli', op: 'finalize-change' },
+  'create-issue': { tier: 'bounded-cli', op: 'create-issue' },
+  'publish-execution-plan': { tier: 'bounded-cli', op: 'publish-execution-plan' },
+  'create-scoped-change': { tier: 'bounded-cli', op: 'create-scoped-change' },
   'create-project-space': { tier: 'bounded-cli', op: 'create-project-space' },
   'register-store-space': { tier: 'bounded-cli', op: 'register-store-space' },
   'setup-store-space': { tier: 'bounded-cli', op: 'setup-store-space' },

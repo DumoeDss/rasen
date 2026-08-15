@@ -29,25 +29,29 @@ describe('runtime adapter registry', () => {
         canDispatch: false,
       },
       omp: {
-        canProbeContext: false,
+        canProbeContext: true,
         canAudit: false,
         canDispatch: false,
       },
     });
   });
 
-  it('excludes a capability-free adapter from every operation set while keeping it registered', () => {
+  it('keeps a single-capability adapter out of the operation sets it does not declare', () => {
     expect(Object.hasOwn(RUNTIME_ADAPTERS, 'omp')).toBe(true);
-    for (const set of [PROBE_RUNTIMES, AUDIT_RUNTIMES, DISPATCH_RUNTIMES]) {
+    // The independence this registry exists to enforce: Oh My Pi gained a
+    // context reader and nothing else. An `omp` appearing in the audit or
+    // dispatch set means a capability outside this change's scope was flipped.
+    expect(PROBE_RUNTIMES).toContain('omp');
+    for (const set of [AUDIT_RUNTIMES, DISPATCH_RUNTIMES]) {
       expect(set).not.toContain('omp');
     }
-    expect(hasRuntimeCapability('omp', 'canProbeContext')).toBe(false);
+    expect(hasRuntimeCapability('omp', 'canProbeContext')).toBe(true);
     expect(hasRuntimeCapability('omp', 'canAudit')).toBe(false);
     expect(hasRuntimeCapability('omp', 'canDispatch')).toBe(false);
   });
 
   it('derives deterministic capability sets in registry order', () => {
-    expect(PROBE_RUNTIMES).toEqual(['claude', 'codex']);
+    expect(PROBE_RUNTIMES).toEqual(['claude', 'codex', 'omp']);
     expect(AUDIT_RUNTIMES).toEqual(['claude', 'codex', 'zed']);
     expect(DISPATCH_RUNTIMES).toEqual(['claude', 'codex']);
   });
@@ -121,15 +125,21 @@ describe('host runtime detection', () => {
     });
   });
 
-  it('keeps a Codex process launched from Oh My Pi identified as Codex', () => {
-    expect(
-      detectHostRuntime({
-        CODEX_THREAD_ID: 'thread-1',
-        OMPCODE: '1',
-        CLAUDECODE: '1',
-      })
-    ).toEqual({ runtime: 'codex', source: 'codex-thread-id' });
-  });
+  // Both Codex fingerprints, not just one: inserting the OMPCODE check one
+  // line too early — between CODEX_THREAD_ID and CODEX_SANDBOX — would
+  // misidentify a sandboxed `codex exec` child of Oh My Pi as its parent, and
+  // a CODEX_THREAD_ID-only case stays green through that mistake.
+  it.each([
+    [{ CODEX_THREAD_ID: 'thread-1' }, 'codex-thread-id'],
+    [{ CODEX_SANDBOX: 'seatbelt' }, 'codex-sandbox'],
+  ] as const)(
+    'keeps a Codex process launched from Oh My Pi identified as Codex (%o)',
+    (codexFingerprint, source) => {
+      expect(
+        detectHostRuntime({ ...codexFingerprint, OMPCODE: '1', CLAUDECODE: '1' })
+      ).toEqual({ runtime: 'codex', source });
+    }
+  );
 
   it('accepts any registered adapter id as the explicit override', () => {
     expect(detectHostRuntime({ RASEN_AGENT_RUNTIME: 'omp', CLAUDECODE: '1' })).toEqual({
@@ -161,6 +171,7 @@ describe('host x target dispatch routes', () => {
     ['omp', 'claude', 'legacy-fallback'],
     ['omp', 'codex', 'legacy-fallback'],
     ['zed', 'claude', 'legacy-fallback'],
+    ['zed', 'codex', 'legacy-fallback'],
   ] as const)('resolves %s -> %s as %s', (host, target, mode) => {
     expect(resolveDispatchRoute(host, target)).toMatchObject({
       host,

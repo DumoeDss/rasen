@@ -61,6 +61,9 @@ import {
   type ImmutableFinalizationPlan,
 } from './store/finalization/index.js';
 import { Validator } from './validation/validator.js';
+import { resolveProjectHome } from './project-home.js';
+import { derivePlanningSpaceId, readPhysicalIdentity } from './change-run/internal/identity.js';
+import { createAssociationLedgerStore } from './change-run/internal/association-ledger-store.js';
 
 interface PreparedSpecActions {
   readonly actions: PreparedArchiveSpecAction[];
@@ -1528,6 +1531,21 @@ export class ArchiveCommand {
 
     const globalDataDir = getGlobalDataDir();
     const persistedPlanToken = await persistArchivePlan(plan, globalDataDir);
+    // Capture the active Change identity before the archive transaction removes
+    // its source. The ECP association ledger uses this to distinguish a later
+    // same-name recreation from the archived instance — 0.2.0-line integration
+    // the 0.1.7 archive does not know about.
+    let preArchivePhysical: ReturnType<typeof readPhysicalIdentity> | undefined;
+    try {
+      const activeStat = await fs.stat(changeDir, { bigint: true });
+      preArchivePhysical = readPhysicalIdentity({
+        device: activeStat.dev,
+        ino: activeStat.ino,
+        birthtimeMs: activeStat.birthtimeMs,
+      });
+    } catch {
+      // Association bookkeeping is best-effort for pre-registry projects.
+    }
     const result = await withStoredArchivePlanOperation(
       plan,
       globalDataDir,
@@ -1580,6 +1598,37 @@ export class ArchiveCommand {
       if (disposition !== null) console.log(disposition);
       process.exitCode = 1;
       return null;
+    }
+
+    // The recoverable archive transaction is authoritative for filesystem
+    // publication. Update 0.2.0's ECP association ledger only after it
+    // completes — the same best-effort contract the 0.2.0 archive carried.
+    if (preArchivePhysical) {
+      try {
+        const projectHome = await resolveProjectHome(root.path, { ensure: false });
+        if (projectHome) {
+          const planningSpaceId = derivePlanningSpaceId(projectHome.name) as never;
+          const ledgerStore = createAssociationLedgerStore({
+            homeDir: projectHome.homeDir,
+            planningSpaceId,
+            projectId: projectHome.projectId,
+          });
+          const alias = `changes/${changeName}`;
+          const archiveAlias = `changes/archive/${path.basename(result.path)}`;
+          const active = ledgerStore.resolveActiveAssociation(changeName);
+          if (active) {
+            ledgerStore.archive({
+              changeId: changeName,
+              instanceId: active.instanceId,
+              activeAlias: alias,
+              archiveAlias,
+              physicalIdentity: preArchivePhysical,
+            });
+          }
+        }
+      } catch {
+        /* registry bookkeeping is best-effort; archive still succeeds */
+      }
     }
 
     if (!json) {
