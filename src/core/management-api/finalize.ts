@@ -273,6 +273,12 @@ function runCli(
       cwd,
       shell: false,
       windowsHide: true,
+      // Read-only inspections must not take git's optional locks: without
+      // this, a `git status` anywhere in the inspection refreshes the
+      // worktree index's stat cache and the refusal's "mutated nothing"
+      // contract would be observably false on filesystems whose mtime
+      // granularity makes stat-cache refreshes likely (Windows NTFS).
+      env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
     });
     let stdout = '';
     let stderr = '';
