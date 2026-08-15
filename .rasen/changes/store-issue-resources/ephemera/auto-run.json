@@ -1,0 +1,83 @@
+{
+  "pipeline": "small-feature",
+  "stages": {
+    "propose": {
+      "status": "done",
+      "reconciledRetroactively": "This stage record was never populated while the stage ran. It sat at status pending while apply was already in flight, which reads to a resuming session as if propose had not happened at all -- the session-3 LEAD hit exactly that. Reconciled from on-disk evidence only. Deliberately NOT reconstructed: the gate decision, the worker identity/model/horizon, and the planner's own scope reasoning, none of which survive anywhere readable. A thin honest record beats an invented complete one.",
+      "artifacts": [
+        "proposal.md",
+        "design.md",
+        "tasks.md",
+        "specs/board-ui/spec.md",
+        "specs/management-http-api/spec.md",
+        "specs/management-ui-shell/spec.md",
+        "specs/store-aggregate-query/spec.md",
+        "specs/store-issue-resources/spec.md",
+        "specs/store-planning-layout-v2/spec.md"
+      ],
+      "taskCount": 39,
+      "evidenceForDone": "All 9 artifacts present on disk. `node bin/rasen.js validate 'store-issue-resources' --type change --strict` PASSES, re-run by the LEAD this session rather than taken on report. The LEAD's propose-time rulings survive under stages.apply.leadRulings, and handoff/lead-2.md records the three-child decomposition that produced this child."
+    },
+    "apply": {
+      "status": "done",
+      "gateDecision": "auto-approved (global)",
+      "worker": {
+        "role": "implementer",
+        "runtime": "claude",
+        "dispatchMode": "native",
+        "agentId": "implementer-s3@session-54f71457",
+        "model": "sonnet",
+        "horizon": "LOOP_BOUND"
+      },
+      "progress": "COMPLETE: 39/39, `rasen list --changes` reports the change Complete. All eight Section-8 gates closed, 8.3 last and GREEN. Two review rounds ran after apply's substance was done (round 1: 1 Blocker / 2 Major / 3 Minor / 3 Trivial; round 2 after fixes: 0 Blocker / 0 Major, 2 new Minor/Trivial), plus a second fix round for the operator's MAJOR-1 ruling. Both fix rounds were verified by the LEAD re-running their mutations rather than reading them: the wire-mirror completeness direction RED 1/15, and removing the node sort RED 3/10 while the 7.1 digest anchors stayed GREEN -- one mutation establishing both that the guard discriminates and that the anchors genuinely bypass the normalizer. Two tasks were found ticked while partly false (2.4's node-ordering clause and 2.5's uncommitted clause); both records were corrected in place rather than closed with new tasks.",
+      "commits": [
+        "af6f3e9d issues/ + query/ landed, 5 ported suites green",
+        "8caafa11 / 9a489b93 command surface",
+        "b7568d6b management-api handlers",
+        "b13a6dc7 wire types + UI mirror + drift guard",
+        "72100ab3 UI components",
+        "52b8be1f deferral + substitute coverage"
+      ],
+      "notableFindings": {
+        "nulByteCorruption": "Two REAL production defects found while verifying: query/module.ts wrote the grouping-key separator as a RAW NUL byte instead of the two-character escape text, and issues/records.ts wrote CONTROL_PATTERN's hex escapes as raw bytes. The file's OWN comment had warned that a raw NUL makes Git classify the file as binary. LEAD-verified fixed: `file` now reports UTF-8 text where query/module.ts previously reported 'data'; a raw-control-byte grep over issues/** and query/** is empty. The transferable part is the DETECTION path - `file` reporting 'data', ripgrep refusing to grep a source file - because tsc and the test suites were both silent. A new variant of the known Write-tool mangling hazard, in hex/NUL-escape form rather than multibyte.",
+        "mirrorAbsenceGap": "The repo's existing satisfies-fixture tripwire (packages/ui/test/api/fixtures.test.ts) only proves an EXISTING mirror type is shape-compatible - it is SILENT when a wire type's mirror was never written at all, which is the exact failure mode it is relied on to prevent. New drift-guard test closes it, mutation-proved: renamed a mirror type -> RED 12/13 naming the type -> byte-exact revert, sha256-verified -> GREEN 13/13.",
+        "unrunTypecheck": "CORRECTED in session 3; the original text is preserved in the field below. Original claim: packages/ui carries a `typecheck` script that NO CI job invokes, so its pre-existing type errors threaten nothing. That claim was verified against .github/workflows/ci.yml ALONE and stated about CI as a whole, and it is false at the workflow-set level: release.yml:89-90 runs `pnpm --dir packages/ui typecheck` and release.yml:93 runs the full packages/ui test suite; packages/ui/package.json additionally wires prepublishOnly to typecheck && test && build. Re-measured this session on a clean tree: `pnpm -C packages/ui exec tsc --noEmit` exits 2 with ELEVEN errors across 3 files (ConsultationBindingEditor.tsx 8, IssuesDrawer.tsx 1, test/canvas/v2-node-panel-consultation.test.tsx 2), not the 8 recorded; the file count matches, the error count does not, and that gap is left unexplained rather than reconciled away. Confirmed NOT this portfolio's doing: `git log origin/dev/0.2.0..HEAD` over those three paths returns no commits, so all three are untouched since merge base 657c546d. What actually changes: `does not threaten delivery` holds for THIS PR (ci.yml really never type-checks packages/ui) but NOT for the release workflow, which will fail on these errors at the next publish of 0.2.0 -- a dated risk, not a latent one. Disposition for this child is unchanged (out of scope, owned by the canvas/consultation surface). Transferable rule: when concluding that nothing runs a check, enumerate the workflow DIRECTORY, not the workflow you happen to be reading.",
+        "unrunTypecheckOriginalText": "packages/ui carries a `typecheck` script (tsc --noEmit) that NO CI job invokes - CI runs only `vite build` (which does not type-check) and `vitest run`. That is why 8 type errors accumulated there predating this branch. LEAD-verified against .github/workflows/ci.yml and packages/ui/package.json. The 8 errors do NOT threaten portfolio delivery; the unrun script is the standing defect.",
+        "ciUiSuiteGap": "Found in session 3 while re-deriving the gate for task 8.2, and NOT what that task was looking for. This change's two new packages/ui component suites (store-aggregate-board.test.tsx, store-issues-view.test.tsx) NEVER RUN on the portfolio's pull request. ci.yml runs packages/ui tests in exactly one step (lines 151-156), gated on matrix.label == 'windows-pwsh-shard-1', against a HARDCODED four-file list that names local-path-picker, spaces-page, workflows-page and pipelines-page only; no other ci.yml step runs them, and the root vitest config excludes packages/ui entirely. release.yml:93 does run the full suite, so they are not unreachable everywhere -- they are invisible to the only gate that runs BEFORE the code lands. This is the third instance in this portfolio of the same defect class (a gate list frozen at one point in time silently stops measuring what the subject grows), and the first found inside CI itself rather than in a local command. Recorded, not fixed: adding files to ci.yml would put a .github/ path into this child's diff, which task 8.8 has already audited as clean of anything outside .ts/.tsx/.json/.md, and CI configuration is a portfolio-delivery concern. DECISION OWNER: whoever executes portfolio delivery. Options: (a) append the two files to the ci.yml list, (b) replace the hardcoded list with a full packages/ui run on one shard, (c) accept that these components gate only at release.",
+        "resolverAsymmetry": "stores.ts -> resolveStoreSpace -> resolveStoreBinding runs a STRICTER root-health check (requires rasen/config.yaml at the Store's registered root) than the CLI-side resolveRegisteredStore path does. A Store that works from the CLI can therefore fail over the API. Surfaced because child 2's shared store-workspace-fixture never writes that file - which real `rasen store setup` always does - and none of its 16 other consumers take the alias path. Recorded as an open question, not fixed: out of scope for this child.",
+        "scopeTsWasNeverTested": "The LEAD's task 6.2 assumed the deferred store-issue-scope-intent.test.ts was the sole coverage of issues/scope.ts behaviours. It was not: resolveIssueScope's worktree-root walk, assertIssueWriteLocation's refusal branch, and requireIssueScopeStore had ZERO coverage anywhere in the reference OR the ported tree - the deferred file does not exercise the refusal branch either. So the 'substitute' coverage written is the FIRST coverage that production code has ever had. Both guards mutation-proved. This is the standing rule that a defensive requirement may be protecting behaviour that was never tested - and taking the deferral evidence is what exposed it.",
+        "environmentDegradationInvalidatesGates": "Session 3. The gate ran RED (8 files / 27 tests failed of 189 / 2649) and NONE of it was a code regression. 7 of the 8 passed clean on a solo re-run. The 8th, workspace-cli, failed solo TOO and was initially recorded as a real defect -- the correction came from taking the actual error text instead of stopping at 'solo also fails'. Three runs produced three DIFFERENT failure sets with no overlapping names, and every failure was `Test timed out in 30000ms` or `EPERM` from fs.rmSync in fixture cleanup, never an assertion. Measured cause: %TEMP% held 3983 leftover rasen-* directories (many full Git repos; statSync over them alone took >120s), and `node bin/rasen.js --version` startup measured 2223-29470ms ON THE SAME BINARY while every test in that suite runs within 2x of the 30s per-test timeout. Which tests fail was a coin flip against a wall. Self-reinforcing loop: residue slows the filesystem -> tests time out -> cleanup is skipped or EPERMs -> residue grows; the EPERM we saw IS the cleanup failing. Repaired by deleting the 3430 dirs older than 1h (23 newer kept for concurrent sessions, 0 failures); re-measured startup spread collapsed from 13x (2223-29470ms) to 1.1x (2319-2558ms), bare node 711->130ms. THE TRANSFERABLE RULE: on this machine, before trusting or triaging any full-suite run, check %TEMP% residue and measure CLI startup SPREAD -- not median. A 13x spread makes any subprocess-spawning suite non-deterministic, and the resulting failures are indistinguishable by shape from real defects. Also: 'no regression identified' is NOT 'the suite passes'; only the latter closes 8.3.",
+        "startupGates": "commander-presentation.ts HARD-CRASHES CLI startup on (a) a structural mismatch between the live Commander tree and command-registry.ts, and (b) missing English locale copy for any registered command or flag. The failure mode is a dead binary, not a failing test, so anything registering a new command surface must satisfy both."
+      },
+      "leadRulings": [
+        "CLI verb names follow the REFERENCE (plan/state under `store issue`; changes/projects directly under `store`, no aggregate group). The specs pin no CLI verb at all - every 'aggregate' in them is descriptive - so tasks.md 4.1/4.2's prose was the planner's paraphrase and simply wrong. Prose corrected rather than left standing, because child 2 shipped exactly that defect and it came back as a review finding.",
+        "UI components deliberately NOT nav-wired. Neither management-ui-shell (which governs how Store-scoped calls address their Store) nor board-ui (which governs mutation scope in an aggregate view) requires reachability, and wiring would modify shell structure in the divergent rim, against design Decision 3's additive-only rule. Recorded as a named follow-up rather than left implicit: a component that compiles, tests green and cannot be reached looks like delivered value from every angle except the one that matters."
+      ]
+    },
+    "verify": {
+      "status": "done",
+      "worker": "verifier-s3 (fable), authoring none of the code, reviews, or fixes",
+      "verdict": "NOT archive-ready on first pass -- 2 Blockers, 1 Major, 6 Minor, found AFTER two clean review rounds.",
+      "whyItMattered": "The brief told it to assume a third false-clause tick existed, because two had already been found. There were two more. B-V1: an unreadable committed Change was SILENTLY OMITTED from listChanges (changeEvidence returned null on three distinct failures and the caller dropped nulls), directly violating the delta SHALL NOT silently omit; and a malformed issue.yaml lost its reason. B-V2: a declared-but-empty project or target line could never appear, because collectGroups created buckets only per committed Change -- and store-aggregate-query.test.ts:118 actively PINNED that omission with an exact-equality assertion. M-V1: proposal.md, which becomes the PR body, twice claimed a 'rasen store aggregate' command group that does not ship; the shipped surface is 'rasen store changes' and 'rasen store projects', two siblings under 'store'.",
+      "fix": "f46ffc13 (fixer3-s3, opus): B-V1 reports problems through one completeness() helper feeding all six result types at 11 construction sites, with three distinct reasons for the three give-up points; B-V2 seeds the declared (project, line) matrix before the evidence loop, from the same catalogs listProjects reports. The pinned assertion was replaced with exact equality over the groups that HOLD entries -- still exact, never relaxed to a subset, so a merge, a wrong key, or a phantom third holder each still fail it. M-V1 corrected by the LEAD against live CLI output rather than against the tasks."
+    },
+    "review-loop": {
+      "status": "done",
+      "rounds": 2,
+      "worker": "reviewer-s3 (round 1, fable), fixer-s3 (round 1, opus), reviewer2-s3 (round 2, fable), fixer2-s3 (round 2, opus) -- four distinct workers, none reviewing or fixing its own prior output",
+      "round1": "1 Blocker / 2 Major / 3 Minor / 3 Trivial. BLOCKER-1: publishPlan accepted a Change whose only evidence was a machine-local workspace-index entry, contradicting the delta SHALL; zero test coverage on that path. MAJOR-1: node-ordering canonicalization promised by the delta and not implemented. MAJOR-2: the wire-mirror guard could not catch ANY unlisted type -- both its assertions iterate the hardcoded list, so no direction sees a core-file type the list lacks.",
+      "round2": "0 Blocker / 0 Major after fixes, by a DIFFERENT reviewer. All round-1 findings independently re-established closed. Two new: MINOR-R2-1 (the schema-bypass class only partly closed -- NodeSchema declared but never parsed, so a 501-char summary and a numeric nodeId both returned 500) and TRIVIAL-R2-1 (an export inside the banner comment block is invisible to the completeness direction; narrow, documented, not fixed).",
+      "operatorRulings": "All three rulings were change-the-code, never reword-the-spec: BLOCKER-1 enforce the committed-evidence requirement; MAJOR-1 implement the sort WITH a new test, because both rounds measured that the change costs zero moved pinned literals AND zero verification -- so shipping it untested would have replaced an unimplemented promise with an unverified behaviour; MINOR-R2-1 sited in the core AND at the handler, since the CLI reaches the same core and a handler-only fix leaves it unguarded.",
+      "leadVerification": "Both fix rounds re-run by the LEAD rather than read. Wire-mirror completeness direction: unlisted export in the section body -> RED 1/15 (a first attempt gave a false GREEN because the probe landed inside the banner comment block -- trap recorded). Plan-node sort removed -> RED 3/10 naming exactly the three node-order cases while the 7.1 digest anchors stayed GREEN, one mutation establishing both that the guard discriminates and that the anchors bypass the normalizer. Baselines 78AA5825/A96B2B71 matched the fixers independently; restores byte-exact."
+    },
+    "ship": {
+      "status": "done",
+      "mode": "local",
+      "commit": "23c5906a",
+      "note": "Commit only -- no push, no PR, no remote ref. The portfolio delivers ONCE at the parent after all three children are terminal; this is the last of them. Ship log at evidence/ship-log.md, written without a premature ## Archive heading (that heading makes rasen archive refuse with archive_recovery_required)."
+    },
+    "archive": {
+      "status": "pending"
+    }
+  }
+}

@@ -141,6 +141,17 @@ describe('root-inclusive CLI structure', () => {
       'eject',
       'list',
       'doctor',
+      // Store v2 groups, added by the store-v2-foundation portfolio. `workspace`
+      // and `target-line` come from store-worktree-bindings-v2; `issue`,
+      // `changes` and `projects` from store-issue-resources. The last two are
+      // deliberately top-level siblings rather than a `store aggregate` group.
+      // `workspace` lives here and not at the root precisely because the
+      // top-level `workspace` noun-command stays retired.
+      'target-line',
+      'workspace',
+      'issue',
+      'changes',
+      'projects',
     ]);
     expect(command('store', 'list')?.aliases).toEqual(['ls']);
     expect(command('workset', 'list')?.aliases).toEqual(['ls']);
@@ -213,6 +224,21 @@ describe('root-inclusive CLI structure', () => {
           ? `${parentPath} ${child.name}`
           : child.name;
         const flagNames = child.flags.map((flag) => flag.name);
+        // Everything under `store` is exempt, and the reason is semantic rather
+        // than a concession. This invariant pairs the two ROOT SELECTORS: at the
+        // root, `--store` and `--project` are mutually exclusive ways to say
+        // which Rasen root a command runs against, so offering one without the
+        // other strands the user. Under `store`, neither flag selects a root --
+        // both name the SUBJECT. `store issue list --store <id>` asks which
+        // Store's Issues to list; `store target-line add --project <id>` names
+        // which project the line belongs to. Requiring the pair there would mean
+        // adding a `--project` that cannot mean anything to seven Store-scoped
+        // reads, and would pull them into the `lifecycle` inventory below, which
+        // enumerates root-selecting commands only.
+        if (commandPath.startsWith('store ')) {
+          walk(child, commandPath);
+          continue;
+        }
         if (flagNames.includes('store')) {
           seen.push(commandPath);
           expect(flagNames, `${commandPath} --project`).toContain('project');

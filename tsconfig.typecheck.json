@@ -1,0 +1,13 @@
+{
+  "//": "Type-level test config. The root tsconfig excludes `test/` (and CI's `tsc --noEmit` runs that root config), which made every `expectTypeOf` assertion in the suite inert. This config adds ONLY `*.test-d.ts` files on top of `src/`, so type-level assertions are actually checked without signing the whole `test/` tree up for type checking in one step. Run via `pnpm run test:types`.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["src/**/*", "test/**/*.test-d.ts"],
+  "exclude": ["node_modules", "dist"]
+}

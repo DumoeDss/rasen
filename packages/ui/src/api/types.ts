@@ -2210,3 +2210,287 @@ export interface PipelineEngineSupport {
     profileDigest: string;
   };
 }
+
+// ---- Store aggregate (store-issue-resources) ----
+// Source of truth: `src/core/management-api/wire-types.ts` in the root
+// package (`GET`/`POST /api/v1/stores/*`). Same hand-maintained-mirror
+// discipline as the rest of this file: copied field-for-field, `readonly`
+// dropped like every other mirror here. The core file aliases each response
+// type directly to a `StoreAggregateQuery`/`StoreIssues` domain type rather
+// than a hand-authored envelope (the wire body is that type, unwrapped) — this
+// mirror redeclares the same shape as a plain interface instead, since a type
+// ALIAS to a package this UI cannot import is not an option here.
+
+export interface StoreCatalogDiagnostic {
+  code: string;
+  message: string;
+  path: string;
+}
+
+/**
+ * An item the query reached and could not read — a Change whose committed
+ * metadata does not validate, an Issue record that does not parse. Not the
+ * same as an unsearched ref, where the bytes were never reached at all.
+ */
+export interface StoreAggregateProblem {
+  kind: 'change' | 'issue';
+  itemId: string;
+  storeRef: string | null;
+  path: string;
+  reason: string;
+}
+
+/** Carried by every Store aggregate read response. */
+export interface StoreAggregateCompleteness {
+  unsearchedRefs: { targetLineId: string; storeRef: string; reason: string }[];
+  problems: StoreAggregateProblem[];
+  complete: boolean;
+}
+
+export interface StoreProjectRollupEntry {
+  projectId: string;
+  roles: { planning: boolean; knowledge: boolean } | null;
+  diagnostic: StoreCatalogDiagnostic | null;
+  targetLines: string[];
+  activeChangeCount: number;
+  archivedChangeCount: number;
+}
+
+/** `GET /api/v1/stores/projects` response. */
+export interface StoreProjectsResponse extends StoreAggregateCompleteness {
+  storeId: string;
+  storeUid: string;
+  projects: StoreProjectRollupEntry[];
+}
+
+export interface StoreTargetLineRollupEntry {
+  targetLineId: string;
+  storeRef: string | null;
+  diagnostic: StoreCatalogDiagnostic | null;
+  projects: string[];
+  activeChangeCount: number;
+  archivedChangeCount: number;
+}
+
+/** `GET /api/v1/stores/target-lines` response. */
+export interface StoreTargetLinesResponse extends StoreAggregateCompleteness {
+  storeId: string;
+  storeUid: string;
+  targetLines: StoreTargetLineRollupEntry[];
+}
+
+/** An absolute path that locates something on THIS machine and grants nothing. */
+export interface StoreInertLocalLocator {
+  root: string;
+  kind: 'planning-worktree';
+  portable: false;
+}
+
+export interface StoreAggregateChangeEntry {
+  changeId: string;
+  changeInstanceId: string | null;
+  projectId: string;
+  targetLineId: string;
+  foundAtRef: string;
+  localLocator: StoreInertLocalLocator | null;
+}
+
+export interface StoreAggregateArchiveEntry {
+  changeId: string;
+  changeInstanceId: string | null;
+  projectId: string;
+  targetLineId: string;
+  entryName: string;
+  archiveDate: string | null;
+  outcome: string | null;
+  legacyRecord: boolean;
+  foundAtRef: string;
+}
+
+export interface StoreChangeGroup {
+  projectId: string;
+  targetLineId: string;
+  active: StoreAggregateChangeEntry[];
+  archived: StoreAggregateArchiveEntry[];
+}
+
+/** `GET /api/v1/stores/changes` response. */
+export interface StoreChangesResponse extends StoreAggregateCompleteness {
+  groups: StoreChangeGroup[];
+}
+
+export type StoreIssueState = 'open' | 'resolved' | 'dropped';
+
+/** `rasen/issues/<issueId>/issue.yaml`, as read back. */
+export interface StoreIssueRecordWire {
+  version: 1;
+  id: string;
+  title: string;
+  state: StoreIssueState;
+  reason: string | null;
+  createdAt: string;
+}
+
+export interface StoreIssueRecordCopy {
+  storeRef: string | null;
+  targetLineId: string | null;
+  sha256: string;
+  record: StoreIssueRecordWire | null;
+  diagnostic: string | null;
+}
+
+export interface StoreIssueDivergence {
+  copies: StoreIssueRecordCopy[];
+}
+
+export interface StoreIssueSummary {
+  issueId: string;
+  record: StoreIssueRecordWire | null;
+  /** Why no record is presented, when a copy that does not read is the reason. */
+  diagnostic: string | null;
+  divergence: StoreIssueDivergence | null;
+  revisionIds: string[];
+  latestRevisionId: string | null;
+  refs: string[];
+  uncommitted: boolean;
+}
+
+/** `GET /api/v1/stores/issues` response. */
+export interface StoreIssuesResponse extends StoreAggregateCompleteness {
+  issues: StoreIssueSummary[];
+}
+
+/** `GET /api/v1/stores/issue-references` response — same shape as the issues list. */
+export type StoreIssueReferencesResponse = StoreIssuesResponse;
+
+export type StoreExecutionPlanNodeKind = 'change' | 'intent';
+
+export interface StoreExecutionPlanNode {
+  nodeId: string;
+  kind: StoreExecutionPlanNodeKind;
+  projectId: string;
+  targetLineId: string;
+  dependsOn: string[];
+  /** Present only when `kind === 'change'`. */
+  changeInstanceId?: string;
+  changeAlias?: string;
+  /** Present only when `kind === 'intent'`. */
+  summary?: string;
+}
+
+/** `rasen/issues/<issueId>/plans/<revisionId>.yaml`, as read back. */
+export interface StoreExecutionPlanRevisionWire {
+  version: 1;
+  issueId: string;
+  revisionId: string;
+  supersedes: string | null;
+  createdAt: string;
+  contentSha256: string;
+  nodes: StoreExecutionPlanNode[];
+}
+
+export type StorePlanNodeResolutionStatus = 'resolved' | 'unresolved' | 'ambiguous' | 'not-created';
+
+export interface StorePlanNodeClaimant {
+  changeId: string;
+  projectId: string;
+  targetLineId: string;
+  foundAtRef: string;
+  archived: boolean;
+}
+
+export interface StorePlanNodeResolution {
+  status: StorePlanNodeResolutionStatus;
+  claimants: StorePlanNodeClaimant[];
+  searchedRefs: string[];
+  localLocator: StoreInertLocalLocator | null;
+  outcome: string | null;
+  archived: boolean;
+}
+
+export type StorePlanNodeReadiness = 'not-started' | 'blocked' | 'in-progress' | 'finalized' | 'unknown';
+
+export interface StoreResolvedPlanNode {
+  node: StoreExecutionPlanNode;
+  resolution: StorePlanNodeResolution;
+  readiness: StorePlanNodeReadiness;
+  blockedBy: string[];
+}
+
+export interface StoreIssueReadiness {
+  nodes: StoreResolvedPlanNode[];
+  readyToResolve: boolean;
+}
+
+/** `GET /api/v1/stores/execution-plan` response. */
+export interface StoreExecutionPlanResponse extends StoreAggregateCompleteness {
+  issueId: string;
+  revisionId: string | null;
+  revision: StoreExecutionPlanRevisionWire | null;
+  diagnostic: string | null;
+  readiness: StoreIssueReadiness;
+}
+
+export interface StoreIssueDetailResponse extends StoreAggregateCompleteness {
+  issue: StoreIssueSummary;
+  plan: StoreExecutionPlanResponse | null;
+}
+
+export interface StoreSuggestedIssueCommit {
+  repoRoot: string;
+  pathspecs: string[];
+  message: string;
+  rationale: string;
+}
+
+export interface StoreIssueWriteReport {
+  issueId: string;
+  storeId: string;
+  storeUid: string;
+  checkoutRoot: string;
+  checkoutRef: string | null;
+  written: string[];
+  suggestedCommits: StoreSuggestedIssueCommit[];
+}
+
+/** `POST /api/v1/stores/issues` and `POST /api/v1/stores/issue-state` response — both write one Issue record. */
+export interface StoreIssueRecordResponse extends StoreIssueWriteReport {
+  record: StoreIssueRecordWire;
+}
+
+/** `POST /api/v1/stores/execution-plan` response. */
+export interface StoreExecutionPlanPublishResponse extends StoreIssueWriteReport {
+  revision: StoreExecutionPlanRevisionWire;
+}
+
+/** `POST /api/v1/stores/issues` request body. */
+export interface StoreIssueCreateRequest {
+  issueId?: string;
+  title?: string;
+  readme?: boolean;
+}
+
+/** `POST /api/v1/stores/issue-state` request body. */
+export interface StoreIssueSetStateRequest {
+  issueId?: string;
+  state?: string;
+  reason?: string;
+}
+
+/** One node of a `POST /api/v1/stores/execution-plan` request body. */
+export interface StoreExecutionPlanNodeInput {
+  nodeId?: string;
+  kind?: string;
+  projectId?: string;
+  targetLineId?: string;
+  changeInstanceId?: string;
+  changeAlias?: string;
+  summary?: string;
+  dependsOn?: string[];
+}
+
+/** `POST /api/v1/stores/execution-plan` request body. */
+export interface StoreExecutionPlanPublishRequest {
+  issueId?: string;
+  nodes?: StoreExecutionPlanNodeInput[];
+}

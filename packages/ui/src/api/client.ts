@@ -44,6 +44,19 @@ import type {
   SpacesResponse,
   SpaceWorktreesResponse,
   StatusResponse,
+  StoreChangesResponse,
+  StoreExecutionPlanPublishRequest,
+  StoreExecutionPlanPublishResponse,
+  StoreExecutionPlanResponse,
+  StoreIssueCreateRequest,
+  StoreIssueDetailResponse,
+  StoreIssueRecordResponse,
+  StoreIssueReferencesResponse,
+  StoreIssuesResponse,
+  StoreIssueSetStateRequest,
+  StoreIssueState,
+  StoreProjectsResponse,
+  StoreTargetLinesResponse,
   SubmitChangeRequest,
   SubmitChangeResponse,
   TaskDetailResponse,
@@ -598,6 +611,137 @@ export function listProfiles(): Promise<ProfileListResponse> {
  */
 export function mutateProfile(body: ProfileMutationRequest): Promise<ProfileMutationResponse> {
   return request<ProfileMutationResponse>('/api/v1/profiles', {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify(body),
+  });
+}
+
+// ---- Store aggregate (store-issue-resources) ----
+// Cross-project reads (Issues, Execution Plans, project/target-line rollups,
+// grouped Changes) plus the three Issue/Plan mutations, every one addressed
+// through the same `space` selector every other call in this file uses — a
+// Store is addressed by its stable identity, never a filesystem path or
+// display alias (management-ui-shell). Reads are lock-free and never mutate
+// (management-http-api); the two write endpoints below (`createStoreIssue`,
+// `setStoreIssueState`) take no project/target line at all, since an Issue is
+// Store-level intent — only `publishStoreExecutionPlan` carries per-node
+// scope, and the caller is responsible for never submitting an incomplete one
+// (board-ui: "An aggregate view never submits a mutation with an incomplete
+// scope").
+
+/** Every project the Store's catalog declares, with its role flags and Change counts. */
+export function getStoreProjects(space?: string): Promise<StoreProjectsResponse> {
+  return request<StoreProjectsResponse>(`/api/v1/stores/projects${spaceQuery(space)}`);
+}
+
+/** Every target line the Store's catalog declares, with its owning projects and Change counts. */
+export function getStoreTargetLines(space?: string): Promise<StoreTargetLinesResponse> {
+  return request<StoreTargetLinesResponse>(`/api/v1/stores/target-lines${spaceQuery(space)}`);
+}
+
+export interface StoreChangesFilter {
+  projects?: string[];
+  targetLines?: string[];
+  outcomes?: string[];
+  state?: 'active' | 'archived';
+}
+
+/**
+ * Changes grouped by project AND target line (board-ui: the same Change alias
+ * in two projects is two board entries). Filters narrow; an empty
+ * project/target-line group in the response is a group that exists and has no
+ * Changes yet — the caller renders it, never hides it.
+ */
+export function getStoreChanges(space?: string, filter?: StoreChangesFilter): Promise<StoreChangesResponse> {
+  const params = new URLSearchParams();
+  if (space) params.set('space', space);
+  for (const project of filter?.projects ?? []) params.append('project', project);
+  for (const targetLine of filter?.targetLines ?? []) params.append('targetLine', targetLine);
+  for (const outcome of filter?.outcomes ?? []) params.append('outcome', outcome);
+  if (filter?.state) params.set('state', filter.state);
+  const query = params.toString();
+  return request<StoreChangesResponse>(query ? `/api/v1/stores/changes?${query}` : '/api/v1/stores/changes');
+}
+
+/** Every Store-level Issue, optionally narrowed by state. */
+export function getStoreIssues(space?: string, state?: StoreIssueState): Promise<StoreIssuesResponse> {
+  const params = new URLSearchParams();
+  if (space) params.set('space', space);
+  if (state) params.set('state', state);
+  const query = params.toString();
+  return request<StoreIssuesResponse>(query ? `/api/v1/stores/issues?${query}` : '/api/v1/stores/issues');
+}
+
+/**
+ * One Issue's full detail: its record plus its resolved current Execution
+ * Plan (board-ui: each Issue shows the Changes its plan references, each with
+ * its owning project; a reference the Store cannot read is reported
+ * unreadable with the reason, never omitted).
+ */
+export function getStoreIssue(issueId: string, space?: string): Promise<StoreIssueDetailResponse> {
+  const params = new URLSearchParams({ issueId });
+  if (space) params.set('space', space);
+  return request<StoreIssueDetailResponse>(`/api/v1/stores/issue?${params.toString()}`);
+}
+
+/** The derived reverse lookup: which Issues reference a given Change instance. */
+export function getStoreIssueReferences(
+  changeInstanceId: string,
+  space?: string
+): Promise<StoreIssueReferencesResponse> {
+  const params = new URLSearchParams({ changeInstanceId });
+  if (space) params.set('space', space);
+  return request<StoreIssueReferencesResponse>(`/api/v1/stores/issue-references?${params.toString()}`);
+}
+
+/** One Issue's resolved Execution Plan; omitted `revisionId` selects the latest published revision. */
+export function getStoreExecutionPlan(
+  issueId: string,
+  space?: string,
+  revisionId?: string
+): Promise<StoreExecutionPlanResponse> {
+  const params = new URLSearchParams({ issueId });
+  if (space) params.set('space', space);
+  if (revisionId) params.set('revisionId', revisionId);
+  return request<StoreExecutionPlanResponse>(`/api/v1/stores/execution-plan?${params.toString()}`);
+}
+
+/** Create a new Store-level Issue. Takes no project or target line — an Issue is Store-level intent. */
+export function createStoreIssue(
+  body: StoreIssueCreateRequest,
+  space?: string
+): Promise<StoreIssueRecordResponse> {
+  return request<StoreIssueRecordResponse>(`/api/v1/stores/issues${spaceQuery(space)}`, {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify(body),
+  });
+}
+
+/** Declare an Issue's lifecycle state. `reason` is required by the server for `dropped`. */
+export function setStoreIssueState(
+  body: StoreIssueSetStateRequest,
+  space?: string
+): Promise<StoreIssueRecordResponse> {
+  return request<StoreIssueRecordResponse>(`/api/v1/stores/issue-state${spaceQuery(space)}`, {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * Publish a new Execution Plan revision for an Issue. Every node the caller
+ * builds MUST already carry a complete `projectId` + `targetLineId` — the
+ * server refuses the whole request otherwise (`store_query_scope_incomplete`)
+ * and this client makes no attempt to fill a missing part itself.
+ */
+export function publishStoreExecutionPlan(
+  body: StoreExecutionPlanPublishRequest,
+  space?: string
+): Promise<StoreExecutionPlanPublishResponse> {
+  return request<StoreExecutionPlanPublishResponse>(`/api/v1/stores/execution-plan${spaceQuery(space)}`, {
     method: 'POST',
     json: true,
     body: JSON.stringify(body),

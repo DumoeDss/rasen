@@ -467,6 +467,177 @@ const COMMANDS: readonly CommandDefinition[] = [
           COMMON_FLAGS.json,
         ],
       },
+      {
+        name: 'target-line',
+        flags: [],
+        subcommands: [
+          {
+            name: 'add',
+            acceptsPositional: true,
+            positionals: [{ name: 'target-line-id' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'store-ref', takesValue: true },
+              COMMON_FLAGS.project,
+              { name: 'code-ref', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'set-ref',
+            acceptsPositional: true,
+            positionals: [{ name: 'target-line-id' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'store-ref', takesValue: true },
+              COMMON_FLAGS.project,
+              { name: 'code-ref', takesValue: true },
+              { name: 'remove-code-ref' },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'list',
+            flags: [COMMON_FLAGS.store, COMMON_FLAGS.json],
+          },
+          {
+            name: 'show',
+            acceptsPositional: true,
+            positionals: [{ name: 'target-line-id' }],
+            flags: [COMMON_FLAGS.store, COMMON_FLAGS.project, COMMON_FLAGS.json],
+          },
+        ],
+      },
+      {
+        // The bound planning/execution worktree PAIR. `workspace` is a RETIRED
+        // top-level group name, and a pair is Store content in any case, so
+        // this group is a `store` subcommand rather than a fourth top-level
+        // `work*` group beside `work`, `workset`, and `workflow`.
+        name: 'workspace',
+        flags: [],
+        subcommands: [
+          {
+            name: 'plan',
+            flags: [
+              COMMON_FLAGS.store,
+              COMMON_FLAGS.project,
+              COMMON_FLAGS.targetLine,
+              { name: 'change', takesValue: true },
+              { name: 'planning-worktree', takesValue: true },
+              { name: 'execution-worktree', takesValue: true },
+              { name: 'existing-change' },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'apply',
+            flags: [
+              { name: 'apply-plan', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'show',
+            flags: [
+              COMMON_FLAGS.store,
+              COMMON_FLAGS.project,
+              COMMON_FLAGS.targetLine,
+              { name: 'change', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'cleanup',
+            flags: [
+              COMMON_FLAGS.store,
+              COMMON_FLAGS.project,
+              COMMON_FLAGS.targetLine,
+              { name: 'change', takesValue: true },
+              { name: 'include-untracked' },
+              { name: 'apply-plan', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+        ],
+      },
+      {
+        // A Store-level Issue spans projects, so every sub-entry here takes
+        // only `--store` — never `--project`, never `--target-line`.
+        name: 'issue',
+        flags: [],
+        subcommands: [
+          {
+            name: 'new',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-id' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'title', takesValue: true },
+              { name: 'readme' },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'list',
+            flags: [
+              COMMON_FLAGS.store,
+              {
+                name: 'state',
+                takesValue: true,
+                completionValues: ['open', 'resolved', 'dropped'],
+              },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'show',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-id' }],
+            flags: [COMMON_FLAGS.store, COMMON_FLAGS.json],
+          },
+          {
+            name: 'state',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-id' }],
+            flags: [
+              COMMON_FLAGS.store,
+              {
+                name: 'state',
+                takesValue: true,
+                completionValues: ['open', 'resolved', 'dropped'],
+              },
+              { name: 'reason', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'plan',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-id' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'from-file', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+        ],
+      },
+      {
+        // The grouped-Changes read: deliberately a top-level `store` sibling,
+        // not a subcommand of a shared `aggregate` noun (see store-aggregate.ts).
+        name: 'changes',
+        flags: [
+          COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        // The per-project rollup read: same rationale as `changes` above.
+        name: 'projects',
+        flags: [COMMON_FLAGS.store, COMMON_FLAGS.json],
+      },
     ],
   },
   {

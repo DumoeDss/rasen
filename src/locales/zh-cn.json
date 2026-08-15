@@ -1717,6 +1717,276 @@
                   "description": "输出为 JSON"
                 }
               }
+            },
+            "target-line": {
+              "description": "创建并改指仓库中用于划分变更与归档的稳定发布线",
+              "commands": {
+                "add": {
+                  "description": "用仓库 ref 定位符创建一条新的目标线；任何命令都不会从分支名推断目标线",
+                  "options": {
+                    "store": {
+                      "description": "要新增目标线的仓库"
+                    },
+                    "store-ref": {
+                      "description": "该线当前指向的完整仓库 ref，例如 refs/heads/release/0.2"
+                    },
+                    "project": {
+                      "description": "同时记录代码 ref 定位符的项目"
+                    },
+                    "code-ref": {
+                      "description": "所选项目在其自身代码仓库中的完整 ref"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                },
+                "set-ref": {
+                  "description": "就地改指某个定位符；目标线身份始终不变，也不提供改名",
+                  "options": {
+                    "store": {
+                      "description": "持有该目标线的仓库"
+                    },
+                    "store-ref": {
+                      "description": "该线新的完整仓库 ref"
+                    },
+                    "project": {
+                      "description": "要编辑代码 ref 定位符的项目"
+                    },
+                    "code-ref": {
+                      "description": "所选项目新的完整代码 ref"
+                    },
+                    "remove-code-ref": {
+                      "description": "移除所选项目的代码定位符；仍有进行中的变更依赖它时会被拒绝"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                },
+                "list": {
+                  "description": "列出仓库中记录的每一条目标线，包括当前 ref 无法解析的那些",
+                  "options": {
+                    "store": {
+                      "description": "要列出目标线的仓库"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                },
+                "show": {
+                  "description": "显示一条目标线，并把它的定位符解析为具体的 ref 与提交 ID",
+                  "options": {
+                    "store": {
+                      "description": "持有该目标线的仓库"
+                    },
+                    "project": {
+                      "description": "与仓库 ref 一并解析代码 ref 的项目"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                }
+              }
+            },
+            "workspace": {
+              "description": "准备、查看并删除已绑定的仓库计划工作树与项目执行工作树这一对（与个人编辑器视图 rasen workset 无关）",
+              "commands": {
+                "plan": {
+                  "description": "把变更所需的工作树对预览为不可变计划：不写入任何文件，并列出全部未满足的前置条件",
+                  "options": {
+                    "store": {
+                      "description": "拥有计划工作树的仓库"
+                    },
+                    "project": {
+                      "description": "拥有该变更的项目"
+                    },
+                    "target-line": {
+                      "description": "准备这一对时所在的稳定目标线"
+                    },
+                    "change": {
+                      "description": "这一对所服务的变更别名"
+                    },
+                    "planning-worktree": {
+                      "description": "仓库计划工作树的目标路径；默认位于仓库检出旁边"
+                    },
+                    "execution-worktree": {
+                      "description": "项目执行工作树的目标路径；默认位于代码检出旁边"
+                    },
+                    "existing-change": {
+                      "description": "把已创建的变更绑定到新准备的一对，而不是预留新身份"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                },
+                "apply": {
+                  "description": "按计划 ID 应用已预览的计划，并在第一次写入前重新校验每个冻结的提交 ID",
+                  "options": {
+                    "apply-plan": {
+                      "description": "由 rasen store workspace plan 生成的计划 ID"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                },
+                "show": {
+                  "description": "报告解析出的工作树对、绑定状态与全部校验发现；这些只是不授予任何权限的定位符",
+                  "options": {
+                    "store": {
+                      "description": "拥有计划工作树的仓库"
+                    },
+                    "project": {
+                      "description": "拥有该变更的项目"
+                    },
+                    "target-line": {
+                      "description": "这一对所属的稳定目标线"
+                    },
+                    "change": {
+                      "description": "要报告的变更别名"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                },
+                "cleanup": {
+                  "description": "预览并执行可证明无损失的删除；没有强制选项，也没有部分删除",
+                  "options": {
+                    "store": {
+                      "description": "拥有计划工作树的仓库"
+                    },
+                    "project": {
+                      "description": "拥有该变更的项目"
+                    },
+                    "target-line": {
+                      "description": "这一对所属的稳定目标线"
+                    },
+                    "change": {
+                      "description": "要删除其工作树对的变更别名"
+                    },
+                    "include-untracked": {
+                      "description": "接受计划中列出的未跟踪文件；Git 无法恢复它们"
+                    },
+                    "apply-plan": {
+                      "description": "上一次预览生成的清理计划 ID"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                }
+              }
+            },
+            "issue": {
+              "description": "创建并查看仓库级 Issue——跨项目的意图，其生命周期比任何一个变更都长",
+              "commands": {
+                "new": {
+                  "description": "创建一个新 Issue；标题从不推断，必须显式指定",
+                  "options": {
+                    "store": {
+                      "description": "获得该 Issue 的仓库"
+                    },
+                    "title": {
+                      "description": "该 Issue 的简短人类可读标题"
+                    },
+                    "readme": {
+                      "description": "同时写入 Issue 记录旁的 README 模板"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                },
+                "list": {
+                  "description": "列出仓库中记录的 Issue；无法读取的会被报告，而不是被省略",
+                  "options": {
+                    "store": {
+                      "description": "要列出 Issue 的仓库"
+                    },
+                    "state": {
+                      "description": "仅限该状态的 Issue"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                },
+                "show": {
+                  "description": "显示单个 Issue 及其最新的 Execution Plan 修订版本（如有）",
+                  "options": {
+                    "store": {
+                      "description": "持有该 Issue 的仓库"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                },
+                "state": {
+                  "description": "转换 Issue 的状态；终态无法再次转换",
+                  "options": {
+                    "store": {
+                      "description": "持有该 Issue 的仓库"
+                    },
+                    "state": {
+                      "description": "Issue 的新状态"
+                    },
+                    "reason": {
+                      "description": "随该转换一起记录的原因"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                },
+                "plan": {
+                  "description": "根据 YAML 节点列表为某个 Issue 发布新的不可变 Execution Plan 修订版本",
+                  "options": {
+                    "store": {
+                      "description": "持有该 Issue 的仓库"
+                    },
+                    "from-file": {
+                      "description": "列出计划节点的 YAML 文件路径"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                }
+              }
+            },
+            "changes": {
+              "description": "按项目和目标线分组列出变更；无法读取的引用会被报告，而不是被省略",
+              "options": {
+                "store": {
+                  "description": "要列出变更的仓库"
+                },
+                "project": {
+                  "description": "仅限该项目（可重复指定）"
+                },
+                "target-line": {
+                  "description": "仅限该目标线（可重复指定）"
+                },
+                "json": {
+                  "description": "以 JSON 输出"
+                }
+              }
+            },
+            "projects": {
+              "description": "列出仓库的项目及其角色与活跃/已归档变更数",
+              "options": {
+                "store": {
+                  "description": "要列出项目的仓库"
+                },
+                "json": {
+                  "description": "以 JSON 输出"
+                }
+              }
             }
           }
         },

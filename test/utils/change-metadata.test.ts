@@ -101,6 +101,14 @@ describe('ChangeMetadataSchema', () => {
       expect(result.success).toBe(false);
     });
 
+    it('should report a misspelled field rather than dropping it', () => {
+      const result = ChangeMetadataSchema.safeParse({
+        schema: 'spec-driven',
+        creatd: '2025-01-05', // misspelled `created`
+      });
+      expect(result.success).toBe(false);
+    });
+
     it('should reject unsafe initiative link identifiers', () => {
       for (const initiative of [
         { store: '/tmp/platform', id: 'billing-launch' },
@@ -208,6 +216,28 @@ describe('readChangeMetadata', () => {
     expect(result?.initiative).toEqual({
       store: 'platform',
       id: 'billing-launch',
+    });
+  });
+
+  it('reads a real archived record and preserves its quality accounting unchanged', () => {
+    // Shape reference named by store-planning-contract-v2 task 3.7: a real
+    // archive record whose engine-written `quality` block (with the older
+    // `rulesExtracted` field) must survive the strict schema unchanged.
+    const archivedChangeDir = path.resolve(
+      __dirname,
+      '../../rasen/changes/archive/2026-07-06-add-context-handoff'
+    );
+
+    const result = readChangeMetadata(archivedChangeDir);
+
+    expect(result).toEqual({
+      schema: 'spec-driven',
+      created: '2026-07-06',
+      quality: {
+        files: ['review-report.md'],
+        metrics: { 'review-report.md': 0 },
+        rulesExtracted: 0,
+      },
     });
   });
 

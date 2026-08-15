@@ -17,6 +17,7 @@ import {
   isStoreSelectedRoot,
   type ResolvedOpenSpecRoot,
 } from '../../core/root-selection.js';
+import { StoreError } from '../../core/store/errors.js';
 import {
   evidenceDir,
   handoffDir,
@@ -125,6 +126,21 @@ export function printJson(payload: unknown): void {
 export function statusFromError(error: unknown): ChangeCommandStatus {
   if (isRootSelectionError(error)) {
     return { ...error.diagnostic };
+  }
+
+  // A `StoreError` (and its subclasses, e.g. the workspace module's
+  // `WorkspaceGitCommandError`) already carries a specific taxonomy code in
+  // `.diagnostic`. This seam has no adapter-level fallback of its own, so
+  // without this branch every such error collapses into the generic
+  // `change_error` below, hiding the actual failure code from an agent
+  // branching on it.
+  if (error instanceof StoreError) {
+    // `StoreError`'s constructor always sets severity 'error' (errors.ts) - the
+    // wider `StoreDiagnosticSeverity` on `.diagnostic` exists for the free
+    // `makeStoreDiagnostic()` producer, not for thrown errors, so this narrows
+    // to what a thrown `StoreError` can actually carry rather than widening
+    // `ChangeCommandStatus` to accept a severity no thrown error produces.
+    return { ...error.diagnostic, severity: 'error' };
   }
 
   return {

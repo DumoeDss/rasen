@@ -1,0 +1,262 @@
+{
+  "pipeline": "small-feature",
+  "stages": {
+    "propose": {
+      "status": "done",
+      "gateDecision": "auto-approved (global)",
+      "worker": {
+        "role": "planner",
+        "runtime": "claude",
+        "dispatchMode": "native",
+        "agentId": "planner@session-54f71457",
+        "model": "opus",
+        "horizon": "ONE_SHOT",
+        "horizonBasis": "Persistent planner, but siblings are serialized behind full child pipelines so the gap to the next propose is long/unbounded; parking would burn the 12-beat cap. Re-engage per Step B.1 instead."
+      },
+      "artifacts": [
+        "proposal.md",
+        "design.md",
+        "tasks.md",
+        "specs/store-planning-layout-v2/spec.md",
+        "specs/store-planning-identity-v2/spec.md",
+        "specs/change-finalization-record-v2/spec.md"
+      ],
+      "taskCount": 36,
+      "leadDirectionCheck": {
+        "enabledByPipeline": false,
+        "performedAnyway": "light",
+        "basis": "leadReview is false on this stage and --review-plan was not passed, so no full direction review is owed. The LEAD holds the original intent, so a light check was run on the planner's four out-of-brief scope decisions.",
+        "verified": [
+          "rasen validate --type change --strict PASSES (re-run by the LEAD, not taken on report).",
+          "Zero scope leak: tasks.md mentions none of workspace/, issues/, query/, layout-migration, store-planning/.",
+          "The .strict() divergence is load-bearing and correctly reasoned: archive-engine.ts:2965 writes metadata.quality into the ARCHIVED .openspec.yaml via raw YAML, and readChangeMetadata (src/utils/change-metadata.ts:130) THROWS ChangeMetadataError on Zod failure rather than degrading. LEAD counted 33 archived records carrying quality and 13 carrying rulesExtracted in this repo - matching the planner's figures exactly. Plain .strict() would make the product unable to read its own archives."
+        ],
+        "acceptedScopeDecisions": [
+          "THREE capabilities, not two: change-finalization-record-v2 added because finalization-v2.ts is assigned to S1 by the LEAD's own brief, so its spec belongs here. The finalization/ DIRECTORY remains out of scope.",
+          "Port target is ship-commit a7135669 plus its own later fixes MINUS S3's additions, not the 0.1.7 tip. Porting the tip would ship ~140 lines (IssueId, ExecutionPlanRevisionId, the four issue* addresses) that no S1 suite exercises. S3 adds them back; the chain is serial so there is no conflict cost.",
+          "A Layer-0 purity guard the reference does not have, with a MANDATORY mutation proof (tasks 5.3/5.4) - correct per the repo rule that an unmutated guard is presumed non-discriminating."
+        ],
+        "briefCorrectionsAccepted": [
+          "There is NO planning-*-windows-paths.test.ts on 0.1.7. The three *-windows-paths.test.ts suites belong to finalization/, layout-migration/, and workspace/ (S2 owns the workspace one). S1's Windows coverage lives inside planning-layout-v2.test.ts. This corrects BOTH the LEAD's dispatch brief and the surveyor's count.",
+          "S1 has FIVE suites / ~159 tests, not four / ~60."
+        ]
+      }
+    },
+    "apply": {
+      "status": "done",
+      "commit": "eaefc01b",
+      "diffStat": "25 files changed, +3858/-99",
+      "tasksCompleted": "36/36",
+      "retiredVia": "standDown signal (LEAD-written) - consumed, DONE returned, worker stopped and slot freed",
+      "gateDecision": "auto-approved (global)",
+      "worker": {
+        "role": "implementer",
+        "runtime": "claude",
+        "dispatchMode": "native",
+        "agentId": "implementer-s1@session-54f71457",
+        "model": "sonnet",
+        "modelSource": "user-directive",
+        "horizon": "LOOP_BOUND",
+        "horizonBasis": "A verify stage follows apply immediately and non-trivial findings route back to the author, so the implementer parks in `rasen agent wait` pending the first review verdict rather than idling its cache out. keepalive.enabled resolves true (registry default; project config has an empty keepalive block) and the route is claude-native, so parking is permitted."
+      }
+    },
+    "verify": {
+      "status": "done",
+      "findings": "round 1: 0 Blocker / 4 Major / 5 Minor / 2 Trivial - all resolved",
+      "verifyPolicy": "standard",
+      "worker": {
+        "role": "reviewer",
+        "runtime": "claude",
+        "dispatchMode": "native",
+        "agentId": "reviewer-s1@session-54f71457",
+        "model": "opus",
+        "horizon": "LOOP_BOUND",
+        "horizonBasis": "A review-loop stage follows; the reviewer re-reviews fix deltas, so it parks between rounds."
+      },
+      "authorIsNotVerifier": true,
+      "testGate": {
+        "command": "pnpm exec vitest run test/core/store test/core/change-run test/commands/store.test.ts test/commands/store-root-selection.test.ts test/cli-e2e/store-lifecycle.test.ts",
+        "status": "OPEN - not yet measured on a quiesced tree. Both LEAD re-runs are VOID (contaminated).",
+        "leadRerunsVoided": {
+          "cause": "LEAD METHODOLOGICAL ERROR. Both LEAD re-runs were executed against the SHARED working tree while reviewer-s1 was concurrently mutating source files in it - mutation testing the LEAD itself had instructed. A test gate taken on a tree another agent is actively mutating measures that agent, not the change.",
+          "run1": {
+            "startedAt": "18:25:36",
+            "durationSec": 346,
+            "observed": "2 failed; one identified as test/core/change-run/reservations.test.ts. Overlapped the reviewer's active window. VOID.",
+            "secondaryError": "The LEAD piped this run through `tail -45`, discarding the second failure's identity - the same reason-from-a-truncated-tail trap this repo has been burned by before."
+          },
+          "run2": {
+            "startedAt": "18:32:26",
+            "durationSec": 518,
+            "observed": "1 file / 2 tests failed, BOTH in test/core/store/planning-foundation-purity.test.ts naming planning-catalogs.ts.",
+            "diagnosis": "Almost certainly the reviewer's in-flight purity mutation: 2 failures naming one file is the exact signature the implementer documented for its own mutation proof. VOID."
+          },
+          "treeStateAfter": "git status is clean for src/ and test/ - the reviewer reverted. Confirms transient mutation, not a persisted defect."
+        },
+        "correctedStanding": "The implementer's own post-change run is the ONLY uncontaminated post-change measurement so far (no other agent was active during it). It reported 2 failures in test/cli-e2e/store-lifecycle.test.ts. The LEAD's earlier claim that 'the failing file differs between runs' was an artifact of the LEAD's own contaminated runs and is WITHDRAWN. The open question is unchanged and still real: are those 2 store-lifecycle failures CAUSED BY, EXPOSED BY, or INDEPENDENT OF commit eaefc01b - given the pre-change baseline on the same file set was 0 failures.",
+        "nextMeasurement": "Re-take the gate only on a QUIESCED tree - every worker parked or stood down and git status clean for src/ and test/ - or in an isolated detached worktree at the commit.",
+        "resolution": {
+          "verdict": "TRANSIENT, NON-REPRODUCING, CAUSE UNESTABLISHED. Not 'pre-existing' and not dismissible as 'flake'.",
+          "evidence": [
+            "LEAD pre-change baseline, uncontaminated: 104 files / 1264 passed / 0 failed.",
+            "Implementer post-change run, uncontaminated: 110 files / 1436 passed / 2 failed in test/cli-e2e/store-lifecycle.test.ts.",
+            "Reviewer independent re-run, same command, same commit eaefc01b, uncontaminated: 110 files / 1438 passed / 0 failed. 1438 = 1436 passed + 2 failed, proving the same test set ran.",
+            "Two LEAD runs in between: VOID, contaminated by the reviewer's concurrent mutation testing."
+          ],
+          "openItem": "One of the two original failures was NEVER read - the second FAIL block was not rendered in the implementer's captured output. The reviewer's causal lead, recorded so it is not lost: the printed stderr names add-billing (machine A's change, archived at store-lifecycle.test.ts:325-331 BEFORE machine B clones at :349-353) as still active, which is the signature of machine A's archive step failing first and cascading. This is durable cross-process reservation/archive state, an area with prior defects in this repo, so it is recorded as an open question rather than closed.",
+          "shipDecision": "Does NOT block ship on the evidence available: two independent uncontaminated runs on the same commit are clean, and no mechanism linking the failure to this Layer-0 diff has been established. Carried forward as a recorded open item, not silently dropped."
+        },
+        "preChangeBaseline": {
+          "result": "green",
+          "testFiles": 104,
+          "tests": 1264,
+          "skipped": 1,
+          "failures": 0,
+          "gitTreeFingerprint": "964a7c62d0c838360c62f68c7e1e2ee81a431f03"
+        },
+        "disputedClaim": "The implementer reported 2 failures in test/cli-e2e/store-lifecycle.test.ts and classified them as a pre-existing full-parallel-load isolation flake. The LEAD's own PRE-change baseline of that same file was GREEN with 0 failures, which is evidence against 'pre-existing'. Additionally the diff touches src/core/index.ts, a barrel with repo-wide blast radius, so 'the failing path is outside the diff' is weaker than it sounds. Classification treated as UNPROVEN pending the LEAD's independent re-run."
+      }
+    },
+    "review-loop": {
+      "status": "done",
+      "outcome": "CLEAN - 0 Blocker / 0 Major open. 17 findings closed across 3 review rounds plus one escalation-ladder attempt, every one confirmed by a non-author who re-ran the mutation rather than accepting the recorded proof.",
+      "finalGate": {
+        "command": "pnpm exec vitest run test/core/store test/core/change-run test/commands/store.test.ts test/commands/store-root-selection.test.ts test/cli-e2e/store-lifecycle.test.ts",
+        "takenOn": "a QUIESCED tree - every worker returned or retired, git status clean for src/ and test/",
+        "result": "GREEN",
+        "testFiles": 110,
+        "passed": 1511,
+        "skipped": 1,
+        "failed": 0,
+        "durationSec": 299,
+        "comparedToBaseline": "pre-change 104 files / 1264 passed / 0 failed -> +6 files, +247 tests, NO regression",
+        "storeLifecycleResolution": "test/cli-e2e/store-lifecycle.test.ts passed here too - the fourth consecutive clean run since the implementer's single observed failure (reviewer, fixer, and this quiesced LEAD gate). Confirms the recorded verdict of transient / non-reproducing / cause unestablished. Does not block; the unread second failure and the machine-A archive cascade lead remain recorded as an open question."
+      },
+      "loop": {
+        "kind": "review-cycle",
+        "maxRounds": 3
+      },
+      "round": 3,
+      "roundHistory": [
+        {
+          "round": 1,
+          "found": "0 Blocker / 4 Major / 5 Minor / 2 Trivial",
+          "outcome": "M1-M4 + m1-m3 fixed at 221bf789"
+        },
+        {
+          "round": 2,
+          "outcome": "All seven round-1 items RESOLVED - each mutation re-run by a non-author rather than accepting the recorded proof.",
+          "newFindings": "0 Blocker / 2 Major / 1 Trivial",
+          "N1": "Major. All 11 expectTypeOf assertions in test/core/store/planning-foundation-consumer.test.ts are INERT - an obviously false assertion passes tsc --noEmit, vitest run, AND lint. Causes: tsconfig.json excludes test/ (and ci.yml:274 runs that same command), vitest.config.ts declares no typecheck key, eslint.config.js is not type-aware. Task 5.2 is ticked [x] claiming this file proves brand discrimination. FOURTH instance of the same defect class, found in the round convened to close the first three.",
+          "N2": "Major, and the defect is the LEAD's own. The [~] marker on task 6.5 is invisible to TASK_PATTERN (src/utils/task-progress.ts:7-8), so the line stopped being a task at all and left BOTH numerator and denominator. Measured: [x] -> 36/36 complete, blockers []; [~] -> 35/35 complete, blockers []; [ ] -> 35/36 in-progress, blockers [1 task incomplete]. The LEAD's edit removed the false claim from the prose and left it standing in the machine record - the item designated as the portfolio-delivery acceptance gate became the one thing no automated gate could see. Reasoning accepted, marker rejected.",
+          "N3": "Trivial. The rewritten M4 evidence ASCII-ized its quoted terminal capture, so a block presented as verbatim no longer is.",
+          "leadLesson": "rasen validate --strict passes under ALL THREE markers. Only `archive --dry-run --json` blockers and `rasen list --changes --json` progress counts discriminate. The reviewer reached for the right instrument; the LEAD had reached for validate alone. This is the standing 'validate has a blind spot, a dry-run archive is what closes the loop' rule, hit again."
+        }
+      ],
+      "worker": {
+        "role": "fixer",
+        "runtime": "claude",
+        "dispatchMode": "native",
+        "agentId": "fixer-s1@session-54f71457",
+        "model": "opus",
+        "horizon": "LOOP_BOUND",
+        "fixCommits": [
+          "221bf789 (round 1: M1-M4 + m1-m3)",
+          "9c0f548e (round 2: N1-N3)"
+        ],
+        "status": "round-2 fixes delivered; held idle pending the round-3 verdict",
+        "round2Substance": {
+          "N1": "Closed with a SCOPED type-check harness rather than signing the whole test/ tree up: new test/core/store/planning-foundation-consumer.test-d.ts, new tsconfig.typecheck.json (src/**/* + test/**/*.test-d.ts only), a test.typecheck block in vitest.config.ts DISABLED by default so `pnpm test` is unchanged, a test:types script, and exactly ONE new CI step inside the existing lint job.",
+          "N2": "tasks.md:51 [~] -> [ ], LEAD prose kept verbatim. Measured after: rasen list reports 35/36 in-progress and archive --dry-run reports the tasks blocker. That blocker is the INTENDED end state - 6.5 is genuinely incomplete until the portfolio PR's CI run exists, and this child must not archive before then.",
+          "N3": "Capture bytes spliced back from `git show eaefc01b:<file>` via a script rather than retyped, because this repo's Write path has previously mangled multibyte characters to U+FFFD. Verified U+FFFD x0."
+        },
+        "probeD": {
+          "what": "The fixer's OWN round-2 fix missed a mutation, and its own probe caught it.",
+          "detail": "Collapsing the brand itself (ChangeInstanceId = string & {...} -> string) leaves src/ internally consistent: tsc exit 0, runtime 27 passed, and the new type assertions stayed GREEN. Cause: every bare-string assertion reached the brand through Parameters<typeof computeStorePlanningLayoutV2>[0]['changeInstanceId'], i.e. through VerifiedChangeInstanceId, which stays branded by its OWN symbol when the base collapses. So the parameter assertions held while the whole public vocabulary silently became string.",
+          "fix": "An individual bare-string pin per branded name; re-ran the same mutation -> RED.",
+          "generalRule": "A type assertion reached through a DERIVED type can be inert against the base type it depends on. Pinning Parameters<f>[0]['x'] against string looks like it pins the brand; it does not, because an intersection brand survives its base collapsing. Pin each name individually.",
+          "significance": "FIFTH instance of the assertion-cannot-fail defect class, and the second one found inside work convened to close earlier instances. This is what moved the LEAD to fold a systematic discrimination sweep into round 3 rather than waiting for the round cap to force a strategy change."
+        }
+      },
+      "reviewers": [
+        {
+          "round": 1,
+          "agentId": "reviewer-s1@session-54f71457",
+          "model": "opus",
+          "outcome": "delivered round-1 findings, then RETIRED by keepalive beat-cap while parked",
+          "handoff": "rasen/changes/store-planning-contract-v2/handoff/reviewer-1.md"
+        },
+        {
+          "round": 2,
+          "agentId": "reviewer-s1-r2@session-54f71457",
+          "model": "opus",
+          "horizon": "ONE_SHOT",
+          "horizonBasis": "Deliberately NOT parked. The round-1 reviewer was lost to the beat cap; a cold seed from its handoff is cheaper and safer than another park. If a round 3 is needed, dispatch another fresh reviewer.",
+          "seed": "rasen/changes/store-planning-contract-v2/handoff/reviewer-1.md"
+        }
+      ],
+      "leadError": {
+        "what": "The LEAD delivered the round-2 re-review instruction to the round-1 reviewer with SendMessage while that reviewer was PARKED in `rasen agent wait`.",
+        "why it failed": "The signal file is the ONLY channel to a parked worker; SendMessage to a parked worker is explicitly forbidden. The instruction never reached it, it idled 12 beats, and the beat cap stood it down with the fix delta entirely unreviewed.",
+        "correctChannel": "Write {\"kind\":\"resume\",\"instruction\":\"...\"} atomically to <changeRoot>/signals/<role>.json - the same mechanism the LEAD used correctly to stand down the implementer.",
+        "note": "The beat cap firing is by design and worked correctly; the defect was the LEAD's choice of channel, not the keepalive mechanism.",
+        "cost": "One wasted park cycle (~54 min of reviewer wall-clock) and one retired worker. No work product lost - the reviewer's handoff carries a complete five-row re-verification recipe."
+      },
+      "routingDecision": "Fixes routed to a SEPARATE fixer, not the author. All three code Majors are one defect class - a requirement with an implementation but no discriminating test - and tasks 2.7/4.6 were ticked [x] while claiming exactly those scenarios. That is a judgment failure about what counts as coverage, so re-running the same judgment (and the same model tier) is the wrong configuration. The non-author reviewer still confirms the fix, per author != verifier.",
+      "capReached": {
+        "at": "round 3 of maxRounds 3, with Majors still open (N4, N5)",
+        "action": "Step H.5/H.6 escalation ladder entered. NOT shipped past, NOT re-run as a fourth identical round."
+      },
+      "strategyAttempts": [
+        {
+          "attempt": 1,
+          "round": 3,
+          "action": "Stop fixing instances; fix the root-cause class. Dispatched golden-vector anchoring for the derived identity digests plus a mirrored negative cross-field matrix, rather than another find-and-patch cycle.",
+          "rationale": "Three rounds produced six instances of one defect class (M1, M2, M3, N1, the fixer's own probe D, now N4/N5). Round 3's systematic sweep already changed the search strategy and found two in one pass instead of one per round - real improvement. But the reviewer's N5 diagnosis names an actual root cause rather than another instance: 'no test pins any derived digest to a value - every identity assertion is relational.' A repo-wide grep for a literal (ps_|ci_|wt_|wp_)[0-9a-f]{16,} returns NO matches. That is a design gap, and golden vectors close the class, not just the finding.",
+          "materialChange": "Root-cause anchoring (pin the format to literal digests) instead of per-finding patching.",
+          "whyNotAccept": "N5's identities are DURABLE - written into .openspec.yaml - so an unpinned preimage means a silent format change invalidates every minted identity with nothing going red. This is the foundation layer S2 and S3 both build on, so the defect compounds downstream rather than staying local. N4 is cheap and mirrors a pattern the same file already implements correctly for FinalizationOutcomeSchema.",
+          "result": "delivered at 27b59b6e; awaiting non-author verification",
+          "outcome": "The fixer took the framing literally: two of the four fixes install a MECHANISM that keeps the property true as the code grows, rather than another assertion that happens to be true today.",
+          "mechanisms": {
+            "N5-golden-vectors": "Six vectors, one per derived identity kind plus one that walks every golden digest back through its own verifier - so a preimage change cannot hide behind a verifier that stopped checking. Digests generated from the implementation as committed at eaefc01b, i.e. pinning today's format rather than proposing one. Each vector takes PINNED LITERAL inputs instead of chaining off the previous derivation, so a break localises to the preimage that moved and the failure set is itself a diagnosis. Probe M (the fixer's own, unasked) proved that design claim rather than asserting it: storeUid -> storeUuid in the scope preimage ONLY reddened exactly 2 tests while the other three vectors stayed green.",
+            "N6-vocabulary-generator": "Rather than hand-extending the pin list from 7 to 16 - hand-maintenance is exactly how it fell to 7-of-16 under a comment claiming 16 - the guard now READS brand declarations out of the three Layer-0 sources and fails by name if a brand reaches the vocabulary unpinned. Matches by exact type argument, not substring, because substring matching would let VerifiedWorkspacePairId satisfy WorkspacePairId - this change's own recurring defect one level down. The fixer mutation-proved the generator itself (probe G)."
+          },
+          "rootCauseArticulated": "Relational assertions are uniformly blind to uniform change. A suite built entirely from toMatch(shape), .toBe(other), .not.toBe(other) and distinct-set counts cannot detect anything that transforms EVERY value the same way - which is exactly what a preimage or format change does. This is why three rounds of 217/217 green missed it: not too few assertions, but an assertion SHAPE that is structurally immune to the defect class. One pinned literal per derived value is the whole fix; nothing weaker substitutes."
+        }
+      ],
+      "acceptedKnown": [
+        "m4 - resolveStorePlanningLayoutV2Path is never called directly by any test",
+        "m5 - task 6.5 records no CI run reference",
+        "t1 - four cosmetic respellings vs the 0.1.7 reference",
+        "t2 - computeStorePlanningLayoutV2 tightened beyond the reference without a design note"
+      ]
+    },
+    "ship": {
+      "status": "done",
+      "mode": "local",
+      "gateDecision": "auto-approved (global)",
+      "shipLog": "rasen/changes/store-planning-contract-v2/evidence/ship-log.md",
+      "commit": "f8e17e3d",
+      "worker": {
+        "role": "shipper",
+        "runtime": "claude",
+        "dispatchMode": "native",
+        "agentId": "shipper-s1@session-54f71457",
+        "model": "sonnet",
+        "modelSource": "stage-definition + user-directive",
+        "horizon": "ONE_SHOT"
+      },
+      "confirmed": "No remote ref created or moved (gh pr view finds no PR for the branch; git branch -vv shows ahead 23, unpushed). No 'Archived in ship:' line, and no '## Archive' heading pre-written in the ship log - that heading would make a later `rasen archive` refuse with archive_recovery_required.",
+      "carriedForwardHonestly": [
+        "Task 6.5 is deliberately [ ] and the change is 35/36, not complete - its CI run reference is structurally unavailable until the portfolio PR exists.",
+        "The store-lifecycle transient failure: transient / non-reproducing / cause unestablished, 4-for-4 clean since, one of the two original failures never read."
+      ]
+    },
+    "archive": {
+      "status": "pending",
+      "reason": "Correctly blocked, verified by the LEAD's own `rasen archive --dry-run --json`: /archive/blockers = [{operation: 'tasks', message: '1 task(s) are incomplete.'}]. That is task 6.5, whose CI run reference cannot exist until the portfolio opens its single PR at the parent. No archive worker was dispatched - the blocker is known and intended, so a dispatch would only produce a refusal.",
+      "unblockedBy": "Portfolio delivery at the parent -> PR CI run -> record the run reference in 6.5 -> archive.",
+      "stageResidue": "none - no .rasen-archive-stage-* left by the dry-run"
+    }
+  }
+}

@@ -124,11 +124,52 @@ describe('vocabulary sweep', () => {
     // workspace_revision: the frozen-Action executor's strict request decoder
     // identifies an invalid workspace-revision authority value. It is not a
     // workspace noun-command or a revived workspace management surface.
+    // The thirty `workspace_*` entries below are `store-worktree-bindings-v2`'s
+    // refusal codes for the bound planning/execution worktree pair. They are a
+    // deliberate ledger entry, not drift, and the distinction the guard turns on
+    // is worth stating: this sweep exists to keep the RETIRED `rasen workspace`
+    // noun-command surface from regrowing, not to ban the word from a domain
+    // that legitimately has workspaces. Store v2 binds a planning worktree to an
+    // execution worktree as a first-class Store concept; its failures have to be
+    // named, and `workspace_` is what they are named after. Nothing here
+    // registers a command, an option, or a top-level group — every one is an
+    // error code reached through `store workspace`, which lives under `store`
+    // precisely because the top-level name stays retired.
     const allowed = new Set([
       'initiative_option_removed',
       'workspace_detected',
       'workspace_identity_unavailable',
       'workspace_revision',
+      'workspace_already_bound',
+      'workspace_apply_failed',
+      'workspace_atomic_write_conflict',
+      'workspace_binding_ambiguous',
+      'workspace_cleanup_failed',
+      'workspace_cleanup_unsafe',
+      'workspace_destination_exists',
+      'workspace_dirty_tree',
+      'workspace_execution_side_unknown',
+      'workspace_git_failed',
+      'workspace_layout_version_unsupported',
+      'workspace_lock_unavailable',
+      'workspace_marker_conflict',
+      'workspace_not_prepared',
+      'workspace_plan_failed',
+      'workspace_plan_missing',
+      'workspace_plan_not_applicable',
+      'workspace_plan_stale',
+      'workspace_planning_identity_unavailable',
+      'workspace_project_unresolved',
+      'workspace_ref_drift',
+      'workspace_ref_mismatch',
+      'workspace_repository_identity_drift',
+      'workspace_repository_unavailable',
+      'workspace_show_failed',
+      'workspace_store_unresolved',
+      'workspace_target_line_unknown',
+      'workspace_worktree_absent',
+      'workspace_worktree_identity_drift',
+      'workspace_worktree_not_a_repository',
     ]);
     const found = new Set<string>();
     const pattern = /(workspace|initiative)_[a-z_]+/g;

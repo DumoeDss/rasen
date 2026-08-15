@@ -62,6 +62,39 @@ const KNOWN_SLOW_TEST_WEIGHTS_MS: Record<string, number> = {
   'test/core/management-api/workflow-enablement.test.ts': 15371,
   'test/commands/work.test.ts': 14611,
   'test/core/management-api/space-scoping.test.ts': 13318,
+  // Real Git worktrees + real filesystem fixtures (store-worktree-bindings-v2,
+  // task 6.9): the byte-size heuristic badly underestimates these, because the
+  // cost is worktree creation/removal wall-clock time, not source size.
+  'test/core/store/workspace-cleanup.test.ts': 166610,
+  'test/commands/workspace-cli.test.ts': 166960,
+  'test/core/store/workspace-apply.test.ts': 109103,
+  // Real Git fixture (`createStoreWorkspaceFixture`) driven through both the
+  // in-process handlers and a `runCLI` subprocess per test (store-issue-resources).
+  'test/core/management-api/stores.test.ts': 199980,
+  // Same fixture class, plus 26 scenario cases that each commit real Git
+  // objects (store-issue-resources, task 8.5): a wide relative-size gap from
+  // the 38KB source file to this solo wall-clock is expected, not a fluke.
+  // Measured TWICE, 1.8x apart on the same machine: 314950ms under task 8.1
+  // and 177060ms under task 8.5. The higher observation is entered, for the
+  // same reason task 8.5 flags `workspace-cleanup` above as under-entered --
+  // a shard planner that underestimates a heavy file skews the whole shard,
+  // whereas overestimating it only costs balance. Do not lower this to the
+  // faster observation without re-measuring on a quiesced tree.
+  'test/core/store/store-aggregate-query.test.ts': 314950,
+  // `runCLI` subprocess per case, same underestimated class as the two
+  // `workspace-*` CLI entries above (store-issue-resources, task 8.5).
+  'test/commands/store-issue-cli.test.ts': 76790,
+  'test/commands/store-aggregate-cli.test.ts': 62300,
+  // Real Git fixture, no CLI subprocess, but still a real worktree/lock
+  // read per case (store-issue-resources, task 8.5).
+  'test/core/store/store-query-lock-free.test.ts': 52290,
+  // Smallest absolute cost of this change's entries, but the worst RELATIVE
+  // skew in the table: 5949 bytes of source implies a 595ms fallback, while
+  // three of its five cases each build a real second Git worktree, measured
+  // twice at 16150ms and 15960ms solo (store-issue-resources, task 8.5). The
+  // higher observation is entered deliberately — under-entering is the failure
+  // mode the `workspace-cleanup` entry above already demonstrates.
+  'test/core/store/store-issue-scope.test.ts': 16150,
 };
 
 function listTestFiles(directory: string, root: string): TestFile[] {
@@ -131,6 +164,15 @@ export default defineConfig({
     pool: 'forks',
     maxWorkers: resolveMaxWorkers(),
     include: resolveTestInclude(),
+    // `expectTypeOf` is a runtime no-op, and the root tsconfig excludes `test/`,
+    // so type-level assertions living in `*.test.ts` cannot fail — nothing in
+    // this repository type-checks them. `*.test-d.ts` files are checked instead,
+    // under a tsconfig scoped to exactly those files plus `src/`. Disabled by
+    // default (so `pnpm test` is unchanged); `pnpm run test:types` enables it.
+    typecheck: {
+      include: ['test/**/*.test-d.ts'],
+      tsconfig: './tsconfig.typecheck.json',
+    },
     coverage: {
       reporter: ['text', 'json', 'html'],
       exclude: [
