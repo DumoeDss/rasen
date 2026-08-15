@@ -357,7 +357,9 @@ describe('formatShellInvocation', () => {
   it('renders a POSIX shell command ending in < /dev/null', () => {
     const rendered = formatShellInvocation(base());
     expect(rendered.endsWith('< /dev/null')).toBe(true);
-    expect(rendered.startsWith("'codex' 'exec'")).toBe(true);
+    // The runtime-identity assignment precedes the command (L4, D7): a pasted
+    // command without it inherits the spawning worker's identity.
+    expect(rendered.startsWith("RASEN_AGENT_RUNTIME='codex' 'codex' 'exec'")).toBe(true);
   });
 
   it('renders a Windows cmd command ending in < NUL', () => {
@@ -392,6 +394,7 @@ describe('formatShellInvocation', () => {
       args: ['exec', '--json', '-o', '/tmp/last.txt', 'no newline here'],
       stdin: 'ignore' as const,
       prompt: 'no newline here',
+      env: { RASEN_AGENT_RUNTIME: 'codex' },
       warnings: [] as string[],
     };
     formatShellInvocation(singleLine, { shell: 'windows' });
