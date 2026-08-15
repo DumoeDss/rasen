@@ -248,6 +248,11 @@ export interface ArchivePlan {
     planning: string;
     execution: string;
   };
+  scope?: {
+    kind: 'standalone' | 'legacy-store' | 'store-aggregate' | 'store-project';
+    storeUid?: string;
+    projectId?: string;
+  };
   paths: {
     active: string;
     archiveParent: string;
@@ -1430,6 +1435,8 @@ export interface CreateArchivePlanInput {
   change: string;
   planningRoot: string;
   executionRoot: string;
+  /** The planning scope the plan is created under; see `ArchivePlan['scope']`. */
+  scope?: ArchivePlan['scope'];
   activePath: string;
   archiveParent: string;
   ephemeraPath: string;
@@ -1853,6 +1860,7 @@ export async function createArchivePlan(
       planning: path.resolve(input.planningRoot),
       execution: path.resolve(input.executionRoot),
     },
+    ...(input.scope === undefined ? {} : { scope: input.scope }),
     paths: {
       active: path.resolve(input.activePath),
       archiveParent: transactionPaths.archiveParent,

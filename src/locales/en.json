@@ -1260,6 +1260,9 @@
         "list": {
           "description": "List items (changes by default). Use --specs to list specs.",
           "options": {
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
+            },
             "specs": {
               "description": "List specs instead of changes"
             },
@@ -1289,6 +1292,9 @@
         "validate": {
           "description": "Validate changes, specs, and pipelines",
           "options": {
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
+            },
             "all": {
               "description": "Validate all changes, specs, and pipelines"
             },
@@ -1327,6 +1333,9 @@
         "show": {
           "description": "Show a change or spec",
           "options": {
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
+            },
             "json": {
               "description": "Output as JSON"
             },
@@ -1378,6 +1387,9 @@
         "archive": {
           "description": "Archive a completed change and update main specs",
           "options": {
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
+            },
             "yes": {
               "description": "Skip confirmation prompts"
             },
@@ -1447,6 +1459,9 @@
         "status": {
           "description": "Display artifact completion status for a change",
           "options": {
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
+            },
             "change": {
               "description": "Change name to show status for"
             },
@@ -1467,6 +1482,9 @@
         "instructions": {
           "description": "Output enriched instructions for creating an artifact or applying tasks",
           "options": {
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
+            },
             "change": {
               "description": "Change name"
             },
@@ -1509,6 +1527,9 @@
             "change": {
               "description": "Create a new change directory",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "description": {
                   "description": "Description to add to README.md"
                 },
@@ -2034,6 +2055,9 @@
         "context": {
           "description": "Print the working context for the resolved Rasen root",
           "options": {
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
+            },
             "json": {
               "description": "Output the agent brief as JSON"
             },
@@ -2080,6 +2104,9 @@
         "doctor": {
           "description": "Report relationship health for the resolved Rasen root",
           "options": {
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
+            },
             "json": {
               "description": "Output as JSON"
             },
@@ -2793,6 +2820,9 @@
             "list": {
               "description": "List available pipelines (project > user > package)",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "json": {
                   "description": "Output as JSON"
                 },
@@ -2807,6 +2837,9 @@
             "show": {
               "description": "Show a pipeline stage DAG and build order",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "for-execution": {
                   "description": "Validate active-profile skills before returning the executable DAG"
                 },
@@ -2839,6 +2872,9 @@
             "agents": {
               "description": "Show or set per-role Claude/Codex runtimes for a pipeline",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "planner": {
                   "description": "Set planner runtime: claude or codex"
                 },
@@ -2868,6 +2904,9 @@
             "classify": {
               "description": "Suggest a pipeline for a task (advisory keyword heuristic)",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "json": {
                   "description": "Output as JSON"
                 },
@@ -2882,6 +2921,9 @@
             "resume": {
               "description": "Show a change's pipeline run-state (next/remaining stages)",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "json": {
                   "description": "Output as JSON"
                 },
@@ -2896,6 +2938,9 @@
             "init": {
               "description": "Create a minimal pipeline draft without installing it",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "output": {
                   "description": "Empty pipeline draft directory to create"
                 },
@@ -2913,6 +2958,9 @@
             "validate": {
               "description": "Validate an installed pipeline, draft directory, or .rasenpkg",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "json": {
                   "description": "Output as JSON"
                 },
@@ -2927,6 +2975,9 @@
             "import": {
               "description": "Validate and atomically install a pipeline .rasenpkg",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "force": {
                   "description": "Overwrite an already-installed pipeline of the same name"
                 },
@@ -2944,6 +2995,9 @@
             "export": {
               "description": "Export a user pipeline as .rasenpkg",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "force": {
                   "description": "Replace an existing destination file"
                 },
@@ -2961,6 +3015,9 @@
             "delete": {
               "description": "Delete an unreferenced user pipeline",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "yes": {
                   "description": "Skip confirmation"
                 },
@@ -2981,6 +3038,9 @@
             "save": {
               "description": "Validate and install a pipeline definition file as a user pipeline",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "from": {
                   "description": "Path to a JSON or YAML pipeline definition"
                 },
@@ -3147,6 +3207,9 @@
                 },
                 "project": {
                   "description": "Use the selected registered project as every migration root"
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 },
                 "json": {
                   "description": "Output as JSON (non-interactive; requires --yes to execute)"

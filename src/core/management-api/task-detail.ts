@@ -150,6 +150,7 @@ export async function handleTaskDetail(
   for (const ref of archivedRefs) {
     if (!belongsToTask(ref.name)) continue;
     const archiveChangesDir = resolveArchivedChangeDir(archiveDir, home, ref.dated);
+    if (archiveChangesDir === null) continue;
     children.push({
       name: ref.name,
       archived: true,

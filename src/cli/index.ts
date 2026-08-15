@@ -321,8 +321,9 @@ program
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
-  .action(async (options?: { specs?: boolean; changes?: boolean; sort?: string; long?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (options?: { specs?: boolean; changes?: boolean; sort?: string; long?: boolean; json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }) => {
     try {
       const root = await resolveRootForCommand(options ?? {}, {
         json: options?.json,
@@ -338,6 +339,9 @@ program
         sort,
         long: options?.long,
         json: options?.json,
+        changesDir: root.changesDir,
+        specsDir: root.specsDir,
+        ...(root.schemasDir === undefined ? {} : { schemasDir: root.schemasDir }),
         ...(options?.json ? { root: toRootOutput(root) } : {}),
       });
     } catch (error) {
@@ -372,6 +376,7 @@ const archiveCommand = program
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .option('--keep-ephemera', '')
   .option('--no-whitespace-check', '')
   .option('--dry-run', '')
@@ -426,8 +431,9 @@ program
   .option('--no-interactive', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
-  .action(async (itemName?: string, options?: { all?: boolean; changes?: boolean; specs?: boolean; pipelines?: boolean; type?: string; strict?: boolean; json?: boolean; noInteractive?: boolean; concurrency?: string; store?: string; project?: string; storePath?: string }) => {
+  .action(async (itemName?: string, options?: { all?: boolean; changes?: boolean; specs?: boolean; pipelines?: boolean; type?: string; strict?: boolean; json?: boolean; noInteractive?: boolean; concurrency?: string; store?: string; project?: string; targetLine?: string; storePath?: string }) => {
     try {
       const validateCommand = new ValidateCommand();
       await validateCommand.execute(itemName, options);
@@ -453,6 +459,7 @@ program
   .option('-r, --requirement <id>', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   // Explicit registration required: allowUnknownOption would otherwise
   // silently swallow --store-path instead of rejecting it deliberately.
   .addOption(hiddenStorePathOption())
@@ -556,6 +563,7 @@ program
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (options: StatusOptions) => {
     try {
@@ -575,6 +583,7 @@ program
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (artifactId: string | undefined, options: InstructionsOptions) => {
     try {
@@ -633,6 +642,7 @@ newCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
   // Removed options kept registered (hidden) so users get a deliberate
   // explanation instead of a generic unknown-option error.
@@ -658,8 +668,9 @@ pipelineCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
-  .action(async (options?: { json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (options?: { json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }) => {
     try {
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.list(options);
@@ -680,6 +691,7 @@ pipelineCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (name: string, options?: {
     planner?: string;
@@ -743,7 +755,7 @@ pipelineCmd
   .action(async (
     change: string,
     pipeline: string,
-    options?: { json?: boolean; store?: string; project?: string; storePath?: string }
+    options?: { json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }
   ) => {
     try {
       const pipelineCommand = new PipelineCommand();
@@ -763,7 +775,7 @@ pipelineCmd
   .action(async (
     change: string,
     pipeline: string,
-    options?: { json?: boolean; store?: string; project?: string; storePath?: string }
+    options?: { json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }
   ) => {
     try {
       const pipelineCommand = new PipelineCommand();
@@ -784,7 +796,7 @@ pipelineCmd
   .addOption(hiddenStorePathOption())
   .action(async (
     change: string,
-    options: { run: string; turnInputFile: string; json?: boolean; store?: string; project?: string; storePath?: string }
+    options: { run: string; turnInputFile: string; json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }
   ) => {
     try {
       const pipelineCommand = new PipelineCommand();
@@ -804,7 +816,7 @@ pipelineCmd
   .action(async (
     change: string,
     pipeline: string,
-    options?: { json?: boolean; store?: string; project?: string; storePath?: string }
+    options?: { json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }
   ) => {
     try {
       const pipelineCommand = new PipelineCommand();
@@ -825,7 +837,7 @@ pipelineCmd
   .addOption(hiddenStorePathOption())
   .action(async (
     change: string,
-    options: { run: string; from: string; json?: boolean; store?: string; project?: string; storePath?: string }
+    options: { run: string; from: string; json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }
   ) => {
     try {
       const pipelineCommand = new PipelineCommand();
@@ -846,7 +858,7 @@ pipelineCmd
   .addOption(hiddenStorePathOption())
   .action(async (
     change: string,
-    options: { run: string; from: string; json?: boolean; store?: string; project?: string; storePath?: string }
+    options: { run: string; from: string; json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }
   ) => {
     try {
       const pipelineCommand = new PipelineCommand();
@@ -867,6 +879,7 @@ pipelineCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
   .action(async (
     name: string,
@@ -896,8 +909,9 @@ pipelineCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
-  .action(async (task: string, options?: { json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (task: string, options?: { json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }) => {
     try {
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.classify(task, options);
@@ -912,8 +926,9 @@ pipelineCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
-  .action(async (change: string, options?: { json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (change: string, options?: { json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }) => {
     try {
       const pipelineCommand = new PipelineCommand();
       await pipelineCommand.resume(change, options);
@@ -929,8 +944,9 @@ pipelineCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
-  .action(async (name: string, options: { output: string; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (name: string, options: { output: string; json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }) => {
     const pipelineLibraryCommand = new PipelineLibraryCommand();
     await pipelineLibraryCommand.init(name, options);
   });
@@ -941,8 +957,9 @@ pipelineCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
-  .action(async (nameOrPath: string, options: { json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (nameOrPath: string, options: { json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }) => {
     const pipelineLibraryCommand = new PipelineLibraryCommand();
     await pipelineLibraryCommand.validate(nameOrPath, options);
   });
@@ -954,8 +971,9 @@ pipelineCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
-  .action(async (sourcePath: string, options: { force?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (sourcePath: string, options: { force?: boolean; json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }) => {
     const pipelineLibraryCommand = new PipelineLibraryCommand();
     await pipelineLibraryCommand.import(sourcePath, options);
   });
@@ -967,8 +985,9 @@ pipelineCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
-  .action(async (name: string, destination: string, options: { force?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (name: string, destination: string, options: { force?: boolean; json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }) => {
     const pipelineLibraryCommand = new PipelineLibraryCommand();
     await pipelineLibraryCommand.export(name, destination, options);
   });
@@ -981,8 +1000,9 @@ pipelineCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
-  .action(async (name: string, options: { from: string; force?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (name: string, options: { from: string; force?: boolean; json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }) => {
     const pipelineLibraryCommand = new PipelineLibraryCommand();
     await pipelineLibraryCommand.save(name, options);
   });
@@ -995,8 +1015,9 @@ pipelineCmd
   .option('--json', '')
   .option('--store <id>', '')
   .option('--project <id>', '')
+  .option('--target-line <id>', '')
   .addOption(hiddenStorePathOption())
-  .action(async (name: string, options: { yes?: boolean; force?: boolean; json?: boolean; store?: string; project?: string; storePath?: string }) => {
+  .action(async (name: string, options: { yes?: boolean; force?: boolean; json?: boolean; store?: string; project?: string; targetLine?: string; storePath?: string }) => {
     const pipelineLibraryCommand = new PipelineLibraryCommand();
     await pipelineLibraryCommand.delete(name, options);
   });

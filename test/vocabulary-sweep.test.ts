@@ -167,6 +167,9 @@ describe('vocabulary sweep', () => {
       'workspace_show_failed',
       'workspace_store_unresolved',
       'workspace_target_line_unknown',
+      // L6 port: context.ts's own resolution failure for a declared workspace
+      // whose pair cannot be read back (0.1.7's code, ported with the command).
+      'workspace_unresolved',
       'workspace_worktree_absent',
       'workspace_worktree_identity_drift',
       'workspace_worktree_not_a_repository',

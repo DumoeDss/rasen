@@ -1260,6 +1260,9 @@
         "list": {
           "description": "項目を一覧表示します（既定は変更、--specsで仕様）",
           "options": {
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
+            },
             "specs": {
               "description": "変更ではなく仕様を一覧表示します"
             },
@@ -1289,6 +1292,9 @@
         "validate": {
           "description": "変更と仕様を検証します",
           "options": {
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
+            },
             "all": {
               "description": "すべての変更と仕様を検証します"
             },
@@ -1327,6 +1333,9 @@
         "show": {
           "description": "変更または仕様を表示します",
           "options": {
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
+            },
             "json": {
               "description": "JSONで出力します"
             },
@@ -1378,6 +1387,9 @@
         "archive": {
           "description": "完了した変更をアーカイブし、メイン仕様を更新します",
           "options": {
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
+            },
             "yes": {
               "description": "確認プロンプトを省略します"
             },
@@ -1447,6 +1459,9 @@
         "status": {
           "description": "変更に含まれる成果物の完了状態を表示します",
           "options": {
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
+            },
             "change": {
               "description": "状態を表示する変更名です"
             },
@@ -1467,6 +1482,9 @@
         "instructions": {
           "description": "成果物作成またはタスク実装用の詳細な指示を出力します",
           "options": {
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
+            },
             "change": {
               "description": "変更名です"
             },
@@ -1509,6 +1527,9 @@
             "change": {
               "description": "新しい変更ディレクトリを作成します",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "description": {
                   "description": "README.mdへ追加する説明です"
                 },
@@ -2034,6 +2055,9 @@
         "context": {
           "description": "解決したRasen rootの作業コンテキストを表示します",
           "options": {
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
+            },
             "json": {
               "description": "JSONで出力します"
             },
@@ -2080,6 +2104,9 @@
         "doctor": {
           "description": "解決したRasen rootの関係性の状態を報告します",
           "options": {
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
+            },
             "json": {
               "description": "JSONで出力します"
             },
@@ -2787,6 +2814,9 @@
             "list": {
               "description": "利用可能なパイプラインを一覧表示します（project > user > package）",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "json": {
                   "description": "JSONで出力します"
                 },
@@ -2801,6 +2831,9 @@
             "show": {
               "description": "パイプラインstageのDAGとbuild順を表示します",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "for-execution": {
                   "description": "実行可能なDAGを返す前に有効なプロファイルのスキルを検証します"
                 },
@@ -2833,6 +2866,9 @@
             "agents": {
               "description": "パイプラインのrole別Claude/Codex runtimeを表示・設定します",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "planner": {
                   "description": "plannerのruntimeを設定します: claude または codex"
                 },
@@ -2862,6 +2898,9 @@
             "classify": {
               "description": "タスクに合うパイプラインを提案します（キーワードによる参考判定）",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "json": {
                   "description": "JSONで出力します"
                 },
@@ -2876,6 +2915,9 @@
             "resume": {
               "description": "変更のパイプライン実行状態（次/残りのstage）を表示します",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "json": {
                   "description": "JSONで出力します"
                 },
@@ -2890,6 +2932,9 @@
             "init": {
               "description": "インストールせず最小パイプラインドラフトを作成します",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "output": {
                   "description": "作成する空のパイプラインドラフトディレクトリです"
                 },
@@ -2907,6 +2952,9 @@
             "validate": {
               "description": "インストール済みパイプライン、ドラフトディレクトリ、または.rasenpkgを検証します",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "json": {
                   "description": "JSONで出力します"
                 },
@@ -2921,6 +2969,9 @@
             "import": {
               "description": "パイプラインの.rasenpkgを検証してatomicにインストールします",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "force": {
                   "description": "同名のインストール済みパイプラインを上書きします"
                 },
@@ -2938,6 +2989,9 @@
             "export": {
               "description": "ユーザーパイプラインを.rasenpkgとしてexportします",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "force": {
                   "description": "既存の出力先ファイルを置き換えます"
                 },
@@ -2955,6 +3009,9 @@
             "delete": {
               "description": "参照されていないユーザーパイプラインを削除します",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "yes": {
                   "description": "確認を省略します"
                 },
@@ -2975,6 +3032,9 @@
             "save": {
               "description": "パイプライン定義ファイルを検証し、ユーザーパイプラインとしてインストールします",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "from": {
                   "description": "JSONまたはYAML形式のパイプライン定義へのパス"
                 },
@@ -3141,6 +3201,9 @@
                 },
                 "project": {
                   "description": "登録済みプロジェクトをすべての移行ルートとして選択"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 },
                 "json": {
                   "description": "JSONで出力します（非対話、実行には--yesが必要）"

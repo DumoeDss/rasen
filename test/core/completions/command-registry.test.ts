@@ -211,6 +211,9 @@ describe('root-inclusive CLI structure', () => {
       'json',
       'store',
       'project',
+      // L6 (store-session-execution-context): the planning-scope selector a
+      // new Change is created under, ported with the root-selection machinery.
+      'target-line',
     ]);
   });
 

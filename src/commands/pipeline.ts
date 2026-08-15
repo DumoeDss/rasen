@@ -179,10 +179,10 @@ import {
 import { tryContextEstimate, type ContextEstimate } from '../core/agent-context.js';
 import { validateChangeExists } from './workflow/shared.js';
 import { resolveChangeWorkDir } from '../core/change-work.js';
-import { ephemeraDir, resolveExecutionRoot } from '../core/file-placement.js';
+import { ephemeraDir } from '../core/file-placement.js';
 import {
   resolveRootForCommand,
-  isStoreSelectedRoot,
+  resolvedExecutionProjectRoot,
   type ResolvedOpenSpecRoot,
 } from '../core/root-selection.js';
 import {
@@ -1068,14 +1068,12 @@ export class PipelineCommand {
     changeId: string,
     root: ResolvedOpenSpecRoot
   ): Promise<StateFileLocationOptions> {
-    const workDir = await resolveChangeWorkDir(root.path, changeId, {
-      ensure: false,
-    });
-    const executionRoot = resolveExecutionRoot(root.path, {
-      storeSelected: isStoreSelectedRoot(root),
-    });
+    const executionRoot = resolvedExecutionProjectRoot(root);
+    const workDir = executionRoot === undefined
+      ? null
+      : await resolveChangeWorkDir(executionRoot, changeId, { ensure: false });
     return {
-      ephemeraDir: ephemeraDir(executionRoot, changeId),
+      ...(executionRoot === undefined ? {} : { ephemeraDir: ephemeraDir(executionRoot, changeId) }),
       workDir,
     };
   }
@@ -2709,11 +2707,11 @@ export class PipelineCommand {
     // Sticky-legacy chain (`file-placement` capability): the execution root's
     // ephemera directory is the terminal landing and is searched first, then
     // the legacy machine-home work directory, then the change directory.
-    const executionRoot = resolveExecutionRoot(projectRoot, {
-      storeSelected: isStoreSelectedRoot(root),
-    });
+    const executionRoot = resolvedExecutionProjectRoot(root);
     const stateLocations = {
-      ephemeraDir: ephemeraDir(executionRoot, changeName),
+      ...(executionRoot === undefined
+        ? {}
+        : { ephemeraDir: ephemeraDir(executionRoot, changeName) }),
       workDir,
     };
 

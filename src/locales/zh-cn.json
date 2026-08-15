@@ -1260,6 +1260,9 @@
         "list": {
           "description": "列出条目（默认为变更，使用 --specs 列出规格）",
           "options": {
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
+            },
             "specs": {
               "description": "列出规格而非变更"
             },
@@ -1289,6 +1292,9 @@
         "validate": {
           "description": "校验变更和规格",
           "options": {
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
+            },
             "all": {
               "description": "校验所有变更和规格"
             },
@@ -1327,6 +1333,9 @@
         "show": {
           "description": "显示变更或规格",
           "options": {
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
+            },
             "json": {
               "description": "输出为 JSON"
             },
@@ -1378,6 +1387,9 @@
         "archive": {
           "description": "归档已完成的变更并更新主规格",
           "options": {
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
+            },
             "yes": {
               "description": "跳过确认提示"
             },
@@ -1447,6 +1459,9 @@
         "status": {
           "description": "显示变更的产物完成状态",
           "options": {
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
+            },
             "change": {
               "description": "要显示状态的变更名称"
             },
@@ -1467,6 +1482,9 @@
         "instructions": {
           "description": "输出用于创建产物或实施任务的增强指令",
           "options": {
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
+            },
             "change": {
               "description": "变更名称"
             },
@@ -1509,6 +1527,9 @@
             "change": {
               "description": "创建新的变更目录",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "description": {
                   "description": "要添加到 README.md 的说明"
                 },
@@ -2034,6 +2055,9 @@
         "context": {
           "description": "输出已解析 Rasen 根目录的工作上下文",
           "options": {
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
+            },
             "json": {
               "description": "输出为 JSON"
             },
@@ -2080,6 +2104,9 @@
         "doctor": {
           "description": "报告已解析 Rasen 根目录的关系健康状况",
           "options": {
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
+            },
             "json": {
               "description": "输出为 JSON"
             },
@@ -2787,6 +2814,9 @@
             "list": {
               "description": "列出可用流水线（project > user > package）",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "json": {
                   "description": "输出为 JSON"
                 },
@@ -2801,6 +2831,9 @@
             "show": {
               "description": "显示流水线阶段的 DAG 和构建顺序",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "for-execution": {
                   "description": "返回可执行 DAG 前校验当前配置方案的技能"
                 },
@@ -2833,6 +2866,9 @@
             "agents": {
               "description": "显示或设置流水线中各角色的 Claude/Codex 运行时",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "planner": {
                   "description": "设置 planner 运行时：claude 或 codex"
                 },
@@ -2862,6 +2898,9 @@
             "classify": {
               "description": "为任务建议流水线（仅供参考的关键字启发式判断）",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "json": {
                   "description": "输出为 JSON"
                 },
@@ -2876,6 +2915,9 @@
             "resume": {
               "description": "显示变更的流水线运行状态（下一/剩余阶段）",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "json": {
                   "description": "输出为 JSON"
                 },
@@ -2890,6 +2932,9 @@
             "init": {
               "description": "创建最小流水线草稿，但不安装",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "output": {
                   "description": "要创建的空流水线草稿目录"
                 },
@@ -2907,6 +2952,9 @@
             "validate": {
               "description": "校验已安装的流水线、草稿目录或 .rasenpkg",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "json": {
                   "description": "输出为 JSON"
                 },
@@ -2921,6 +2969,9 @@
             "import": {
               "description": "校验并原子安装流水线 .rasenpkg",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "force": {
                   "description": "覆盖已安装的同名流水线"
                 },
@@ -2938,6 +2989,9 @@
             "export": {
               "description": "将用户流水线导出为 .rasenpkg",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "force": {
                   "description": "替换现有目标文件"
                 },
@@ -2955,6 +3009,9 @@
             "delete": {
               "description": "删除未被引用的用户流水线",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "yes": {
                   "description": "跳过确认"
                 },
@@ -2975,6 +3032,9 @@
             "save": {
               "description": "校验流水线定义文件并将其安装为用户流水线",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "from": {
                   "description": "JSON 或 YAML 格式的流水线定义文件路径"
                 },
@@ -3141,6 +3201,9 @@
                 },
                 "project": {
                   "description": "选择已注册项目作为所有迁移根目录"
+                },
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
                 },
                 "json": {
                   "description": "输出为 JSON（非交互；执行时需要 --yes）"

@@ -9,23 +9,24 @@
 
 import ora from 'ora';
 import path from 'path';
-import { createChange, validateChangeName } from '../../utils/change-utils.js';
+import { validateChangeName } from '../../utils/change-utils.js';
 import { formatChangeLocation } from '../../core/planning-home.js';
-import { ephemeraDir, resolveExecutionRoot } from '../../core/file-placement.js';
+import { ephemeraDir } from '../../core/file-placement.js';
 import {
   freezeProductionPreparedPipelineRegistry,
   initializeRunState,
   type RunStatePipelineSeed,
 } from '../../core/pipeline-registry/index.js';
 import {
-  resolveRootForCommand,
+  resolveChangeCreationForCommand,
+  resolvedExecutionProjectRoot,
   RootSelectionError,
   toPlanningHome,
   toRootOutput,
   withStoreFlag,
+  isStoreSelectedRoot,
   type ResolvedOpenSpecRoot,
   type RootOutput,
-  isStoreSelectedRoot,
 } from '../../core/root-selection.js';
 import { printJson, statusFromError, validateSchemaExists } from './shared.js';
 
@@ -40,6 +41,7 @@ export interface NewChangeOptions {
   schema?: string;
   store?: string;
   project?: string;
+  targetLine?: string;
   storePath?: string;
   initiative?: string;
   areas?: string;
@@ -123,20 +125,31 @@ export async function newChangeCommand(name: string | undefined, options: NewCha
       throw new Error('--proposal must not be empty or whitespace-only.');
     }
 
-    const root = await resolveRootForCommand(options, {
+    const resolved = await resolveChangeCreationForCommand(options, {
       json: options.json,
       failurePayload: { change: null },
     });
-    if (!root) {
+    if (!resolved) {
       return;
     }
+    const { root, scope } = resolved;
 
     const projectRoot = root.path;
+    // Run-state is ephemera of an EXECUTION project. A Store planning
+    // checkout is a planning locator, not an execution fallback.
+    const executionRoot = resolvedExecutionProjectRoot(root);
     // Resolve before creating anything so an invalid assignment is atomic:
     // no orphan child directory is left behind on an unknown pipeline.
+    if (options.pipeline && executionRoot === undefined) {
+      throw new RootSelectionError(
+        'Pipeline initialization requires a verified execution project; the Store planning checkout is not an execution fallback.',
+        'execution_authority_unavailable',
+        { target: 'execution.root' }
+      );
+    }
     const pipelineSelection = options.pipeline
       ? await (
-          await freezeProductionPreparedPipelineRegistry(projectRoot, {
+          await freezeProductionPreparedPipelineRegistry(executionRoot as string, {
             reporter: options.json ? false : undefined,
           })
         ).selectForExecution(options.pipeline, {
@@ -164,7 +177,7 @@ export async function newChangeCommand(name: string | undefined, options: NewCha
 
     // Validate schema if provided
     if (options.schema) {
-      validateSchemaExists(options.schema, projectRoot);
+      validateSchemaExists(options.schema, projectRoot, root.schemasDir);
     }
 
     const resolvedSchema = options.schema ?? root.defaultSchema;
@@ -172,19 +185,17 @@ export async function newChangeCommand(name: string | undefined, options: NewCha
       spinner.start(`Creating change '${name}' with schema '${resolvedSchema}'...`);
     }
 
-    const result = await createChange(projectRoot, name, {
+    const result = await scope.createChange({
+      changeId: name,
       schema: options.schema,
       defaultSchema: root.defaultSchema,
-      changesDir: root.changesDir,
-      metadata: {
-        ...(options.goal ? { goal: options.goal } : {}),
-      },
+      ...(options.goal === undefined ? {} : { goal: options.goal }),
     });
 
     // If description provided, create README.md with description
     if (options.description) {
       const { promises: fs } = await import('fs');
-      const readmePath = path.join(result.changeDir, 'README.md');
+      const readmePath = path.join(result.location.absolutePath, 'README.md');
       await fs.writeFile(readmePath, `# ${name}\n\n${options.description}\n`, 'utf-8');
     }
 
@@ -193,7 +204,7 @@ export async function newChangeCommand(name: string | undefined, options: NewCha
     // --description, which only seeds README.md.
     if (options.proposal) {
       const { promises: fs } = await import('fs');
-      const proposalPath = path.join(result.changeDir, 'proposal.md');
+      const proposalPath = path.join(result.location.absolutePath, 'proposal.md');
       await fs.writeFile(
         proposalPath,
         `# ${name}\n\n` +
@@ -209,10 +220,7 @@ export async function newChangeCommand(name: string | undefined, options: NewCha
     // failed with "Run-state already exists" for a change it had never created.
     const initialized = pipeline
       ? initializeRunState(
-          ephemeraDir(
-            resolveExecutionRoot(projectRoot, { storeSelected: isStoreSelectedRoot(root) }),
-            name
-          ),
+          ephemeraDir(executionRoot as string, name),
           pipeline
         )
       : null;
@@ -220,8 +228,8 @@ export async function newChangeCommand(name: string | undefined, options: NewCha
     const payload: NewChangeOutput = {
       change: {
         id: name,
-        path: result.changeDir,
-        metadataPath: path.join(result.changeDir, '.openspec.yaml'),
+        path: result.location.absolutePath,
+        metadataPath: result.metadataPath,
         schema: result.schema,
         ...(pipeline && initialized
           ? { pipeline: pipeline.name, runStatePath: initialized.path }

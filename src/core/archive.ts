@@ -20,7 +20,7 @@ import {
 } from './archive-engine.js';
 import { getGlobalDataDir } from './global-config.js';
 import { resolveArchiveDestination, resolveChangeWorkDir } from './change-work.js';
-import { ephemeraDir, evidenceDir, resolveExecutionRoot } from './file-placement.js';
+import { ephemeraDir, evidenceDir } from './file-placement.js';
 import {
   formatWhitespaceViolations,
   scanDirectoryForWhitespaceViolations,
@@ -34,12 +34,29 @@ import { queryLegacyCoordinatorConversion } from './store/layout-migration/recei
 import {
   emitStoreRootBanner,
   isRootSelectionError,
-  isStoreSelectedRoot,
+  resolvedExecutionProjectRoot,
   resolveOpenSpecRoot,
   toRootOutput,
   withStoreFlag,
   type ResolvedOpenSpecRoot,
 } from './root-selection.js';
+
+/** The planning scope facts recorded on every plan this build creates. */
+function archivePlanScope(root: ResolvedOpenSpecRoot): ArchivePlan['scope'] {
+  const ref = root.planningScope?.ref;
+  if (root.planningScope === undefined || ref === undefined) {
+    return { kind: 'standalone' };
+  }
+  return {
+    kind: root.planningScope.kind,
+    ...(ref.mode === 'standalone' || ref.storeUid === undefined
+      ? {}
+      : { storeUid: ref.storeUid }),
+    ...('projectId' in ref && ref.projectId !== undefined
+      ? { projectId: ref.projectId }
+      : {}),
+  };
+}
 import { buildUpdatedSpec, findSpecUpdates } from './specs-apply.js';
 import { Validator } from './validation/validator.js';
 import { resolveProjectHome } from './project-home.js';
@@ -75,6 +92,7 @@ export interface ArchiveOptions {
   json?: boolean;
   store?: string;
   project?: string;
+  targetLine?: string;
   storePath?: string;
   keepEphemera?: boolean;
   /** `--no-whitespace-check` sets this to false; the preflight is on by default. */
@@ -108,40 +126,31 @@ function legacyFlatStoreArchiveRefusal(storeId: string): ArchiveDiagnostic {
 }
 
 /**
- * The Store a project-scoped archive target plans in, or null when the root
- * has nothing to do with a Store. This line's root selection carries no
- * planning-scope description yet (that surface is the L6 slice), so the store
- * binding is re-derived from the root's own declaration here.
- */
-async function archiveStoreBindingTarget(
-  root: ResolvedOpenSpecRoot
-): Promise<{ storeId: string; storeUid?: string; storeRoot: string } | null> {
-  const { pointer } = classifyOpenSpecDir(root.path);
-  const declaration = storeBindingDeclarationFrom(pointer);
-  if (declaration.form === 'absent') return null;
-  const binding = await resolveStoreBinding({ declaration, projectRoot: root.path }).catch(
-    () => null
-  );
-  if (binding?.kind !== 'resolved') return null;
-  return {
-    storeId: binding.store.id,
-    ...(binding.store.uid === undefined ? {} : { storeUid: binding.store.uid }),
-    storeRoot: binding.store.root,
-  };
-}
-
-/**
  * A legacy flat Store's planning tree is READ-ONLY until it is migrated:
  * archiving writes into `rasen/changes/archive`, a namespace layout v2
  * retires, and the entry would then have to be relocated a second time by the
  * migration. The refusal ships together with the migration that makes it
- * survivable (`store-layout-v2-migration`, tasks 10b.1-10b.3). Without a
- * planning-scope description the root's own Store declaration is classified
- * directly, which is the same fact the resolver would have reported.
+ * survivable (`store-layout-v2-migration`, tasks 10b.1-10b.3).
  */
 async function storeFinalizationDiagnostic(
   root: ResolvedOpenSpecRoot
 ): Promise<ArchiveDiagnostic | null> {
+  if (root.planningScope?.kind === 'legacy-store') {
+    const storeId =
+      root.planningScope.ref.mode === 'legacy-store'
+        ? root.planningScope.ref.storeId
+        : '<store-id>';
+    return legacyFlatStoreArchiveRefusal(storeId);
+  }
+  if (root.planningScope !== undefined) return null;
+
+  // No scope description at all. That is not "not a Store": ONLY the authoring
+  // resolution attaches one, and `resolveOpenSpecRoot` deliberately hands every
+  // legacy flat Store back through the frozen compatibility adapter, which
+  // attaches none — through `--store`, through a `store:` pointer, and from
+  // inside the Store checkout alike. Keying the refusal on the scope alone left
+  // it unreachable. Classify the root's own Store declaration instead, which is
+  // the same fact the resolver would have reported.
   const classification = await classifyStoreRootLayout(root.path);
   return classification.kind === 'legacy-flat'
     ? legacyFlatStoreArchiveRefusal(root.storeId ?? classification.storeId ?? '<store-id>')
@@ -168,31 +177,33 @@ async function legacyCoordinatorDiagnostic(
   options: ArchiveOptions,
   lstat: typeof fs.lstat
 ): Promise<ArchiveDiagnostic | null> {
-  if (changeName === undefined || options.intentTemplate === true) {
+  if (
+    changeName === undefined ||
+    options.intentTemplate === true ||
+    root.planningScope?.kind !== 'store-project'
+  ) {
     return null;
   }
   // A real active Change always wins and remains subject to finalization.
   if (await exactActiveChangeExists(root.changesDir, changeName, lstat)) return null;
-  const target = await archiveStoreBindingTarget(root);
-  // The conversion receipt is keyed by the Store's permanent identity; a
-  // Store without one cannot have recorded a coordinator conversion.
-  if (target === null || target.storeUid === undefined) return null;
+  const ref = root.planningScope.ref;
+  if (ref.mode !== 'store-project') return null;
   const checkedOutRef = await productionStoreLayoutMigrationDependencies.git.currentRef(
-    target.storeRoot
+    ref.storeRoot
   );
   if (checkedOutRef === null) return null;
   const result = await queryLegacyCoordinatorConversion(
     productionStoreLayoutMigrationDependencies,
     {
-      storeRoot: target.storeRoot,
-      storeUid: target.storeUid,
+      storeRoot: ref.storeRoot,
+      storeUid: ref.storeUid,
       ref: checkedOutRef,
       alias: changeName,
     }
   );
   if (result.status !== 'found') return null;
-  const show = `rasen store issue show ${result.issueId} --store ${target.storeId}`;
-  const state = `rasen store issue state ${result.issueId} --store ${target.storeId} --state <resolved|dropped>`;
+  const show = `rasen store issue show ${result.issueId} --store ${ref.storeId}`;
+  const state = `rasen store issue state ${result.issueId} --store ${ref.storeId} --state <resolved|dropped>`;
   return {
     severity: 'error',
     code: 'legacy_coordinator_became_issue',
@@ -201,7 +212,7 @@ async function legacyCoordinatorDiagnostic(
       `This archive invocation executed no finalization option and changed neither resource.`,
     fix: `Inspect it with '${show}'. If appropriate, declare Issue state separately with '${state}'; that is an independent operator action, not archive forwarding.`,
     issueId: result.issueId,
-    storeId: target.storeId,
+    storeId: ref.storeId,
     forwarded: false,
     continuations: [show, state],
   };
@@ -351,6 +362,7 @@ export class ArchiveCommand {
       root = await resolveOpenSpecRoot({
         ...(options.store !== undefined ? { store: options.store } : {}),
         ...(options.project !== undefined ? { project: options.project } : {}),
+        ...(options.targetLine !== undefined ? { targetLine: options.targetLine } : {}),
         ...(options.storePath !== undefined ? { storePath: options.storePath } : {}),
       });
     } catch (error) {
@@ -822,10 +834,14 @@ export class ArchiveCommand {
       specActions = [];
     }
 
-    const executionRoot = resolveExecutionRoot(root.path, {
-      storeSelected: isStoreSelectedRoot(root),
-      cwd: process.cwd(),
-    });
+    const executionRoot = resolvedExecutionProjectRoot(root);
+    if (executionRoot === undefined) {
+      throw new ArchiveBlockedError(
+        'execution_authority_required',
+        'Archive requires a verified execution checkout; planning scope alone is not writable.',
+        'Run from an associated execution worktree and retry.'
+      );
+    }
     const sidecar = sourceAvailable
       ? await resolveArchiveSidecar(
           changeDir,
@@ -868,6 +884,7 @@ export class ArchiveCommand {
       change: changeName,
       planningRoot: root.path,
       executionRoot,
+      scope: archivePlanScope(root),
       activePath: changeDir,
       archiveParent,
       ephemeraPath: ephemeraDir(executionRoot, changeName),
