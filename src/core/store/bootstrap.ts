@@ -105,10 +105,10 @@ import {
   type ProjectStoreCandidate,
   type StoreMembershipRecord,
 } from './membership.js';
+import { readStoreMembership } from './membership-layout.js';
 import {
   getStoreProjectRecordsDir,
   normalizeProjectIdentity,
-  readStoreProjectRecord,
   WINDOWS_RESERVED_DEVICE_NAMES,
 } from './project-records.js';
 import { assertCredentialFreeRemote, redactOptionalRemote } from './remote.js';
@@ -1230,15 +1230,23 @@ async function projectFirstBundleDeclarations(
 
   for (const store of stores) {
     if (store.root === undefined) continue;
-    let read: Awaited<ReturnType<typeof readStoreProjectRecord>>;
+    // Dispatches on the Store's declared layout: reading a layout v2 project
+    // catalog through the v1 parser DROPPED the project's declared knowledge
+    // bundle and emitted a spurious parse diagnostic instead.
+    let read: Awaited<ReturnType<typeof readStoreMembership>>;
     try {
-      read = await readStoreProjectRecord(store.root, projectId);
+      read = await readStoreMembership(store.root, projectId, store.id ?? store.selector);
     } catch (failure) {
       diagnostics.push(...diagnosticsFor(failure));
       continue;
     }
     diagnostics.push(...read.diagnostics);
-    const locator = read.record?.knowledgeBundle;
+    const locator =
+      read.entry === null
+        ? undefined
+        : read.entry.layout === 1
+          ? read.entry.record.knowledgeBundle
+          : read.entry.catalog.knowledgeBundle;
     if (locator === undefined) continue;
     declarations.push({
       projectId,
@@ -2659,18 +2667,23 @@ async function buildStoreEntry(context: {
  * The record file that exists but cannot be read, or undefined when there is
  * simply no record.
  *
- * `readStoreProjectRecord` is the ONE landed reader that keeps those apart: it
+ * `readStoreMembership` is the ONE landed reader that keeps those apart: it
  * returns empty diagnostics for a missing file and the parse or key-mismatch
  * diagnostic for a broken one. `resolveProjectMembership` collapses both into
  * `null`, which is why the answer has to be re-asked here rather than inferred.
+ *
+ * It dispatches on the Store's declared layout, and must: this check runs
+ * BEFORE `resolveProjectMembership` and short-circuits it, so reading a layout
+ * v2 catalog through the v1 parser reported every healthy catalog in a migrated
+ * Store as an unreadable record and membership never got asked at all.
  */
 async function readUnreadableRecord(
   store: ResolvedStoreRef,
   projectId: string
 ): Promise<{ path: string; diagnostics: StoreDiagnostic[] } | undefined> {
   try {
-    const read = await readStoreProjectRecord(store.root, projectId);
-    if (read.record !== null || read.diagnostics.length === 0) return undefined;
+    const read = await readStoreMembership(store.root, projectId, store.id);
+    if (read.entry !== null || read.diagnostics.length === 0) return undefined;
     return { path: read.filePath, diagnostics: [...read.diagnostics] };
   } catch (failure) {
     // An identity that cannot even name a record file is itself the reason

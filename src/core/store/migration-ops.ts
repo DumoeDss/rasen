@@ -59,7 +59,6 @@ import {
   membershipRecordLockError,
   membershipStoreLabel,
   writeMembershipLocator,
-  writeMembershipRecord,
 } from './membership.js';
 import {
   deleteStoreProjectRecord,
@@ -75,10 +74,25 @@ import {
   type StoreProjectRoles,
 } from './project-records.js';
 import { storeAddProject } from './operations.js';
+import { readStoreMembership } from './membership-layout.js';
+import { assertStoreLayoutForWrite, readStoreLayoutState } from './layout-write-guard.js';
+import {
+  archiveLineDir,
+  assertBoundPlanningMember,
+  assertPortableProjectIdentity,
+  bindProjectCatalog,
+  crossLineArchiveCollisions,
+  partitionCollisions,
+  projectPartition,
+  readPartitionContents,
+  requireTargetLineCatalog,
+  restorePartition,
+  storeDeclaresLayoutV2,
+  unbindProjectCatalog,
+} from './migration-ops-v2.js';
 import { remoteCarriesCredentials } from './remote.js';
 import { writeDurablePointer } from './upgrade-identity.js';
 import {
-  caseInsensitiveCollisions,
   changesDir,
   deleteAdoptionsManifest,
   detectUncommittedPaths,
@@ -371,6 +385,11 @@ export interface AdoptInput extends StorePathOptions, ProjectPathOptions {
   sourcePath: string;
   storeId: string;
   archive?: ArchiveMode;
+  /**
+   * Required with `--archive move`: a layout v2 store partitions archives by
+   * stable target line, and no legacy archive entry records one.
+   */
+  targetLine?: string;
   dryRun?: boolean;
   verifyHash?: boolean;
 }
@@ -444,6 +463,18 @@ export async function adoptProject(input: AdoptInput): Promise<AdoptResult> {
   // registered store, leaving a Git-tracked pointer that resolves to nothing.
   const storeId = store.id;
 
+  // Adopt writes a project PARTITION. A store that has not declared layout
+  // version 2 has no partition namespace, so this refuses and names the
+  // migration rather than writing into the retired flat namespace; a
+  // half-migrated store refuses outright and names recovery (spec store-adopt,
+  // "Adopt into a legacy flat store is refused").
+  await assertStoreLayoutForWrite({
+    storeRoot,
+    storeId,
+    intent: 'store-adopt',
+    writes: 'partition',
+  });
+
   // A dry run must not mint identity either: `ensureProjectIdInConfig` appends
   // `projectId:` to the TRACKED rasen/config.yaml, so a preview-only run left
   // the repo dirty while printing "no config changed". Read what is already
@@ -452,7 +483,17 @@ export async function adoptProject(input: AdoptInput): Promise<AdoptResult> {
   const projectId = input.dryRun
     ? (readProjectConfig(sourcePath)?.projectId ?? UNASSIGNED_PROJECT_ID)
     : await ensureProjectIdInConfig(sourcePath, storeOpts);
-  const existingOwnership = await readProjectOwnership(storeRoot, projectId);
+  if (projectId !== UNASSIGNED_PROJECT_ID) {
+    assertPortableProjectIdentity(projectId, storeId);
+  }
+  // In layout v2 the project's own catalog binding is the ownership record and
+  // the resume marker; there is no spec/change name list to consult.
+  const existingBinding =
+    projectId === UNASSIGNED_PROJECT_ID
+      ? null
+      : (await readStoreMembership(storeRoot, projectId, storeId)).entry;
+  const alreadyBound =
+    existingBinding?.layout === 2 && existingBinding.catalog.planningBinding.state === 'bound';
   const pointer = readStorePointer(sourcePath);
   const { hasPlanningShape } = classifyOpenSpecDir(sourcePath);
 
@@ -462,7 +503,7 @@ export async function adoptProject(input: AdoptInput): Promise<AdoptResult> {
   // Ownership comes from the membership record, with the legacy manifest read
   // as a fallback while an un-migrated store still carries one, so a resume
   // works either side of `store migrate-membership`.
-  const resumed = existingOwnership !== null && hasPlanningShape;
+  const resumed = alreadyBound && hasPlanningShape;
 
   // --- Prechecks (aggregate every failure) ---
   const problems: string[] = [];
@@ -476,15 +517,24 @@ export async function adoptProject(input: AdoptInput): Promise<AdoptResult> {
         `Source already declares store pointer '${describeStoreDeclaration(pointer)}'. Use 'rasen store eject' or 'rasen store doctor' instead.`
       );
     }
-    // Collision precheck (case-insensitive, both axes).
-    const [srcSpecs, srcChanges, storeSpecs, storeChanges] = await Promise.all([
+    // Collision precheck (case-insensitive), scoped to THIS project's
+    // partition. A name another project's partition already holds is not a
+    // collision — partitioning it is exactly the point.
+    const [srcSpecs, srcChanges] = await Promise.all([
       listSpecNames(sourcePath),
       listActiveChangeNames(sourcePath),
-      listSpecNames(storeRoot),
-      listActiveChangeNames(storeRoot),
     ]);
-    const specCollisions = caseInsensitiveCollisions(srcSpecs, storeSpecs);
-    const changeCollisions = caseInsensitiveCollisions(srcChanges, storeChanges);
+    const collisions =
+      projectId === UNASSIGNED_PROJECT_ID
+        ? { specs: [], changes: [] }
+        : await partitionCollisions({
+            storeRoot,
+            projectId,
+            incomingSpecs: srcSpecs,
+            incomingChanges: srcChanges,
+          });
+    const specCollisions = collisions.specs;
+    const changeCollisions = collisions.changes;
     if (specCollisions.length > 0) {
       problems.push(`Spec name collisions in store: ${specCollisions.join(', ')}.`);
     }
@@ -503,11 +553,15 @@ export async function adoptProject(input: AdoptInput): Promise<AdoptResult> {
   // Names still physically present at the source (what THIS run must move).
   const sourceSpecs = await listSpecNames(sourcePath);
   const sourceChanges = await listActiveChangeNames(sourcePath);
-  // The recorded ownership set is the UNION of any prior manifest entry and the
-  // source names, so a resume never drops already-moved names from the manifest
-  // (finding #2 — reversibility must survive an interrupted adopt).
-  const specNames = unionSorted(existingOwnership?.specs ?? [], sourceSpecs);
-  const changeNames = unionSorted(existingOwnership?.changes ?? [], sourceChanges);
+  // What the project owns afterwards is its PARTITION, so the reported set is
+  // the union of what is already there and what this run moves — read from the
+  // partition rather than from a name list nobody writes any more.
+  const alreadyInPartition =
+    projectId === UNASSIGNED_PROJECT_ID
+      ? { specs: [], changes: [], designDocs: [], archiveEntries: [] }
+      : await readPartitionContents(storeRoot, projectId);
+  const specNames = unionSorted([...alreadyInPartition.specs], sourceSpecs);
+  const changeNames = unionSorted([...alreadyInPartition.changes], sourceChanges);
 
   // Uncommitted detection for the moved paths (warning only).
   const movedScopes = [
@@ -522,13 +576,35 @@ export async function adoptProject(input: AdoptInput): Promise<AdoptResult> {
     ...(input.verifyHash ? { verifyHash: true } : {}),
   };
 
+  // `--archive move` needs a stable target line, and no legacy archive entry
+  // records one. This is checked BEFORE the dry-run preview so a preview
+  // reports the same refusal the real run would.
+  let archiveTargetDir: string | undefined;
+  if (archiveMode === 'move') {
+    await requireTargetLineCatalog(
+      storeRoot,
+      storeId,
+      input.targetLine,
+      'store adopt --archive move'
+    );
+    // The refusal above is unconditional, but the DESTINATION needs the
+    // project's permanent identity, which a dry run deliberately does not mint.
+    // The check may not hide behind that: the real run mints an identity and
+    // then requires the line, so a preview that skipped it would report success
+    // for a run that refuses (spec store-adopt, "Archive move without a target
+    // line is refused").
+    if (projectId !== UNASSIGNED_PROJECT_ID) {
+      archiveTargetDir = archiveLineDir(storeRoot, projectId, input.targetLine as string);
+    }
+  }
+
   if (input.dryRun) {
     // Preview the archive relocation too: enumeration is read-only when
     // `dryRun` is passed through, and archives run to hundreds of entries, so
     // leaving this inside the mutation guard made `--dry-run` report `0
     // entries` and hid the true scale of the operation (spec store-adopt,
     // "Adopt is git-safe and previewable"). Same shape as `archive relocate`.
-    archiveMoves = await handleAdoptArchive(sourcePath, storeRoot, archiveMode, {
+    archiveMoves = await handleAdoptArchive(sourcePath, archiveTargetDir, archiveMode, {
       ...archiveOptions,
       dryRun: true,
     });
@@ -567,37 +643,27 @@ export async function adoptProject(input: AdoptInput): Promise<AdoptResult> {
       }
     }
 
-    // 2. Ownership BEFORE any source deletion (design D2 / spec "Manifest
-    //    written before source deletion"): a crash mid-move then leaves the
-    //    record already present, so a rerun takes the resume path and
-    //    completes idempotently instead of failing the collision precheck on
-    //    the names it already moved. Preserves the original timestamp on
-    //    resume and records the full union name set.
-    //
-    //    Ownership now lives in the store's per-project membership record,
-    //    which carries NO path: restoring the project later resolves its
-    //    destination explicitly (see `ejectProject`) rather than following a
-    //    path captured on whichever machine ran the adoption.
-    const adoption: StoreProjectRecordAdoption = {
-      specs: specNames,
-      changes: changeNames,
-      adoptedAt: existingOwnership?.adoptedAt ?? nowIso(),
-    };
+    // 2. The BOUND CATALOG before any source deletion (design D11 / spec
+    //    "Manifest written before source deletion"): a crash mid-move leaves
+    //    the bound catalog already present, so a rerun takes the resume path
+    //    and completes idempotently instead of failing the collision precheck
+    //    on the names it already moved. The catalog carries NO name list and
+    //    NO path — the partition is the ownership record, and restoring the
+    //    project later resolves its destination explicitly (see
+    //    `ejectProject`) rather than following a path captured on whichever
+    //    machine ran the adoption.
     const storeRef: ResolvedStoreRef = {
       type: 'store',
       id: storeId,
       root: storeRoot,
       ...(store.uid !== undefined ? { uid: store.uid } : {}),
     };
-    await writeMembershipRecord({
-      projectRoot: sourcePath,
+    await bindProjectCatalog({
+      storeRoot,
+      storeId,
       projectId,
-      ...(addedProjectId !== undefined ? { projectDisplayId: addedProjectId } : {}),
-      store: storeRef,
-      // Adopt proves PLANNING membership and nothing else; roles only ever
-      // widen, so a knowledge role another command recorded survives.
-      roles: { planning: true, knowledge: false },
-      adoption,
+      ...(addedProjectId !== undefined ? { displayId: addedProjectId } : {}),
+      boundAt: canonicalBoundAt(nowIso()),
     });
     // The project-side locator, so a fresh clone of the repo can still find
     // the store its planning now lives in. `add-project` above normally wrote
@@ -607,26 +673,34 @@ export async function adoptProject(input: AdoptInput): Promise<AdoptResult> {
       membershipHintFor(storeRef, await storeRemoteFor(storeRoot))
     ).catch(() => undefined);
 
-    // 3. Copy → verify → delete specs and changes into the store's flat layout.
+    // 3. Copy → verify → delete specs and changes into the project's PARTITION.
     //    Only names still present at the source are moved; a resume skips names
     //    already relocated by an interrupted prior run.
+    const partition = projectPartition(storeRoot, projectId);
     for (const name of sourceSpecs) {
-      await moveTreeVerified(path.join(specsDir(sourcePath), name), path.join(specsDir(storeRoot), name), {
-        verifyHash: input.verifyHash,
-      });
+      await moveTreeVerified(
+        path.join(specsDir(sourcePath), name),
+        path.join(partition.specs, name),
+        { verifyHash: input.verifyHash }
+      );
     }
     for (const name of sourceChanges) {
       await moveTreeVerified(
         path.join(changesDir(sourcePath), name),
-        path.join(changesDir(storeRoot), name),
+        path.join(partition.changes, name),
         { verifyHash: input.verifyHash }
       );
     }
 
     // 4. Archive handling per --archive. Stays here (not hoisted next to the
     //    dry-run preview above) because it deletes source content and so must
-    //    run AFTER the manifest write of step 2.
-    archiveMoves = await handleAdoptArchive(sourcePath, storeRoot, archiveMode, archiveOptions);
+    //    run AFTER the catalog binding of step 2.
+    archiveMoves = await handleAdoptArchive(
+      sourcePath,
+      archiveTargetDir,
+      archiveMode,
+      archiveOptions
+    );
 
     // 5. Remove now-empty planning dirs and write the store pointer.
     await removeIfEmpty(specsDir(sourcePath));
@@ -674,16 +748,27 @@ export async function adoptProject(input: AdoptInput): Promise<AdoptResult> {
 
 async function handleAdoptArchive(
   sourcePath: string,
-  storeRoot: string,
+  archiveTargetDir: string | undefined,
   mode: ArchiveMode,
   options: MoveOptions
 ): Promise<ArchiveMove[]> {
-  if (mode === 'leave') {
+  if (mode === 'leave' || archiveTargetDir === undefined) {
     return [];
   }
   // `move` is the only destination left: archives land in a planning root, and
   // adopt writes no archive configuration (`archive-destination` capability).
-  return moveArchiveEntries([inRepoArchiveDir(sourcePath)], inRepoArchiveDir(storeRoot), options);
+  // In layout v2 that root is the project's stable target-line archive
+  // directory, and entries keep their existing directory names and records.
+  return moveArchiveEntries([inRepoArchiveDir(sourcePath)], archiveTargetDir, options);
+}
+
+/**
+ * The v2 catalog's `boundAt` is a canonical ISO-8601 UTC instant. `nowIso()`
+ * already produces one; this states the contract at the seam rather than
+ * relying on the caller's format staying that way.
+ */
+function canonicalBoundAt(value: string): string {
+  return new Date(value).toISOString();
 }
 
 // -----------------------------------------------------------------------------
@@ -843,6 +928,13 @@ export async function ejectProject(input: EjectInput): Promise<EjectResult> {
   const projectOptions: ProjectPathOptions = input.globalDataDir
     ? { globalDataDir: input.globalDataDir }
     : {};
+
+  // In a layout v2 store the project's PARTITION is its ownership record, so
+  // there is no name list to consult and nothing to consent to.
+  if (await storeDeclaresLayoutV2(storeRoot)) {
+    return ejectPartition({ ...input, storeId, storeRoot, projectOptions, storeOpts });
+  }
+
   // Ownership comes from the store's membership record for this project, with
   // the legacy adoption manifest read as a fallback while an un-migrated store
   // still carries one. Its recorded `sourcePath`, if any, is never consulted.
@@ -974,6 +1066,137 @@ export async function ejectProject(input: EjectInput): Promise<EjectResult> {
   };
 }
 
+/**
+ * `store eject` from a layout v2 store (design D11, spec store-eject).
+ *
+ * The partition is the ownership record: what it holds is what the project
+ * owns, so there is no recorded name list, no drift to reconcile against one,
+ * and no `--all` ambiguity to consent to. Archive line subdirectories flatten
+ * into the repository's single archive directory, which has no line dimension,
+ * so a cross-line name collision fails closed rather than overwriting or
+ * nesting.
+ */
+async function ejectPartition(input: EjectInput & {
+  storeId: string;
+  storeRoot: string;
+  projectOptions: ProjectPathOptions;
+  storeOpts: StorePathOptions;
+}): Promise<EjectResult> {
+  const { storeId, storeRoot } = input;
+
+  await assertStoreLayoutForWrite({
+    storeRoot,
+    storeId,
+    intent: 'store-eject',
+    writes: 'partition',
+  });
+
+  if (input.all) {
+    throw new StoreError(
+      `Store '${storeId}' declares planning layout version 2, where project '${input.projectId}' already has a partition that defines exactly what it owns, so there is nothing for --all to consent to.`,
+      'eject_all_rejected_for_partitioned_store',
+      {
+        target: 'store.layout',
+        fix: 'Drop --all; eject restores the project partition and nothing else.',
+      }
+    );
+  }
+
+  assertPortableProjectIdentity(input.projectId, storeId);
+  const partition = projectPartition(storeRoot, input.projectId);
+  if (!(await pathIsDirectory(partition.projectHome))) {
+    throw new StoreError(
+      `Store '${storeId}' holds no partition for project '${input.projectId}'.`,
+      'eject_partition_missing',
+      {
+        target: 'store.layout',
+        fix: `Check the project id, or inspect ${partition.projectHome} in the store's git history.`,
+      }
+    );
+  }
+
+  const contents = await readPartitionContents(storeRoot, input.projectId);
+  const collisions = crossLineArchiveCollisions(contents.archiveEntries);
+  if (collisions.length > 0) {
+    throw new StoreError(
+      `Archive entries from different target lines share a directory name, and the repository archive has no target-line dimension: ${collisions
+        .map((collision) => collision.sources.join(' and '))
+        .join('; ')}.`,
+      'eject_archive_line_collision',
+      {
+        target: 'store.layout',
+        fix: 'Rename one of the colliding entries inside the store, then rerun eject. Nothing was moved.',
+      }
+    );
+  }
+
+  const destination = await resolveEjectDestination({
+    projectId: input.projectId,
+    ...(input.destinationPath !== undefined ? { explicit: input.destinationPath } : {}),
+    ...(input.currentDirectory !== undefined ? { currentDirectory: input.currentDirectory } : {}),
+    pathOptions: input.projectOptions,
+  });
+  const destinationPath = destination.destinationPath;
+
+  const [destSpecs, destChanges] = await Promise.all([
+    listSpecNames(destinationPath),
+    listActiveChangeNames(destinationPath),
+  ]);
+  const destinationCollisions = [
+    ...contents.specs.filter((name) => destSpecs.includes(name)),
+    ...contents.changes.filter((name) => destChanges.includes(name)),
+  ];
+
+  if (!input.dryRun) {
+    await restorePartition({
+      storeRoot,
+      projectId: input.projectId,
+      destinationPath,
+      contents,
+      ...(input.verifyHash === undefined ? {} : { verifyHash: input.verifyHash }),
+    });
+    if (hasStoreDeclaration(readStorePointer(destinationPath))) {
+      updateProjectConfigKey(destinationPath, 'store', undefined);
+    }
+    await unbindProjectCatalog(storeRoot, storeId, input.projectId);
+    const projectId = await ensureProjectIdInConfig(destinationPath, input.storeOpts);
+    await registerProject(
+      { projectRoot: destinationPath, projectId, mode: 'in-repo' },
+      input.storeOpts
+    );
+  }
+
+  const suggestedCommits: SuggestedGitCommand[] = [];
+  const destCommit = renderSuggestedCommit(
+    destinationPath,
+    [WORKSPACE_DIR_NAME],
+    `chore: eject planning from store ${storeId}`,
+    'Repo: record the restored specs/changes and the removed store: pointer.'
+  );
+  if (destCommit) suggestedCommits.push(destCommit);
+  const storeCommit = renderSuggestedCommit(
+    storeRoot,
+    [WORKSPACE_DIR_NAME, STORE_METADATA_DIR_NAME],
+    `chore: eject ${path.basename(destinationPath)} planning`,
+    "Store repo: record the removed partition and the project catalog's unbound binding."
+  );
+  if (storeCommit) suggestedCommits.push(storeCommit);
+
+  return {
+    projectId: input.projectId,
+    storeId,
+    storeRoot,
+    destinationPath,
+    specs: [...contents.specs],
+    changes: [...contents.changes],
+    missing: [],
+    collisions: destinationCollisions,
+    suggestedCommits,
+    dryRun: !!input.dryRun,
+    usedAll: false,
+  };
+}
+
 // -----------------------------------------------------------------------------
 // archive relocate (design D5)
 // -----------------------------------------------------------------------------
@@ -989,6 +1212,11 @@ export type RelocateTarget = 'in-repo' | 'store';
 export interface RelocateInput extends StorePathOptions, ProjectPathOptions {
   projectRoot: string;
   to: RelocateTarget;
+  /**
+   * Required for `--to store` against a layout v2 store: archives there are
+   * partitioned by stable target line and no legacy entry records one.
+   */
+  targetLine?: string;
   dryRun?: boolean;
   verifyHash?: boolean;
 }
@@ -1034,6 +1262,7 @@ export async function relocateArchive(input: RelocateInput): Promise<RelocateRes
   const pointer = readStorePointer(projectRoot);
   const isStoreMode =
     hasStoreDeclaration(pointer) && !classifyOpenSpecDir(projectRoot).hasPlanningShape;
+  const projectId = readProjectConfig(projectRoot)?.projectId;
 
   // Enumerate current locations (union): repo archive + machine home archive +
   // store archive when store-mode.
@@ -1046,6 +1275,8 @@ export async function relocateArchive(input: RelocateInput): Promise<RelocateRes
   if (home) sources.add(home.archiveDir);
 
   let storeRoot: string | undefined;
+  let storeId: string | undefined;
+  let storeIsV2 = false;
   if (hasStoreDeclaration(pointer)) {
     // Through the shared resolver, so a declaration that records only the
     // permanent identity resolves too, and an alias never overrides the uid
@@ -1054,7 +1285,11 @@ export async function relocateArchive(input: RelocateInput): Promise<RelocateRes
     const binding = await resolveDeclaredStore(pointer, projectRoot, storeOpts);
     if (binding.kind === 'resolved') {
       storeRoot = binding.store.root;
-      sources.add(inRepoArchiveDir(storeRoot));
+      storeId = binding.store.id;
+      storeIsV2 = await storeDeclaresLayoutV2(storeRoot);
+      // A layout v2 Store has no flat archive to consolidate FROM, and reading
+      // one as a source would resurrect the retired namespace as a read path.
+      if (!storeIsV2) sources.add(inRepoArchiveDir(storeRoot));
     }
   }
 
@@ -1072,7 +1307,45 @@ export async function relocateArchive(input: RelocateInput): Promise<RelocateRes
         { target: 'store.pointer', fix: 'Run `rasen store adopt . --to <store-id>` first.' }
       );
     }
-    targetDir = inRepoArchiveDir(storeRoot);
+    const resolvedStoreId = storeId ?? input.projectRoot;
+    if (storeIsV2) {
+      // Archives in layout v2 are partitioned by stable target line, and no
+      // legacy entry records one, so relocation fails closed rather than
+      // choosing a line or a partition.
+      if (projectId === undefined) {
+        throw new StoreError(
+          'The project has no permanent identity, so its partition in a layout version 2 store cannot be addressed.',
+          'relocate_project_identity_missing',
+          {
+            target: 'store.membership',
+            fix: 'Run `rasen store adopt` (or `rasen store add-project`) to give the project an identity first.',
+          }
+        );
+      }
+      await assertStoreLayoutForWrite({
+        storeRoot,
+        storeId: resolvedStoreId,
+        intent: 'archive-relocate',
+        writes: 'partition',
+      });
+      assertPortableProjectIdentity(projectId, resolvedStoreId);
+      await assertBoundPlanningMember({ storeRoot, storeId: resolvedStoreId, projectId });
+      await requireTargetLineCatalog(
+        storeRoot,
+        resolvedStoreId,
+        input.targetLine,
+        '`archive relocate --to store`'
+      );
+      targetDir = archiveLineDir(storeRoot, projectId, input.targetLine as string);
+    } else {
+      await assertStoreLayoutForWrite({
+        storeRoot,
+        storeId: resolvedStoreId,
+        intent: 'archive-relocate',
+        writes: 'flat',
+      });
+      targetDir = inRepoArchiveDir(storeRoot);
+    }
   }
 
   const moves = await moveArchiveEntries([...sources], targetDir, {
@@ -1271,6 +1544,40 @@ export async function migrateStoreMembership(
   const entries = registry ? listStoreRegistryEntries(registry) : [];
   const label = membershipStoreLabel(storeRef, entries);
 
+  // A layout v2 Store has no legacy membership left for this command to
+  // convert: `migrate-layout` already turned every v1 record into a v2 catalog
+  // and removed the adoption manifest. Running the legacy census anyway read
+  // every catalog through the v1 parser and reported its parse failure to the
+  // operator as `error: invalid_store_project_record — Repair or remove
+  // <catalog>` — the same destructive advice H1 was filed for, surviving on a
+  // command surface. Following it deletes the ownership record and orphans the
+  // partition.
+  const layout = await readStoreLayoutState(storeRoot);
+  if (layout.declared === 2) {
+    return {
+      storeId: store.id,
+      storeRoot,
+      applied: !!input.apply,
+      converted: [],
+      unresolved: [],
+      storeWrites: [],
+      legacyManifestRemoved: false,
+      legacyManifestPath: getAdoptionsManifestPath(storeRoot),
+      diagnostics: [
+        makeStoreDiagnostic(
+          'info',
+          'store_layout_membership_already_migrated',
+          `Store '${label.selector}' declares planning layout version 2, so its membership is already recorded as v2 project catalogs and there is nothing for this command to convert.`,
+          {
+            target: 'store.membership',
+            fix: `Run 'rasen store doctor ${label.selector}' to check the Store's planning layout.`,
+          }
+        ),
+      ],
+      suggestedCommits: [],
+    };
+  }
+
   // The provider already normalizes all three sources into one shape with its
   // provenance, so the migration converts exactly what every reader already
   // sees — it never re-derives membership a second way.
@@ -1295,7 +1602,18 @@ export async function migrateStoreMembership(
   }
 
   for (const member of listing.members) {
-    if (member.provenance === 'v2-record') continue;
+    // DEFAULT-DENY, not an exclusion list. This loop's body writes a `version: 1`
+    // record through the RAW `writeStoreProjectRecord`, so it bypasses both the
+    // layout dispatch and the M6 assert in `writeMembershipRecord`; this check is
+    // the only thing standing between a layout v2 project catalog and being
+    // rewritten backwards into a v1 record with its planning binding dropped.
+    // Naming the two legacy sources that MAY be converted means a member source
+    // added later fails closed — it is skipped until someone adds it here on
+    // purpose — instead of falling through to the writer because nobody
+    // remembered to extend an exclusion list.
+    if (member.provenance !== 'legacy-adoption' && member.provenance !== 'legacy-reference') {
+      continue;
+    }
     if (alreadyRecorded.has(member.projectId)) continue;
 
     const problem = projectIdentityDiagnostic(member.projectId);

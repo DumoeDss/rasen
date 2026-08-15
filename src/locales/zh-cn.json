@@ -1428,6 +1428,9 @@
                 "to": {
                   "description": "目标位置：in-repo 或 store（external 已退役）"
                 },
+                "target-line": {
+                  "description": "布局 v2 的 store 中归档条目落入的稳定目标线"
+                },
                 "dry-run": {
                   "description": "打印移动计划，不做任何更改"
                 },
@@ -1650,6 +1653,41 @@
                 }
               }
             },
+            "migrate-layout": {
+              "description": "将旧版扁平 store 迁移到规划布局 v2，且总是先预览全部条目",
+              "options": {
+                "mapping": {
+                  "description": "store 工作区内已提交的映射文件，用于显式解决归属未知、共享 spec、设计文档与目标线"
+                },
+                "default-target-line": {
+                  "description": "为未自行声明目标线的条目断言的目标线；绝不从分支名或引用推导"
+                },
+                "include-untracked": {
+                  "description": "确认移动树内的未跟踪文件（Git 无法恢复它们）"
+                },
+                "dry-run": {
+                  "description": "预览完整条目表且不做任何改动（默认）"
+                },
+                "apply": {
+                  "description": "暂存、校验并发布已预览的计划"
+                },
+                "status": {
+                  "description": "报告该 store 与该引用上已记录的迁移运行阶段"
+                },
+                "resume": {
+                  "description": "从记录的阶段继续中断的运行"
+                },
+                "rollback": {
+                  "description": "仅删除该次运行创建的路径并恢复此前的 store 元数据"
+                },
+                "retire-flat": {
+                  "description": "在发布完成后，作为独立步骤删除扁平规划目录树"
+                },
+                "json": {
+                  "description": "以 JSON 输出"
+                }
+              }
+            },
             "adopt": {
               "description": "将仓库内项目的规划内容迁移到 store，并将仓库转换为指针",
               "options": {
@@ -1658,6 +1696,9 @@
                 },
                 "archive": {
                   "description": "归档处理方式：move（默认）或 leave"
+                },
+                "target-line": {
+                  "description": "布局 v2 的 store 中归档落入的稳定目标线"
                 },
                 "dry-run": {
                   "description": "打印移动计划，不做任何更改"

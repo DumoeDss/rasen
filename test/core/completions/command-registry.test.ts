@@ -137,6 +137,7 @@ describe('root-inclusive CLI structure', () => {
       'upgrade-identity',
       'unregister',
       'remove',
+      'migrate-layout',
       'adopt',
       'eject',
       'list',

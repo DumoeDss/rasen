@@ -1428,6 +1428,9 @@
                 "to": {
                   "description": "移動先: in-repo または store（external は廃止）"
                 },
+                "target-line": {
+                  "description": "レイアウト v2 の store でアーカイブ項目を配置する安定ターゲットライン"
+                },
                 "dry-run": {
                   "description": "移動計画を表示し、何も変更しません"
                 },
@@ -1650,6 +1653,41 @@
                 }
               }
             },
+            "migrate-layout": {
+              "description": "レガシーなフラット store を計画レイアウト v2 に移行する（常に全項目を先にプレビュー）",
+              "options": {
+                "mapping": {
+                  "description": "store ワークツリー内のコミット済みマッピングファイル。所有者不明・共有 spec・設計ドキュメント・ターゲットラインを明示的に解決する"
+                },
+                "default-target-line": {
+                  "description": "自身のターゲットラインを宣言しない項目に適用するターゲットライン。推測は一切行わない"
+                },
+                "include-untracked": {
+                  "description": "移動対象ツリー内の未追跡ファイルを承認する（Git では復元できない）"
+                },
+                "dry-run": {
+                  "description": "完全な項目一覧をプレビューし、何も変更しない（既定）"
+                },
+                "apply": {
+                  "description": "プレビュー済みの計画をステージ・検証・公開する"
+                },
+                "status": {
+                  "description": "この store とリファレンスに記録された移行実行のフェーズを報告する"
+                },
+                "resume": {
+                  "description": "中断した実行を記録済みフェーズから再開する"
+                },
+                "rollback": {
+                  "description": "その実行が作成したパスのみを削除し、以前の store メタデータを復元する"
+                },
+                "retire-flat": {
+                  "description": "公開完了後、別ステップとしてフラットな計画ツリーを削除する"
+                },
+                "json": {
+                  "description": "JSON で出力"
+                }
+              }
+            },
             "adopt": {
               "description": "リポジトリ内プロジェクトの計画内容をストアへ移行し、リポジトリをポインターに変換します",
               "options": {
@@ -1658,6 +1696,9 @@
                 },
                 "archive": {
                   "description": "アーカイブの扱い: move（デフォルト）または leave"
+                },
+                "target-line": {
+                  "description": "レイアウト v2 の store でアーカイブを配置する安定ターゲットライン"
                 },
                 "dry-run": {
                   "description": "移動計画を表示し、何も変更しません"

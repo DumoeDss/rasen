@@ -32,7 +32,12 @@ import {
 import { findRepoPlanningRootSync } from '../core/planning-home.js';
 import { countMigratableEphemera } from '../core/work-migration.js';
 import { checkMachineRootRelocation } from '../core/global-config.js';
-import { StoreError } from '../core/store/errors.js';
+import {
+  makeStoreDiagnostic,
+  StoreError,
+  type StoreDiagnostic,
+} from '../core/store/errors.js';
+import { diagnoseLayoutMigration } from '../core/store/layout-migration/index.js';
 import { diagnoseMigrationDrift } from '../core/store/migration-ops.js';
 import { gatherProjectMembership, gatherRelationshipData } from './shared-gather.js';
 import {
@@ -341,6 +346,111 @@ function printGcSummary(result: GcProjectRegistryResult): void {
   }
 }
 
+/**
+ * The Store whose planning layout this root should be diagnosed against, or
+ * null when the root has nothing to do with a Store.
+ *
+ * `rasen doctor` is the obvious first move for a Store owner, and `rasen store
+ * doctor`'s findings do not replace it — so design D13 and task 10.4 require
+ * BOTH doctors to report the same layout codes with the same repair commands.
+ * They come from the same diagnoser here, never a second implementation, so the
+ * two commands cannot disagree.
+ */
+async function storeLayoutDiagnosisTarget(
+  root: ResolvedOpenSpecRoot
+): Promise<{ storeId: string; storeUid?: string; storeRoot: string } | null> {
+  // The root IS a Store checkout: `--store <id>`, or a cwd inside one.
+  const direct = await readOptionalStoreMetadataState(root.path).catch(() => null);
+  if (direct !== null) {
+    const uid = storeMetadataUid(direct);
+    return {
+      storeId: root.storeId ?? direct.id,
+      ...(uid === undefined ? {} : { storeUid: uid }),
+      storeRoot: root.path,
+    };
+  }
+
+  // A project repo declaring a Store: the Store it plans in is the one whose
+  // layout decides whether its planning writes will work at all.
+  const { pointer } = classifyOpenSpecDir(root.path);
+  const declaration = storeBindingDeclarationFrom(pointer);
+  if (declaration.form === 'absent') return null;
+  const binding = await resolveStoreBinding({ declaration, projectRoot: root.path }).catch(
+    () => null
+  );
+  if (binding?.kind !== 'resolved') return null;
+  return {
+    storeId: binding.store.id,
+    ...(binding.store.uid === undefined ? {} : { storeUid: binding.store.uid }),
+    storeRoot: binding.store.root,
+  };
+}
+
+async function gatherStoreLayoutFindings(
+  root: ResolvedOpenSpecRoot
+): Promise<StoreDiagnostic[]> {
+  const target = await storeLayoutDiagnosisTarget(root).catch(() => null);
+  if (target === null) return [];
+  try {
+    const layout = await diagnoseLayoutMigration(target);
+    // Also run the target-line / partition consistency checks so `rasen doctor`
+    // and `rasen store doctor` report the same set (requirement: "One
+    // diagnostic surface reports Store planning-layout health").
+    let consistency: StoreDiagnostic[] = [];
+    try {
+      const { diagnoseConsistency } = await import('../core/store/consistency-gates.js');
+      consistency = await diagnoseConsistency(target);
+    } catch (failure) {
+      // A consistency diagnosis failure is NOT "no consistency findings" —
+      // same rule as the layout diagnosis below. Parity with `rasen store
+      // doctor` (operations.ts), which reports `store_consistency_diagnosis_failed`.
+      consistency = [
+        makeStoreDiagnostic(
+          'warning',
+          'store_consistency_diagnosis_failed',
+          `Consistency diagnosis for store '${target.storeId}' failed: ${
+            failure instanceof Error ? failure.message : String(failure)
+          }`,
+          {
+            target: 'store.consistency',
+            fix: `Inspect the Store and rerun 'rasen doctor' or 'rasen store doctor ${target.storeId}'.`,
+          }
+        ),
+      ];
+    }
+    return [...layout, ...consistency];
+  } catch (failure) {
+    // A Store whose layout cannot be diagnosed is not a Store with no layout
+    // findings. Reported rather than swallowed, for the same reason doctor
+    // keeps running on a broken declaration: this is where a user finds out.
+    return [
+      makeStoreDiagnostic(
+        'warning',
+        'store_layout_diagnosis_failed',
+        `Planning-layout diagnosis for store '${target.storeId}' failed: ${
+          failure instanceof Error ? failure.message : String(failure)
+        }`,
+        {
+          target: 'store.layout',
+          fix: `Inspect ${target.storeRoot} and rerun 'rasen store doctor ${target.storeId}'.`,
+        }
+      ),
+    ];
+  }
+}
+
+function printStoreLayoutFindings(findings: readonly StoreDiagnostic[]): void {
+  if (findings.length === 0) return;
+  console.log('');
+  console.log('Store planning layout:');
+  for (const finding of findings) {
+    // The CODE is printed, not only the prose: task 10.4 requires identical
+    // codes and repair commands between human and JSON output.
+    console.log(`  - [${finding.severity}] ${finding.code}: ${finding.message}`);
+    if (finding.fix) console.log(`    Fix: ${finding.fix}`);
+  }
+}
+
 function printDiagnosticLines(prefix: string, status: { message: string; fix?: string }[]): void {
   for (const entry of status) {
     console.log(`${prefix}- ${entry.message}`);
@@ -560,6 +670,11 @@ export function registerDoctorCommand(program: Command): void {
         // reflects the post-GC registry state.
         const gcResult = options.gc ? await gcProjectRegistry() : null;
 
+        // Computed before health gathering: the layout findings must reach the
+        // report of a root standing in or declaring a Store, not only after
+        // some other branch succeeds.
+        const storeLayout = await gatherStoreLayoutFindings(root);
+
         const { health, declaredReferenceCount } = await gatherHealth(root);
 
         // Migration drift (store-migration-commands D7): pointer to an
@@ -579,7 +694,7 @@ export function registerDoctorCommand(program: Command): void {
 
         if (options.json) {
           const base = gcResult ? { ...health, gc: formatGcResult(gcResult) } : { ...health };
-          printJson({ ...base, migrationDrift });
+          printJson({ ...base, migrationDrift, storeLayout });
           return;
         }
         printHumanHealth(health, declaredReferenceCount);
@@ -591,6 +706,7 @@ export function registerDoctorCommand(program: Command): void {
             if (status.fix) console.log(`    Fix: ${status.fix}`);
           }
         }
+        printStoreLayoutFindings(storeLayout);
         if (gcResult) {
           printGcSummary(gcResult);
         }

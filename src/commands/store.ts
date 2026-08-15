@@ -37,6 +37,10 @@ import { findRepoPlanningRootSync } from '../core/planning-home.js';
 import { isInteractive } from '../utils/interactive.js';
 import { WORKSPACE_DIR_NAME } from '../core/config.js';
 import { runAdopt, runEject } from './store-migration.js';
+import {
+  runStoreMigrateLayout,
+  type StoreMigrateLayoutOptions,
+} from './store-migrate-layout.js';
 import { registerStoreAggregateCommand } from './store-aggregate.js';
 import { registerStoreIssueCommand } from './store-issue.js';
 import { registerStoreTargetLineCommand } from './store-target-line.js';
@@ -1494,10 +1498,28 @@ export function registerStoreCommand(program: Command): void {
     });
 
   store
+    .command('migrate-layout <store-id>')
+    .description('')
+    .option('--mapping <path>', '')
+    .option('--default-target-line <id>', '')
+    .option('--include-untracked', '')
+    .option('--dry-run', '')
+    .option('--apply', '')
+    .option('--status', '')
+    .option('--resume', '')
+    .option('--rollback', '')
+    .option('--retire-flat', '')
+    .option('--json', '')
+    .action(async (storeId: string, options: StoreMigrateLayoutOptions) => {
+      await runStoreMigrateLayout(storeId, options);
+    });
+
+  store
     .command('adopt [path]')
     .description('')
     .option('--to <store-id>', '')
     .option('--archive <mode>', '')
+    .option('--target-line <id>', '')
     .option('--dry-run', '')
     .option('--verify-hash', '')
     .option('--json', '')

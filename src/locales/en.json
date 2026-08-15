@@ -1428,6 +1428,9 @@
                 "to": {
                   "description": "Target: in-repo or store (external is retired)"
                 },
+                "target-line": {
+                  "description": "Stable target line the archive entries land under in a layout version 2 store"
+                },
                 "dry-run": {
                   "description": "Print the move plan and change nothing"
                 },
@@ -1650,6 +1653,41 @@
                 }
               }
             },
+            "migrate-layout": {
+              "description": "Migrate a legacy flat store to planning layout version 2, previewing every item first",
+              "options": {
+                "mapping": {
+                  "description": "Committed mapping file inside the store worktree that resolves unknown ownership, shared specs, design docs, and target lines"
+                },
+                "default-target-line": {
+                  "description": "Target line to assert for every item that does not declare its own; no line is ever derived"
+                },
+                "include-untracked": {
+                  "description": "Acknowledge untracked files inside moved trees, which Git cannot restore"
+                },
+                "dry-run": {
+                  "description": "Preview the complete item table and change nothing (default)"
+                },
+                "apply": {
+                  "description": "Stage, verify, and publish the previewed plan"
+                },
+                "status": {
+                  "description": "Report the recorded phase of any migration run for this store and ref"
+                },
+                "resume": {
+                  "description": "Continue an interrupted run from its recorded phase"
+                },
+                "rollback": {
+                  "description": "Remove only the paths the run created and restore the previous store metadata"
+                },
+                "retire-flat": {
+                  "description": "Remove the flat planning tree as a separate step after a completed publication"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
             "adopt": {
               "description": "Migrate an in-repo project's planning content into a store and convert the repo to a pointer",
               "options": {
@@ -1658,6 +1696,9 @@
                 },
                 "archive": {
                   "description": "Archive handling: move (default) or leave"
+                },
+                "target-line": {
+                  "description": "Stable target line the archive lands under in a layout version 2 store"
                 },
                 "dry-run": {
                   "description": "Print the full move plan and change nothing"
