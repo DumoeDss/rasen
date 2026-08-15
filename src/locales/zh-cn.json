@@ -18,6 +18,10 @@
     "abortAction": "中止：{action}",
     "recoveryAction": "恢复：{action}"
   },
+  "ompProjectContext": {
+  "nestedInstallCaptureWarning": "{installDir} 现在包含 Oh My Pi 配置，因此 Oh My Pi 会从这里而不是外层目录读取项目指令与常驻规则。以下文件将不再加载：{files}",
+  "nestedInstallCaptureFix": "若要保留它们，请改在 {boundary} 安装，或把上述文件复制到 {installDir}。已安装的技能不受影响——Oh My Pi 会扫描所有上层目录来发现技能。"
+  },
   "bootstrap": {
     "headingProject": "对 {path} 处项目执行 bootstrap {mode}",
     "headingStore": "对 {path} 处 store {store} 执行 bootstrap {mode}",

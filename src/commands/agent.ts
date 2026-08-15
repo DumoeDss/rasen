@@ -747,7 +747,9 @@ export class AgentCommand {
     transcript: string;
     threshold: ThresholdValue;
     thresholdSource: string;
-    shouldHandoff: boolean;
+    // Optional since the L4 port: an unmeasurable window leaves the verdict
+    // unset rather than defaulting it to false (0.1.7's semantics).
+    shouldHandoff: boolean | undefined;
   } {
     return {
       available: true,

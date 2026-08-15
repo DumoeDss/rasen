@@ -27,6 +27,7 @@
  *    There is no `--last` form: "the most recent thread" is a race under
  *    parallel dispatch, so resume always requires an explicit thread id.
  */
+import { runtimeIdentityEnv, type RuntimeIdentityEnv } from '../runtime-adapters.js';
 import { CODEX_CLI_VERSION_PREMISE } from './codex-home.js';
 import { inlineCommandTemplate, type TemplateInliner } from './template-inline.js';
 
@@ -108,6 +109,13 @@ export interface CodexExecInvocation {
   stdin: 'ignore';
   /** The fully assembled prompt (inlined template + task prompt + flat guard). */
   prompt: string;
+  /**
+   * The runtime identity the PLAYBOOK must apply to this process (L4, D7):
+   * Rasen never resolves the codex binary and so cannot apply it itself, but
+   * the invocation surfaces it so a Codex worker beneath a bridged worker
+   * overwrites the inherited identity instead of adopting it.
+   */
+  env: RuntimeIdentityEnv<'codex'>;
   /** Non-fatal notices, e.g. an effort clamp. Empty array when none apply. */
   warnings: string[];
 }
@@ -238,6 +246,7 @@ export function buildCodexExecInvocation(
     spawnArgs,
     stdin: 'ignore',
     prompt,
+    env: runtimeIdentityEnv('codex'),
     warnings,
   };
 }
@@ -288,6 +297,13 @@ export function formatShellInvocation(
       'Rendered a Windows shell command from an argument containing a newline; cmd.exe cannot quote newlines, so this command will not run correctly. Use the argv (command/args/stdin) form instead.'
     );
   }
+  // The identity prefix is part of the command, not decoration (L4, D7): a
+  // rendered command pasted without it inherits the spawning worker's
+  // identity. Rasen does not own this spawn, so the rendered form is the only
+  // channel that carries the runtime identity to the child.
+  const assignments = Object.entries(invocation.env).map(([key, value]) =>
+    shell === 'windows' ? `set "${key}=${value}" &&` : `${key}=${quote(value)}`
+  );
   const parts = [invocation.command, ...invocation.args].map(quote);
-  return `${parts.join(' ')} ${redirect}`;
+  return `${[...assignments, ...parts].join(' ')} ${redirect}`;
 }

@@ -18,6 +18,10 @@
     "abortAction": "中止: {action}",
     "recoveryAction": "復旧: {action}"
   },
+  "ompProjectContext": {
+  "nestedInstallCaptureWarning": "{installDir} に Oh My Pi の設定が入ったため、Oh My Pi はプロジェクト指示と常時適用ルールを上位ディレクトリではなくこの場所から読み込みます。次のファイルは読み込まれなくなります：{files}",
+  "nestedInstallCaptureFix": "読み込みを維持するには、{boundary} にインストールするか、上記のファイルを {installDir} にコピーしてください。インストール済みスキルには影響しません（Oh My Pi はスキルを全上位ディレクトリから探索します）。"
+  },
   "bootstrap": {
     "headingProject": "{path} のプロジェクトに対する bootstrap {mode}",
     "headingStore": "{path} にある store {store} に対する bootstrap {mode}",

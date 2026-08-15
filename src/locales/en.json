@@ -18,6 +18,10 @@
     "abortAction": "Abort: {action}",
     "recoveryAction": "Recovery: {action}"
   },
+  "ompProjectContext": {
+  "nestedInstallCaptureWarning": "{installDir} now holds Oh My Pi configuration, so Oh My Pi reads its project instructions and sticky rules from there instead of the enclosing directory. These files stop loading: {files}",
+  "nestedInstallCaptureFix": "To keep them, install at {boundary} instead, or copy the listed files into {installDir}. Installed skills are unaffected — Oh My Pi scans every ancestor for skills."
+  },
   "bootstrap": {
     "headingProject": "Bootstrap {mode} for the project at {path}",
     "headingStore": "Bootstrap {mode} for store {store} at {path}",
