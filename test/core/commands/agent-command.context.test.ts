@@ -354,12 +354,14 @@ describe('AgentCommand.context — Codex rollout support', () => {
     });
   });
 
-  // detect-omp-host-runtime: an implicit --latest probe must refuse rather
-  // than report an unrelated Claude session's occupancy as this session's.
+  // With the L4 runtime registry, omp HAS a context reader (its session
+  // journal), so the probe-capability refusal needs a host that is genuinely
+  // registered without one: `zed` (0.1.7's own choice for this case), which
+  // also carries no host fingerprint — the explicit runtime override is the
+  // only route to the refusal.
   describe('implicit --latest on a host with no context-probe adapter', () => {
     beforeEach(() => {
-      process.env.OMPCODE = '1';
-      process.env.CLAUDECODE = '1';
+      process.env.RASEN_AGENT_RUNTIME = 'zed';
     });
 
     it('--json exits 0 with the unavailable shape and no occupancy fields', async () => {

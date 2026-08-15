@@ -10,7 +10,7 @@ import type * as http from 'node:http';
 import * as path from 'node:path';
 
 import type { ConfigApiContext } from '../config-api/router.js';
-import { resolveSpaceSelector } from '../config-api/project-addressing.js';
+import { resolveSpaceSelector, type ResolvedSpace } from '../config-api/project-addressing.js';
 import type { ProjectHome } from '../project-home.js';
 import {
   getProjectRegistryPath,
@@ -82,6 +82,13 @@ import {
   type ReusableSessionService,
 } from './reusable-session-api.js';
 import { createChangeSubmitter } from './submit.js';
+import {
+  createChangeFinalizer,
+  type ChangeFinalizerOptions,
+  type FinalizeChangePathScope,
+  type FinalizeChangeRequestBody,
+} from './finalize.js';
+import { isStoreAggregateSpace } from './project-space.js';
 import { createSpaceCreator } from './create-space.js';
 import {
   handleWorkflowDependenciesRead,
@@ -131,7 +138,7 @@ type RunsSpaceResolution =
 
 /** Resolution of a request's optional `space` selector to a planning-space root (planning-space-addressing design D2). */
 type RequestSpaceResolution =
-  | { ok: true; root: string | undefined }
+  | { ok: true; root: string | undefined; space?: ResolvedSpace }
   | { ok: false; status: number; code: string; message: string };
 
 /**
@@ -238,6 +245,8 @@ export interface ManagementRouterOptions {
   resolveAgentCliOverride?: () => Promise<string | null>;
   maxConcurrentSessions?: number;
   sessionKillGraceMs?: number;
+  /** Test/embedded-host override for the change finalizer (CLI entry injection). */
+  finalizer?: ChangeFinalizerOptions;
   /** Test override for the durable hosted lifecycle; production constructs one per daemon/server. */
   sessionHostOverride?: SessionHost;
   /** Test-only parent data directory for the durable hosted registry. */
@@ -334,6 +343,47 @@ const MANAGEMENT_PATHS = new Set([
 
 const SESSION_ID_PATH_PREFIX = '/api/v1/sessions/';
 const HOSTED_SESSION_PATH_PREFIX = '/api/v1/hosted-sessions/';
+
+const STORE_FINALIZE_PATH_PREFIX = '/api/v1/stores/';
+
+/**
+ * Matches
+ * `/api/v1/stores/<storeUid>/projects/<projectId>/lines/<targetLineId>/changes/<instance>/finalize`
+ * and nothing shorter, longer, or differently shaped (L3+L5: the Store
+ * change-finalization route). A partial prefix is not a management path and
+ * falls through to the rest of the server's routing, so an incomplete scope
+ * can never be answered by this route group at all.
+ */
+function matchStoreFinalizePath(pathname: string): FinalizeChangePathScope | null {
+  if (!pathname.startsWith(STORE_FINALIZE_PATH_PREFIX)) return null;
+  const parts = pathname.slice(STORE_FINALIZE_PATH_PREFIX.length).split('/');
+  if (parts.length !== 8) return null;
+  const [storeUid, projects, projectId, lines, targetLineId, changes, instance, finalize] =
+    parts as [string, string, string, string, string, string, string, string];
+  if (
+    projects !== 'projects' ||
+    lines !== 'lines' ||
+    changes !== 'changes' ||
+    finalize !== 'finalize'
+  ) {
+    return null;
+  }
+  const decoded = [storeUid, projectId, targetLineId, instance].map((value) => {
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return null;
+    }
+  });
+  if (decoded.some((value) => value === null)) return null;
+  return {
+    storeUid: decoded[0] as string,
+    projectId: decoded[1] as string,
+    targetLineId: decoded[2] as string,
+    changeInstanceId: decoded[3] as string,
+  };
+}
+
 const TASK_ID_PATH_PREFIX = '/api/v1/tasks/';
 const WORKFLOW_ID_PATH_PREFIX = '/api/v1/workflows/';
 const PIPELINE_ID_PATH_PREFIX = '/api/v1/pipelines/';
@@ -479,6 +529,10 @@ function matchHostedSessionPath(
 
 /** Methods admitted per management path (design D1/D4; space-creation D5): everywhere GETs, `/changes`, `/sessions`, and `/spaces` also POST, session-id paths also DELETE. */
 function isMethodAdmitted(pathname: string, method: string | undefined): boolean {
+  if (matchStoreFinalizePath(pathname) !== null) {
+    // L3+L5: the finalize path is POST-only; GET/PUT/DELETE are all 405.
+    return method === 'POST';
+  }
   if (pathname === '/api/v1/local-paths/resolve') return method === 'GET';
   if (pathname === '/api/v1/local-paths/choose') return method === 'POST';
   if (pathname === '/api/v1/themes') return method === 'GET';
@@ -655,7 +709,8 @@ export function isManagementPath(pathname: string): boolean {
     matchWorkflowIdPath(stripped) !== null ||
     matchPipelineIdPath(stripped) !== null ||
     matchAuditIdPath(stripped) !== null ||
-    matchRunDetailPath(stripped) !== null
+    matchRunDetailPath(stripped) !== null ||
+    matchStoreFinalizePath(stripped) !== null
   );
 }
 
@@ -709,6 +764,10 @@ export function createManagementRouter(
   // One submitter per server instance (design D3's cap-1 concurrency is
   // per-server state, closed over here rather than module-scoped).
   const submitChange = createChangeSubmitter(context);
+  // The Store change-finalization bridge (L3+L5): spawns the same bounded-cli
+  // `finalize-change` op the CLI itself runs, so its refusals arrive here
+  // structurally rather than by duplication.
+  const finalizeChange = createChangeFinalizer(context, options.finalizer);
 
   // One space creator per server instance (space-creation design D5): its own
   // cap-1 concurrency, independent of change submission's cap.
@@ -840,7 +899,7 @@ export function createManagementRouter(
     }
     const resolved = await resolveSpaceSelector(selector);
     if (!resolved.ok) return resolved;
-    return { ok: true, root: resolved.space.root };
+    return { ok: true, root: resolved.space.root, space: resolved.space };
   };
 
   /**
@@ -1064,6 +1123,50 @@ export function createManagementRouter(
       return;
     }
 
+    // The Store change-finalization route (L3+L5): the complete scope comes
+    // from the PATH and from nowhere else — no `space` selector, no query
+    // filter, no session, no launch-project fallback for any scope field.
+    // GET, PUT, and DELETE on the finalize path are all 405: the path is a
+    // management path (the gate admits it), so it must be answered here
+    // rather than falling through to the static/UI routing.
+    const finalizeScope = matchStoreFinalizePath(pathname);
+    if (finalizeScope !== null && req.method !== 'POST') {
+      res.writeHead(405, JSON_HEADERS);
+      res.end(JSON.stringify({ error: { code: 'method_not_allowed', message: 'Use POST.' } }));
+      return;
+    }
+    if (finalizeScope !== null && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      const result = await finalizeChange(
+        finalizeScope,
+        (body.value ?? {}) as FinalizeChangeRequestBody
+      );
+      if (!result.ok) {
+        res.writeHead(result.status, JSON_HEADERS);
+        res.end(
+          JSON.stringify({
+            error: {
+              code: result.code,
+              message: result.message,
+              ...(result.cliExitCode !== undefined ? { cliExitCode: result.cliExitCode } : {}),
+              ...(result.stderr !== undefined ? { stderr: result.stderr } : {}),
+              ...(result.finalization !== undefined
+                ? { finalization: result.finalization }
+                : {}),
+            },
+          })
+        );
+        return;
+      }
+      sendJson(res, result.status, result.response);
+      return;
+    }
+
     if (pathname === '/api/v1/changes' && req.method === 'POST') {
       const body = await readJsonBody(req);
       if (!body.ok) {
@@ -1085,16 +1188,28 @@ export function createManagementRouter(
         sendError(res, 400, 'invalid_input', 'space must be a string.');
         return;
       }
-      let submitRoot: string | undefined;
+      let submitTarget: ResolvedSpace | string | undefined;
       if (typeof request.space === 'string' && request.space !== '') {
         const resolvedSpace = await resolveRequestSpace(request.space);
         if (!resolvedSpace.ok) {
           sendError(res, resolvedSpace.status, resolvedSpace.code, resolvedSpace.message);
           return;
         }
-        submitRoot = resolvedSpace.root;
+        // A Store aggregate cannot select a project implicitly; refuse before
+        // anything is spawned. The submission target that works in layout v2
+        // is the bound project space.
+        if (isStoreAggregateSpace(resolvedSpace.space)) {
+          sendError(
+            res,
+            400,
+            'project_scope_required',
+            'Change submission requires a project planning scope; a Store aggregate cannot select a project implicitly.'
+          );
+          return;
+        }
+        submitTarget = resolvedSpace.space;
       }
-      const result = await submitChange(request.name, request.description, submitRoot);
+      const result = await submitChange(request.name, request.description, submitTarget);
       if (!result.ok) {
         res.writeHead(result.status, JSON_HEADERS);
         res.end(

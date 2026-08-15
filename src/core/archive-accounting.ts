@@ -5,9 +5,10 @@
  * Evidence is recursively inventoried without following symlinks and the
  * ledger is atomically written and verified before active-source removal.
  */
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promises as fs } from 'node:fs';
+import type { FileHandle } from 'node:fs/promises';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
 
@@ -241,12 +242,23 @@ async function resolvePlanningGitFacts(
   };
 }
 
-function resolveMissing(evidenceEntries: EvidenceEntry[]): string[] {
+/**
+ * The missing-evidence names, shared by the v1 accounting record and the
+ * Archive v2 record so both writers report the same absences. Exported rather
+ * than duplicated: two independent copies of this rule would drift.
+ */
+export function resolveMissingEvidenceNames(
+  evidenceEntries: readonly EvidenceEntry[]
+): string[] {
   const paths = new Set(evidenceEntries.map(entry => entry.path));
   const missing: string[] = [];
   if (!paths.has('evidence/ship-log.md')) missing.push('ship-log');
   if (!paths.has('evidence/verification-report.md')) missing.push('verification-report');
   return missing;
+}
+
+function resolveMissing(evidenceEntries: EvidenceEntry[]): string[] {
+  return resolveMissingEvidenceNames(evidenceEntries);
 }
 
 /**
@@ -372,28 +384,135 @@ export async function verifyArchiveAccounting(
   }
 }
 
+export function archiveAccountingTemporaryPath(
+  archivedDir: string,
+  content: string
+): string {
+  const digest = createHash('sha256').update(content, 'utf8').digest('hex');
+  return path.join(archivedDir, `.archive.json.rasen-intent-${digest}`);
+}
+
+export function archiveAccountingOwnershipError(message: string): Error {
+  const error = new Error(message);
+  (error as NodeJS.ErrnoException).code =
+    'archive_accounting_ownership_unverified';
+  return error;
+}
+
+export interface ArchiveAccountingTemporaryIdentity {
+  readonly dev: string;
+  readonly ino: string;
+  readonly mode: string;
+  readonly size: string;
+  readonly mtimeNs: string;
+  readonly ctimeNs: string;
+}
+
+export function accountingIdentity(stat: {
+  dev: number | bigint;
+  ino: number | bigint;
+  mode: number | bigint;
+  size: number | bigint;
+  mtimeMs: number | bigint;
+  ctimeMs: number | bigint;
+  mtimeNs?: bigint;
+  ctimeNs?: bigint;
+}): ArchiveAccountingTemporaryIdentity {
+  const mtimeNs =
+    stat.mtimeNs ?? BigInt(Math.trunc(Number(stat.mtimeMs) * 1e6));
+  const ctimeNs =
+    stat.ctimeNs ?? BigInt(Math.trunc(Number(stat.ctimeMs) * 1e6));
+  return {
+    dev: String(stat.dev),
+    ino: String(stat.ino),
+    mode: String(stat.mode),
+    size: String(stat.size),
+    mtimeNs: String(mtimeNs),
+    ctimeNs: String(ctimeNs),
+  };
+}
+
+export function sameAccountingIdentity(
+  left: ArchiveAccountingTemporaryIdentity,
+  right: ArchiveAccountingTemporaryIdentity
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 export async function writeArchiveJson(
   archivedDir: string,
-  accounting: ArchiveAccounting
+  accounting: ArchiveAccounting,
+  expectedTemporaryIdentity?: ArchiveAccountingTemporaryIdentity
 ): Promise<void> {
   const ledgerPath = path.join(archivedDir, 'archive.json');
-  const tempPath = path.join(
-    archivedDir,
-    `.archive.json.tmp-${process.pid}-${randomUUID()}`
-  );
   const content = serializeArchiveAccounting(accounting);
-  let handle: import('node:fs/promises').FileHandle | undefined;
+  const tempPath = archiveAccountingTemporaryPath(archivedDir, content);
+  let handle: FileHandle | undefined;
   try {
-    handle = await fs.open(tempPath, 'wx', 0o600);
-    await handle.writeFile(content, 'utf8');
-    await handle.sync();
-    await handle.close();
-    handle = undefined;
-    await fs.rename(tempPath, ledgerPath);
+    let temporary: string | null;
+    try {
+      const stat = await fs.lstat(tempPath);
+      if (!stat.isFile() || stat.isSymbolicLink()) {
+        throw archiveAccountingOwnershipError(
+          'the deterministic accounting intent is not a real file'
+        );
+      }
+      temporary = await fs.readFile(tempPath, 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      temporary = null;
+    }
+    if (
+      temporary !== null &&
+      (expectedTemporaryIdentity === undefined ||
+        !sameAccountingIdentity(
+          accountingIdentity(await fs.lstat(tempPath, { bigint: true })),
+          expectedTemporaryIdentity
+        ))
+    ) {
+      throw archiveAccountingOwnershipError(
+        'the deterministic accounting intent lacks matching journal identity'
+      );
+    }
+    if (temporary !== null && temporary !== content) {
+      throw archiveAccountingOwnershipError(
+        'the deterministic accounting intent contains disagreeing bytes'
+      );
+    }
+    if (temporary === null) {
+      handle = await fs.open(tempPath, 'wx', 0o600);
+      await handle.writeFile(content, 'utf8');
+      await handle.sync();
+      await handle.close();
+      handle = undefined;
+    }
+    try {
+      await fs.link(tempPath, ledgerPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      const [ledger, temporaryStat] = await Promise.all([
+        fs.lstat(ledgerPath),
+        fs.lstat(tempPath),
+      ]);
+      if (
+        !ledger.isFile() ||
+        ledger.isSymbolicLink() ||
+        !sameAccountingIdentity(
+          accountingIdentity(ledger),
+          accountingIdentity(temporaryStat)
+        )
+      ) {
+        throw archiveAccountingOwnershipError(
+          'the existing archive ledger is not the journal-owned temporary inode'
+        );
+      }
+    }
+    await verifyArchiveAccounting(archivedDir, accounting);
+    await fs.unlink(tempPath).catch(error => {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    });
   } catch (error) {
     await handle?.close().catch(() => undefined);
-    await fs.rm(tempPath, { force: true }).catch(() => undefined);
     throw new ArchiveAccountingError('archive-json-write', ledgerPath, error);
   }
-  await verifyArchiveAccounting(archivedDir, accounting);
 }

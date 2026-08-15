@@ -18,6 +18,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createRouter as createConfigRouter } from '../config-api/router.js';
+import type { ChangeFinalizerOptions } from './finalize.js';
 import { getGlobalDataDir } from '../global-config.js';
 import { createTrustedExecutionAdapterProducerResolver } from '../pipeline-registry/trusted-execution-adapters.js';
 import { createProductionExactTeacherAuthorityPolicy } from '../frozen-action-executor/index.js';
@@ -39,6 +40,8 @@ export interface StartManagementServerOptions {
   port?: number;
   /** Test/embedded-host override; production uses the Rasen machine-data root. */
   hostStateRoot?: string;
+  /** Test/embedded-host override for the change finalizer (L3+L5). */
+  finalizer?: ChangeFinalizerOptions;
   /** Test/daemon-only overrides for the sessions supervisor (design D1's injectable resolver, task 3.3's fixture CLI override). */
   sessions?: ManagementRouterOptions;
 }
@@ -139,7 +142,13 @@ export function startManagementServer(
     exactTeacherSessionHost,
     shutdownReusableSessions,
     shutdownPathChooser,
-  } = createManagementRouter(context, resolveHomeForRoot, sessions);
+  } = createManagementRouter(context, resolveHomeForRoot, {
+    ...sessions,
+    // L3+L5: the Store change-finalization bridge options pass through
+    // unchanged; production leaves them unset (the finalizer resolves its own
+    // CLI entry) and tests inject a fixture CLI.
+    ...(options.finalizer === undefined ? {} : { finalizer: options.finalizer }),
+  });
 
   const handler = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
     const pathname = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;

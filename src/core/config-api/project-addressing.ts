@@ -13,14 +13,18 @@ import {
 } from '../project-registry.js';
 import { cachedResolveRegistrationRoot } from './piercing-cache.js';
 import {
-  resolveStoreBinding,
   primaryRepair,
   type StoreUnavailableReason,
   type UnavailableStoreBinding,
 } from '../store/identity.js';
-import { isValidStoreUid } from '../store/identity-types.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import type { ProjectRef } from './wire-types.js';
+import {
+  PlanningScopeError,
+  StorePlanning,
+  type ProjectReadScope,
+  type StoreAggregateReadScope,
+} from '../store-planning/index.js';
 
 export interface ResolvedProject {
   root: string;
@@ -34,12 +38,32 @@ export interface ResolvedProject {
  * `root` is always canonical (`FileSystemUtils.canonicalizeExistingPath`), so
  * downstream root-equality comparisons are Windows-safe.
  */
-export interface ResolvedSpace {
+interface ResolvedSpaceBase {
   type: 'project' | 'store';
   id: string;
   name: string;
+  /** Planning checkout locator retained for wire compatibility. */
   root: string;
 }
+
+export interface ResolvedProjectSpace extends ResolvedSpaceBase {
+  type: 'project';
+  planningScope: ProjectReadScope;
+  projectHome: string;
+  schemasDir: string;
+  changesDir: string;
+  specsDir: string;
+  archiveDir?: string;
+  /** Real code checkout, independent from Store planning ownership. */
+  executionRoot?: string;
+}
+
+export interface ResolvedStoreSpace extends ResolvedSpaceBase {
+  type: 'store';
+  planningScope: StoreAggregateReadScope;
+}
+
+export type ResolvedSpace = ResolvedProjectSpace | ResolvedStoreSpace;
 
 export type SpaceSelectorResult =
   | { ok: true; space: ResolvedSpace }
@@ -108,11 +132,85 @@ export function unavailableStoreHttpResult(
   };
 }
 
-function spaceResultFor(
-  selector: string,
-  binding: UnavailableStoreBinding
+function planningSpaceFailure(
+  error: unknown,
+  namespace: 'project' | 'store',
+  selector: string
 ): Extract<SpaceSelectorResult, { ok: false }> {
-  return { ok: false, ...unavailableStoreHttpResult(binding, selector) };
+  if (!(error instanceof PlanningScopeError)) throw error;
+  const notFound = error.diagnostic.code === 'unknown_project' ||
+    (namespace === 'store' && error.diagnostic.code === 'unknown_store');
+  return {
+    ok: false,
+    status: notFound ? 404 : 409,
+    code: notFound ? 'space_not_found' : 'space_unavailable',
+    message: notFound
+      ? `No registered ${namespace} matches "${selector}" in the ${namespace} namespace.`
+      : `${namespace} space "${selector}" is unavailable: ${error.message}`,
+  };
+}
+
+async function projectPlanningSpace(
+  resolved: ResolvedProject
+): Promise<ResolvedProjectSpace> {
+  const planningScope = await StorePlanning.open({
+    intent: 'project-read',
+    startPath: resolved.root,
+  });
+  const scopeProjectId = planningScope.ref.projectId;
+  if (
+    resolved.ref.projectId.length > 0 &&
+    scopeProjectId !== undefined &&
+    scopeProjectId !== resolved.ref.projectId
+  ) {
+    throw new PlanningScopeError(
+      'planning_selection_conflict',
+      `Project registry identity '${resolved.ref.projectId}' conflicts with planning identity '${planningScope.ref.projectId}'.`,
+      { target: resolved.root }
+    );
+  }
+  const description = planningScope.describe();
+  let archiveDir: string | undefined;
+  try {
+    archiveDir = planningScope.locate({ kind: 'archive-line' }).absolutePath;
+  } catch (error) {
+    if (!(error instanceof PlanningScopeError)) throw error;
+  }
+  return {
+    type: 'project',
+    id: resolved.ref.projectId,
+    name: resolved.ref.name,
+    root: description.paths['planning-checkout'] as string,
+    planningScope,
+    projectHome: planningScope.locate({ kind: 'project-home' }).absolutePath,
+    schemasDir: planningScope.locate({ kind: 'project-schemas' }).absolutePath,
+    changesDir: planningScope.locate({ kind: 'active-changes' }).absolutePath,
+    specsDir: planningScope.locate({ kind: 'specs' }).absolutePath,
+    ...(archiveDir === undefined ? {} : { archiveDir }),
+    ...(description.paths['execution-root'] === undefined
+      ? { executionRoot: resolved.root }
+      : { executionRoot: description.paths['execution-root'] }),
+  };
+}
+
+/** Resolve an already-identified project root through Store planning truth. */
+export async function resolveProjectPlanningSpaceFromRoot(
+  root: string
+): Promise<SpaceSelectorResult> {
+  const ref = await resolveLaunchProjectRef(root);
+  if (!ref) {
+    return {
+      ok: false,
+      status: 404,
+      code: 'space_not_found',
+      message: `No launch project is available at "${root}".`,
+    };
+  }
+  try {
+    return { ok: true, space: await projectPlanningSpace({ root, ref }) };
+  } catch (error) {
+    return planningSpaceFailure(error, 'project', ref.projectId || root);
+  }
 }
 
 /**
@@ -137,10 +235,11 @@ export async function resolveSpaceSelector(raw: string): Promise<SpaceSelectorRe
         message: `No registered project matches "${parsed.selector}" in the project namespace.`,
       };
     }
-    return {
-      ok: true,
-      space: { type: 'project', id: resolved.ref.projectId, name: resolved.ref.name, root: resolved.root },
-    };
+    try {
+      return { ok: true, space: await projectPlanningSpace(resolved) };
+    } catch (error) {
+      return planningSpaceFailure(error, 'project', parsed.selector);
+    }
   }
 
   // `store:<permanent identity>` addresses a Store exactly, which is the only
@@ -148,42 +247,26 @@ export async function resolveSpaceSelector(raw: string): Promise<SpaceSelectorRe
   // the same identity form the CLI's `--store` and lifecycle commands accept.
   // The resolved space below already reports the Store's own id, never the
   // selector, so this is purely an additional way in.
-  const binding = await resolveStoreBinding({
-    declaration: isValidStoreUid(parsed.selector)
-      ? { form: 'durable', uid: parsed.selector }
-      : { form: 'alias', id: parsed.selector },
-  });
-
-  if (binding.kind === 'absent') {
+  try {
+    const planningScope = await StorePlanning.open({
+      intent: 'store-read',
+      startPath: process.cwd(),
+      selection: { store: parsed.selector },
+    });
+    const description = planningScope.describe();
     return {
-      ok: false,
-      status: 404,
-      code: 'space_not_found',
-      message: `No registered store matches "${parsed.selector}" in the store namespace.`,
+      ok: true,
+      space: {
+        type: 'store',
+        id: planningScope.ref.storeId,
+        name: planningScope.ref.storeId,
+        root: description.paths['planning-checkout'] as string,
+        planningScope,
+      },
     };
+  } catch (error) {
+    return planningSpaceFailure(error, 'store', parsed.selector);
   }
-
-  if (binding.kind === 'unavailable') {
-    if (binding.reason === 'not-registered') {
-      return {
-        ok: false,
-        status: 404,
-        code: 'space_not_found',
-        message: `No registered store matches "${parsed.selector}" in the store namespace.`,
-      };
-    }
-    return spaceResultFor(parsed.selector, binding);
-  }
-
-  return {
-    ok: true,
-    space: {
-      type: 'store',
-      id: binding.store.id,
-      name: binding.store.id,
-      root: binding.store.root,
-    },
-  };
 }
 
 /**

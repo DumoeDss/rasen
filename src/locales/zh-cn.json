@@ -1,5 +1,27 @@
 {
   "locale": "zh-cn",
+  "archiveAbort": {
+    "optionConflict": "--abort-plan 不能与变更名称或除 --yes 和 --json 之外的任何归档选项同时使用。",
+    "confirmationRequired": "中止归档事务需要显式确认。",
+    "confirmationFix": "请重新运行 'rasen archive --abort-plan {token} --yes'。",
+    "applyAborted": "此归档计划已中止，无法应用。",
+    "aborted": "归档计划 {transactionId} 已中止。未撤销任何已持久化的归档更改。",
+    "alreadyAborted": "归档计划 {transactionId} 已经中止，无需进一步更改。",
+    "associationPending": "Store 工作区关联仍处于待处理状态。",
+    "blocked": "归档计划 {transactionId} 未中止。",
+    "blocker": "阻止项 {code}：{message}（{path}）",
+    "effectivePhase": "有效阶段：{phase}",
+    "effectivePhaseUnknown": "尚未确定",
+    "retainedPath": "保留路径：{path}",
+    "retainedPathsNone": "保留路径：未报告",
+    "manualRecoveryAction": "手动恢复：{action}",
+    "abortAction": "中止：{action}",
+    "recoveryAction": "恢复：{action}"
+  },
+  "ompProjectContext": {
+  "nestedInstallCaptureWarning": "{installDir} 现在包含 Oh My Pi 配置，因此 Oh My Pi 会从这里而不是外层目录读取项目指令与常驻规则。以下文件将不再加载：{files}",
+  "nestedInstallCaptureFix": "若要保留它们，请改在 {boundary} 安装，或把上述文件复制到 {installDir}。已安装的技能不受影响——Oh My Pi 会扫描所有上层目录来发现技能。"
+  },
   "bootstrap": {
     "headingProject": "对 {path} 处项目执行 bootstrap {mode}",
     "headingStore": "对 {path} 处 store {store} 执行 bootstrap {mode}",
@@ -1260,6 +1282,9 @@
         "list": {
           "description": "列出条目（默认为变更，使用 --specs 列出规格）",
           "options": {
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
+            },
             "specs": {
               "description": "列出规格而非变更"
             },
@@ -1289,6 +1314,9 @@
         "validate": {
           "description": "校验变更和规格",
           "options": {
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
+            },
             "all": {
               "description": "校验所有变更和规格"
             },
@@ -1327,6 +1355,9 @@
         "show": {
           "description": "显示变更或规格",
           "options": {
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
+            },
             "json": {
               "description": "输出为 JSON"
             },
@@ -1397,13 +1428,13 @@
               "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
             },
             "project": {
-              "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+              "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+            },
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
             },
             "keep-ephemera": {
               "description": "保留所有 ephemera 文件，同时继续执行完整安全检查"
-            },
-            "no-whitespace-check": {
-              "description": "跳过空白预检（该预检会拦下 CI 将会拒绝的归档产物）"
             },
             "dry-run": {
               "description": "预演所有计划中的归档操作，不执行任何实际更改"
@@ -1414,11 +1445,29 @@
             "apply-plan": {
               "description": "不重新规划，按保存的令牌应用或恢复精确计划"
             },
+            "abort-plan": {
+              "description": "在跨越持久变更边界前，中止保存令牌所对应的精确归档计划"
+            },
             "intent-template": {
               "description": "以 JSON 输出完整的归档意图模板，且不修改文件"
             },
             "intent-file": {
               "description": "从指定文件读取并严格校验完整的归档意图"
+            },
+            "outcome": {
+              "description": "仅 Store v2：显式声明的唯一终态（landed | superseded | cancelled | abandoned）。在 Store v2 中必填，且无默认值"
+            },
+            "reason": {
+              "description": "仅 Store v2：变更结束的原因。除 landed 外的每个结果都必填，landed 则拒绝该选项"
+            },
+            "by": {
+              "description": "仅 Store v2：superseded 所指定的后继 change instance id。根据已提交的作用域证据验证，不接受别名"
+            },
+            "by-target-line": {
+              "description": "仅 Store v2：将后继搜索限定在一条目标线上。不能代替后继验证"
+            },
+            "commit": {
+              "description": "仅 Store v2：landed 证明的候选提交。不能绕过该证明"
             }
           },
           "commands": {
@@ -1427,6 +1476,9 @@
               "options": {
                 "to": {
                   "description": "目标位置：in-repo 或 store（external 已退役）"
+                },
+                "target-line": {
+                  "description": "布局 v2 的 store 中归档条目落入的稳定目标线"
                 },
                 "dry-run": {
                   "description": "打印移动计划，不做任何更改"
@@ -1444,6 +1496,9 @@
         "status": {
           "description": "显示变更的产物完成状态",
           "options": {
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
+            },
             "change": {
               "description": "要显示状态的变更名称"
             },
@@ -1464,6 +1519,9 @@
         "instructions": {
           "description": "输出用于创建产物或实施任务的增强指令",
           "options": {
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
+            },
             "change": {
               "description": "变更名称"
             },
@@ -1506,6 +1564,9 @@
             "change": {
               "description": "创建新的变更目录",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "description": {
                   "description": "要添加到 README.md 的说明"
                 },
@@ -1650,6 +1711,41 @@
                 }
               }
             },
+            "migrate-layout": {
+              "description": "将旧版扁平 store 迁移到规划布局 v2，且总是先预览全部条目",
+              "options": {
+                "mapping": {
+                  "description": "store 工作区内已提交的映射文件，用于显式解决归属未知、共享 spec、设计文档与目标线"
+                },
+                "default-target-line": {
+                  "description": "为未自行声明目标线的条目断言的目标线；绝不从分支名或引用推导"
+                },
+                "include-untracked": {
+                  "description": "确认移动树内的未跟踪文件（Git 无法恢复它们）"
+                },
+                "dry-run": {
+                  "description": "预览完整条目表且不做任何改动（默认）"
+                },
+                "apply": {
+                  "description": "暂存、校验并发布已预览的计划"
+                },
+                "status": {
+                  "description": "报告该 store 与该引用上已记录的迁移运行阶段"
+                },
+                "resume": {
+                  "description": "从记录的阶段继续中断的运行"
+                },
+                "rollback": {
+                  "description": "仅删除该次运行创建的路径并恢复此前的 store 元数据"
+                },
+                "retire-flat": {
+                  "description": "在发布完成后，作为独立步骤删除扁平规划目录树"
+                },
+                "json": {
+                  "description": "以 JSON 输出"
+                }
+              }
+            },
             "adopt": {
               "description": "将仓库内项目的规划内容迁移到 store，并将仓库转换为指针",
               "options": {
@@ -1658,6 +1754,9 @@
                 },
                 "archive": {
                   "description": "归档处理方式：move（默认）或 leave"
+                },
+                "target-line": {
+                  "description": "布局 v2 的 store 中归档落入的稳定目标线"
                 },
                 "dry-run": {
                   "description": "打印移动计划，不做任何更改"
@@ -1972,6 +2071,12 @@
                 "target-line": {
                   "description": "仅限该目标线（可重复指定）"
                 },
+                "outcome": {
+                  "description": "将归档条目收窄到这些收尾结果"
+                },
+                "state": {
+                  "description": "active 或 archived"
+                },
                 "json": {
                   "description": "以 JSON 输出"
                 }
@@ -1993,6 +2098,9 @@
         "context": {
           "description": "输出已解析 Rasen 根目录的工作上下文",
           "options": {
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
+            },
             "json": {
               "description": "输出为 JSON"
             },
@@ -2039,6 +2147,9 @@
         "doctor": {
           "description": "报告已解析 Rasen 根目录的关系健康状况",
           "options": {
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
+            },
             "json": {
               "description": "输出为 JSON"
             },
@@ -2746,6 +2857,9 @@
             "list": {
               "description": "列出可用流水线（project > user > package）",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "json": {
                   "description": "输出为 JSON"
                 },
@@ -2760,6 +2874,9 @@
             "show": {
               "description": "显示流水线阶段的 DAG 和构建顺序",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "for-execution": {
                   "description": "返回可执行 DAG 前校验当前配置方案的技能"
                 },
@@ -2792,6 +2909,9 @@
             "agents": {
               "description": "显示或设置流水线中各角色的 Claude/Codex 运行时",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "planner": {
                   "description": "设置 planner 运行时：claude 或 codex"
                 },
@@ -2821,6 +2941,9 @@
             "classify": {
               "description": "为任务建议流水线（仅供参考的关键字启发式判断）",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "json": {
                   "description": "输出为 JSON"
                 },
@@ -2835,6 +2958,9 @@
             "resume": {
               "description": "显示变更的流水线运行状态（下一/剩余阶段）",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "json": {
                   "description": "输出为 JSON"
                 },
@@ -2849,6 +2975,9 @@
             "init": {
               "description": "创建最小流水线草稿，但不安装",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "output": {
                   "description": "要创建的空流水线草稿目录"
                 },
@@ -2866,6 +2995,9 @@
             "validate": {
               "description": "校验已安装的流水线、草稿目录或 .rasenpkg",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "json": {
                   "description": "输出为 JSON"
                 },
@@ -2880,6 +3012,9 @@
             "import": {
               "description": "校验并原子安装流水线 .rasenpkg",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "force": {
                   "description": "覆盖已安装的同名流水线"
                 },
@@ -2897,6 +3032,9 @@
             "export": {
               "description": "将用户流水线导出为 .rasenpkg",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "force": {
                   "description": "替换现有目标文件"
                 },
@@ -2914,6 +3052,9 @@
             "delete": {
               "description": "删除未被引用的用户流水线",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "yes": {
                   "description": "跳过确认"
                 },
@@ -2934,6 +3075,9 @@
             "save": {
               "description": "校验流水线定义文件并将其安装为用户流水线",
               "options": {
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
+                },
                 "from": {
                   "description": "JSON 或 YAML 格式的流水线定义文件路径"
                 },
@@ -3100,6 +3244,9 @@
                 },
                 "project": {
                   "description": "选择已注册项目作为所有迁移根目录"
+                },
+                "target-line": {
+                  "description": "所选项目规划作用域的稳定目标线 ID"
                 },
                 "json": {
                   "description": "输出为 JSON（非交互；执行时需要 --yes）"

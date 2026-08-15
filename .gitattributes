@@ -60,3 +60,8 @@ src/core/session-host/process-capsule/resolver.ts text eol=lf
 src/core/session-host/process-capsule/native-process-scope.ts text eol=lf
 test/core/session-host/process-capsule-package.test.ts text eol=lf
 test/core/session-host/process-capsule-posix-replacement.test.ts text eol=lf
+
+
+# Byte-pinned fixture data: migration-plan digests and instance ids are
+# derived from these exact bytes, so every platform must read the same LF.
+test/fixtures/** text eol=lf

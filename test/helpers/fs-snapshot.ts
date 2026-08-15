@@ -14,9 +14,16 @@ export function snapshotDirectory(root: string): Map<string, string> {
   const relKey = (fullPath: string): string =>
     path.relative(root, fullPath).split(path.sep).join('/');
 
+  // git's auto-maintenance creates and asynchronously removes
+  // .git/objects/maintenance.lock after commits (observed racing on macOS
+  // runners). It is git's own scratch state, never fixture content, so a
+  // before/after byte-identity assertion must not observe it.
+  const TRANSIENT_GIT_LOCK = '.git/objects/maintenance.lock';
+
   const walk = (dir: string): void => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const fullPath = path.join(dir, entry.name);
+      if (relKey(fullPath) === TRANSIENT_GIT_LOCK) continue;
       if (entry.isDirectory()) {
         snapshot.set(`${relKey(fullPath)}/`, '');
         walk(fullPath);

@@ -37,7 +37,11 @@ import { findRepoPlanningRootSync } from '../core/planning-home.js';
 import { isInteractive } from '../utils/interactive.js';
 import { WORKSPACE_DIR_NAME } from '../core/config.js';
 import { runAdopt, runEject } from './store-migration.js';
-import { registerStoreAggregateCommand } from './store-aggregate.js';
+import {
+  runStoreMigrateLayout,
+  type StoreMigrateLayoutOptions,
+} from './store-migrate-layout.js';
+import { registerStoreAggregateCommands } from './store-aggregate.js';
 import { registerStoreIssueCommand } from './store-issue.js';
 import { registerStoreTargetLineCommand } from './store-target-line.js';
 import { registerWorkspaceCommand } from './workspace.js';
@@ -1494,10 +1498,28 @@ export function registerStoreCommand(program: Command): void {
     });
 
   store
+    .command('migrate-layout <store-id>')
+    .description('')
+    .option('--mapping <path>', '')
+    .option('--default-target-line <id>', '')
+    .option('--include-untracked', '')
+    .option('--dry-run', '')
+    .option('--apply', '')
+    .option('--status', '')
+    .option('--resume', '')
+    .option('--rollback', '')
+    .option('--retire-flat', '')
+    .option('--json', '')
+    .action(async (storeId: string, options: StoreMigrateLayoutOptions) => {
+      await runStoreMigrateLayout(storeId, options);
+    });
+
+  store
     .command('adopt [path]')
     .description('')
     .option('--to <store-id>', '')
     .option('--archive <mode>', '')
+    .option('--target-line <id>', '')
     .option('--dry-run', '')
     .option('--verify-hash', '')
     .option('--json', '')
@@ -1573,10 +1595,9 @@ export function registerStoreCommand(program: Command): void {
   registerWorkspaceCommand(store);
   // A Store-level Issue spans projects, so its commands take only `--store`.
   registerStoreIssueCommand(store);
-  // `store changes` and `store projects` are the aggregate reads: two
-  // independent top-level commands, not subcommands of a shared `aggregate`
-  // noun (design decision recorded in store-aggregate.ts).
-  registerStoreAggregateCommand(store);
+  // The aggregate reads. They answer questions that span more than one project,
+  // which is exactly what no other surface can do.
+  registerStoreAggregateCommands(store);
 
   const lifecycleRedirects = new Set(
     (COMMAND_REGISTRY.subcommands ?? []).filter(

@@ -124,7 +124,10 @@ export function resolveChangeReference(
     distinctScopes.add(`${entry.projectId}/${entry.targetLineId}`);
   }
 
-  if (committed.length > 1 && distinctScopes.size > 1) {
+  // Reaching the same Change through several refs is collapsed earlier by
+  // identity + alias + blob digest. Two remaining committed candidates are
+  // therefore two claimant trees, even when they repeat the same scope.
+  if (committed.length > 1) {
     return { status: 'ambiguous', claimants: committed.map(claimantOf) };
   }
   if (committed.length > 0 && local.length > 0 && distinctScopes.size > 1) {

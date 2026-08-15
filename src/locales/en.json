@@ -1,5 +1,27 @@
 {
   "locale": "en",
+  "archiveAbort": {
+    "optionConflict": "--abort-plan cannot be combined with a change name or any other archive option except --yes and --json.",
+    "confirmationRequired": "Aborting an archive transaction requires explicit confirmation.",
+    "confirmationFix": "Rerun with 'rasen archive --abort-plan {token} --yes'.",
+    "applyAborted": "This archive plan was aborted and cannot be applied.",
+    "aborted": "Archive plan {transactionId} was aborted. No durable archive changes were reversed.",
+    "alreadyAborted": "Archive plan {transactionId} was already aborted; no further changes were needed.",
+    "associationPending": "The Store workspace association remains pending.",
+    "blocked": "Archive plan {transactionId} was not aborted.",
+    "blocker": "Blocker {code}: {message} ({path})",
+    "effectivePhase": "Effective phase: {phase}",
+    "effectivePhaseUnknown": "not established",
+    "retainedPath": "Retained path: {path}",
+    "retainedPathsNone": "Retained paths: none reported",
+    "manualRecoveryAction": "Manual recovery: {action}",
+    "abortAction": "Abort: {action}",
+    "recoveryAction": "Recovery: {action}"
+  },
+  "ompProjectContext": {
+  "nestedInstallCaptureWarning": "{installDir} now holds Oh My Pi configuration, so Oh My Pi reads its project instructions and sticky rules from there instead of the enclosing directory. These files stop loading: {files}",
+  "nestedInstallCaptureFix": "To keep them, install at {boundary} instead, or copy the listed files into {installDir}. Installed skills are unaffected — Oh My Pi scans every ancestor for skills."
+  },
   "bootstrap": {
     "headingProject": "Bootstrap {mode} for the project at {path}",
     "headingStore": "Bootstrap {mode} for store {store} at {path}",
@@ -1260,6 +1282,9 @@
         "list": {
           "description": "List items (changes by default). Use --specs to list specs.",
           "options": {
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
+            },
             "specs": {
               "description": "List specs instead of changes"
             },
@@ -1289,6 +1314,9 @@
         "validate": {
           "description": "Validate changes, specs, and pipelines",
           "options": {
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
+            },
             "all": {
               "description": "Validate all changes, specs, and pipelines"
             },
@@ -1327,6 +1355,9 @@
         "show": {
           "description": "Show a change or spec",
           "options": {
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
+            },
             "json": {
               "description": "Output as JSON"
             },
@@ -1397,13 +1428,13 @@
               "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
             },
             "project": {
-              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+              "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+            },
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
             },
             "keep-ephemera": {
               "description": "Preserve all ephemera files while retaining complete safety inspection"
-            },
-            "no-whitespace-check": {
-              "description": "Skip the whitespace preflight that blocks archiving artifacts CI would reject"
             },
             "dry-run": {
               "description": "Preview all planned archive actions without executing anything"
@@ -1414,11 +1445,29 @@
             "apply-plan": {
               "description": "Apply or resume the exact saved archive plan without replanning"
             },
+            "abort-plan": {
+              "description": "Abort the exact saved archive plan before it crosses a durable mutation boundary"
+            },
             "intent-template": {
               "description": "Output a complete archive intent template as JSON without changing files"
             },
             "intent-file": {
               "description": "Read a complete, strictly validated archive intent from the specified file"
+            },
+            "outcome": {
+              "description": "Store v2 only: the one explicitly declared terminal state (landed | superseded | cancelled | abandoned). Required there; there is no default"
+            },
+            "reason": {
+              "description": "Store v2 only: why the change ended. Required by every non-landed outcome and refused for landed"
+            },
+            "by": {
+              "description": "Store v2 only: the successor change instance id a superseded outcome names. Resolved to committed scope evidence, never to an alias"
+            },
+            "by-target-line": {
+              "description": "Store v2 only: narrows the successor search to one target line. Never a substitute for successor verification"
+            },
+            "commit": {
+              "description": "Store v2 only: the candidate commit for a landed proof. Never a bypass for it"
             }
           },
           "commands": {
@@ -1427,6 +1476,9 @@
               "options": {
                 "to": {
                   "description": "Target: in-repo or store (external is retired)"
+                },
+                "target-line": {
+                  "description": "Stable target line the archive entries land under in a layout version 2 store"
                 },
                 "dry-run": {
                   "description": "Print the move plan and change nothing"
@@ -1444,6 +1496,9 @@
         "status": {
           "description": "Display artifact completion status for a change",
           "options": {
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
+            },
             "change": {
               "description": "Change name to show status for"
             },
@@ -1464,6 +1519,9 @@
         "instructions": {
           "description": "Output enriched instructions for creating an artifact or applying tasks",
           "options": {
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
+            },
             "change": {
               "description": "Change name"
             },
@@ -1506,6 +1564,9 @@
             "change": {
               "description": "Create a new change directory",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "description": {
                   "description": "Description to add to README.md"
                 },
@@ -1650,6 +1711,41 @@
                 }
               }
             },
+            "migrate-layout": {
+              "description": "Migrate a legacy flat store to planning layout version 2, previewing every item first",
+              "options": {
+                "mapping": {
+                  "description": "Committed mapping file inside the store worktree that resolves unknown ownership, shared specs, design docs, and target lines"
+                },
+                "default-target-line": {
+                  "description": "Target line to assert for every item that does not declare its own; no line is ever derived"
+                },
+                "include-untracked": {
+                  "description": "Acknowledge untracked files inside moved trees, which Git cannot restore"
+                },
+                "dry-run": {
+                  "description": "Preview the complete item table and change nothing (default)"
+                },
+                "apply": {
+                  "description": "Stage, verify, and publish the previewed plan"
+                },
+                "status": {
+                  "description": "Report the recorded phase of any migration run for this store and ref"
+                },
+                "resume": {
+                  "description": "Continue an interrupted run from its recorded phase"
+                },
+                "rollback": {
+                  "description": "Remove only the paths the run created and restore the previous store metadata"
+                },
+                "retire-flat": {
+                  "description": "Remove the flat planning tree as a separate step after a completed publication"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
             "adopt": {
               "description": "Migrate an in-repo project's planning content into a store and convert the repo to a pointer",
               "options": {
@@ -1658,6 +1754,9 @@
                 },
                 "archive": {
                   "description": "Archive handling: move (default) or leave"
+                },
+                "target-line": {
+                  "description": "Stable target line the archive lands under in a layout version 2 store"
                 },
                 "dry-run": {
                   "description": "Print the full move plan and change nothing"
@@ -1972,6 +2071,12 @@
                 "target-line": {
                   "description": "Limit to this target line (repeatable)"
                 },
+                "outcome": {
+                  "description": "Narrow archived entries to these finalization outcomes"
+                },
+                "state": {
+                  "description": "active or archived"
+                },
                 "json": {
                   "description": "Output as JSON"
                 }
@@ -1993,6 +2098,9 @@
         "context": {
           "description": "Print the working context for the resolved Rasen root",
           "options": {
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
+            },
             "json": {
               "description": "Output the agent brief as JSON"
             },
@@ -2039,6 +2147,9 @@
         "doctor": {
           "description": "Report relationship health for the resolved Rasen root",
           "options": {
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
+            },
             "json": {
               "description": "Output as JSON"
             },
@@ -2752,6 +2863,9 @@
             "list": {
               "description": "List available pipelines (project > user > package)",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "json": {
                   "description": "Output as JSON"
                 },
@@ -2766,6 +2880,9 @@
             "show": {
               "description": "Show a pipeline stage DAG and build order",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "for-execution": {
                   "description": "Validate active-profile skills before returning the executable DAG"
                 },
@@ -2798,6 +2915,9 @@
             "agents": {
               "description": "Show or set per-role Claude/Codex runtimes for a pipeline",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "planner": {
                   "description": "Set planner runtime: claude or codex"
                 },
@@ -2827,6 +2947,9 @@
             "classify": {
               "description": "Suggest a pipeline for a task (advisory keyword heuristic)",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "json": {
                   "description": "Output as JSON"
                 },
@@ -2841,6 +2964,9 @@
             "resume": {
               "description": "Show a change's pipeline run-state (next/remaining stages)",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "json": {
                   "description": "Output as JSON"
                 },
@@ -2855,6 +2981,9 @@
             "init": {
               "description": "Create a minimal pipeline draft without installing it",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "output": {
                   "description": "Empty pipeline draft directory to create"
                 },
@@ -2872,6 +3001,9 @@
             "validate": {
               "description": "Validate an installed pipeline, draft directory, or .rasenpkg",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "json": {
                   "description": "Output as JSON"
                 },
@@ -2886,6 +3018,9 @@
             "import": {
               "description": "Validate and atomically install a pipeline .rasenpkg",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "force": {
                   "description": "Overwrite an already-installed pipeline of the same name"
                 },
@@ -2903,6 +3038,9 @@
             "export": {
               "description": "Export a user pipeline as .rasenpkg",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "force": {
                   "description": "Replace an existing destination file"
                 },
@@ -2920,6 +3058,9 @@
             "delete": {
               "description": "Delete an unreferenced user pipeline",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "yes": {
                   "description": "Skip confirmation"
                 },
@@ -2940,6 +3081,9 @@
             "save": {
               "description": "Validate and install a pipeline definition file as a user pipeline",
               "options": {
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
+                },
                 "from": {
                   "description": "Path to a JSON or YAML pipeline definition"
                 },
@@ -3106,6 +3250,9 @@
                 },
                 "project": {
                   "description": "Use the selected registered project as every migration root"
+                },
+                "target-line": {
+                  "description": "Stable target-line id for the selected project planning scope"
                 },
                 "json": {
                   "description": "Output as JSON (non-interactive; requires --yes to execute)"

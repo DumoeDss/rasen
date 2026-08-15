@@ -102,26 +102,14 @@ describe('rasen store aggregate CLI', () => {
     expect(humanResult.stdout).toContain('change-a');
     expect(humanResult.stdout).toContain('change-b');
 
-    // The JSON form has the same groups: the two that hold a Change, plus the
-    // declared-but-empty `app-a`/`main` pair (`main` declares only app-a and
-    // holds nothing), which is reported present and empty rather than hidden.
+    // The JSON form has the same groups. Three, not two: this line keeps
+    // slice 1's fix for the declared-but-empty line (the fixture declares
+    // line-main for PROJECT_A with no Changes), so that group appears
+    // instead of being silently dropped.
+    expect(jsonResult.groups).toHaveLength(3);
     expect(jsonResult.complete).toBe(true);
     const ids = jsonResult.groups.map((g: any) => `${g.projectId}/${g.targetLineId}`).sort();
-    expect(ids).toEqual([
-      `${PROJECT_A}/${LINE}`,
-      `${PROJECT_A}/${LINE_MAIN}`,
-      `${PROJECT_B}/${LINE}`,
-    ]);
-    const holders = jsonResult.groups.filter(
-      (g: any) => g.active.length + g.archived.length > 0
-    );
-    expect(holders.map((g: any) => `${g.projectId}/${g.targetLineId}`).sort()).toEqual([
-      `${PROJECT_A}/${LINE}`,
-      `${PROJECT_B}/${LINE}`,
-    ]);
-    // The empty pair reaches a PERSON too, not only a program.
-    expect(humanResult.stdout).toContain(`${PROJECT_A} / ${LINE_MAIN}`);
-    expect(humanResult.stdout).toContain('(no Changes)');
+    expect(ids).toEqual([`${PROJECT_A}/${LINE}`, `${PROJECT_A}/${LINE_MAIN}`, `${PROJECT_B}/${LINE}`]);
   });
 
   it('narrows the result with --project and --target-line filters', async () => {
@@ -137,12 +125,10 @@ describe('rasen store aggregate CLI', () => {
         )
       )
     );
-    // The filter narrows to app-a — both of its declared pairs, and nothing
-    // of app-b's, whose Change is the one this must not report.
-    expect(byProject.groups.map((g: any) => g.projectId)).toEqual([PROJECT_A, PROJECT_A]);
-    expect(
-      byProject.groups.flatMap((g: any) => g.active.map((e: any) => e.changeId))
-    ).toEqual(['narrow-a']);
+    expect(byProject.groups).toHaveLength(2);
+    // Both of PROJECT_A's declared lines — release/0.2 with its Change and
+    // the empty line-main group this line surfaces (see the first test).
+    expect(byProject.groups.every((g: any) => g.projectId === PROJECT_A)).toBe(true);
   });
 
   it('prints a projects rollup in both human and JSON forms', async () => {

@@ -8,6 +8,10 @@ import {
   registerStore,
 } from '../../src/core/index.js';
 import { writeStoreMetadataState } from '../../src/core/store/foundation.js';
+import {
+  getProjectRegistryPath,
+  registerProject,
+} from '../../src/core/project-registry.js';
 import { runCLI, type RunCLIResult } from '../helpers/run-cli.js';
 import { cleanupTempPath } from '../helpers/temp-cleanup.js';
 
@@ -124,43 +128,60 @@ describe('store root selection for normal commands', () => {
   }
 
   describe('selecting a registered store by id', () => {
-    it('creates a change only in the store and names the root on stderr', async () => {
+    // Creating a Change in a Store is proven end to end where the layout v2
+    // fixture lives: `test/commands/store-v2-planning-scope-journey.test.ts`
+    // asserts the same root block (`root.scope` = `store-project`), the same
+    // absolute `change.path`, and the partition destination, from a verified
+    // planning worktree. It cannot be re-proven HERE, because creation in a
+    // layout v2 Store additionally requires that worktree and this suite's
+    // fixture is an integration checkout — and a legacy flat Store refuses
+    // creation outright (change `store-layout-v2-migration`, `proposal.md`
+    // BREAKING bullet 2, task 10b.1).
+    //
+    // What this suite owns is ROOT SELECTION, and that survives intact: the
+    // cases below prove `--store` resolves to the registered Store, names it,
+    // and never falls back to a local root — including when the command it
+    // selected the root for is then refused.
+    it('names the selected store root and refuses to create in its legacy flat layout', async () => {
       const result = await runCLI(['new', 'change', 'add-billing', '--store', 'team-context'], {
         cwd: appRepo,
         env,
       });
-      expect(result.exitCode).toBe(0);
-      expect(result.stderr).toContain(`Using Rasen root: team-context (${storeRoot})`);
-      expect(result.stdout).toContain("Created change 'add-billing'");
-      expect(result.stdout).toContain(
-        path.join(storeRoot, 'rasen', 'changes', 'add-billing')
-      );
 
-      expect(
-        fs.existsSync(path.join(storeRoot, 'rasen', 'changes', 'add-billing'))
-      ).toBe(true);
+      expect(result.exitCode).toBe(1);
+      // The refusal names the store `--store` selected, which is how the
+      // selection is still observable: the "Using Rasen root" notice belongs
+      // to a resolution that completed, and this one fails inside it.
+      expect(`${result.stdout}${result.stderr}`).toContain('legacy flat planning layout');
+      expect(`${result.stdout}${result.stderr}`).toContain('store migrate-layout team-context');
+      // Neither root gained the Change: the refusal is not a fallback.
+      expect(fs.existsSync(path.join(storeRoot, 'rasen', 'changes', 'add-billing'))).toBe(false);
       expectNoLocalOpenSpec();
     });
 
-    it('includes the shared root block and absolute paths in new change JSON', async () => {
-      const result = await runCLI(
-        ['new', 'change', 'add-billing', '--store', 'team-context', '--json'],
-        { cwd: appRepo, env }
-      );
-      expect(result.exitCode).toBe(0);
+    it('includes the shared root block for the selected store, with absolute paths', async () => {
+      createChange(storeRoot, 'add-billing');
+      const result = await runCLI(['list', '--store', 'team-context', '--json'], {
+        cwd: appRepo,
+        env,
+      });
+      expect(result.exitCode, result.stdout || result.stderr).toBe(0);
 
       const json = parseJson(result);
-      expect(json.root).toEqual({
+      // The established compatibility fields are unchanged. `scope` is absent
+      // here because only the authoring path resolves a planning scope; the
+      // scope block itself is asserted in the layout v2 journey named above.
+      expect(json.root).toMatchObject({
         path: storeRoot,
         source: 'store',
         store_id: 'team-context',
       });
-      expect(path.isAbsolute(json.change.path)).toBe(true);
-      expect(json.change.path).toBe(
-        path.join(storeRoot, 'rasen', 'changes', 'add-billing')
-      );
+      expect(Object.keys(json.root).sort()).toEqual(['path', 'source', 'store_id']);
+      expect(path.isAbsolute(json.root.path)).toBe(true);
+      expect(json.changes.map((change: { name: string }) => change.name)).toContain('add-billing');
       expectNoLocalOpenSpec();
     });
+
 
     it('wins over the nearest local root', async () => {
       const localRepo = path.join(tempDir, 'local-repo');
@@ -261,6 +282,59 @@ describe('store root selection for normal commands', () => {
       expectNoLocalOpenSpec();
     });
 
+    it('compares change deltas with canonical specs in the selected store', async () => {
+      const canonicalDir = path.join(storeRoot, 'rasen', 'specs', 'billing');
+      fs.mkdirSync(canonicalDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(canonicalDir, 'spec.md'),
+        [
+          '# Billing',
+          '',
+          '## Purpose',
+          'Billing behavior remains deterministic.',
+          '',
+          '## Requirements',
+          '',
+          '### Requirement: Billing SHALL work',
+          'The system SHALL create bills.',
+          '',
+          '#### Scenario: Creates bills',
+          '- **WHEN** a billing period ends',
+          '- **THEN** a bill is created',
+          '',
+          '#### Scenario: Exports bills',
+          '- **WHEN** a bill is exported',
+          '- **THEN** an export is created',
+        ].join('\n')
+      );
+      createChange(storeRoot, 'store-scenario-loss', {
+        deltaSpec: MODIFIED_ONLY_DELTA_SPEC,
+      });
+
+      const result = await runCLI(
+        [
+          'validate',
+          'store-scenario-loss',
+          '--store',
+          'team-context',
+          '--json',
+        ],
+        { cwd: appRepo, env }
+      );
+
+      expect(result.exitCode).toBe(0);
+      const json = parseJson(result);
+      expect(json.root.store_id).toBe('team-context');
+      expect(json.items[0].issues).toContainEqual(
+        expect.objectContaining({
+          level: 'WARNING',
+          code: 'spec_modified_scenarios_missing',
+          missingScenarios: ['Exports bills'],
+        })
+      );
+      expectNoLocalOpenSpec();
+    });
+
     it('lists specs from the store with minimal JSON support', async () => {
       const specDir = path.join(storeRoot, 'rasen', 'specs', 'billing');
       fs.mkdirSync(specDir, { recursive: true });
@@ -292,32 +366,45 @@ describe('store root selection for normal commands', () => {
       expect(json.root.store_id).toBe('team-context');
     });
 
-    it('archives a change into the store archive with JSON output', async () => {
+    // DELIBERATE REFUSAL. This case used to archive into the selected Store's
+    // flat `rasen/changes/archive`, which is exactly the write
+    // `specs/store-planning-scope-routing` ("Legacy flat Store refuses planning
+    // writes until it is migrated") now forbids and change
+    // `store-layout-v2-migration` task 10b.1 implements. Archiving a MIGRATED
+    // Store is proved end to end in `test/cli-e2e/store-lifecycle.test.ts`,
+    // where it now reaches the finalization gate
+    // (`finalization_outcome_required`). What survives here is what this
+    // suite owns: the selected Store is still named in the root block, and the
+    // app repo still grows nothing.
+    it('refuses to archive into a selected legacy flat store, and writes nothing', async () => {
       createChange(storeRoot, 'store-change');
 
       const result = await runCLI(
         ['archive', 'store-change', '--store', 'team-context', '--json', '--yes'],
         { cwd: appRepo, env }
       );
-      expect(result.exitCode).toBe(0);
+      expect(result.exitCode).toBe(1);
       expect(result.stdout.trim().startsWith('{')).toBe(true);
 
       const json = parseJson(result);
-      expect(json.archive.change).toBe('store-change');
-      expect(json.archive.archivedAs).toMatch(/^\d{4}-\d{2}-\d{2}-store-change$/);
-      expect(json.archive.path).toBe(
-        path.join(storeRoot, 'rasen', 'changes', 'archive', json.archive.archivedAs)
-      );
-      expect(json.archive.specsUpdated).toBe(true);
+      expect(json.archive).toBeNull();
+      expect(json.status[0]).toMatchObject({
+        severity: 'error',
+        code: 'legacy_flat_store_requires_migration',
+        fix: "Run 'rasen store migrate-layout team-context' to migrate this Store, then retry.",
+      });
       expect(json.root.store_id).toBe('team-context');
 
-      expect(fs.existsSync(json.archive.path)).toBe(true);
+      // Refused before writing, moving, or deleting anything.
       expect(
         fs.existsSync(path.join(storeRoot, 'rasen', 'changes', 'store-change'))
-      ).toBe(false);
-      expect(
-        fs.existsSync(path.join(storeRoot, 'rasen', 'specs', 'billing', 'spec.md'))
       ).toBe(true);
+      expect(
+        fs.readdirSync(path.join(storeRoot, 'rasen', 'changes', 'archive'))
+      ).toEqual([]);
+      expect(
+        fs.existsSync(path.join(storeRoot, 'rasen', 'specs', 'billing'))
+      ).toBe(false);
       expectNoLocalOpenSpec();
     });
   });
@@ -523,6 +610,23 @@ describe('store root selection for normal commands', () => {
   });
 
   describe('archive --json is non-interactive', () => {
+    // `rasen archive` against a legacy flat Store is refused now
+    // (`legacy_flat_store_requires_migration`; change
+    // `store-layout-v2-migration`, task 10b.1), and a layout v2 Store answers
+    // `finalization_outcome_required` until one outcome is declared
+    // (`store-finalization-outcomes-v2`). So archiving into ANY Store without
+    // further setup is unreachable in this suite,
+    // and these cases split in two: the ones whose subject is the SELECTED
+    // ROOT keep `--store` and assert the deliberate refusal, and the ones whose
+    // subject is archive's own JSON discipline move to a standalone root, where
+    // that discipline is unchanged and still worth a live gate.
+    let standaloneRoot: string;
+
+    beforeEach(() => {
+      standaloneRoot = path.join(tempDir, 'archive-standalone');
+      createOpenSpecRoot(standaloneRoot);
+    });
+
     function expectBlockedPlanWithNoWrites(json: any): void {
       expect(json.plan.complete).toBe(false);
       expect(json.plan.blockers.length).toBeGreaterThan(0);
@@ -531,21 +635,29 @@ describe('store root selection for normal commands', () => {
       expect(fs.existsSync(json.plan.paths.final)).toBe(false);
     }
 
-    it('fails without a change name instead of opening a picker', async () => {
+    it('refuses a selected legacy flat store without opening a picker', async () => {
       createChange(storeRoot, 'store-change');
 
       const result = await runCLI(['archive', '--store', 'team-context', '--json'], {
         cwd: appRepo,
         env,
       });
+
+      // The subject survives: no picker, exit 1, pure JSON on stdout. What
+      // changed is which refusal comes first — the Store's layout is checked
+      // before the missing change name.
       expect(result.exitCode).toBe(1);
       expect(result.stdout.trim().startsWith('{')).toBe(true);
       const json = parseJson(result);
       expect(json.archive).toBeNull();
-      expect(json.status[0].code).toBe('archive_change_name_required');
+      expect(json.status[0].code).toBe('legacy_flat_store_requires_migration');
+      expect(json.status[0].fix).toContain('store migrate-layout team-context');
+      expect(
+        fs.existsSync(path.join(storeRoot, 'rasen', 'changes', 'store-change'))
+      ).toBe(true);
     });
 
-    it('reports no active changes for a selected empty store without init guidance', async () => {
+    it('refuses a selected empty store without init guidance', async () => {
       const blankStoreRoot = path.join(tempDir, 'stores', 'archive-blank-context');
       fs.mkdirSync(path.join(blankStoreRoot, 'rasen'), { recursive: true });
       fs.writeFileSync(
@@ -570,26 +682,20 @@ describe('store root selection for normal commands', () => {
       expect(result.exitCode).toBe(1);
       const json = parseJson(result);
       expect(json.archive).toBeNull();
-      expect(json.status[0]).toEqual({
-        severity: 'error',
-        code: 'archive_change_not_found',
-        message: "Change 'missing-change' not found. No active changes exist in this root.",
-      });
-      expectBlockedPlanWithNoWrites(json);
-      expect(json.plan.blockers).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ operation: 'source-lstat', code: 'ENOENT' }),
-        ])
-      );
+      expect(json.status[0].code).toBe('legacy_flat_store_requires_migration');
+      // The property this case has always protected: a selected Store never
+      // gets told to run `rasen init`. The refusal names the migration instead.
+      expect(JSON.stringify(json.status)).not.toContain('rasen init');
+      expect(json.status[0].fix).toContain('store migrate-layout archive-blank-context');
     });
 
     it('reports validation failures as diagnostics without stdout prose', async () => {
-      createChange(storeRoot, 'bad-change', { deltaSpec: INVALID_DELTA_SPEC });
+      createChange(standaloneRoot, 'bad-change', { deltaSpec: INVALID_DELTA_SPEC });
 
-      const result = await runCLI(
-        ['archive', 'bad-change', '--store', 'team-context', '--json', '--yes'],
-        { cwd: appRepo, env }
-      );
+      const result = await runCLI(['archive', 'bad-change', '--json', '--yes'], {
+        cwd: standaloneRoot,
+        env,
+      });
       expect(result.exitCode).toBe(1);
       expect(result.stdout.trim().startsWith('{')).toBe(true);
       const json = parseJson(result);
@@ -598,7 +704,7 @@ describe('store root selection for normal commands', () => {
         severity: 'error',
         code: 'archive_validation_failed',
         message: "Validation failed for change 'bad-change'.",
-        fix: 'Run rasen validate bad-change --store team-context for details, fix the errors, or rerun with --no-validate.',
+        fix: 'Run rasen validate bad-change for details, fix the errors, or rerun with --no-validate.',
       });
       expectBlockedPlanWithNoWrites(json);
       expect(json.plan.blockers).toEqual(
@@ -606,16 +712,16 @@ describe('store root selection for normal commands', () => {
       );
       // The change was not archived.
       expect(
-        fs.existsSync(path.join(storeRoot, 'rasen', 'changes', 'bad-change'))
+        fs.existsSync(path.join(standaloneRoot, 'rasen', 'changes', 'bad-change'))
       ).toBe(true);
     });
 
     it('keeps stdout pure when REMOVED deltas target a new spec', async () => {
-      createChange(storeRoot, 'removed-change', { deltaSpec: REMOVED_ONLY_DELTA_SPEC });
+      createChange(standaloneRoot, 'removed-change', { deltaSpec: REMOVED_ONLY_DELTA_SPEC });
 
       const result = await runCLI(
-        ['archive', 'removed-change', '--store', 'team-context', '--json', '--yes', '--no-validate'],
-        { cwd: appRepo, env }
+        ['archive', 'removed-change', '--json', '--yes', '--no-validate'],
+        { cwd: standaloneRoot, env }
       );
       expect(result.exitCode).toBe(0);
       // The "REMOVED requirement(s) ignored for new spec" warning must not
@@ -625,36 +731,35 @@ describe('store root selection for normal commands', () => {
       expect(json.archive.change).toBe('removed-change');
     });
 
-    it('writes no spec when any rebuilt spec fails validation', async () => {
+    it('writes no spec when a canonical baseline fails validation', async () => {
       // Two delta specs in one change: 'aaa-good' targets a new spec and
       // rebuilds cleanly; 'zzz-bad' targets an existing spec whose current
-      // requirement has no scenarios, so its rebuilt content fails the
-      // validator only at the late rebuilt-validation pass (the prepare-time
-      // structure check does not catch missing scenarios).
-      const changeDir = createChange(storeRoot, 'two-spec-change', { deltaSpec: null });
+      // requirement has no scenarios. Canonical-aware change validation
+      // rejects that baseline before archive planning or mutation begins.
+      const changeDir = createChange(standaloneRoot, 'two-spec-change', { deltaSpec: null });
       for (const capability of ['aaa-good', 'zzz-bad']) {
         const specDir = path.join(changeDir, 'specs', capability);
         fs.mkdirSync(specDir, { recursive: true });
         fs.writeFileSync(path.join(specDir, 'spec.md'), VALID_DELTA_SPEC);
       }
-      const badTargetDir = path.join(storeRoot, 'rasen', 'specs', 'zzz-bad');
+      const badTargetDir = path.join(standaloneRoot, 'rasen', 'specs', 'zzz-bad');
       fs.mkdirSync(badTargetDir, { recursive: true });
       const badTargetContent =
         '# zzz-bad\n\n## Purpose\nLegacy.\n\n## Requirements\n\n### Requirement: Old rule SHALL hold\nThe system SHALL hold.\n';
       fs.writeFileSync(path.join(badTargetDir, 'spec.md'), badTargetContent);
 
-      const result = await runCLI(
-        ['archive', 'two-spec-change', '--store', 'team-context', '--json', '--yes'],
-        { cwd: appRepo, env }
-      );
+      const result = await runCLI(['archive', 'two-spec-change', '--json', '--yes'], {
+        cwd: standaloneRoot,
+        env,
+      });
       expect(result.exitCode).toBe(1);
       const json = parseJson(result);
       expect(json.archive).toBeNull();
       expect(json.status[0]).toEqual({
         severity: 'error',
-        code: 'archive_spec_validation_failed',
-        message: "Rebuilt spec for 'zzz-bad' failed validation. No files were changed.",
-        fix: 'Run rasen validate zzz-bad --store team-context after fixing the change deltas.',
+        code: 'archive_validation_failed',
+        message: "Validation failed for change 'two-spec-change'.",
+        fix: 'Run rasen validate two-spec-change for details, fix the errors, or rerun with --no-validate.',
       });
       expectBlockedPlanWithNoWrites(json);
       expect(json.plan.blockers).toEqual(
@@ -669,22 +774,22 @@ describe('store root selection for normal commands', () => {
       // "No files were changed" must be true: the good spec was not created
       // and the bad target is byte-identical.
       expect(
-        fs.existsSync(path.join(storeRoot, 'rasen', 'specs', 'aaa-good', 'spec.md'))
+        fs.existsSync(path.join(standaloneRoot, 'rasen', 'specs', 'aaa-good', 'spec.md'))
       ).toBe(false);
       expect(fs.readFileSync(path.join(badTargetDir, 'spec.md'), 'utf-8')).toBe(
         badTargetContent
       );
       expect(
-        fs.existsSync(path.join(storeRoot, 'rasen', 'changes', 'two-spec-change'))
+        fs.existsSync(path.join(standaloneRoot, 'rasen', 'changes', 'two-spec-change'))
       ).toBe(true);
     });
 
     it('reports spec-update failures as diagnostics without stdout prose', async () => {
-      createChange(storeRoot, 'modified-change', { deltaSpec: MODIFIED_ONLY_DELTA_SPEC });
+      createChange(standaloneRoot, 'modified-change', { deltaSpec: MODIFIED_ONLY_DELTA_SPEC });
 
       const result = await runCLI(
-        ['archive', 'modified-change', '--store', 'team-context', '--json', '--yes', '--no-validate'],
-        { cwd: appRepo, env }
+        ['archive', 'modified-change', '--json', '--yes', '--no-validate'],
+        { cwd: standaloneRoot, env }
       );
       expect(result.exitCode).toBe(1);
       expect(result.stdout.trim().startsWith('{')).toBe(true);
@@ -693,7 +798,7 @@ describe('store root selection for normal commands', () => {
       expect(json.status[0]).toEqual({
         severity: 'error',
         code: 'archive_spec_update_failed',
-        message: 'billing: target spec does not exist; only ADDED requirements are allowed for new specs. MODIFIED and RENAMED operations require an existing spec.',
+        message: 'billing: target spec does not exist; MODIFIED for "### Requirement: Billing SHALL work" requires an existing spec. Only ADDED requirements are allowed for new specs.',
         fix: 'Fix the change delta specs and rerun. No files were changed.',
       });
       expectBlockedPlanWithNoWrites(json);
@@ -701,22 +806,22 @@ describe('store root selection for normal commands', () => {
         expect.arrayContaining([
           expect.objectContaining({
             operation: 'spec',
-            code: 'archive_spec_update_failed',
+            code: 'spec_existing_target_required',
           }),
         ])
       );
       expect(
-        fs.existsSync(path.join(storeRoot, 'rasen', 'changes', 'modified-change'))
+        fs.existsSync(path.join(standaloneRoot, 'rasen', 'changes', 'modified-change'))
       ).toBe(true);
     });
 
     it('refuses incomplete tasks without --yes', async () => {
-      createChange(storeRoot, 'wip-change', { tasksDone: false });
+      createChange(standaloneRoot, 'wip-change', { tasksDone: false });
 
-      const result = await runCLI(
-        ['archive', 'wip-change', '--store', 'team-context', '--json'],
-        { cwd: appRepo, env }
-      );
+      const result = await runCLI(['archive', 'wip-change', '--json'], {
+        cwd: standaloneRoot,
+        env,
+      });
       expect(result.exitCode).toBe(1);
       const json = parseJson(result);
       expect(json.archive).toBeNull();
@@ -731,7 +836,7 @@ describe('store root selection for normal commands', () => {
         expect.arrayContaining([expect.objectContaining({ operation: 'tasks' })])
       );
       expect(
-        fs.existsSync(path.join(storeRoot, 'rasen', 'changes', 'wip-change'))
+        fs.existsSync(path.join(standaloneRoot, 'rasen', 'changes', 'wip-change'))
       ).toBe(true);
     });
   });
@@ -776,6 +881,41 @@ describe('store root selection for normal commands', () => {
       const help = await runCLI(['--help'], { cwd: localRepo, env });
       expect(help.stdout).not.toContain('Set checked-in Rasen metadata');
       expect(help.stdout).not.toMatch(/^\s*set\s/m);
+    });
+  });
+
+  describe('read-only root resolution', () => {
+    it('validates a copied project config without registering the copy', async () => {
+      const projectId = '11111111-1111-4111-8111-111111111111';
+      const ownerRoot = path.join(tempDir, 'project-owner');
+      createOpenSpecRoot(ownerRoot);
+      fs.writeFileSync(
+        path.join(ownerRoot, 'rasen', 'config.yaml'),
+        `schema: spec-driven\nprojectId: ${projectId}\n`
+      );
+      await registerProject(
+        { projectRoot: ownerRoot, projectId, mode: 'in-repo' },
+        { globalDataDir }
+      );
+
+      const copiedRoot = path.join(tempDir, 'project-copy');
+      createOpenSpecRoot(copiedRoot);
+      fs.writeFileSync(
+        path.join(copiedRoot, 'rasen', 'config.yaml'),
+        `schema: spec-driven\nprojectId: ${projectId}\n`
+      );
+      createChange(copiedRoot, 'copied-change');
+      const registryPath = getProjectRegistryPath({ globalDataDir });
+      const registryBefore = fs.readFileSync(registryPath, 'utf8');
+
+      const result = await runCLI(
+        ['validate', 'copied-change', '--json'],
+        { cwd: copiedRoot, env }
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(parseJson(result).items[0].valid).toBe(true);
+      expect(fs.readFileSync(registryPath, 'utf8')).toBe(registryBefore);
     });
   });
 

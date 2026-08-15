@@ -10,7 +10,10 @@ import {
 import { deriveSpaceFromCwd } from '../../src/core/root-selection.js';
 import { registerProject } from '../../src/core/project-registry.js';
 import { registerStore } from '../../src/core/store/registry.js';
-import { getStoreMetadataPath } from '../../src/core/store/foundation.js';
+import {
+  getStoreMetadataPath,
+  writeStoreMetadataState,
+} from '../../src/core/store/foundation.js';
 import { FileSystemUtils } from '../../src/utils/file-system.js';
 import { createOpenSpecRoot } from '../helpers/rasen-fixtures.js';
 
@@ -139,14 +142,12 @@ describe('planning-space selector (planning-space-addressing design D1/D2/D5)', 
 
     it('resolves a registered store by permanent identity, reporting its display name', async () => {
       const storeRoot = makePlanningRoot(tempDir, 'identified-store');
-      await registerStore({ id: 'identified', localPath: storeRoot, globalDataDir: dataDir });
-      // Registration records an identity; give this one a v2 metadata file so
-      // it has one to be addressed by.
       const uid = '2b7f4c1a-5d3e-4a91-8c0b-6e2f9d7a1c34';
-      fs.writeFileSync(
-        getStoreMetadataPath(storeRoot),
-        `version: 2\nuid: ${uid}\nid: identified\n`
-      );
+      // Register the permanent identity atomically with the checkout. Replacing
+      // metadata after registration would correctly make the registry and
+      // checkout disagree and must not be used as a positive identity fixture.
+      await writeStoreMetadataState(storeRoot, { version: 2, uid, id: 'identified' });
+      await registerStore({ id: 'identified', localPath: storeRoot, globalDataDir: dataDir });
 
       const result = await resolveSpaceSelector(`store:${uid}`);
 

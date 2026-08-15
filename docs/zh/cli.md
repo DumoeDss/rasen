@@ -270,6 +270,95 @@ rasen store doctor [id] [--json]
 
 doctor 仅用于诊断；它报告缺失的根、元数据不匹配和无效的本地注册表状态，但不修改 store。
 
+### `rasen store migrate-layout`（0.1.7 兼容桥）
+
+把旧式 flat Store 当前检出的一个 ref 转换为 layout v2。默认只预览；只有
+`--apply` 才会写入，命令不会 commit、fetch 或 push。
+
+```bash
+rasen store migrate-layout <store> --mapping rasen/migration-mapping.yaml --json
+rasen store migrate-layout <store> --mapping rasen/migration-mapping.yaml --apply --json
+rasen store migrate-layout <store> --status --json
+rasen store migrate-layout <store> --resume --json
+rasen store migrate-layout <store> --rollback --json
+rasen store migrate-layout <store> --retire-flat --json
+```
+
+mapping v1 保持原有的项目复制契约：相同输入仍产生完全相同的 plan-schema-v1
+规范字节和 plan id。mapping v2 要求显式区分项目 Change 与 Store Issue：
+
+```yaml
+version: 2
+defaultTargetLine: release-0-1
+targetLines:
+  release-0-1:
+    storeRef: refs/heads/main
+    projects:
+      scene-bridge:
+        codeRef: refs/heads/main
+changes:
+  render-worker:
+    kind: project-change
+    project: scene-bridge
+  release-coordinator:
+    kind: store-issue
+    issueId: release-coordinator
+    title: Coordinate the cross-project release
+    plan: rasen/migration-inputs/release-coordinator.yaml
+archive:
+  historical-coordinator:
+    kind: store-issue
+    issueId: historical-coordinator
+    title: Historical release coordination
+    state: resolved
+    reason: Operator declares the historical coordination concluded; acceptance is unproven.
+```
+
+Change 已记录的身份始终具有约束力。活跃的 `store-issue` 一律以 `open`
+导入，不能声明 reason；归档源必须显式声明 `open`、`resolved` 或
+`dropped`，终态必须带操作员理由，并记录 `acceptanceEvidence: unproven`。
+名称、文档内容、分支、cwd、归档位置和 commit 都不能推断所有权、状态或验收。
+
+可选的 Issue plan 输入必须位于 Store 内，被 Git 跟踪，并且 HEAD、index 与
+worktree 字节完全一致；文本必须是无 BOM 的严格 UTF-8。迁移专用的
+`sourceChange` 节点仍须声明 project 与 target line；规划会在同一不可变
+plan 中把它验证为唯一项目 Change，并且只序列化规范 `changeInstanceId`。
+不提供 plan 时不会虚构节点，预览会报告
+`no plan supplied; no nodes invented`，并给出普通后续命令：
+
+```bash
+rasen store issue plan <issue-id> --store <store> --from-file <path>
+```
+
+发布会先暂存并验证整个 ref，写入项目分区与生成的 Issue 根（不会复制旧
+coordinator 树），记录强类型 receipt，最后才翻转 `layoutVersion: 2`。
+flat 源仍在时，失败可用 `--resume` 继续或用 `--rollback` 回滚。确认发布
+commit 已安全保存后，`--retire-flat` 只删除 receipt 明列的旧路径；部分删除
+后可安全重试。receipt 把源 revision 明确标为 Store 规划来源，而不是成员代码
+commit：
+
+```bash
+git restore --source=<receipt.sourceRevision.headOid> --worktree -- <conversion.source.path>
+```
+
+恢复后将递归源 digest 与 `conversion.source.digest` 比对。迁移不会写成员代码
+仓库。
+
+retirement 后，普通的直接选择器 `rasen archive <old-active-alias>` 只有在当前
+ref 的一个 v2 receipt 唯一证明转换时，才报告
+`legacy_coordinator_became_issue` 与现有 `rasen store issue show` 命令。它不会
+把 archive 的 outcome、reason、token、commit、确认或验收翻译为 Issue 状态。
+归档源别名不会重定向，token 所有的 `--apply-plan`/`--abort-plan` 路径不会查询
+receipt，真实 Change 仍遵循普通终结规则（包括
+`finalization_outcome_required`）。
+
+这是边界明确的 **Rasen 0.1.7 兼容专用桥**：它只借助已经存在的最小 Issue
+record 与 Execution Plan v1 资源，帮助 flat Store coordinator 退役；它不表示
+后续 Issue-centered automation、Dispatch、Reconciliation、Acceptance、
+Delivery、Board 或 coordinator runtime 已提前实现。当受支持的 Store 不再需要
+flat-to-v2 迁移时，应整体移除此桥；只要已提交 receipt 仍是受支持证据，就保留
+强类型历史 receipt reader。
+
 ### 从项目引用 store
 
 项目仓库可以在 `rasen/config.yaml` 中声明其工作所依赖的 store：

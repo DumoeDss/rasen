@@ -21,6 +21,8 @@ interface ShowExecuteOptions {
   type?: string;
   noInteractive?: boolean;
   store?: string;
+  project?: string;
+  targetLine?: string;
   storePath?: string;
   [k: string]: any;
 }
@@ -77,26 +79,26 @@ export class ShowCommand {
   ): Promise<void> {
     const { select } = await import('@inquirer/prompts');
     if (type === 'change') {
-      const changes = await getActiveChangeIds(root.path);
+      const changes = await getActiveChangeIds(root.path, root.changesDir);
       if (changes.length === 0) {
         console.error('No changes found.');
         process.exitCode = 1;
         return;
       }
       const picked = await select<string>({ message: 'Pick a change', choices: changes.map(id => ({ name: id, value: id })) });
-      const cmd = new ChangeCommand(root.path);
+      const cmd = new ChangeCommand(root.path, root.changesDir);
       await cmd.show(picked, this.delegateOptions(root, options) as any);
       return;
     }
 
-    const specs = await getSpecIds(root.path);
+    const specs = await getSpecIds(root.path, root.specsDir);
     if (specs.length === 0) {
       console.error('No specs found.');
       process.exitCode = 1;
       return;
     }
     const picked = await select<string>({ message: 'Pick a spec', choices: specs.map(id => ({ name: id, value: id })) });
-    const cmd = new SpecCommand(root.path);
+    const cmd = new SpecCommand(root.path, root.specsDir);
     await cmd.show(picked, this.delegateOptions(root, options) as any);
   }
 
@@ -111,13 +113,16 @@ export class ShowCommand {
     let changes: string[] = [];
     let specs: string[] = [];
     if (params.typeOverride === 'change') {
-      changes = await getActiveChangeIds(root.path);
+      changes = await getActiveChangeIds(root.path, root.changesDir);
       isChange = changes.includes(itemName);
     } else if (params.typeOverride === 'spec') {
-      specs = await getSpecIds(root.path);
+      specs = await getSpecIds(root.path, root.specsDir);
       isSpec = specs.includes(itemName);
     } else {
-      [changes, specs] = await Promise.all([getActiveChangeIds(root.path), getSpecIds(root.path)]);
+      [changes, specs] = await Promise.all([
+        getActiveChangeIds(root.path, root.changesDir),
+        getSpecIds(root.path, root.specsDir),
+      ]);
       isChange = changes.includes(itemName);
       isSpec = specs.includes(itemName);
     }
@@ -173,11 +178,11 @@ export class ShowCommand {
 
     this.warnIrrelevantFlags(resolvedType, params.options);
     if (resolvedType === 'change') {
-      const cmd = new ChangeCommand(root.path);
+      const cmd = new ChangeCommand(root.path, root.changesDir);
       await cmd.show(itemName, this.delegateOptions(root, params.options) as any);
       return;
     }
-    const cmd = new SpecCommand(root.path);
+    const cmd = new SpecCommand(root.path, root.specsDir);
     await cmd.show(itemName, this.delegateOptions(root, params.options) as any);
   }
 

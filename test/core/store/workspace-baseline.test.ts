@@ -31,10 +31,7 @@ import * as path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { StoreError } from '../../../src/core/store/errors.js';
 import { StoreTargetLinesModule } from '../../../src/core/store/target-lines.js';
-import { planningMarkerPath, readBindingFact } from '../../../src/core/store/workspace/binding.js';
-import { probePlanningWorktree } from '../../../src/core/store/workspace/module.js';
 import { runCLI, type RunCLIResult } from '../../helpers/run-cli.js';
 import {
   createStoreWorkspaceFixture,
@@ -162,29 +159,7 @@ describe('workspace baseline: what this change preserved, and what it changed', 
 
   // ---- 1. the marker path still authorizes, unaided ----------------------
 
-  // DEFERRED (task 6.6): every case in this describe block drives `new change
-  // --target-line`, which does not exist as a CLI option on this branch
-  // (confirmed by reading src/cli/index.ts and by direct run: `error: unknown
-  // option '--target-line'`). It ships in upstream commit 3b050663, which is
-  // NOT an ancestor of dev/0.2.0 and belongs to the `store-planning-scope-routing`
-  // slice — out of S2's scope by design (see the module-level doc comment).
-  //
-  // Deferring the CASE is not deferring the BEHAVIOR: see the "deferred CLI
-  // surface: S2-scoped substitute coverage" describe block below, which
-  // drives the exact S2-owned functions these five cases exercise
-  // (`probePlanningWorktree`, `readBindingFact`, `completeChangeBinding`)
-  // directly, with a mapping comment on each case naming which test below
-  // substitutes for it. INBOUND ACCEPTANCE ITEM for the slice that ports
-  // `new change --target-line`: re-enable these five cases unmodified once
-  // that flag exists.
-  it.skip(
-    // SUBSTITUTE: workspace-pairing.test.ts "records the Change instance and
-    // says so when no execution side is known" drives the same hand-assembled,
-    // marker-only, no-execution-declared scenario through `completeChangeBinding`
-    // directly (a hand-seeded Change instance standing in for what `new change`
-    // would mint), and asserts the same outcome this case asserts via the CLI:
-    // bindingState stays 'prepared', no plan is required, no workspacePairId
-    // is invented.
+  it(
     'still accepts a hand-assembled marker-only planning worktree, with none of this change machinery',
     async () => {
       healthyMarker();
@@ -207,12 +182,7 @@ describe('workspace baseline: what this change preserved, and what it changed', 
     BASELINE_TIMEOUT_MS
   );
 
-  it.skip(
-    // SUBSTITUTE: the same workspace-pairing.test.ts case cited above asserts
-    // the index-repair-from-disk outcome directly: `completed.entry?.planning.root`
-    // equals the hand-assembled root, `changeInstanceId` is recorded, and
-    // `execution.root` stays '' rather than being invented — the same "every
-    // recorded fact was already true on disk" property this case asserts.
+  it(
     'indexes the hand-assembled pair on first use, from what is already true on disk',
     async () => {
       healthyMarker();
@@ -248,17 +218,7 @@ describe('workspace baseline: what this change preserved, and what it changed', 
 
   // ---- 2. what this change deliberately narrowed -------------------------
 
-  it.skip(
-    // SUBSTITUTE: "DEFERRED SUBSTITUTE: an under-declared marker fails closed
-    // through the reader S2 owns, never silently proceeds" below drives the
-    // SAME under-declared marker through `readBindingFact` directly. It
-    // deliberately does NOT claim to reproduce `planning_worktree_required`
-    // (that code is decided entirely by the deferred resolver, and reading
-    // binding.ts confirms S2's own reader throws a DIFFERENT code,
-    // `workspace_marker_conflict`, for this input — a genuine discrepancy
-    // recorded in that test's comment, not papered over). What it proves
-    // instead is the narrower, S2-owned invariant the CLI gap cannot remove:
-    // no path that reads an incomplete carrier ever treats it as evidence.
+  it(
     'now refuses a marker that does not declare the resolved project and line',
     async () => {
       // This is the tightening, stated rather than implied: marker PRESENCE was
@@ -284,12 +244,7 @@ describe('workspace baseline: what this change preserved, and what it changed', 
     BASELINE_TIMEOUT_MS
   );
 
-  it.skip(
-    // SUBSTITUTE: "DEFERRED SUBSTITUTE: probePlanningWorktree reports no
-    // storeRefOid when the target line ref does not resolve" below drives
-    // `probePlanningWorktree` directly at an unresolvable ref and asserts the
-    // same fact this case relies on: the ref does not resolve to a commit,
-    // reported as an absent `storeRefOid` rather than a guess or a throw.
+  it(
     'now refuses a marker whose target line names no commit in the Store',
     async () => {
       // The other half of the tightening: a marker may not authorize a line
@@ -318,12 +273,7 @@ describe('workspace baseline: what this change preserved, and what it changed', 
 
   // ---- 3. the integration checkout is still never authorized -------------
 
-  it.skip(
-    // SUBSTITUTE: "DEFERRED SUBSTITUTE: probePlanningWorktree reports
-    // linked:false for the Store integration checkout" below drives
-    // `probePlanningWorktree` directly at the integration checkout and
-    // asserts the exact fact the deferred resolver's refusal is built on:
-    // the integration checkout IS a worktree but is never a LINKED one.
+  it(
     'still refuses a project mutation from the Store integration checkout, by name',
     async () => {
       healthyMarker();
@@ -341,118 +291,6 @@ describe('workspace baseline: what this change preserved, and what it changed', 
     },
     BASELINE_TIMEOUT_MS
   );
-
-  // ---- deferred CLI surface: S2-scoped substitute coverage ---------------
-  //
-  // The five cases above are skipped because they all drive `new change
-  // --target-line`, a CLI option that does not exist on this branch (it ships
-  // in upstream commit 3b050663, owned by the `store-planning-scope-routing`
-  // slice, out of scope here). Per the portfolio ruling: deferring the CASE is
-  // acceptable, shipping the BEHAVIOR untested is not. The cases below drive
-  // the actual S2-owned functions the deferred CLI resolver is built on top
-  // of — `probePlanningWorktree` and `readBindingFact` (both in
-  // src/core/store/workspace/, both documented in module.ts as "the evidence
-  // the scope resolver's planningWorktreeVerified consumes instead of a
-  // marker file exists") — directly, bypassing only the missing flag.
-  describe('deferred CLI surface: S2-scoped substitute coverage', () => {
-    it(
-      'probePlanningWorktree reports no storeRefOid when the target line ref does not resolve',
-      async () => {
-        // Substitute for the skipped "now refuses a marker whose target line
-        // names no commit in the Store" above. No marker is even written here:
-        // `probePlanningWorktree` never reads the marker (module.ts's own
-        // comment: "the resolver already has [the marker's declared scope] in
-        // hand" before calling this), it only resolves `storeRef` against live
-        // Git — so this isolates exactly the fact in question.
-        const probe = await probePlanningWorktree(
-          { planningRoot, storeRef: 'refs/heads/never-created' },
-          f.dependencies
-        );
-        expect(probe.isWorktree).toBe(true);
-        expect(probe.linked).toBe(true);
-        expect(probe.storeRefOid).toBeUndefined();
-      },
-      BASELINE_TIMEOUT_MS
-    );
-
-    it(
-      'probePlanningWorktree resolves storeRefOid to the real commit when the ref DOES exist',
-      async () => {
-        // The negative case above is only meaningful beside this positive one:
-        // proves the function is not simply always-undefined.
-        const oid = f.git(f.storeRoot, ['rev-parse', 'refs/heads/release/0.2']).trim();
-        const probe = await probePlanningWorktree(
-          { planningRoot, storeRef: 'refs/heads/release/0.2' },
-          f.dependencies
-        );
-        expect(probe.storeRefOid).toBe(oid);
-      },
-      BASELINE_TIMEOUT_MS
-    );
-
-    it(
-      'probePlanningWorktree reports linked:false for the Store integration checkout',
-      async () => {
-        // Substitute for the skipped "still refuses a project mutation from
-        // the Store integration checkout, by name" above. The integration
-        // checkout IS a worktree (the main one) but is never a LINKED one —
-        // exactly the fact the deferred resolver's refusal is built on.
-        const probe = await probePlanningWorktree(
-          { planningRoot: f.storeRoot },
-          f.dependencies
-        );
-        expect(probe.isWorktree).toBe(true);
-        expect(probe.linked).toBe(false);
-      },
-      BASELINE_TIMEOUT_MS
-    );
-
-    it(
-      'probePlanningWorktree reports linked:true for a genuine linked planning worktree',
-      async () => {
-        // The positive counterpart: the hand-assembled planning worktree this
-        // whole suite prepares in beforeEach IS linked, so the false above is
-        // not a function that always answers false.
-        const probe = await probePlanningWorktree({ planningRoot }, f.dependencies);
-        expect(probe.isWorktree).toBe(true);
-        expect(probe.linked).toBe(true);
-      },
-      BASELINE_TIMEOUT_MS
-    );
-
-    it(
-      'DEFERRED SUBSTITUTE: an under-declared marker fails closed through the reader S2 owns, never silently proceeds',
-      async () => {
-        // Substitute for the skipped "now refuses a marker that does not
-        // declare the resolved project and line" above — with an honest
-        // caveat. That case asserts the CLI-level code `planning_worktree_required`,
-        // decided entirely by the deferred resolver. Reading binding.ts
-        // (parseBindingFact) confirms S2's OWN reader does not return that
-        // code for this input: it throws `workspace_marker_conflict`, the same
-        // code used for a marker that actively CONTRADICTS the resolved scope,
-        // not a distinct "declares nothing" code. That is a genuine difference
-        // from the code name the skipped case names, recorded here rather than
-        // papered over. What this test proves is the invariant that survives
-        // regardless of which code names it: an incomplete carrier is REFUSED,
-        // never silently accepted as if the missing fields were absent-but-fine.
-        writeMarker({ storeUid: f.storeUid, storeId: f.storeId });
-        const markerPath = planningMarkerPath(planningRoot);
-        const before = fs.readFileSync(markerPath);
-
-        const error = await readBindingFact(f.dependencies, markerPath).catch(
-          (raised: unknown) => raised
-        );
-
-        expect(error).toBeInstanceOf(StoreError);
-        expect((error as StoreError).diagnostic.code).toBe('workspace_marker_conflict');
-        expect((error as StoreError).diagnostic.message).toContain('projectId');
-        expect((error as StoreError).diagnostic.message).toContain('targetLineId');
-        // The refusal wrote nothing: the marker is untouched.
-        expect(fs.readFileSync(markerPath).equals(before)).toBe(true);
-      },
-      BASELINE_TIMEOUT_MS
-    );
-  });
 
   // ---- 4. the target-line writer, as it is NOW ---------------------------
 
@@ -514,15 +352,10 @@ describe('workspace baseline: what this change preserved, and what it changed', 
     };
     walk(srcRoot);
 
-    // Upstream (0.1.7) numbers this alongside a sibling "Child 3" layout
-    // migration that already existed there and wrote the catalog too. In
-    // this repo's re-decomposition (store-v2-foundation), that migration is
-    // `store-issue-resources` (S3) — explicitly out of scope for this change
-    // (design carve-out: `layout-migration/` is untouched here) and not yet
-    // implemented in this tree. Until S3 lands, this change's own authoring
-    // surface (`add` / `set-ref`) is the ONLY writer; S3 must extend this
-    // list with its own writer when it adds one, not silently satisfy it.
     expect(callers.sort()).toEqual([
+      // Child 3's layout migration, which writes the catalogs named by the
+      // committed mapping file. This was the ONLY writer before this change.
+      'src/core/store/layout-migration/plan.ts x1',
       // This change's explicit authoring surface: `add` and `set-ref`.
       'src/core/store/target-lines.ts x2',
     ]);

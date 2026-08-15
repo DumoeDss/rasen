@@ -1,5 +1,27 @@
 {
   "locale": "ja",
+  "archiveAbort": {
+    "optionConflict": "--abort-plan は、change 名、または --yes と --json 以外の archive オプションと同時に指定できません。",
+    "confirmationRequired": "アーカイブトランザクションを中止するには明示的な確認が必要です。",
+    "confirmationFix": "'rasen archive --abort-plan {token} --yes' を再実行してください。",
+    "applyAborted": "このアーカイブ計画は中止済みのため、適用できません。",
+    "aborted": "アーカイブ計画 {transactionId} を中止しました。永続化済みのアーカイブ変更は取り消していません。",
+    "alreadyAborted": "アーカイブ計画 {transactionId} はすでに中止済みです。追加の変更は不要でした。",
+    "associationPending": "Store ワークスペースの関連付けは保留中のままです。",
+    "blocked": "アーカイブ計画 {transactionId} は中止されませんでした。",
+    "blocker": "ブロッカー {code}: {message}（{path}）",
+    "effectivePhase": "有効なフェーズ: {phase}",
+    "effectivePhaseUnknown": "未確定",
+    "retainedPath": "保持されたパス: {path}",
+    "retainedPathsNone": "保持されたパス: 報告なし",
+    "manualRecoveryAction": "手動復旧: {action}",
+    "abortAction": "中止: {action}",
+    "recoveryAction": "復旧: {action}"
+  },
+  "ompProjectContext": {
+  "nestedInstallCaptureWarning": "{installDir} に Oh My Pi の設定が入ったため、Oh My Pi はプロジェクト指示と常時適用ルールを上位ディレクトリではなくこの場所から読み込みます。次のファイルは読み込まれなくなります：{files}",
+  "nestedInstallCaptureFix": "読み込みを維持するには、{boundary} にインストールするか、上記のファイルを {installDir} にコピーしてください。インストール済みスキルには影響しません（Oh My Pi はスキルを全上位ディレクトリから探索します）。"
+  },
   "bootstrap": {
     "headingProject": "{path} のプロジェクトに対する bootstrap {mode}",
     "headingStore": "{path} にある store {store} に対する bootstrap {mode}",
@@ -1260,6 +1282,9 @@
         "list": {
           "description": "項目を一覧表示します（既定は変更、--specsで仕様）",
           "options": {
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
+            },
             "specs": {
               "description": "変更ではなく仕様を一覧表示します"
             },
@@ -1289,6 +1314,9 @@
         "validate": {
           "description": "変更と仕様を検証します",
           "options": {
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
+            },
             "all": {
               "description": "すべての変更と仕様を検証します"
             },
@@ -1327,6 +1355,9 @@
         "show": {
           "description": "変更または仕様を表示します",
           "options": {
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
+            },
             "json": {
               "description": "JSONで出力します"
             },
@@ -1397,13 +1428,13 @@
               "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
             },
             "project": {
-              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+              "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+            },
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
             },
             "keep-ephemera": {
               "description": "完全な安全検査を維持しながら、すべての ephemera ファイルを保持します"
-            },
-            "no-whitespace-check": {
-              "description": "CI が拒否する成果物のアーカイブを止める空白事前チェックをスキップする"
             },
             "dry-run": {
               "description": "計画されたすべてのアーカイブ操作をプレビューし、何も実行しません"
@@ -1414,11 +1445,29 @@
             "apply-plan": {
               "description": "再計画せず、保存済みトークンの正確な計画を適用または再開します"
             },
+            "abort-plan": {
+              "description": "永続的な変更境界を越える前に、保存済みトークンの正確なアーカイブ計画を中止します"
+            },
             "intent-template": {
               "description": "ファイルを変更せずに、完全なアーカイブ意図テンプレートを JSON で出力します"
             },
             "intent-file": {
               "description": "厳密に検証された完全なアーカイブ意図を指定ファイルから読み込みます"
+            },
+            "outcome": {
+              "description": "Store v2 専用: 明示的に宣言する唯一の終了状態 (landed | superseded | cancelled | abandoned)。Store v2 では必須で、既定値はありません"
+            },
+            "reason": {
+              "description": "Store v2 専用: 変更が終了した理由。landed 以外のすべての結果で必須で、landed では拒否されます"
+            },
+            "by": {
+              "description": "Store v2 専用: superseded が指名する後継 change instance id。コミット済みのスコープ証拠で検証され、エイリアスでは解決されません"
+            },
+            "by-target-line": {
+              "description": "Store v2 専用: 後継検索を 1 つの target line に絞ります。検証の代替にはなりません"
+            },
+            "commit": {
+              "description": "Store v2 専用: landed 証明の候補コミット。証明を回避するものではありません"
             }
           },
           "commands": {
@@ -1427,6 +1476,9 @@
               "options": {
                 "to": {
                   "description": "移動先: in-repo または store（external は廃止）"
+                },
+                "target-line": {
+                  "description": "レイアウト v2 の store でアーカイブ項目を配置する安定ターゲットライン"
                 },
                 "dry-run": {
                   "description": "移動計画を表示し、何も変更しません"
@@ -1444,6 +1496,9 @@
         "status": {
           "description": "変更に含まれる成果物の完了状態を表示します",
           "options": {
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
+            },
             "change": {
               "description": "状態を表示する変更名です"
             },
@@ -1464,6 +1519,9 @@
         "instructions": {
           "description": "成果物作成またはタスク実装用の詳細な指示を出力します",
           "options": {
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
+            },
             "change": {
               "description": "変更名です"
             },
@@ -1506,6 +1564,9 @@
             "change": {
               "description": "新しい変更ディレクトリを作成します",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "description": {
                   "description": "README.mdへ追加する説明です"
                 },
@@ -1650,6 +1711,41 @@
                 }
               }
             },
+            "migrate-layout": {
+              "description": "レガシーなフラット store を計画レイアウト v2 に移行する（常に全項目を先にプレビュー）",
+              "options": {
+                "mapping": {
+                  "description": "store ワークツリー内のコミット済みマッピングファイル。所有者不明・共有 spec・設計ドキュメント・ターゲットラインを明示的に解決する"
+                },
+                "default-target-line": {
+                  "description": "自身のターゲットラインを宣言しない項目に適用するターゲットライン。推測は一切行わない"
+                },
+                "include-untracked": {
+                  "description": "移動対象ツリー内の未追跡ファイルを承認する（Git では復元できない）"
+                },
+                "dry-run": {
+                  "description": "完全な項目一覧をプレビューし、何も変更しない（既定）"
+                },
+                "apply": {
+                  "description": "プレビュー済みの計画をステージ・検証・公開する"
+                },
+                "status": {
+                  "description": "この store とリファレンスに記録された移行実行のフェーズを報告する"
+                },
+                "resume": {
+                  "description": "中断した実行を記録済みフェーズから再開する"
+                },
+                "rollback": {
+                  "description": "その実行が作成したパスのみを削除し、以前の store メタデータを復元する"
+                },
+                "retire-flat": {
+                  "description": "公開完了後、別ステップとしてフラットな計画ツリーを削除する"
+                },
+                "json": {
+                  "description": "JSON で出力"
+                }
+              }
+            },
             "adopt": {
               "description": "リポジトリ内プロジェクトの計画内容をストアへ移行し、リポジトリをポインターに変換します",
               "options": {
@@ -1658,6 +1754,9 @@
                 },
                 "archive": {
                   "description": "アーカイブの扱い: move（デフォルト）または leave"
+                },
+                "target-line": {
+                  "description": "レイアウト v2 の store でアーカイブを配置する安定ターゲットライン"
                 },
                 "dry-run": {
                   "description": "移動計画を表示し、何も変更しません"
@@ -1972,6 +2071,12 @@
                 "target-line": {
                   "description": "このターゲットラインに限定します（繰り返し指定可）"
                 },
+                "outcome": {
+                  "description": "アーカイブ済みエントリをこれらの確定結果に絞り込む"
+                },
+                "state": {
+                  "description": "active または archived"
+                },
                 "json": {
                   "description": "JSON で出力"
                 }
@@ -1993,6 +2098,9 @@
         "context": {
           "description": "解決したRasen rootの作業コンテキストを表示します",
           "options": {
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
+            },
             "json": {
               "description": "JSONで出力します"
             },
@@ -2039,6 +2147,9 @@
         "doctor": {
           "description": "解決したRasen rootの関係性の状態を報告します",
           "options": {
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
+            },
             "json": {
               "description": "JSONで出力します"
             },
@@ -2746,6 +2857,9 @@
             "list": {
               "description": "利用可能なパイプラインを一覧表示します（project > user > package）",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "json": {
                   "description": "JSONで出力します"
                 },
@@ -2760,6 +2874,9 @@
             "show": {
               "description": "パイプラインstageのDAGとbuild順を表示します",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "for-execution": {
                   "description": "実行可能なDAGを返す前に有効なプロファイルのスキルを検証します"
                 },
@@ -2792,6 +2909,9 @@
             "agents": {
               "description": "パイプラインのrole別Claude/Codex runtimeを表示・設定します",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "planner": {
                   "description": "plannerのruntimeを設定します: claude または codex"
                 },
@@ -2821,6 +2941,9 @@
             "classify": {
               "description": "タスクに合うパイプラインを提案します（キーワードによる参考判定）",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "json": {
                   "description": "JSONで出力します"
                 },
@@ -2835,6 +2958,9 @@
             "resume": {
               "description": "変更のパイプライン実行状態（次/残りのstage）を表示します",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "json": {
                   "description": "JSONで出力します"
                 },
@@ -2849,6 +2975,9 @@
             "init": {
               "description": "インストールせず最小パイプラインドラフトを作成します",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "output": {
                   "description": "作成する空のパイプラインドラフトディレクトリです"
                 },
@@ -2866,6 +2995,9 @@
             "validate": {
               "description": "インストール済みパイプライン、ドラフトディレクトリ、または.rasenpkgを検証します",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "json": {
                   "description": "JSONで出力します"
                 },
@@ -2880,6 +3012,9 @@
             "import": {
               "description": "パイプラインの.rasenpkgを検証してatomicにインストールします",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "force": {
                   "description": "同名のインストール済みパイプラインを上書きします"
                 },
@@ -2897,6 +3032,9 @@
             "export": {
               "description": "ユーザーパイプラインを.rasenpkgとしてexportします",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "force": {
                   "description": "既存の出力先ファイルを置き換えます"
                 },
@@ -2914,6 +3052,9 @@
             "delete": {
               "description": "参照されていないユーザーパイプラインを削除します",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "yes": {
                   "description": "確認を省略します"
                 },
@@ -2934,6 +3075,9 @@
             "save": {
               "description": "パイプライン定義ファイルを検証し、ユーザーパイプラインとしてインストールします",
               "options": {
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
+                },
                 "from": {
                   "description": "JSONまたはYAML形式のパイプライン定義へのパス"
                 },
@@ -3100,6 +3244,9 @@
                 },
                 "project": {
                   "description": "登録済みプロジェクトをすべての移行ルートとして選択"
+                },
+                "target-line": {
+                  "description": "選択したproject planning scopeの安定したtarget-line ID"
                 },
                 "json": {
                   "description": "JSONで出力します（非対話、実行には--yesが必要）"

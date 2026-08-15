@@ -185,7 +185,10 @@ export class ValidateCommand {
     if (choice === 'pipelines') return this.runBulkValidation(root, { changes: false, specs: false, pipelines: true }, opts);
 
     // one
-    const [changes, specs] = await Promise.all([this.listChangeIds(root), getSpecIds(root.path)]);
+    const [changes, specs] = await Promise.all([
+      this.listChangeIds(root),
+      getSpecIds(root.path, root.specsDir),
+    ]);
     const pipelines = listPipelines(root.path);
     const items: { name: string; value: { type: ItemType; id: string } }[] = [];
     items.push(...changes.map(id => ({ name: `change/${id}`, value: { type: 'change' as const, id } })));
@@ -217,7 +220,10 @@ export class ValidateCommand {
       return;
     }
 
-    const [changes, specs] = await Promise.all([this.listChangeIds(root), getSpecIds(root.path)]);
+    const [changes, specs] = await Promise.all([
+      this.listChangeIds(root),
+      getSpecIds(root.path, root.specsDir),
+    ]);
     const pipelines = listPipelines(root.path);
     const isChange = changes.includes(itemName);
     const isSpec = specs.includes(itemName);
@@ -351,7 +357,7 @@ export class ValidateCommand {
     const spinner = !opts.json && !opts.noInteractive ? ora('Validating...').start() : undefined;
     const [changeIds, specIds] = await Promise.all([
       scope.changes ? this.listChangeIds(root) : Promise.resolve<string[]>([]),
-      scope.specs ? getSpecIds(root.path) : Promise.resolve<string[]>([]),
+      scope.specs ? getSpecIds(root.path, root.specsDir) : Promise.resolve<string[]>([]),
     ]);
     const pipelineIds = scope.pipelines ? listPipelines(root.path) : [];
 

@@ -128,9 +128,7 @@ export function issueLockKey(input: {
 
 export function issueLockFileName(key: IssueLockKey): string {
   const digest = createHash('sha256')
-    .update(
-      canonicalBytes({ domain: 'issue-lock/v1', kind: key.kind, material: key.material })
-    )
+    .update(issueLockCanonicalBytes(key))
     .digest('hex');
   return `${key.kind}-${digest}.lock`;
 }
@@ -144,6 +142,7 @@ export function issueLockPath(
 
 interface HeldIssueLocks {
   readonly held: boolean;
+  readonly keys: readonly IssueLockKey[];
 }
 
 const heldIssue = new AsyncLocalStorage<HeldIssueLocks>();
@@ -151,6 +150,16 @@ const heldIssue = new AsyncLocalStorage<HeldIssueLocks>();
 /** Whether this async context currently holds the issue lock. */
 export function issueLockHeld(): boolean {
   return heldIssue.getStore()?.held === true;
+}
+
+/** Canonical domain bytes used both for lock filenames and batch ordering. */
+export function issueLockCanonicalBytes(key: IssueLockKey): Buffer {
+  return canonicalBytes({ domain: 'issue-lock/v1', kind: key.kind, material: key.material });
+}
+
+/** The canonical batch held by the current async publication context. */
+export function heldIssueLockKeys(): readonly IssueLockKey[] {
+  return heldIssue.getStore()?.keys ?? [];
 }
 
 /** Every lock kind this async context holds, in acquisition order. */
@@ -223,6 +232,12 @@ function lockErrorFor(
 export interface IssueLockOptions {
   readonly deadlineMs?: number;
   readonly pollMs?: number;
+  /** Internal deterministic-observation seam used by Store migration tests. */
+  readonly onAcquired?: (
+    key: IssueLockKey,
+    index: number,
+    total: number
+  ) => Promise<void>;
 }
 
 /** Takes the issue key and runs `fn` under it. Released even on failure. */
@@ -241,8 +256,55 @@ export async function withIssueLock<T>(
     ...(options.pollMs === undefined ? {} : { pollMs: options.pollMs }),
   });
   try {
-    return await heldIssue.run({ held: true }, fn);
+    return await heldIssue.run({ held: true, keys: [key] }, fn);
   } finally {
     await releaseOwnerAwareFileLock(handle);
+  }
+}
+
+
+/**
+ * Acquires one complete migration Issue batch in canonical byte order.
+ * Partial acquisition and callback failure both release exactly once in
+ * reverse order.  The layout module supplies already constructed normal Issue
+ * keys, so this remains the sole path/holder/stale-owner implementation.
+ */
+export async function withIssueLockBatch<T>(
+  coordination: WorkspaceCoordination,
+  inputKeys: readonly IssueLockKey[],
+  fn: () => Promise<T>,
+  options: IssueLockOptions = {}
+): Promise<T> {
+  assertIssueAcquisitionOrder();
+  const byBytes = new Map<string, IssueLockKey>();
+  for (const key of inputKeys) {
+    if (key.kind !== 'issue') {
+      throw new Error(`Issue batch contains non-issue key '${String(key.kind)}'.`);
+    }
+    const bytes = issueLockCanonicalBytes(key);
+    byBytes.set(bytes.toString('hex'), key);
+  }
+  const keys = [...byBytes.values()].sort((left, right) =>
+    Buffer.compare(issueLockCanonicalBytes(left), issueLockCanonicalBytes(right))
+  );
+  const handles: Awaited<ReturnType<typeof acquireOwnerAwareFileLock>>[] = [];
+  try {
+    for (const key of keys) {
+      handles.push(
+        await acquireOwnerAwareFileLock({
+          lockPath: issueLockPath(coordination, key),
+          errorFor: lockErrorFor(key),
+          holder: key.label,
+          ...(options.deadlineMs === undefined ? {} : { deadlineMs: options.deadlineMs }),
+          ...(options.pollMs === undefined ? {} : { pollMs: options.pollMs }),
+        })
+      );
+      await options.onAcquired?.(key, handles.length - 1, keys.length);
+    }
+    return await heldIssue.run({ held: true, keys: Object.freeze(keys) }, fn);
+  } finally {
+    for (const handle of [...handles].reverse()) {
+      await releaseOwnerAwareFileLock(handle);
+    }
   }
 }

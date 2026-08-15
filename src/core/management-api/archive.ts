@@ -59,6 +59,7 @@ export async function handleArchive(
     const ref = parseArchivedRef(dated);
     if (!ref) continue;
     const archiveChangesDir = resolveArchivedChangeDir(archiveDir, home, ref.dated);
+    if (archiveChangesDir === null) continue;
     const taskProgress = await getTaskProgressForChange(archiveChangesDir, ref.dated, root);
     const portfolio = portfolioOf(ref.name, containers);
     changes.push({

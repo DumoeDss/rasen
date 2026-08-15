@@ -65,6 +65,17 @@ import {
 } from './identity-diagnostics.js';
 import type { ResolvedStoreRef } from './identity-types.js';
 import { inspectRegisteredStore } from './inspection.js';
+import { assertStoreLayoutForWrite, readStoreLayoutState } from './layout-write-guard.js';
+import {
+  listStoreMembership,
+  readStoreMembership,
+  writeStoreProjectCatalog,
+  type StoreMembershipEntry,
+} from './membership-layout.js';
+import {
+  serializeStoreProjectCatalogV2,
+  type StoreProjectCatalogV2,
+} from './planning-catalogs.js';
 import {
   getAdoptionsManifestPath,
   readAdoptionsManifest,
@@ -75,7 +86,6 @@ import {
 import {
   assertRecordableProjectIdentity,
   getStoreProjectRecordPath,
-  listStoreProjectRecords,
   mergeStoreProjectRoles,
   normalizeProjectIdentity,
   projectIdentityDiagnostic,
@@ -91,7 +101,19 @@ import { assertCredentialFreeRemote } from './remote.js';
 // Provider shape
 // -----------------------------------------------------------------------------
 
-export type MembershipProvenance = 'v2-record' | 'legacy-reference' | 'legacy-adoption';
+/**
+ * Which source answered. `project-catalog` is the layout v2 project catalog,
+ * `v2-record` the second-generation per-project membership record a legacy flat
+ * Store carries, and the two `legacy-*` values the pre-record sources. The two
+ * record-family values are kept apart because a caller that converts data
+ * FORWARD (`store migrate-membership`) must not treat a catalog as something it
+ * can rewrite into a record.
+ */
+export type MembershipProvenance =
+  | 'project-catalog'
+  | 'v2-record'
+  | 'legacy-reference'
+  | 'legacy-adoption';
 
 export interface StoreMembershipRecord {
   /** The Store's permanent identity; absent only for a legacy-identity Store. */
@@ -258,6 +280,15 @@ function describeLegacySources(fromAdoption: boolean, fromReference: boolean): s
  * instructions), and the reported roles say they were inferred. Provenance
  * names the source that supplied the entry's details, so it never has to
  * pretend one source said something the other did.
+ *
+ * The record family is read through `listStoreMembership`, which dispatches on
+ * the Store's DECLARED planning layout (spec `store-project-membership`, "The
+ * record schema follows the declared layout"). Reading the v1 parser directly
+ * made a migrated Store report zero members and two `invalid_store_project_record`
+ * errors against the catalogs the migration had just written — and this is the
+ * most widely consumed reader in the file, so that answer reached `store doctor`,
+ * the management API's space listing and session launch, learned-skill
+ * authority, and bootstrap.
  */
 export async function listStoreMembers(
   store: ResolvedStoreRef,
@@ -266,11 +297,11 @@ export async function listStoreMembers(
   const entries = await readStoreEntries(options);
   const label = membershipStoreLabel(store, entries);
 
-  const listing = await listStoreProjectRecords(store.root);
+  const listing = await listStoreMembership(store.root, label.selector);
   const diagnostics: StoreDiagnostic[] = [...listing.diagnostics];
 
-  const members: StoreMembershipRecord[] = listing.records.map((record) =>
-    fromStoreProjectRecord(store, record)
+  const members: StoreMembershipRecord[] = listing.entries.map((entry) =>
+    fromStoreMembershipEntry(store, entry)
   );
   const seen = new Set(members.map((member) => member.projectId));
 
@@ -367,9 +398,44 @@ function fromStoreProjectRecord(
 }
 
 /**
+ * One member file, in whichever schema the Store's declared layout selects.
+ *
+ * A v2 project catalog carries no adopted spec/change name lists — the
+ * partition IS the ownership record in layout v2 — so `adoption` is absent
+ * rather than synthesized, and the binding stays inside the catalog where a
+ * caller that needs it reads it through `readStoreMembership`. Membership and
+ * planning binding are different questions (design D10) and this provider
+ * answers only the first.
+ */
+function fromStoreMembershipEntry(
+  store: ResolvedStoreRef,
+  entry: StoreMembershipEntry
+): StoreMembershipRecord {
+  if (entry.layout === 1) return fromStoreProjectRecord(store, entry.record);
+  const catalog = entry.catalog;
+  return {
+    ...(store.uid !== undefined ? { storeUid: store.uid } : {}),
+    storeId: store.id,
+    projectId: catalog.projectId,
+    ...(catalog.id !== undefined ? { id: catalog.id } : {}),
+    ...(catalog.remote !== undefined ? { remote: catalog.remote } : {}),
+    ...(catalog.knowledgeBundle !== undefined
+      ? { knowledgeBundle: catalog.knowledgeBundle }
+      : {}),
+    roles: { ...catalog.roles },
+    provenance: 'project-catalog',
+    diagnostics: [],
+  };
+}
+
+/**
  * This Store's membership answer for ONE project, or null when it records
  * none. Same precedence and the same normalization as `listStoreMembers` — it
  * is the same answer, narrowed, never a second implementation of it.
+ *
+ * The direct read dispatches on the declared layout for the same reason
+ * `listStoreMembers` does: reading a layout v2 catalog through the v1 parser
+ * answers "not a member" for every project a migrated Store owns.
  */
 export async function resolveProjectMembership(
   store: ResolvedStoreRef,
@@ -377,9 +443,12 @@ export async function resolveProjectMembership(
   options: StorePathOptions = {}
 ): Promise<StoreMembershipRecord | null> {
   const normalized = normalizeProjectIdentity(projectId);
-  const direct = await readStoreProjectRecord(store.root, normalized).catch(() => null);
-  if (direct?.record) {
-    return { ...fromStoreProjectRecord(store, direct.record), diagnostics: direct.diagnostics };
+  const direct = await readStoreMembership(store.root, normalized, store.id).catch(() => null);
+  if (direct?.entry) {
+    return {
+      ...fromStoreMembershipEntry(store, direct.entry),
+      diagnostics: [...direct.diagnostics],
+    };
   }
 
   const listing = await listStoreMembers(store, options);
@@ -649,10 +718,7 @@ export async function planMembershipMutation(
   const projectId = assertRecordableProjectIdentity(input.projectId);
   const base = await readBaseCommits(input.projectRoot, input.store.root);
 
-  const existing = await readStoreProjectRecord(input.store.root, projectId);
-  const nextRecord = composeRecord(existing.record, projectId, input);
-  const storeWrites =
-    existing.record && recordsEqual(existing.record, nextRecord) ? [] : [existing.filePath];
+  const storeWrites = await plannedMembershipWrites(projectId, input);
 
   const hint = membershipHintFor(input.store, input.storeRemote);
   const config = readProjectConfig(input.projectRoot);
@@ -727,6 +793,62 @@ function recordsEqual(left: StoreProjectRecord, right: StoreProjectRecord): bool
 }
 
 /**
+ * The v2 project catalog a membership mutation produces in a Store declaring
+ * layout version 2 (spec `store-project-membership`, "The record schema follows
+ * the declared layout").
+ *
+ * Roles OR-widen exactly as they do for the legacy record. The planning binding
+ * is deliberately NOT a membership fact: an existing binding is preserved
+ * verbatim, adoption evidence supplied by the caller derives one, and otherwise
+ * it stays `unbound` — membership alone never binds (design D10).
+ */
+function composeCatalog(
+  existing: StoreProjectCatalogV2 | undefined,
+  projectId: string,
+  input: MembershipMutationInput
+): StoreProjectCatalogV2 {
+  const id = input.projectDisplayId ?? existing?.id;
+  const remote = input.projectRemote ?? existing?.remote;
+  const knowledgeBundle = existing?.knowledgeBundle;
+  const planningBinding =
+    existing?.planningBinding.state === 'bound'
+      ? existing.planningBinding
+      : input.adoption !== undefined
+        ? { state: 'bound' as const, boundAt: new Date(input.adoption.adoptedAt).toISOString() }
+        : { state: 'unbound' as const };
+
+  return {
+    version: 2,
+    projectId,
+    ...(id !== undefined ? { id } : {}),
+    ...(remote !== undefined ? { remote } : {}),
+    ...(knowledgeBundle !== undefined ? { knowledgeBundle } : {}),
+    roles: mergeStoreProjectRoles(existing?.roles, input.roles),
+    planningBinding,
+  } as StoreProjectCatalogV2;
+}
+
+function catalogsEqual(left: StoreProjectCatalogV2, right: StoreProjectCatalogV2): boolean {
+  return serializeStoreProjectCatalogV2(left) === serializeStoreProjectCatalogV2(right);
+}
+
+/** The Store-side file this mutation would rewrite, in the declared layout. */
+async function plannedMembershipWrites(
+  projectId: string,
+  input: MembershipMutationInput
+): Promise<string[]> {
+  if ((await readStoreLayoutState(input.store.root)).declared === 2) {
+    const read = await readStoreMembership(input.store.root, projectId, input.store.id);
+    const previous = read.entry?.layout === 2 ? read.entry.catalog : undefined;
+    const next = composeCatalog(previous, projectId, input);
+    return previous && catalogsEqual(previous, next) ? [] : [read.filePath];
+  }
+  const existing = await readStoreProjectRecord(input.store.root, projectId);
+  const nextRecord = composeRecord(existing.record, projectId, input);
+  return existing.record && recordsEqual(existing.record, nextRecord) ? [] : [existing.filePath];
+}
+
+/**
  * Lock-error factory for the Store authority-record mutation. Same shape as
  * the registry / import lock factories: a create-failure reports a filesystem
  * problem with a "check permissions" fix; a timeout reports a busy peer with
@@ -742,6 +864,15 @@ export const membershipRecordLockError = makeLockErrorFactory({
 /**
  * Writes the Store's authority record and verifies it by reading it back.
  *
+ * The SCHEMA follows the Store's declared planning layout, never the file's own
+ * contents: a Store declaring layout version 2 records a v2 project catalog and
+ * every other Store records the legacy membership record (spec
+ * `store-project-membership`). Writing the legacy schema into a v2 Store would
+ * plant the very `store_layout_legacy_membership_record` state the layout
+ * migration exists to remove — and, worse, the next writer reads the mismatched
+ * file as ABSENT, so the roles, remote and binding timestamp it carried are
+ * silently dropped rather than carried over.
+ *
  * Identity is validated and the remote is checked BEFORE anything is written,
  * so a refused mutation leaves no partial state — the same order child A's
  * registration uses.
@@ -754,7 +885,7 @@ export const membershipRecordLockError = makeLockErrorFactory({
  */
 export async function writeMembershipRecord(
   input: MembershipMutationInput
-): Promise<{ record: StoreProjectRecord; filePath: string; changed: boolean }> {
+): Promise<{ entry: StoreMembershipEntry; filePath: string; changed: boolean }> {
   const projectId = assertRecordableProjectIdentity(input.projectId);
   assertCredentialFreeRemote(input.projectRemote, 'store.metadata');
 
@@ -769,11 +900,35 @@ export async function writeMembershipRecord(
       holder: 'store-membership-record',
     },
     async () => {
+      // The one precondition in front of every Store planning mutation (task
+      // 9.1, design D12). Asserted INSIDE the lock, beside the record read it
+      // dispatches, so two things hold: a Store migrated between the plan and
+      // this write is not recorded in the schema the plan happened to see, and
+      // a Store caught HALF-migrated is not written at all. Branching on
+      // `.declared` alone never consulted `.mixed`, so a concurrent
+      // `add-project` could plant a v2 catalog into a Store whose migration had
+      // flipped the layout but not yet landed its receipt — and the operator
+      // then diagnosed the resulting `migration_plan_stale` instead of the
+      // unguarded write that actually caused it.
+      const state = await assertStoreLayoutForWrite({
+        storeRoot: input.store.root,
+        storeId: input.store.id,
+        intent: 'membership-record',
+        writes: 'metadata',
+      });
+      if (state.declared === 2) {
+        return writeMembershipCatalogLocked(projectId, input);
+      }
+
       const existing = await readStoreProjectRecord(input.store.root, projectId);
       const next = composeRecord(existing.record, projectId, input);
 
       if (existing.record && recordsEqual(existing.record, next)) {
-        return { record: existing.record, filePath: existing.filePath, changed: false };
+        return {
+          entry: { layout: 1, projectId, record: existing.record },
+          filePath: existing.filePath,
+          changed: false,
+        };
       }
 
       const filePath = await writeStoreProjectRecord(input.store.root, next);
@@ -793,9 +948,33 @@ export async function writeMembershipRecord(
         );
       }
 
-      return { record: verified.record, filePath, changed: true };
+      return { entry: { layout: 1, projectId, record: verified.record }, filePath, changed: true };
     }
   );
+}
+
+/** The layout v2 half of `writeMembershipRecord`; the caller holds the lock. */
+async function writeMembershipCatalogLocked(
+  projectId: string,
+  input: MembershipMutationInput
+): Promise<{ entry: StoreMembershipEntry; filePath: string; changed: boolean }> {
+  const read = await readStoreMembership(input.store.root, projectId, input.store.id);
+  const previous = read.entry?.layout === 2 ? read.entry.catalog : undefined;
+  const next = composeCatalog(previous, projectId, input);
+
+  if (previous && catalogsEqual(previous, next)) {
+    return {
+      entry: { layout: 2, projectId, catalog: previous },
+      filePath: read.filePath,
+      changed: false,
+    };
+  }
+
+  // `writeStoreProjectCatalog` reads the catalog back and re-validates it
+  // before returning, so the read-back verification the legacy branch performs
+  // separately has already happened when this resolves.
+  const filePath = await writeStoreProjectCatalog(input.store.root, next);
+  return { entry: { layout: 2, projectId, catalog: next }, filePath, changed: true };
 }
 
 /** Writes the project's locator hint. Errors propagate for the caller to record. */

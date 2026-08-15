@@ -26,18 +26,15 @@ import {
   parseIssueId,
   type ExecutionPlanRevisionId,
 } from '../planning-validation.js';
-import { RefReader, type StoreRefTarget } from '../query/refs.js';
 import { listProjectEntries, listTargetLineEntries } from '../query/refs.js';
-import {
-  gatherReferenceEvidence,
-  resolveChangeReference,
-} from '../query/references.js';
+import { resolveRegisteredStore } from '../registry.js';
 import {
   productionStoreIssueDependencies,
   type StoreIssueDependencies,
 } from './dependencies.js';
 import { issueError, issueRefusal } from './diagnostics.js';
 import { issueLockKey, withIssueLock } from './locks.js';
+import { verifyExecutionPlanReferences } from './reference-verification.js';
 import {
   executionPlanDigest,
   normalizePlanNodes,
@@ -94,10 +91,7 @@ export class StoreIssuesModule implements StoreIssues {
 
   async create(input: CreateIssueInput): Promise<IssueRecordResult> {
     const issueId = parseIssueId(input.issueId);
-    const scope = await this.openWriteScope(input);
-    const key = issueLockKey({ storeUid: scope.storeUid, issueId });
-
-    return withIssueLock(this.dependencies.coordination(input.globalDataDir), key, async () => {
+    return this.withWriteLock(input, issueId, async (scope) => {
       const addresses = issueAddresses(scope.checkoutRoot, issueId);
       if ((await this.dependencies.fs.statKind(addresses.record)) !== 'absent') {
         // Refused WITHOUT touching the existing record. A create that repaired
@@ -141,10 +135,7 @@ export class StoreIssuesModule implements StoreIssues {
 
   async setState(input: SetIssueStateInput): Promise<IssueRecordResult> {
     const issueId = parseIssueId(input.issueId);
-    const scope = await this.openWriteScope(input);
-    const key = issueLockKey({ storeUid: scope.storeUid, issueId });
-
-    return withIssueLock(this.dependencies.coordination(input.globalDataDir), key, async () => {
+    return this.withWriteLock(input, issueId, async (scope) => {
       const addresses = issueAddresses(scope.checkoutRoot, issueId);
       const current = await this.requireRecord(addresses.record, issueId, scope);
 
@@ -203,10 +194,7 @@ export class StoreIssuesModule implements StoreIssues {
 
   async publishPlan(input: PublishExecutionPlanInput): Promise<ExecutionPlanResult> {
     const issueId = parseIssueId(input.issueId);
-    const scope = await this.openWriteScope(input);
-    const key = issueLockKey({ storeUid: scope.storeUid, issueId });
-
-    return withIssueLock(this.dependencies.coordination(input.globalDataDir), key, async () => {
+    return this.withWriteLock(input, issueId, async (scope) => {
       const addresses = issueAddresses(scope.checkoutRoot, issueId);
       await this.requireRecord(addresses.record, issueId, scope);
 
@@ -261,6 +249,49 @@ export class StoreIssuesModule implements StoreIssues {
   // ---------------------------------------------------------------------------
   // Internals
   // ---------------------------------------------------------------------------
+
+  /**
+   * An explicit Store selector lets a writer derive the canonical Issue key
+   * from registry identity before layout-v2 scope validation. That ordering is
+   * essential during migration: once publication owns the batch, ordinary
+   * writes wait or return the existing bounded lock diagnostic at every
+   * pre-flip boundary instead of racing past the batch with a flat-layout
+   * scope refusal. The full scope/location validation still runs under the
+   * lock before any filesystem write.
+   */
+  private async withWriteLock<T>(
+    input: {
+      readonly store?: string;
+      readonly startPath: string;
+      readonly globalDataDir?: string;
+    },
+    issueId: string,
+    fn: (scope: ResolvedIssueScope) => Promise<T>
+  ): Promise<T> {
+    if (input.store !== undefined) {
+      const registered = await resolveRegisteredStore({
+        id: input.store,
+        ...(input.globalDataDir === undefined
+          ? {}
+          : { globalDataDir: input.globalDataDir }),
+      });
+      if (registered.uid !== undefined) {
+        const key = issueLockKey({ storeUid: registered.uid, issueId });
+        return withIssueLock(
+          this.dependencies.coordination(input.globalDataDir),
+          key,
+          async () => fn(await this.openWriteScope(input))
+        );
+      }
+    }
+    const scope = await this.openWriteScope(input);
+    const key = issueLockKey({ storeUid: scope.storeUid, issueId });
+    return withIssueLock(
+      this.dependencies.coordination(input.globalDataDir),
+      key,
+      async () => fn(scope)
+    );
+  }
 
   private async openWriteScope(input: {
     readonly store?: string;
@@ -340,162 +371,31 @@ export class StoreIssuesModule implements StoreIssues {
   ): Promise<void> {
     const targetLines = await listTargetLineEntries(this.dependencies, scope.registeredRoot);
     const projects = await listProjectEntries(this.dependencies, scope.registeredRoot);
-    const declaredProjects = new Set(
-      projects.filter(entry => entry.catalog !== null).map(entry => entry.projectId)
-    );
-    const declaredLines = new Set(
-      targetLines.filter(entry => entry.catalog !== null).map(entry => entry.targetLineId)
-    );
-
-    for (const node of nodes) {
-      if (!declaredProjects.has(node.projectId)) {
-        throw issueRefusal(
-          'issue_reference_scope_conflict',
-          `Node '${node.nodeId}' names project '${node.projectId}', which Store '${scope.storeId}' has no project catalog for.`,
-          {
-            expected: `one of ${[...declaredProjects].sort().join(', ') || '(no project catalogs)'}`,
-            actual: node.projectId,
-            target: node.nodeId,
-            fix: `Add the project to the Store with 'rasen store add-project', or correct the node's project.`,
-          }
-        );
-      }
-      if (!declaredLines.has(node.targetLineId)) {
-        throw issueRefusal(
-          'issue_reference_scope_conflict',
-          `Node '${node.nodeId}' names target line '${node.targetLineId}', which Store '${scope.storeId}' has no target-line catalog for.`,
-          {
-            expected: `one of ${[...declaredLines].sort().join(', ') || '(no target-line catalogs)'}`,
-            actual: node.targetLineId,
-            target: node.nodeId,
-            fix: `Author the line with 'rasen store target-line add ${node.targetLineId} --store ${scope.storeId} --store-ref refs/heads/<branch>'. A branch name is never a target line.`,
-          }
-        );
-      }
-    }
-
-    const changeNodes = nodes.filter(node => node.kind === 'change');
-    if (changeNodes.length === 0) return;
-
-    const reader = new RefReader(
-      { ...this.dependencies, snapshotProjects: async () => [], now: this.dependencies.now },
-      scope.registeredRoot
-    );
-    const refs: StoreRefTarget[] = targetLines
-      .filter(entry => entry.catalog !== null)
-      .map(entry => ({
-        targetLineId: entry.targetLineId,
-        storeRef: (entry.catalog as NonNullable<typeof entry.catalog>).storeRef,
-      }));
-    const evidence = await gatherReferenceEvidence(
+    await verifyExecutionPlanReferences(
       {
         ...this.dependencies,
         snapshotProjects: async () => [],
         now: this.dependencies.now,
       },
       {
-        reader,
-        refs,
-        projectIds: [...declaredProjects],
+        registeredRoot: scope.registeredRoot,
+        storeId: scope.storeId,
         storeUid: scope.storeUid,
+        nodes,
+        catalogs: {
+          projectIds: projects
+            .filter(entry => entry.catalog !== null)
+            .map(entry => entry.projectId),
+          targetLines: targetLines
+            .filter(entry => entry.catalog !== null)
+            .map(entry => ({
+              targetLineId: entry.targetLineId,
+              storeRef: (entry.catalog as NonNullable<typeof entry.catalog>).storeRef,
+            })),
+        },
         ...(globalDataDir === undefined ? {} : { globalDataDir }),
       }
     );
-
-    for (const node of changeNodes) {
-      if (node.kind !== 'change') continue;
-      const resolved = resolveChangeReference(evidence, node.changeInstanceId);
-      if (resolved.status === 'ambiguous') {
-        throw issueRefusal(
-          'issue_reference_ambiguous',
-          `Change instance '${node.changeInstanceId}' referenced by node '${node.nodeId}' is claimed by ${resolved.claimants.length} candidates: ${resolved.claimants
-            .map(claimant => `${claimant.projectId}/${claimant.changeId} at ${claimant.foundAtRef}`)
-            .join('; ')}.`,
-          {
-            expected: '1 claimant',
-            actual: `${resolved.claimants.length} claimants`,
-            target: node.nodeId,
-            fix: 'Resolve the duplication in the Store; Rasen lists every claimant and selects none by ref order, recency, or proximity.',
-          }
-        );
-      }
-      if (resolved.status === 'unresolved') {
-        if (!reader.complete) {
-          throw issueRefusal(
-            'store_query_ref_unreadable',
-            `The reference search could not read ${reader.unsearchedRefs.length} Store ref(s), so '${node.changeInstanceId}' cannot be concluded absent: ${reader.unsearchedRefs
-              .map(entry => `${entry.storeRef} (${entry.reason})`)
-              .join('; ')}.`,
-            {
-              expected: 'every Store ref searched',
-              actual: `${reader.searchedRefs.length} searched, ${reader.unsearchedRefs.length} unsearched`,
-              target: node.nodeId,
-              fix: 'Make the unreadable refs available in this checkout (they are read as Git objects; nothing is checked out), then retry.',
-            }
-          );
-        }
-        throw issueRefusal(
-          'issue_reference_unresolved',
-          `No committed Change metadata under this Store's target-line refs, and no local planning worktree, derives the Change instance '${node.changeInstanceId}' referenced by node '${node.nodeId}'. Refs searched: ${
-            reader.searchedRefs.join(', ') || '(none)'
-          }.`,
-          {
-            expected: node.changeInstanceId,
-            actual: '(no match)',
-            target: node.nodeId,
-            fix: "Pass the Change's real instance identifier — a Change alias, a directory name, or a branch name is never accepted — or declare the node as an intent until the Change exists.",
-          }
-        );
-      }
-
-      const found = resolved.evidence;
-      if (found === null) {
-        // Resolved by the machine workspace index ALONE. That index is a
-        // locator and authority for nothing (`references.ts`'s header table),
-        // so it answers a READ and never a publication: a revision is durable,
-        // portable Store content, and one naming a Change that is committed on
-        // no Store ref would be a published claim no other clone can check.
-        // The resolver is left reporting exactly what it found; the decision
-        // that committed evidence is required belongs to the mutation.
-        const locator = resolved.localLocator?.root ?? '(a local planning worktree)';
-        throw issueRefusal(
-          'issue_reference_uncommitted',
-          `Change instance '${node.changeInstanceId}' referenced by node '${node.nodeId}' exists only as a local planning worktree on this machine (${locator}); no committed Change metadata under this Store's target-line refs derives it. Refs searched: ${
-            reader.searchedRefs.join(', ') || '(none)'
-          }.`,
-          {
-            expected: "the Change committed under one of this Store's target-line refs",
-            actual: 'a local planning worktree on this machine only',
-            target: node.nodeId,
-            fix: "Land the Change on its target line so the Store carries it, or declare the node as an intent until the Change exists. A machine-local worktree is never evidence for a published plan.",
-          }
-        );
-      }
-      if (found.storeUid !== scope.storeUid) {
-        throw issueRefusal(
-          'issue_reference_foreign_store',
-          `Change instance '${node.changeInstanceId}' belongs to Store '${found.storeUid}', not to '${scope.storeUid}'.`,
-          {
-            expected: scope.storeUid,
-            actual: found.storeUid,
-            target: node.nodeId,
-            fix: 'An Issue references Changes of its own Store only. Open the Issue in the Store that owns the Change.',
-          }
-        );
-      }
-      if (found.projectId !== node.projectId || found.targetLineId !== node.targetLineId) {
-        throw issueRefusal(
-          'issue_reference_scope_conflict',
-          `Node '${node.nodeId}' declares ${node.projectId}/${node.targetLineId} but Change instance '${node.changeInstanceId}' is committed as ${found.projectId}/${found.targetLineId}.`,
-          {
-            expected: `${node.projectId}/${node.targetLineId}`,
-            actual: `${found.projectId}/${found.targetLineId}`,
-            target: node.nodeId,
-            fix: "Correct the node's project and target line to the Change's committed identity. Neither side is adjusted to agree with the other.",
-          }
-        );
-      }
-    }
   }
 
   /**
