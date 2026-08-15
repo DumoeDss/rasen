@@ -45,7 +45,7 @@ for.
   and Issue content is never a valid project-planning address. Issue identifiers satisfy the same
   portable canonical path-segment rules a project identifier satisfies, and a revision identifier is a
   canonical zero-padded ordinal that rejects an unpadded, differently padded, or zero value.
-- Add `rasen store issue` and `rasen store aggregate` command groups, each with a machine-readable
+- Add the `rasen store issue` command group plus the two top-level `rasen store changes` / `rasen store projects` reads — deliberately siblings under `store`, NOT a `store aggregate` group (see the doc comment in `src/commands/store-aggregate.ts` and tasks 4.1/4.2) — each with a machine-readable
   form whose content matches the human form.
 - Serve the same reads over the management HTTP API and surface them in the operations UI as a
   Store-scoped Issue view and an aggregate board grouped by project and target line. A Store-scoped
@@ -98,7 +98,7 @@ for.
 - **Adds** `src/core/store/issues/**` (11 files) and `src/core/store/query/**` (7 files) as one unit —
   they have a genuine bidirectional import cycle and cannot be separated — built on the planning
   contract and the workspace bindings this portfolio's first two changes landed.
-- **Adds** `rasen store issue` and `rasen store aggregate` to the command tree, the completion
+- **Adds** `rasen store issue`, `rasen store changes` and `rasen store projects` to the command tree, the completion
   registry, and all three locale trees in lockstep.
 - **Adds, additively,** Store aggregate read paths to the management API router and its wire types,
   with the UI's mirror of those types moved in the same step, and two operations-UI components.
