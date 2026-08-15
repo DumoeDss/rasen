@@ -599,7 +599,10 @@ describe('archive plan/apply engine', () => {
     await expect(fs.readFile(target, 'utf8')).resolves.toBe(
       '# First canonical spec\n'
     );
-  });
+    // CI Windows runners run this fs-heavy case past the default 30s
+    // (observed 31s on the shard runner); bounded like the suite's other
+    // filesystem-heavy cases rather than left to the default.
+  }, 120_000);
 
   it('round-trips a saved canonical plan token and rejects one-byte plan tampering', async () => {
     const archivePlan = await plan();

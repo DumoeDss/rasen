@@ -186,7 +186,9 @@ describe('openspec CLI e2e basics', () => {
         );
       }
     }
-  }, 20_000);
+    // One CLI process per subcommand help (~20 spawns); the ported pipeline
+    // group grew the list past the 20s budget on CI Windows runners.
+  }, 120_000);
 
   it('uses persisted zh-cn in the next CLI process', async () => {
     const home = await prepareIsolatedHome();
