@@ -1,5 +1,23 @@
 {
   "locale": "ja",
+  "archiveAbort": {
+    "optionConflict": "--abort-plan は、change 名、または --yes と --json 以外の archive オプションと同時に指定できません。",
+    "confirmationRequired": "アーカイブトランザクションを中止するには明示的な確認が必要です。",
+    "confirmationFix": "'rasen archive --abort-plan {token} --yes' を再実行してください。",
+    "applyAborted": "このアーカイブ計画は中止済みのため、適用できません。",
+    "aborted": "アーカイブ計画 {transactionId} を中止しました。永続化済みのアーカイブ変更は取り消していません。",
+    "alreadyAborted": "アーカイブ計画 {transactionId} はすでに中止済みです。追加の変更は不要でした。",
+    "associationPending": "Store ワークスペースの関連付けは保留中のままです。",
+    "blocked": "アーカイブ計画 {transactionId} は中止されませんでした。",
+    "blocker": "ブロッカー {code}: {message}（{path}）",
+    "effectivePhase": "有効なフェーズ: {phase}",
+    "effectivePhaseUnknown": "未確定",
+    "retainedPath": "保持されたパス: {path}",
+    "retainedPathsNone": "保持されたパス: 報告なし",
+    "manualRecoveryAction": "手動復旧: {action}",
+    "abortAction": "中止: {action}",
+    "recoveryAction": "復旧: {action}"
+  },
   "bootstrap": {
     "headingProject": "{path} のプロジェクトに対する bootstrap {mode}",
     "headingStore": "{path} にある store {store} に対する bootstrap {mode}",
@@ -1387,9 +1405,6 @@
         "archive": {
           "description": "完了した変更をアーカイブし、メイン仕様を更新します",
           "options": {
-            "target-line": {
-              "description": "選択したproject planning scopeの安定したtarget-line ID"
-            },
             "yes": {
               "description": "確認プロンプトを省略します"
             },
@@ -1409,13 +1424,13 @@
               "description": "Rasen rootとして使うstore IDです（storeは登録済みの独立Rasenリポジトリ）"
             },
             "project": {
-              "description": "Rasen rootとして使うproject IDです（'store add-project' でproject名前空間へ登録、--storeとは同時指定不可）"
+              "description": "project名前空間、または --store も指定した場合はその Store 内で選択するproject IDです"
+            },
+            "target-line": {
+              "description": "選択したproject planning scopeの安定したtarget-line ID"
             },
             "keep-ephemera": {
               "description": "完全な安全検査を維持しながら、すべての ephemera ファイルを保持します"
-            },
-            "no-whitespace-check": {
-              "description": "CI が拒否する成果物のアーカイブを止める空白事前チェックをスキップする"
             },
             "dry-run": {
               "description": "計画されたすべてのアーカイブ操作をプレビューし、何も実行しません"
@@ -1426,11 +1441,29 @@
             "apply-plan": {
               "description": "再計画せず、保存済みトークンの正確な計画を適用または再開します"
             },
+            "abort-plan": {
+              "description": "永続的な変更境界を越える前に、保存済みトークンの正確なアーカイブ計画を中止します"
+            },
             "intent-template": {
               "description": "ファイルを変更せずに、完全なアーカイブ意図テンプレートを JSON で出力します"
             },
             "intent-file": {
               "description": "厳密に検証された完全なアーカイブ意図を指定ファイルから読み込みます"
+            },
+            "outcome": {
+              "description": "Store v2 専用: 明示的に宣言する唯一の終了状態 (landed | superseded | cancelled | abandoned)。Store v2 では必須で、既定値はありません"
+            },
+            "reason": {
+              "description": "Store v2 専用: 変更が終了した理由。landed 以外のすべての結果で必須で、landed では拒否されます"
+            },
+            "by": {
+              "description": "Store v2 専用: superseded が指名する後継 change instance id。コミット済みのスコープ証拠で検証され、エイリアスでは解決されません"
+            },
+            "by-target-line": {
+              "description": "Store v2 専用: 後継検索を 1 つの target line に絞ります。検証の代替にはなりません"
+            },
+            "commit": {
+              "description": "Store v2 専用: landed 証明の候補コミット。証明を回避するものではありません"
             }
           },
           "commands": {
@@ -2033,6 +2066,12 @@
                 },
                 "target-line": {
                   "description": "このターゲットラインに限定します（繰り返し指定可）"
+                },
+                "outcome": {
+                  "description": "アーカイブ済みエントリをこれらの確定結果に絞り込む"
+                },
+                "state": {
+                  "description": "active または archived"
                 },
                 "json": {
                   "description": "JSON で出力"

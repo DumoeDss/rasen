@@ -1,5 +1,23 @@
 {
   "locale": "en",
+  "archiveAbort": {
+    "optionConflict": "--abort-plan cannot be combined with a change name or any other archive option except --yes and --json.",
+    "confirmationRequired": "Aborting an archive transaction requires explicit confirmation.",
+    "confirmationFix": "Rerun with 'rasen archive --abort-plan {token} --yes'.",
+    "applyAborted": "This archive plan was aborted and cannot be applied.",
+    "aborted": "Archive plan {transactionId} was aborted. No durable archive changes were reversed.",
+    "alreadyAborted": "Archive plan {transactionId} was already aborted; no further changes were needed.",
+    "associationPending": "The Store workspace association remains pending.",
+    "blocked": "Archive plan {transactionId} was not aborted.",
+    "blocker": "Blocker {code}: {message} ({path})",
+    "effectivePhase": "Effective phase: {phase}",
+    "effectivePhaseUnknown": "not established",
+    "retainedPath": "Retained path: {path}",
+    "retainedPathsNone": "Retained paths: none reported",
+    "manualRecoveryAction": "Manual recovery: {action}",
+    "abortAction": "Abort: {action}",
+    "recoveryAction": "Recovery: {action}"
+  },
   "bootstrap": {
     "headingProject": "Bootstrap {mode} for the project at {path}",
     "headingStore": "Bootstrap {mode} for store {store} at {path}",
@@ -1387,9 +1405,6 @@
         "archive": {
           "description": "Archive a completed change and update main specs",
           "options": {
-            "target-line": {
-              "description": "Stable target-line id for the selected project planning scope"
-            },
             "yes": {
               "description": "Skip confirmation prompts"
             },
@@ -1409,13 +1424,13 @@
               "description": "Store id to use as the Rasen root (a store is a standalone Rasen repo you've registered)"
             },
             "project": {
-              "description": "Project id to use as the Rasen root (a project registered via 'store add-project', in the project namespace). Mutually exclusive with --store."
+              "description": "Project id to select in the project namespace, or inside the selected Store when --store is also present."
+            },
+            "target-line": {
+              "description": "Stable target-line id for the selected project planning scope"
             },
             "keep-ephemera": {
               "description": "Preserve all ephemera files while retaining complete safety inspection"
-            },
-            "no-whitespace-check": {
-              "description": "Skip the whitespace preflight that blocks archiving artifacts CI would reject"
             },
             "dry-run": {
               "description": "Preview all planned archive actions without executing anything"
@@ -1426,11 +1441,29 @@
             "apply-plan": {
               "description": "Apply or resume the exact saved archive plan without replanning"
             },
+            "abort-plan": {
+              "description": "Abort the exact saved archive plan before it crosses a durable mutation boundary"
+            },
             "intent-template": {
               "description": "Output a complete archive intent template as JSON without changing files"
             },
             "intent-file": {
               "description": "Read a complete, strictly validated archive intent from the specified file"
+            },
+            "outcome": {
+              "description": "Store v2 only: the one explicitly declared terminal state (landed | superseded | cancelled | abandoned). Required there; there is no default"
+            },
+            "reason": {
+              "description": "Store v2 only: why the change ended. Required by every non-landed outcome and refused for landed"
+            },
+            "by": {
+              "description": "Store v2 only: the successor change instance id a superseded outcome names. Resolved to committed scope evidence, never to an alias"
+            },
+            "by-target-line": {
+              "description": "Store v2 only: narrows the successor search to one target line. Never a substitute for successor verification"
+            },
+            "commit": {
+              "description": "Store v2 only: the candidate commit for a landed proof. Never a bypass for it"
             }
           },
           "commands": {
@@ -2033,6 +2066,12 @@
                 },
                 "target-line": {
                   "description": "Limit to this target line (repeatable)"
+                },
+                "outcome": {
+                  "description": "Narrow archived entries to these finalization outcomes"
+                },
+                "state": {
+                  "description": "active or archived"
                 },
                 "json": {
                   "description": "Output as JSON"

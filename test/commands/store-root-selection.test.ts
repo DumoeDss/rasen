@@ -282,11 +282,7 @@ describe('store root selection for normal commands', () => {
       expectNoLocalOpenSpec();
     });
 
-    // DEFERRED with the L6 port: these three pin 0.1.7's specs-apply/validator
-    // WARNING surface, which is its own ~1,500-line divergent reconciliation
-    // area this line has not ported. The selector threading they exercise is
-    // covered by the other tests in this file.
-    it.skip('compares change deltas with canonical specs in the selected store', async () => {
+    it('compares change deltas with canonical specs in the selected store', async () => {
       const canonicalDir = path.join(storeRoot, 'rasen', 'specs', 'billing');
       fs.mkdirSync(canonicalDir, { recursive: true });
       fs.writeFileSync(
@@ -735,7 +731,7 @@ describe('store root selection for normal commands', () => {
       expect(json.archive.change).toBe('removed-change');
     });
 
-    it.skip('writes no spec when a canonical baseline fails validation', async () => {
+    it('writes no spec when a canonical baseline fails validation', async () => {
       // Two delta specs in one change: 'aaa-good' targets a new spec and
       // rebuilds cleanly; 'zzz-bad' targets an existing spec whose current
       // requirement has no scenarios. Canonical-aware change validation
@@ -788,7 +784,7 @@ describe('store root selection for normal commands', () => {
       ).toBe(true);
     });
 
-    it.skip('reports spec-update failures as diagnostics without stdout prose', async () => {
+    it('reports spec-update failures as diagnostics without stdout prose', async () => {
       createChange(standaloneRoot, 'modified-change', { deltaSpec: MODIFIED_ONLY_DELTA_SPEC });
 
       const result = await runCLI(

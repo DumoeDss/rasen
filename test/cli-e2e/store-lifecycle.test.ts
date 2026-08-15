@@ -620,15 +620,13 @@ describe('store lifecycle journey', () => {
     expect(archived.exitCode).toBe(1);
     const archivedStatus = JSON.parse(archived.stdout).status;
     expect(archivedStatus).toHaveLength(1);
-    // L6-port note: with the finalization slice (L3+L5) not yet ported, the
-    // refusal this line reports first is the execution-authority gate, not
-    // `finalization_outcome_required` — 0.1.7's archive runs the outcome
-    // diagnostics BEFORE the execution guard. When the finalization module
-    // lands, this assertion and the outcome-name loop below flip back.
     expect(archivedStatus[0]).toMatchObject({
       severity: 'error',
-      code: 'execution_authority_required',
+      code: 'finalization_outcome_required',
     });
+    for (const outcome of ['landed', 'superseded', 'cancelled', 'abandoned']) {
+      expect(archivedStatus[0].message).toContain(outcome);
+    }
     // Refused without touching the partition, and without resurrecting a
     // root-level flat namespace.
     await expect(
@@ -758,16 +756,16 @@ describe('store lifecycle journey', () => {
     expect(validated.exitCode).toBe(0);
     expect(validated.stdout).toContain('is valid');
 
-    // Same gate as machine A, reached from the second machine. L6-port note:
-    // reports the execution-authority refusal until the finalization slice
-    // (L3+L5) lands; then this flips back to `finalization_outcome_required`.
+    // Same gate as machine A, reached from the second machine: one explicitly
+    // declared outcome is required and nothing is inferred from the fact that
+    // the work looks finished.
     const archived = await runCLI(
       ['archive', changeId, '--yes', '--json', ...selectors],
       { env: machineB, cwd: planningRootB }
     );
     expect(archived.exitCode).toBe(1);
     expect(JSON.parse(archived.stdout).status[0].code).toBe(
-      'execution_authority_required'
+      'finalization_outcome_required'
     );
     await expect(
       fs.access(path.join(partitionChangeDir(planningRootB, changeId), 'proposal.md'))

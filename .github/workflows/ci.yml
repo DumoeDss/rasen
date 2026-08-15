@@ -54,7 +54,7 @@ jobs:
             label: linux-bash
             node: '20.19.0'
             vitest_workers: 4
-            timeout_minutes: 20
+            timeout_minutes: 30
             vitest_partition: ''
           - os: macos-latest
             shell: bash

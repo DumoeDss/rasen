@@ -128,12 +128,7 @@ describe('capstone persona journeys (6.1)', () => {
    * finalize-and-assert-the-record journey lives in
    * `test/commands/store-v2-finalization-journey.test.ts`.
    */
-  // L6-port note: skipped until the finalization slice (L3+L5) lands. Its
-  // terminal gate pins `finalization_outcome_required` from the pointer-repo
-  // archive; without the finalization module the archive runs to completion
-  // and every downstream assertion about the refused state fails. The journey
-  // resumes verbatim when that module is ported.
-  it.skip('journey 3 — externalized planning: pointer repo runs the lifecycle without --store', async () => {
+  it('journey 3 — externalized planning: pointer repo runs the lifecycle without --store', async () => {
     const storeId = 'team-planning';
     const projectId = 'api-server';
     const targetLine = 'line-main';

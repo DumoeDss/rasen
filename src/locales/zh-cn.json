@@ -1,5 +1,23 @@
 {
   "locale": "zh-cn",
+  "archiveAbort": {
+    "optionConflict": "--abort-plan 不能与变更名称或除 --yes 和 --json 之外的任何归档选项同时使用。",
+    "confirmationRequired": "中止归档事务需要显式确认。",
+    "confirmationFix": "请重新运行 'rasen archive --abort-plan {token} --yes'。",
+    "applyAborted": "此归档计划已中止，无法应用。",
+    "aborted": "归档计划 {transactionId} 已中止。未撤销任何已持久化的归档更改。",
+    "alreadyAborted": "归档计划 {transactionId} 已经中止，无需进一步更改。",
+    "associationPending": "Store 工作区关联仍处于待处理状态。",
+    "blocked": "归档计划 {transactionId} 未中止。",
+    "blocker": "阻止项 {code}：{message}（{path}）",
+    "effectivePhase": "有效阶段：{phase}",
+    "effectivePhaseUnknown": "尚未确定",
+    "retainedPath": "保留路径：{path}",
+    "retainedPathsNone": "保留路径：未报告",
+    "manualRecoveryAction": "手动恢复：{action}",
+    "abortAction": "中止：{action}",
+    "recoveryAction": "恢复：{action}"
+  },
   "bootstrap": {
     "headingProject": "对 {path} 处项目执行 bootstrap {mode}",
     "headingStore": "对 {path} 处 store {store} 执行 bootstrap {mode}",
@@ -1387,9 +1405,6 @@
         "archive": {
           "description": "归档已完成的变更并更新主规格",
           "options": {
-            "target-line": {
-              "description": "所选项目规划作用域的稳定目标线 ID"
-            },
             "yes": {
               "description": "跳过确认提示"
             },
@@ -1409,13 +1424,13 @@
               "description": "用作 Rasen 根目录的 Store ID（Store 是已注册的独立 Rasen 仓库）"
             },
             "project": {
-              "description": "用作 Rasen 根目录的项目 ID（通过 'store add-project' 注册到项目命名空间）。不能与 --store 同时使用。"
+              "description": "在项目命名空间中选择的项目 ID；同时指定 --store 时，则在该 Store 内选择项目。"
+            },
+            "target-line": {
+              "description": "所选项目规划作用域的稳定目标线 ID"
             },
             "keep-ephemera": {
               "description": "保留所有 ephemera 文件，同时继续执行完整安全检查"
-            },
-            "no-whitespace-check": {
-              "description": "跳过空白预检（该预检会拦下 CI 将会拒绝的归档产物）"
             },
             "dry-run": {
               "description": "预演所有计划中的归档操作，不执行任何实际更改"
@@ -1426,11 +1441,29 @@
             "apply-plan": {
               "description": "不重新规划，按保存的令牌应用或恢复精确计划"
             },
+            "abort-plan": {
+              "description": "在跨越持久变更边界前，中止保存令牌所对应的精确归档计划"
+            },
             "intent-template": {
               "description": "以 JSON 输出完整的归档意图模板，且不修改文件"
             },
             "intent-file": {
               "description": "从指定文件读取并严格校验完整的归档意图"
+            },
+            "outcome": {
+              "description": "仅 Store v2：显式声明的唯一终态（landed | superseded | cancelled | abandoned）。在 Store v2 中必填，且无默认值"
+            },
+            "reason": {
+              "description": "仅 Store v2：变更结束的原因。除 landed 外的每个结果都必填，landed 则拒绝该选项"
+            },
+            "by": {
+              "description": "仅 Store v2：superseded 所指定的后继 change instance id。根据已提交的作用域证据验证，不接受别名"
+            },
+            "by-target-line": {
+              "description": "仅 Store v2：将后继搜索限定在一条目标线上。不能代替后继验证"
+            },
+            "commit": {
+              "description": "仅 Store v2：landed 证明的候选提交。不能绕过该证明"
             }
           },
           "commands": {
@@ -2033,6 +2066,12 @@
                 },
                 "target-line": {
                   "description": "仅限该目标线（可重复指定）"
+                },
+                "outcome": {
+                  "description": "将归档条目收窄到这些收尾结果"
+                },
+                "state": {
+                  "description": "active 或 archived"
                 },
                 "json": {
                   "description": "以 JSON 输出"

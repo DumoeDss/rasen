@@ -41,7 +41,7 @@ import {
   runStoreMigrateLayout,
   type StoreMigrateLayoutOptions,
 } from './store-migrate-layout.js';
-import { registerStoreAggregateCommand } from './store-aggregate.js';
+import { registerStoreAggregateCommands } from './store-aggregate.js';
 import { registerStoreIssueCommand } from './store-issue.js';
 import { registerStoreTargetLineCommand } from './store-target-line.js';
 import { registerWorkspaceCommand } from './workspace.js';
@@ -1595,10 +1595,9 @@ export function registerStoreCommand(program: Command): void {
   registerWorkspaceCommand(store);
   // A Store-level Issue spans projects, so its commands take only `--store`.
   registerStoreIssueCommand(store);
-  // `store changes` and `store projects` are the aggregate reads: two
-  // independent top-level commands, not subcommands of a shared `aggregate`
-  // noun (design decision recorded in store-aggregate.ts).
-  registerStoreAggregateCommand(store);
+  // The aggregate reads. They answer questions that span more than one project,
+  // which is exactly what no other surface can do.
+  registerStoreAggregateCommands(store);
 
   const lifecycleRedirects = new Set(
     (COMMAND_REGISTRY.subcommands ?? []).filter(

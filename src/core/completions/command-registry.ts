@@ -190,9 +190,6 @@ const COMMANDS: readonly CommandDefinition[] = [
         name: 'keep-ephemera',
       },
       {
-        name: 'no-whitespace-check',
-      },
-      {
         name: 'dry-run',
       },
       {
@@ -203,10 +200,35 @@ const COMMANDS: readonly CommandDefinition[] = [
         takesValue: true,
       },
       {
+        name: 'abort-plan',
+        takesValue: true,
+      },
+      {
         name: 'intent-template',
       },
       {
         name: 'intent-file',
+        takesValue: true,
+      },
+      {
+        name: 'outcome',
+        takesValue: true,
+        completionValues: ['landed', 'superseded', 'cancelled', 'abandoned'],
+      },
+      {
+        name: 'reason',
+        takesValue: true,
+      },
+      {
+        name: 'by',
+        takesValue: true,
+      },
+      {
+        name: 'by-target-line',
+        takesValue: true,
+      },
+      {
+        name: 'commit',
         takesValue: true,
       },
       COMMON_FLAGS.store,
@@ -656,6 +678,8 @@ const COMMANDS: readonly CommandDefinition[] = [
           COMMON_FLAGS.store,
           COMMON_FLAGS.project,
           COMMON_FLAGS.targetLine,
+          { name: 'outcome', takesValue: true },
+          { name: 'state', takesValue: true },
           COMMON_FLAGS.json,
         ],
       },

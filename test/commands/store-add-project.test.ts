@@ -225,10 +225,7 @@ describe('store add-project', () => {
     ).toBe(false);
   });
 
-  // DEFERRED with the L6 port, same family as the three skipped tests in
-  // store-root-selection.test.ts: pins 0.1.7's specs-apply/validator WARNING
-  // surface, which is its own divergent area this line has not ported.
-  it.skip('compares deltas with canonical specs in a selected registered project', async () => {
+  it('compares deltas with canonical specs in a selected registered project', async () => {
     await registerTargetStore();
     const projectRoot = makeProject('my-project');
     const add = await runCLI(
