@@ -1,0 +1,7 @@
+schema: spec-driven
+created: 2026-08-12
+quality:
+  files:
+    - evidence/verify-report.md
+  metrics:
+    evidence/verify-report.md: 0

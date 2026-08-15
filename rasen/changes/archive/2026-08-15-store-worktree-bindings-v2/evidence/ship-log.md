@@ -128,3 +128,9 @@ Delivery for this change completes at the portfolio level: a single PR will
 be opened against the resolved integration base once
 `store-planning-contract-v2` (child 1), this change (child 2), and
 `store-issue-resources` (child 3) are all terminal.
+
+## Archive
+**Date:** 2026-08-15T08:24:17.216Z
+**Ship commit:** 6113f2880a4c59127b6c3e5a8434e4a27efbff4a
+**Outcome:** archived at E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\fix-ci-shard3\rasen\changes\archive\2026-08-15-store-worktree-bindings-v2
+**Transaction:** df2fcf2b-830a-4105-8b49-fa646735d81a
