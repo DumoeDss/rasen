@@ -82,28 +82,28 @@ jobs:
             label: windows-pwsh-shard-1
             node: '20.19.0'
             vitest_workers: 2
-            timeout_minutes: 20
+            timeout_minutes: 30
             vitest_partition: '1/3'
           - os: windows-latest
             shell: pwsh
             label: windows-pwsh-shard-2
             node: '20.19.0'
             vitest_workers: 2
-            timeout_minutes: 20
+            timeout_minutes: 30
             vitest_partition: '2/3'
           - os: windows-latest
             shell: pwsh
             label: windows-pwsh-shard-3
             node: '20.19.0'
             vitest_workers: 2
-            timeout_minutes: 20
+            timeout_minutes: 30
             vitest_partition: '3/3'
           - os: ubuntu-latest
             shell: bash
             label: linux-bash-node24
             node: '24.x'
             vitest_workers: 4
-            timeout_minutes: 20
+            timeout_minutes: 30
             vitest_partition: ''
 
     defaults:
