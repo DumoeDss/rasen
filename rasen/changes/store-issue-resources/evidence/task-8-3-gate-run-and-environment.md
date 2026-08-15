@@ -225,6 +225,40 @@ on disk. The round-1 fixer discovered this by accident (their new CLI tests were
 stale `dist/` and GREEN after a build). CI is unaffected: `ci.yml` runs `pnpm run build` before
 `pnpm test`.
 
+## Re-taken after the verify round — still GREEN
+
+The GREEN above was invalidated, deliberately and by us. The verify stage found two Blockers that
+three earlier passes had missed (`evidence/verify-report.md`), the operator ruled to change the code
+rather than the deltas, and the fix (`f46ffc13`) touched 12 files including `query/` internals. A
+gate taken before that fix describes a tree that no longer exists — the same reason the first gate
+was deliberately taken after the `origin/dev/0.2.0` merge rather than before it.
+
+Re-taken on identical terms, `pnpm run build` first:
+
+| Partition | Files | Tests | Failed | Duration |
+|---|---|---|---|---|
+| 1/3 | 73 | 927 passed | **0** | 1553.78s |
+| 2/3 | 55 | 777 passed, 3 skipped | **0** | 540.06s |
+| 3/3 | 63 | 964 passed, 6 skipped | **0** | 792.57s |
+| **Total** | **191** | **2668 passed, 9 skipped** | **0** | 2886s |
+
+**The delta reconciles exactly again: +0 files, +5 tests.** All five of the fix round's new tests
+landed in `store-aggregate-query.test.ts` (26 → 31), so no new file appears and the count stays 191;
+2672 + 5 = 2677 = 2668 passed + 9 skipped. `stores.test.ts` + `store-aggregate-cli.test.ts` remain
+29 combined, unchanged.
+
+Two things recorded rather than smoothed over:
+
+- **Per-partition file counts moved** (67/74/50 → 73/55/63) even though the total did not.
+  `VITEST_FILE_PARTITION` re-derives its weighted split over the whole suite, so a change in any
+  file's weight redistributes every partition. Only the total is comparable across runs; a
+  per-partition comparison would be reading noise.
+- **Total wall-clock rose 40%** (2064s → 2886s) for five more tests. That is not explained by the
+  work added. The most likely cause is `%TEMP%` residue re-accumulating — measured earlier in this
+  change to inflate CLI startup spread 13x — and it is worth re-checking before any future
+  measurement is trusted. It does not invalidate this result: the run completed, every partition
+  produced a summary block, and nothing failed.
+
 ## Inherited item this run confirms
 
 `workspace-cleanup.test.ts` was flagged in task 8.5 as possibly a >2x under-entry in
