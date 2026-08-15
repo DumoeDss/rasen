@@ -1,0 +1,73 @@
+{
+  "change": "store-issue-resources",
+  "archivedAt": "2026-08-15T08:24:43.350Z",
+  "codeCommit": "af259a8109f32ae385c221937ad3c48e16a5defd",
+  "planningBranch": "chore/archive-store-v2-slice-1",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/commander-presentation-startup-gates.md",
+      "sha256": "869e571a29d5ea56502de01c70cc924cdb77dce4a99dd0d3b9e9b4d92fea9c7d"
+    },
+    {
+      "path": "evidence/digest-anchor-mutation-proof.md",
+      "sha256": "6c332e66024753d2263e09be4d7ee9f909e55b1d877d361c46b9d09763266fc7"
+    },
+    {
+      "path": "evidence/intended-divergence-from-017-tip.md",
+      "sha256": "f4e240c2a9598e9aaa68b7ec303d002a8fede3776afd675ce65a814e47f2bdf4"
+    },
+    {
+      "path": "evidence/nul-byte-corruption-and-detection.md",
+      "sha256": "a53556deef629eae4207d6ed6e9d13cbc7a1f74d8dcfc184421a3f035c9ffb5e"
+    },
+    {
+      "path": "evidence/packages-ui-unrun-typecheck.md",
+      "sha256": "66144c9d494af1f8a47a02715161a30ef54d21daf24776b34efa210d5f939293"
+    },
+    {
+      "path": "evidence/review-report-round-1.md",
+      "sha256": "0240316034c43a256d58da78e9bd24d926e91375113298151b686273f09c740b"
+    },
+    {
+      "path": "evidence/review-report-round-2.md",
+      "sha256": "9b483ca2553289a49b9346193773022d4bb533a264f32c2781054837774dd640"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "f0b1375f91e9bbfce33b8578c8c0d679de5a9e161771df762cc8e2cfc213e3d8"
+    },
+    {
+      "path": "evidence/store-lock-order-takers.md",
+      "sha256": "679232ace0bd1528c5e74a9d407d959bbae129a9956b4141b7b23fd8347e85b8"
+    },
+    {
+      "path": "evidence/store-resolution-strictness-asymmetry.md",
+      "sha256": "0c7aad7efd5636f18dd2d1b9edf59389d0d34976e2cd33724dff96ef7c1c2d39"
+    },
+    {
+      "path": "evidence/task-8-2-rederived-gate.md",
+      "sha256": "bd7b5cf6b890beba817daa7dc814263d57f583d6b879c97ce6d0e0dd5f3ca048"
+    },
+    {
+      "path": "evidence/task-8-3-gate-run-and-environment.md",
+      "sha256": "6f576caf1eae7e4f74c29ea769742ff78749b8c2a3d4499105ba67f6dceba8d3"
+    },
+    {
+      "path": "evidence/verify-report.md",
+      "sha256": "59188774e8dd8df381a1a84ab60ff1a9d5b54c243f7724e1184b7e41e61a27b1"
+    },
+    {
+      "path": "evidence/wire-type-mirror-absence-mutation-proof.md",
+      "sha256": "d300d1ebb2fec283d4d952a5a4fc22aad0535b6bfd98cc6eb288d33f513a6ddb"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}
