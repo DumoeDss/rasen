@@ -1,7 +1,7 @@
 # change-finalization-record-v2 Specification
 
 ## Purpose
-TBD - created by archiving change store-planning-contract-v2. Update Purpose after archive.
+Record the terminal outcome of a Change as a portable, verifiable finalization: exactly one explicit outcome (landed, superseded, cancelled, or abandoned) with the outcome-specific fields each requires, so an archived Change proves what became of it and what, if anything, superseded it.
 ## Requirements
 ### Requirement: Finalization names exactly one explicit outcome
 

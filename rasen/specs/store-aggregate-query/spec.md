@@ -1,7 +1,7 @@
 # store-aggregate-query Specification
 
 ## Purpose
-TBD - created by archiving change store-issue-resources. Update Purpose after archive.
+Provide the read side of the Store as one aggregate query interface: listing and showing Issues, reporting what references them, and resolving Execution Plans all report through queries that never mutate, keeping the 'a mutation refuses; a query reports' split that the Issue mutation interface depends on.
 ## Requirements
 ### Requirement: One read surface answers every Store-wide question
 

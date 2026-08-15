@@ -1,7 +1,7 @@
 # store-planning-worktree-bindings Specification
 
 ## Purpose
-TBD - created by archiving change store-worktree-bindings-v2. Update Purpose after archive.
+Make planning worktrees first-class authored Store content: creating, verifying, and binding a planning worktree to its workspace pair is checked against real Git state and durable marker evidence rather than admitted on a hand-written marker alone, with atomic writes and store-ordered locks governing every mutation.
 ## Requirements
 ### Requirement: A Change workspace is prepared through an immutable plan and a revalidated token
 

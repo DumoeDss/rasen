@@ -1,7 +1,7 @@
 # store-issue-resources Specification
 
 ## Purpose
-TBD - created by archiving change store-issue-resources. Update Purpose after archive.
+Add the Store Issue as a first-class, repo-blind planning resource for work that spans projects: a minimal record carrying intent and state, immutable Execution Plan revisions that verify their referenced Change instances against committed Store evidence, and a single serializer-and-lock so one truth owns every mutation.
 ## Requirements
 ### Requirement: A Store Issue is a repo-blind statement of intent
 

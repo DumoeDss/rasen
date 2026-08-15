@@ -1,7 +1,7 @@
 # store-target-lines Specification
 
 ## Purpose
-TBD - created by archiving change store-worktree-bindings-v2. Update Purpose after archive.
+Treat target lines as explicit authored Store content with a stable identity and mutable locators: add, set-ref, list, show, and resolve resolve a line's Store ref and per-project code refs to concrete refs and commit identities at use time, and no command ever infers a target line from a branch name.
 ## Requirements
 ### Requirement: Target lines are authored explicitly and never inferred
 

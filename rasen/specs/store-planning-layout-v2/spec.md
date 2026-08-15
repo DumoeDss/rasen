@@ -1,7 +1,7 @@
 # store-planning-layout-v2 Specification
 
 ## Purpose
-TBD - created by archiving change store-planning-contract-v2. Update Purpose after archive.
+Give each member project its own planning home under a Store: canonical specs, design docs, active Changes, and target-line-partitioned Archives no longer share one flat Store root, so two projects can hold the same Change alias without collision and archive placement derives from stable target-line identity.
 ## Requirements
 ### Requirement: Layout v2 partitions Store planning content by project
 

@@ -1,7 +1,7 @@
 # store-planning-identity-v2 Specification
 
 ## Purpose
-TBD - created by archiving change store-planning-contract-v2. Update Purpose after archive.
+Define the typed v2 planning identities - Store, member project, target line, Change, and planning worktree - as stable, domain-separated addresses whose digests do not change when directories move or metadata inserts in a different order, so every later Store-v2 capability refers to planning objects through one identity contract instead of inventing its own.
 ## Requirements
 ### Requirement: A planning scope has one stable, portable identity
 
