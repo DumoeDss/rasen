@@ -20,6 +20,7 @@ import {
   resolveReadableStoreMetadataPath,
 } from './foundation.js';
 import { ARCHIVE_SUBDIR, CHANGES_SUBDIR, SPECS_SUBDIR } from './migration.js';
+import { readMigrationReceipt } from './layout-migration/receipt.js';
 
 const fs = nodeFs.promises;
 
@@ -97,10 +98,11 @@ async function readReceiptPhases(
     if (!name.toLowerCase().endsWith('.json')) continue;
     let phases: string[];
     try {
-      const parsed = JSON.parse(await fs.readFile(path.join(dir, name), 'utf-8')) as {
-        phases?: { phase?: string }[];
-      };
-      phases = (parsed.phases ?? []).map((entry) => entry.phase ?? '');
+      const read = readMigrationReceipt(
+        await fs.readFile(path.join(dir, name), 'utf-8')
+      );
+      if (!read.ok) continue;
+      phases = read.receipt.phases.map((entry) => entry.phase);
     } catch {
       continue;
     }

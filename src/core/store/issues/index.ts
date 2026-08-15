@@ -30,24 +30,32 @@ export {
 export {
   checkExecutionPlanGraph,
   executionPlanDigest,
-  findPlanNodeSchemaProblems,
   normalizePlanNodes,
   parseExecutionPlanRevision,
   serializeExecutionPlanRevision,
   validateExecutionPlanRevision,
   type GraphViolation,
-  type PlanNodeSchemaProblem,
 } from './plans.js';
+export {
+  compileMigrationIssueTree,
+  type CompiledMigrationIssueFile,
+  type CompiledMigrationIssueTree,
+  type MigrationIssueFileRole,
+  type MigrationIssueInput,
+} from './migration-compiler.js';
 export {
   STORE_LOCK_ORDER,
   assertIssueAcquisitionOrder,
   assertStoreLockOrderAgreesWithWorkspace,
   heldStoreLockKinds,
+  heldIssueLockKeys,
+  issueLockCanonicalBytes,
   issueLockFileName,
   issueLockHeld,
   issueLockKey,
   issueLockPath,
   withIssueLock,
+  withIssueLockBatch,
   type IssueLockKey,
   type StoreLockKind,
 } from './locks.js';

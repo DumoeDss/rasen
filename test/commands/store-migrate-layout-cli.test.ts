@@ -240,6 +240,54 @@ describe('rasen store migrate-layout (CLI)', () => {
     expect(human.stdout).toContain(PROJECT_ID);
   }, 120_000);
 
+  it('reports the no-plan continuation identically in human and JSON previews', async () => {
+    write('rasen/changes/release-coordinator/proposal.md', '# coordinator\n');
+    write(
+      MAPPING,
+      [
+        'version: 2',
+        `defaultTargetLine: ${TARGET_LINE}`,
+        'targetLines:',
+        `  ${TARGET_LINE}:`,
+        '    storeRef: refs/heads/main',
+        '    projects:',
+        `      ${PROJECT_ID}:`,
+        '        codeRef: refs/heads/main',
+        'changes:',
+        '  release-coordinator:',
+        '    kind: store-issue',
+        '    issueId: release-coordinator',
+        '    title: Coordinate the release',
+        '',
+      ].join('\n')
+    );
+    git('add', '-A');
+    git('commit', '-m', 'declare coordinator conversion');
+
+    const json = parseJson(
+      await runCLI(['store', 'migrate-layout', STORE_ID, '--mapping', MAPPING, '--json'], {
+        env,
+        cwd: storeRoot,
+      })
+    );
+    const human = await runCLI(
+      ['store', 'migrate-layout', STORE_ID, '--mapping', MAPPING],
+      { env, cwd: storeRoot }
+    );
+    const coordinator = json.items.find(
+      (item: { name: string }) => item.name === 'release-coordinator'
+    );
+    expect(coordinator.continuation).toEqual({
+      code: 'migration_issue_plan_absent',
+      message: 'no plan supplied; no nodes invented',
+      command:
+        `rasen store issue plan release-coordinator --store ${STORE_ID} --from-file <path>`,
+    });
+    expect(human.stdout).toContain('migration_issue_plan_absent');
+    expect(human.stdout).toContain(coordinator.continuation.message);
+    expect(human.stdout).toContain(coordinator.continuation.command);
+  }, 180_000);
+
   it('refuses to apply an unresolved plan, exits non-zero, and lists the blocker', async () => {
     write('rasen/changes/mystery-change/proposal.md', '# mystery\n');
     git('add', '-A');
@@ -255,6 +303,7 @@ describe('rasen store migrate-layout (CLI)', () => {
     expect(payload.blockers.map((item: { name: string }) => item.name)).toEqual([
       'mystery-change',
     ]);
+    expect(payload.blockers[0].code).toBe('migration_classification_unresolved');
     expect(payload.blockers[0].repair).toContain('changes.mystery-change.project');
 
     const human = await runCLI(
@@ -263,6 +312,7 @@ describe('rasen store migrate-layout (CLI)', () => {
     );
     expect(human.exitCode).toBe(1);
     expect(`${human.stdout}${human.stderr}`).toContain('mystery-change');
+    expect(`${human.stdout}${human.stderr}`).toContain('migration_classification_unresolved');
     expect(`${human.stdout}${human.stderr}`).toContain('no --force');
 
     // Nothing was published, and the Store is still flat.
@@ -332,6 +382,11 @@ describe('rasen store migrate-layout (CLI)', () => {
 
     expect(retired.exitCode).toBe(1);
     expect(parseJson(retired).status[0].code).toBe('migration_run_missing');
+    const human = await runCLI(
+      ['store', 'migrate-layout', STORE_ID, '--retire-flat'],
+      { env, cwd: storeRoot }
+    );
+    expect(`${human.stdout}${human.stderr}`).toContain('migration_run_missing');
     expect(fs.existsSync(path.join(storeRoot, 'rasen', 'specs', 'billing'))).toBe(true);
   }, 120_000);
 
@@ -346,6 +401,11 @@ describe('rasen store migrate-layout (CLI)', () => {
 
     expect(result.exitCode).toBe(1);
     expect(parseJson(result).status[0].code).toBe('migration_mapping_outside_store');
+    const human = await runCLI(
+      ['store', 'migrate-layout', STORE_ID, '--mapping', outside],
+      { env, cwd: storeRoot }
+    );
+    expect(`${human.stdout}${human.stderr}`).toContain('migration_mapping_outside_store');
   }, 120_000);
 
   it('refuses to run from outside the Store worktree', async () => {

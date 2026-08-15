@@ -79,6 +79,48 @@ describe('store layout v2 migration — Windows and POSIX destination constructi
     }
   });
 
+  it('normalizes Windows slash aliases while preserving drive and UNC/long-root identity', () => {
+    expect(
+      resolveStorePlanningLayoutV2Path(
+        'c:/Stores/Team',
+        { kind: 'issue-record', issueId: 'release-coordinator' },
+        'win32'
+      )
+    ).toBe('c:\\Stores\\Team\\rasen\\issues\\release-coordinator\\issue.yaml');
+    expect(
+      resolveStorePlanningLayoutV2Path(
+        '\\\\server\\share\\Team',
+        { kind: 'issue', issueId: 'release-coordinator' },
+        'win32'
+      )
+    ).toBe('\\\\server\\share\\Team\\rasen\\issues\\release-coordinator');
+    const longRoot = `\\\\?\\C:\\stores\\${'deep\\'.repeat(40)}team`;
+    const destination = resolveStorePlanningLayoutV2Path(
+      longRoot,
+      { kind: 'issue', issueId: 'release-coordinator' },
+      'win32'
+    );
+    expect(destination.startsWith('\\\\?\\C:\\stores\\')).toBe(true);
+    expect(destination.endsWith('\\rasen\\issues\\release-coordinator')).toBe(true);
+  });
+
+  it('keeps POSIX case-sensitive siblings distinct while exposing their case-fold collision', () => {
+    const lower = resolveStorePlanningLayoutV2Path(
+      '/stores/team',
+      { kind: 'issue', issueId: 'release-coordinator' },
+      'posix'
+    );
+    const upper = resolveStorePlanningLayoutV2Path(
+      '/stores/Team',
+      { kind: 'issue', issueId: 'release-coordinator' },
+      'posix'
+    );
+    expect(lower).not.toBe(upper);
+    expect(lower.toLocaleLowerCase('en-US')).toBe(upper.toLocaleLowerCase('en-US'));
+    expect(lower).not.toContain('\\');
+    expect(upper).not.toContain('\\');
+  });
+
   it('rejects a relative or wrong-flavor Store root rather than resolving against cwd', () => {
     expect(() =>
       resolveStorePlanningLayoutV2Path('stores/team', { kind: 'store-metadata' }, 'posix')
@@ -201,6 +243,45 @@ describe('store layout v2 migration — Windows and POSIX destination constructi
 
     await f.migration().apply(plan.token!);
     expect(fsExists(path.join(destination, 'proposal.md'))).toBe(true);
+  });
+
+  it('rejects a native symlink or junction whose mapping alias escapes the Store', async () => {
+    const outside = path.join(f.tempDir, 'outside-mapping');
+    nodeFs.mkdirSync(outside, { recursive: true });
+    nodeFs.writeFileSync(
+      path.join(outside, 'mapping.yaml'),
+      targetLineMapping(LINE, ['elftia']),
+      'utf8'
+    );
+    const alias = f.at('rasen', 'linked-mapping');
+    nodeFs.mkdirSync(path.dirname(alias), { recursive: true });
+    nodeFs.symlinkSync(outside, alias, process.platform === 'win32' ? 'junction' : 'dir');
+
+    await expect(
+      f.migration().plan(f.input({ mappingPath: 'rasen/linked-mapping/mapping.yaml' }))
+    ).rejects.toMatchObject({
+      diagnostic: { code: 'migration_mapping_outside_store' },
+    });
+  });
+
+  it('uses identical Store-relative receipt paths across refs without native separators', async () => {
+    await f.member('elftia', { specs: [], changes: ['fix-a'] });
+    f.writeChange('fix-a');
+    f.write(MAPPING, targetLineMapping(LINE, ['elftia']));
+    f.commitAll();
+    f.git('branch', 'other-ref');
+
+    const main = await f.migration().plan(f.input({ mappingPath: MAPPING }));
+    f.switchRef('other-ref');
+    const other = await f.migration().plan(f.input({ mappingPath: MAPPING }));
+    const relative = (plan: ImmutableMigrationPlan): string | undefined =>
+      plan.items.find((item) => item.name === 'fix-a')?.destinationRelative;
+
+    expect(relative(main)).toBe(relative(other));
+    expect(relative(main)).toBe('rasen/projects/elftia/changes/fix-a');
+    expect(relative(main)).not.toContain('\\');
+    expect(main.ref).toBe('refs/heads/main');
+    expect(other.ref).toBe('refs/heads/other-ref');
   });
 
   it('refuses a Windows reserved device name as a project or Change id', () => {

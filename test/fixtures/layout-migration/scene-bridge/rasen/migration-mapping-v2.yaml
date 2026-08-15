@@ -1,0 +1,35 @@
+version: 2
+defaultTargetLine: line-0.1
+targetLines:
+  line-0.1:
+    storeRef: refs/heads/main
+    projects:
+      scene-bridge:
+        codeRef: refs/heads/main
+changes:
+  scene-render-worker:
+    kind: project-change
+    project: scene-bridge
+  time-qualified-preview-render-job-and-reference-video:
+    kind: store-issue
+    issueId: time-qualified-preview-render-job-and-reference-video
+    title: Coordinate time-qualified preview and reference-video delivery
+    plan: rasen/migration-inputs/time-qualified-plan.yaml
+archive:
+  2026-08-01-core-project-and-scene-lifecycle:
+    kind: store-issue
+    issueId: historical-core-project-and-scene-lifecycle
+    title: Historical core project and scene lifecycle coordination
+    state: resolved
+    reason: Operator declares the historical coordination concluded; acceptance evidence is unavailable.
+  2026-08-01-protocol-spine-and-live-cube:
+    kind: store-issue
+    issueId: historical-protocol-spine-and-live-cube
+    title: Historical protocol spine and live cube coordination
+    state: dropped
+    reason: Operator declares this historical coordination superseded; acceptance evidence is unavailable.
+  2026-08-03-named-camera-shot-camera-path-and-timeline:
+    kind: store-issue
+    issueId: historical-camera-path-and-timeline
+    title: Historical named camera, shot, camera path, and timeline coordination
+    state: open

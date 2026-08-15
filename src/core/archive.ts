@@ -25,7 +25,12 @@ import {
   formatWhitespaceViolations,
   scanDirectoryForWhitespaceViolations,
 } from './whitespace-hygiene.js';
-import { readProjectConfig, resolveArchiveTiming } from './project-config.js';
+import { classifyOpenSpecDir, readProjectConfig, resolveArchiveTiming } from './project-config.js';
+import { storeBindingDeclarationFrom } from './effective-config.js';
+import { resolveStoreBinding } from './store/identity.js';
+import { classifyStoreRootLayout } from './store/layout-write-guard.js';
+import { productionStoreLayoutMigrationDependencies } from './store/layout-migration/dependencies.js';
+import { queryLegacyCoordinatorConversion } from './store/layout-migration/receipt.js';
 import {
   emitStoreRootBanner,
   isRootSelectionError,
@@ -86,6 +91,120 @@ interface ArchiveDiagnostic {
   code: string;
   message: string;
   fix?: string;
+  issueId?: string;
+  storeId?: string;
+  forwarded?: false;
+  continuations?: readonly string[];
+}
+
+function legacyFlatStoreArchiveRefusal(storeId: string): ArchiveDiagnostic {
+  return {
+    severity: 'error',
+    code: 'legacy_flat_store_requires_migration',
+    message:
+      'This Store still uses the legacy flat planning layout, which is read-only; archiving requires layout v2.',
+    fix: `Run 'rasen store migrate-layout ${storeId}' to migrate this Store, then retry.`,
+  };
+}
+
+/**
+ * The Store a project-scoped archive target plans in, or null when the root
+ * has nothing to do with a Store. This line's root selection carries no
+ * planning-scope description yet (that surface is the L6 slice), so the store
+ * binding is re-derived from the root's own declaration here.
+ */
+async function archiveStoreBindingTarget(
+  root: ResolvedOpenSpecRoot
+): Promise<{ storeId: string; storeUid?: string; storeRoot: string } | null> {
+  const { pointer } = classifyOpenSpecDir(root.path);
+  const declaration = storeBindingDeclarationFrom(pointer);
+  if (declaration.form === 'absent') return null;
+  const binding = await resolveStoreBinding({ declaration, projectRoot: root.path }).catch(
+    () => null
+  );
+  if (binding?.kind !== 'resolved') return null;
+  return {
+    storeId: binding.store.id,
+    ...(binding.store.uid === undefined ? {} : { storeUid: binding.store.uid }),
+    storeRoot: binding.store.root,
+  };
+}
+
+/**
+ * A legacy flat Store's planning tree is READ-ONLY until it is migrated:
+ * archiving writes into `rasen/changes/archive`, a namespace layout v2
+ * retires, and the entry would then have to be relocated a second time by the
+ * migration. The refusal ships together with the migration that makes it
+ * survivable (`store-layout-v2-migration`, tasks 10b.1-10b.3). Without a
+ * planning-scope description the root's own Store declaration is classified
+ * directly, which is the same fact the resolver would have reported.
+ */
+async function storeFinalizationDiagnostic(
+  root: ResolvedOpenSpecRoot
+): Promise<ArchiveDiagnostic | null> {
+  const classification = await classifyStoreRootLayout(root.path);
+  return classification.kind === 'legacy-flat'
+    ? legacyFlatStoreArchiveRefusal(root.storeId ?? classification.storeId ?? '<store-id>')
+    : null;
+}
+
+async function exactActiveChangeExists(
+  changesDir: string,
+  changeName: string,
+  lstat: typeof fs.lstat
+): Promise<boolean> {
+  try {
+    const stat = await lstat(path.join(changesDir, changeName));
+    return stat.isDirectory() && !stat.isSymbolicLink();
+  } catch (error) {
+    if (isMissingPathError(error)) return false;
+    throw error;
+  }
+}
+
+async function legacyCoordinatorDiagnostic(
+  root: ResolvedOpenSpecRoot,
+  changeName: string | undefined,
+  options: ArchiveOptions,
+  lstat: typeof fs.lstat
+): Promise<ArchiveDiagnostic | null> {
+  if (changeName === undefined || options.intentTemplate === true) {
+    return null;
+  }
+  // A real active Change always wins and remains subject to finalization.
+  if (await exactActiveChangeExists(root.changesDir, changeName, lstat)) return null;
+  const target = await archiveStoreBindingTarget(root);
+  // The conversion receipt is keyed by the Store's permanent identity; a
+  // Store without one cannot have recorded a coordinator conversion.
+  if (target === null || target.storeUid === undefined) return null;
+  const checkedOutRef = await productionStoreLayoutMigrationDependencies.git.currentRef(
+    target.storeRoot
+  );
+  if (checkedOutRef === null) return null;
+  const result = await queryLegacyCoordinatorConversion(
+    productionStoreLayoutMigrationDependencies,
+    {
+      storeRoot: target.storeRoot,
+      storeUid: target.storeUid,
+      ref: checkedOutRef,
+      alias: changeName,
+    }
+  );
+  if (result.status !== 'found') return null;
+  const show = `rasen store issue show ${result.issueId} --store ${target.storeId}`;
+  const state = `rasen store issue state ${result.issueId} --store ${target.storeId} --state <resolved|dropped>`;
+  return {
+    severity: 'error',
+    code: 'legacy_coordinator_became_issue',
+    message:
+      `Legacy Change alias '${changeName}' was converted to Store Issue '${result.issueId}'. ` +
+      `This archive invocation executed no finalization option and changed neither resource.`,
+    fix: `Inspect it with '${show}'. If appropriate, declare Issue state separately with '${state}'; that is an independent operator action, not archive forwarding.`,
+    issueId: result.issueId,
+    storeId: target.storeId,
+    forwarded: false,
+    continuations: [show, state],
+  };
 }
 
 interface ArchiveResult {
@@ -201,7 +320,15 @@ async function resolveShipLogPlan(
   return { source: null, sha256: null, recordedCommit: null };
 }
 
+export interface ArchiveCommandDependencies {
+  readonly lstat: typeof fs.lstat;
+}
+
 export class ArchiveCommand {
+  constructor(
+    private readonly dependencies: ArchiveCommandDependencies = { lstat: fs.lstat }
+  ) {}
+
   async execute(changeName?: string, options: ArchiveOptions = {}): Promise<void> {
     const json = !!options.json;
     if (options.applyPlan !== undefined) {
@@ -232,6 +359,37 @@ export class ArchiveCommand {
         return;
       }
       throw error;
+    }
+
+    const conversionDiagnostic = await legacyCoordinatorDiagnostic(
+      root,
+      changeName,
+      options,
+      this.dependencies.lstat
+    );
+    if (conversionDiagnostic !== null) {
+      if (json) {
+        this.printJsonFailure(root, conversionDiagnostic);
+        return;
+      }
+      throw new ArchiveBlockedError(
+        conversionDiagnostic.code,
+        `[${conversionDiagnostic.code}] ${conversionDiagnostic.message}`,
+        conversionDiagnostic.fix
+      );
+    }
+
+    const flatStoreDiagnostic = await storeFinalizationDiagnostic(root);
+    if (flatStoreDiagnostic !== null) {
+      if (json) {
+        this.printJsonFailure(root, flatStoreDiagnostic);
+        return;
+      }
+      throw new ArchiveBlockedError(
+        flatStoreDiagnostic.code,
+        flatStoreDiagnostic.message,
+        flatStoreDiagnostic.fix
+      );
     }
 
     if (json) {

@@ -157,8 +157,9 @@ async function collectStoreRecords(
     } catch {
       continue;
     }
-    // `projectId` is the record's membership authority and may canonically be
-    // either a UUID or a kebab id. `id` is only a display name and never keys
+    // `projectId` is the record's membership authority and filename key; it may
+    // canonically be either a UUID or a kebab id. `id` is only a human display
+    // name (and may contain values such as "Elftia · 前端"), so it never keys
     // membership, evidence, or a v2 mapping.
     const projectKey = record.projectId;
     members.push(projectKey);

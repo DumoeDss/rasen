@@ -115,7 +115,14 @@ export async function digestTree(
     };
   }
   if (kind !== 'directory') {
-    return { digest: sha256Hex(`${kind}\0`), files: [] };
+    const link = kind === 'other' ? await fsAdapter.readLink(target) : null;
+    return {
+      digest: sha256Hex(`${kind}\0${link ?? ''}`),
+      files:
+        link === null
+          ? []
+          : [{ relative: '', digest: sha256Hex(`link\0${link}`), bytes: Buffer.byteLength(link) }],
+    };
   }
 
   const files: TreeFileDigest[] = [];
@@ -128,6 +135,15 @@ export async function digestTree(
       } else if (entry.kind === 'file') {
         const bytes = (await fsAdapter.readBytes(child)) ?? Buffer.alloc(0);
         files.push({ relative, digest: sha256Hex(bytes), bytes: bytes.length });
+      } else {
+        const link = await fsAdapter.readLink(child);
+        if (link !== null) {
+          files.push({
+            relative,
+            digest: sha256Hex(`link\0${link}`),
+            bytes: Buffer.byteLength(link),
+          });
+        }
       }
     }
   };

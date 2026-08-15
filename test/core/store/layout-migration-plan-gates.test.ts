@@ -21,11 +21,20 @@ import {
   parseTargetLineId,
   verifyChangeInstanceId,
 } from '../../../src/core/index.js';
-import { migrationItemStateLabel } from '../../../src/core/store/layout-migration/types.js';
+import {
+  migrationItemDiagnosticCode,
+  migrationItemStateLabel,
+} from '../../../src/core/store/layout-migration/types.js';
+import {
+  stagePlan,
+  verifyStagedTree,
+} from '../../../src/core/store/layout-migration/apply.js';
+import { productionStoreLayoutMigrationDependencies } from '../../../src/core/store/layout-migration/dependencies.js';
 import { snapshotDirectory } from '../../helpers/fs-snapshot.js';
 import {
   createLayoutMigrationFixture,
   targetLineMapping,
+  targetLineMappingV2,
   MIGRATION_FIXTURE_STORE_UID,
   type LayoutMigrationFixture,
 } from '../../helpers/layout-migration-fixture.js';
@@ -99,8 +108,79 @@ describe('store layout v2 migration — destinations, gates, and minted identity
     const spec = plan.items.find((item) => item.kind === 'spec');
 
     expect(migrationItemStateLabel(spec!.state)).toBe('blocked:destination-exists');
+    expect(migrationItemDiagnosticCode(spec!)).toBe('migration_destination_conflict');
     expect(spec?.reason).toContain('rasen');
     expect(plan.applicable).toBe(false);
+  });
+
+  it('no-clobbers generated Issue roots at plan and apply time and retires only the legacy source', async () => {
+    await f.member('elftia');
+    f.writeChange('release-coordinator');
+    f.write(
+      MAPPING,
+      targetLineMappingV2(LINE, ['elftia'], [
+        'changes:',
+        '  release-coordinator:',
+        '    kind: store-issue',
+        '    issueId: release-coordinator',
+        '    title: Coordinate the release',
+      ])
+    );
+    f.write('rasen/issues/release-coordinator', 'a conflicting file\n');
+    f.commitAll('plant generated destination conflict');
+
+    const blocked = await f.migration().plan(f.input({ mappingPath: MAPPING }));
+    const coordinator = blocked.items.find(item => item.name === 'release-coordinator');
+    expect(migrationItemStateLabel(coordinator!.state)).toBe('blocked:destination-exists');
+    expect(blocked.applicable).toBe(false);
+
+    fs.rmSync(f.issueAt('release-coordinator'));
+    f.commitAll('remove generated destination conflict');
+    const applicable = await f.migration().plan(f.input({ mappingPath: MAPPING }));
+    expect(applicable.applicable).toBe(true);
+    expect(applicable.retirementSet).toContain('rasen/changes/release-coordinator');
+    expect(applicable.retirementSet).not.toContain('rasen/issues/release-coordinator');
+
+    f.write('rasen/issues/release-coordinator/foreign.txt', 'created after planning\n');
+    await expect(f.migration().apply(applicable.token!)).rejects.toThrow(/now exists/iu);
+    expect(f.readBytes('rasen/issues/release-coordinator/foreign.txt').toString('utf8')).toBe(
+      'created after planning\n'
+    );
+    expect(f.readBytes('rasen/changes/release-coordinator/proposal.md').toString('utf8'))
+      .toBe('# release-coordinator\n');
+    expect(f.readBytes('.rasen-store/store.yaml').toString('utf8')).not.toContain(
+      'layoutVersion: 2'
+    );
+  });
+
+  it('verifies the exact generated inventory and reparses staged Issue bytes before publication', async () => {
+    await f.member('elftia');
+    f.writeChange('release-coordinator');
+    f.write(
+      MAPPING,
+      targetLineMappingV2(LINE, ['elftia'], [
+        'changes:',
+        '  release-coordinator:',
+        '    kind: store-issue',
+        '    issueId: release-coordinator',
+        '    title: Coordinate the release',
+      ])
+    );
+    f.commitAll('declare generated Issue');
+    const plan = await f.migration().plan(f.input({ mappingPath: MAPPING }));
+    const staged = await stagePlan(
+      productionStoreLayoutMigrationDependencies,
+      plan,
+      undefined
+    );
+    const issueEntry = staged.entries.find(entry => entry.kind === 'issue-tree')!;
+    fs.writeFileSync(path.join(issueEntry.staged, 'issue.yaml'), 'version: 1\nid: wrong\n', 'utf8');
+    fs.writeFileSync(path.join(issueEntry.staged, 'unplanned.txt'), 'surprise\n', 'utf8');
+
+    await expect(
+      verifyStagedTree(productionStoreLayoutMigrationDependencies, plan, staged)
+    ).rejects.toThrow(/wrong digest|was not planned|invalid/iu);
+    expect(fs.existsSync(f.issueAt('release-coordinator'))).toBe(false);
   });
 
   // Two capabilities that fold onto one destination cannot even be CREATED on a
@@ -239,6 +319,56 @@ describe('store layout v2 migration — destinations, gates, and minted identity
       .plan(f.input({ mappingPath: MAPPING, includeUntracked: true }));
     expect(allowed.applicable).toBe(true);
     expect(allowed.includeUntracked).toBe(true);
+  });
+
+  it('unconditionally blocks every untracked, ignored, or linked byte below a generated source', async () => {
+    await f.member('elftia');
+    f.writeChange('release-coordinator');
+    f.write(
+      MAPPING,
+      targetLineMappingV2(LINE, ['elftia'], [
+        'changes:',
+        '  release-coordinator:',
+        '    kind: store-issue',
+        '    issueId: release-coordinator',
+        '    title: Coordinate the release',
+      ])
+    );
+    f.ignore('rasen/changes/release-coordinator/ignored/');
+    f.commitAll('declare generated source safety policy');
+    f.writeUntracked('rasen/changes/release-coordinator/scratch.md', 'untracked\n');
+    f.writeUntracked('rasen/changes/release-coordinator/ignored/secret.md', 'ignored\n');
+
+    const outside = path.join(f.tempDir, 'outside-source.txt');
+    fs.writeFileSync(outside, 'outside\n', 'utf8');
+    let linkCreated = false;
+    try {
+      fs.symlinkSync(
+        outside,
+        f.at('rasen', 'changes', 'release-coordinator', 'outside-link'),
+        'file'
+      );
+      linkCreated = true;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'EPERM' && code !== 'EACCES' && code !== 'ENOTSUP') throw error;
+    }
+
+    const plan = await f.migration().plan(
+      f.input({ mappingPath: MAPPING, includeUntracked: true })
+    );
+    const coordinator = plan.items.find(item => item.name === 'release-coordinator')!;
+    expect(migrationItemStateLabel(coordinator.state)).toBe('blocked:dirty-source');
+    expect(migrationItemDiagnosticCode(coordinator)).toBe('migration_source_unsafe');
+    expect(coordinator.untracked).toContain('rasen/changes/release-coordinator/scratch.md');
+    expect(coordinator.untracked?.some(entry => entry.includes('/ignored'))).toBe(true);
+    if (linkCreated) {
+      expect(coordinator.untracked).toContain(
+        'rasen/changes/release-coordinator/outside-link'
+      );
+    }
+    expect(coordinator.repair).toContain('--include-untracked cannot authorize data loss');
+    expect(plan.applicable).toBe(false);
   });
 
   it('is one gate with no override: a single unresolved item refuses the whole plan and writes nothing', async () => {
