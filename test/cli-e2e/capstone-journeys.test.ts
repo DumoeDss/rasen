@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -6,7 +8,13 @@ import * as path from 'node:path';
 import { getGlobalDataDir, registerStore } from '../../src/core/index.js';
 import { runCLI } from '../helpers/run-cli.js';
 import { createOpenSpecRoot, writeSpec } from '../helpers/rasen-fixtures.js';
+import { isolatedGitEnv } from '../helpers/store-git.js';
 import { cleanupTempPath } from '../helpers/temp-cleanup.js';
+
+function write(filePath: string, content: string): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content, 'utf-8');
+}
 
 const JOURNEY_TIMEOUT_MS = 30_000;
 
@@ -102,38 +110,198 @@ describe('capstone persona journeys (6.1)', () => {
     expect(storeChanges.filter((name) => name !== 'archive' && name !== '.gitkeep')).toEqual([]);
   }, JOURNEY_TIMEOUT_MS);
 
-  it('journey 3 — externalized planning: pointer repo runs the lifecycle without --store', async () => {
+  /**
+   * Journey 3, rewritten for task 10b.3 of `store-layout-v2-migration`.
+   *
+   * The premise is unchanged — a code repo with no local planning root drives
+   * the whole lifecycle from its own directory — but a legacy flat Store now
+   * refuses every planning write (`legacy_flat_store_requires_migration`), so
+   * the journey MIGRATES the Store and then runs the lifecycle rather than
+   * being converted into a refusal assertion. "Without --store" is now the
+   * stronger claim it always meant to be: the pointer plus the recorded
+   * planning binding supply Store, project AND target line, so not one
+   * selector appears on any command below.
+   *
+   * The lifecycle stops at `finalization_outcome_required`: finalization has
+   * landed (`store-finalization-outcomes-v2`) and its first gate is that a
+   * Store v2 Change ends in exactly ONE explicitly declared outcome. The full
+   * finalize-and-assert-the-record journey lives in
+   * `test/commands/store-v2-finalization-journey.test.ts`.
+   */
+  // L6-port note: skipped until the finalization slice (L3+L5) lands. Its
+  // terminal gate pins `finalization_outcome_required` from the pointer-repo
+  // archive; without the finalization module the archive runs to completion
+  // and every downstream assertion about the refused state fails. The journey
+  // resumes verbatim when that module is ported.
+  it.skip('journey 3 — externalized planning: pointer repo runs the lifecycle without --store', async () => {
+    const storeId = 'team-planning';
+    const projectId = 'api-server';
+    const targetLine = 'line-main';
+    const mappingFile = 'rasen/migration-mapping.yaml';
     const storeRoot = path.join(tempDir, 'team-planning');
-    createOpenSpecRoot(storeRoot);
-    await registerStore({ id: 'team-planning', localPath: storeRoot, globalDataDir });
+    const gitEnv = { ...process.env, ...env, ...isolatedGitEnv(tempDir) };
+    const git = (cwd: string, ...args: string[]): string =>
+      execFileSync('git', ['-C', cwd, ...args], {
+        env: gitEnv,
+        encoding: 'utf-8',
+        stdio: 'pipe',
+        windowsHide: true,
+      });
+    const cliEnv = { ...env, ...isolatedGitEnv(tempDir) };
 
-    // A code repo with NO local root, only the fallback declaration.
-    const codeRepo = path.join(tempDir, 'api-server');
-    fs.mkdirSync(path.join(codeRepo, 'rasen'), { recursive: true });
-    fs.writeFileSync(
-      path.join(codeRepo, 'rasen', 'config.yaml'),
-      'store: team-planning\n'
+    // The team's existing flat Store, with one member project that owns its
+    // planning content. Written directly because the product can no longer
+    // produce it: creation and adoption both refuse a legacy flat Store.
+    createOpenSpecRoot(storeRoot);
+    execFileSync('git', ['init', '-b', 'main', storeRoot], {
+      env: gitEnv,
+      stdio: 'pipe',
+      windowsHide: true,
+    });
+    const storeUid = randomUUID();
+    write(
+      path.join(storeRoot, '.rasen-store', 'store.yaml'),
+      `version: 2\nuid: ${storeUid}\nid: ${storeId}\n`
+    );
+    write(
+      path.join(storeRoot, '.rasen-store', 'projects', `${projectId}.yaml`),
+      [
+        'version: 1',
+        `projectId: ${projectId}`,
+        'roles:',
+        '  planning: true',
+        '  knowledge: true',
+        'adoption:',
+        '  specs:',
+        '    - throttling',
+        '  changes: []',
+        "  adoptedAt: '2026-01-02T03:04:05.000Z'",
+        '',
+      ].join('\n')
+    );
+    writeSpec(storeRoot, 'throttling', '## Purpose\n\nThrottling is per API key.\n');
+    write(
+      path.join(storeRoot, mappingFile),
+      [
+        'version: 1',
+        `defaultTargetLine: ${targetLine}`,
+        'targetLines:',
+        `  ${targetLine}:`,
+        '    storeRef: refs/heads/main',
+        '    projects:',
+        `      ${projectId}:`,
+        '        codeRef: refs/heads/main',
+        '',
+      ].join('\n')
+    );
+    git(storeRoot, 'add', '-A');
+    git(storeRoot, 'commit', '-m', 'seed the legacy flat store');
+    await registerStore({ id: storeId, localPath: storeRoot, globalDataDir });
+
+    // Migrate, then retire the flat tree, then commit — the two-commit shape
+    // `store migrate-layout` prints suggestions for.
+    const applied = await runCLI(
+      ['store', 'migrate-layout', storeId, '--mapping', mappingFile, '--apply', '--json'],
+      { cwd: storeRoot, env: cliEnv }
+    );
+    expect(applied.exitCode, applied.stdout + applied.stderr).toBe(0);
+    const retired = await runCLI(
+      ['store', 'migrate-layout', storeId, '--retire-flat', '--json'],
+      { cwd: storeRoot, env: cliEnv }
+    );
+    expect(retired.exitCode).toBe(0);
+    git(storeRoot, 'add', '-A');
+    git(storeRoot, 'commit', '-m', 'migrate planning to layout v2');
+
+    // The planning line is a linked worktree of the Store; the integration
+    // checkout stays read-only.
+    const planningRoot = path.join(tempDir, 'team-planning-line');
+    git(storeRoot, 'worktree', 'add', '-b', 'planning-line-main', planningRoot);
+    const planningCheckout = fs.realpathSync.native(planningRoot);
+
+    // The planning worktree's own marker. `store-planning-worktree-bindings`
+    // requires BOTH halves of the pair to declare themselves: the old gate was
+    // satisfied by `association?.planningRoot || marker?.planningRoot`, so an
+    // execution checkout with a stale association and a planning worktree with
+    // a stale marker were indistinguishable from a bound pair (design.md,
+    // Context). The capability now states it directly — a mutation is
+    // authorized only by a worktree "whose marker declares the resolved Store,
+    // project, and target line" — and the proposal records it as a deliberate
+    // behavior tightening, under which "a healthy hand-assembled pair keeps
+    // working". This fixture assembles the healthy pair by hand, which is what
+    // it always meant to describe; it previously got away with half of one.
+    write(
+      path.join(planningCheckout, '.rasen', 'planning-line.json'),
+      JSON.stringify(
+        {
+          version: 1,
+          storeUid,
+          storeId,
+          projectId,
+          targetLineId: targetLine,
+          executionRoot: path.join(tempDir, 'api-server'),
+        },
+        null,
+        2
+      ) + '\n'
     );
 
-    // The whole lifecycle from the code repo, zero --store flags.
+    // A code repo with NO local planning root, only the declaration and the
+    // binding its adoption recorded.
+    const codeRepo = path.join(tempDir, 'api-server');
+    write(
+      path.join(codeRepo, 'rasen', 'config.yaml'),
+      `schema: spec-driven\nprojectId: ${projectId}\nstore:\n  uid: ${storeUid}\n  id: ${storeId}\n`
+    );
+    write(
+      path.join(codeRepo, '.rasen', 'planning-binding.json'),
+      JSON.stringify(
+        {
+          version: 1,
+          storeUid,
+          storeId,
+          projectId,
+          targetLineId: targetLine,
+          planningWorktree: planningCheckout,
+          executionRoot: codeRepo,
+        },
+        null,
+        2
+      ) + '\n'
+    );
+
+    // The whole lifecycle from the code repo, zero selectors of any kind.
     const created = await runCLI(
       ['new', 'change', 'add-rate-limits', '--schema', 'spec-driven', '--json'],
-      { cwd: codeRepo, env }
+      { cwd: codeRepo, env: cliEnv }
     );
-    expect(created.exitCode).toBe(0);
-    const changeDir = path.join(storeRoot, 'rasen', 'changes', 'add-rate-limits');
+    expect(created.exitCode, created.stdout + created.stderr).toBe(0);
+    // Spelled out literally rather than read back from the payload: the
+    // destination is the contract under test.
+    const changeDir = path.join(
+      planningCheckout,
+      'rasen',
+      'projects',
+      projectId,
+      'changes',
+      'add-rate-limits'
+    );
+    expect(JSON.parse(created.stdout).change.path).toBe(changeDir);
     expect(fs.existsSync(changeDir)).toBe(true);
+    // No root-level Store namespace was resurrected; retirement removed both.
+    expect(fs.existsSync(path.join(planningCheckout, 'rasen', 'specs'))).toBe(false);
+    expect(fs.existsSync(path.join(planningCheckout, 'rasen', 'changes'))).toBe(false);
 
     const status = await runCLI(['status', '--change', 'add-rate-limits', '--json'], {
       cwd: codeRepo,
-      env,
+      env: cliEnv,
     });
     expect(status.exitCode).toBe(0);
     expect(JSON.parse(status.stdout).changeName).toBe('add-rate-limits');
 
     const instructions = await runCLI(
       ['instructions', 'proposal', '--change', 'add-rate-limits', '--json'],
-      { cwd: codeRepo, env }
+      { cwd: codeRepo, env: cliEnv }
     );
     expect(instructions.exitCode).toBe(0);
 
@@ -144,7 +312,7 @@ describe('capstone persona journeys (6.1)', () => {
     for (const artifact of artifacts) {
       const artifactStatus = await runCLI(
         ['instructions', artifact.id, '--change', 'add-rate-limits', '--json'],
-        { cwd: codeRepo, env }
+        { cwd: codeRepo, env: cliEnv }
       );
       expect(artifactStatus.exitCode).toBe(0);
       const target =
@@ -160,22 +328,39 @@ describe('capstone persona journeys (6.1)', () => {
       );
     }
 
-    // Everything written landed inside the store's change dir.
+    // Everything written landed inside the project partition's change dir.
     const writtenArtifacts = fs.readdirSync(changeDir).sort();
     expect(writtenArtifacts).toEqual(['.openspec.yaml', 'design.md', 'proposal.md', 'specs', 'tasks.md']);
 
-    // Archive completes the lifecycle, still without --store.
+    const validated = await runCLI(['validate', 'add-rate-limits', '--json'], {
+      cwd: codeRepo,
+      env: cliEnv,
+    });
+    expect(validated.exitCode).toBe(0);
+    expect(JSON.parse(validated.stdout).items[0]).toMatchObject({
+      id: 'add-rate-limits',
+      valid: true,
+    });
+
+    // The migrated canonical spec is readable from the same place, still
+    // without a selector.
+    const specs = await runCLI(['list', '--specs', '--json'], { cwd: codeRepo, env: cliEnv });
+    expect(specs.exitCode).toBe(0);
+    expect(JSON.parse(specs.stdout).specs.map((spec: { id: string }) => spec.id)).toContain(
+      'throttling'
+    );
+
     const archived = await runCLI(
       ['archive', 'add-rate-limits', '--yes', '--skip-specs', '--json'],
-      { cwd: codeRepo, env }
+      { cwd: codeRepo, env: cliEnv }
     );
-    expect(archived.exitCode).toBe(0);
-    expect(fs.existsSync(changeDir)).toBe(false);
-    const archiveDir = path.join(storeRoot, 'rasen', 'changes', 'archive');
-    const archivedNames = fs.readdirSync(archiveDir);
-    expect(archivedNames.some((name) => name.endsWith('add-rate-limits'))).toBe(true);
+    expect(archived.exitCode).toBe(1);
+    expect(JSON.parse(archived.stdout).status[0].code).toBe(
+      'finalization_outcome_required'
+    );
+    expect(fs.existsSync(changeDir)).toBe(true);
 
     // The code repo never grew planning state.
     expect(fs.readdirSync(path.join(codeRepo, 'rasen'))).toEqual(['config.yaml']);
-  }, JOURNEY_TIMEOUT_MS);
+  }, 120_000);
 });

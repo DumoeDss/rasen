@@ -10,7 +10,7 @@ import type * as http from 'node:http';
 import * as path from 'node:path';
 
 import type { ConfigApiContext } from '../config-api/router.js';
-import { resolveSpaceSelector } from '../config-api/project-addressing.js';
+import { resolveSpaceSelector, type ResolvedSpace } from '../config-api/project-addressing.js';
 import type { ProjectHome } from '../project-home.js';
 import {
   getProjectRegistryPath,
@@ -82,6 +82,7 @@ import {
   type ReusableSessionService,
 } from './reusable-session-api.js';
 import { createChangeSubmitter } from './submit.js';
+import { isStoreAggregateSpace } from './project-space.js';
 import { createSpaceCreator } from './create-space.js';
 import {
   handleWorkflowDependenciesRead,
@@ -131,7 +132,7 @@ type RunsSpaceResolution =
 
 /** Resolution of a request's optional `space` selector to a planning-space root (planning-space-addressing design D2). */
 type RequestSpaceResolution =
-  | { ok: true; root: string | undefined }
+  | { ok: true; root: string | undefined; space?: ResolvedSpace }
   | { ok: false; status: number; code: string; message: string };
 
 /**
@@ -840,7 +841,7 @@ export function createManagementRouter(
     }
     const resolved = await resolveSpaceSelector(selector);
     if (!resolved.ok) return resolved;
-    return { ok: true, root: resolved.space.root };
+    return { ok: true, root: resolved.space.root, space: resolved.space };
   };
 
   /**
@@ -1085,16 +1086,28 @@ export function createManagementRouter(
         sendError(res, 400, 'invalid_input', 'space must be a string.');
         return;
       }
-      let submitRoot: string | undefined;
+      let submitTarget: ResolvedSpace | string | undefined;
       if (typeof request.space === 'string' && request.space !== '') {
         const resolvedSpace = await resolveRequestSpace(request.space);
         if (!resolvedSpace.ok) {
           sendError(res, resolvedSpace.status, resolvedSpace.code, resolvedSpace.message);
           return;
         }
-        submitRoot = resolvedSpace.root;
+        // A Store aggregate cannot select a project implicitly; refuse before
+        // anything is spawned. The submission target that works in layout v2
+        // is the bound project space.
+        if (isStoreAggregateSpace(resolvedSpace.space)) {
+          sendError(
+            res,
+            400,
+            'project_scope_required',
+            'Change submission requires a project planning scope; a Store aggregate cannot select a project implicitly.'
+          );
+          return;
+        }
+        submitTarget = resolvedSpace.space;
       }
-      const result = await submitChange(request.name, request.description, submitRoot);
+      const result = await submitChange(request.name, request.description, submitTarget);
       if (!result.ok) {
         res.writeHead(result.status, JSON_HEADERS);
         res.end(
