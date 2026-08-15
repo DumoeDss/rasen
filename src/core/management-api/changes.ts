@@ -9,16 +9,22 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { WORKSPACE_DIR_NAME } from '../config.js';
 import { getActiveChangeIds } from '../../utils/item-discovery.js';
 import { getTaskProgressForChange } from '../../utils/task-progress.js';
 import { loadChangeContext, formatChangeStatus } from '../artifact-graph/index.js';
-import { resolveProjectHome, type ProjectHome } from '../project-home.js';
+import type { ProjectHome } from '../project-home.js';
 import { resolveRunStateLocation } from '../pipeline-registry/run-state.js';
 import { resolvePortfolioStateLocation } from '../pipeline-registry/portfolio-state.js';
 import { resolveGoalRunPath } from './runs.js';
-import { ephemeraDir } from '../file-placement.js';
 import type { ChangeLoadError, ChangeSummary, ChangesResponse } from './wire-types.js';
+import {
+  changeStateLocations,
+  resolveActiveChangeDir,
+  resolveExecutionHome,
+  resolveProjectContentSpace,
+  type ProjectContentSpace,
+  type ProjectSpaceInput,
+} from './project-space.js';
 
 export type ChangesResult =
   | { ok: true; response: ChangesResponse }
@@ -84,27 +90,31 @@ export function portfolioOf(changeName: string, containers: string[]): string | 
  * handler so a Task's active children carry byte-identical facts to the board.
  */
 export async function buildChangeSummary(
-  root: string,
-  changesDir: string,
+  space: ProjectContentSpace,
   name: string,
   portfolioContainers: string[],
   home: ProjectHome | null
 ): Promise<ChangeSummary> {
-  const changeDir = path.join(changesDir, name);
-  const context = loadChangeContext(root, name);
+  const changeDir = await resolveActiveChangeDir(space, name);
+  const context = loadChangeContext(space.planningCheckoutRoot, name, undefined, {
+    changeDir,
+    projectSchemasDir: space.schemasDir,
+  });
   // `nextWorkflows` is never read by `ChangeSummary` below (review round 1
   // m1) — skip its two uncached fs reads (`getGlobalConfig`,
   // `loadWorkflowCatalog`) per change in this per-request board loop.
   const status = formatChangeStatus(context, { computeNextWorkflows: false });
 
-  const taskProgress = await getTaskProgressForChange(changesDir, name, root);
+  const taskProgress = await getTaskProgressForChange(
+    space.changesDir,
+    name,
+    space.planningCheckoutRoot,
+    space.schemasDir
+  );
   // Sticky-legacy chain (`file-placement`): the execution root's ephemera
   // directory first — `root` IS the execution root for a server-driven read —
   // then the legacy machine-home work directory, then the change directory.
-  const locations = {
-    ephemeraDir: ephemeraDir(root, name),
-    workDir: home ? home.workDir(name) : null,
-  };
+  const locations = changeStateLocations(space, home, name);
   const hasRunFiles =
     resolveRunStateLocation(changeDir, locations) !== null ||
     resolvePortfolioStateLocation(changeDir, locations) !== null ||
@@ -130,41 +140,22 @@ export async function buildChangeSummary(
  * board load resolves the home once, not once per endpoint.
  */
 export async function handleChanges(
-  root: string | undefined,
+  input: ProjectSpaceInput,
   home?: ProjectHome | null
 ): Promise<ChangesResult> {
-  if (!root) {
-    return {
-      ok: false,
-      status: 400,
-      code: 'project_required',
-      message: 'No Rasen project is available for this server; launch `rasen ui` inside a project.',
-    };
-  }
-
-  const changesDir = path.join(root, WORKSPACE_DIR_NAME, 'changes');
-  const changeIds = await getActiveChangeIds(root);
-  const portfolioContainers = findPortfolioContainers(changesDir);
-
-  let resolvedHome: ProjectHome | null;
-  if (home !== undefined) {
-    resolvedHome = home;
-  } else {
-    // Read-only probe (design D5's `ensure: false` contract, reused here for
-    // `hasRunFiles`): never mints identity or creates directories.
-    try {
-      resolvedHome = await resolveProjectHome(root, { ensure: false });
-    } catch {
-      resolvedHome = null;
-    }
-  }
+  const resolved = resolveProjectContentSpace(input);
+  if (!resolved.ok) return resolved;
+  const space = resolved.space;
+  const changeIds = await getActiveChangeIds(space.planningCheckoutRoot, space.changesDir);
+  const portfolioContainers = findPortfolioContainers(space.changesDir);
+  const resolvedHome = await resolveExecutionHome(space, home);
 
   const changes: ChangeSummary[] = [];
   const errors: ChangeLoadError[] = [];
 
   for (const name of changeIds) {
     try {
-      changes.push(await buildChangeSummary(root, changesDir, name, portfolioContainers, resolvedHome));
+      changes.push(await buildChangeSummary(space, name, portfolioContainers, resolvedHome));
     } catch (err) {
       // A change with a valid `proposal.md` (so `getActiveChangeIds` counts
       // it active) but an unresolvable schema or corrupt metadata must not

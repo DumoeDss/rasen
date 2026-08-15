@@ -308,7 +308,7 @@ describe('the Store change-finalization route', () => {
     expect(fs.existsSync(bound.archiveLine)).toBe(false);
   }, 120_000);
 
-  it.skip.each(['GET', 'PUT', 'DELETE'])('405s %s on the finalize path', async method => {
+  it.each(['GET', 'PUT', 'DELETE'])('405s %s on the finalize path', async method => {
     const server = await startServer();
     const res = await req(server.port, {
       method,
@@ -348,11 +348,7 @@ describe('the Store change-finalization route', () => {
     expect(fs.existsSync(bound.archiveLine)).toBe(false);
   }, 120_000);
 
-  // L3+L5-port deferral: the refusal semantics below assert green; the byte-level
-  // tree-identity snapshot fails because this line's real-CLI inspect refreshes
-  // the planning worktree's git index (content unchanged). Root-cause with the
-  // L7 management-api wave; resumes verbatim.
-  it.skip('409s a path scope that disagrees with the committed identity, mutating nothing', async () => {
+  it('409s a path scope that disagrees with the committed identity, mutating nothing', async () => {
     const server = await startServer();
     const before = snapshotFinalizationTrees();
 
@@ -378,11 +374,8 @@ describe('the Store change-finalization route', () => {
     expect(fs.existsSync(bound.archiveLine)).toBe(false);
   }, 180_000);
 
-  // L3+L5-port deferral: the refusal semantics below assert green; the byte-level
-  // tree-identity snapshot fails because this line's real-CLI inspect refreshes
-  // the planning worktree's git index (content unchanged). Root-cause with the
   // L7 management-api wave; resumes verbatim.
-  it.skip('rejects identity drift between real inspect and save before transaction persistence', async () => {
+  it('rejects identity drift between real inspect and save before transaction persistence', async () => {
     const fixtureCli = path.resolve(
       __dirname,
       '..',
@@ -460,11 +453,8 @@ describe('the Store change-finalization route', () => {
     expect(res.json().error.code).toBe('archive_finalization_preview_changed');
   }, 300_000);
 
-  // L3+L5-port deferral: the refusal semantics below assert green; the byte-level
-  // tree-identity snapshot fails because this line's real-CLI inspect refreshes
-  // the planning worktree's git index (content unchanged). Root-cause with the
   // L7 management-api wave; resumes verbatim.
-  it.skip('rejects merge-gate drift between real inspect and save before transaction persistence', async () => {
+  it('rejects merge-gate drift between real inspect and save before transaction persistence', async () => {
     const fixtureCli = path.resolve(
       __dirname,
       '..',
@@ -509,11 +499,8 @@ describe('the Store change-finalization route', () => {
     expect(res.json().error.code).toBe('archive_finalization_preview_changed');
   }, 300_000);
 
-  // L3+L5-port deferral: the refusal semantics below assert green; the byte-level
-  // tree-identity snapshot fails because this line's real-CLI inspect refreshes
-  // the planning worktree's git index (content unchanged). Root-cause with the
   // L7 management-api wave; resumes verbatim.
-  it.skip('rejects archive-cleaner decision drift between real inspect and save before transaction persistence', async () => {
+  it('rejects archive-cleaner decision drift between real inspect and save before transaction persistence', async () => {
     const fixtureCli = path.resolve(
       __dirname,
       '..',
@@ -576,11 +563,10 @@ describe('the Store change-finalization route', () => {
     );
   }, 300_000);
 
-  it.skip.each([
+  it.each([
     { label: 'omitted', mergeConfirmed: undefined },
     { label: 'false', mergeConfirmed: false },
   ])(
-    // L3+L5-port deferral: same snapshot class as above. Resumes verbatim.
     'refuses the sole merge gate when mergeConfirmed is $label without persisting a transaction',
     async ({ mergeConfirmed }) => {
       seedPullRequestDelivery();
@@ -648,10 +634,7 @@ describe('the Store change-finalization route', () => {
     ]);
   }, 300_000);
 
-  // L3+L5-port deferral: same class as the four above — refusal semantics green,
-  // byte-level tree snapshot fails on the planning worktree's refreshed git
-  // index. Resumes verbatim with the L7 wave.
-  it.skip('retains the complete blocker array and saves nothing when true accompanies a second blocker', async () => {
+  it('retains the complete blocker array and saves nothing when true accompanies a second blocker', async () => {
     seedPullRequestDelivery();
     f.write(path.join(bound.changeDir, 'tasks.md'), '- [ ] unresolved task\n');
     const server = await startServer();
@@ -688,10 +671,7 @@ describe('the Store change-finalization route', () => {
     expect(snapshotFinalizationTrees()).toEqual(before);
   }, 300_000);
 
-  // L3+L5-port deferral: same class as the four above — refusal semantics green,
-  // byte-level tree snapshot fails on the planning worktree's refreshed git
-  // index. Resumes verbatim with the L7 wave.
-  it.skip('preserves real reconciliation issue occurrences through ArchiveCommand, CLI JSON, and loopback HTTP', async () => {
+  it('preserves real reconciliation issue occurrences through ArchiveCommand, CLI JSON, and loopback HTTP', async () => {
     const canonical = path.join(
       bound.planningWorktree,
       'rasen',
