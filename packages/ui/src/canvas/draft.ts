@@ -1211,6 +1211,120 @@ export function removeV2Node(
   };
 }
 
+export interface V2NodeRemovalRefusal {
+  id: string;
+  reason: string;
+}
+
+export interface V2NodeRemovalPlan {
+  next: WirePipelineDefinitionV2;
+  /** Every root node id actually gone from `next`, in draft order — including co-deleted barriers a pair removal carried away unselected. */
+  removedIds: string[];
+  refused: readonly V2NodeRemovalRefusal[];
+}
+
+/**
+ * Best-effort batch removal over a set of selected root node ids
+ * (canvas-multi-selection design D5). One call owns the whole delete:
+ *
+ * - A selected `FanOut` routes through `removeParallelPair` — its `Join`
+ *   travels with it whether or not the Join was also selected.
+ * - A lone selected `Join` (its FanOut not selected) is refused with
+ *   `removeV2Node`'s existing paired-deletion message; same for a
+ *   Gate-targeted node and a parallel pair's last member — every refusal
+ *   reuses `removeV2Node`'s own thrown message verbatim, so this helper
+ *   adds no new vocabulary.
+ * - Kinds outside the editable vocabulary (a future engine node the UI
+ *   does not know) are skipped silently and are NOT refusals — they were
+ *   never selectable-editable.
+ *
+ * Best-effort, not atomic: eligible nodes delete while refusals collect.
+ * The caller reports `refused` as ONE summary for the whole deletion.
+ */
+export function removeV2Nodes(
+  def: WirePipelineDefinitionV2,
+  ids: ReadonlySet<string>
+): V2NodeRemovalPlan {
+  const refusals: V2NodeRemovalRefusal[] = [];
+  let next = def;
+  // Selected FanOuts go FIRST: their pair removal deletes the whole
+  // parallel unit's structure, so any selected members that follow are
+  // judged as plain nodes instead of being refused as "the only parallel
+  // member" of a FanOut the same batch is already deleting (an order
+  // artifact a box-select of a frontier + its members would otherwise hit).
+  for (const pass of ['pairs', 'rest'] as const) {
+    for (const node of def.root.nodes) {
+      if (!ids.has(node.id)) continue;
+      if (pass === 'pairs' ? node.kind !== 'FanOut' : node.kind === 'FanOut') {
+        continue;
+      }
+      // A pair removal can carry away an unselected (or not-yet-iterated)
+      // Join before its own turn arrives.
+      if (!next.root.nodes.some((candidate) => candidate.id === node.id)) {
+        continue;
+      }
+      if (!isV2EditableNodeKind(node.kind)) continue;
+      if (node.kind === 'FanOut') {
+        try {
+          next = removeParallelPair(next, node.id);
+        } catch (error) {
+          refusals.push({
+            id: node.id,
+            reason: removalRefusalMessage(node.id, error),
+          });
+        }
+        continue;
+      }
+      if (node.kind === 'Join') {
+        // Its FanOut is also selected: the pair is (or was) handled as one
+        // unit at the FanOut, so this half is neither refused nor re-removed.
+        const ownerSelected = def.root.nodes.some(
+          (candidate) =>
+            candidate.kind === 'FanOut' &&
+            candidate.joinNodeId === node.id &&
+            ids.has(candidate.id)
+        );
+        if (ownerSelected) continue;
+        try {
+          next = removeV2Node(next, node.id);
+        } catch (error) {
+          refusals.push({
+            id: node.id,
+            reason: removalRefusalMessage(node.id, error),
+          });
+        }
+        continue;
+      }
+      try {
+        next = removeV2Node(next, node.id);
+      } catch (error) {
+        refusals.push({
+          id: node.id,
+          reason: removalRefusalMessage(node.id, error),
+        });
+      }
+    }
+  }
+  // "Actually deleted" is the before/after difference in draft order, so a
+  // co-deleted barrier (or a member a pair removal carried away after its
+  // own refusal was recorded) is reported as removed, and...
+  const removedIds = def.root.nodes
+    .map((node) => node.id)
+    .filter((id) => !next.root.nodes.some((node) => node.id === id));
+  // ...a refusal whose node no longer exists is not a refusal — a later
+  // pair removal in the same batch resolved it.
+  const refused = refusals.filter((refusal) =>
+    next.root.nodes.some((node) => node.id === refusal.id)
+  );
+  return { next, removedIds, refused };
+}
+
+function removalRefusalMessage(id: string, error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : `Node '${id}' could not be removed.`;
+}
+
 /**
  * Gate as a stage property (design D4). `GateNode` already *names* the stage
  * it guards (`target`), which is why it reads naturally as that stage's
@@ -1721,6 +1835,70 @@ export type DefinitionIssueTarget =
       sourceStage: string;
       field?: string;
     };
+
+// ===== Canvas selection model (canvas-multi-selection design D1/D2) =====
+
+/**
+ * The canvas editor's selection: a set of node ids and a set of connection
+ * ids, never a single chosen element. React Flow owns the interaction truth
+ * (`node.selected`/`edge.selected`, driven by its Shift+drag box-select and
+ * multi-select-key augmentation); the page keeps exactly ONE derived mirror
+ * of this shape, written by `onSelectionChange` (user actions) and by the
+ * explicit programmatic replacers at the gesture/rename/issue handlers.
+ * Panels and the later portfolio children (subgraph extraction, loop
+ * inference, frontier inference) consume `nodeIds` — never a re-derived
+ * "what is selected" of their own.
+ *
+ * Lives here, beside `DefinitionIssueTarget`, because `draft.ts` is the one
+ * home for canvas model vocabulary: a second encoding of "what does this
+ * selection mean" in a panel would be exactly the drift this module's
+ * vocabulary comments warn about.
+ */
+export interface CanvasSelection {
+  nodeIds: ReadonlySet<string>;
+  connectionIds: ReadonlySet<string>;
+}
+
+export const EMPTY_CANVAS_SELECTION: CanvasSelection = {
+  nodeIds: new Set<string>(),
+  connectionIds: new Set<string>(),
+};
+
+/**
+ * The one selected node when the selection is exactly one node and nothing
+ * else; `null` for every other shape (this is how singleton panel behavior
+ * is preserved by derivation — a mixed or multi selection is not a node
+ * selection).
+ */
+export function singletonNodeId(selection: CanvasSelection): string | null {
+  if (selection.nodeIds.size !== 1 || selection.connectionIds.size > 0) {
+    return null;
+  }
+  return [...selection.nodeIds][0]!;
+}
+
+/** The one selected connection when the selection is exactly one connection and nothing else; `null` otherwise. */
+export function singletonConnectionId(selection: CanvasSelection): string | null {
+  if (selection.connectionIds.size !== 1 || selection.nodeIds.size > 0) {
+    return null;
+  }
+  return [...selection.connectionIds][0]!;
+}
+
+/**
+ * Which right-column panel a selection opens: exactly one node → the node
+ * panel; exactly one connection → the connection panel; two or more
+ * elements, or any node+connection mix → the selection summary; nothing →
+ * none. The page never re-derives this.
+ */
+export function selectionPanelMode(
+  selection: CanvasSelection
+): 'empty' | 'node' | 'connection' | 'multi' {
+  const total = selection.nodeIds.size + selection.connectionIds.size;
+  if (total === 0) return 'empty';
+  if (total === 1) return selection.nodeIds.size === 1 ? 'node' : 'connection';
+  return 'multi';
+}
 
 function jsonPointerSegments(path: string): string[] | null {
   if (!path.startsWith('/')) return null;

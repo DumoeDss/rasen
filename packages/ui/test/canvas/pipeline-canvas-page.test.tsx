@@ -28,6 +28,7 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
 interface MockNode {
   id: string;
   type?: string;
+  selected?: boolean;
   data?: {
     definitionKind?: string;
     editorSupported?: boolean;
@@ -41,10 +42,18 @@ interface MockNode {
 
 interface MockEdge {
   id: string;
+  selected?: boolean;
   data?: { issueSeverity?: string };
 }
 
-vi.mock('@xyflow/react', () => ({
+/** The change shapes the mock's ReactFlow emits and applies — the two the page's handlers act on. */
+type MockFlowChange =
+  | { type: 'remove'; id: string }
+  | { type: 'select'; id: string; selected: boolean };
+
+vi.mock('@xyflow/react', async () => {
+  const { useEffect } = await import('preact/hooks');
+  return {
   ReactFlow: (props: {
     nodes: MockNode[];
     edges: MockEdge[];
@@ -52,19 +61,83 @@ vi.mock('@xyflow/react', () => ({
       string,
       FunctionComponent<{ data: MockNode['data'] }>
     >;
-    onNodeClick?: (e: unknown, n: MockNode) => void;
-    onEdgeClick?: (e: unknown, edge: MockEdge) => void;
-    onPaneClick?: () => void;
+    onSelectionChange?: (params: { nodes: MockNode[]; edges: MockEdge[] }) => void;
     onConnect?: (connection: {
       source: string;
       sourceHandle: string | null;
       target: string;
       targetHandle: string | null;
     }) => void;
-    onNodesChange?: (changes: { type: 'remove'; id: string }[]) => void;
-    onEdgesChange?: (changes: { type: 'remove'; id: string }[]) => void;
+    onNodesChange?: (changes: MockFlowChange[]) => void;
+    onEdgesChange?: (changes: MockFlowChange[]) => void;
+    selectionKeyCode?: string | null;
     proOptions?: { hideAttribution?: boolean };
   }) => {
+    // Selection stand-ins for the real library's two truths (review m1 —
+    // before this existed, nothing modeled the listener, and a Blocker in
+    // exactly that mechanism passed a fully green suite):
+    //
+    // 1. Store truth IS the `selected` flags on the nodes/edges the page
+    //    passes: controlled-mode React Flow adopts them on every prop
+    //    change (`StoreUpdater` -> `adoptUserNodes`). An interaction is
+    //    echoed back as `select` changes through onNodesChange/
+    //    onEdgesChange — exactly what the real library emits in controlled
+    //    mode — and a programmatic page re-stamp reaches store truth the
+    //    same way.
+    // 2. SelectionListener: the real component keys its effect on
+    //    [selectedNodes, selectedEdges, onSelectionChange] and the page
+    //    passes a fresh callback identity on every render, so the listener
+    //    RE-FIRES with current store truth after EVERY page re-render, not
+    //    only on interactions. The effect below deliberately has no
+    //    dependency array, so it runs after every render of this mock and
+    //    reproduces that re-fire: a page write that changes the mirror
+    //    without re-stamping the flags is reverted one commit later.
+    function flaggedIds(): Set<string> {
+      return new Set<string>([
+        ...props.nodes.filter((node) => node.selected).map((node) => node.id),
+        ...props.edges.filter((edge) => edge.selected).map((edge) => edge.id),
+      ]);
+    }
+    function emitSelection(next: ReadonlySet<string>) {
+      const nodeChanges: MockFlowChange[] = [];
+      for (const node of props.nodes) {
+        if (!!node.selected !== next.has(node.id)) {
+          nodeChanges.push({
+            type: 'select',
+            id: node.id,
+            selected: next.has(node.id),
+          });
+        }
+      }
+      const edgeChanges: MockFlowChange[] = [];
+      for (const edge of props.edges) {
+        if (!!edge.selected !== next.has(edge.id)) {
+          edgeChanges.push({
+            type: 'select',
+            id: edge.id,
+            selected: next.has(edge.id),
+          });
+        }
+      }
+      if (nodeChanges.length > 0) props.onNodesChange?.(nodeChanges);
+      if (edgeChanges.length > 0) props.onEdgesChange?.(edgeChanges);
+      props.onSelectionChange?.({
+        nodes: props.nodes.filter((node) => next.has(node.id)),
+        edges: props.edges.filter((edge) => next.has(edge.id)),
+      });
+    }
+    function toggleSelection(id: string) {
+      const next = flaggedIds();
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      emitSelection(next);
+    }
+    useEffect(() => {
+      props.onSelectionChange?.({
+        nodes: props.nodes.filter((node) => node.selected),
+        edges: props.edges.filter((edge) => edge.selected),
+      });
+    });
     const atomicNodes = props.nodes.filter(
       (node) => node.data?.definitionKind === 'AtomicStage'
     );
@@ -78,7 +151,7 @@ vi.mock('@xyflow/react', () => ({
       ['join', 'done', 'finish', 'input'],
     ] as const;
     return (
-    <div data-testid="mock-reactflow-wrapper" data-hide-attribution={String(props.proOptions?.hideAttribution)}>
+    <div data-testid="mock-reactflow-wrapper" data-hide-attribution={String(props.proOptions?.hideAttribution)} data-selection-key={props.selectionKeyCode ?? ''}>
       <div data-testid="mock-reactflow">{props.nodes.map((n) => n.id).join(',')}</div>
       <div data-testid="mock-rendered-node-types">
         {props.nodes
@@ -97,15 +170,24 @@ vi.mock('@xyflow/react', () => ({
             data-testid="mock-edge"
             data-edge-id={edge.id}
             data-issue={edge.data?.issueSeverity}
+            data-selected={String(edge.selected)}
           >
             {edge.id}
             <button
               type="button"
               data-testid="mock-edge-click"
               data-edge-id={edge.id}
-              onClick={() => props.onEdgeClick?.(null, edge)}
+              onClick={() => emitSelection(new Set([edge.id]))}
             >
               select {edge.id}
+            </button>
+            <button
+              type="button"
+              data-testid="mock-edge-augment"
+              data-edge-id={edge.id}
+              onClick={() => toggleSelection(edge.id)}
+            >
+              augment {edge.id}
             </button>
             <button
               type="button"
@@ -133,14 +215,23 @@ vi.mock('@xyflow/react', () => ({
               data-issue={n.data?.issueSeverity}
               data-deletable={String(n.deletable)}
               data-connectable={String(n.connectable)}
+              data-selected={String(n.selected)}
             >
               <button
                 type="button"
                 data-testid="mock-node-click"
                 data-node-id={n.id}
-                onClick={() => props.onNodeClick?.(null, n)}
+                onClick={() => emitSelection(new Set([n.id]))}
               >
                 select {n.id}
+              </button>
+              <button
+                type="button"
+                data-testid="mock-node-augment"
+                data-node-id={n.id}
+                onClick={() => toggleSelection(n.id)}
+              >
+                augment {n.id}
               </button>
               <button
                 type="button"
@@ -208,8 +299,32 @@ vi.mock('@xyflow/react', () => ({
             </button>
           );
         })}
-        <button type="button" data-testid="mock-pane-click" onClick={() => props.onPaneClick?.()}>
+        <button type="button" data-testid="mock-pane-click" onClick={() => emitSelection(new Set<string>())}>
           pane
+        </button>
+        {/* The Delete key: removes the store's selection — flagged nodes
+            (only those React Flow would consider deletable) and edges — as
+            one batch of remove changes. Refused nodes stay flagged, as in
+            the real store. */}
+        <button
+          type="button"
+          data-testid="mock-delete-selection"
+          onClick={() => {
+            const nodeIds = props.nodes
+              .filter((n) => n.selected && n.deletable !== false)
+              .map((n) => n.id);
+            const edgeIds = props.edges
+              .filter((edge) => edge.selected)
+              .map((edge) => edge.id);
+            if (nodeIds.length > 0) {
+              props.onNodesChange?.(nodeIds.map((id) => ({ type: 'remove' as const, id })));
+            }
+            if (edgeIds.length > 0) {
+              props.onEdgesChange?.(edgeIds.map((id) => ({ type: 'remove' as const, id })));
+            }
+          }}
+        >
+          delete selection
         </button>
       </div>
     </div>
@@ -229,9 +344,40 @@ vi.mock('@xyflow/react', () => ({
   // pipeline-canvas-edit additions: the editor's connect/drag/drop wiring.
   useReactFlow: () => ({ screenToFlowPosition: (p: { x: number; y: number }) => p }),
   addEdge: (edge: unknown, edges: unknown[]) => [...edges, edge],
-  applyNodeChanges: (_changes: unknown[], nodes: unknown[]) => nodes,
-  applyEdgeChanges: (_changes: unknown[], edges: unknown[]) => edges,
-}));
+  // Minimal but real: the two change types this page's handlers feed back —
+  // `select` so interaction echoes land on the flags (controlled-mode RF
+  // keeps its store only because the page re-passes them), `remove` so the
+  // Delete key's cards leave the canvas as they do in the real app.
+  applyNodeChanges: (changes: MockFlowChange[], nodes: MockNode[]) =>
+    changes.reduce<MockNode[]>(
+      (acc, change) =>
+        change.type === 'remove'
+          ? acc.filter((node) => node.id !== change.id)
+          : change.type === 'select'
+            ? acc.map((node) =>
+                node.id === change.id
+                  ? { ...node, selected: change.selected }
+                  : node
+              )
+            : acc,
+      nodes
+    ),
+  applyEdgeChanges: (changes: MockFlowChange[], edges: MockEdge[]) =>
+    changes.reduce<MockEdge[]>(
+      (acc, change) =>
+        change.type === 'remove'
+          ? acc.filter((edge) => edge.id !== change.id)
+          : change.type === 'select'
+            ? acc.map((edge) =>
+                edge.id === change.id
+                  ? { ...edge, selected: change.selected }
+                  : edge
+              )
+            : acc,
+      edges
+    ),
+  };
+});
 
 import { LocationProvider, Router, Route } from 'preact-iso';
 import { DefinitionContractPanel } from '../../src/canvas/DefinitionContractPanel.js';
@@ -2278,14 +2424,20 @@ describe('PipelineCanvasPage — edit mode', () => {
     expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).not.toContain(
       'composite'
     );
-    // A FanOut is not independently deletable because its Join belongs to the
-    // same paired parallel contract. The pair-level removal action owns that
-    // structural edit, so this single-node removal is refused.
+    // A FanOut's Join belongs to the same paired parallel contract, so the
+    // pair is one unit in deletion (canvas-multi-selection): a removal
+    // carrying the FanOut takes its Join too — never a half-pair left
+    // behind. (React Flow itself never emits a remove for these
+    // non-deletable nodes; this exercises the same batch path the selection
+    // panel's delete button drives.)
     await clickAndFlush(
       container.querySelector('[data-testid="mock-node-remove"][data-node-id="fanout"]')
     );
-    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).not.toContain(
       'fanout'
+    );
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).not.toContain(
+      'join'
     );
     await clickAndFlush(
       container.querySelector('[data-testid="mock-node-remove"][data-node-id="choice"]')
@@ -4611,5 +4763,374 @@ describe('PipelineCanvasPage — edit mode', () => {
         .querySelector('[data-testid="declaration-body-connection"][data-connection-id="review-to-apply"]')
         ?.getAttribute('data-issue')
     ).toBeNull();
+  });
+});
+
+/**
+ * Multi-selection coverage (canvas-multi-selection). The ReactFlow mock's
+ * interaction buttons drive `onSelectionChange` — the single user-action
+ * mirror writer (design D1): plain click replaces, augment (the platform
+ * multi-select key) toggles within the selection, pane click empties it,
+ * and `mock-delete-selection` is the Delete key's batch of remove changes.
+ * The mock also carries the SelectionListener stand-in (see the mock body,
+ * review m1): it re-emits store truth after every render, so the
+ * programmatic-write tests at the bottom of this block pin that the page
+ * re-stamps the flow's `selected` flags with every mirror write (B1/M1).
+ * jsdom performs no layout, so the Shift+drag box geometry itself is
+ * verified only by the real-browser CDP check recorded in the change's
+ * evidence dir; these tests pin the selection CONTRACT each gesture
+ * produces.
+ */
+describe('PipelineCanvasPage — multi-selection', () => {
+  let container: HTMLElement;
+
+  const editableDetail = {
+    ...pipelineDetailFixture,
+    pipeline: { ...pipelineDetailFixture.pipeline, provenance: 'user' as const, sourceLayer: 'user' as const },
+    editable: true,
+  };
+
+  beforeEach(() => {
+    __resetLocaleForTesting();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+  });
+
+  afterEach(() => {
+    render(null, container);
+    document.body.removeChild(container);
+    window.history.replaceState({}, '', '/');
+    __resetLocaleForTesting();
+    vi.clearAllMocks();
+  });
+
+  async function clickAndFlush(el: Element | null): Promise<void> {
+    await act(async () => {
+      (el as HTMLElement).click();
+      await flushMicrotasks();
+    });
+  }
+
+  function nodeButton(kind: 'click' | 'augment', id: string): Element | null {
+    return container.querySelector(
+      `[data-testid="mock-node-${kind}"][data-node-id="${id}"]`
+    );
+  }
+
+  async function mountV2Edit(): Promise<void> {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+  }
+
+  async function submittedDefinition(): Promise<WirePipelineDefinitionV2> {
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    return vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+  }
+
+  it('renders the selection summary for a multi-node selection, with counts and kinds', async () => {
+    await mountV2Edit();
+    await clickAndFlush(await nodeButton('click', 'atomic'));
+    // Exactly one node: today's node panel, no summary.
+    expect(container.querySelector('[data-testid="v2-node-panel"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).toBeNull();
+
+    await clickAndFlush(await nodeButton('augment', 'choice'));
+    const panel = container.querySelector('[data-testid="v2-selection-panel"]');
+    expect(panel).not.toBeNull();
+    expect(panel!.getAttribute('data-node-count')).toBe('2');
+    expect(panel!.getAttribute('data-connection-count')).toBe('0');
+    expect(
+      panel!.querySelector('[data-testid="v2-selection-panel-counts"]')!.textContent
+    ).toContain('2 nodes');
+    const kinds = panel!.querySelector('[data-testid="v2-selection-panel-kinds"]')!.textContent!;
+    expect(kinds).toContain('AtomicStage');
+    expect(kinds).toContain('Choice');
+    // The singleton node panel yielded to the summary.
+    expect(container.querySelector('[data-testid="v2-node-panel"]')).toBeNull();
+  });
+
+  it('selects nodes and connections together as one mixed selection', async () => {
+    await mountV2Edit();
+    await clickAndFlush(await nodeButton('click', 'finish'));
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-edge-augment"][data-edge-id="atomic:done->gate:input"]')
+    );
+    const panel = container.querySelector('[data-testid="v2-selection-panel"]');
+    expect(panel).not.toBeNull();
+    expect(panel!.getAttribute('data-node-count')).toBe('1');
+    expect(panel!.getAttribute('data-connection-count')).toBe('1');
+    expect(
+      panel!.querySelector('[data-testid="v2-selection-panel-counts"]')!.textContent
+    ).toContain('1 node');
+    expect(
+      panel!.querySelector('[data-testid="v2-selection-panel-counts"]')!.textContent
+    ).toContain('1 connection');
+  });
+
+  it('removes an element from the selection when augment-clicked again', async () => {
+    await mountV2Edit();
+    await clickAndFlush(await nodeButton('click', 'atomic'));
+    await clickAndFlush(await nodeButton('augment', 'choice'));
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).not.toBeNull();
+
+    await clickAndFlush(await nodeButton('augment', 'choice'));
+    // Back to a singleton: the summary closes and the node panel reopens.
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).toBeNull();
+    expect(container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-node')).toBe(
+      'atomic'
+    );
+  });
+
+  it('multi-deletes the whole set and cleans every connection reference', async () => {
+    vi.mocked(client.getPipelineDetail).mockRejectedValue(
+      new ApiError(404, { error: { code: 'not_found', message: 'No pipeline named "multi-delete".' } })
+    );
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/multi-delete');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-start-assembling"]'));
+
+    // Two stages, wired together — then selected together (the second
+    // gesture UNIONs into the first's selection).
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-propose"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-apply"]'));
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-production-atomics"]'));
+    const panel = container.querySelector('[data-testid="v2-selection-panel"]');
+    expect(panel!.getAttribute('data-node-count')).toBe('2');
+
+    await clickAndFlush(container.querySelector('[data-testid="v2-selection-panel-delete"]'));
+    const submitted = await submittedDefinition();
+    expect(submitted.root.nodes).toEqual([]);
+    expect(submitted.root.connections).toEqual([]);
+    // The selection left with the nodes — no orphaned summary panel.
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).toBeNull();
+  });
+
+  it('deletes a selected FanOut together with its Join from the summary panel', async () => {
+    await mountV2Edit();
+    await clickAndFlush(await nodeButton('click', 'fanout'));
+    await clickAndFlush(await nodeButton('augment', 'finish'));
+
+    await clickAndFlush(container.querySelector('[data-testid="v2-selection-panel-delete"]'));
+    const submitted = await submittedDefinition();
+    expect(submitted.root.nodes.map((node) => node.id)).toEqual([
+      'atomic',
+      'gate',
+      'choice',
+      'composite',
+      'loop',
+    ]);
+    // No refusal toast — the pair went as one unit.
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')).toBeNull();
+  });
+
+  it('reports every refusal in one summary message naming each refused element', async () => {
+    await mountV2Edit();
+    // join: a lone barrier whose FanOut was not selected; atomic: still
+    // targeted by the fixture's Gate; choice: plain and deletable.
+    await clickAndFlush(await nodeButton('click', 'join'));
+    await clickAndFlush(await nodeButton('augment', 'atomic'));
+    await clickAndFlush(await nodeButton('augment', 'choice'));
+
+    await clickAndFlush(container.querySelector('[data-testid="v2-selection-panel-delete"]'));
+    const toast = container.querySelector('[data-testid="pipeline-canvas-toast"]');
+    expect(toast).not.toBeNull();
+    // ONE message carries the deleted count and names BOTH refusals with
+    // their reasons — a per-node toast loop would leave only the last
+    // refusal visible.
+    expect(toast!.textContent).toContain('Deleted 1');
+    expect(toast!.textContent).toContain('2 refused');
+    expect(toast!.textContent).toContain("atomic (Node 'atomic' is still targeted by Gate 'gate'.)");
+    expect(toast!.textContent).toContain('join (FanOut and Join require explicit paired deletion.)');
+
+    const submitted = await submittedDefinition();
+    expect(submitted.root.nodes.map((node) => node.id)).toContain('atomic');
+    expect(submitted.root.nodes.map((node) => node.id)).toContain('join');
+    expect(submitted.root.nodes.map((node) => node.id)).not.toContain('choice');
+  });
+
+  it('keeps the previous selection stamped selected across a palette add', async () => {
+    await mountV2Edit();
+    await clickAndFlush(await nodeButton('click', 'atomic'));
+    await clickAndFlush(await nodeButton('augment', 'choice'));
+
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-propose"]')
+    );
+    // The rebuild re-stamps `selected` from the mirror (design D3's
+    // selection-carry): the two previously selected nodes are still
+    // selected after the new node appears — the spec's
+    // "Selection survives a non-destructive edit" scenario.
+    for (const id of ['atomic', 'choice']) {
+      expect(
+        container.querySelector(`[data-testid="mock-node"][data-node-id="${id}"]`)?.getAttribute('data-selected')
+      ).toBe('true');
+    }
+    expect(
+      container.querySelector('[data-testid="mock-node"][data-node-id="finish"]')?.getAttribute('data-selected')
+    ).not.toBe('true');
+    const panel = container.querySelector('[data-testid="v2-selection-panel"]');
+    expect(panel!.getAttribute('data-node-count')).toBe('3');
+  });
+
+  it('prunes the selection after the Delete key removes the batch', async () => {
+    await mountV2Edit();
+    await clickAndFlush(await nodeButton('click', 'finish'));
+    await clickAndFlush(await nodeButton('augment', 'composite'));
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).not.toBeNull();
+
+    await clickAndFlush(container.querySelector('[data-testid="mock-delete-selection"]'));
+    const flowText = container.querySelector('[data-testid="mock-reactflow"]')!.textContent!;
+    expect(flowText).not.toContain('finish');
+    expect(flowText).not.toContain('composite');
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).toBeNull();
+  });
+
+  it('replaces a multi-selection with exactly the issue\'s target on an issue click', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({
+      valid: false,
+      issues: [{ severity: 'error', path: '/root/nodes/1/skill', message: 'Gate skill issue.' }],
+    });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+
+    await clickAndFlush(await nodeButton('click', 'atomic'));
+    await clickAndFlush(await nodeButton('augment', 'choice'));
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).not.toBeNull();
+
+    await clickAndFlush(container.querySelector('[data-testid="issues-drawer-select"]'));
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).toBeNull();
+    expect(container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-node')).toBe(
+      'gate'
+    );
+  });
+
+  it('deletes several v1 stages as a set, cleaning every dependency reference', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(editableDetail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+
+    await clickAndFlush(await nodeButton('click', 'propose'));
+    await clickAndFlush(await nodeButton('augment', 'apply'));
+    const panel = container.querySelector('[data-testid="v2-selection-panel"]');
+    expect(panel).not.toBeNull();
+    expect(panel!.getAttribute('data-node-count')).toBe('2');
+
+    await clickAndFlush(container.querySelector('[data-testid="v2-selection-panel-delete"]'));
+    const submitted = await submittedDefinition() as unknown as { stages: { id: string; requires: string[] }[] };
+    expect(submitted.stages.map((stage) => stage.id)).not.toContain('propose');
+    expect(submitted.stages.map((stage) => stage.id)).not.toContain('apply');
+    // review/cso/qa required 'apply' — the group's references were cleaned,
+    // not left dangling.
+    for (const stage of submitted.stages) {
+      expect(stage.requires).not.toContain('apply');
+      expect(stage.requires).not.toContain('propose');
+    }
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).toBeNull();
+  });
+
+  // --- Review round 1 regression pins (B1/M1) -----------------------------
+  //
+  // These only discriminate because the mock now carries the SelectionListener
+  // stand-in: every programmatic selection write must re-stamp the flow's
+  // `selected` flags in the same update, or the listener's next firing reverts
+  // the mirror one commit later.
+
+  it('keeps an issue-click selection: the listener re-fire cannot revert it (B1)', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({
+      valid: false,
+      issues: [{ severity: 'error', path: '/root/nodes/1/skill', message: 'Gate skill issue.' }],
+    });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+
+    // A multi-selection is standing when the issue is clicked — the
+    // listener's next firing must see flow state for the issue's target,
+    // not for the selection that write replaces.
+    await clickAndFlush(await nodeButton('click', 'atomic'));
+    await clickAndFlush(await nodeButton('augment', 'choice'));
+
+    await clickAndFlush(container.querySelector('[data-testid="issues-drawer-select"]'));
+    // The target's panel stays open — the re-fire used to clear the mirror
+    // (no prior selection) or revert it to the box selection.
+    expect(container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-node')).toBe(
+      'gate'
+    );
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).toBeNull();
+    // The flow flags agree with the mirror: exactly the target.
+    expect(
+      container.querySelector('[data-testid="mock-node"][data-node-id="gate"]')?.getAttribute('data-selected')
+    ).toBe('true');
+    expect(
+      container.querySelector('[data-testid="mock-node"][data-node-id="atomic"]')?.getAttribute('data-selected')
+    ).not.toBe('true');
+    expect(
+      container.querySelector('[data-testid="mock-node"][data-node-id="choice"]')?.getAttribute('data-selected')
+    ).not.toBe('true');
+  });
+
+  it('keeps the singleton and summary panels closed after their close button (B1)', async () => {
+    await mountV2Edit();
+    await clickAndFlush(await nodeButton('click', 'atomic'));
+    expect(container.querySelector('[data-testid="v2-node-panel"]')).not.toBeNull();
+
+    await clickAndFlush(
+      container.querySelector('button[aria-label="Close node properties"]')
+    );
+    // The close persists: the listener's re-fire with flow truth used to
+    // re-select the node and reopen the panel one frame later.
+    expect(container.querySelector('[data-testid="v2-node-panel"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="mock-node"][data-node-id="atomic"]')?.getAttribute('data-selected')
+    ).not.toBe('true');
+
+    // Same contract for the multi-selection summary panel.
+    await clickAndFlush(await nodeButton('click', 'atomic'));
+    await clickAndFlush(await nodeButton('augment', 'choice'));
+    const panel = container.querySelector('[data-testid="v2-selection-panel"]');
+    expect(panel).not.toBeNull();
+    // v2 keeps the version-neutral heading (review t1 pins the v1 variant
+    // in the v1 test below).
+    expect(panel!.querySelector('.stage-panel__title')?.textContent).toBe('Selection');
+    await clickAndFlush(
+      container.querySelector('button[aria-label="Close selection summary"]')
+    );
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).toBeNull();
+    for (const id of ['atomic', 'choice']) {
+      expect(
+        container.querySelector(`[data-testid="mock-node"][data-node-id="${id}"]`)?.getAttribute('data-selected')
+      ).not.toBe('true');
+    }
+  });
+
+  it('v1 delete removes the stage cards from the canvas and the summary stays closed (M1)', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(editableDetail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+
+    await clickAndFlush(await nodeButton('click', 'propose'));
+    await clickAndFlush(await nodeButton('augment', 'apply'));
+    const panel = container.querySelector('[data-testid="v2-selection-panel"]');
+    expect(panel).not.toBeNull();
+    // The v1 editor's summary names its mode's vocabulary — its elements
+    // are stage cards (review t1).
+    expect(panel!.querySelector('.stage-panel__title')?.textContent).toBe('Selected stages');
+
+    await clickAndFlush(container.querySelector('[data-testid="v2-selection-panel-delete"]'));
+    // Ghost check: the deleted cards leave the canvas — this path used to
+    // leave them rendered as still-selected ghosts, and the listener then
+    // re-popped the summary reporting the deleted stages.
+    const flowText = container.querySelector('[data-testid="mock-reactflow"]')!.textContent!;
+    expect(flowText).not.toContain('propose');
+    expect(flowText).not.toContain('apply');
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).toBeNull();
   });
 });

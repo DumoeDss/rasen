@@ -13,6 +13,7 @@ import {
   type Edge,
   type NodeChange,
   type EdgeChange,
+  type OnSelectionChangeParams,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import * as client from '../api/client.js';
@@ -48,8 +49,10 @@ import {
   addRequire,
   addStage,
   addV2Connection,
+  CanvasSelection,
   definitionIssuePathTarget,
   duplicateV2Definition,
+  EMPTY_CANVAS_SELECTION,
   insertCompositeRef,
   isBindableSkill,
   isDirty,
@@ -62,13 +65,16 @@ import {
   removeRequire,
   removeStage,
   removeV2Connection,
-  removeV2Node,
+  removeV2Nodes,
   removeParallelPair,
   renameDeclaration,
   renameStage,
   renameV2Node,
+  selectionPanelMode,
   setParallelMembers,
   setStageGate,
+  singletonConnectionId,
+  singletonNodeId,
   spliceConditionOntoConnection,
   stageIdFor,
   unavailableRootGestures,
@@ -101,6 +107,7 @@ import { PalettePanel, PALETTE_DND_TYPE } from './PalettePanel.js';
 import { StagePanel } from './StagePanel.js';
 import { V2NodePanel } from './V2NodePanel.js';
 import { V2ConnectionPanel } from './V2ConnectionPanel.js';
+import { V2SelectionPanel } from './V2SelectionPanel.js';
 import { IssuesDrawer } from './IssuesDrawer.js';
 import { EngineSupportPanel } from './EngineSupportPanel.js';
 import { consumePendingDraft, setPendingDraft } from './pending-draft.js';
@@ -145,12 +152,20 @@ export function PipelineCanvasPage() {
   const [loadedDefinition, setLoadedDefinition] = useState<WirePipelineDefinition | null>(null);
   const [flowNodes, setFlowNodes] = useState<PipelineFlowNode[]>([]);
   const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
-  const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
-  /** The v2 connection open in the Connection panel, if any (design D5).
-   * Mutually exclusive with `selectedStageId` — selecting one clears the
-   * other, and the pane click clears both. */
-  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
-  /** The Custom Composite declaration open in the declaration editor, if any. */
+  /**
+   * The canvas selection mirror (canvas-multi-selection design D1): React
+   * Flow owns the interaction truth (box-select via Shift+drag, augmentation
+   * via the platform multi-select key, click, pane click) and
+   * `onSelectionChange` mirrors every user-driven change here; the only
+   * other writers are the page's programmatic replacers (gesture adds,
+   * rename id-follow, issue navigation, edit-mode entry/exit). Panels derive
+   * their mode from this set via `selectionPanelMode` — singleton behavior
+   * is preserved by derivation, not by parallel state.
+   */
+  const [selection, setSelection] = useState<CanvasSelection>(EMPTY_CANVAS_SELECTION);
+  /** The Custom Composite declaration open in the declaration editor, if any.
+   * Deliberately still a single scalar — the declaration editor edits
+   * exactly one declaration (design D1/D2). */
   const [selectedDeclarationId, setSelectedDeclarationId] = useState<string | null>(null);
   const [selectedIssueTarget, setSelectedIssueTarget] =
     useState<DefinitionIssueTarget | null>(null);
@@ -310,9 +325,95 @@ export function PipelineCanvasPage() {
     );
   }
 
+  /**
+   * Re-stamps `selected` on the current flow nodes/edges from the given
+   * selection — the React Flow half of every programmatic selection write
+   * (review B1). RF's SelectionListener keys its effect on the
+   * `onSelectionChange` callback identity — a fresh function on every page
+   * render — so it re-fires with its OWN store truth after every commit,
+   * and that store adopts the `selected` flags we pass
+   * (`StoreUpdater`/`adoptUserNodes`). A mirror write that leaves the flags
+   * at the old value is therefore reverted one commit later: issue
+   * navigation's panel closed again, and every panel close reopened.
+   * Pairing the write with this re-stamp makes the next listener firing
+   * carry a value equal to the mirror, which `onSelectionChange`'s
+   * same-state guard absorbs.
+   */
+  function syncFlowSelection(next: CanvasSelection) {
+    setFlowNodes((nodes) =>
+      nodes.map((node) =>
+        next.nodeIds.has(node.id) === !!node.selected
+          ? node
+          : { ...node, selected: next.nodeIds.has(node.id) }
+      )
+    );
+    setFlowEdges((edges) =>
+      edges.map((edge) =>
+        next.connectionIds.has(edge.id) === !!edge.selected
+          ? edge
+          : { ...edge, selected: next.connectionIds.has(edge.id) }
+      )
+    );
+  }
+
+  /**
+   * Replaces the whole selection — the programmatic replacer (design D1).
+   * Writes BOTH truths in one update: the mirror the panels derive from,
+   * and the flow's `selected` flags React Flow's store adopts (see
+   * `syncFlowSelection`). Handlers that rebuild the whole flow in the same
+   * tick (`recomputeFlow` with a `selectionOverride`) already keep the two
+   * equal; this is the pairing for writes that don't.
+   */
+  function replaceSelection(
+    nodeIds: readonly string[],
+    connectionIds: readonly string[] = []
+  ) {
+    const next: CanvasSelection = {
+      nodeIds: new Set(nodeIds),
+      connectionIds: new Set(connectionIds),
+    };
+    setSelection(next);
+    syncFlowSelection(next);
+  }
+
+  /**
+   * Drops every selected id the next draft no longer contains — the
+   * "elements removed by any edit SHALL leave the selection" half of the
+   * selection-survival rule. Idempotent and shape-preserving: live ids are
+   * never touched, so non-destructive edits keep the selection intact.
+   */
+  function pruneSelectionToDraft(nextDraft: WirePipelineDefinition) {
+    setSelection((current) => {
+      const nodeIds = new Set(
+        [...current.nodeIds].filter((id) =>
+          nextDraft.version === 2
+            ? nextDraft.root.nodes.some((node) => node.id === id)
+            : nextDraft.stages.some((stage) => stage.id === id)
+        )
+      );
+      const connectionIds = new Set(
+        [...current.connectionIds].filter(
+          (id) =>
+            nextDraft.version === 2 &&
+            nextDraft.root.connections.some(
+              (connection) => connection.id === id
+            )
+        )
+      );
+      if (
+        nodeIds.size === current.nodeIds.size &&
+        connectionIds.size === current.connectionIds.size
+      ) {
+        return current;
+      }
+      return { nodeIds, connectionIds };
+    });
+  }
+
   function recomputeFlow(
     def: WirePipelineDefinition,
-    catalogOverride: PipelineCatalogResponse | null = catalog
+    catalogOverride: PipelineCatalogResponse | null = catalog,
+    selectionOverride: CanvasSelection = selection
   ) {
     const { nodes, edges } = draftToGraph(def, catalogOverride);
     const laidOut = layoutGraph(nodes, edges).map((node) =>
@@ -320,8 +421,25 @@ export function PipelineCanvasPage() {
         ? { ...node, draggable: true, connectable: true, deletable: true }
         : node
     );
-    setFlowNodes(laidOut);
-    setFlowEdges(edges);
+    // Selection-carry (design D3): rebuilt nodes/edges re-stamp `selected`
+    // from the mirror by id, so a non-destructive mutation no longer
+    // visually deselects everything. Handlers that replace the selection in
+    // the same tick pass the NEXT selection explicitly — this closure's
+    // `selection` is still the pre-replace value.
+    setFlowNodes(
+      laidOut.map((node) =>
+        selectionOverride.nodeIds.has(node.id)
+          ? { ...node, selected: true }
+          : node
+      )
+    );
+    setFlowEdges(
+      edges.map((edge) =>
+        selectionOverride.connectionIds.has(edge.id)
+          ? { ...edge, selected: true }
+          : edge
+      )
+    );
   }
 
   function enterEditWith(
@@ -332,7 +450,7 @@ export function PipelineCanvasPage() {
     setDraft(seed);
     setLoadedDefinition(seed);
     setMode('edit');
-    setSelectedStageId(null);
+    setSelection(EMPTY_CANVAS_SELECTION);
     setSelectedDeclarationId(null);
     setSelectedIssueTarget(null);
     setSelectedIssueSeverity(null);
@@ -342,7 +460,7 @@ export function PipelineCanvasPage() {
     setLastValidation(null);
     setSaveState({ status: 'idle' });
     setExportState({ open: false, path: '', status: 'idle' });
-    recomputeFlow(seed);
+    recomputeFlow(seed, catalog, EMPTY_CANVAS_SELECTION);
     if (initialIssues.length > 0) {
       applyIssueMarkers(initialIssues, seed);
     }
@@ -374,7 +492,7 @@ export function PipelineCanvasPage() {
     setMode('view');
     setDraft(null);
     setLoadedDefinition(null);
-    setSelectedStageId(null);
+    setSelection(EMPTY_CANVAS_SELECTION);
     setSelectedDeclarationId(null);
     setSelectedIssueTarget(null);
     setSelectedIssueSeverity(null);
@@ -527,7 +645,7 @@ export function PipelineCanvasPage() {
         setDraft(null);
         setMode('view');
         setIssues([]);
-        setSelectedStageId(null);
+        setSelection(EMPTY_CANVAS_SELECTION);
         setSelectedDeclarationId(null);
         setSelectedIssueTarget(null);
         setSelectedIssueSeverity(null);
@@ -651,36 +769,84 @@ export function PipelineCanvasPage() {
     markDraftChanged();
   }
 
+  /**
+   * One batch removal over a set of selected v2 node ids and connection ids
+   * (canvas-multi-selection design D5) — the path BOTH the Delete key (via
+   * `onNodesChange`/`onEdgesChange`) and the selection panel's delete button
+   * take. `removeV2Nodes` owns every node rule (pair co-deletion, refusals,
+   * reference cleanup); selected connections go through the same
+   * editable-endpoint guard the Delete key's edge path has always used. The
+   * page's only added behavior: pruning the selection of removed ids,
+   * clearing authoring-error scopes, and showing ONE summary toast when
+   * nodes were refused.
+   */
+  function applyV2BatchRemoval(
+    nodeIds: ReadonlySet<string>,
+    connectionIds: ReadonlySet<string>
+  ) {
+    if (!draft || draft.version !== 2) return;
+    const plan = removeV2Nodes(draft, nodeIds);
+    let nextDraft = plan.next;
+    const removedConnectionIds = new Set<string>();
+    for (const id of connectionIds) {
+      const connection = nextDraft.root.connections.find(
+        (candidate) => candidate.id === id
+      );
+      if (!connection) continue;
+      const sourceNode = nextDraft.root.nodes.find(
+        (node) => node.id === connection.from.node
+      );
+      const targetNode = nextDraft.root.nodes.find(
+        (node) => node.id === connection.to.node
+      );
+      if (
+        sourceNode &&
+        targetNode &&
+        isV2EditableNodeKind(sourceNode.kind) &&
+        isV2EditableNodeKind(targetNode.kind)
+      ) {
+        nextDraft = removeV2Connection(nextDraft, id);
+        removedConnectionIds.add(id);
+      }
+    }
+    if (
+      plan.removedIds.length === 0 &&
+      plan.refused.length === 0 &&
+      removedConnectionIds.size === 0
+    ) {
+      return;
+    }
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
+    pruneSelectionToDraft(nextDraft);
+    const removedFanOutIds = plan.removedIds.filter(
+      (id) =>
+        draft.root.nodes.find((node) => node.id === id)?.kind === 'FanOut'
+    );
+    removeAuthoringDraftErrorScopes([
+      ...plan.removedIds.map((id) => `root-node:${id}`),
+      ...removedFanOutIds.map((id) => `parallel:${id}`),
+    ]);
+    if (plan.refused.length > 0) {
+      showToast(
+        `Deleted ${plan.removedIds.length + removedConnectionIds.size}` +
+          ` · ${plan.refused.length} refused: ` +
+          plan.refused
+            .map((refusal) => `${refusal.id} (${refusal.reason})`)
+            .join('; ')
+      );
+    }
+    markDraftChanged();
+  }
+
   function onNodesChange(changes: NodeChange[]) {
     const removed = changes.filter((c) => c.type === 'remove');
     if (removed.length > 0 && draft) {
       if (draft.version === 2) {
-        let nextDraft = draft;
-        for (const change of removed) {
-          const id = (change as { id: string }).id;
-          const node = nextDraft.root.nodes.find(
-            (candidate) => candidate.id === id
-          );
-          if (node && isV2EditableNodeKind(node.kind)) {
-            try {
-              nextDraft = removeV2Node(nextDraft, id);
-              removeAuthoringDraftErrorScopes([`root-node:${id}`]);
-            } catch (error) {
-              showToast(
-                error instanceof Error ? error.message : 'Could not remove the node.'
-              );
-            }
-          }
-        }
-        setDraft(nextDraft);
-        recomputeFlow(nextDraft);
-        if (
-          selectedStageId &&
-          !nextDraft.root.nodes.some((node) => node.id === selectedStageId)
-        ) {
-          setSelectedStageId(null);
-        }
-        markDraftChanged();
+        applyV2BatchRemoval(
+          new Set(removed.map((change) => (change as { id: string }).id)),
+          new Set<string>()
+        );
         return;
       }
       let nextDraft = draft;
@@ -688,7 +854,7 @@ export function PipelineCanvasPage() {
       setDraft(nextDraft);
       const removedIds = new Set(removed.map((c) => (c as { id: string }).id));
       setFlowEdges((eds) => eds.filter((e) => !removedIds.has(e.source) && !removedIds.has(e.target)));
-      if (selectedStageId && removedIds.has(selectedStageId)) setSelectedStageId(null);
+      pruneSelectionToDraft(nextDraft);
       markDraftChanged();
     }
     setFlowNodes((nds) => applyNodeChanges(changes, nds) as PipelineFlowNode[]);
@@ -698,36 +864,10 @@ export function PipelineCanvasPage() {
     const removed = changes.filter((c) => c.type === 'remove');
     if (removed.length > 0 && draft) {
       if (draft.version === 2) {
-        let nextDraft = draft;
-        const removedConnectionIds = new Set<string>();
-        for (const change of removed) {
-          const id = (change as { id: string }).id;
-          const connection = nextDraft.root.connections.find(
-            (candidate) => candidate.id === id
-          );
-          if (!connection) continue;
-          const sourceNode = nextDraft.root.nodes.find(
-            (node) => node.id === connection.from.node
-          );
-          const targetNode = nextDraft.root.nodes.find(
-            (node) => node.id === connection.to.node
-          );
-          if (
-            sourceNode &&
-            targetNode &&
-            isV2EditableNodeKind(sourceNode.kind) &&
-            isV2EditableNodeKind(targetNode.kind)
-          ) {
-            nextDraft = removeV2Connection(nextDraft, id);
-            removedConnectionIds.add(id);
-          }
-        }
-        setDraft(nextDraft);
-        recomputeFlow(nextDraft);
-        if (selectedConnectionId && removedConnectionIds.has(selectedConnectionId)) {
-          setSelectedConnectionId(null);
-        }
-        markDraftChanged();
+        applyV2BatchRemoval(
+          new Set<string>(),
+          new Set(removed.map((change) => (change as { id: string }).id))
+        );
         return;
       }
       let nextDraft = draft;
@@ -736,28 +876,40 @@ export function PipelineCanvasPage() {
         if (edge) nextDraft = removeRequire(nextDraft, edge.source, edge.target);
       }
       setDraft(nextDraft);
+      pruneSelectionToDraft(nextDraft);
       markDraftChanged();
     }
     setFlowEdges((eds) => applyEdgeChanges(changes, eds));
   }
 
-  function onNodeClick(_event: unknown, node: { id: string; type?: string }) {
-    if (node.type === 'stage') {
-      setSelectedConnectionId(null);
-      setSelectedStageId(node.id);
-    }
-  }
-
-  function onEdgeClick(_event: unknown, edge: { id: string }) {
-    if (!draft || draft.version !== 2) return;
-    if (!draft.root.connections.some((connection) => connection.id === edge.id)) return;
-    setSelectedStageId(null);
-    setSelectedConnectionId(edge.id);
-  }
-
-  function onPaneClick() {
-    setSelectedStageId(null);
-    setSelectedConnectionId(null);
+  /**
+   * The single user-action mirror writer (canvas-multi-selection design
+   * D1/D3): React Flow reports every interaction-driven selection change —
+   * plain click, Shift+drag box-select, multi-select-key augmentation, pane
+   * click, delete — and the page mirrors it verbatim. The hand-rolled
+   * `onNodeClick`/`onEdgeClick`/`onPaneClick` XOR clearing this replaces
+   * could not represent the multi state at all.
+   *
+   * Same value → same state, deliberately: React Flow's SelectionListener
+   * runs its effect on this callback's IDENTITY (and once at mount), so a
+   * fresh object for an unchanged selection would re-render the page, mint
+   * a new callback, re-fire the listener, and spin the renderer forever —
+   * found as a hard tab freeze in the task 5.1 real-browser check.
+   */
+  function onSelectionChange({ nodes, edges }: OnSelectionChangeParams) {
+    const nodeIds = new Set(nodes.map((node) => node.id));
+    const connectionIds = new Set(edges.map((edge) => edge.id));
+    setSelection((current) => {
+      const sameNodes =
+        current.nodeIds.size === nodeIds.size &&
+        [...nodeIds].every((id) => current.nodeIds.has(id));
+      const sameConnections =
+        current.connectionIds.size === connectionIds.size &&
+        [...connectionIds].every((id) => current.connectionIds.has(id));
+      return sameNodes && sameConnections
+        ? current
+        : { nodeIds, connectionIds };
+    });
   }
 
   function onDropStage(skill: PipelineCatalogSkill, position: { x: number; y: number }) {
@@ -800,6 +952,24 @@ export function PipelineCanvasPage() {
    * re-decides a rule the model owns — replaces the old `addV2RootNode`
    * switch, which built every node kind's shape inline.
    */
+  /**
+   * Selects the node(s) a gesture just created — a UNION, not a replace:
+   * the spec's "Selection survives a non-destructive edit" scenario pins
+   * that previously selected nodes stay selected across a palette add
+   * (select a region, keep adding to it — the workflow every later
+   * portfolio child builds on). Unioning also preserves the pre-change
+   * singleton behavior: from an empty selection the new node is the whole
+   * selection and its panel opens exactly as before.
+   */
+  function selectAddedNodes(ids: readonly string[]) {
+    const nextSelection: CanvasSelection = {
+      nodeIds: new Set([...selection.nodeIds, ...ids]),
+      connectionIds: selection.connectionIds,
+    };
+    setSelection(nextSelection);
+    return nextSelection;
+  }
+
   function addStageGesture(capability: { id: string; version: string }) {
     if (!draft || draft.version !== 2) return;
     const id = v2NodeIdFor('AtomicStage', draft);
@@ -811,24 +981,25 @@ export function PipelineCanvasPage() {
       return;
     }
     setDraft(nextDraft);
-    recomputeFlow(nextDraft);
-    setSelectedStageId(id);
+    recomputeFlow(nextDraft, catalog, selectAddedNodes([id]));
     markDraftChanged();
   }
 
   function addRootGesture(gesture: 'parallel' | 'loop' | 'finish') {
     if (!draft || draft.version !== 2) return;
-    let id: string;
+    let ids: readonly string[];
     let nextDraft;
     try {
       if (gesture === 'parallel') {
-        id = v2NodeIdFor('FanOut', draft);
+        // The parallel gesture creates a PAIR; both halves land in the
+        // selection together, because the pair is one structural unit.
+        ids = [v2NodeIdFor('FanOut', draft), v2NodeIdFor('Join', draft)];
         nextDraft = addParallelFrontier(draft);
       } else if (gesture === 'loop') {
-        id = v2NodeIdFor('BoundedLoop', draft);
+        ids = [v2NodeIdFor('BoundedLoop', draft)];
         nextDraft = addBoundedLoopOverDeclaration(draft);
       } else {
-        id = v2NodeIdFor('Finish', draft);
+        ids = [v2NodeIdFor('Finish', draft)];
         nextDraft = addFinishNode(draft);
       }
     } catch (error) {
@@ -836,8 +1007,7 @@ export function PipelineCanvasPage() {
       return;
     }
     setDraft(nextDraft);
-    recomputeFlow(nextDraft);
-    setSelectedStageId(id);
+    recomputeFlow(nextDraft, catalog, selectAddedNodes(ids));
     markDraftChanged();
   }
 
@@ -856,14 +1026,15 @@ export function PipelineCanvasPage() {
 
   /** Splices a condition onto the selected connection (design D5). The
    * spliced connection no longer exists afterward, so the Connection panel
-   * closes; the new Choice node is left selectable on the canvas. */
+   * closes (the removed id leaves the selection); the new Choice node is
+   * left selectable on the canvas. */
   function spliceConnectionCondition(connectionId: string, expression: string) {
     if (!draft || draft.version !== 2) return;
     try {
       const nextDraft = spliceConditionOntoConnection(draft, connectionId, expression);
       setDraft(nextDraft);
       recomputeFlow(nextDraft);
-      setSelectedConnectionId(null);
+      pruneSelectionToDraft(nextDraft);
       markDraftChanged();
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not add this condition.');
@@ -877,7 +1048,7 @@ export function PipelineCanvasPage() {
       const nextDraft = unspliceChoice(draft, choiceId);
       setDraft(nextDraft);
       recomputeFlow(nextDraft);
-      setSelectedStageId(null);
+      pruneSelectionToDraft(nextDraft);
       markDraftChanged();
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not remove this condition.');
@@ -891,8 +1062,7 @@ export function PipelineCanvasPage() {
     try {
       const nextDraft = insertCompositeRef(draft, declarationId);
       setDraft(nextDraft);
-      recomputeFlow(nextDraft);
-      setSelectedStageId(id);
+      recomputeFlow(nextDraft, catalog, selectAddedNodes([id]));
       markDraftChanged();
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not insert this declaration.');
@@ -1277,9 +1447,19 @@ export function PipelineCanvasPage() {
       );
       const oldJoinId = previousJoin?.kind === 'FanOut' ? previousJoin.joinNodeId : null;
       const nextDraft = updateParallelContract(draft, fanOutId, patch);
+      // Join-rename follow: when the renamed Join was THE selection, the
+      // selection follows to the new id (a rename is the element surviving
+      // under a new name, not a removal).
+      const followJoinId =
+        patch.joinId && oldJoinId !== null && singletonNodeId(selection) === oldJoinId
+          ? patch.joinId.trim()
+          : null;
+      const nextSelection: CanvasSelection = followJoinId
+        ? { nodeIds: new Set([followJoinId]), connectionIds: new Set() }
+        : selection;
       setDraft(nextDraft);
-      recomputeFlow(nextDraft);
-      if (patch.joinId && selectedStageId === oldJoinId) setSelectedStageId(patch.joinId.trim());
+      recomputeFlow(nextDraft, catalog, nextSelection);
+      if (followJoinId) setSelection(nextSelection);
       markDraftChanged();
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not edit the parallel contract.');
@@ -1295,7 +1475,9 @@ export function PipelineCanvasPage() {
       const nextDraft = removeParallelPair(draft, fanOutId);
       setDraft(nextDraft);
       recomputeFlow(nextDraft);
-      setSelectedStageId(null);
+      // Both halves left the draft, so both leave the selection; any other
+      // selected element survives.
+      pruneSelectionToDraft(nextDraft);
       removeAuthoringDraftErrorScopes([
         `parallel:${fanOutId}`,
         `root-node:${fanOutId}`,
@@ -1310,29 +1492,37 @@ export function PipelineCanvasPage() {
   }
 
   function renameSelectedV2Node(newId: string) {
-    if (!draft || draft.version !== 2 || !selectedStageId) return;
+    if (!draft || draft.version !== 2) return;
+    const currentId = singletonNodeId(selection);
+    if (!currentId) return;
     const node = draft.root.nodes.find(
-      (candidate) => candidate.id === selectedStageId
+      (candidate) => candidate.id === currentId
     );
     if (
       !node ||
       !isV2EditableNodeKind(node.kind) ||
-      newId === selectedStageId ||
+      newId === currentId ||
       draft.root.nodes.some((candidate) => candidate.id === newId)
     ) {
       return;
     }
-    const nextDraft = renameV2Node(draft, selectedStageId, newId);
+    const nextDraft = renameV2Node(draft, currentId, newId);
+    // The renamed node survives under its new id — the selection follows
+    // the rename rather than being cleared (design D3).
+    const nextSelection: CanvasSelection = {
+      nodeIds: new Set([newId]),
+      connectionIds: new Set(),
+    };
     setDraft(nextDraft);
-    recomputeFlow(nextDraft);
-    setSelectedStageId(newId);
+    recomputeFlow(nextDraft, catalog, nextSelection);
+    setSelection(nextSelection);
     renameAuthoringDraftErrorScope(
-      `root-node:${selectedStageId}`,
+      `root-node:${currentId}`,
       `root-node:${newId}`
     );
     if (node.kind === 'FanOut') {
       renameAuthoringDraftErrorScope(
-        `parallel:${selectedStageId}`,
+        `parallel:${currentId}`,
         `parallel:${newId}`
       );
     }
@@ -1397,29 +1587,32 @@ export function PipelineCanvasPage() {
   }
 
   function renameSelectedStage(newId: string) {
-    if (!draft || draft.version !== 1 || !selectedStageId) return;
-    const nextDraft = renameStage(draft, selectedStageId, newId);
+    if (!draft || draft.version !== 1) return;
+    const currentId = singletonNodeId(selection);
+    if (!currentId) return;
+    const nextDraft = renameStage(draft, currentId, newId);
     setDraft(nextDraft);
     markDraftChanged();
     setFlowNodes((nodes) =>
       nodes.map((n) =>
-        n.id === selectedStageId && n.type === 'stage' ? { ...n, id: newId, data: { ...n.data, id: newId } } : n
+        n.id === currentId && n.type === 'stage' ? { ...n, id: newId, data: { ...n.data, id: newId } } : n
       )
     );
     // The id rewrite below assumes an edge's source and target are never BOTH
-    // `selectedStageId` at once — relies on the no-self-edges invariant
+    // `currentId` at once — relies on the no-self-edges invariant
     // (`wouldCreateCycle` rejects a self-loop, so a stage can never require
     // itself) — otherwise the `${newId}->${e.target}` branch would silently
     // drop a rewritten target half of a self-referencing id.
     setFlowEdges((eds) =>
       eds.map((e) => ({
         ...e,
-        id: e.id === `${selectedStageId}->${e.target}` || e.source === selectedStageId ? `${newId}->${e.target}` : e.id,
-        source: e.source === selectedStageId ? newId : e.source,
-        target: e.target === selectedStageId ? newId : e.target,
+        id: e.id === `${currentId}->${e.target}` || e.source === currentId ? `${newId}->${e.target}` : e.id,
+        source: e.source === currentId ? newId : e.source,
+        target: e.target === currentId ? newId : e.target,
       }))
     );
-    setSelectedStageId(newId);
+    // The renamed stage survives under its new id — the selection follows.
+    replaceSelection([newId]);
   }
 
   function relayout() {
@@ -1459,26 +1652,32 @@ export function PipelineCanvasPage() {
 
   const backHref = space ? spaceHref(space, 'pipelines') : '/';
 
+  // Singleton derivations (design D3): the panel objects come from
+  // `singletonNodeId`/`singletonConnectionId`, so singleton panel behavior —
+  // including `key={id}` remount semantics below — is unchanged while a
+  // multi or mixed selection yields null and opens no singleton panel.
+  const primarySelectedNodeId = singletonNodeId(selection);
+  const primarySelectedConnectionId = singletonConnectionId(selection);
   const selectedStage = useMemo(
     () =>
-      draft?.version === 1 && selectedStageId
-        ? draft.stages.find((stage) => stage.id === selectedStageId) ?? null
+      draft?.version === 1 && primarySelectedNodeId
+        ? draft.stages.find((stage) => stage.id === primarySelectedNodeId) ?? null
         : null,
-    [draft, selectedStageId]
+    [draft, primarySelectedNodeId]
   );
   const selectedV2Node = useMemo(
     () =>
-      draft?.version === 2 && selectedStageId
-        ? draft.root.nodes.find((node) => node.id === selectedStageId) ?? null
+      draft?.version === 2 && primarySelectedNodeId
+        ? draft.root.nodes.find((node) => node.id === primarySelectedNodeId) ?? null
         : null,
-    [draft, selectedStageId]
+    [draft, primarySelectedNodeId]
   );
   const selectedConnection = useMemo(
     () =>
-      draft?.version === 2 && selectedConnectionId
-        ? draft.root.connections.find((connection) => connection.id === selectedConnectionId) ?? null
+      draft?.version === 2 && primarySelectedConnectionId
+        ? draft.root.connections.find((connection) => connection.id === primarySelectedConnectionId) ?? null
         : null,
-    [draft, selectedConnectionId]
+    [draft, primarySelectedConnectionId]
   );
   const existingGroups = useMemo(
     () =>
@@ -1496,23 +1695,23 @@ export function PipelineCanvasPage() {
   /** Field-level issue severities for the currently open stage panel (design D5's "panel field highlight"). */
   const selectedStageFieldIssues = useMemo(() => {
     const result: Record<string, 'error' | 'warning'> = {};
-    if (!draft || draft.version !== 1 || !selectedStageId) return result;
+    if (!draft || draft.version !== 1 || !primarySelectedNodeId) return result;
     for (const issue of issues) {
       const target = issuePathTarget(issue.path, draft.stages.length);
       if (!target || !target.field) continue;
-      if (draft.stages[target.stageIndex]?.id !== selectedStageId) continue;
+      if (draft.stages[target.stageIndex]?.id !== primarySelectedNodeId) continue;
       if (result[target.field] !== 'error') result[target.field] = issue.severity;
     }
     return result;
-  }, [draft, selectedStageId, issues]);
+  }, [draft, primarySelectedNodeId, issues]);
   const selectedV2NodeFieldIssues = useMemo(() => {
     const result: Record<string, 'error' | 'warning'> = {};
-    if (!draft || draft.version !== 2 || !selectedStageId) return result;
+    if (!draft || draft.version !== 2 || !primarySelectedNodeId) return result;
     for (const issue of issues) {
       const target = definitionIssuePathTarget(draft, issue.path);
       if (
         target?.kind !== 'node' ||
-        target.id !== selectedStageId ||
+        target.id !== primarySelectedNodeId ||
         !target.field
       ) {
         continue;
@@ -1522,7 +1721,22 @@ export function PipelineCanvasPage() {
       }
     }
     return result;
-  }, [draft, selectedStageId, issues]);
+  }, [draft, primarySelectedNodeId, issues]);
+
+  /**
+   * The selection summary panel's kind breakdown (`AtomicStage × 2`), read
+   * from the v2 draft in draft order. Empty for v1 — its stages carry no
+   * node kinds — and empty whenever no selected id matches a node.
+   */
+  const selectionNodeKindSummary = useMemo(() => {
+    if (draft?.version !== 2) return [];
+    const counts = new Map<string, number>();
+    for (const node of draft.root.nodes) {
+      if (!selection.nodeIds.has(node.id)) continue;
+      counts.set(node.kind, (counts.get(node.kind) ?? 0) + 1);
+    }
+    return [...counts.entries()].map(([kind, count]) => `${kind} × ${count}`);
+  }, [draft, selection]);
 
   function selectIssueTarget(
     target: DefinitionIssueTarget,
@@ -1531,19 +1745,26 @@ export function PipelineCanvasPage() {
     setSelectedIssueTarget(target);
     setSelectedIssueSeverity(severity);
     if (!draft) return;
+    // "Selecting an issue in the issues list SHALL leave exactly the one
+    // element the issue points at selected, opening its panel" — every
+    // branch REPLACES the selection (through the paired replacer, which
+    // also re-stamps the flow so the listener cannot revert it one commit
+    // later — review B1), so a box-selection is not left half-standing
+    // behind the newly focused element.
     if (target.kind === 'definition') {
-      setSelectedStageId(null);
+      replaceSelection([]);
       setSelectedDeclarationId(null);
       return;
     }
     if (target.kind === 'node') {
       setSelectedDeclarationId(null);
-      setSelectedStageId(target.id);
+      replaceSelection([target.id]);
       return;
     }
     if (target.kind === 'connection' && draft.version === 2) {
       const consuming = draft.root.connections[target.index]?.to.node;
-      if (consuming) setSelectedStageId(consuming);
+      if (consuming) replaceSelection([consuming]);
+      else replaceSelection([]);
       setSelectedDeclarationId(null);
       return;
     }
@@ -1552,11 +1773,42 @@ export function PipelineCanvasPage() {
       target.kind === 'body-node' ||
       target.kind === 'body-connection'
     ) {
-      setSelectedStageId(null);
+      replaceSelection([]);
       setSelectedDeclarationId(
         target.kind === 'declaration' ? target.id : target.declarationId
       );
     }
+  }
+
+  /**
+   * The selection summary panel's delete action — the same batch path the
+   * Delete key takes. v2 routes the whole node set through
+   * `applyV2BatchRemoval` (pair co-deletion, one refusal summary); v1 keeps
+   * its existing `removeStage` loop, which is already batch-capable and
+   * cleans every `requires` reference (design D5).
+   */
+  function deleteSelection() {
+    if (!draft || selection.nodeIds.size === 0) return;
+    if (draft.version === 2) {
+      applyV2BatchRemoval(selection.nodeIds, selection.connectionIds);
+      return;
+    }
+    let nextDraft: WirePipelineDefinition = draft;
+    for (const id of selection.nodeIds) nextDraft = removeStage(nextDraft, id);
+    const removedIds = new Set(selection.nodeIds);
+    setDraft(nextDraft);
+    setFlowEdges((eds) =>
+      eds.filter((e) => !removedIds.has(e.source) && !removedIds.has(e.target))
+    );
+    // Canvas truth in the same update (review M1): unlike the Delete key,
+    // whose `applyNodeChanges` tail drops the removed cards, this path
+    // never rebuilt the flow — the deleted stages survived as still-
+    // selected ghosts, and with the selection listener live they re-popped
+    // the summary panel reporting the deleted stages. Drop the cards, then
+    // clear mirror and flags together through the paired replacer.
+    setFlowNodes((nodes) => nodes.filter((node) => !removedIds.has(node.id)));
+    replaceSelection([]);
+    markDraftChanged();
   }
 
   function selectDeclaration(id: string | null) {
@@ -1604,7 +1856,7 @@ export function PipelineCanvasPage() {
       : null;
   const selectedRootFocusedField =
     selectedIssueTarget?.kind === 'node' &&
-    selectedIssueTarget.id === selectedStageId
+    selectedIssueTarget.id === primarySelectedNodeId
       ? selectedIssueTarget.field ?? null
       : null;
 
@@ -2048,9 +2300,7 @@ export function PipelineCanvasPage() {
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
-                onNodeClick={onNodeClick}
-                onEdgeClick={onEdgeClick}
-                onPaneClick={onPaneClick}
+                onSelectionChange={onSelectionChange}
                 onDropStage={onDropStage}
               />
             </ReactFlowProvider>
@@ -2098,7 +2348,7 @@ export function PipelineCanvasPage() {
             onHandoffThreshold={(threshold) =>
               patchStageHandoffThreshold(selectedStage.id, threshold)
             }
-            onClose={() => setSelectedStageId(null)}
+            onClose={() => replaceSelection([])}
           />
         )}
         {editable && selectedV2Node && (
@@ -2136,7 +2386,7 @@ export function PipelineCanvasPage() {
             onParallelContractPatch={editParallelContract}
             onDeleteParallelPair={deleteParallel}
             onInvalidChange={setAuthoringDraftError}
-            onClose={() => setSelectedStageId(null)}
+            onClose={() => replaceSelection([])}
           />
         )}
         {editable && selectedConnection && (
@@ -2144,7 +2394,19 @@ export function PipelineCanvasPage() {
             key={selectedConnection.id}
             connection={selectedConnection}
             onSpliceCondition={spliceConnectionCondition}
-            onClose={() => setSelectedConnectionId(null)}
+            onClose={() => replaceSelection([])}
+          />
+        )}
+        {editable && draft && selectionPanelMode(selection) === 'multi' && (
+          <V2SelectionPanel
+            // The summary serves both editors; v1's elements are stage
+            // cards, so its heading names that mode's vocabulary (review t1).
+            title={draft.version === 1 ? 'Selected stages' : 'Selection'}
+            nodeCount={selection.nodeIds.size}
+            connectionCount={selection.connectionIds.size}
+            nodeKinds={selectionNodeKindSummary}
+            onDelete={deleteSelection}
+            onClose={() => replaceSelection([])}
           />
         )}
       </div>
@@ -2170,9 +2432,7 @@ function CanvasFlow({
   onNodesChange,
   onEdgesChange,
   onConnect,
-  onNodeClick,
-  onEdgeClick,
-  onPaneClick,
+  onSelectionChange,
   onDropStage,
 }: {
   nodes: PipelineFlowNode[];
@@ -2181,9 +2441,7 @@ function CanvasFlow({
   onNodesChange: (changes: NodeChange[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
   onConnect: (connection: Connection) => void;
-  onNodeClick: (event: unknown, node: { id: string; type?: string }) => void;
-  onEdgeClick: (event: unknown, edge: { id: string }) => void;
-  onPaneClick: () => void;
+  onSelectionChange: (params: OnSelectionChangeParams) => void;
   onDropStage: (skill: PipelineCatalogSkill, position: { x: number; y: number }) => void;
 }) {
   const { screenToFlowPosition } = useReactFlow();
@@ -2204,6 +2462,11 @@ function CanvasFlow({
   }
 
   return (
+    // Box-select is pinned to Shift+drag explicitly (canvas-multi-selection
+    // design D4) so the interaction contract is visible in code instead of
+    // relying on the library default; multiSelectionKeyCode stays at its
+    // platform-aware default (Control on Windows/Linux, Command on macOS)
+    // and selectionOnDrag stays false, preserving plain-drag panning.
     <ReactFlow
       nodes={nodes}
       edges={edges}
@@ -2214,13 +2477,12 @@ function CanvasFlow({
       nodesConnectable={!editable ? false : undefined}
       edgesFocusable={editable}
       elementsSelectable
+      selectionKeyCode="Shift"
       deleteKeyCode={editable ? ['Backspace', 'Delete'] : null}
       onNodesChange={editable ? onNodesChange : undefined}
       onEdgesChange={editable ? onEdgesChange : undefined}
       onConnect={editable ? onConnect : undefined}
-      onNodeClick={onNodeClick}
-      onEdgeClick={onEdgeClick}
-      onPaneClick={onPaneClick}
+      onSelectionChange={editable ? onSelectionChange : undefined}
       onDrop={editable ? onDrop : undefined}
       onDragOver={editable ? onDragOver : undefined}
     >

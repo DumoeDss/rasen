@@ -1,0 +1,80 @@
+{
+  "allOk": true,
+  "results": [
+    {
+      "name": "authoring setup produced five nodes",
+      "ok": true,
+      "detail": "nodes=5"
+    },
+    {
+      "name": "box rectangle contains the two stage rects and intersects no other node",
+      "ok": true,
+      "detail": "from=(581,156) to=(1010,454)"
+    },
+    {
+      "name": "box drag starts on the pane, not on a node",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Shift+drag box-select selected exactly the two enclosed nodes",
+      "ok": true,
+      "detail": "[\"atomic-stage\",\"atomic-stage-2\"]"
+    },
+    {
+      "name": "selection summary reports two nodes",
+      "ok": true,
+      "detail": "2 nodes"
+    },
+    {
+      "name": "Control+click augmented the selection to three nodes",
+      "ok": true,
+      "detail": "[\"atomic-stage\",\"atomic-stage-2\",\"fan-out\"]"
+    },
+    {
+      "name": "Control+click on a selected node removed it",
+      "ok": true,
+      "detail": "[\"atomic-stage-2\",\"fan-out\"]"
+    },
+    {
+      "name": "Control+click re-added the node (three again)",
+      "ok": true,
+      "detail": "[\"atomic-stage\",\"atomic-stage-2\",\"fan-out\"]"
+    },
+    {
+      "name": "palette add kept the three previously selected nodes selected",
+      "ok": true,
+      "detail": "[\"atomic-stage\",\"atomic-stage-2\",\"fan-out\",\"atomic-stage-3\"]"
+    },
+    {
+      "name": "deleting the selection removed the pair together (fan-out AND join) plus every selected node",
+      "ok": true,
+      "detail": "[\"finish\"]"
+    },
+    {
+      "name": "pair deletion produced no refusal toast",
+      "ok": true,
+      "detail": "none"
+    },
+    {
+      "name": "emptied selection closed every panel",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "second box-select gathered the two remaining nodes",
+      "ok": true,
+      "detail": "[\"finish\",\"atomic-stage\"]"
+    },
+    {
+      "name": "Delete key removed the whole multi-selection",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "selection summary closed with the emptied selection",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

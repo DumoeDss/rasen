@@ -12,6 +12,8 @@ import {
   addRequire,
   bodyWouldCreateCycle,
   createBlankCanvasPipelineDefinitionV2,
+  createParallelPair,
+  EMPTY_CANVAS_SELECTION,
   updateBodyStage,
   addStage,
   addV2Connection,
@@ -27,8 +29,12 @@ import {
   removeStage,
   removeV2Connection,
   removeV2Node,
+  removeV2Nodes,
   renameStage,
   renameV2Node,
+  selectionPanelMode,
+  singletonConnectionId,
+  singletonNodeId,
   stageIdFor,
   updateStageFields,
   updateStageHandoffThreshold,
@@ -779,5 +785,210 @@ describe('Composite declaration CRUD', () => {
     expect(() => updateBodyStage(def, 'comp', 'a', { id: '  ' })).toThrow(/cannot be blank/);
     expect(() => updateBodyStage(def, 'comp', 'a', { id: 'b' })).toThrow(/already exists/);
     expect(() => updateBodyStage(def, 'comp', 'ghost', { id: 'c' })).toThrow(/does not exist/);
+  });
+});
+
+// ===== canvas-multi-selection: the selection model and the batch removal =====
+
+function selectionOf(
+  nodeIds: readonly string[],
+  connectionIds: readonly string[] = []
+) {
+  return {
+    nodeIds: new Set(nodeIds),
+    connectionIds: new Set(connectionIds),
+  };
+}
+
+describe('selectionPanelMode / singleton accessors', () => {
+  it('maps every selection shape to its panel mode', () => {
+    expect(selectionPanelMode(EMPTY_CANVAS_SELECTION)).toBe('empty');
+    expect(selectionPanelMode(selectionOf(['a']))).toBe('node');
+    expect(selectionPanelMode(selectionOf([], ['c']))).toBe('connection');
+    // Any mix, and any two-or-more, is the multi state.
+    expect(selectionPanelMode(selectionOf(['a'], ['c']))).toBe('multi');
+    expect(selectionPanelMode(selectionOf(['a', 'b']))).toBe('multi');
+    expect(selectionPanelMode(selectionOf([], ['c1', 'c2']))).toBe('multi');
+  });
+
+  it('yields the singleton id only for an exactly-one selection', () => {
+    expect(singletonNodeId(EMPTY_CANVAS_SELECTION)).toBeNull();
+    expect(singletonNodeId(selectionOf(['a']))).toBe('a');
+    // One node PLUS one connection is not a node selection.
+    expect(singletonNodeId(selectionOf(['a'], ['c']))).toBeNull();
+    expect(singletonNodeId(selectionOf(['a', 'b']))).toBeNull();
+
+    expect(singletonConnectionId(selectionOf([], ['c']))).toBe('c');
+    expect(singletonConnectionId(selectionOf(['a'], ['c']))).toBeNull();
+    expect(singletonConnectionId(selectionOf([], ['c1', 'c2']))).toBeNull();
+    expect(singletonConnectionId(EMPTY_CANVAS_SELECTION)).toBeNull();
+  });
+});
+
+/** v2Def() plus a second member, a parallel pair over both, and two connections (one incident to the pair). */
+function pairedDef(): WirePipelineDefinitionV2 {
+  let def = v2Def();
+  def = addV2Node(def, {
+    id: 'review',
+    kind: 'AtomicStage',
+    capability: { id: 'skill:review', version: 'sha256:review' },
+  });
+  def = createParallelPair(def, {
+    fanOutId: 'fan',
+    joinId: 'join',
+    memberNodeIds: ['produce', 'review'],
+    requiredMemberIds: ['produce'],
+    concurrencyCap: 2,
+    budget: 2,
+    outcomes: { proceed: 'done', failed: 'failed' },
+  });
+  def = addV2Connection(def, {
+    id: 'produce:done->finish:input',
+    from: { node: 'produce', port: 'done' },
+    to: { node: 'finish', port: 'input' },
+  });
+  def = addV2Connection(def, {
+    id: 'fan:produce->join:produce',
+    from: { node: 'fan', port: 'produce' },
+    to: { node: 'join', port: 'produce' },
+  });
+  return def;
+}
+
+describe('removeV2Nodes', () => {
+  it('co-deletes the paired Join with a selected FanOut, selected or not', () => {
+    const plan = removeV2Nodes(pairedDef(), new Set(['fan']));
+    expect(plan.removedIds).toEqual(['fan', 'join']);
+    expect(plan.refused).toEqual([]);
+    expect(plan.next.root.nodes.map((node) => node.id)).toEqual([
+      'produce',
+      'gate',
+      'finish',
+      'review',
+    ]);
+    // The pair's incident connection is gone; the member-to-finish edge survives.
+    expect(plan.next.root.connections.map((connection) => connection.id)).toEqual([
+      'produce:done->finish:input',
+    ]);
+  });
+
+  it('treats a pair selected on both halves as one unit — no refusal, one removal', () => {
+    const plan = removeV2Nodes(pairedDef(), new Set(['fan', 'join']));
+    expect(plan.removedIds).toEqual(['fan', 'join']);
+    expect(plan.refused).toEqual([]);
+  });
+
+  it('refuses a lone Join whose FanOut is not selected, with the existing paired-deletion message', () => {
+    const plan = removeV2Nodes(pairedDef(), new Set(['join']));
+    expect(plan.removedIds).toEqual([]);
+    expect(plan.refused).toEqual([
+      { id: 'join', reason: 'FanOut and Join require explicit paired deletion.' },
+    ]);
+  });
+
+  it('refuses a Gate-targeted node with the existing removeV2Node message', () => {
+    const plan = removeV2Nodes(pairedDef(), new Set(['produce']));
+    expect(plan.removedIds).toEqual([]);
+    expect(plan.refused.map((refusal) => refusal.id)).toEqual(['produce']);
+    expect(plan.refused[0]!.reason).toMatch(/targeted by Gate 'gate'/);
+  });
+
+  it('refuses a parallel pair\'s last member', () => {
+    let def = removeV2Node(v2Def(), 'gate');
+    def = createParallelPair(def, {
+      fanOutId: 'fan',
+      joinId: 'join',
+      memberNodeIds: ['produce'],
+      requiredMemberIds: ['produce'],
+      concurrencyCap: 1,
+      budget: 1,
+      outcomes: { proceed: 'done', failed: 'failed' },
+    });
+    const plan = removeV2Nodes(def, new Set(['produce']));
+    expect(plan.removedIds).toEqual([]);
+    expect(plan.refused.map((refusal) => refusal.id)).toEqual(['produce']);
+    expect(plan.refused[0]!.reason).toMatch(/only parallel member of 'fan'/);
+  });
+
+  it('reports a mixed batch as removed-plus-refused in draft order, one plan', () => {
+    // produce is Gate-targeted, finish is plain, join is a lone barrier.
+    const plan = removeV2Nodes(pairedDef(), new Set(['finish', 'join', 'produce']));
+    expect(plan.removedIds).toEqual(['finish']);
+    expect(plan.refused.map((refusal) => refusal.id)).toEqual(['produce', 'join']);
+    expect(plan.next.root.nodes.map((node) => node.id)).toEqual([
+      'produce',
+      'gate',
+      'review',
+      'fan',
+      'join',
+    ]);
+  });
+
+  it('removes a member together with its pair when both are selected', () => {
+    const plan = removeV2Nodes(pairedDef(), new Set(['review', 'fan']));
+    expect(plan.removedIds).toEqual(['review', 'fan', 'join']);
+    expect(plan.refused).toEqual([]);
+    expect(plan.next.root.nodes.map((node) => node.id)).toEqual([
+      'produce',
+      'gate',
+      'finish',
+    ]);
+  });
+
+  it('removes EVERY member of a selected pair plus the pair, with no last-member refusal', () => {
+    // DISCRIMINATING PROBE for the pairs-first ordering: processing members
+    // before the FanOut would remove the first member (2 members -> 1) and
+    // then REFUSE the second as the pair's only remaining member — an order
+    // artifact for the natural box-select of a frontier plus its members.
+    // The FanOut's pair removal goes first, so both members are judged as
+    // plain nodes and the whole selection deletes. (The gate is dropped so
+    // 'produce' carries no Gate-target refusal of its own.)
+    let def = removeV2Node(v2Def(), 'gate');
+    def = addV2Node(def, {
+      id: 'review',
+      kind: 'AtomicStage',
+      capability: { id: 'skill:review', version: 'sha256:review' },
+    });
+    def = createParallelPair(def, {
+      fanOutId: 'fan',
+      joinId: 'join',
+      memberNodeIds: ['produce', 'review'],
+      requiredMemberIds: ['produce'],
+      concurrencyCap: 2,
+      budget: 2,
+      outcomes: { proceed: 'done', failed: 'failed' },
+    });
+    const plan = removeV2Nodes(def, new Set(['produce', 'review', 'fan']));
+    expect(plan.removedIds).toEqual(['produce', 'review', 'fan', 'join']);
+    expect(plan.refused).toEqual([]);
+    expect(plan.next.root.nodes.map((node) => node.id)).toEqual(['finish']);
+  });
+
+  it('is a no-op for an empty batch or ids the draft does not carry', () => {
+    const def = pairedDef();
+    expect(removeV2Nodes(def, new Set())).toEqual({
+      next: def,
+      removedIds: [],
+      refused: [],
+    });
+    expect(removeV2Nodes(def, new Set(['ghost']))).toEqual({
+      next: def,
+      removedIds: [],
+      refused: [],
+    });
+  });
+
+  it('skips a kind outside the editable vocabulary silently — not removed, not refused', () => {
+    const def = pairedDef();
+    def.root.nodes.push({
+      id: 'future-sentinel',
+      kind: 'FutureSentinel',
+    } as never);
+    const plan = removeV2Nodes(def, new Set(['future-sentinel', 'finish']));
+    expect(plan.removedIds).toEqual(['finish']);
+    expect(plan.refused).toEqual([]);
+    expect(
+      plan.next.root.nodes.some((node) => node.id === 'future-sentinel')
+    ).toBe(true);
   });
 });
