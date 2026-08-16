@@ -1,0 +1,25 @@
+{
+  "change": "converge-projectid-mint-with-registry",
+  "archivedAt": "2026-08-16T15:03:43.256Z",
+  "codeCommit": "488aef9a0e2ab0c869fb2a18413b55e254cb5970",
+  "planningBranch": "dev/0.2.0",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "a993e9f050b75a2169cef61283078fe3a5d6a439e341a097032d18896831a6d8"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "ed3517473941e78f68d796761ac8b3f0f0a8c955a3dcc6269281b8e02dfdea05"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

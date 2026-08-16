@@ -788,6 +788,93 @@ export async function findProjectRegistryEntry(
   return direct ? { canonicalPath, entry: direct } : null;
 }
 
+/** The outcome of {@link findAdoptableProjectIdentity} for one project root. */
+export type AdoptableProjectIdentity =
+  | { adoptable: true; projectId: string }
+  | { adoptable: false; reason: 'unregistered' | 'fixedMetadataConflict' };
+
+/**
+ * Read-only lookup of the identity a run at `projectRoot` may ADOPT when it
+ * is about to mint a `projectId` (converge-projectid-mint design D2): the
+ * registry entry's `projectId` when the machine holds one unambiguous claim
+ * for the root (piercing a linked worktree to the main checkout's entry, the
+ * same resolution `findProjectRegistryEntry` applies), and no adoption
+ * otherwise. Reuses the canonical-claimant machinery only — no new detection
+ * mechanism — and never mutates the registry or creates the registry file.
+ *
+ * Cost contract: the mint consults this on EVERY first-run identity, so the
+ * nothing-to-adopt answers must cost ZERO git spawns. An absent or EMPTY
+ * registry returns before any piercing or claimant grouping runs (a plain
+ * registry read), and a registry whose single entry already claims the root
+ * via claim-key comparison (case-insensitive path resolve, no spawn) is
+ * answered directly — provably equivalent to the full machinery for that
+ * shape, because a one-alias group can never disagree on fixed metadata.
+ * Only a multi-entry (or non-claiming) registry pays for the machinery, the
+ * same spawn class as the registration that follows in every caller. (The
+ * consumer-side `cachedResolveRegistrationRoot` cache lives in config-api and
+ * is not importable here without a module cycle; per its own contract,
+ * identity-asserting write paths keep the uncached resolver.)
+ *
+ * A root whose LIVE registry aliases disagree on fixed ownership metadata
+ * (`fixedMetadataConflict`) is reported rather than resolved: adopting either
+ * alias's id would choose a winner the registry itself refuses to choose, so
+ * the caller mints fresh and lets the subsequent registration surface the
+ * conflict through its existing error.
+ */
+export async function findAdoptableProjectIdentity(
+  projectRoot: string,
+  options: ProjectPathOptions = {}
+): Promise<AdoptableProjectIdentity> {
+  // Cheap path first: an absent or EMPTY registry holds no identity to
+  // adopt - the common case for any first run on any machine - and must be
+  // settled before anything that spawns a git process runs.
+  const state = await readProjectRegistryState(options);
+  if (!state) return { adoptable: false, reason: 'unregistered' };
+  const registryKeys = Object.keys(state.projects);
+  if (registryKeys.length === 0) {
+    return { adoptable: false, reason: 'unregistered' };
+  }
+
+  const canonicalPath = FileSystemUtils.canonicalizeExistingPath(projectRoot);
+
+  // Single-direct-entry fast path: the one registry key already claims this
+  // exact root, so the claimant group is that alias alone and cannot carry a
+  // fixed-metadata conflict.
+  if (
+    registryKeys.length === 1 &&
+    projectClaimPathKey(registryKeys[0]!) === projectClaimPathKey(canonicalPath)
+  ) {
+    return { adoptable: true, projectId: state.projects[registryKeys[0]!].projectId };
+  }
+
+  const claimants = await canonicalProjectClaimants(state.projects);
+
+  const pierced = await resolveRegistrationRoot(canonicalPath);
+  const primaryRoot = pierced !== canonicalPath ? pierced : canonicalPath;
+  const primaryKey = projectClaimPathKey(primaryRoot);
+  const primary = claimants.find(
+    claimant =>
+      projectClaimPathKey(claimant.path) === primaryKey &&
+      claimant.aliases.some(alias =>
+        projectClaimPathKey(alias.canonicalPath) === primaryKey
+      )
+  );
+
+  // Same surviving-evidence fallback as `findProjectRegistryEntry`: when the
+  // pierced main root has no registered claim of its own, only the root's own
+  // exact entry counts. The claimant GROUP is matched (not the bare entry) so
+  // the fixed-metadata-conflict bit stays available.
+  const claimant =
+    primary ??
+    claimants.find(claimant => claimant.registryPaths.includes(canonicalPath));
+
+  if (!claimant) return { adoptable: false, reason: 'unregistered' };
+  if (claimant.fixedMetadataConflict) {
+    return { adoptable: false, reason: 'fixedMetadataConflict' };
+  }
+  return { adoptable: true, projectId: claimant.entry.projectId };
+}
+
 export interface DanglingProjectEntry {
   path: string;
   entry: ProjectRegistryEntryState;

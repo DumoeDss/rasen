@@ -9,9 +9,11 @@ import { randomUUID } from 'node:crypto';
 import { resolveProjectHome, touchProjectRegistry } from '../../src/core/project-home.js';
 import { readProjectConfig } from '../../src/core/project-config.js';
 import {
+  getProjectHomeDir,
   getProjectRegistryPath,
   readProjectRegistryState,
   registerProject,
+  updateProjectRegistryState,
   writeProjectRegistryState,
 } from '../../src/core/project-registry.js';
 import { FileSystemUtils } from '../../src/utils/file-system.js';
@@ -132,6 +134,117 @@ describe('project-home', () => {
     expect(probed).not.toBeNull();
     expect(probed!.projectId).toBe(ensured!.projectId);
     expect(probed!.homeDir).toBe(ensured!.homeDir);
+  });
+
+  it('repairs an already-diverged config toward the registered identity, idempotently', async () => {
+    const registeredId = randomUUID();
+    await registerProject(
+      { projectRoot, projectId: registeredId, mode: 'in-repo' },
+      { globalDataDir }
+    );
+    const configPath = path.join(projectRoot, 'rasen', 'config.yaml');
+    fs.writeFileSync(
+      configPath,
+      'schema: spec-driven\n# project note\nprojectId: divergent-id-b\ncontext: |\n  Keep me\n'
+    );
+
+    const home = await resolveProjectHome(projectRoot, { globalDataDir });
+
+    expect(home!.projectId).toBe(registeredId);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).toContain(`projectId: ${registeredId}`);
+    expect(content).not.toContain('divergent-id-b');
+    expect(content).toContain('# project note');
+    expect(content).toContain('Keep me');
+
+    // A second ensure run changes nothing in the config (idempotent).
+    const again = await resolveProjectHome(projectRoot, { globalDataDir });
+    expect(again!.projectId).toBe(registeredId);
+    expect(fs.readFileSync(configPath, 'utf-8')).toBe(content);
+  });
+
+  it('adopts the registered identity end-to-end when the config has no projectId', async () => {
+    const registeredId = randomUUID();
+    const { entry } = await registerProject(
+      { projectRoot, projectId: registeredId, mode: 'in-repo' },
+      { globalDataDir }
+    );
+
+    const home = await resolveProjectHome(projectRoot, { globalDataDir });
+
+    expect(home!.projectId).toBe(registeredId);
+    expect(home!.homeDir).toBe(getProjectHomeDir(entry.home, { globalDataDir }));
+    const config = readProjectConfig(projectRoot);
+    expect(config?.projectId).toBe(registeredId);
+    // The registry entry itself is untouched: same identity, same home.
+    const canonicalPath = FileSystemUtils.canonicalizeExistingPath(projectRoot);
+    const state = await readProjectRegistryState({ globalDataDir });
+    expect(state?.projects[canonicalPath]?.projectId).toBe(registeredId);
+    expect(state?.projects[canonicalPath]?.home).toBe(entry.home);
+  });
+
+  it('leaves a case-differing (canonical-form-equal) config id byte-identical', async () => {
+    const lowerId = randomUUID();
+    await registerProject(
+      { projectRoot, projectId: lowerId, mode: 'in-repo' },
+      { globalDataDir }
+    );
+    const configPath = path.join(projectRoot, 'rasen', 'config.yaml');
+    const original = `schema: spec-driven\nprojectId: ${lowerId.toUpperCase()}\n`;
+    fs.writeFileSync(configPath, original);
+
+    const home = await resolveProjectHome(projectRoot, { globalDataDir });
+
+    // Resolves normally (same project identity) and no rewrite happens.
+    expect(home!.projectId).toBe(lowerId);
+    expect(fs.readFileSync(configPath, 'utf-8')).toBe(original);
+  });
+
+  it('propagates the alias-conflict refusal without rewriting the config (no silent winner)', async () => {
+    // A conflicted registry: the root's own live entry plus a second live
+    // worktree-keyed alias resolving to the same canonical root, disagreeing
+    // on identity and home. Registration must refuse, the refusal must
+    // propagate, and neither the config nor the registry may be rewritten.
+    const gitExecEnv = { ...process.env, ...isolatedGitEnv(globalDataDir) };
+    execFileSync('git', ['init'], { cwd: projectRoot, stdio: 'ignore' });
+    fs.writeFileSync(path.join(projectRoot, 'README.md'), 'hello\n');
+    execFileSync('git', ['add', '-A'], { cwd: projectRoot, env: gitExecEnv });
+    execFileSync('git', ['commit', '-m', 'init'], { cwd: projectRoot, env: gitExecEnv, stdio: 'ignore' });
+    const worktreePath = path.join(path.dirname(projectRoot), `rasen-home-conflict-wt-${randomUUID().slice(0, 8)}`);
+    execFileSync('git', ['worktree', 'add', worktreePath], { cwd: projectRoot, env: gitExecEnv, stdio: 'ignore' });
+
+    const registeredId = randomUUID();
+    const main = await registerProject(
+      { projectRoot, projectId: registeredId, mode: 'in-repo' },
+      { globalDataDir }
+    );
+    await updateProjectRegistryState((current) => ({
+      version: 1,
+      projects: {
+        ...(current?.projects ?? {}),
+        [FileSystemUtils.canonicalizeExistingPath(worktreePath)]: {
+          projectId: randomUUID(),
+          name: 'conflicting-alias',
+          mode: 'in-repo',
+          home: `${main.entry.home}-conflicting`,
+          lastSeen: '2026-07-09T12:00:00.000Z',
+        },
+      },
+    }), { globalDataDir });
+
+    const configPath = path.join(projectRoot, 'rasen', 'config.yaml');
+    const diverged = 'schema: spec-driven\nprojectId: divergent-id-b\n';
+    fs.writeFileSync(configPath, diverged);
+    const registryBefore = fs.readFileSync(getProjectRegistryPath({ globalDataDir }), 'utf-8');
+
+    await expect(resolveProjectHome(projectRoot, { globalDataDir })).rejects.toMatchObject({
+      diagnostic: { code: 'project_registry_alias_conflict' },
+    });
+
+    expect(fs.readFileSync(configPath, 'utf-8')).toBe(diverged);
+    expect(fs.readFileSync(getProjectRegistryPath({ globalDataDir }), 'utf-8')).toBe(registryBefore);
+
+    execFileSync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: projectRoot, env: gitExecEnv, stdio: 'ignore' });
   });
 
   it('fails with an actionable message when the config file cannot be written', async () => {
