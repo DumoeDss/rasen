@@ -1,5 +1,13 @@
 # Roadmap: Store-v2 onto 0.2.0
 
+**STATUS: COMPLETED 2026-08-16** (dev/0.2.0 tip `222eb0f6`). All seven slices closed `passed`
+on observable evidence; per-slice records live in `slices/*/result.md`. Delivery vehicles:
+the foundation as the store-v2-foundation change portfolio (PRs #157/#158/#159), the six
+later slices as the direct port wave (PR #160 `958b75dd`, PR #161 `cdbe7d0a`, PR #162
+`222eb0f6`) under the port-first directive. A same-day post-merge review
+(`post-merge-review.md`) swept the port line claim-by-claim: zero defects, zero dropped files,
+retired-suite coverage confirmed. The item below is preserved as the historical plan.
+
 Candidate order, evidence-adjustable. Each slice must close on observable evidence
 (goal north-star 戒律 2–3, 9), not on file/module/endpoint existence.
 

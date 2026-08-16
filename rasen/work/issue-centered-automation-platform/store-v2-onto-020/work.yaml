@@ -1,8 +1,15 @@
 version: 1
 id: store-v2-onto-020
-status: active
+status: completed
 targetState: target-state.md
 roadmap: roadmap.md
-activeSlice: slices/store-v2-foundation
 # No own North Star: this sub-direction inherits the parent
 # issue-centered-automation-platform/north-star.md as read-only higher authority.
+#
+# Completed 2026-08-16 at dev/0.2.0 tip 222eb0f6. All seven slices terminal (passed);
+# per-slice results in slices/*/result.md. Delivery vehicles: slice 1 as the
+# store-v2-foundation change portfolio (PRs #157/#158/#159); L2-L8 as the direct
+# port wave (PR #160 958b75dd, PR #161 cdbe7d0a, PR #162 222eb0f6).
+lastReconciled:
+  at: 2026-08-16
+  revision: 222eb0f6
