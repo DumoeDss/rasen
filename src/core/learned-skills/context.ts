@@ -564,7 +564,7 @@ async function resolveLaunchOwner(
     if (!sameProjectIdentity(configuredId, registered.entry.projectId)) {
       fail(
         'knowledge_owner_stale',
-        `The registered project at ${canonicalRoot} no longer matches its projectId metadata. Run \`rasen init\` to repair it.`,
+        `The registered project at ${canonicalRoot} no longer matches its projectId metadata. Run \`rasen init\` to repair it; if the machine registry itself holds conflicting entries for this path, repair them explicitly (init will name them).`,
         {
           owner: { type: 'project', id: registered.entry.projectId },
           selectorGuidance,

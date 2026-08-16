@@ -17,6 +17,7 @@ import {
   type StoreUnavailableReason,
   type UnavailableStoreBinding,
 } from '../store/identity.js';
+import { sameProjectIdentity } from '../store/project-records.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import type { ProjectRef } from './wire-types.js';
 import {
@@ -161,7 +162,10 @@ async function projectPlanningSpace(
   if (
     resolved.ref.projectId.length > 0 &&
     scopeProjectId !== undefined &&
-    scopeProjectId !== resolved.ref.projectId
+    // Canonical-form comparison (converge-projectid-mint D5): a config id
+    // differing only in case/whitespace from the registered id is the same
+    // project, not a conflict.
+    !sameProjectIdentity(scopeProjectId, resolved.ref.projectId)
   ) {
     throw new PlanningScopeError(
       'planning_selection_conflict',

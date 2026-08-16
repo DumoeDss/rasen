@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { parse as parseYaml } from 'yaml';
 import {
   appendStoreReference,
@@ -10,6 +12,7 @@ import {
   validateConfigRules,
   suggestSchemas,
   ensureProjectIdInConfig,
+  reconcileProjectIdInConfig,
   resolveArchiveTiming,
   resolveAutopilotGatePolicy,
   resolveAutopilotSelectionPolicy,
@@ -17,6 +20,13 @@ import {
   updateProjectConfigKey,
   updateProjectConfigKeys,
 } from '../../src/core/project-config.js';
+import {
+  readProjectRegistryState,
+  registerProject,
+  updateProjectRegistryState,
+} from '../../src/core/project-registry.js';
+import { FileSystemUtils } from '../../src/utils/file-system.js';
+import { isolatedGitEnv } from '../helpers/store-git.js';
 
 describe('project-config', () => {
   let tempDir: string;
@@ -1724,6 +1734,221 @@ pipelines:
       // Exactly one projectId line landed - no divergence, no duplication.
       const written = fs.readFileSync(path.join(configDir, 'config.yaml'), 'utf-8');
       expect(written.match(/^projectId:/gmu)?.length).toBe(1);
+    });
+
+    it("adopts the machine registry's identity for a registered root instead of minting", async () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      const original = 'schema: spec-driven\n\n# a helpful comment\n';
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), original);
+
+      const registeredId = randomUUID();
+      await registerProject(
+        { projectRoot: tempDir, projectId: registeredId, mode: 'in-repo' },
+        { globalDataDir }
+      );
+
+      const projectId = await ensureProjectIdInConfig(tempDir, { globalDataDir });
+
+      expect(projectId).toBe(registeredId);
+      const written = fs.readFileSync(path.join(configDir, 'config.yaml'), 'utf-8');
+      expect(written).toContain(`projectId: ${registeredId}`);
+      expect(written).toContain('# a helpful comment');
+      // No second identity exists anywhere: the registry still holds exactly
+      // the one registered entry.
+      const state = await readProjectRegistryState({ globalDataDir });
+      expect(Object.values(state?.projects ?? {}).map((entry) => entry.projectId)).toEqual([
+        registeredId,
+      ]);
+    });
+
+    it("adopts the root's registered identity through the multi-entry slow path, never an unrelated project's", async () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), 'schema: spec-driven\n');
+
+      // A multi-entry registry: an unrelated project registered elsewhere,
+      // plus this root. The single-entry fast path cannot answer this shape;
+      // claimant matching must adopt THIS root's entry, never the other id.
+      const unrelatedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-test-config-unrelated-'));
+      try {
+        const unrelatedId = randomUUID();
+        await registerProject(
+          { projectRoot: unrelatedRoot, projectId: unrelatedId, mode: 'in-repo' },
+          { globalDataDir }
+        );
+        const registeredId = randomUUID();
+        await registerProject(
+          { projectRoot: tempDir, projectId: registeredId, mode: 'in-repo' },
+          { globalDataDir }
+        );
+
+        const projectId = await ensureProjectIdInConfig(tempDir, { globalDataDir });
+
+        expect(projectId).toBe(registeredId);
+        expect(projectId).not.toBe(unrelatedId);
+        const written = fs.readFileSync(path.join(configDir, 'config.yaml'), 'utf-8');
+        expect(written).toContain(`projectId: ${registeredId}`);
+      } finally {
+        fs.rmSync(unrelatedRoot, { recursive: true, force: true });
+      }
+    });
+
+    it('still mints a fresh UUID (never throws) when the registry aliases for the root conflict', async () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), 'schema: spec-driven\n');
+
+      // Conflicted registry state: the root's own live entry plus a second
+      // live worktree-keyed alias resolving to the same canonical root, disa-
+      // greeing on identity and home. Adoption must decline, not throw.
+      const gitExecEnv = { ...process.env, ...isolatedGitEnv(globalDataDir) };
+      execFileSync('git', ['init'], { cwd: tempDir, stdio: 'ignore' });
+      fs.writeFileSync(path.join(tempDir, 'README.md'), 'hello\n');
+      execFileSync('git', ['add', '-A'], { cwd: tempDir, env: gitExecEnv });
+      execFileSync('git', ['commit', '-m', 'init'], { cwd: tempDir, env: gitExecEnv, stdio: 'ignore' });
+      const worktreePath = path.join(path.dirname(tempDir), `rasen-test-config-wt-${randomUUID().slice(0, 8)}`);
+      execFileSync('git', ['worktree', 'add', worktreePath], { cwd: tempDir, env: gitExecEnv, stdio: 'ignore' });
+
+      const registeredId = randomUUID();
+      const main = await registerProject(
+        { projectRoot: tempDir, projectId: registeredId, mode: 'in-repo' },
+        { globalDataDir }
+      );
+      await updateProjectRegistryState((current) => ({
+        version: 1,
+        projects: {
+          ...(current?.projects ?? {}),
+          [FileSystemUtils.canonicalizeExistingPath(worktreePath)]: {
+            projectId: randomUUID(),
+            name: 'conflicting-alias',
+            mode: 'in-repo',
+            home: `${main.entry.home}-conflicting`,
+            lastSeen: '2026-07-09T12:00:00.000Z',
+          },
+        },
+      }), { globalDataDir });
+
+      const projectId = await ensureProjectIdInConfig(tempDir, { globalDataDir });
+
+      expect(projectId).toMatch(/^[0-9a-f-]{36}$/u);
+      const state = await readProjectRegistryState({ globalDataDir });
+      const ids = Object.values(state?.projects ?? {}).map((entry) => entry.projectId);
+      expect(ids).not.toContain(projectId);
+
+      execFileSync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: tempDir, env: gitExecEnv, stdio: 'ignore' });
+    });
+
+    it('still mints a fresh UUID (never throws) when the machine registry cannot be read', async () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      const configPath = path.join(configDir, 'config.yaml');
+      fs.writeFileSync(configPath, 'schema: spec-driven\n');
+
+      // A corrupt registry file: the adoption lookup must treat it as "no
+      // adoptable identity" rather than failing the mint - registry problems
+      // never throw out of ensureProjectIdInConfig.
+      fs.mkdirSync(path.join(globalDataDir, 'projects'), { recursive: true });
+      fs.writeFileSync(path.join(globalDataDir, 'projects', 'registry.json'), '{not valid json');
+
+      const projectId = await ensureProjectIdInConfig(tempDir, { globalDataDir });
+
+      expect(projectId).toMatch(/^[0-9a-f-]{36}$/u);
+      expect(fs.readFileSync(configPath, 'utf-8')).toContain(`projectId: ${projectId}`);
+    });
+  });
+
+  describe('reconcileProjectIdInConfig', () => {
+    // Same isolation rationale as ensureProjectIdInConfig: the helper runs
+    // under the project registry lock, so the lock file never touches the
+    // real machine registry.
+    let globalDataDir: string;
+
+    beforeEach(() => {
+      globalDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-test-config-gdd-'));
+    });
+
+    afterEach(() => {
+      fs.rmSync(globalDataDir, { recursive: true, force: true });
+    });
+
+    it('rewrites only the projectId value, preserving every other byte and comment', async () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      const configPath = path.join(configDir, 'config.yaml');
+      fs.writeFileSync(
+        configPath,
+        '# top comment\nschema: spec-driven\n\nprojectId: old-id-b # identity note\ncontext: |\n  Keep me\n'
+      );
+
+      const result = await reconcileProjectIdInConfig(
+        tempDir,
+        '11111111-2222-4333-8444-555555555555',
+        { globalDataDir }
+      );
+
+      expect(result.changed).toBe(true);
+      expect(fs.readFileSync(configPath, 'utf-8')).toBe(
+        '# top comment\nschema: spec-driven\n\nprojectId: 11111111-2222-4333-8444-555555555555 # identity note\ncontext: |\n  Keep me\n'
+      );
+    });
+
+    it('appends the line when the field is absent, honoring .yml/.yaml precedence', async () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, 'config.yml'), 'schema: spec-driven\n');
+      fs.writeFileSync(path.join(configDir, 'config.yaml'), '# canonical file\nschema: spec-driven\n');
+      const expected = randomUUID();
+
+      const result = await reconcileProjectIdInConfig(tempDir, expected, { globalDataDir });
+
+      expect(result.changed).toBe(true);
+      expect(result.configPath).toBe(path.join(configDir, 'config.yaml'));
+      expect(fs.readFileSync(path.join(configDir, 'config.yaml'), 'utf-8')).toBe(
+        `# canonical file\nschema: spec-driven\nprojectId: ${expected}\n`
+      );
+      // The shadowed .yml is left untouched.
+      expect(fs.readFileSync(path.join(configDir, 'config.yml'), 'utf-8')).toBe(
+        'schema: spec-driven\n'
+      );
+    });
+
+    it('reverts the rewrite when post-write validation fails', async () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      const configPath = path.join(configDir, 'config.yaml');
+      const original = 'schema: spec-driven\nprojectId: old-id-b\n';
+      fs.writeFileSync(configPath, original);
+
+      const writeFileSpy = vi
+        .spyOn(fs.promises, 'writeFile')
+        .mockImplementationOnce(async (target, content) => {
+          // Simulate the rewrite landing corrupted (fails the re-read validation).
+          await fs.promises.writeFile(target as string, `${content}\n: not: valid: yaml: [`, 'utf-8');
+        });
+
+      await expect(
+        reconcileProjectIdInConfig(tempDir, '11111111-2222-4333-8444-555555555555', {
+          globalDataDir,
+        })
+      ).rejects.toThrow(/did not validate/u);
+      writeFileSpy.mockRestore();
+
+      expect(fs.readFileSync(configPath, 'utf-8')).toBe(original);
+    });
+
+    it('is a byte-identical no-op for a sameProjectIdentity-equal id', async () => {
+      const configDir = path.join(tempDir, 'rasen');
+      fs.mkdirSync(configDir, { recursive: true });
+      const configPath = path.join(configDir, 'config.yaml');
+      const id = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+      const original = `schema: spec-driven\nprojectId: ${id.toUpperCase()} # hand-edited\n`;
+      fs.writeFileSync(configPath, original);
+
+      const result = await reconcileProjectIdInConfig(tempDir, id, { globalDataDir });
+
+      expect(result.changed).toBe(false);
+      expect(fs.readFileSync(configPath, 'utf-8')).toBe(original);
     });
   });
 

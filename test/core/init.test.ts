@@ -2,8 +2,14 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
+import { randomUUID } from 'node:crypto';
 import { InitCommand } from '../../src/core/init.js';
 import { saveGlobalConfig, getGlobalConfig } from '../../src/core/global-config.js';
+import { registerProject } from '../../src/core/project-registry.js';
+import { resolveProjectHome } from '../../src/core/project-home.js';
+import {
+  resolveLearnedSkillExecutionContext,
+} from '../../src/core/learned-skills/index.js';
 
 const { confirmMock, showWelcomeScreenMock, searchableMultiSelectMock } = vi.hoisted(() => ({
   confirmMock: vi.fn(),
@@ -1015,6 +1021,73 @@ describe('InitCommand machine-home registration', () => {
     const registryPath = path.join(dataTempDir, 'rasen', 'projects', 'registry.json');
     const registry = JSON.parse(await fs.readFile(registryPath, 'utf-8'));
     expect(Object.keys(registry.projects)).toHaveLength(1);
+  });
+
+  it('converges a diverged config identity toward the registered one (re-init repairs)', async () => {
+    // The real 0.1.7 -> 0.2.0 upgrade shape: the path was registered with id
+    // A by an older build, and a later init minted/wrote a divergent id B.
+    // Re-running init must now repair the config toward the registered id.
+    const dataHome = path.join(dataTempDir, 'rasen');
+    const registeredId = randomUUID();
+    await registerProject(
+      { projectRoot: testDir, projectId: registeredId, mode: 'in-repo' },
+      { globalDataDir: dataHome }
+    );
+    const configPath = path.join(testDir, 'rasen', 'config.yaml');
+    await fs.mkdir(path.join(testDir, 'rasen'), { recursive: true });
+    await fs.writeFile(
+      configPath,
+      '# project config\nschema: spec-driven\nprojectId: divergent-id-b\ncontext: |\n  Keep me\n'
+    );
+
+    await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+
+    const content = await fs.readFile(configPath, 'utf-8');
+    expect(content).toContain(`projectId: ${registeredId}`);
+    expect(content).not.toContain('divergent-id-b');
+    expect(content).toContain('# project config');
+    expect(content).toContain('Keep me');
+
+    // The registry entry still carries the registered id.
+    const registryPath = path.join(dataHome, 'projects', 'registry.json');
+    const registry = JSON.parse(await fs.readFile(registryPath, 'utf-8'));
+    expect(Object.values(registry.projects).map((entry: { projectId: string }) => entry.projectId)).toEqual([
+      registeredId,
+    ]);
+
+    // The stale condition is gone: a probe resolves, and knowledge-owner
+    // resolution for the root no longer fails knowledge_owner_stale (the
+    // built-in "Run `rasen init` to repair it" hint is now truthful).
+    const probed = await resolveProjectHome(testDir, { ensure: false, globalDataDir: dataHome });
+    expect(probed?.projectId).toBe(registeredId);
+    const context = await resolveLearnedSkillExecutionContext({
+      launchDirectory: testDir,
+      requestedScope: 'project',
+      globalDataDir: dataHome,
+    });
+    expect(context.owner).toMatchObject({ type: 'project', id: registeredId });
+  });
+
+  it('adopts the registered identity on a fresh init when the path is already registered (no second identity)', async () => {
+    const dataHome = path.join(dataTempDir, 'rasen');
+    const registeredId = randomUUID();
+    await registerProject(
+      { projectRoot: testDir, projectId: registeredId, mode: 'in-repo' },
+      { globalDataDir: dataHome }
+    );
+    // No rasen/ at all: init creates the planning root and lazily mints the
+    // id - which must now ADOPT the registered identity instead of minting.
+    await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
+
+    const configPath = path.join(testDir, 'rasen', 'config.yaml');
+    const content = await fs.readFile(configPath, 'utf-8');
+    expect(content).toContain(`projectId: ${registeredId}`);
+
+    const registryPath = path.join(dataHome, 'projects', 'registry.json');
+    const registry = JSON.parse(await fs.readFile(registryPath, 'utf-8'));
+    expect(Object.values(registry.projects).map((entry: { projectId: string }) => entry.projectId)).toEqual([
+      registeredId,
+    ]);
   });
 
   it('downgrades a registry write failure to a warning without failing init', async () => {
