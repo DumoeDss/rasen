@@ -27,3 +27,9 @@
 
 ## Deployment
 Status: Pending (run rasen-ship --deploy to continue)
+
+## Archive
+**Date:** 2026-08-16T15:58:11.171Z
+**Ship commit:** 4ca03ac589d325c571b79cae1c4f299f76c941c5
+**Outcome:** archived at E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\store-v2-foundation\rasen\changes\archive\2026-08-16-canvas-authoring-surface
+**Transaction:** 425cf6a6-fbf5-428d-b4ac-7a9f170c03ce

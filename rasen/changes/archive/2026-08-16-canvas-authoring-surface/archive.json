@@ -1,0 +1,29 @@
+{
+  "change": "canvas-authoring-surface",
+  "archivedAt": "2026-08-16T15:58:11.171Z",
+  "codeCommit": "7456890655caae76c603812ce4f0370f616f76a7",
+  "planningBranch": "chore/archive-canvas-authoring-surface",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/real-browser-verification-2026-08-16.md",
+      "sha256": "4d35ca6eb691a5e67b447abb4e4598bd48c89b967a7995626580603fe7e6162b"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "168f9efe3b1e5171418cf87cbfdf4f76f5fe972af12dcc70694121c072c712d5"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "37aa5413773ee7200dc2cfc74212448d96e8bb68f622f04078646f6ed023d855"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}
