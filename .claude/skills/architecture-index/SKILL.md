@@ -74,6 +74,7 @@ shipped 内容: skills/ (sidecar) · pipelines/ (8 YAML) · schemas/spec-driven/
 | `schemas/` | Zod 校验 schema：Spec / Requirement·Scenario / Change·Delta |
 | `validation/` | `Validator`：结构规则 + SHALL/MUST + delta 合法性 |
 | `change-metadata/` | 每 change `change.yaml`（用哪个工作流 schema + goal + initiative） |
+| `issue-status/` | Issue 三轴状态投影器（`phase×health×progress`，读时推导不持久化；import 只读复用 run-state readers + store query） |
 | `change-run/` | **最复杂**。durable Run Record 引擎（reducer/reconciler/projector 事件溯源 + 全链摘要完整性） |
 | `parsers/` | Markdown→领域对象（`MarkdownParser`/`ChangeParser`/`parseDeltaSpec`） |
 | `converters/` | spec/change → JSON 导出（`JsonConverter`，叶子模块） |

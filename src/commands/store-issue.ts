@@ -28,8 +28,19 @@ import {
   StoreAggregateQuery,
   type AggregateProblem,
   type IssueDetail,
+  type IssueSummary,
   type IssueSummaryPage,
 } from '../core/store/query/index.js';
+import {
+  projectIssueStatus,
+  type IssueStatus,
+  type IssueStatusProblem,
+  type ProjectIssueStatusInput,
+} from '../core/issue-status/index.js';
+import {
+  resolvedExecutionProjectRoot,
+  resolveOpenSpecRoot,
+} from '../core/root-selection.js';
 import { emitFailure, printJson } from './shared-output.js';
 
 export interface StoreIssueOptions {
@@ -111,14 +122,132 @@ function renderProblems(problems: readonly AggregateProblem[]): void {
   }
 }
 
-function renderIssueList(page: IssueSummaryPage): void {
+// -----------------------------------------------------------------------------
+// Status projection (read enrichment)
+// -----------------------------------------------------------------------------
+
+/**
+ * The machine-local inputs the projection needs: resolved from the WORKING
+ * DIRECTORY the command runs from, best-effort. An Issue is Store content and
+ * readable from anywhere, so a directory that resolves no project execution
+ * root degrades to a visibility-`none` answer — committed evidence still
+ * derives; never a failure of the store-scoped command.
+ */
+async function resolveProjectionContext(): Promise<{
+  executionRoot?: string;
+  changesDir?: string;
+}> {
+  try {
+    const root = await resolveOpenSpecRoot({ startPath: process.cwd(), reporter: false });
+    return {
+      executionRoot: resolvedExecutionProjectRoot(root),
+      changesDir: root.changesDir,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function statusInputFor(
+  detail: IssueDetail,
+  context: { executionRoot?: string; changesDir?: string }
+): ProjectIssueStatusInput {
+  return {
+    detail,
+    ...(context.executionRoot === undefined ? {} : { executionRoot: context.executionRoot }),
+    ...(context.changesDir === undefined ? {} : { changesDir: context.changesDir }),
+  };
+}
+
+/**
+ * `list` has the summary page but not the plans, so each Issue's latest plan
+ * is resolved here (one `resolveExecutionPlan` per Issue — accepted at
+ * single-project scale) and assembled into the `IssueDetail` shape the
+ * projection consumes.
+ */
+async function detailForList(
+  scope: { store?: string; startPath: string },
+  summary: IssueSummary,
+  page: IssueSummaryPage
+): Promise<IssueDetail> {
+  const plan =
+    summary.latestRevisionId === null
+      ? null
+      : await StoreAggregateQuery.resolveExecutionPlan({
+          ...(scope.store === undefined ? {} : { store: scope.store }),
+          startPath: scope.startPath,
+          issueId: summary.issueId,
+        });
+  return {
+    issue: summary,
+    plan,
+    complete: plan === null ? page.complete : plan.complete,
+    unsearchedRefs: plan === null ? page.unsearchedRefs : plan.unsearchedRefs,
+    problems: plan === null ? page.problems : plan.problems,
+  };
+}
+
+function renderProgress(status: IssueStatus): string {
+  return status.progress === null ? '-/-' : `${status.progress.completed}/${status.progress.total}`;
+}
+
+function renderRunStateVisibility(status: IssueStatus): string {
+  return status.runStateVisibility.kind === 'execution-root'
+    ? `run-state: ${status.runStateVisibility.executionRoot}`
+    : 'run-state: none visible from this directory';
+}
+
+/**
+ * The per-node line the show command prints: identifier, kind, alias,
+ * observation, then whatever explains it — a dependency that has not
+ * finalized, or the diagnostic behind an `unknown`.
+ */
+function renderStatusNode(node: IssueStatus['nodes'][number]): string {
+  const head =
+    node.alias === null
+      ? `${node.nodeId} ${node.kind} — ${node.observation}`
+      : `${node.nodeId} ${node.kind} ${node.alias} — ${node.observation}`;
+  const parts = [head];
+  if (node.blockedBy.length > 0) parts.push(`(blockedBy ${node.blockedBy.join(', ')})`);
+  if (node.diagnostic !== null) parts.push(`(${node.diagnostic})`);
+  return `      ${parts.join(' ')}`;
+}
+
+function renderStatusProblems(problems: readonly IssueStatusProblem[]): void {
+  if (problems.length === 0) return;
+  console.log('');
+  console.log(`STATUS PROBLEMS: ${problems.length} fact(s) could not be derived.`);
+  for (const problem of problems) {
+    const at = problem.ref === null ? '' : ` ${problem.ref}`;
+    const node = problem.node === null ? '' : ` ${problem.node}`;
+    console.log(`  ${problem.kind}${node}${at}: ${problem.reason}`);
+  }
+}
+
+function renderIssueStatus(status: IssueStatus): void {
+  console.log('  status:');
+  console.log(`    phase: ${status.phase}`);
+  console.log(`    health: ${status.health}`);
+  console.log(`    progress: ${renderProgress(status)}`);
+  console.log(`    ${renderRunStateVisibility(status)}`);
+  if (status.nodes.length > 0) {
+    console.log('    nodes:');
+    for (const node of status.nodes) console.log(renderStatusNode(node));
+  }
+  renderStatusProblems(status.problems);
+}
+
+function renderIssueList(page: IssueSummaryPage, statuses: readonly IssueStatus[] = []): void {
   if (page.issues.length === 0) {
     console.log('No Issues found.');
   }
-  for (const summary of page.issues) {
+  page.issues.forEach((summary, index) => {
     const state = summary.record?.state ?? (summary.divergence ? '(divergent)' : '(unknown)');
     const title = summary.record?.title ?? '';
-    console.log(`${summary.issueId}  [${state}]  ${title}`);
+    const status = statuses[index];
+    const statusSegment =
+      status === undefined ? '' : `  ${status.phase}/${status.health} ${renderProgress(status)}`;
+    console.log(`${summary.issueId}  [${state}]${statusSegment}  ${title}`);
     // The reason there is no record, on the item's own line. `(unknown)` names
     // the fact and hides the cause; the machine form carries the cause, so the
     // human form does too.
@@ -131,6 +260,23 @@ function renderIssueList(page: IssueSummaryPage): void {
     for (const copy of summary.divergence?.copies ?? []) {
       console.log(`    ${copy.storeRef ?? '(local checkout)'}  ${copy.sha256}`);
     }
+  });
+  // One shared label for the whole listing: run-state visibility comes from
+  // the working directory, not from any single Issue.
+  if (page.issues.length > 0 && statuses.length > 0) {
+    const anyVisible = statuses.some(
+      status => status.runStateVisibility.kind === 'execution-root'
+    );
+    console.log('');
+    if (anyVisible) {
+      const root = (statuses.find(
+        status => status.runStateVisibility.kind === 'execution-root'
+      ) as { runStateVisibility: { kind: 'execution-root'; executionRoot: string } })
+        .runStateVisibility.executionRoot;
+      console.log(`Run-state visible at: ${root}`);
+    } else {
+      console.log('No local run-state visible: no execution root resolved from this directory.');
+    }
   }
   if (page.unsearchedRefs.length > 0) {
     console.log('');
@@ -142,7 +288,7 @@ function renderIssueList(page: IssueSummaryPage): void {
   renderProblems(page.problems);
 }
 
-function renderIssueDetail(detail: IssueDetail): void {
+function renderIssueDetail(detail: IssueDetail, status?: IssueStatus): void {
   const summary = detail.issue;
   console.log(`Issue ${summary.issueId}`);
   if (summary.record) {
@@ -179,6 +325,9 @@ function renderIssueDetail(detail: IssueDetail): void {
       console.log(`  plan PROBLEM: ${detail.plan.diagnostic}`);
     }
   }
+  // The tri-axis projection, node by node — the answer to "where is this
+  // Issue right now" the record's operator-declared state never carried.
+  if (status !== undefined) renderIssueStatus(status);
   if (detail.unsearchedRefs.length > 0) {
     console.log('');
     console.log(`INCOMPLETE: ${detail.unsearchedRefs.length} ref(s) could not be read.`);
@@ -248,16 +397,26 @@ export function registerStoreIssueCommand(store: Command): void {
           startPath: process.cwd(),
           ...(options.state === undefined ? {} : { state: options.state as IssueState }),
         });
+        const scope = {
+          ...(options.store === undefined ? {} : { store: options.store }),
+          startPath: process.cwd(),
+        };
+        const context = await resolveProjectionContext();
+        const statuses: IssueStatus[] = [];
+        for (const summary of page.issues) {
+          const detail = await detailForList(scope, summary, page);
+          statuses.push(await projectIssueStatus(statusInputFor(detail, context)));
+        }
         if (options.json) {
           printJson({
-            issues: page.issues,
+            issues: page.issues.map((summary, index) => ({ ...summary, status: statuses[index] })),
             complete: page.complete,
             unsearchedRefs: page.unsearchedRefs,
             problems: page.problems,
           });
           return;
         }
-        renderIssueList(page);
+        renderIssueList(page, statuses);
       } catch (error) {
         emitFailure(options.json, { issues: [] }, error, 'store_issue_list_failed');
       }
@@ -275,17 +434,21 @@ export function registerStoreIssueCommand(store: Command): void {
           startPath: process.cwd(),
           issueId,
         });
+        const status = await projectIssueStatus(
+          statusInputFor(detail, await resolveProjectionContext())
+        );
         if (options.json) {
           printJson({
             issue: detail.issue,
             plan: detail.plan,
+            status,
             complete: detail.complete,
             unsearchedRefs: detail.unsearchedRefs,
             problems: detail.problems,
           });
           return;
         }
-        renderIssueDetail(detail);
+        renderIssueDetail(detail, status);
       } catch (error) {
         emitFailure(options.json, { issue: null }, error, 'store_issue_show_failed');
       }

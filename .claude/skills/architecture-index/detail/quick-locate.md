@@ -22,7 +22,9 @@
 | Store 身份解析（当前项目是哪个 Store） | `src/core/store/identity.ts`（`resolveStoreBinding` 三态） |
 | Store 注册 CRUD | `src/core/store/registry.ts` |
 | Store 生命周期（setup/register/clone） | `src/core/store/operations.ts` |
+| Issue 三轴状态投影（phase/health/progress） | `src/core/issue-status/projection.ts`（`projectIssueStatus`；CLI 面 `src/commands/store-issue.ts` list/show） |
 | `rasen store` 命令 | `src/commands/store.ts` |
+| `rasen store issue` 命令（Issue CRUD + 状态面） | `src/commands/store-issue.ts` |
 | **Workflow / Pipeline** | |
 | 添加 / 修改 built-in workflow 定义 | `src/core/workflow-registry/builtins.ts`（ID 表 + 适配表） |
 | workflow 目录加载（built-in + user） | `src/core/workflow-registry/registry.ts`（`loadWorkflowCatalog`） |

@@ -36,6 +36,15 @@ Spec、Requirement/Scenario、Change/Delta 的 canonical 校验定义。
 - **`ValidationReport = {valid, issues[], summary:{errors,warnings,info}}`**。
 - **连接**：消费 `schemas/` + `parsers/`。被 CLI `validate`/`new`/`continue`/`archive` 在产出或同步 artifact 前强制质量。
 
+## `issue-status/` — Issue 三轴状态投影（读时推导，不持久化）
+
+回答"这个 Issue 现在在哪"：`phase`(`planning|ready|active|review|done`) × `health`(`healthy|blocked|failed|waiting-human|stale`，后两者为保留值) × `progress`(完成必需节点/总数)。每次读取从三个输入现推——最新 Execution Plan 修订、committed Store evidence、机器本地 run-state——不写任何地方（source guard + byte-identical 行为测试双保险）。
+
+- **关键文件**：`projection.ts`（`projectIssueStatus(input)`：per-node run-state 定位 + D4 观察映射 + phase/health/progress 推导）、`types.ts`（闭词汇表 + `ProjectIssueStatusInput`，显式路径输入零 ambient read）、`index.ts`（barrel）。
+- **定位配方 = `pipeline resume` 原样复用**：`stateFileSearchChain` + `runStatePath`/`portfolioStatePath` + `readRunStateDetailed`/`readPortfolioStateDetailed`（`ephemera → workDir → planning change dir` 三段 sticky-legacy 链）；portfolio-run.json 存在即权威；escalated child/delivery = failed、escalated stage = waiting-human。
+- **边界**：只 import 不改 `src/core/pipeline-registry/`（冻结）与 `src/core/store/query/`（store-pure 契约不含 run-state——这就是它独立成顶层模块的原因）。CLI 缝在 `src/commands/store-issue.ts`：best-effort 解析 execution root（失败降级 visibility-none），list 行加 `phase/health n/m`，show 加 status 块，两命令 `--json` 增生 `status` 对象。
+- **连接**：被 `src/commands/store-issue.ts` 消费；g-002（execution binding）的 Run/Session 归属回流应 import/扩展此模块。
+
 ## `change-metadata/` — 每 change 元数据（`change.yaml`）
 
 - **唯一实质文件**：`schema.ts`（Zod + TS）。`ChangeMetadata = {schema, created?, goal?, affected_areas?, initiative?}`，`InitiativeLink = {store, id}`（跨 store 引用）。
