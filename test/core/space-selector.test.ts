@@ -123,6 +123,20 @@ describe('planning-space selector (planning-space-addressing design D1/D2/D5)', 
         expect(result.message).toContain('project namespace');
       }
     });
+
+    it('resolves (no planning_selection_conflict) when the config records the registered id in a different case', async () => {
+      const registeredId = '11111111-2222-4333-8444-555555555555';
+      const root = makePlanningRoot(tempDir, 'proj-case-identity');
+      await registerProject({ projectRoot: root, projectId: registeredId, mode: 'in-repo' }, { globalDataDir: dataDir });
+      // A hand-edit in the wild: the config carries the SAME identity in
+      // uppercase. Canonical-form agreement (converge-projectid-mint D5)
+      // means this is the same project, not a planning-selection conflict.
+      writeProjectId(root, registeredId.toUpperCase());
+
+      const result = await resolveSpaceSelector(`project:${registeredId}`);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.space.id).toBe(registeredId);
+    });
   });
 
   describe('resolveSpaceSelector — store namespace', () => {

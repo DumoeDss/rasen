@@ -10,6 +10,7 @@ import {
   PROJECTS_DIR_NAME,
   deriveHomeBaseName,
   deriveProjectDisplayName,
+  findAdoptableProjectIdentity,
   findDanglingProjectEntries,
   findProjectRegistryEntry,
   findWorktreeDuplicateEntries,
@@ -673,6 +674,142 @@ describe('project-registry', () => {
       const found = await findProjectRegistryEntry(projectRoot, { globalDataDir });
       expect(found).toBeNull();
       fs.rmSync(projectRoot, { recursive: true, force: true });
+    });
+  });
+
+  describe('findAdoptableProjectIdentity (adoptable-identity lookup)', () => {
+    it("returns the registered entry's projectId for a registered canonical root", async () => {
+      const projectRoot = makeProjectDir('adopt-registered');
+      const projectId = randomUUID();
+      await registerProject({ projectRoot, projectId, mode: 'in-repo' }, { globalDataDir });
+
+      await expect(findAdoptableProjectIdentity(projectRoot, { globalDataDir })).resolves.toEqual({
+        adoptable: true,
+        projectId,
+      });
+
+      fs.rmSync(projectRoot, { recursive: true, force: true });
+    });
+
+    it('reports "unregistered" for a root the registry has no entry for', async () => {
+      // Register an unrelated project so the registry file exists — this pins
+      // "no entry for THIS root" separately from "no registry at all" below.
+      await registerProject(
+        { projectRoot: makeProjectDir('adopt-unregistered-other'), projectId: randomUUID(), mode: 'in-repo' },
+        { globalDataDir }
+      );
+      const projectRoot = makeProjectDir('adopt-unregistered');
+
+      await expect(findAdoptableProjectIdentity(projectRoot, { globalDataDir })).resolves.toEqual({
+        adoptable: false,
+        reason: 'unregistered',
+      });
+
+      fs.rmSync(projectRoot, { recursive: true, force: true });
+    });
+
+    it('means "unregistered" and creates no registry file on a machine with no registry at all', async () => {
+      const projectRoot = makeProjectDir('adopt-no-registry');
+
+      await expect(findAdoptableProjectIdentity(projectRoot, { globalDataDir })).resolves.toEqual({
+        adoptable: false,
+        reason: 'unregistered',
+      });
+      expect(fs.existsSync(getProjectRegistryPath({ globalDataDir }))).toBe(false);
+
+      fs.rmSync(projectRoot, { recursive: true, force: true });
+    });
+
+    it.runIf(process.platform === 'win32')('adopts through the claim-key fast path when the single entry key differs from the root only by case', async () => {
+      const projectRoot = makeProjectDir('Adopt-Case-FastPath');
+      const projectId = randomUUID();
+      // Seed the registry key directly as a case-variant spelling (registration
+      // itself canonicalizes, so it cannot produce this shape): one entry
+      // whose key claims the same directory on a case-insensitive filesystem.
+      // The lookup answers through the no-spawn claim-key fast path.
+      await writeProjectRegistryState(
+        {
+          version: 1,
+          projects: {
+            [projectRoot.toLowerCase()]: {
+              projectId,
+              name: 'adopt-case-fast-path',
+              mode: 'in-repo',
+              home: 'adopt-case-home',
+              lastSeen: '2026-08-16T12:00:00.000Z',
+            },
+          },
+        },
+        { globalDataDir }
+      );
+
+      await expect(findAdoptableProjectIdentity(projectRoot, { globalDataDir })).resolves.toEqual({
+        adoptable: true,
+        projectId,
+      });
+
+      fs.rmSync(projectRoot, { recursive: true, force: true });
+    });
+
+    it('resolves a linked-worktree run to the main checkout registered identity', async () => {
+      const repoRoot = makeProjectDir('adopt-wt-main');
+      const gitExecEnv = { ...process.env, ...isolatedGitEnv(globalDataDir) };
+      execFileSync('git', ['init'], { cwd: repoRoot, stdio: 'ignore' });
+      fs.writeFileSync(path.join(repoRoot, 'README.md'), 'hello\n');
+      execFileSync('git', ['add', '-A'], { cwd: repoRoot, env: gitExecEnv });
+      execFileSync('git', ['commit', '-m', 'init'], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+      const worktreePath = path.join(path.dirname(repoRoot), `adopt-wt-${randomUUID().slice(0, 8)}`);
+      execFileSync('git', ['worktree', 'add', worktreePath], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+
+      const projectId = randomUUID();
+      await registerProject({ projectRoot: repoRoot, projectId, mode: 'in-repo' }, { globalDataDir });
+
+      await expect(findAdoptableProjectIdentity(worktreePath, { globalDataDir })).resolves.toEqual({
+        adoptable: true,
+        projectId,
+      });
+
+      execFileSync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    });
+
+    it('reports the fixed-metadata conflict rather than a representative id when the live aliases disagree', async () => {
+      const repoRoot = makeProjectDir('adopt-conflict-main');
+      const gitExecEnv = { ...process.env, ...isolatedGitEnv(globalDataDir) };
+      execFileSync('git', ['init'], { cwd: repoRoot, stdio: 'ignore' });
+      fs.writeFileSync(path.join(repoRoot, 'README.md'), 'hello\n');
+      execFileSync('git', ['add', '-A'], { cwd: repoRoot, env: gitExecEnv });
+      execFileSync('git', ['commit', '-m', 'init'], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+      const worktreePath = path.join(path.dirname(repoRoot), `adopt-conflict-wt-${randomUUID().slice(0, 8)}`);
+      execFileSync('git', ['worktree', 'add', worktreePath], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+
+      const projectId = randomUUID();
+      const main = await registerProject({ projectRoot: repoRoot, projectId, mode: 'in-repo' }, { globalDataDir });
+      const canonicalWorktree = FileSystemUtils.canonicalizeExistingPath(worktreePath);
+
+      // A second LIVE alias resolving to the same canonical root (a legacy
+      // worktree-keyed entry) that disagrees on identity and home — exactly
+      // the state registration refuses to pick a winner for. The lookup must
+      // not offer either side's id for adoption.
+      await updateProjectRegistryState((current) => ({
+        version: 1,
+        projects: {
+          ...(current?.projects ?? {}),
+          [canonicalWorktree]: {
+            projectId: randomUUID(),
+            name: 'adopt-conflict-wt',
+            mode: 'in-repo',
+            home: `${main.entry.home}-conflicting`,
+            lastSeen: '2026-07-09T12:00:00.000Z',
+          },
+        },
+      }), { globalDataDir });
+
+      const lookup = await findAdoptableProjectIdentity(repoRoot, { globalDataDir });
+      expect(lookup).toEqual({ adoptable: false, reason: 'fixedMetadataConflict' });
+
+      execFileSync('git', ['worktree', 'remove', '--force', worktreePath], { cwd: repoRoot, env: gitExecEnv, stdio: 'ignore' });
+      fs.rmSync(repoRoot, { recursive: true, force: true });
     });
   });
 
