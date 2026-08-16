@@ -53,6 +53,7 @@ vi.mock('@xyflow/react', () => ({
       FunctionComponent<{ data: MockNode['data'] }>
     >;
     onNodeClick?: (e: unknown, n: MockNode) => void;
+    onEdgeClick?: (e: unknown, edge: MockEdge) => void;
     onPaneClick?: () => void;
     onConnect?: (connection: {
       source: string;
@@ -71,9 +72,7 @@ vi.mock('@xyflow/react', () => ({
     const targetAtomic = atomicNodes[1];
     const authoredRoute = [
       ['composite-ref', 'body-report', 'bounded-loop', 'brief'],
-      ['bounded-loop', 'done', 'choice', 'input'],
-      ['choice', 'default', 'fan-out', 'input'],
-      ['choice', 'parallel', 'fan-out', 'input'],
+      ['bounded-loop', 'done', 'fan-out', 'input'],
       ['fan-out', 'atomic-stage', 'atomic-stage', 'input'],
       ['atomic-stage', 'done', 'join', 'atomic-stage'],
       ['join', 'done', 'finish', 'input'],
@@ -100,6 +99,14 @@ vi.mock('@xyflow/react', () => ({
             data-issue={edge.data?.issueSeverity}
           >
             {edge.id}
+            <button
+              type="button"
+              data-testid="mock-edge-click"
+              data-edge-id={edge.id}
+              onClick={() => props.onEdgeClick?.(null, edge)}
+            >
+              select {edge.id}
+            </button>
             <button
               type="button"
               data-testid="mock-edge-remove"
@@ -237,6 +244,7 @@ import {
   CANVAS_V2_AUTHORING_CATALOG,
   CANVAS_V2_AUTHORING_DEFINITION,
   CANVAS_V2_AUTHORING_NAME,
+  CANVAS_V2_GESTURE_AUTHORED_DEFINITION,
 } from '../fixtures/canvas-v2-authoring.js';
 import type {
   PipelineCatalogResponse,
@@ -278,6 +286,38 @@ const v2CatalogFixture = {
       outcomes: ['done'],
     },
   })),
+} as PipelineCatalogResponse;
+
+/**
+ * `v2CatalogFixture` holds two skills that are BOTH enabled and BOTH carry a
+ * capability, so `PalettePanel`'s `skillDisabled` is false at every one of its
+ * call sites and the greying branch is never entered. This variant adds the
+ * two unplaceable shapes the requirement names — reported disabled, and
+ * carrying no exact capability revision — while keeping a bindable skill so
+ * the Stage gesture itself stays available.
+ */
+const v2CatalogWithUnplaceableSkills = {
+  ...v2CatalogFixture,
+  skills: [
+    ...v2CatalogFixture.skills,
+    {
+      id: 'rasen-profile-disabled',
+      description: 'Off in the active profile',
+      enabled: false,
+      capability: {
+        id: 'skill:rasen-profile-disabled',
+        version: 'digest-disabled',
+        inputs: [],
+        artifacts: [],
+        outcomes: ['done'],
+      },
+    },
+    {
+      id: 'rasen-no-capability',
+      description: 'Served without an exact capability revision',
+      enabled: true,
+    },
+  ],
 } as PipelineCatalogResponse;
 
 const v2Definition = {
@@ -984,7 +1024,15 @@ describe('PipelineCanvasPage — edit mode', () => {
     );
   });
 
-  it('authors the shared all-eight v2 request from a real blank Canvas and submits it unchanged to validate and save', async () => {
+  it('authors the shared all-eight v2 request from a real blank Canvas, through the closed gesture vocabulary, and submits it unchanged to validate and save', async () => {
+    // Same "one of every node kind" claim as the pre-refactor version of this
+    // test, but reached exclusively through the four root gestures and the
+    // three property affordances (design D2-D5) instead of the withdrawn raw
+    // `v2-palette-add-<Kind>` buttons — see `CANVAS_V2_GESTURE_AUTHORED_
+    // DEFINITION`'s docblock in the fixtures file for why this cannot target
+    // the shared `CANVAS_V2_AUTHORING_DEFINITION` oracle byte-for-byte (its
+    // Choice node's arbitrary custom outcomes are structurally unreachable
+    // through the closed matched/skipped splice vocabulary).
     const notFound = new ApiError(404, {
       error: {
         code: 'not_found',
@@ -997,7 +1045,7 @@ describe('PipelineCanvasPage — edit mode', () => {
         ...v2EditableDetail.pipeline,
         name: CANVAS_V2_AUTHORING_NAME,
       },
-      definition: CANVAS_V2_AUTHORING_DEFINITION,
+      definition: CANVAS_V2_GESTURE_AUTHORED_DEFINITION,
     } as PipelineDetailResponse;
     vi.mocked(client.getPipelineDetail)
       .mockRejectedValueOnce(notFound)
@@ -1041,7 +1089,7 @@ describe('PipelineCanvasPage — edit mode', () => {
     );
     await setValueAndFlush(
       container.querySelector('[data-testid="definition-outcomes"]'),
-      CANVAS_V2_AUTHORING_DEFINITION.outcomes.join(',')
+      CANVAS_V2_GESTURE_AUTHORED_DEFINITION.outcomes.join(',')
     );
     await setValueAndFlush(
       container.querySelector('[data-testid="definition-limit-max-actions"]'),
@@ -1085,40 +1133,35 @@ describe('PipelineCanvasPage — edit mode', () => {
       container.querySelector('[data-testid="v2-body-palette-add-AtomicStage"]')
     );
 
-    for (const kind of [
-      'AtomicStage',
-      'CompositeRef',
-      'BoundedLoop',
-      'Choice',
-      'Gate',
-      'Finish',
-      'FanOut',
-    ]) {
-      await clickAndFlush(
-        container.querySelector(`[data-testid="v2-palette-add-${kind}"]`)
-      );
-    }
-
+    // Stage gesture: bind the one installed skill's exact capability.
     await clickAndFlush(
       container.querySelector(
-        '[data-testid="mock-node-click"][data-node-id="choice"]'
+        '[data-testid="v2-palette-gesture-stage-rasen-apply-change"]'
       )
     );
-    const choiceOutcomes = container.querySelector(
-      '[data-testid="v2-node-panel-outcomes"]'
-    ) as HTMLInputElement;
-    choiceOutcomes.focus();
-    await setValueAndFlush(choiceOutcomes, 'default,parallel', 'input');
-    await act(async () => {
-      choiceOutcomes.blur();
-      await flushMicrotasks();
-    });
+    // CompositeRef: the declaration row's own "Insert into graph" action.
+    await clickAndFlush(
+      container.querySelector(
+        '[data-testid="declaration-insert-ref"][data-declaration-id="work-body"]'
+      )
+    );
+    // Loop gesture: BoundedLoop over the one declaration with a body graph.
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-gesture-loop"]'));
+    // Parallel gesture: FanOut+Join as one transaction over the root AtomicStage.
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-parallel"]')
+    );
+    // Finish gesture.
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-gesture-finish"]'));
+    // Gate: the approval checkbox on the AtomicStage's own panel (design D4).
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="atomic-stage"]')
+    );
+    await clickAndFlush(container.querySelector('[data-testid="v2-node-panel-gate-toggle"]'));
 
     for (const [source, sourceHandle, target, targetHandle] of [
       ['composite-ref', 'body-report', 'bounded-loop', 'brief'],
-      ['bounded-loop', 'done', 'choice', 'input'],
-      ['choice', 'default', 'fan-out', 'input'],
-      ['choice', 'parallel', 'fan-out', 'input'],
+      ['bounded-loop', 'done', 'fan-out', 'input'],
       ['fan-out', 'atomic-stage', 'atomic-stage', 'input'],
       ['atomic-stage', 'done', 'join', 'atomic-stage'],
       ['join', 'done', 'finish', 'input'],
@@ -1142,13 +1185,34 @@ describe('PipelineCanvasPage — edit mode', () => {
       await clickAndFlush(connect);
     }
 
+    // Choice: splice a condition onto the bounded-loop -> fan-out connection
+    // (design D5) — the only route to a Choice now; there is no raw palette
+    // kind for it.
+    const spliceTarget = container.querySelector(
+      '[data-testid="mock-edge-click"][data-edge-id="bounded-loop:done->fan-out:input"]'
+    ) as HTMLButtonElement;
+    expect(spliceTarget, 'missing the bounded-loop -> fan-out edge to splice onto').not.toBeNull();
+    await clickAndFlush(spliceTarget);
+    expect(container.querySelector('[data-testid="v2-connection-panel"]')).not.toBeNull();
+    const condition = container.querySelector(
+      '[data-testid="v2-connection-panel-condition"]'
+    ) as HTMLInputElement;
+    condition.focus();
+    await setValueAndFlush(condition, 'ready', 'input');
+    await act(async () => {
+      condition.blur();
+      await flushMicrotasks();
+    });
+
     await clickAndFlush(
       container.querySelector('[data-testid="pipeline-canvas-validate"]')
     );
     expect(vi.mocked(client.validatePipeline).mock.calls.at(-1)).toEqual([
-      CANVAS_V2_AUTHORING_DEFINITION,
+      CANVAS_V2_GESTURE_AUTHORED_DEFINITION,
       'project:proj_x',
     ]);
+    // Ordered, not a Set: the gesture sequence determines node order as well
+    // as node content, and a Set comparison would pass on a reordering.
     expect(
       (vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2)
         .root.nodes.map((node) => node.kind)
@@ -1156,25 +1220,412 @@ describe('PipelineCanvasPage — edit mode', () => {
       'AtomicStage',
       'CompositeRef',
       'BoundedLoop',
-      'Choice',
-      'Gate',
-      'Finish',
       'FanOut',
       'Join',
+      'Finish',
+      'Gate',
+      'Choice',
     ]);
 
     await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
     expect(vi.mocked(client.mutatePipeline).mock.calls.at(-1)![0]).toEqual({
       op: 'save',
       name: CANVAS_V2_AUTHORING_NAME,
-      definition: CANVAS_V2_AUTHORING_DEFINITION,
+      definition: CANVAS_V2_GESTURE_AUTHORED_DEFINITION,
       force: false,
     });
     expect(
-      CANVAS_V2_AUTHORING_DEFINITION.root.nodes.find(
+      CANVAS_V2_GESTURE_AUTHORED_DEFINITION.root.nodes.find(
         (node) => node.id === 'atomic-stage'
       )
     ).not.toHaveProperty('execution.gate');
+    const authoredChoice = CANVAS_V2_GESTURE_AUTHORED_DEFINITION.root.nodes.find(
+      (node) => node.id === 'choice'
+    );
+    expect(authoredChoice).not.toHaveProperty('legacyRuntimeOwner');
+  });
+
+  // --- ECP-2/design D9 task 9.2: one explicit parity test per withdrawn
+  // kind. Each starts from a real blank Canvas (the same not-found ->
+  // start-assembling draft as above) and assembles ONLY through the new
+  // affordance for that kind — never a `v2-palette-add-<Kind>` click, which
+  // no longer exists for any of these four. Gate, FanOut+Join, and
+  // CompositeRef reproduce the exact defaults the old raw-kind palette used
+  // to produce (moved verbatim into the section-3/4 `draft.ts` helpers).
+  // Choice is a deliberate structural narrowing (design D5): its "parity"
+  // claim is against the new closed matched/skipped + expression shape, not
+  // the old arbitrary-outcome-label shape, which is no longer authorable.
+
+  async function mountBlankDraft(name: string): Promise<void> {
+    vi.mocked(client.getPipelineDetail).mockRejectedValue(
+      new ApiError(404, { error: { code: 'not_found', message: `No pipeline named "${name}".` } })
+    );
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, `/p/proj_x/pipelines/${name}`);
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-start-assembling"]'));
+  }
+
+  it('Gate parity: the approval checkbox on an AtomicStage reproduces the Canvas\'s pre-existing Gate defaults', async () => {
+    await mountBlankDraft('gate-parity');
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-propose"]')
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="atomic-stage"]')
+    );
+    await clickAndFlush(container.querySelector('[data-testid="v2-node-panel-gate-toggle"]'));
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+
+    const submitted = vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+    const gate = submitted.root.nodes.find((node) => node.kind === 'Gate');
+    expect(gate).toMatchObject({
+      target: 'atomic-stage',
+      outcomes: ['approved', 'rejected'],
+      dispositions: { approved: 'proceed', rejected: 'escalate' },
+    });
+    // A Gate's linkage to its stage is the `target` field alone. The old
+    // raw-palette Gate did not add a `root.connections` entry either (it
+    // called `addV2Node` and nothing else), so this is parity, not a
+    // difference — `setStageGate` does not need one; the node itself IS the
+    // annotation.
+  });
+
+  it('FanOut+Join parity: the Parallel gesture reproduces the Canvas\'s pre-existing frontier defaults, wired to each other', async () => {
+    await mountBlankDraft('parallel-parity');
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-propose"]')
+    );
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-gesture-parallel"]'));
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+
+    const submitted = vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+    const fanOut = submitted.root.nodes.find((node) => node.kind === 'FanOut');
+    const join = submitted.root.nodes.find((node) => node.kind === 'Join');
+    expect(fanOut).toMatchObject({
+      branches: ['atomic-stage'],
+      members: [{ id: 'atomic-stage', required: true }],
+    });
+    expect(join).toMatchObject({ inputs: ['atomic-stage'], requiredMembers: ['atomic-stage'] });
+    expect((fanOut as { joinNodeId: string }).joinNodeId).toBe(join!.id);
+  });
+
+  it('CompositeRef parity: the declaration row\'s insert action reproduces the Canvas\'s pre-existing CompositeRef defaults', async () => {
+    await mountBlankDraft('composite-ref-parity');
+    await setValueAndFlush(
+      container.querySelector('[data-testid="declaration-new-id"]'),
+      'gesture-composite',
+      'input'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="declaration-create"]'));
+    await clickAndFlush(
+      container.querySelector(
+        '[data-testid="declaration-insert-ref"][data-declaration-id="gesture-composite"]'
+      )
+    );
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+
+    const submitted = vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+    expect(submitted.root.nodes.find((node) => node.kind === 'CompositeRef')).toMatchObject({
+      declarationId: 'gesture-composite',
+    });
+  });
+
+  it('Choice parity: splicing a condition onto a connection via the Connection panel produces the closed matched/skipped vocabulary with no legacyRuntimeOwner', async () => {
+    await mountBlankDraft('choice-parity');
+    // Two root AtomicStages, wired together, give us a real connection to
+    // splice onto — Gate's `target` link (see the Gate parity test above)
+    // is NOT a connection, so it cannot serve this purpose.
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-propose"]')
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-apply"]')
+    );
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-production-atomics"]'));
+
+    const edgeButtons = [...container.querySelectorAll('[data-testid="mock-edge-click"]')];
+    expect(edgeButtons, 'the stage-to-stage connection must be rendered').toHaveLength(1);
+    const originalConnectionId = edgeButtons[0]!.getAttribute('data-edge-id')!;
+
+    // Select the connection via the mock harness's edge-click affordance,
+    // mirroring React Flow's real `onEdgeClick` (wired at task 7.2) — this is
+    // the ONLY way to reach a Choice now; there is no raw palette kind for it
+    // (design D5).
+    await clickAndFlush(edgeButtons[0] as HTMLElement);
+    expect(container.querySelector('[data-testid="v2-connection-panel"]')).not.toBeNull();
+
+    const condition = container.querySelector(
+      '[data-testid="v2-connection-panel-condition"]'
+    ) as HTMLInputElement;
+    condition.focus();
+    await setValueAndFlush(condition, 'ready', 'input');
+    await act(async () => {
+      condition.blur();
+      await flushMicrotasks();
+    });
+
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    const submitted = vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+    const choice = submitted.root.nodes.find((node) => node.kind === 'Choice');
+    expect(choice).toMatchObject({ outcomes: ['matched', 'skipped'], expression: 'ready' });
+    expect(choice).not.toHaveProperty('legacyRuntimeOwner');
+    expect(submitted.root.connections.some((connection) => connection.to.node === choice!.id)).toBe(
+      true
+    );
+    expect(
+      submitted.root.connections.some((connection) => connection.from.node === choice!.id)
+    ).toBe(true);
+    expect(submitted.root.connections.map((connection) => connection.id)).not.toContain(
+      originalConnectionId
+    );
+  });
+
+  it('edits a spliced condition and removes it again from the Choice node panel, restoring the direct connection', async () => {
+    // The `V2NodePanel -> onUnspliceChoice -> unspliceSelectedChoice ->
+    // unspliceChoice` wiring and `commitExpression -> onPatch({expression})`
+    // (tasks 7.4 / 9.2, spec scenario "Clearing an unwired condition restores
+    // the direct connection"). `unspliceChoice` is covered at the model layer;
+    // this covers the page wiring, which the model tests cannot see.
+    await mountBlankDraft('choice-panel-editing');
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-propose"]')
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-apply"]')
+    );
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-production-atomics"]'));
+    const originalConnectionId = container
+      .querySelector('[data-testid="mock-edge-click"]')!
+      .getAttribute('data-edge-id')!;
+
+    await clickAndFlush(container.querySelector('[data-testid="mock-edge-click"]'));
+    const condition = container.querySelector(
+      '[data-testid="v2-connection-panel-condition"]'
+    ) as HTMLInputElement;
+    condition.focus();
+    await setValueAndFlush(condition, 'ready', 'input');
+    await act(async () => {
+      condition.blur();
+      await flushMicrotasks();
+    });
+
+    // Select the new Choice and edit its expression through the node panel.
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="choice"]')
+    );
+    const expression = container.querySelector(
+      '[data-testid="v2-node-panel-choice-expression"]'
+    ) as HTMLInputElement;
+    expect(expression, 'the Choice panel must expose its condition').not.toBeNull();
+    expect(expression.value).toBe('ready');
+    expression.focus();
+    await setValueAndFlush(expression, 'ready && approved', 'input');
+    await act(async () => {
+      expression.blur();
+      await flushMicrotasks();
+    });
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    const edited = vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+    expect(edited.root.nodes.find((node) => node.kind === 'Choice')).toMatchObject({
+      expression: 'ready && approved',
+    });
+
+    // "Remove condition" un-splices: the Choice disappears and the original
+    // A -> B connection comes back.
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-node-panel-unsplice-choice"]')
+    );
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    const cleared = vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+    expect(cleared.root.nodes.some((node) => node.kind === 'Choice')).toBe(false);
+    expect(cleared.root.connections.map((connection) => connection.id)).toEqual([
+      originalConnectionId,
+    ]);
+  });
+
+  it('surfaces every unsplice refusal as a toast and leaves the draft untouched', async () => {
+    // `unspliceChoice`'s three refusals are covered at the model layer, but the
+    // model cannot see whether the page's `catch` arm actually reaches the
+    // author. Only this handler's catch was unasserted; five other refusal
+    // tests in this file already pin the same `showToast` surface.
+    //
+    // Each case is a definition the editor genuinely loads, not a synthetic
+    // model input: the Choice is already wired the offending way, so clicking
+    // "Remove condition" exercises exactly the path a real author hits.
+    async function refusalToastFor(
+      extraConnections: WirePipelineDefinitionV2['root']['connections']
+    ): Promise<{ toast: string; submittedRoot: unknown; expectedRoot: unknown }> {
+      const wired = structuredClone(v2Definition) as unknown as WirePipelineDefinitionV2;
+      wired.root.connections = [...wired.root.connections, ...extraConnections];
+      const expectedRoot = structuredClone(wired.root);
+      vi.mocked(client.getPipelineDetail).mockResolvedValue({
+        ...v2EditableDetail,
+        definition: wired,
+      } as PipelineDetailResponse);
+      vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+      vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+
+      await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+      await enterEdit();
+      await clickAndFlush(
+        container.querySelector('[data-testid="mock-node-click"][data-node-id="choice"]')
+      );
+      await clickAndFlush(
+        container.querySelector('[data-testid="v2-node-panel-unsplice-choice"]')
+      );
+      const toast =
+        container.querySelector('[data-testid="pipeline-canvas-toast"]')?.textContent ?? '';
+      // The Choice survived the refusal, and so did every connection.
+      expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
+        'choice'
+      );
+      await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+      const submitted = vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as
+        WirePipelineDefinitionV2;
+      render(null, container);
+      return { toast, submittedRoot: submitted.root, expectedRoot };
+    }
+
+    // A second connection leading into the branch point.
+    const twoInbound = await refusalToastFor([
+      {
+        id: 'composite:done->choice:input',
+        from: { node: 'composite', port: 'done' },
+        to: { node: 'choice', port: 'input' },
+      },
+      {
+        id: 'atomic:done->choice:input',
+        from: { node: 'atomic', port: 'done' },
+        to: { node: 'choice', port: 'input' },
+      },
+    ]);
+    expect(twoInbound.toast).toContain('2 incoming connections');
+    expect(twoInbound.toast).toContain('composite');
+    expect(twoInbound.submittedRoot).toEqual(twoInbound.expectedRoot);
+
+    // A matched outcome leading to two destinations.
+    const twoMatched = await refusalToastFor([
+      {
+        id: 'choice:matched->finish:input',
+        from: { node: 'choice', port: 'matched' },
+        to: { node: 'finish', port: 'input' },
+      },
+      {
+        id: 'choice:matched->composite:input',
+        from: { node: 'choice', port: 'matched' },
+        to: { node: 'composite', port: 'input' },
+      },
+    ]);
+    expect(twoMatched.toast).toContain("branch 'matched' is wired to 2 targets");
+    expect(twoMatched.submittedRoot).toEqual(twoMatched.expectedRoot);
+
+    // The pre-existing stray-branch refusal, which had the identical gap.
+    const strayBranch = await refusalToastFor([
+      {
+        id: 'choice:careful->finish:input',
+        from: { node: 'choice', port: 'careful' },
+        to: { node: 'finish', port: 'input' },
+      },
+    ]);
+    expect(strayBranch.toast).toContain("branch 'careful' is still wired to 'finish'");
+    expect(strayBranch.submittedRoot).toEqual(strayBranch.expectedRoot);
+  });
+
+  it('greys an unplaceable Stage skill, NAMES its state on screen, and refuses to place it', async () => {
+    // `v2CatalogFixture`'s two skills are both enabled AND both carry a
+    // capability, so `skillDisabled` is false at every one of its call sites
+    // and this whole branch is unreachable from it — coverage absent, not
+    // weak. This fixture variant reaches it for both reasons the requirement
+    // names: reported disabled, and carrying no exact capability revision.
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogWithUnplaceableSkills);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    const bindable = container.querySelector(
+      '[data-testid="v2-palette-gesture-stage-rasen-propose"]'
+    ) as HTMLButtonElement;
+    expect(bindable.disabled).toBe(false);
+    expect(bindable.className).not.toContain('palette-card--disabled');
+    expect(bindable.querySelector('[data-testid="palette-card-disabled-state"]')).toBeNull();
+
+    for (const [skillId, state] of [
+      ['rasen-profile-disabled', 'disabled'],
+      ['rasen-no-capability', 'no exact capability'],
+    ] as const) {
+      const card = container.querySelector(
+        `[data-testid="v2-palette-gesture-stage-${skillId}"]`
+      ) as HTMLButtonElement;
+      expect(card, `missing Stage card for ${skillId}`).not.toBeNull();
+      expect(card.className).toContain('palette-card--disabled');
+      expect(card.disabled).toBe(true);
+      const named = card.querySelector('[data-testid="palette-card-disabled-state"]');
+      expect(
+        named,
+        `${skillId} must name its state on screen — a title tooltip is not a visible state`
+      ).not.toBeNull();
+      expect(named!.textContent).toBe(state);
+    }
+
+    // ...and cannot be placed.
+    const before = container.querySelector('[data-testid="mock-reactflow"]')!.textContent;
+    for (const skillId of ['rasen-profile-disabled', 'rasen-no-capability']) {
+      await clickAndFlush(
+        container.querySelector(`[data-testid="v2-palette-gesture-stage-${skillId}"]`)
+      );
+    }
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toBe(before);
+  });
+
+  it('a branch point authored before the condition narrowing still loads, edits, and saves in its own shape', async () => {
+    // The Choice narrowing (design D5) constrains AUTHORING only. The
+    // `v2Definition` fixture's `choice` node is exactly the pre-change shape —
+    // arbitrary outcome labels, no `expression` key — and the editor must
+    // neither refuse it nor rewrite it into the matched/skipped shape.
+    let saved: WirePipelineDefinitionV2 | null = null;
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    vi.mocked(client.mutatePipeline).mockImplementation(async (request) => {
+      if (request.op === 'save') saved = structuredClone(request.definition) as WirePipelineDefinitionV2;
+      return { pipeline: { name: 'v2-canvas', path: '/pipelines/v2-canvas' }, created: false };
+    });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="choice"]')
+    );
+
+    // Its condition field is empty because the node genuinely carries no
+    // `expression` — the editor reports the shape rather than inventing one.
+    expect(
+      (container.querySelector(
+        '[data-testid="v2-node-panel-choice-expression"]'
+      ) as HTMLInputElement).value
+    ).toBe('');
+
+    const outcomes = container.querySelector(
+      '[data-testid="v2-node-panel-outcomes"]'
+    ) as HTMLInputElement;
+    expect(outcomes.value).toBe('fast,careful');
+    outcomes.focus();
+    await setValueAndFlush(outcomes, 'fast,careful,deferred', 'input');
+    await act(async () => {
+      outcomes.blur();
+      await flushMicrotasks();
+    });
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+
+    const savedChoice = saved!.root.nodes.find((node) => node.id === 'choice')!;
+    expect(savedChoice).toMatchObject({
+      kind: 'Choice',
+      outcomes: ['fast', 'careful', 'deferred'],
+      retained: { branchNote: 'keep choice metadata' },
+    });
+    // Editing the labels must not stamp an `expression` the author never typed.
+    expect(savedChoice).not.toHaveProperty('expression');
   });
 
   it('blocks save on an error-severity issue, passes on warnings only, and stamps origin: ui on the save body', async () => {
@@ -1761,20 +2212,29 @@ describe('PipelineCanvasPage — edit mode', () => {
     await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
     await enterEdit();
 
-    for (const kind of ['AtomicStage', 'Gate', 'Choice', 'Finish']) {
-      await clickAndFlush(container.querySelector(`[data-testid="v2-palette-add-${kind}"]`));
-    }
+    // Stage and Finish gestures (design D2/D3) replace two of the four raw
+    // palette kinds this test used to create directly.
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-propose"]')
+    );
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-gesture-finish"]'));
     expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
       'atomic-stage'
     );
     expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
-      'gate-2'
-    );
-    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
-      'choice-2'
-    );
-    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
       'finish-2'
+    );
+
+    // Gate is now a stage property (design D4), not a raw palette kind —
+    // attach one to the freshly created AtomicStage via its approval
+    // checkbox. (Choice creation moved to connection splicing, design D5,
+    // and is covered separately by the model tests and the Connection panel.)
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="atomic-stage"]')
+    );
+    await clickAndFlush(container.querySelector('[data-testid="v2-node-panel-gate-toggle"]'));
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
+      'gate-2'
     );
 
     await clickAndFlush(
@@ -1854,8 +2314,14 @@ describe('PipelineCanvasPage — edit mode', () => {
     await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
     await enterEdit();
 
-    await clickAndFlush(container.querySelector('[data-testid="v2-palette-add-AtomicStage"]'));
-    await clickAndFlush(container.querySelector('[data-testid="v2-palette-add-BoundedLoop"]'));
+    // Stage and Loop gestures (design D2/D3) replace the old raw
+    // AtomicStage/BoundedLoop palette buttons; the resulting node shapes and
+    // ids are unchanged, since both gestures still delegate to the same
+    // `v2NodeIdFor` id scheme and node construction.
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-propose"]')
+    );
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-gesture-loop"]'));
     await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
 
     const submitted = vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
@@ -1942,8 +2408,15 @@ describe('PipelineCanvasPage — edit mode', () => {
     expect(stages).toHaveLength(1);
     expect(stages[0]!.getAttribute('data-stage-kind')).toBe('AtomicStage');
 
-    // Reference it from the root graph, then save and read the posted body.
-    await clickAndFlush(container.querySelector('[data-testid="v2-palette-add-CompositeRef"]'));
+    // Reference it from the root graph via the declaration row's insert
+    // action (design D6) — CompositeRef is no longer a raw palette kind, so
+    // this targets the specific 'my-composite' row rather than a generic
+    // palette button, proving the author's choice is honored.
+    await clickAndFlush(
+      container.querySelector(
+        '[data-testid="declaration-insert-ref"][data-declaration-id="my-composite"]'
+      )
+    );
     vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
     vi.mocked(client.mutatePipeline).mockResolvedValueOnce({
       pipeline: { name: 'v2-canvas', path: '/pipelines/v2-canvas' },
@@ -2037,7 +2510,7 @@ describe('PipelineCanvasPage — edit mode', () => {
     // A loop body needs real stages; this also makes `looped` the only
     // declaration a BoundedLoop can bind (the fixture's is empty).
     await clickAndFlush(container.querySelector('[data-testid="v2-body-palette-add-AtomicStage"]'));
-    await clickAndFlush(container.querySelector('[data-testid="v2-palette-add-BoundedLoop"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-gesture-loop"]'));
     expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
       'bounded-loop'
     );
@@ -2400,9 +2873,15 @@ describe('PipelineCanvasPage — edit mode', () => {
         `body palette must not offer ${kind}`
       ).toBeNull();
     }
-    // The body palette is a strict subset of the root palette, which still
-    // offers the kinds the ROOT graph may hold.
-    expect(container.querySelector('[data-testid="v2-palette-add-CompositeRef"]')).not.toBeNull();
+    // CompositeRef is no longer a root-palette kind (design D6) — the root
+    // graph can still reference a declaration, but only via that
+    // declaration row's own insert action, which the nested body palette
+    // rightly excludes from its own offering.
+    expect(
+      container.querySelector(
+        '[data-testid="declaration-insert-ref"][data-declaration-id="composite:review"]'
+      )
+    ).not.toBeNull();
 
     // Removing the stage again keeps the navigator honest.
     await clickAndFlush(container.querySelector('[data-testid="v2-body-palette-add-AtomicStage"]'));
@@ -2411,18 +2890,23 @@ describe('PipelineCanvasPage — edit mode', () => {
     expect(container.querySelectorAll('[data-testid="declaration-body-stage"]')).toHaveLength(0);
   });
 
-  it('inserts a CompositeRef from the root palette and disables the kinds the draft cannot accept', async () => {
+  it('inserts a CompositeRef from a declaration row and disables the loop gesture the draft cannot accept', async () => {
     // ECP-2 `executable-custom-composite`, "Canvas creates and references a
     // Custom Composite declaration": "The user SHALL be able to reference the
-    // declaration from the root graph via a `CompositeRef` node." The insertion
-    // branch shipped in `addV2RootNode`, but the palette exposed only the four
-    // pre-ECP-2 kinds, so no affordance could reach it.
+    // declaration from the root graph via a `CompositeRef` node." CompositeRef
+    // is no longer a root-palette kind (design D6) — the declaration row's
+    // "Insert into graph" action reaches the same `insertCompositeRef` model
+    // helper, proving the author's chosen declaration is honored.
     vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
     vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
     await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
     await enterEdit();
 
-    await clickAndFlush(container.querySelector('[data-testid="v2-palette-add-CompositeRef"]'));
+    await clickAndFlush(
+      container.querySelector(
+        '[data-testid="declaration-insert-ref"][data-declaration-id="composite:review"]'
+      )
+    );
     expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
       'composite-ref'
     );
@@ -2432,15 +2916,22 @@ describe('PipelineCanvasPage — edit mode', () => {
       'composite-ref'
     );
 
-    // The fixture's only declaration has an empty body graph, so a BoundedLoop
-    // has nothing to loop over: the palette reports it unavailable rather than
-    // offering a click that can only toast. FanOut/Join are not offered at all.
+    // The fixture's only declaration has an empty body graph, so a loop has
+    // nothing to loop over: `unavailableRootGestures` (design D2) reports the
+    // Loop gesture unavailable rather than offering a click that can only
+    // toast. Choice, Gate, FanOut, Join, and CompositeRef are not offered as
+    // root palette entries at all — Stage and Finish remain available.
     expect(
-      (container.querySelector('[data-testid="v2-palette-add-BoundedLoop"]') as HTMLButtonElement)
+      (container.querySelector('[data-testid="v2-palette-gesture-loop"]') as HTMLButtonElement)
         .disabled
     ).toBe(true);
-    expect(container.querySelector('[data-testid="v2-palette-add-FanOut"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="v2-palette-add-Join"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-propose"]')
+    ).not.toBeNull();
+    expect(container.querySelector('[data-testid="v2-palette-gesture-finish"]')).not.toBeNull();
+    for (const kind of ['Choice', 'Gate', 'FanOut', 'Join', 'CompositeRef']) {
+      expect(container.querySelector(`[data-testid="v2-palette-add-${kind}"]`)).toBeNull();
+    }
   });
 
   it('keeps the v2 stable-id editor focused across multiple keystrokes and commits the rename on blur', async () => {
@@ -3686,6 +4177,76 @@ describe('PipelineCanvasPage — edit mode', () => {
     expect(submitted.root.nodes.some((node) => node.kind === 'Join')).toBe(false);
   });
 
+  it('loads, renders, selects, edits, and saves an existing v2 definition containing all eight node kinds without shape drift', async () => {
+    // ECP-2 executable-custom-composite / design D8: the closed gesture
+    // vocabulary only constrains AUTHORING new nodes — a definition that
+    // already carries all eight raw IR kinds (however it was produced) must
+    // still load, render, and round-trip through the editor untouched.
+    let saved: WirePipelineDefinitionV2 | null = null;
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    vi.mocked(client.mutatePipeline).mockImplementation(async (request) => {
+      if (request.op === 'save') saved = structuredClone(request.definition) as WirePipelineDefinitionV2;
+      return { pipeline: { name: 'v2-canvas', path: '/pipelines/v2-canvas' }, created: false };
+    });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    // Renders: every one of the fixture's eight node ids is present.
+    const flowText = () => container.querySelector('[data-testid="mock-reactflow"]')!.textContent;
+    for (const id of ['atomic', 'gate', 'choice', 'finish', 'composite', 'loop', 'fanout', 'join']) {
+      expect(flowText()).toContain(id);
+    }
+
+    // Selects: clicking each node surfaces its own kind in the properties
+    // panel — nothing is hidden or misrendered for a withdrawn raw kind.
+    const kindByNodeId: Record<string, string> = {
+      atomic: 'AtomicStage',
+      gate: 'Gate',
+      choice: 'Choice',
+      finish: 'Finish',
+      composite: 'CompositeRef',
+      loop: 'BoundedLoop',
+      fanout: 'FanOut',
+      join: 'Join',
+    };
+    for (const [nodeId, kind] of Object.entries(kindByNodeId)) {
+      await clickAndFlush(
+        container.querySelector(`[data-testid="mock-node-click"][data-node-id="${nodeId}"]`)
+      );
+      expect(
+        container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-kind')
+      ).toBe(kind);
+    }
+
+    // Edits: one deliberate change (Finish's terminal outcome) — every other
+    // node, the declarations, and the connections must round-trip verbatim.
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-node-click"][data-node-id="finish"]')
+    );
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-node-panel-outcome"]'),
+      'rejected'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+
+    expect(saved).not.toBeNull();
+    expect(saved!.root.nodes.map((node) => ({ id: node.id, kind: node.kind }))).toEqual(
+      v2Definition.root.nodes.map((node) => ({ id: node.id, kind: node.kind }))
+    );
+    expect(saved!.root.connections).toEqual(v2Definition.root.connections);
+    expect(saved!.declarations).toEqual(v2Definition.declarations);
+    expect(saved!.root.nodes.find((node) => node.id === 'finish')).toMatchObject({
+      outcome: 'rejected',
+    });
+    for (const id of ['atomic', 'gate', 'choice', 'composite', 'loop', 'fanout', 'join']) {
+      expect(saved!.root.nodes.find((node) => node.id === id)).toEqual(
+        v2Definition.root.nodes.find((node) => node.id === id)
+      );
+    }
+  });
+
   it('keeps paired membership, partitions, conditions, limits, and outcomes equal after save and detail reload', async () => {
     let saved: WirePipelineDefinitionV2 | null = null;
     vi.mocked(client.getPipelineDetail)
@@ -3702,7 +4263,11 @@ describe('PipelineCanvasPage — edit mode', () => {
     });
     await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
     await enterEdit();
-    await clickAndFlush(container.querySelector('[data-testid="v2-palette-add-AtomicStage"]'));
+    // Stage gesture (design D2/D3) replaces the raw AtomicStage palette
+    // button; same node construction and id scheme.
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-propose"]')
+    );
     await clickAndFlush(
       container.querySelector('[data-testid="mock-node-click"][data-node-id="fanout"]')
     );

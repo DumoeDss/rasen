@@ -1,12 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addAtomicStageForCapability,
+  addBoundedLoopOverDeclaration,
+  addFinishNode,
+  addParallelFrontier,
   createParallelPair,
   definitionIssuePathTarget,
   duplicateV2Definition,
+  gateForStage,
+  insertCompositeRef,
   removeParallelPair,
   removeV2Node,
   renameDeclaration,
   renameV2Node,
+  setStageGate,
+  spliceConditionOntoConnection,
+  unavailableRootGestures,
+  unspliceChoice,
   updateAtomicStageExecution,
   updateBodyStageExecution,
   updateBoundedLoopContract,
@@ -17,11 +27,14 @@ import {
   updateParallelMember,
   updateParallelContract,
   setParallelMembers,
-  V2_ROOT_PALETTE_KINDS,
+  V2_BODY_PALETTE_KINDS,
+  V2_ROOT_PALETTE_GESTURES,
 } from '../../src/canvas/draft.js';
+import * as draftModule from '../../src/canvas/draft.js';
 import type {
   WireAtomicStageNode,
   WireBoundedLoopNode,
+  WireChoiceNode,
   WireFanOutNode,
   WireGateNode,
   WireJoinNode,
@@ -146,18 +159,23 @@ function definition(): WirePipelineDefinitionV2 {
 }
 
 describe('closed v2 Canvas wire vocabulary', () => {
-  it('represents all eight authorable root kinds with their closed fields', () => {
-    expect(V2_ROOT_PALETTE_KINDS).toEqual([
-      'AtomicStage',
-      'CompositeRef',
-      'BoundedLoop',
-      'Choice',
-      'FanOut',
-      'Join',
-      'Gate',
-      'Finish',
-    ]);
+  it('the root palette offers the four author gestures, not the eight raw node kinds', () => {
+    expect(V2_ROOT_PALETTE_GESTURES).toEqual(['stage', 'parallel', 'loop', 'finish']);
+    // V2_ROOT_PALETTE_KINDS (design D2) was withdrawn, not left beside the
+    // gesture list — a re-added export would slip past a TS-only check if
+    // nothing imported it, so this reads the module dynamically.
+    expect(
+      (draftModule as Record<string, unknown>).V2_ROOT_PALETTE_KINDS
+    ).toBeUndefined();
+  });
 
+  it('the declaration-body palette stays constrained to AtomicStage only (executable-custom-composite)', () => {
+    // The body palette must not widen alongside the root gesture rewrite —
+    // it reads this same constant, unchanged since before this change.
+    expect(V2_BODY_PALETTE_KINDS).toEqual(['AtomicStage']);
+  });
+
+  it('the Definition IR itself still carries all eight node kinds unchanged', () => {
     const atomic = definition().root.nodes[0] as WireAtomicStageNode;
     const gate = definition().root.nodes[2] as WireGateNode;
     const loop = definition().root.nodes[3] as WireBoundedLoopNode;
@@ -604,5 +622,364 @@ describe('nested server diagnostic locator', () => {
     expect(definitionIssuePathTarget(def, '/root/nodes/nope/id')).toBeNull();
     expect(definitionIssuePathTarget(def, '/futureDefinition/keep')).toBeNull();
     expect(definitionIssuePathTarget(def, '/root/nodes/0/~2bad')).toBeNull();
+  });
+});
+
+describe('unavailableRootGestures (design D2)', () => {
+  it('withholds each gesture for its own rule, independently of the others', () => {
+    const def = definition();
+    const withCapability = { exactCapabilities: [{ id: 'skill:new', version: 'sha256:new' }] };
+
+    expect(unavailableRootGestures(def, { exactCapabilities: [] })).toEqual(['stage']);
+    expect(unavailableRootGestures(def, withCapability)).toEqual([]);
+
+    const noAtomicStage: WirePipelineDefinitionV2 = {
+      ...def,
+      root: {
+        ...def.root,
+        nodes: def.root.nodes.filter((node) => node.kind !== 'AtomicStage'),
+      },
+    };
+    expect(unavailableRootGestures(noAtomicStage, withCapability)).toEqual(['parallel']);
+
+    const noBodyDeclaration: WirePipelineDefinitionV2 = {
+      ...def,
+      declarations: def.declarations.map((declaration) => ({
+        ...declaration,
+        graph: { ...declaration.graph, nodes: [] },
+      })),
+    };
+    expect(unavailableRootGestures(noBodyDeclaration, withCapability)).toEqual(['loop']);
+
+    // finish is never withheld, no matter how thin the draft is
+    expect(unavailableRootGestures(def, { exactCapabilities: [] })).not.toContain('finish');
+  });
+});
+
+describe('gesture composition helpers (design D3)', () => {
+  it('addAtomicStageForCapability appends one AtomicStage bound to the chosen capability', () => {
+    const next = addAtomicStageForCapability(definition(), {
+      id: 'skill:new',
+      version: 'sha256:new',
+    });
+    const added = next.root.nodes[next.root.nodes.length - 1] as WireAtomicStageNode;
+    expect(added).toMatchObject({
+      kind: 'AtomicStage',
+      capability: { id: 'skill:new', version: 'sha256:new' },
+      execution: { version: 1, role: 'implementer', workspace: { access: 'write' } },
+    });
+  });
+
+  it('addParallelFrontier fans out over every root AtomicStage, with FanOut and Join referencing each other', () => {
+    const next = addParallelFrontier(definition());
+    const fanOut = next.root.nodes.find((node) => node.kind === 'FanOut') as WireFanOutNode;
+    const join = next.root.nodes.find((node) => node.kind === 'Join') as WireJoinNode;
+    expect(fanOut.joinNodeId).toBe(join.id);
+    expect(join.inputs).toEqual(fanOut.branches);
+    expect(fanOut.branches).toEqual(['work', 'review']);
+  });
+
+  it('addParallelFrontier refuses when no root AtomicStage exists', () => {
+    const def = definition();
+    const noAtomicStage: WirePipelineDefinitionV2 = {
+      ...def,
+      root: { ...def.root, nodes: [], connections: [] },
+    };
+    expect(() => addParallelFrontier(noAtomicStage)).toThrow(/Add an AtomicStage/);
+  });
+
+  it('addBoundedLoopOverDeclaration wraps the first declaration carrying a body graph', () => {
+    const next = addBoundedLoopOverDeclaration(definition());
+    const added = next.root.nodes[next.root.nodes.length - 1] as WireBoundedLoopNode;
+    expect(added).toMatchObject({ kind: 'BoundedLoop', body: 'body' });
+  });
+
+  it('addBoundedLoopOverDeclaration refuses when no declaration has a body graph', () => {
+    const emptyDeclarations: WirePipelineDefinitionV2 = { ...definition(), declarations: [] };
+    expect(() => addBoundedLoopOverDeclaration(emptyDeclarations)).toThrow(
+      /No declaration is available/
+    );
+  });
+
+  it("addFinishNode maps to the definition's first outcome", () => {
+    const next = addFinishNode(definition());
+    const added = next.root.nodes[next.root.nodes.length - 1];
+    expect(added).toEqual({ id: expect.any(String), kind: 'Finish', outcome: 'done' });
+  });
+
+  it('insertCompositeRef refuses an unknown declaration and a non-referenceable one', () => {
+    expect(() => insertCompositeRef(definition(), 'missing')).toThrow(/does not exist/);
+
+    const builtInEmpty: WirePipelineDefinitionV2 = {
+      ...definition(),
+      declarations: [
+        {
+          id: 'empty-builtin',
+          kind: 'Composite',
+          provenance: 'built-in',
+          inputs: [],
+          artifacts: [],
+          outcomes: [],
+          graph: { nodes: [], connections: [] },
+        },
+      ],
+    };
+    expect(() => insertCompositeRef(builtInEmpty, 'empty-builtin')).toThrow(
+      /no body graph to reference/
+    );
+  });
+
+  it('insertCompositeRef references the requested declaration, not the first referenceable one (design D6)', () => {
+    const withTwo: WirePipelineDefinitionV2 = {
+      ...definition(),
+      declarations: [
+        ...definition().declarations,
+        {
+          id: 'second-body',
+          kind: 'Composite',
+          provenance: 'custom',
+          inputs: [],
+          artifacts: [],
+          outcomes: ['done'],
+          graph: {
+            nodes: [
+              {
+                id: 'second-body-stage',
+                kind: 'AtomicStage',
+                capability: { id: 'skill:second', version: 'sha256:second' },
+                execution: { version: 1, role: 'implementer', workspace: { access: 'write' } },
+              },
+            ],
+            connections: [],
+          },
+        },
+      ],
+    };
+    // 'body' (the first, already-referenceable declaration) is deliberately
+    // NOT what's requested here — the author picked the row, so this must
+    // not silently fall back to the first referenceable declaration.
+    const next = insertCompositeRef(withTwo, 'second-body');
+    const added = next.root.nodes[next.root.nodes.length - 1];
+    expect(added).toMatchObject({ kind: 'CompositeRef', declarationId: 'second-body' });
+  });
+});
+
+describe('setStageGate (design D4)', () => {
+  it('enabling appends a Gate with the Canvas approved/rejected vocabulary, and is idempotent', () => {
+    const def = definition();
+    expect(gateForStage(def, 'review')).toBeUndefined();
+    const withGate = setStageGate(def, 'review', true);
+    const gate = gateForStage(withGate, 'review')!;
+    expect(gate).toMatchObject({
+      kind: 'Gate',
+      target: 'review',
+      outcomes: ['approved', 'rejected'],
+      dispositions: { approved: 'proceed', rejected: 'escalate' },
+    });
+    expect(setStageGate(withGate, 'review', true)).toBe(withGate);
+  });
+
+  it('refuses a target that is not a root AtomicStage', () => {
+    expect(() => setStageGate(definition(), 'approval', true)).toThrow(
+      /not a root AtomicStage/
+    );
+  });
+
+  it('disabling removes the gate and its incident connections, and the stage becomes deletable again', () => {
+    const def = definition();
+    const wired: WirePipelineDefinitionV2 = {
+      ...def,
+      root: {
+        ...def.root,
+        connections: [
+          ...def.root.connections,
+          {
+            id: 'work-to-approval',
+            from: { node: 'work', port: 'done' },
+            to: { node: 'approval', port: 'input' },
+          },
+        ],
+      },
+    };
+    expect(gateForStage(wired, 'work')).toMatchObject({ id: 'approval' });
+
+    const disabled = setStageGate(wired, 'work', false);
+    expect(gateForStage(disabled, 'work')).toBeUndefined();
+    expect(disabled.root.nodes.some((node) => node.id === 'approval')).toBe(false);
+    expect(disabled.root.connections.some((c) => c.to.node === 'approval')).toBe(false);
+
+    // 'work' is no longer targeted by any Gate, so removeV2Node no longer refuses it
+    expect(() => removeV2Node(disabled, 'work')).not.toThrow();
+
+    // disabling with no gate present is a no-op
+    expect(setStageGate(disabled, 'work', false)).toBe(disabled);
+  });
+});
+
+describe('Choice as a connection condition (design D5)', () => {
+  it('splices a Choice into the connection, rewires it, and never writes legacyRuntimeOwner', () => {
+    const def = definition();
+    const spliced = spliceConditionOntoConnection(def, 'work-to-review', 'result.ok');
+
+    expect(spliced.root.connections.some((c) => c.id === 'work-to-review')).toBe(false);
+
+    const choiceNode = spliced.root.nodes.find(
+      (node) => node.kind === 'Choice' && (node as WireChoiceNode).expression === 'result.ok'
+    ) as (WireChoiceNode & { expression?: string; legacyRuntimeOwner?: unknown }) | undefined;
+    expect(choiceNode).toBeDefined();
+    expect(choiceNode!.outcomes).toEqual(['matched', 'skipped']);
+    expect(choiceNode).not.toHaveProperty('legacyRuntimeOwner');
+
+    const into = spliced.root.connections.find((c) => c.to.node === choiceNode!.id);
+    const out = spliced.root.connections.find((c) => c.from.node === choiceNode!.id);
+    expect(into).toMatchObject({
+      from: { node: 'work', port: 'done' },
+      to: { node: choiceNode!.id, port: 'input' },
+    });
+    expect(out).toMatchObject({
+      from: { node: choiceNode!.id, port: 'matched' },
+      to: { node: 'review', port: 'input' },
+    });
+
+    const unspliced = unspliceChoice(spliced, choiceNode!.id);
+    expect(unspliced.root.nodes.some((node) => node.id === choiceNode!.id)).toBe(false);
+    expect(unspliced.root.connections).toEqual([
+      {
+        id: 'work:done->review:input',
+        from: { node: 'work', port: 'done' },
+        to: { node: 'review', port: 'input' },
+      },
+    ]);
+  });
+
+  it('refuses to unsplice when the skipped branch is wired', () => {
+    const def = definition();
+    const spliced = spliceConditionOntoConnection(def, 'work-to-review', 'result.ok');
+    const choiceNode = spliced.root.nodes.find(
+      (node) => node.kind === 'Choice' && (node as WireChoiceNode).expression === 'result.ok'
+    )!;
+    const wired: WirePipelineDefinitionV2 = {
+      ...spliced,
+      root: {
+        ...spliced.root,
+        connections: [
+          ...spliced.root.connections,
+          {
+            id: 'skip-to-finish',
+            from: { node: choiceNode.id, port: 'skipped' },
+            to: { node: 'finish', port: 'input' },
+          },
+        ],
+      },
+    };
+    expect(() => unspliceChoice(wired, choiceNode.id)).toThrow(/skipped/);
+  });
+
+  it('refuses to splice onto a missing connection or a blank expression', () => {
+    const def = definition();
+    expect(() => spliceConditionOntoConnection(def, 'does-not-exist', 'x')).toThrow(
+      /does not exist/
+    );
+    expect(() => spliceConditionOntoConnection(def, 'work-to-review', '   ')).toThrow(
+      /blank/i
+    );
+  });
+
+  it('refuses to splice onto a connection that touches a preserved read-only node', () => {
+    // `spliceConditionOntoConnection`'s third refusal (task 5.1's first
+    // clause), the one the other two tests do not reach. A kind outside the
+    // closed editable vocabulary is preserved verbatim and must not be
+    // rewired by an authoring gesture.
+    const def = definition();
+    const withPreserved: WirePipelineDefinitionV2 = {
+      ...def,
+      root: {
+        ...def.root,
+        nodes: [
+          ...def.root.nodes,
+          { id: 'future-kind', kind: 'FuturePlugin' } as unknown as
+            WirePipelineDefinitionV2['root']['nodes'][number],
+        ],
+        connections: [
+          ...def.root.connections,
+          {
+            id: 'work-to-future',
+            from: { node: 'work', port: 'done' },
+            to: { node: 'future-kind', port: 'input' },
+          },
+        ],
+      },
+    };
+    expect(() =>
+      spliceConditionOntoConnection(withPreserved, 'work-to-future', 'result.ok')
+    ).toThrow(/read-only/);
+    // The editable-endpoint connection on the SAME draft still splices, so the
+    // refusal is attributable to the preserved endpoint and not to the extra
+    // node merely being present.
+    expect(() =>
+      spliceConditionOntoConnection(withPreserved, 'work-to-review', 'result.ok')
+    ).not.toThrow();
+  });
+
+  it('refuses to unsplice a Choice with a second inbound connection, naming both sources', () => {
+    // `removeV2Node` drops EVERY connection incident on the Choice while only
+    // one inbound edge can be restored, so a `find`-based guard would delete
+    // the second with no refusal and no toast. `onConnect` imposes no per-port
+    // arity limit, so two inbound edges are reachable by ordinary drags.
+    const def = definition();
+    const spliced = spliceConditionOntoConnection(def, 'work-to-review', 'result.ok');
+    const choiceNode = spliced.root.nodes.find(
+      (node) => node.kind === 'Choice' && (node as WireChoiceNode).expression === 'result.ok'
+    )!;
+    const twoInbound: WirePipelineDefinitionV2 = {
+      ...spliced,
+      root: {
+        ...spliced.root,
+        connections: [
+          ...spliced.root.connections,
+          {
+            id: 'body-ref-into-choice',
+            from: { node: 'body-ref', port: 'done' },
+            to: { node: choiceNode.id, port: 'input' },
+          },
+        ],
+      },
+    };
+    expect(() => unspliceChoice(twoInbound, choiceNode.id)).toThrow(
+      /2 incoming connections/
+    );
+    // The message names the edge that would otherwise vanish, not just a count.
+    expect(() => unspliceChoice(twoInbound, choiceNode.id)).toThrow(/'body-ref'/);
+  });
+
+  it("refuses to unsplice a Choice whose matched branch fans out to two targets", () => {
+    // The `strayOut` guard cannot see this one: both edges carry port
+    // 'matched', so it filters neither of them out.
+    const def = definition();
+    const spliced = spliceConditionOntoConnection(def, 'work-to-review', 'result.ok');
+    const choiceNode = spliced.root.nodes.find(
+      (node) => node.kind === 'Choice' && (node as WireChoiceNode).expression === 'result.ok'
+    )!;
+    const twoMatched: WirePipelineDefinitionV2 = {
+      ...spliced,
+      root: {
+        ...spliced.root,
+        connections: [
+          ...spliced.root.connections,
+          {
+            id: 'matched-to-finish',
+            from: { node: choiceNode.id, port: 'matched' },
+            to: { node: 'finish', port: 'input' },
+          },
+        ],
+      },
+    };
+    expect(() => unspliceChoice(twoMatched, choiceNode.id)).toThrow(
+      /branch 'matched' is wired to 2 targets/
+    );
+    expect(() => unspliceChoice(twoMatched, choiceNode.id)).toThrow(/'finish'/);
+    // One inbound + one matched outbound still unsplices — the arity guard
+    // refuses duplicates, it does not refuse the ordinary case.
+    expect(() => unspliceChoice(spliced, choiceNode.id)).not.toThrow();
   });
 });

@@ -11,6 +11,7 @@ import type {
 } from '../api/types.js';
 import {
   V2_BODY_PALETTE_KINDS,
+  isReferenceableDeclaration,
   type AtomicStageExecutionPatch,
 } from './draft.js';
 import { V2ExecutionEditor } from './V2ExecutionEditor.js';
@@ -67,6 +68,7 @@ export function DeclarationsPanel({
   onPatchBodyExecution,
   onAddBodyConnection,
   onRemoveBodyConnection,
+  onInsertRef,
 }: {
   definition: WirePipelineDefinitionV2;
   selectedId: string | null;
@@ -113,6 +115,11 @@ export function DeclarationsPanel({
   ) => void;
   onAddBodyConnection: (declarationId: string, from: string, to: string) => void;
   onRemoveBodyConnection: (declarationId: string, connectionId: string) => void;
+  /** Appends a `CompositeRef` targeting this declaration to the root graph
+   * (design D6) — the replacement affordance for the withdrawn CompositeRef
+   * palette entry. Absent `isReferenceableDeclaration(declaration)`, the row
+   * action is disabled rather than failing on click. */
+  onInsertRef?: (declarationId: string) => void;
 }) {
   const [newId, setNewId] = useState('');
   const declarations = definition.declarations ?? [];
@@ -171,6 +178,16 @@ export function DeclarationsPanel({
             >
               {declaration.id}
               {declaration.provenance === 'built-in' ? ' (built-in)' : ''}
+            </button>
+            <button
+              type="button"
+              class="declarations-panel__insert-ref"
+              data-testid="declaration-insert-ref"
+              data-declaration-id={declaration.id}
+              disabled={!isReferenceableDeclaration(declaration)}
+              onClick={() => onInsertRef?.(declaration.id)}
+            >
+              Insert into graph
             </button>
             <button
               type="button"

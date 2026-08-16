@@ -1675,6 +1675,49 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
   padding: var(--space-3); background: var(--surface); display: flex; flex-direction: column; gap: var(--space-3);
   overflow-y: auto;
 }
+
+/* v2 authoring column (definition contract + declarations editor). Its two
+   panels are cards inside ONE scrolling column — matching `.palette-panel`
+   and `.stage-panel`, its two working siblings (design D1). The single
+   scroll lives here, not on the panels individually. */
+.pipeline-canvas__authoring-contracts {
+  width: 280px; flex-shrink: 0; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column; gap: var(--space-3);
+}
+.definition-contract,
+.declarations-panel {
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: var(--space-3); background: var(--surface);
+  display: flex; flex-direction: column; gap: var(--space-2);
+}
+.definition-contract h3,
+.declarations-panel__title { margin: 0; font-size: var(--text-sm); }
+.definition-contract__field,
+.declaration-editor__field {
+  display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm);
+}
+.definition-contract__field--focused,
+.declaration-editor__field--focused {
+  outline: 2px solid var(--accent); border-radius: var(--radius); padding: var(--space-1);
+}
+.definition-contract__row {
+  display: flex; align-items: center; gap: var(--space-2);
+}
+.declarations-panel__new { display: flex; gap: var(--space-2); }
+.declarations-panel__list {
+  display: flex; flex-direction: column; gap: var(--space-1); list-style: none; margin: 0; padding: 0;
+}
+.declarations-panel__item {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
+  padding: var(--space-1) var(--space-2); border: 1px solid var(--border); border-radius: var(--radius);
+  font-size: var(--text-sm);
+}
+.declarations-panel__item--selected { border-color: var(--accent); }
+.declarations-panel__select {
+  background: none; border: none; cursor: pointer; text-align: left; flex: 1;
+  font-family: var(--font-mono); color: var(--fg);
+}
+.declarations-panel__empty { color: var(--muted); font-size: var(--text-sm); }
 .stage-panel__header { display: flex; align-items: center; justify-content: space-between; }
 .stage-panel__title { margin: 0; font-size: var(--text-sm); }
 .stage-panel__close { background: none; border: none; cursor: pointer; font-size: var(--text-sm); }

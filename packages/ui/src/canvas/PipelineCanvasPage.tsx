@@ -38,23 +38,24 @@ import {
   CONTROL_SOURCE_PORT,
   CONTROL_TARGET_PORT,
   createBlankCanvasPipelineDefinitionV2,
-  createDefaultBoundedLoopLifecycle,
-  createParallelPair,
+  addAtomicStageForCapability,
   addBodyConnection,
   addBodyStage,
+  addBoundedLoopOverDeclaration,
   addDeclaration,
+  addFinishNode,
+  addParallelFrontier,
   addRequire,
   addStage,
   addV2Connection,
-  addV2Node,
   definitionIssuePathTarget,
   duplicateV2Definition,
+  insertCompositeRef,
+  isBindableSkill,
   isDirty,
   isV2EditableNodeKind,
   issuePathTarget,
   bodyConnectionIdFor,
-  loopBodyDeclaration,
-  referenceableDeclaration,
   removeBodyConnection,
   removeBodyStage,
   removeDeclaration,
@@ -67,7 +68,11 @@ import {
   renameStage,
   renameV2Node,
   setParallelMembers,
+  setStageGate,
+  spliceConditionOntoConnection,
   stageIdFor,
+  unavailableRootGestures,
+  unspliceChoice,
   updateBodyStage,
   updateBodyStageExecution,
   updateAtomicStageExecution,
@@ -87,7 +92,6 @@ import {
   wouldCreateCycle,
   addConsultationBinding,
   removeConsultationBinding,
-  type V2EditableNodeKind,
   type DefinitionIssueTarget,
 } from './draft.js';
 import { DeclarationsPanel } from './DeclarationsPanel.js';
@@ -96,6 +100,7 @@ import type { IntegerContractDraftError } from './IntegerContractField.js';
 import { PalettePanel, PALETTE_DND_TYPE } from './PalettePanel.js';
 import { StagePanel } from './StagePanel.js';
 import { V2NodePanel } from './V2NodePanel.js';
+import { V2ConnectionPanel } from './V2ConnectionPanel.js';
 import { IssuesDrawer } from './IssuesDrawer.js';
 import { EngineSupportPanel } from './EngineSupportPanel.js';
 import { consumePendingDraft, setPendingDraft } from './pending-draft.js';
@@ -141,6 +146,10 @@ export function PipelineCanvasPage() {
   const [flowNodes, setFlowNodes] = useState<PipelineFlowNode[]>([]);
   const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
+  /** The v2 connection open in the Connection panel, if any (design D5).
+   * Mutually exclusive with `selectedStageId` — selecting one clears the
+   * other, and the pane click clears both. */
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   /** The Custom Composite declaration open in the declaration editor, if any. */
   const [selectedDeclarationId, setSelectedDeclarationId] = useState<string | null>(null);
   const [selectedIssueTarget, setSelectedIssueTarget] =
@@ -690,6 +699,7 @@ export function PipelineCanvasPage() {
     if (removed.length > 0 && draft) {
       if (draft.version === 2) {
         let nextDraft = draft;
+        const removedConnectionIds = new Set<string>();
         for (const change of removed) {
           const id = (change as { id: string }).id;
           const connection = nextDraft.root.connections.find(
@@ -709,10 +719,14 @@ export function PipelineCanvasPage() {
             isV2EditableNodeKind(targetNode.kind)
           ) {
             nextDraft = removeV2Connection(nextDraft, id);
+            removedConnectionIds.add(id);
           }
         }
         setDraft(nextDraft);
         recomputeFlow(nextDraft);
+        if (selectedConnectionId && removedConnectionIds.has(selectedConnectionId)) {
+          setSelectedConnectionId(null);
+        }
         markDraftChanged();
         return;
       }
@@ -728,11 +742,22 @@ export function PipelineCanvasPage() {
   }
 
   function onNodeClick(_event: unknown, node: { id: string; type?: string }) {
-    if (node.type === 'stage') setSelectedStageId(node.id);
+    if (node.type === 'stage') {
+      setSelectedConnectionId(null);
+      setSelectedStageId(node.id);
+    }
+  }
+
+  function onEdgeClick(_event: unknown, edge: { id: string }) {
+    if (!draft || draft.version !== 2) return;
+    if (!draft.root.connections.some((connection) => connection.id === edge.id)) return;
+    setSelectedStageId(null);
+    setSelectedConnectionId(edge.id);
   }
 
   function onPaneClick() {
     setSelectedStageId(null);
+    setSelectedConnectionId(null);
   }
 
   function onDropStage(skill: PipelineCatalogSkill, position: { x: number; y: number }) {
@@ -767,119 +792,111 @@ export function PipelineCanvasPage() {
     markDraftChanged();
   }
 
-  function addV2RootNode(kind: V2EditableNodeKind) {
+  /**
+   * Gesture handlers (design D2/D3). Each delegates composition to the pure
+   * `draft.ts` helper and follows this module's established mutation-handler
+   * convention: mutate via the model, `setDraft` + `recomputeFlow` +
+   * `markDraftChanged`, surface a refusal as a toast. No gesture handler
+   * re-decides a rule the model owns — replaces the old `addV2RootNode`
+   * switch, which built every node kind's shape inline.
+   */
+  function addStageGesture(capability: { id: string; version: string }) {
     if (!draft || draft.version !== 2) return;
-    const id = v2NodeIdFor(kind, draft);
-    let node: WireDefinitionNode;
-    if (kind === 'AtomicStage') {
-      const capability = (catalog?.skills ?? []).find(
-        (skill) => skill.enabled && skill.capability
-      )?.capability;
-      if (!capability) {
-        showToast('No enabled exact capability revision is available.');
-        return;
-      }
-      node = {
-        id,
-        kind,
-        capability: { id: capability.id, version: capability.version },
-        execution: {
-          version: 1,
-          role: 'implementer',
-          workspace: { access: 'write' },
-        },
-      };
-    } else if (kind === 'Gate') {
-      const target = draft.root.nodes.find(
-        (candidate) => candidate.kind === 'AtomicStage'
-      );
-      if (!target) {
-        showToast('Add an AtomicStage before authoring a Gate.');
-        return;
-      }
-      node = {
-        id,
-        kind,
-        target: target.id,
-        outcomes: ['approved', 'rejected'],
-        dispositions: { approved: 'proceed', rejected: 'escalate' },
-      };
-    } else if (kind === 'Choice') {
-      node = { id, kind, outcomes: ['default'] };
-    } else if (kind === 'CompositeRef') {
-      const declaration = referenceableDeclaration(draft);
-      if (!declaration) {
-        showToast('No declaration available to reference.');
-        return;
-      }
-      node = { id, kind, declarationId: declaration.id };
-    } else if (kind === 'BoundedLoop') {
-      const declaration = loopBodyDeclaration(draft);
-      if (!declaration) {
-        showToast('No declaration available for loop body.');
-        return;
-      }
-      node = {
-        id,
-        kind,
-        body: declaration.id,
-        limits: { maxIterations: 3, maxActions: 12, budget: 12 },
-        lifecycle: createDefaultBoundedLoopLifecycle(),
-        exits: Object.fromEntries(
-          declaration.outcomes.map((outcome, index) => [
-            outcome,
-            index === declaration.outcomes.length - 1
-              ? { action: 'exit', outcome: draft.outcomes[0] ?? 'done' }
-              : { action: 'continue' },
-          ])
-        ),
-      };
-    } else if (kind === 'FanOut' || kind === 'Join') {
-      const members = draft.root.nodes
-        .filter((candidate) => candidate.kind === 'AtomicStage')
-        .map((candidate) => candidate.id);
-      if (members.length === 0) {
-        showToast('Add an AtomicStage before authoring a parallel frontier.');
-        return;
-      }
-      const fanOutId =
-        kind === 'FanOut' ? id : v2NodeIdFor('FanOut', draft);
-      const joinId = kind === 'Join' ? id : v2NodeIdFor('Join', draft);
-      let nextDraft;
-      try {
-        nextDraft = createParallelPair(draft, {
-          fanOutId,
-          joinId,
-          memberNodeIds: members,
-          requiredMemberIds: [members[0]!],
-          concurrencyCap: Math.max(1, Math.min(3, members.length)),
-          budget: Math.max(1, members.length),
-          outcomes: {
-            proceed: draft.outcomes[0] ?? 'done',
-            failed: draft.outcomes[1] ?? 'failed',
-          },
-        });
-      } catch (error) {
-        showToast(error instanceof Error ? error.message : 'Could not add the parallel pair.');
-        return;
-      }
-      setDraft(nextDraft);
-      recomputeFlow(nextDraft);
-      setSelectedStageId(kind === 'FanOut' ? fanOutId : joinId);
-      markDraftChanged();
+    const id = v2NodeIdFor('AtomicStage', draft);
+    let nextDraft;
+    try {
+      nextDraft = addAtomicStageForCapability(draft, capability);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not add the stage.');
       return;
-    } else {
-      node = {
-        id,
-        kind,
-        outcome: draft.outcomes[0] ?? 'done',
-      };
     }
-    const nextDraft = addV2Node(draft, node);
     setDraft(nextDraft);
     recomputeFlow(nextDraft);
     setSelectedStageId(id);
     markDraftChanged();
+  }
+
+  function addRootGesture(gesture: 'parallel' | 'loop' | 'finish') {
+    if (!draft || draft.version !== 2) return;
+    let id: string;
+    let nextDraft;
+    try {
+      if (gesture === 'parallel') {
+        id = v2NodeIdFor('FanOut', draft);
+        nextDraft = addParallelFrontier(draft);
+      } else if (gesture === 'loop') {
+        id = v2NodeIdFor('BoundedLoop', draft);
+        nextDraft = addBoundedLoopOverDeclaration(draft);
+      } else {
+        id = v2NodeIdFor('Finish', draft);
+        nextDraft = addFinishNode(draft);
+      }
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not add this gesture.');
+      return;
+    }
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
+    setSelectedStageId(id);
+    markDraftChanged();
+  }
+
+  /** Toggles the approval `Gate` targeting an `AtomicStage` (design D4). */
+  function toggleStageGate(stageId: string, enabled: boolean) {
+    if (!draft || draft.version !== 2) return;
+    try {
+      const nextDraft = setStageGate(draft, stageId, enabled);
+      setDraft(nextDraft);
+      recomputeFlow(nextDraft);
+      markDraftChanged();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not change approval on this stage.');
+    }
+  }
+
+  /** Splices a condition onto the selected connection (design D5). The
+   * spliced connection no longer exists afterward, so the Connection panel
+   * closes; the new Choice node is left selectable on the canvas. */
+  function spliceConnectionCondition(connectionId: string, expression: string) {
+    if (!draft || draft.version !== 2) return;
+    try {
+      const nextDraft = spliceConditionOntoConnection(draft, connectionId, expression);
+      setDraft(nextDraft);
+      recomputeFlow(nextDraft);
+      setSelectedConnectionId(null);
+      markDraftChanged();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not add this condition.');
+    }
+  }
+
+  /** Removes a spliced `Choice`, restoring its direct connection (design D5). */
+  function unspliceSelectedChoice(choiceId: string) {
+    if (!draft || draft.version !== 2) return;
+    try {
+      const nextDraft = unspliceChoice(draft, choiceId);
+      setDraft(nextDraft);
+      recomputeFlow(nextDraft);
+      setSelectedStageId(null);
+      markDraftChanged();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not remove this condition.');
+    }
+  }
+
+  /** Appends a `CompositeRef` targeting the chosen declaration (design D6). */
+  function insertDeclarationRef(declarationId: string) {
+    if (!draft || draft.version !== 2) return;
+    const id = v2NodeIdFor('CompositeRef', draft);
+    try {
+      const nextDraft = insertCompositeRef(draft, declarationId);
+      setDraft(nextDraft);
+      recomputeFlow(nextDraft);
+      setSelectedStageId(id);
+      markDraftChanged();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not insert this declaration.');
+    }
   }
 
   // --- Custom Composite declaration authoring (ECP-2 8.5/8.6) -------------
@@ -903,7 +920,7 @@ export function PipelineCanvasPage() {
    */
   function exactCapabilities() {
     return (catalog?.skills ?? [])
-      .filter((skill) => skill.enabled && skill.capability)
+      .filter(isBindableSkill)
       .map((skill) => skill.capability!);
   }
 
@@ -1456,6 +1473,13 @@ export function PipelineCanvasPage() {
         : null,
     [draft, selectedStageId]
   );
+  const selectedConnection = useMemo(
+    () =>
+      draft?.version === 2 && selectedConnectionId
+        ? draft.root.connections.find((connection) => connection.id === selectedConnectionId) ?? null
+        : null,
+    [draft, selectedConnectionId]
+  );
   const existingGroups = useMemo(
     () =>
       draft?.version === 1
@@ -1951,20 +1975,15 @@ export function PipelineCanvasPage() {
             skills={catalog?.skills ?? null}
             loading={catalogLoading}
             definitionVersion={draft?.version ?? 1}
-            // Same rule the insertion uses, read once — a CompositeRef needs a
-            // referenceable declaration and a BoundedLoop needs one with a body.
-            disabledKinds={
+            // Same rule the insertion uses, read once — the panel decides
+            // nothing about which gestures are available (design D2).
+            disabledGestures={
               draft?.version === 2
-                ? [
-                    ...(referenceableDeclaration(draft) ? [] : (['CompositeRef'] as const)),
-                    ...(loopBodyDeclaration(draft) ? [] : (['BoundedLoop'] as const)),
-                    ...(draft.root.nodes.some((node) => node.kind === 'AtomicStage')
-                      ? []
-                      : (['Gate', 'FanOut', 'Join'] as const)),
-                  ]
+                ? unavailableRootGestures(draft, { exactCapabilities: exactCapabilities() })
                 : undefined
             }
-            onAddV2Node={addV2RootNode}
+            onAddStage={addStageGesture}
+            onAddGesture={addRootGesture}
           />
         )}
 
@@ -2006,6 +2025,7 @@ export function PipelineCanvasPage() {
               onPatchBodyExecution={patchBodyExecution}
               onAddBodyConnection={createBodyConnection}
               onRemoveBodyConnection={deleteBodyConnection}
+              onInsertRef={insertDeclarationRef}
             />
           </div>
         )}
@@ -2029,6 +2049,7 @@ export function PipelineCanvasPage() {
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
                 onNodeClick={onNodeClick}
+                onEdgeClick={onEdgeClick}
                 onPaneClick={onPaneClick}
                 onDropStage={onDropStage}
               />
@@ -2095,9 +2116,11 @@ export function PipelineCanvasPage() {
             onAtomicExecutionPatch={(patch) =>
               patchAtomicExecution(selectedV2Node.id, patch)
             }
+            onStageGateToggle={toggleStageGate}
             onGateDisposition={(decision, disposition) =>
               patchGateDisposition(selectedV2Node.id, decision, disposition)
             }
+            onUnspliceChoice={unspliceSelectedChoice}
             onBoundedLoopPatch={(patch) =>
               patchBoundedLoop(selectedV2Node.id, patch)
             }
@@ -2114,6 +2137,14 @@ export function PipelineCanvasPage() {
             onDeleteParallelPair={deleteParallel}
             onInvalidChange={setAuthoringDraftError}
             onClose={() => setSelectedStageId(null)}
+          />
+        )}
+        {editable && selectedConnection && (
+          <V2ConnectionPanel
+            key={selectedConnection.id}
+            connection={selectedConnection}
+            onSpliceCondition={spliceConnectionCondition}
+            onClose={() => setSelectedConnectionId(null)}
           />
         )}
       </div>
@@ -2140,6 +2171,7 @@ function CanvasFlow({
   onEdgesChange,
   onConnect,
   onNodeClick,
+  onEdgeClick,
   onPaneClick,
   onDropStage,
 }: {
@@ -2150,6 +2182,7 @@ function CanvasFlow({
   onEdgesChange: (changes: EdgeChange[]) => void;
   onConnect: (connection: Connection) => void;
   onNodeClick: (event: unknown, node: { id: string; type?: string }) => void;
+  onEdgeClick: (event: unknown, edge: { id: string }) => void;
   onPaneClick: () => void;
   onDropStage: (skill: PipelineCatalogSkill, position: { x: number; y: number }) => void;
 }) {
@@ -2186,6 +2219,7 @@ function CanvasFlow({
       onEdgesChange={editable ? onEdgesChange : undefined}
       onConnect={editable ? onConnect : undefined}
       onNodeClick={onNodeClick}
+      onEdgeClick={onEdgeClick}
       onPaneClick={onPaneClick}
       onDrop={editable ? onDrop : undefined}
       onDragOver={editable ? onDragOver : undefined}

@@ -15,6 +15,7 @@ import type {
   WirePipelineDefinitionV2,
 } from '../api/types.js';
 import {
+  gateForStage,
   getConsultationBindingForStage,
   isV2EditableNodeKind,
   type AtomicStageExecutionPatch,
@@ -43,6 +44,11 @@ function stringList(value: unknown): readonly string[] {
     : [];
 }
 
+/** Narrow an untyped wire-node field to a string before rendering it. */
+function stringField(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
 function parseList(value: string): string[] {
   return Array.from(
     new Set(
@@ -65,7 +71,9 @@ export function V2NodePanel({
   onRename,
   onPatch,
   onAtomicExecutionPatch,
+  onStageGateToggle,
   onGateDisposition,
+  onUnspliceChoice,
   onBoundedLoopPatch,
   onParallelMembers,
   onParallelMemberPatch,
@@ -87,10 +95,14 @@ export function V2NodePanel({
   onRename: (id: string) => void;
   onPatch: (patch: Partial<WireDefinitionNode>) => boolean | void;
   onAtomicExecutionPatch?: (patch: AtomicStageExecutionPatch) => void;
+  /** Toggles the approval `Gate` targeting this `AtomicStage` on or off (design D4). */
+  onStageGateToggle?: (stageId: string, enabled: boolean) => void;
   onGateDisposition?: (
     decision: string,
     disposition: WireGateNode['dispositions'][string]
   ) => void;
+  /** Removes a spliced `Choice` and restores its direct connection (design D5). */
+  onUnspliceChoice?: (choiceId: string) => void;
   onBoundedLoopPatch?: (patch: BoundedLoopContractPatch) => void;
   onParallelMembers?: (fanOutId: string, memberIds: readonly string[]) => void;
   onParallelMemberPatch?: (
@@ -119,12 +131,20 @@ export function V2NodePanel({
       ? listValue(node.outcomes)
       : '';
   const [outcomesDraft, setOutcomesDraft] = useState(authoritativeOutcomes);
+  const authoritativeExpression =
+    node.kind === 'Choice'
+      ? stringField((node as Record<string, unknown>).expression)
+      : '';
+  const [expressionDraft, setExpressionDraft] = useState(authoritativeExpression);
   useEffect(() => {
     setIdDraft(node.id);
   }, [node.id]);
   useEffect(() => {
     setOutcomesDraft(authoritativeOutcomes);
   }, [node.id, authoritativeOutcomes]);
+  useEffect(() => {
+    setExpressionDraft(authoritativeExpression);
+  }, [node.id, authoritativeExpression]);
   const commitRename = () => {
     const next = idDraft.trim();
     if (next && next !== node.id) {
@@ -144,6 +164,15 @@ export function V2NodePanel({
     setOutcomesDraft(
       accepted === false ? authoritativeOutcomes : listValue(outcomes)
     );
+  };
+  const commitExpression = () => {
+    const trimmed = expressionDraft.trim();
+    if (!trimmed) {
+      setExpressionDraft(authoritativeExpression);
+      return;
+    }
+    const accepted = onPatch({ expression: trimmed });
+    setExpressionDraft(accepted === false ? authoritativeExpression : trimmed);
   };
   const fieldClass = (field: string) => nestedFieldClass(fieldIssues, field);
 
@@ -206,6 +235,20 @@ export function V2NodePanel({
                 onCapabilityPatch={(capability) => onPatch({ capability })}
                 onExecutionPatch={(patch) => onAtomicExecutionPatch?.(patch)}
               />
+              <label class="stage-panel__field stage-panel__field--checkbox">
+                <input
+                  type="checkbox"
+                  data-testid="v2-node-panel-gate-toggle"
+                  checked={definition ? Boolean(gateForStage(definition, node.id)) : false}
+                  onChange={(event) =>
+                    onStageGateToggle?.(
+                      node.id,
+                      (event.target as HTMLInputElement).checked
+                    )
+                  }
+                />
+                Require approval before this stage proceeds
+              </label>
               {fullDefinition && (
                 <ConsultationBindingEditor
                   stageId={node.id}
@@ -247,6 +290,41 @@ export function V2NodePanel({
                 }}
               />
             </label>
+          )}
+
+          {node.kind === 'Choice' && (
+            <>
+              <label class={fieldClass('expression')}>
+                <span>Branch condition</span>
+                <input
+                  data-testid="v2-node-panel-choice-expression"
+                  value={expressionDraft}
+                  onInput={(event) =>
+                    setExpressionDraft((event.target as HTMLInputElement).value)
+                  }
+                  onBlur={commitExpression}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      (event.currentTarget as HTMLInputElement).blur();
+                    }
+                  }}
+                />
+              </label>
+              {/* Deliberately a SIBLING of the label, not a child of it:
+                  interactive content nested in a `<label>` is invalid HTML,
+                  and the label's activation behavior would forward this
+                  button's click to the labelled input — focusing then blurring
+                  it, running `commitExpression` as a side effect of pressing
+                  an unrelated control. */}
+              <button
+                type="button"
+                data-testid="v2-node-panel-unsplice-choice"
+                onClick={() => onUnspliceChoice?.(node.id)}
+              >
+                Remove condition
+              </button>
+            </>
           )}
 
           {node.kind === 'Gate' && (
