@@ -16,6 +16,8 @@ export function V2SelectionPanel({
   nodeKinds,
   title = 'Selection',
   onDelete,
+  onPackage,
+  packageRefusals,
   onClose,
 }: {
   nodeCount: number;
@@ -25,6 +27,15 @@ export function V2SelectionPanel({
   /** Panel heading — the v2 default 'Selection'; the page passes 'Selected stages' for the v1 stage editor (review t1). */
   title?: string;
   onDelete: () => void;
+  /**
+   * Package-into-reusable-block action (canvas-subgraph-extraction design D4).
+   * Provided ONLY when the model's refusal list is empty — the page decides,
+   * from `subgraphExtractionRefusals`, whether the action is offered at all;
+   * this panel renders the button and nothing else.
+   */
+  onPackage?: () => void;
+  /** The model's refusal strings, rendered as muted text — why the selection cannot be packaged right now. */
+  packageRefusals?: readonly string[];
   onClose: () => void;
 }) {
   return (
@@ -58,9 +69,32 @@ export function V2SelectionPanel({
         </p>
       )}
 
+      {onPackage && (
+        <button
+          type="button"
+          class="btn--primary"
+          data-testid="v2-selection-panel-package"
+          onClick={onPackage}
+        >
+          Package into reusable block
+        </button>
+      )}
+      {packageRefusals && packageRefusals.length > 0 && (
+        <div data-testid="v2-selection-panel-refusals">
+          {packageRefusals.map((refusal, index) => (
+            // Keyed by INDEX: two refusal strings can be byte-identical (a
+            // stage under two consultation bindings emits one per binding,
+            // same message), and a string key would duplicate (review m1).
+            <p class="stage-panel__muted" key={index}>
+              {refusal}
+            </p>
+          ))}
+        </div>
+      )}
+
       <button
         type="button"
-        class="btn--primary"
+        class="btn--danger"
         data-testid="v2-selection-panel-delete"
         onClick={onDelete}
       >

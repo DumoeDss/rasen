@@ -51,10 +51,13 @@ import {
   addV2Connection,
   CanvasSelection,
   definitionIssuePathTarget,
+  deriveSubgraphContract,
   duplicateV2Definition,
   EMPTY_CANVAS_SELECTION,
+  extractSubgraph,
   insertCompositeRef,
   isBindableSkill,
+  isDeclarationIdUnique,
   isDirty,
   isV2EditableNodeKind,
   issuePathTarget,
@@ -72,6 +75,7 @@ import {
   renameV2Node,
   selectionPanelMode,
   setParallelMembers,
+  subgraphExtractionRefusals,
   setStageGate,
   singletonConnectionId,
   singletonNodeId,
@@ -108,6 +112,10 @@ import { StagePanel } from './StagePanel.js';
 import { V2NodePanel } from './V2NodePanel.js';
 import { V2ConnectionPanel } from './V2ConnectionPanel.js';
 import { V2SelectionPanel } from './V2SelectionPanel.js';
+import {
+  V2ExtractReviewPanel,
+  type SubgraphExtractionReview,
+} from './V2ExtractReviewPanel.js';
 import { IssuesDrawer } from './IssuesDrawer.js';
 import { EngineSupportPanel } from './EngineSupportPanel.js';
 import { consumePendingDraft, setPendingDraft } from './pending-draft.js';
@@ -202,6 +210,21 @@ export function PipelineCanvasPage() {
   const [toast, setToast] = useState('');
   const [pendingExit, setPendingExit] = useState<(() => void) | null>(null);
   const [duplicateDialog, setDuplicateDialog] = useState<{ name: string; error: string | null } | null>(null);
+  /**
+   * The open package-into-reusable-block review (canvas-subgraph-extraction
+   * design D4): which nodes are being packaged, the derivation defaults the
+   * dialog opened with, the body summary, and the model's last confirm-time
+   * refusal. Null when no review is open; the nodeIds are captured at open so
+   * the transaction judges the exact set the author reviewed.
+   */
+  const [extractReview, setExtractReview] = useState<{
+    nodeIds: ReadonlySet<string>;
+    derived: ReturnType<typeof deriveSubgraphContract>;
+    stageCount: number;
+    internalConnectionCount: number;
+    defaultId: string;
+    error: string | null;
+  } | null>(null);
 
   const hasAuthoringDraftErrors = Object.keys(authoringDraftErrors).length > 0;
   const dirty =
@@ -1069,6 +1092,73 @@ export function PipelineCanvasPage() {
     }
   }
 
+  // --- Package-into-reusable-block (canvas-subgraph-extraction design D4) --
+
+  /**
+   * Opens the extraction review with the derivation defaults. The rules and
+   * the cut live in `draft.ts` (`subgraphExtractionRefusals` /
+   * `deriveSubgraphContract`); this handler only captures what the author is
+   * about to review.
+   */
+  function openExtractReview() {
+    if (!draft || draft.version !== 2 || selection.nodeIds.size === 0) return;
+    const derived = deriveSubgraphContract(draft, selection.nodeIds);
+    const internalConnectionCount = draft.root.connections.filter(
+      (connection) =>
+        selection.nodeIds.has(connection.from.node) &&
+        selection.nodeIds.has(connection.to.node)
+    ).length;
+    // `block`, `block-2`, … — the `v2NodeIdFor` suffix convention over the
+    // model's uniqueness rule.
+    let defaultId = 'block';
+    for (let suffix = 2; !isDeclarationIdUnique(draft, defaultId); suffix += 1) {
+      defaultId = `block-${suffix}`;
+    }
+    setExtractReview({
+      nodeIds: new Set(selection.nodeIds),
+      derived,
+      stageCount: selection.nodeIds.size,
+      internalConnectionCount,
+      defaultId,
+      error: null,
+    });
+  }
+
+  /**
+   * Confirms the review: one `extractSubgraph` transaction, then the
+   * selectionOverride path — both selection truths in the same tick (the
+   * `syncFlowSelection` discipline: the moved ids are gone from the draft, so
+   * the mirror must become the ref in the same update that rebuilds the
+   * flow, or React Flow's listener reverts it one commit later). A model
+   * refusal keeps the draft unchanged, toasts the message, and leaves the
+   * review open with its edits intact.
+   */
+  function confirmExtractReview(review: SubgraphExtractionReview) {
+    if (!draft || draft.version !== 2 || !extractReview) return;
+    let result;
+    try {
+      result = extractSubgraph(draft, { nodeIds: extractReview.nodeIds, ...review });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Could not package this selection.';
+      setExtractReview((current) => (current ? { ...current, error: message } : current));
+      showToast(message);
+      return;
+    }
+    setExtractReview(null);
+    const nextSelection: CanvasSelection = {
+      nodeIds: new Set([result.refId]),
+      connectionIds: new Set<string>(),
+    };
+    setDraft(result.next);
+    setSelection(nextSelection);
+    recomputeFlow(result.next, catalog, nextSelection);
+    markDraftChanged();
+    showToast(
+      `Packaged ${extractReview.stageCount} stage${extractReview.stageCount === 1 ? '' : 's'} into '${result.declarationId}'.`
+    );
+  }
+
   // --- Custom Composite declaration authoring (ECP-2 8.5/8.6) -------------
   //
   // Every handler delegates to the pure `draft.ts` model and reports the
@@ -1738,6 +1828,17 @@ export function PipelineCanvasPage() {
     return [...counts.entries()].map(([kind, count]) => `${kind} × ${count}`);
   }, [draft, selection]);
 
+  /**
+   * The package action's availability, read once from the model
+   * (canvas-subgraph-extraction design D3/D4): the selection panel offers the
+   * button only when this is empty and renders the strings as muted text
+   * otherwise — the panel decides nothing. v2 edit mode only.
+   */
+  const packageRefusals = useMemo(() => {
+    if (draft?.version !== 2) return [];
+    return subgraphExtractionRefusals(draft, selection);
+  }, [draft, selection]);
+
   function selectIssueTarget(
     target: DefinitionIssueTarget,
     severity: 'error' | 'warning'
@@ -2221,6 +2322,20 @@ export function PipelineCanvasPage() {
         </div>
       )}
 
+      {extractReview && (
+        <V2ExtractReviewPanel
+          defaultId={extractReview.defaultId}
+          derived={extractReview.derived}
+          bodySummary={{
+            stageCount: extractReview.stageCount,
+            internalConnectionCount: extractReview.internalConnectionCount,
+          }}
+          error={extractReview.error}
+          onConfirm={confirmExtractReview}
+          onCancel={() => setExtractReview(null)}
+        />
+      )}
+
       <div class="pipeline-canvas__body">
         {editable && (
           <PalettePanel
@@ -2405,6 +2520,14 @@ export function PipelineCanvasPage() {
             nodeCount={selection.nodeIds.size}
             connectionCount={selection.connectionIds.size}
             nodeKinds={selectionNodeKindSummary}
+            // The package gesture is v2-only, and offered only when the
+            // model's refusal list is empty — the refusals render instead.
+            onPackage={
+              draft.version === 2 && packageRefusals.length === 0
+                ? openExtractReview
+                : undefined
+            }
+            packageRefusals={draft.version === 2 ? packageRefusals : undefined}
             onDelete={deleteSelection}
             onClose={() => replaceSelection([])}
           />

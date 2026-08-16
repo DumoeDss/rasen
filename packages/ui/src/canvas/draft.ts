@@ -2496,3 +2496,353 @@ export function removeBodyConnection(
     }),
   };
 }
+
+// ===== Subgraph extraction (canvas-subgraph-extraction design D1-D3) =====
+
+/**
+ * The prefix the engine's v1 normalizer writes into cross-node structural
+ * references (`Gate.target`, `Join.inputs`, `FanOut.members[].hierarchicalPath`
+ * — `src/core/pipeline-registry/definition.ts:3599`, `:3681-3692`) while
+ * authored v2 writes raw ids. Reference checks below test BOTH forms, plus the
+ * reverse hybrid (a prefixed node id referenced raw — the shape a definition
+ * carrying definition-level consultations over v1-normalized nodes produces,
+ * since `consultations[].sourceStage` mirrors the v1 stage id, not the node id).
+ */
+const STAGE_REFERENCE_PREFIX = 'stage:';
+
+/**
+ * Resolves a structural reference against the selected node ids, accepting
+ * both authored forms. Returns the SELECTED node id the reference points at
+ * (the id as it appears in the draft — what a refusal should name), or null.
+ */
+function referencedSelectedStage(
+  reference: string,
+  selected: ReadonlySet<string>
+): string | null {
+  if (selected.has(reference)) return reference;
+  if (reference.startsWith(STAGE_REFERENCE_PREFIX)) {
+    const raw = reference.slice(STAGE_REFERENCE_PREFIX.length);
+    if (selected.has(raw)) return raw;
+  }
+  const prefixed = `${STAGE_REFERENCE_PREFIX}${reference}`;
+  if (selected.has(prefixed)) return prefixed;
+  return null;
+}
+
+/**
+ * Why a selection cannot be packaged into a reusable declaration (design D3) —
+ * empty array means extractable. Each entry is one author-readable blocker,
+ * and the MODEL owns every rule:
+ *
+ * 1. The selection is non-empty and every selected node is an `AtomicStage`
+ *    (`V2_BODY_PALETTE_KINDS` — the body vocabulary a spec forbids widening);
+ *    any other kind is named.
+ * 2. No OUTSIDE `Gate` targets a selected stage — a disposition cannot cross
+ *    a declaration boundary, so a cut that would sever it is refused, not
+ *    migrated.
+ * 3. No OUTSIDE `FanOut` counts a selected stage among its branches or
+ *    members (id or hierarchicalPath) — same boundary rule for parallel pairs.
+ * 4. No OUTSIDE `Join` lists a selected stage in its inputs or member sets.
+ * 5. No consultation binding names a selected stage as its source.
+ *
+ * "Outside" only matters for kinds rule 1 already refuses, but the checks are
+ * written structurally so they hold regardless of what is selected.
+ */
+export function subgraphExtractionRefusals(
+  def: WirePipelineDefinitionV2,
+  selection: CanvasSelection
+): string[] {
+  return subgraphExtractionRefusalsForNodeIds(def, selection.nodeIds);
+}
+
+function subgraphExtractionRefusalsForNodeIds(
+  def: WirePipelineDefinitionV2,
+  selected: ReadonlySet<string>
+): string[] {
+  const refusals: string[] = [];
+  if (selected.size === 0) {
+    refusals.push('Select at least one stage to package into a reusable block.');
+    return refusals;
+  }
+  for (const id of selected) {
+    const node = def.root.nodes.find((candidate) => candidate.id === id);
+    if (!node) {
+      refusals.push(`Node '${id}' does not exist in this draft.`);
+      continue;
+    }
+    if (!V2_BODY_PALETTE_KINDS.includes(node.kind)) {
+      refusals.push(
+        `Only plain stages can be packaged into a reusable block — '${id}' is a ${node.kind}.`
+      );
+    }
+  }
+  for (const node of def.root.nodes) {
+    if (selected.has(node.id)) continue;
+    if (node.kind === 'Gate') {
+      const hit = referencedSelectedStage(node.target, selected);
+      if (hit) {
+        refusals.push(
+          `Stage '${hit}' is targeted by Gate '${node.id}' outside the selection.`
+        );
+      }
+      continue;
+    }
+    if (node.kind === 'FanOut') {
+      const references = [
+        ...node.branches,
+        ...node.members.flatMap((member) => [member.id, member.hierarchicalPath]),
+      ];
+      const hit = references
+        .map((reference) => referencedSelectedStage(reference, selected))
+        .find((hit): hit is string => hit !== null);
+      if (hit) {
+        refusals.push(
+          `Stage '${hit}' is a branch or member of FanOut '${node.id}' outside the selection.`
+        );
+      }
+      continue;
+    }
+    if (node.kind === 'Join') {
+      const references = [
+        ...node.inputs,
+        ...node.requiredMembers,
+        ...node.optionalMembers,
+      ];
+      const hit = references
+        .map((reference) => referencedSelectedStage(reference, selected))
+        .find((hit): hit is string => hit !== null);
+      if (hit) {
+        refusals.push(
+          `Stage '${hit}' is an input of Join '${node.id}' outside the selection.`
+        );
+      }
+    }
+  }
+  for (const binding of readConsultations(def)) {
+    const hit = referencedSelectedStage(binding.sourceStage, selected);
+    if (hit) {
+      refusals.push(`Stage '${hit}' is referenced by a consultation binding.`);
+    }
+  }
+  return refusals;
+}
+
+/** The derived contract a review dialog opens with (design D2) — review-editable defaults. */
+export interface DerivedSubgraphContract {
+  inputs: WireDefinitionPort[];
+  artifacts: WireDefinitionArtifact[];
+  outcomes: string[];
+}
+
+/** Joins node and port with the U+0000 separator below, so ids containing `stage:`-style colons cannot forge key collisions. */
+const CUT_KEY_SEPARATOR = String.fromCharCode(0);
+function cutKey(node: string, port: string): string {
+  return node + CUT_KEY_SEPARATOR + port;
+}
+
+/**
+ * Enumerates the cut a node set implies, in draft connection order: the
+ * distinct severed-incoming `(target stage, target port)` pairs and the
+ * distinct severed-outgoing `(source stage, source port)` pairs. Parallel to
+ * the rows {@link deriveSubgraphContract} derives and the mapping
+ * {@link extractSubgraph} rewires through — one enumeration, three readers.
+ */
+function computeSubgraphCut(
+  def: WirePipelineDefinitionV2,
+  nodeIds: ReadonlySet<string>
+): { incomingKeys: string[]; outgoingKeys: string[] } {
+  const incomingKeys: string[] = [];
+  const outgoingKeys: string[] = [];
+  for (const connection of def.root.connections) {
+    if (nodeIds.has(connection.to.node) && !nodeIds.has(connection.from.node)) {
+      const key = cutKey(connection.to.node, connection.to.port);
+      if (!incomingKeys.includes(key)) incomingKeys.push(key);
+    } else if (
+      nodeIds.has(connection.from.node) &&
+      !nodeIds.has(connection.to.node)
+    ) {
+      const key = cutKey(connection.from.node, connection.from.port);
+      if (!outgoingKeys.includes(key)) outgoingKeys.push(key);
+    }
+  }
+  return { incomingKeys, outgoingKeys };
+}
+
+/** `base`, then `base-2`, `base-3`, … — the `v2NodeIdFor` suffix convention. */
+function suffixedName(base: string, used: Set<string>): string {
+  if (!used.has(base)) {
+    used.add(base);
+    return base;
+  }
+  let suffix = 2;
+  while (used.has(`${base}-${suffix}`)) suffix += 1;
+  const name = `${base}-${suffix}`;
+  used.add(name);
+  return name;
+}
+
+/**
+ * Derives the declaration contract a cut implies (design D2), all defaults the
+ * review may edit:
+ *
+ * - One input port per distinct severed-incoming `(target stage, port)`,
+ *   named after the target stage (suffixed on collision), typed by the severed
+ *   edge's target port (typically `CONTROL_TARGET_PORT`), `required` unset.
+ * - One outcome per distinct severed-outgoing `(source stage, port)`, named
+ *   after the source stage (suffixed on collision); when no outgoing edge is
+ *   severed, the single default outcome `'done'` (`addDeclaration`'s own).
+ * - Artifacts default to `[]` — control edges carry no artifact semantics.
+ */
+export function deriveSubgraphContract(
+  def: WirePipelineDefinitionV2,
+  nodeIds: ReadonlySet<string>
+): DerivedSubgraphContract {
+  const { incomingKeys, outgoingKeys } = computeSubgraphCut(def, nodeIds);
+  const usedInputNames = new Set<string>();
+  const inputs = incomingKeys.map((key) => {
+    const [node, port] = key.split(CUT_KEY_SEPARATOR);
+    return {
+      name: suffixedName(node!, usedInputNames),
+      type: port!,
+    };
+  });
+  const usedOutcomeNames = new Set<string>();
+  const outcomes = outgoingKeys.map((key) =>
+    suffixedName(key.split(CUT_KEY_SEPARATOR)[0]!, usedOutcomeNames)
+  );
+  return {
+    inputs,
+    artifacts: [],
+    outcomes: outcomes.length > 0 ? outcomes : ['done'],
+  };
+}
+
+/** The reviewed contract plus which nodes move — {@link extractSubgraph}'s input. */
+export interface SubgraphExtractionInput {
+  nodeIds: ReadonlySet<string>;
+  id: string;
+  inputs: WireDefinitionPort[];
+  artifacts: WireDefinitionArtifact[];
+  outcomes: string[];
+}
+
+export interface SubgraphExtractionResult {
+  next: WirePipelineDefinitionV2;
+  declarationId: string;
+  refId: string;
+}
+
+/**
+ * The one extraction transaction (design D1): moves the selected plain stages
+ * into a new custom Composite declaration, replaces them in the root graph
+ * with one `CompositeRef`, and rewires every severed crossing connection onto
+ * the ref's mapped ports. Pure — returns the next definition, never mutates.
+ *
+ * The dialog is not trusted: refusals are re-run here, the reviewed id is
+ * validated by the same blank/unique rules `addDeclaration` enforces, and the
+ * reviewed rows by `assertNamedContractRows`/`assertNamedOutcomes`. Severed
+ * edges map onto reviewed rows POSITIONALLY in derivation order — a renamed
+ * row renames the port its edge lands on; a deleted derived row leaves its
+ * edge on the derived default name (and the definition may then validate red —
+ * the Validate button stays the authority, the design's stated posture).
+ *
+ * Content preservation: moved stages and internal connections are the SAME
+ * values (verbatim, ids included — body ids are declaration-scoped); crossing
+ * connections keep every extension field via the spread, with only identity
+ * and the rewritten endpoint changed (`v2ConnectionIdFor` convention). Nothing
+ * is stamped `legacyRuntimeOwner` — the ref is built by `insertCompositeRef`
+ * with exactly `{ id, kind, declarationId }`.
+ */
+export function extractSubgraph(
+  def: WirePipelineDefinitionV2,
+  input: SubgraphExtractionInput
+): SubgraphExtractionResult {
+  const refusals = subgraphExtractionRefusalsForNodeIds(def, input.nodeIds);
+  if (refusals.length > 0) {
+    throw new Error(refusals.join(' '));
+  }
+  if (input.id.trim().length === 0) {
+    throw new Error('A declaration id cannot be blank.');
+  }
+  if (!isDeclarationIdUnique(def, input.id)) {
+    throw new Error(`Declaration id '${input.id}' already exists.`);
+  }
+  assertNamedContractRows('declaration input', input.inputs);
+  assertNamedContractRows('declaration artifact', input.artifacts);
+  assertNamedOutcomes('declaration', input.outcomes);
+
+  const derived = deriveSubgraphContract(def, input.nodeIds);
+  const { incomingKeys, outgoingKeys } = computeSubgraphCut(def, input.nodeIds);
+  const declaration: WireCompositeDeclaration = {
+    id: input.id,
+    kind: 'Composite',
+    provenance: 'custom',
+    inputs: input.inputs,
+    artifacts: input.artifacts,
+    outcomes: input.outcomes,
+    graph: {
+      nodes: def.root.nodes.filter((node) => input.nodeIds.has(node.id)),
+      connections: def.root.connections.filter(
+        (connection) =>
+          input.nodeIds.has(connection.from.node) &&
+          input.nodeIds.has(connection.to.node)
+      ),
+    },
+  };
+  let next: WirePipelineDefinitionV2 = {
+    ...def,
+    declarations: [...def.declarations, declaration],
+    root: {
+      ...def.root,
+      nodes: def.root.nodes.filter((node) => !input.nodeIds.has(node.id)),
+      connections: def.root.connections.filter(
+        (connection) =>
+          !input.nodeIds.has(connection.from.node) &&
+          !input.nodeIds.has(connection.to.node)
+      ),
+    },
+  };
+  // Appended through the same gesture `insertCompositeRef` runs, so its
+  // existence/referenceability checks execute against the just-created
+  // declaration; the id minted here is the one it appends (same root state).
+  const refId = v2NodeIdFor('CompositeRef', next);
+  next = insertCompositeRef(next, input.id);
+
+  for (const connection of def.root.connections) {
+    if (input.nodeIds.has(connection.to.node) && !input.nodeIds.has(connection.from.node)) {
+      const index = incomingKeys.indexOf(cutKey(connection.to.node, connection.to.port));
+      const port = input.inputs[index]?.name ?? derived.inputs[index]!.name;
+      const id = v2ConnectionIdFor(next, {
+        source: connection.from.node,
+        sourcePort: connection.from.port,
+        target: refId,
+        targetPort: port,
+      });
+      next = addV2Connection(next, {
+        ...connection,
+        id,
+        to: { node: refId, port },
+      });
+    } else if (
+      input.nodeIds.has(connection.from.node) &&
+      !input.nodeIds.has(connection.to.node)
+    ) {
+      const index = outgoingKeys.indexOf(
+        cutKey(connection.from.node, connection.from.port)
+      );
+      const port = input.outcomes[index] ?? derived.outcomes[index]!;
+      const id = v2ConnectionIdFor(next, {
+        source: refId,
+        sourcePort: port,
+        target: connection.to.node,
+        targetPort: connection.to.port,
+      });
+      next = addV2Connection(next, {
+        ...connection,
+        id,
+        from: { node: refId, port },
+      });
+    }
+  }
+  return { next, declarationId: input.id, refId };
+}

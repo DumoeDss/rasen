@@ -13,7 +13,11 @@ import {
   bodyWouldCreateCycle,
   createBlankCanvasPipelineDefinitionV2,
   createParallelPair,
+  deriveSubgraphContract,
   EMPTY_CANVAS_SELECTION,
+  extractSubgraph,
+  insertCompositeRef,
+  subgraphExtractionRefusals,
   updateBodyStage,
   addStage,
   addV2Connection,
@@ -990,5 +994,586 @@ describe('removeV2Nodes', () => {
     expect(
       plan.next.root.nodes.some((node) => node.id === 'future-sentinel')
     ).toBe(true);
+  });
+});
+
+// ===== canvas-subgraph-extraction: refusals, derivation, transaction =====
+
+/** The canonical extraction shape: a --(e-ab)--> b --(e-bc)--> c --(e-cf)--> f(finish). */
+function extractionDef(): WirePipelineDefinitionV2 {
+  const stage = (id: string) => ({
+    id,
+    kind: 'AtomicStage' as const,
+    capability: { id: `skill:${id}`, version: `sha256:${id}` },
+    execution: {
+      version: 1 as const,
+      role: 'implementer' as const,
+      workspace: { access: 'write' as const },
+    },
+    retained: { note: `keep ${id}` },
+  });
+  return {
+    version: 2,
+    id: 'definition:extraction',
+    sourceId: 'fixture:extraction',
+    name: 'extraction',
+    inputs: [],
+    artifacts: [],
+    outcomes: ['done'],
+    declarations: [],
+    root: {
+      nodes: [stage('a'), stage('b'), stage('c'), { id: 'f', kind: 'Finish' as const, outcome: 'done' }],
+      connections: [
+        {
+          id: 'e-ab',
+          from: { node: 'a', port: 'done' },
+          to: { node: 'b', port: 'input' },
+          condition: 'always',
+        },
+        {
+          id: 'e-bc',
+          from: { node: 'b', port: 'done' },
+          to: { node: 'c', port: 'input' },
+        },
+        {
+          id: 'e-cf',
+          from: { node: 'c', port: 'done' },
+          to: { node: 'f', port: 'input' },
+        },
+      ],
+    },
+  };
+}
+
+describe('subgraphExtractionRefusals', () => {
+  const refusals = (def: WirePipelineDefinitionV2, ids: readonly string[]) =>
+    subgraphExtractionRefusals(def, {
+      nodeIds: new Set(ids),
+      connectionIds: new Set<string>(),
+    });
+
+  it('refuses an empty selection and a selection carrying unknown ids', () => {
+    expect(refusals(extractionDef(), []).length).toBe(1);
+    expect(refusals(extractionDef(), [])[0]).toMatch(/Select at least one stage/);
+    expect(refusals(extractionDef(), ['ghost'])[0]).toMatch(
+      /Node 'ghost' does not exist/
+    );
+  });
+
+  it('accepts a plain chained pair — the happy path is empty', () => {
+    expect(refusals(extractionDef(), ['b', 'c'])).toEqual([]);
+  });
+
+  it('names every non-AtomicStage kind in a mixed selection', () => {
+    const messages = refusals(extractionDef(), ['b', 'f']);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatch(/Only plain stages can be packaged/);
+    expect(messages[0]).toMatch(/'f' is a Finish/);
+  });
+
+  it('refuses a stage an outside Gate targets, in raw and prefixed form', () => {
+    const raw = extractionDef();
+    raw.root.nodes.push({
+      id: 'gate-1',
+      kind: 'Gate',
+      target: 'c',
+      outcomes: ['approve'],
+      dispositions: { approve: 'proceed' },
+    });
+    expect(refusals(raw, ['b', 'c'])[0]).toMatch(
+      /Stage 'c' is targeted by Gate 'gate-1' outside the selection/
+    );
+
+    const prefixed = extractionDef();
+    prefixed.root.nodes.push({
+      id: 'gate-1',
+      kind: 'Gate',
+      target: 'stage:c',
+      outcomes: ['approve'],
+      dispositions: { approve: 'proceed' },
+    });
+    expect(refusals(prefixed, ['b', 'c'])[0]).toMatch(
+      /Stage 'c' is targeted by Gate 'gate-1'/
+    );
+  });
+
+  it('reads references on a fully normalized (stage:-prefixed) fixture', () => {
+    // The engine's v1 normalizer writes node ids AND references prefixed —
+    // the raw-exact check must still resolve them.
+    const def = extractionDef();
+    def.root.nodes = def.root.nodes.map((node) =>
+      node.id === 'c' ? { ...node, id: 'stage:c' } : node
+    );
+    def.root.connections = def.root.connections.map((connection) => ({
+      ...connection,
+      from: connection.from.node === 'c' ? { ...connection.from, node: 'stage:c' } : connection.from,
+      to: connection.to.node === 'c' ? { ...connection.to, node: 'stage:c' } : connection.to,
+    }));
+    def.root.nodes.push({
+      id: 'gate-1',
+      kind: 'Gate',
+      target: 'stage:c',
+      outcomes: ['approve'],
+      dispositions: { approve: 'proceed' },
+    });
+    expect(refusals(def, ['b', 'stage:c'])[0]).toMatch(
+      /Stage 'stage:c' is targeted by Gate 'gate-1'/
+    );
+  });
+
+  it('refuses a stage counted by an outside FanOut — branches, member ids, and hierarchicalPath', () => {
+    const byBranch = extractionDef();
+    byBranch.root.nodes.push({
+      id: 'fan',
+      kind: 'FanOut',
+      branches: ['c'],
+      concurrencyCap: 1,
+      budget: 1,
+      joinNodeId: 'join',
+      members: [],
+    });
+    expect(refusals(byBranch, ['b', 'c'])[0]).toMatch(
+      /Stage 'c' is a branch or member of FanOut 'fan' outside the selection/
+    );
+
+    const byMember = extractionDef();
+    byMember.root.nodes.push({
+      id: 'fan',
+      kind: 'FanOut',
+      branches: [],
+      concurrencyCap: 1,
+      budget: 1,
+      joinNodeId: 'join',
+      members: [
+        {
+          id: 'unrelated',
+          hierarchicalPath: 'stage:c',
+          required: true,
+          condition: 'always',
+        },
+      ],
+    });
+    // hierarchicalPath carries the prefixed form while the id points elsewhere
+    // — the prefixed check must still catch it.
+    expect(refusals(byMember, ['b', 'c'])[0]).toMatch(
+      /Stage 'c' is a branch or member of FanOut 'fan'/
+    );
+  });
+
+  it('refuses a stage listed by an outside Join — inputs, required, and optional', () => {
+    const byInput = extractionDef();
+    byInput.root.nodes.push({
+      id: 'join',
+      kind: 'Join',
+      inputs: ['stage:c'],
+      requiredMembers: [],
+      optionalMembers: [],
+      outcomes: { proceed: 'done', failed: 'failed' },
+    });
+    expect(refusals(byInput, ['b', 'c'])[0]).toMatch(
+      /Stage 'c' is an input of Join 'join' outside the selection/
+    );
+
+    const byOptional = extractionDef();
+    byOptional.root.nodes.push({
+      id: 'join',
+      kind: 'Join',
+      inputs: [],
+      requiredMembers: [],
+      optionalMembers: ['c'],
+      outcomes: { proceed: 'done', failed: 'failed' },
+    });
+    expect(refusals(byOptional, ['b', 'c'])[0]).toMatch(
+      /Stage 'c' is an input of Join 'join'/
+    );
+  });
+
+  it('refuses a stage referenced by a consultation binding — raw, prefixed, and reverse-prefixed forms', () => {
+    const binding = (sourceStage: string) => ({
+      sourceStage,
+      teacherSkill: 'skill:teacher',
+      maxConsultationsPerInvocation: 1,
+      maxTeacherAttemptsPerConsultation: 1,
+    });
+    const raw = extractionDef();
+    raw.consultations = [binding('c')];
+    expect(refusals(raw, ['b', 'c'])[0]).toMatch(
+      /Stage 'c' is referenced by a consultation binding/
+    );
+
+    const prefixed = extractionDef();
+    prefixed.consultations = [binding('stage:c')];
+    expect(refusals(prefixed, ['b', 'c'])[0]).toMatch(/Stage 'c'/);
+
+    // Reverse hybrid: node ids are v1-normalized but the consultation mirrors
+    // the raw v1 stage id — the reverse-prefix check must catch it.
+    const reverse = extractionDef();
+    reverse.root.nodes = reverse.root.nodes.map((node) =>
+      node.id === 'c' ? { ...node, id: 'stage:c' } : node
+    );
+    reverse.consultations = [binding('c')];
+    expect(refusals(reverse, ['b', 'stage:c'])[0]).toMatch(
+      /Stage 'stage:c' is referenced by a consultation binding/
+    );
+  });
+
+  it('collects several blockers at once — one string each', () => {
+    const def = extractionDef();
+    def.root.nodes.push(
+      {
+        id: 'gate-1',
+        kind: 'Gate',
+        target: 'b',
+        outcomes: ['approve'],
+        dispositions: { approve: 'proceed' },
+      },
+      { id: 'f2', kind: 'Finish', outcome: 'done' }
+    );
+    const messages = refusals(def, ['b', 'c', 'f2']);
+    expect(messages).toHaveLength(2);
+    // Rule-1 kind refusals emit per selected node before the structural
+    // rules run — assert presence, not order.
+    expect(messages.some((message) => /targeted by Gate 'gate-1'/.test(message))).toBe(
+      true
+    );
+    expect(messages.some((message) => /'f2' is a Finish/.test(message))).toBe(true);
+  });
+});
+
+describe('deriveSubgraphContract', () => {
+  it('derives one input and one outcome per severed cut, named after the stages', () => {
+    const def = extractionDef();
+    expect(deriveSubgraphContract(def, new Set(['b', 'c']))).toEqual({
+      inputs: [{ name: 'b', type: 'input' }],
+      artifacts: [],
+      outcomes: ['c'],
+    });
+  });
+
+  it('suffixes colliding names — one row per distinct (stage, port)', () => {
+    const def = extractionDef();
+    def.root.connections.push(
+      {
+        id: 'e-ab2',
+        from: { node: 'a', port: 'brief' },
+        to: { node: 'b', port: 'artifact/brief' },
+      },
+      {
+        id: 'e-cf2',
+        from: { node: 'c', port: 'reviewed' },
+        to: { node: 'f', port: 'input' },
+      }
+    );
+    expect(deriveSubgraphContract(def, new Set(['b', 'c']))).toEqual({
+      inputs: [
+        { name: 'b', type: 'input' },
+        { name: 'b-2', type: 'artifact/brief' },
+      ],
+      artifacts: [],
+      outcomes: ['c', 'c-2'],
+    });
+  });
+
+  it('defaults to the single outcome "done" when no outgoing edge is severed', () => {
+    // Every edge has both ends inside {a,b,c,f}, so nothing is severed. (A
+    // lone {a} WOULD sever a->b and derive outcome 'a' — derivation has no
+    // kind rules of its own.)
+    expect(deriveSubgraphContract(extractionDef(), new Set(['a', 'b', 'c', 'f']))).toEqual({
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+    });
+    expect(deriveSubgraphContract(extractionDef(), new Set())).toEqual({
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+    });
+  });
+
+  it('deduplicates repeated severed edges onto the same (stage, port)', () => {
+    const def = extractionDef();
+    def.root.connections.push({
+      id: 'e-ab-dup',
+      from: { node: 'a', port: 'done' },
+      to: { node: 'b', port: 'input' },
+    });
+    expect(deriveSubgraphContract(def, new Set(['b', 'c']))).toEqual({
+      inputs: [{ name: 'b', type: 'input' }],
+      artifacts: [],
+      outcomes: ['c'],
+    });
+  });
+});
+
+describe('extractSubgraph', () => {
+  it('moves the body verbatim, rewires the crossings, and preserves extension fields', () => {
+    const def = extractionDef();
+    const bNode = def.root.nodes[1]!;
+    const cNode = def.root.nodes[2]!;
+    const internal = def.root.connections[1]!;
+    const result = extractSubgraph(def, {
+      nodeIds: new Set(['b', 'c']),
+      id: 'block',
+      inputs: [{ name: 'b', type: 'input' }],
+      artifacts: [],
+      outcomes: ['c'],
+    });
+
+    // The declaration: custom, with the reviewed contract and the moved body.
+    expect(result.declarationId).toBe('block');
+    expect(result.refId).toBe('composite-ref');
+    const declaration = result.next.declarations.find((d) => d.id === 'block')!;
+    expect(declaration.provenance).toBe('custom');
+    expect(declaration.inputs).toEqual([{ name: 'b', type: 'input' }]);
+    expect(declaration.outcomes).toEqual(['c']);
+
+    // VERBATIM: the moved stages and internal connection are the same values
+    // (ids, execution blocks, and retained extension fields included).
+    expect(declaration.graph.nodes).toHaveLength(2);
+    expect(declaration.graph.nodes[0]).toBe(bNode);
+    expect(declaration.graph.nodes[1]).toBe(cNode);
+    expect(declaration.graph.connections).toEqual([internal]);
+
+    // The root keeps only the untouched nodes plus the ref.
+    expect(result.next.root.nodes.map((node) => node.id)).toEqual([
+      'a',
+      'f',
+      'composite-ref',
+    ]);
+    const ref = result.next.root.nodes[2]!;
+    expect(ref.kind).toBe('CompositeRef');
+    if (ref.kind === 'CompositeRef') expect(ref.declarationId).toBe('block');
+
+    // The crossings rewired onto the mapped ports with fresh endpoint-derived
+    // ids, extension fields carried, and only identity/endpoints rewritten.
+    const connections = result.next.root.connections;
+    expect(connections.map((connection) => connection.id)).toEqual([
+      'a:done->composite-ref:b',
+      'composite-ref:c->f:input',
+    ]);
+    const inbound = connections[0]!;
+    expect(inbound.from).toEqual({ node: 'a', port: 'done' });
+    expect(inbound.to).toEqual({ node: 'composite-ref', port: 'b' });
+    expect(inbound.condition).toBe('always');
+    const outbound = connections[1]!;
+    expect(outbound.from).toEqual({ node: 'composite-ref', port: 'c' });
+    expect(outbound.to).toEqual({ node: 'f', port: 'input' });
+
+    // The internal edge left the root and the original ids died with the endpoints.
+    expect(
+      result.next.root.connections.some((connection) => connection.id === 'e-ab')
+    ).toBe(false);
+  });
+
+  it('never stamps legacyRuntimeOwner on any moved node or the ref', () => {
+    const result = extractSubgraph(extractionDef(), {
+      nodeIds: new Set(['b', 'c']),
+      id: 'block',
+      inputs: [{ name: 'b', type: 'input' }],
+      artifacts: [],
+      outcomes: ['c'],
+    });
+    for (const declaration of result.next.declarations) {
+      for (const node of declaration.graph.nodes) {
+        expect(node).not.toHaveProperty('legacyRuntimeOwner');
+      }
+    }
+    for (const node of result.next.root.nodes) {
+      expect(node).not.toHaveProperty('legacyRuntimeOwner');
+    }
+  });
+
+  it('maps severed edges onto REVIEWED rows — a renamed outcome renames the port', () => {
+    const result = extractSubgraph(extractionDef(), {
+      nodeIds: new Set(['b', 'c']),
+      id: 'block',
+      inputs: [{ name: 'entry', type: 'control' }],
+      artifacts: [{ name: 'patch', type: 'artifact/text' }],
+      outcomes: ['complete'],
+    });
+    const declaration = result.next.declarations.find((d) => d.id === 'block')!;
+    expect(declaration.inputs).toEqual([{ name: 'entry', type: 'control' }]);
+    expect(declaration.artifacts).toEqual([{ name: 'patch', type: 'artifact/text' }]);
+    expect(declaration.outcomes).toEqual(['complete']);
+    const connections = result.next.root.connections;
+    expect(connections[0]!.to).toEqual({ node: 'composite-ref', port: 'entry' });
+    expect(connections[1]!.from).toEqual({ node: 'composite-ref', port: 'complete' });
+    expect(connections.map((connection) => connection.id)).toEqual([
+      'a:done->composite-ref:entry',
+      'composite-ref:complete->f:input',
+    ]);
+  });
+
+  it('falls back to the derived port name when a derived row was deleted in review', () => {
+    const result = extractSubgraph(extractionDef(), {
+      nodeIds: new Set(['b', 'c']),
+      id: 'block',
+      inputs: [],
+      artifacts: [],
+      outcomes: [],
+    });
+    // No rows survive review, so the edges land on the derived defaults —
+    // the declaration itself carries no such port, and Validate stays the
+    // authority for the (deliberately possible) red cut.
+    expect(result.next.root.connections[0]!.to).toEqual({
+      node: 'composite-ref',
+      port: 'b',
+    });
+    expect(result.next.root.connections[1]!.from).toEqual({
+      node: 'composite-ref',
+      port: 'c',
+    });
+  });
+
+  it('re-runs the refusal rules — the dialog is not trusted', () => {
+    const def = extractionDef();
+    def.root.nodes.push({
+      id: 'gate-1',
+      kind: 'Gate',
+      target: 'c',
+      outcomes: ['approve'],
+      dispositions: { approve: 'proceed' },
+    });
+    expect(() =>
+      extractSubgraph(def, {
+        nodeIds: new Set(['b', 'c']),
+        id: 'block',
+        inputs: [{ name: 'b', type: 'input' }],
+        artifacts: [],
+        outcomes: ['c'],
+      })
+    ).toThrow(/targeted by Gate 'gate-1'/);
+    expect(
+      () =>
+        extractSubgraph(extractionDef(), {
+          nodeIds: new Set(['b', 'c']),
+          id: 'block',
+          inputs: [{ name: 'b', type: 'input' }],
+          artifacts: [],
+          outcomes: ['c'],
+        })
+    ).not.toThrow();
+  });
+
+  it('enforces the declaration id and contract row rules with the model vocabulary', () => {
+    const input = (over: Partial<Parameters<typeof extractSubgraph>[1]>) => ({
+      nodeIds: new Set(['b', 'c']),
+      id: 'block',
+      inputs: [{ name: 'b', type: 'input' }],
+      artifacts: [],
+      outcomes: ['c'],
+      ...over,
+    });
+    expect(() => extractSubgraph(extractionDef(), input({ id: '' }))).toThrow(
+      /cannot be blank/
+    );
+    const taken = extractionDef();
+    taken.declarations.push({
+      id: 'block',
+      kind: 'Composite',
+      provenance: 'custom',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      graph: { nodes: [], connections: [] },
+    });
+    expect(() => extractSubgraph(taken, input({}))).toThrow(/already exists/);
+    expect(() =>
+      extractSubgraph(extractionDef(), input({ inputs: [{ name: '', type: 'input' }] }))
+    ).toThrow(/name cannot be blank/);
+    expect(() =>
+      extractSubgraph(
+        extractionDef(),
+        input({ inputs: [
+          { name: 'x', type: 'input' },
+          { name: 'x', type: 'input' },
+        ] })
+      )
+    ).toThrow(/names must be unique/);
+    expect(() =>
+      extractSubgraph(extractionDef(), input({ outcomes: ['', 'c'] }))
+    ).toThrow(/outcome cannot be blank/);
+  });
+
+  it('leaves the result re-referenceable — a second insertCompositeRef appends another ref', () => {
+    const result = extractSubgraph(extractionDef(), {
+      nodeIds: new Set(['b', 'c']),
+      id: 'block',
+      inputs: [{ name: 'b', type: 'input' }],
+      artifacts: [],
+      outcomes: ['c'],
+    });
+    const reReferenced = insertCompositeRef(result.next, 'block');
+    const refs = reReferenced.root.nodes.filter(
+      (node) => node.kind === 'CompositeRef' && node.declarationId === 'block'
+    );
+    expect(refs.map((node) => node.id)).toEqual(['composite-ref', 'composite-ref-2']);
+  });
+
+  it('keeps a valid pre-extraction draft shape-valid post-extraction (rows, ports, sibling loops)', () => {
+    const def = extractionDef();
+    def.declarations.push({
+      id: 'loop-body',
+      kind: 'Composite',
+      provenance: 'custom',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      graph: {
+        nodes: [
+          {
+            id: 'body-step',
+            kind: 'AtomicStage',
+            capability: { id: 'skill:body', version: 'sha256:body' },
+          },
+        ],
+        connections: [],
+      },
+    });
+    def.root.nodes.push({
+      id: 'loop',
+      kind: 'BoundedLoop',
+      body: 'loop-body',
+      limits: { maxIterations: 2, maxActions: 8, budget: 8 },
+      exits: { done: { action: 'exit', outcome: 'done' } },
+    });
+    const loopNode = def.root.nodes[def.root.nodes.length - 1]!;
+
+    const result = extractSubgraph(def, {
+      nodeIds: new Set(['b', 'c']),
+      id: 'block',
+      inputs: [{ name: 'b', type: 'input' }],
+      artifacts: [],
+      outcomes: ['c'],
+    });
+
+    // The sibling BoundedLoop is untouched — same value, same exits.
+    const loopAfter = result.next.root.nodes.find((node) => node.id === 'loop')!;
+    expect(loopAfter).toBe(loopNode);
+    expect(loopAfter).toEqual({
+      id: 'loop',
+      kind: 'BoundedLoop',
+      body: 'loop-body',
+      limits: { maxIterations: 2, maxActions: 8, budget: 8 },
+      exits: { done: { action: 'exit', outcome: 'done' } },
+    });
+
+    // The extracted declaration's rows are unique and non-blank, and every
+    // rewired port names a declared handle of the ref's declaration.
+    const declaration = result.next.declarations.find((d) => d.id === 'block')!;
+    const inputNames = declaration.inputs.map((row) => row.name);
+    expect(new Set(inputNames).size).toBe(inputNames.length);
+    expect(inputNames.every(Boolean)).toBe(true);
+    const outcomeNames = declaration.outcomes;
+    expect(new Set(outcomeNames).size).toBe(outcomeNames.length);
+    expect(outcomeNames.every(Boolean)).toBe(true);
+    for (const connection of result.next.root.connections) {
+      if (connection.to.node === result.refId) {
+        expect(inputNames).toContain(connection.to.port);
+      }
+      if (connection.from.node === result.refId) {
+        expect(outcomeNames).toContain(connection.from.port);
+      }
+    }
   });
 });

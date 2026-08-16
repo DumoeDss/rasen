@@ -397,6 +397,7 @@ import type {
   PipelineDetailResponse,
   ThresholdValue,
   WireBoundedLoopNode,
+  WireConsultationBinding,
   WirePipelineDefinition,
   WirePipelineDefinitionV2,
 } from '../../src/api/types.js';
@@ -5132,5 +5133,512 @@ describe('PipelineCanvasPage — multi-selection', () => {
     expect(flowText).not.toContain('propose');
     expect(flowText).not.toContain('apply');
     expect(container.querySelector('[data-testid="v2-selection-panel"]')).toBeNull();
+  });
+});
+
+describe('PipelineCanvasPage — package into reusable block', () => {
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    __resetLocaleForTesting();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+  });
+
+  afterEach(() => {
+    render(null, container);
+    document.body.removeChild(container);
+    window.history.replaceState({}, '', '/');
+    __resetLocaleForTesting();
+    vi.clearAllMocks();
+  });
+
+  async function clickAndFlush(el: Element | null): Promise<void> {
+    await act(async () => {
+      (el as HTMLElement).click();
+      await flushMicrotasks();
+    });
+  }
+
+  async function setValueAndFlush(
+    el: Element | null,
+    value: string,
+    eventType: 'change' | 'input' = 'change'
+  ): Promise<void> {
+    await act(async () => {
+      const input = el as HTMLInputElement;
+      input.value = value;
+      input.dispatchEvent(new Event(eventType, { bubbles: true }));
+      await flushMicrotasks();
+    });
+  }
+
+  function nodeButton(kind: 'click' | 'augment', id: string): Element | null {
+    return container.querySelector(
+      `[data-testid="mock-node-${kind}"][data-node-id="${id}"]`
+    );
+  }
+
+  /**
+   * The canonical extraction shape: upstream -> work-b -> work-c -> finish.
+   * The middle pair is the cut every happy-path assertion packages.
+   */
+  function extractableDetail(
+    extra: {
+      nodes?: Record<string, unknown>[];
+      consultations?: WireConsultationBinding[];
+    } = {}
+  ): PipelineDetailResponse {
+    const stage = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: 'skill:rasen-apply', version: 'digest-apply' },
+      execution: {
+        version: 1 as const,
+        role: 'implementer' as const,
+        workspace: { access: 'write' as const },
+        retainedExecutionNote: `keep ${id}`,
+      },
+    });
+    const definition = {
+      version: 2 as const,
+      id: 'definition:extract',
+      sourceId: 'fixture:extract',
+      name: 'extract',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [],
+      root: {
+        nodes: [
+          stage('upstream'),
+          stage('work-b'),
+          stage('work-c'),
+          { id: 'finish', kind: 'Finish' as const, outcome: 'done' },
+          ...((extra.nodes ?? []) as never[]),
+        ],
+        connections: [
+          {
+            id: 'upstream:done->work-b:input',
+            from: { node: 'upstream', port: 'done' },
+            to: { node: 'work-b', port: 'input' },
+            condition: 'always',
+          },
+          {
+            id: 'work-b:done->work-c:input',
+            from: { node: 'work-b', port: 'done' },
+            to: { node: 'work-c', port: 'input' },
+          },
+          {
+            id: 'work-c:done->finish:input',
+            from: { node: 'work-c', port: 'done' },
+            to: { node: 'finish', port: 'input' },
+          },
+        ],
+      },
+      ...(extra.consultations ? { consultations: extra.consultations } : {}),
+    };
+    return {
+      ...pipelineDetailFixture,
+      pipeline: {
+        ...pipelineDetailFixture.pipeline,
+        name: 'extract',
+        description: 'Extraction fixture',
+        provenance: 'user' as const,
+        sourceLayer: 'user' as const,
+        stages: [],
+        authoredVersion: 2 as const,
+        normalizedVersion: 2 as const,
+        definitionValid: true,
+        planAvailable: true,
+        executable: false,
+        executionMode: 'unavailable' as const,
+        unavailableReason: 'ecp_v2_runtime_unavailable',
+      },
+      definition,
+      preparation: v2Preparation,
+      editable: true,
+    } as PipelineDetailResponse;
+  }
+
+  async function mountExtractEdit(detail: PipelineDetailResponse): Promise<void> {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(detail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/extract');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+  }
+
+  /** Selects the canonical middle pair (the multi state the panel needs). */
+  async function selectPair(): Promise<void> {
+    await clickAndFlush(await nodeButton('click', 'work-b'));
+    await clickAndFlush(await nodeButton('augment', 'work-c'));
+  }
+
+  /** Selects the pair plus extra node ids (the mixed-kind refusal case). */
+  async function selectWith(extra: readonly string[]): Promise<void> {
+    await selectPair();
+    for (const id of extra) {
+      await clickAndFlush(await nodeButton('augment', id));
+    }
+  }
+
+  async function submittedDefinition(): Promise<WirePipelineDefinitionV2> {
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    return vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+  }
+
+  it('offers the action for a multi selection of plain stages and opens the review with the derived defaults', async () => {
+    await mountExtractEdit(extractableDetail());
+    // A singleton opens the node panel — no summary, no package action.
+    await clickAndFlush(await nodeButton('click', 'work-b'));
+    expect(container.querySelector('[data-testid="v2-node-panel"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="v2-selection-panel-package"]')).toBeNull();
+
+    await clickAndFlush(await nodeButton('augment', 'work-c'));
+    const packageButton = container.querySelector('[data-testid="v2-selection-panel-package"]');
+    expect(packageButton).not.toBeNull();
+    expect(packageButton!.textContent).toContain('Package into reusable block');
+    await clickAndFlush(packageButton);
+
+    const review = container.querySelector('[data-testid="v2-extract-review-panel"]');
+    expect(review).not.toBeNull();
+    expect(
+      (review!.querySelector('[data-testid="v2-extract-review-id"]') as HTMLInputElement).value
+    ).toBe('block');
+    const summary = review!.querySelector('[data-testid="v2-extract-review-summary"]')!
+      .textContent!;
+    expect(summary).toContain('2 stages');
+    expect(summary).toContain('1 internal connection');
+    expect(summary).toContain('cut: 1 input, 1 outcome');
+    expect(
+      (review!.querySelector('[data-testid="v2-extract-review-input-name"]') as HTMLInputElement)
+        .value
+    ).toBe('work-b');
+    expect(
+      (review!.querySelector('[data-testid="v2-extract-review-outcomes"]') as HTMLInputElement)
+        .value
+    ).toBe('work-c');
+  });
+
+  it('offers no package action in the v1 editor even for a multi selection', async () => {
+    const v1Detail = {
+      ...pipelineDetailFixture,
+      pipeline: {
+        ...pipelineDetailFixture.pipeline,
+        provenance: 'user' as const,
+        sourceLayer: 'user' as const,
+      },
+      editable: true,
+    } as PipelineDetailResponse;
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v1Detail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+
+    await clickAndFlush(await nodeButton('click', 'propose'));
+    await clickAndFlush(await nodeButton('augment', 'apply'));
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="v2-selection-panel-package"]')).toBeNull();
+    expect(container.querySelector('[data-testid="v2-selection-panel-refusals"]')).toBeNull();
+  });
+
+  it('names every blocker instead of offering the action — kinds, gate, fan-out, join, consultation', async () => {
+    const cases: Array<{
+      label: string;
+      detail: PipelineDetailResponse;
+      pattern: RegExp;
+      select?: readonly string[];
+    }> = [
+      {
+        label: 'mixed kinds',
+        detail: extractableDetail({
+          nodes: [{ id: 'extra-finish', kind: 'Finish', outcome: 'done' }],
+        }),
+        select: ['extra-finish'],
+        pattern: /Only plain stages can be packaged.*'extra-finish' is a Finish/,
+      },
+      {
+        label: 'outside gate target',
+        detail: extractableDetail({
+          nodes: [
+            {
+              id: 'gate-1',
+              kind: 'Gate',
+              target: 'work-b',
+              outcomes: ['approve'],
+              dispositions: { approve: 'proceed' },
+            },
+          ],
+        }),
+        pattern: /Stage 'work-b' is targeted by Gate 'gate-1' outside the selection/,
+      },
+      {
+        label: 'outside fan-out member',
+        detail: extractableDetail({
+          nodes: [
+            {
+              id: 'fan',
+              kind: 'FanOut',
+              branches: [],
+              concurrencyCap: 1,
+              budget: 1,
+              joinNodeId: 'join-x',
+              members: [
+                {
+                  id: 'unrelated',
+                  hierarchicalPath: 'stage:work-b',
+                  required: true,
+                  condition: 'always',
+                },
+              ],
+            },
+          ],
+        }),
+        pattern: /Stage 'work-b' is a branch or member of FanOut 'fan' outside the selection/,
+      },
+      {
+        label: 'outside join input (prefixed form)',
+        detail: extractableDetail({
+          nodes: [
+            {
+              id: 'join-x',
+              kind: 'Join',
+              inputs: ['stage:work-c'],
+              requiredMembers: [],
+              optionalMembers: [],
+              outcomes: { proceed: 'done', failed: 'failed' },
+            },
+          ],
+        }),
+        pattern: /Stage 'work-c' is an input of Join 'join-x' outside the selection/,
+      },
+      {
+        label: 'consultation binding',
+        detail: extractableDetail({
+          consultations: [
+            {
+              sourceStage: 'work-c',
+              teacherSkill: 'skill:teacher',
+              maxConsultationsPerInvocation: 1,
+              maxTeacherAttemptsPerConsultation: 1,
+            },
+          ],
+        }),
+        pattern: /Stage 'work-c' is referenced by a consultation binding/,
+      },
+    ];
+    for (const testCase of cases) {
+      await mountExtractEdit(testCase.detail);
+      await selectWith(testCase.select ?? []);
+      expect(
+        container.querySelector('[data-testid="v2-selection-panel-package"]'),
+        testCase.label
+      ).toBeNull();
+      const refusals = container.querySelector('[data-testid="v2-selection-panel-refusals"]');
+      expect(refusals, testCase.label).not.toBeNull();
+      expect(refusals!.textContent, testCase.label).toMatch(testCase.pattern);
+      // Refused means unchanged: every node is still on the canvas.
+      const flowText = container.querySelector('[data-testid="mock-reactflow"]')!
+        .textContent!;
+      expect(flowText, testCase.label).toContain('work-b');
+      expect(flowText, testCase.label).toContain('work-c');
+      render(null, container);
+      document.body.removeChild(container);
+      container = document.createElement('div');
+      document.body.appendChild(container);
+    }
+  });
+
+  it('confirming the review packages the pair onto the EDITED outcome, selects the ref, and keeps the declaration reusable', async () => {
+    await mountExtractEdit(extractableDetail());
+    await selectPair();
+    await clickAndFlush(container.querySelector('[data-testid="v2-selection-panel-package"]'));
+
+    // Rename the derived outcome — NameListField commits on blur, exactly
+    // like the declarations editor's own outcomes field.
+    const outcomes = container.querySelector(
+      '[data-testid="v2-extract-review-outcomes"]'
+    ) as HTMLInputElement;
+    outcomes.focus();
+    await setValueAndFlush(outcomes, 'complete', 'input');
+    await act(async () => {
+      outcomes.blur();
+      await flushMicrotasks();
+    });
+
+    await clickAndFlush(container.querySelector('[data-testid="v2-extract-review-confirm"]'));
+
+    // The review closed and the success toast names the declaration.
+    expect(container.querySelector('[data-testid="v2-extract-review-panel"]')).toBeNull();
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toContain(
+      "Packaged 2 stages into 'block'."
+    );
+
+    // The ref IS the selection and its panel is open (both selection truths
+    // written in one tick — the pairing discipline).
+    expect(
+      container
+        .querySelector('[data-testid="mock-node"][data-node-id="composite-ref"]')
+        ?.getAttribute('data-selected')
+    ).toBe('true');
+    expect(
+      container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-node')
+    ).toBe('composite-ref');
+    // The summary closed: the selection is a singleton now.
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).toBeNull();
+
+    // The declarations panel lists the new custom row; its insert action adds
+    // a second ref (no capability hole — the explicit path still works).
+    const row = container.querySelector(
+      '[data-testid="declaration-row"][data-declaration-id="block"]'
+    );
+    expect(row).not.toBeNull();
+    expect(row!.getAttribute('data-provenance')).toBe('custom');
+    await clickAndFlush(
+      container.querySelector(
+        '[data-testid="declaration-insert-ref"][data-declaration-id="block"]'
+      )
+    );
+    const flowText = container.querySelector('[data-testid="mock-reactflow"]')!.textContent!;
+    expect(flowText).toContain('composite-ref');
+    expect(flowText).toContain('composite-ref-2');
+
+    // The definition actually sent to validation: the rewired crossing uses
+    // the edited outcome as its source port, the body is verbatim, and NO
+    // moved node or created node carries legacyRuntimeOwner (the POST-body
+    // half of the two-layer guard).
+    const submitted = await submittedDefinition();
+    const block = submitted.declarations.find((declaration) => declaration.id === 'block')!;
+    expect(block.provenance).toBe('custom');
+    expect(block.inputs).toEqual([{ name: 'work-b', type: 'input' }]);
+    expect(block.outcomes).toEqual(['complete']);
+    expect(block.graph.nodes.map((node) => node.id)).toEqual(['work-b', 'work-c']);
+    expect(block.graph.nodes[0]).toHaveProperty('execution.retainedExecutionNote', 'keep work-b');
+    expect(submitted.root.connections.map((connection) => connection.id)).toEqual([
+      'upstream:done->composite-ref:work-b',
+      'composite-ref:complete->finish:input',
+    ]);
+    expect(
+      submitted.root.connections.find(
+        (connection) => connection.id === 'upstream:done->composite-ref:work-b'
+      )
+    ).toHaveProperty('condition', 'always');
+    const everyNode = [
+      ...submitted.root.nodes,
+      ...submitted.declarations.flatMap((declaration) => declaration.graph.nodes),
+    ];
+    expect(everyNode.length).toBeGreaterThan(0);
+    for (const node of everyNode) {
+      expect(node).not.toHaveProperty('legacyRuntimeOwner');
+    }
+  });
+
+  it('renders byte-identical refusals as distinct lines with index keys (review m1)', async () => {
+    // Two consultation bindings on the SAME selected stage emit two
+    // byte-identical refusal strings — the refusal list must still render
+    // BOTH lines (a string key would collide; review round 1, m1).
+    const detail = extractableDetail({
+      consultations: [
+        {
+          sourceStage: 'work-c',
+          teacherSkill: 'skill:teacher-a',
+          maxConsultationsPerInvocation: 1,
+          maxTeacherAttemptsPerConsultation: 1,
+        },
+        {
+          sourceStage: 'work-c',
+          teacherSkill: 'skill:teacher-b',
+          maxConsultationsPerInvocation: 2,
+          maxTeacherAttemptsPerConsultation: 1,
+        },
+      ],
+    });
+    await mountExtractEdit(detail);
+    await selectPair();
+    const refusals = () =>
+      Array.from(
+        container.querySelectorAll('[data-testid="v2-selection-panel-refusals"] > p')
+      );
+    let lines = refusals();
+    expect(lines).toHaveLength(2);
+    expect(lines[0]!.textContent).toBe(
+      "Stage 'work-c' is referenced by a consultation binding."
+    );
+    expect(lines[1]!.textContent).toBe(lines[0]!.textContent);
+
+    // Churn the list through a different shape and back — the keyed
+    // reconciliation over a duplicate-string list must keep every line.
+    await clickAndFlush(await nodeButton('augment', 'finish'));
+    lines = refusals();
+    expect(lines).toHaveLength(3);
+    expect(lines[0]!.textContent).toMatch(/Only plain stages/);
+    expect(lines[1]!.textContent).toBe(
+      "Stage 'work-c' is referenced by a consultation binding."
+    );
+    expect(lines[2]!.textContent).toBe(lines[1]!.textContent);
+
+    await clickAndFlush(await nodeButton('augment', 'finish'));
+    lines = refusals();
+    expect(lines).toHaveLength(2);
+    expect(lines.every((line) => line.textContent === lines[0]!.textContent)).toBe(
+      true
+    );
+  });
+
+  it('cancel discards; a duplicate-id confirm toasts the model message, keeps the review open, and leaves the draft unchanged', async () => {
+    const detail = extractableDetail();
+    (detail.definition as WirePipelineDefinitionV2).declarations.push({
+      id: 'block',
+      kind: 'Composite',
+      provenance: 'custom',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      graph: { nodes: [], connections: [] },
+    });
+    await mountExtractEdit(detail);
+    await selectPair();
+    await clickAndFlush(container.querySelector('[data-testid="v2-selection-panel-package"]'));
+
+    // The default id skips the taken one.
+    expect(
+      (container.querySelector('[data-testid="v2-extract-review-id"]') as HTMLInputElement)
+        .value
+    ).toBe('block-2');
+
+    // Cancel: the draft is untouched.
+    await clickAndFlush(container.querySelector('[data-testid="v2-extract-review-cancel"]'));
+    expect(container.querySelector('[data-testid="v2-extract-review-panel"]')).toBeNull();
+    let submitted = await submittedDefinition();
+    expect(submitted.declarations.map((declaration) => declaration.id)).toEqual(['block']);
+    expect(submitted.root.nodes.map((node) => node.id)).toContain('work-b');
+
+    // A forced duplicate id: the model refuses on confirm, the message
+    // surfaces (toast + in-dialog), and the review keeps its edits. (The
+    // pair selection survived the cancel — augmenting would toggle it off.)
+    await clickAndFlush(container.querySelector('[data-testid="v2-selection-panel-package"]'));
+    const idInput = container.querySelector(
+      '[data-testid="v2-extract-review-id"]'
+    ) as HTMLInputElement;
+    await setValueAndFlush(idInput, 'block', 'input');
+    await clickAndFlush(container.querySelector('[data-testid="v2-extract-review-confirm"]'));
+
+    const review = container.querySelector('[data-testid="v2-extract-review-panel"]');
+    expect(review).not.toBeNull();
+    expect(
+      review!.querySelector('[data-testid="v2-extract-review-error"]')!.textContent
+    ).toMatch(/Declaration id 'block' already exists/);
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toMatch(
+      /already exists/
+    );
+    expect(
+      (review!.querySelector('[data-testid="v2-extract-review-id"]') as HTMLInputElement).value
+    ).toBe('block');
+
+    submitted = await submittedDefinition();
+    expect(submitted.declarations).toHaveLength(1);
+    expect(submitted.root.nodes.map((node) => node.id)).toContain('work-b');
+    expect(submitted.root.nodes.map((node) => node.id)).toContain('work-c');
   });
 });

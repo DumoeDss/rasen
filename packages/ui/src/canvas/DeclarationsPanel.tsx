@@ -237,8 +237,12 @@ export function DeclarationsPanel({
   );
 }
 
-/** One editable comma-separated name list (outcomes). */
-function NameListField({
+/**
+ * One editable comma-separated name list (outcomes). Exported for the
+ * extraction review dialog (`V2ExtractReviewPanel`), which reuses the exact
+ * row UX — one implementation of "how an author edits a contract list".
+ */
+export function NameListField({
   label,
   testId,
   value,
@@ -284,8 +288,10 @@ function NameListField({
 /**
  * Editable `name: type` port rows with add/remove/rename, used for both the
  * declared inputs and the declared artifacts (identical shape on the wire).
+ * Exported for the extraction review dialog (`V2ExtractReviewPanel`), which
+ * reuses the exact row UX.
  */
-function PortListEditor({
+export function PortListEditor({
   label,
   testIdPrefix,
   ports,
