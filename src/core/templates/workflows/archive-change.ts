@@ -16,6 +16,8 @@ export function getArchiveChangeSkillTemplate(): SkillTemplate {
 
 ${STORE_SELECTION_GUIDANCE}
 
+**Store finalization hard gate:** decide the outcome BEFORE any planning, Git, spec, or filesystem mutation. If this archive addresses a Store v2 member project — you threaded \`--project <id>\` (a project registered via \`rasen store add-project\`), alone or as the \`--store <id> --project <id>\` pair — the change is FINALIZED rather than merely archived: you MUST obtain exactly one explicitly declared outcome from the user — \`landed\`, \`superseded\`, \`cancelled\`, or \`abandoned\` — and pass it as \`--outcome\`. NEVER choose one yourself, never infer one from a ship log, a merged pull request, or completed tasks, and never default to \`landed\`. Every non-landed outcome additionally requires a non-empty \`--reason\`, and \`superseded\` additionally requires \`--by <changeInstanceId>\`; pass them as command options rather than writing them into an artifact. A \`landed\` outcome must PROVE its code commit is reachable from the target line's code ref — if the CLI refuses, surface the diagnostic and stop; do not retry with another outcome and do not add \`--skip-specs\`. If the selected store is a legacy flat Store, REFUSE with \`legacy_flat_store_requires_migration\` — the legacy flat Store planning tree is read-only until \`rasen store migrate-layout <store-id>\` has migrated it. Every other scope (a standalone project, the bare store-aggregate root) archives as before, with no outcome required or recorded.
+
 **Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
 **Steps**

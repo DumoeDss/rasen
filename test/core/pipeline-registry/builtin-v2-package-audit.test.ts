@@ -27,7 +27,7 @@ const AUTO_DECOMPOSE_GIT_BLOB =
 
 const EXACT_CAPABILITY_PINS = {
   'skill:rasen-apply-change': 'sha256:dd1b0845380d232d173d7c28873738aff2a798defc13b83bf1041a39d6a6a79f',
-  'skill:rasen-archive-change': 'sha256:4883a8d8e4c61343c87e3e0bdd194bc5d48e8b4cbc7ded32738b7652bec93b13',
+  'skill:rasen-archive-change': 'sha256:bf36a873d7af835e3622da50a45e391aecc70b908ce9b51b19567c847b9dfdd8',
   'skill:rasen-benchmark': 'sha256:34927b5d7713076287cad9cd71e03e0892efec7911080795d4294c9fe0e8ad1b',
   'skill:rasen-cso': 'sha256:1f89c4fadfd9ad155f5af3e5835799201d347b9dbe2a670c0b076193ce219808',
   'skill:rasen-design-review': 'sha256:588c9a8901527e1cfb9b0f814f8759a79d063536126c13eddb3240de5ef79c52',
