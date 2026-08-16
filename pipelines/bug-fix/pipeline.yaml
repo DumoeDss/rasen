@@ -142,7 +142,7 @@ root:
       kind: AtomicStage
       capability:
         id: skill:rasen-archive-change
-        version: sha256:4883a8d8e4c61343c87e3e0bdd194bc5d48e8b4cbc7ded32738b7652bec93b13
+        version: sha256:bf36a873d7af835e3622da50a45e391aecc70b908ce9b51b19567c847b9dfdd8
       execution:
         version: 1
         role: shipper
