@@ -10,6 +10,7 @@ import type {
   PipelineAgentRuntime,
   PipelineAgentRuntimeSandbox,
   PipelineAgentRuntimeSessionReuse,
+  PipelineCatalogSkill,
   PipelineStageHandoffConfig,
   PipelineVerifyPolicy,
   ThresholdValue,
@@ -690,21 +691,6 @@ export function isV2EditableNodeKind(
 }
 
 /**
- * The kinds the ROOT palette offers — the editable vocabulary, in display
- * order. All eight closed v2 kinds are authored by this slice.
- */
-export const V2_ROOT_PALETTE_KINDS: readonly V2EditableNodeKind[] = [
-  'AtomicStage',
-  'CompositeRef',
-  'BoundedLoop',
-  'Choice',
-  'FanOut',
-  'Join',
-  'Gate',
-  'Finish',
-];
-
-/**
  * The kinds a DECLARATION BODY palette offers (ECP-2 task 8.6): `AtomicStage`
  * only — "`CompositeRef`, `BoundedLoop`, `Choice`, `FanOut`, and `Join` SHALL
  * NOT be available in the body palette" (`executable-custom-composite`,
@@ -718,21 +704,71 @@ export const V2_ROOT_PALETTE_KINDS: readonly V2EditableNodeKind[] = [
 export const V2_BODY_PALETTE_KINDS: readonly V2EditableNodeKind[] = ['AtomicStage'];
 
 /**
- * The declaration a root-level `CompositeRef` may reference, if any: a custom
- * declaration, or a built-in one that actually carries a body graph.
- *
- * Exported so the palette's availability and the insertion itself read the SAME
- * rule — a palette that decided this for itself would be a second
- * implementation of "can a CompositeRef be inserted right now", and the two
- * would drift.
+ * The author-meaningful gestures the ROOT palette offers (design D2). This
+ * replaces `V2_ROOT_PALETTE_KINDS`, which mirrored the eight IR node kinds
+ * 1:1 — an author never types "FanOut" or "Join", and the v2 Canvas should
+ * not make them learn to. Lives beside `V2_BODY_PALETTE_KINDS` for the same
+ * "one home" reason that comment already states: this portfolio has already
+ * paid for drifting encodings of "which vocabulary is offered where", and a
+ * `V2_ROOT_PALETTE_KINDS` left behind alongside this would be exactly that
+ * drift again.
  */
-export function referenceableDeclaration(
-  def: WirePipelineDefinitionV2
-): WireCompositeDeclaration | undefined {
-  return (def.declarations ?? []).find(
-    (declaration) =>
-      declaration.provenance !== 'built-in' || declaration.graph.nodes.length > 0
-  );
+export type V2RootGesture = 'stage' | 'parallel' | 'loop' | 'finish';
+
+export const V2_ROOT_PALETTE_GESTURES: readonly V2RootGesture[] = [
+  'stage',
+  'parallel',
+  'loop',
+  'finish',
+];
+
+/**
+ * Whether the Stage gesture may bind this catalog skill: it must be enabled in
+ * the active profile AND carry an exact capability revision.
+ *
+ * Exported so the palette's card greying and the page's `exactCapabilities()`
+ * — which is what produces the `stage` entry in `unavailableRootGestures`
+ * below — read the SAME rule. Two encodings of "may this skill be bound" in
+ * two modules is precisely the drift this module's vocabulary comment warns
+ * about, and it is how `PalettePanel.tsx` came to contradict its own doc
+ * comment in the first place.
+ */
+export function isBindableSkill(skill: PipelineCatalogSkill): boolean {
+  return Boolean(skill.enabled && skill.capability);
+}
+
+/**
+ * The gestures this draft cannot accept right now, and why — one rule read
+ * by BOTH the palette's enablement and the insertion helpers below, so the
+ * two can never drift the way `PalettePanel.tsx:48-51`'s hardcoded check
+ * used to drift from its own doc comment.
+ */
+export function unavailableRootGestures(
+  def: WirePipelineDefinitionV2,
+  input: { exactCapabilities: readonly { id: string; version: string }[] }
+): readonly V2RootGesture[] {
+  const unavailable: V2RootGesture[] = [];
+  if (input.exactCapabilities.length === 0) unavailable.push('stage');
+  if (!def.root.nodes.some((node) => node.kind === 'AtomicStage')) {
+    unavailable.push('parallel');
+  }
+  if (!loopBodyDeclaration(def)) unavailable.push('loop');
+  return unavailable;
+}
+
+/**
+ * Whether a declaration may be referenced by a root-level `CompositeRef`: a
+ * custom declaration, or a built-in one that actually carries a body graph.
+ *
+ * Exported so a declaration row's insert action and `insertCompositeRef`
+ * itself read the SAME rule — two independent readings of "can this
+ * declaration be referenced right now" is exactly the drift this module's
+ * vocabulary comment warns about.
+ */
+export function isReferenceableDeclaration(
+  declaration: WireCompositeDeclaration
+): boolean {
+  return declaration.provenance !== 'built-in' || declaration.graph.nodes.length > 0;
 }
 
 /**
@@ -745,6 +781,115 @@ export function loopBodyDeclaration(
   return (def.declarations ?? []).find(
     (declaration) => declaration.graph.nodes.length > 0
   );
+}
+
+/**
+ * Gesture → IR composition (design D3). Each composes exactly the IR shape
+ * the ROOT palette used to build inline in `PipelineCanvasPage.tsx`'s
+ * `addV2RootNode` switch, now owned here so no panel re-decides a rule the
+ * model owns. Each throws a plain `Error` with an author-readable message on
+ * refusal; the page surfaces it as a toast.
+ */
+
+/** Stage gesture: one `AtomicStage` bound to the author's chosen capability. */
+export function addAtomicStageForCapability(
+  def: WirePipelineDefinitionV2,
+  capability: { id: string; version: string }
+): WirePipelineDefinitionV2 {
+  const id = v2NodeIdFor('AtomicStage', def);
+  const node: WireAtomicStageNode = {
+    id,
+    kind: 'AtomicStage',
+    capability: { id: capability.id, version: capability.version },
+    execution: {
+      version: 1,
+      role: 'implementer',
+      workspace: { access: 'write' },
+    },
+  };
+  return addV2Node(def, node);
+}
+
+/**
+ * Parallel gesture: a complete fan-out + join frontier over every root
+ * `AtomicStage`, created as one transaction via `createParallelPair`.
+ */
+export function addParallelFrontier(
+  def: WirePipelineDefinitionV2
+): WirePipelineDefinitionV2 {
+  const members = def.root.nodes
+    .filter((node): node is WireAtomicStageNode => node.kind === 'AtomicStage')
+    .map((node) => node.id);
+  if (members.length === 0) {
+    throw new Error('Add an AtomicStage before authoring a parallel frontier.');
+  }
+  const fanOutId = v2NodeIdFor('FanOut', def);
+  const joinId = v2NodeIdFor('Join', def);
+  return createParallelPair(def, {
+    fanOutId,
+    joinId,
+    memberNodeIds: members,
+    requiredMemberIds: [members[0]!],
+    concurrencyCap: Math.max(1, Math.min(3, members.length)),
+    budget: Math.max(1, members.length),
+    outcomes: {
+      proceed: def.outcomes[0] ?? 'done',
+      failed: def.outcomes[1] ?? 'failed',
+    },
+  });
+}
+
+/** Loop gesture: a `BoundedLoop` over the first declaration carrying a body graph. */
+export function addBoundedLoopOverDeclaration(
+  def: WirePipelineDefinitionV2
+): WirePipelineDefinitionV2 {
+  const declaration = loopBodyDeclaration(def);
+  if (!declaration) {
+    throw new Error('No declaration is available for a loop body.');
+  }
+  const id = v2NodeIdFor('BoundedLoop', def);
+  const node: WireBoundedLoopNode = {
+    id,
+    kind: 'BoundedLoop',
+    body: declaration.id,
+    limits: { maxIterations: 3, maxActions: 12, budget: 12 },
+    lifecycle: createDefaultBoundedLoopLifecycle(),
+    exits: Object.fromEntries(
+      declaration.outcomes.map((outcome, index) => [
+        outcome,
+        index === declaration.outcomes.length - 1
+          ? { action: 'exit' as const, outcome: def.outcomes[0] ?? 'done' }
+          : { action: 'continue' as const },
+      ])
+    ),
+  };
+  return addV2Node(def, node);
+}
+
+/** Finish gesture: a terminal node mapped to the definition's first outcome. */
+export function addFinishNode(def: WirePipelineDefinitionV2): WirePipelineDefinitionV2 {
+  const id = v2NodeIdFor('Finish', def);
+  return addV2Node(def, { id, kind: 'Finish', outcome: def.outcomes[0] ?? 'done' });
+}
+
+/**
+ * Declaration-row gesture (design D6): inserts a `CompositeRef` referencing
+ * the CHOSEN declaration — the author picks the row, not the editor picking
+ * the first referenceable one on their behalf.
+ */
+export function insertCompositeRef(
+  def: WirePipelineDefinitionV2,
+  declarationId: string
+): WirePipelineDefinitionV2 {
+  const declaration = (def.declarations ?? []).find((d) => d.id === declarationId);
+  if (!declaration) {
+    throw new Error(`Declaration '${declarationId}' does not exist.`);
+  }
+  if (!isReferenceableDeclaration(declaration)) {
+    throw new Error(`Declaration '${declarationId}' has no body graph to reference.`);
+  }
+  const id = v2NodeIdFor('CompositeRef', def);
+  return addV2Node(def, { id, kind: 'CompositeRef', declarationId: declaration.id });
 }
 
 /** Appends one authored v2 root node without touching declarations or graph extensions. */
@@ -1066,6 +1211,56 @@ export function removeV2Node(
   };
 }
 
+/**
+ * Gate as a stage property (design D4). `GateNode` already *names* the stage
+ * it guards (`target`), which is why it reads naturally as that stage's
+ * property — in v1 it literally was one (`gate: boolean`).
+ */
+
+/** The `Gate` node targeting this stage, if any. */
+export function gateForStage(
+  def: WirePipelineDefinitionV2,
+  stageId: string
+): WireGateNode | undefined {
+  return def.root.nodes.find(
+    (node): node is WireGateNode => node.kind === 'Gate' && node.target === stageId
+  );
+}
+
+/**
+ * Turns approval on or off for a root `AtomicStage`. Enabling appends a
+ * `Gate` with the Canvas's own default decision vocabulary
+ * (`approved`/`rejected`, NOT `normalizeV1`'s `approve`/`reject`) so no
+ * definition previously authored in the Canvas changes meaning. Disabling
+ * routes through `removeV2Node`, which already drops the Gate's incident
+ * connections. Enabling twice, or disabling with no gate present, is a no-op.
+ */
+export function setStageGate(
+  def: WirePipelineDefinitionV2,
+  stageId: string,
+  enabled: boolean
+): WirePipelineDefinitionV2 {
+  const stage = def.root.nodes.find((node) => node.id === stageId);
+  if (!stage || stage.kind !== 'AtomicStage') {
+    throw new Error(`'${stageId}' is not a root AtomicStage.`);
+  }
+  const existing = gateForStage(def, stageId);
+  if (enabled) {
+    if (existing) return def;
+    const id = v2NodeIdFor('Gate', def);
+    const gate: WireGateNode = {
+      id,
+      kind: 'Gate',
+      target: stageId,
+      outcomes: ['approved', 'rejected'],
+      dispositions: { approved: 'proceed', rejected: 'escalate' },
+    };
+    return addV2Node(def, gate);
+  }
+  if (!existing) return def;
+  return removeV2Node(def, existing.id);
+}
+
 /** Renames a root node and every structured reference owned by the draft. */
 export function renameV2Node(
   def: WirePipelineDefinitionV2,
@@ -1162,6 +1357,141 @@ export function removeV2Connection(
       ),
     },
   };
+}
+
+/**
+ * Choice as a connection condition (design D5). Splicing rewrites one
+ * connection `A:pOut -> B:pIn` into a branch point: `A:pOut -> choice:input`
+ * and `choice:matched -> B:pIn`. Shape and vocabulary deliberately match what
+ * `normalizeV1()` writes for a v1 `condition:` (`definition.ts:3581-3590`),
+ * with ONE deliberate omission: `legacyRuntimeOwner` is never written.
+ * `orchestrationEvaluatorCapabilityFor()` (`definition.ts:220-228`) reads its
+ * ABSENCE as "authored, therefore requires a `choice-select` evaluator" —
+ * forging it would silently exempt an authored Choice from that requirement.
+ */
+export function spliceConditionOntoConnection(
+  def: WirePipelineDefinitionV2,
+  connectionId: string,
+  expression: string
+): WirePipelineDefinitionV2 {
+  const connection = def.root.connections.find((c) => c.id === connectionId);
+  if (!connection) {
+    throw new Error(`Connection '${connectionId}' does not exist.`);
+  }
+  const trimmed = expression.trim();
+  if (!trimmed) {
+    throw new Error('A branch condition cannot be blank.');
+  }
+  const sourceNode = def.root.nodes.find((n) => n.id === connection.from.node);
+  const targetNode = def.root.nodes.find((n) => n.id === connection.to.node);
+  if (
+    !sourceNode ||
+    !targetNode ||
+    !isV2EditableNodeKind(sourceNode.kind) ||
+    !isV2EditableNodeKind(targetNode.kind)
+  ) {
+    throw new Error('This connection touches a preserved read-only node.');
+  }
+  const choiceId = v2NodeIdFor('Choice', def);
+  // `expression` is carried through `WireDefinitionNodeBase`'s index
+  // signature, the same mechanism `normalizeV1()` relies on — no typed
+  // interface change is needed and none is made.
+  const choice: WireDefinitionNode = {
+    id: choiceId,
+    kind: 'Choice',
+    outcomes: ['matched', 'skipped'],
+    expression: trimmed,
+  } as WireDefinitionNode;
+  let next = removeV2Connection(def, connectionId);
+  next = addV2Node(next, choice);
+  const intoChoice: WireDefinitionConnection = {
+    id: v2ConnectionIdFor(next, {
+      source: connection.from.node,
+      sourcePort: connection.from.port,
+      target: choiceId,
+      targetPort: CONTROL_TARGET_PORT,
+    }),
+    from: { node: connection.from.node, port: connection.from.port },
+    to: { node: choiceId, port: CONTROL_TARGET_PORT },
+  };
+  next = addV2Connection(next, intoChoice);
+  const outOfChoice: WireDefinitionConnection = {
+    id: v2ConnectionIdFor(next, {
+      source: choiceId,
+      sourcePort: 'matched',
+      target: connection.to.node,
+      targetPort: connection.to.port,
+    }),
+    from: { node: choiceId, port: 'matched' },
+    to: { node: connection.to.node, port: connection.to.port },
+  };
+  return addV2Connection(next, outOfChoice);
+}
+
+/**
+ * Removes a spliced Choice and restores the direct connection from its
+ * inbound source to its `matched` destination. Refuses, naming the wired
+ * branch, when any outbound connection uses a port other than `matched` —
+ * clearing the condition must never silently discard a wired `skipped`
+ * branch.
+ *
+ * The arity guards below COUNT rather than `find`, and that is load-bearing:
+ * `removeV2Node` drops EVERY connection incident on the Choice, while only one
+ * inbound/`matched` pair can be restored. `onConnect` imposes no per-port arity
+ * limit and `v2ConnectionIdFor` keys on both endpoints, so a second inbound
+ * edge — or a `matched` port fanning out to a second target — is genuinely
+ * reachable through ordinary drags, and a `find`-based restore would delete it
+ * with no refusal and no toast. That is exactly the silent discard this
+ * capability's own SHALL forbids.
+ */
+export function unspliceChoice(
+  def: WirePipelineDefinitionV2,
+  choiceId: string
+): WirePipelineDefinitionV2 {
+  const choice = def.root.nodes.find((node) => node.id === choiceId);
+  if (!choice || choice.kind !== 'Choice') {
+    throw new Error(`'${choiceId}' is not a Choice node.`);
+  }
+  const inboundAll = def.root.connections.filter((c) => c.to.node === choiceId);
+  const outbound = def.root.connections.filter((c) => c.from.node === choiceId);
+  const matchedAll = outbound.filter((c) => c.from.port === 'matched');
+  const strayOut = outbound.filter((c) => c.from.port !== 'matched');
+  if (strayOut.length > 0) {
+    throw new Error(
+      `Cannot remove this condition: branch '${strayOut[0]!.from.port}' is still wired to '${strayOut[0]!.to.node}'.`
+    );
+  }
+  if (inboundAll.length > 1) {
+    throw new Error(
+      `Cannot remove this condition: '${choiceId}' has ${inboundAll.length} incoming connections (${inboundAll
+        .map((c) => `'${c.from.node}'`)
+        .join(', ')}); only one can be restored, so disconnect the others first.`
+    );
+  }
+  if (matchedAll.length > 1) {
+    throw new Error(
+      `Cannot remove this condition: branch 'matched' is wired to ${matchedAll.length} targets (${matchedAll
+        .map((c) => `'${c.to.node}'`)
+        .join(', ')}); only one can be restored, so disconnect the others first.`
+    );
+  }
+  const inbound = inboundAll[0];
+  const matchedOut = matchedAll[0];
+  let next = removeV2Node(def, choiceId);
+  if (inbound && matchedOut) {
+    const restored: WireDefinitionConnection = {
+      id: v2ConnectionIdFor(next, {
+        source: inbound.from.node,
+        sourcePort: inbound.from.port,
+        target: matchedOut.to.node,
+        targetPort: matchedOut.to.port,
+      }),
+      from: { node: inbound.from.node, port: inbound.from.port },
+      to: { node: matchedOut.to.node, port: matchedOut.to.port },
+    };
+    next = addV2Connection(next, restored);
+  }
+  return next;
 }
 
 const V2_NODE_ID_BASE: Record<V2EditableNodeKind, string> = {
