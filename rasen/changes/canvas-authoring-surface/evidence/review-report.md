@@ -806,3 +806,50 @@ The fix is to raise that test's budget — one line, and outside this change's s
 
 Typecheck was not re-run this round: the fix delta is one markdown file and one test file, and both
 were exercised by the runs above.
+
+## CORRECTION to the section above — the cliff-edge conclusion was wrong
+
+Appended, not rewritten: the reading above stands as written so the record shows what was
+concluded, what contradicted it, and how it resolved.
+
+**Retracted:** "this test's real cost on this machine is 5.0–7.7s against a 5000ms budget… not
+occasionally unlucky, it is permanently at the cliff edge", and the recommendation to open a
+separate change raising `testTimeout`. **Do not act on that recommendation. The test is not
+broken and no timeout change is warranted.**
+
+The LEAD measured `test/i18n/catalog.test.ts` in isolation four times and got 12 passed at
+139 / 296 / 160 / 104 ms. I re-measured four times myself, same command, after the contending
+load had cleared:
+
+```
+cd packages/ui && pnpm exec vitest run test/i18n/catalog.test.ts
+  run 1: 12 passed, tests 235ms
+  run 2: 12 passed, tests  73ms
+  run 3: 12 passed, tests  93ms
+  run 4: 12 passed, tests 238ms
+```
+
+**73–238 ms against a 5000 ms budget — 20-68× under, not at its edge.** My own numbers now
+reproduce the LEAD's and refute my earlier reading. The 5.05s and 7.69s figures were artifacts of
+a saturated machine: a ~10k-test root suite was running in another session while I measured.
+
+**The corrected conclusion is my round-1 position, unchanged:** these were machine-load contention
+timeouts, environmental, not a property of the test and not caused by this branch. The round-2
+"sharpening" overshot on a contaminated measurement.
+
+**Why the error survived my own guard.** This is the third instance of one error class in this
+review, and the only one I did not catch myself. I flagged it twice — a mutation landing on the
+wrong rule, then a two-file "isolation" run that was not isolated — and then committed it again at
+a larger scale: I controlled for the confound *inside my own vitest invocation* (parallel test
+files) and never considered load *outside* it. A single failing measurement that contradicts a
+prior green run is a claim about the environment, and it needs the environment controlled or at
+minimum re-measured later before it becomes a conclusion. One run is an observation; I promoted it
+to a characterization on the strength of a plausible story.
+
+**The nuance that survives, correctly scaled:** this branch does add `V2ConnectionPanel.tsx` and
+~600 `src` lines to the tree this test scans, so it does make the test marginally more expensive.
+At 73–238 ms against 5000 ms that is noise — nowhere near the budget, and no reason to act.
+
+Nothing else in this report is affected. R1 and R2 remain confirmed-resolved on the evidence
+recorded above, and the full-suite failures observed during round 2 remain what round 1 called
+them: load-contention timeouts in files this branch does not touch.
