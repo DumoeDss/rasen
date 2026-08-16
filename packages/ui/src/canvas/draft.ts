@@ -327,6 +327,38 @@ export function bodyWouldCreateCycle(
 }
 
 /**
+ * The region a refused back-edge `from -> to` closes
+ * (canvas-backedge-loop-inference design D2): `{to, from}` plus every node
+ * on a path between them — `{n | to ⇝* n ∧ n ⇝* from}` — computed over the
+ * SAME adjacency builder {@link wouldCreateCycle} uses, so the region can
+ * never disagree with the rule that recognized the draw as loop intent.
+ * Both endpoints are always members (the existing path `to ⇝* from` is what
+ * made the draw a refusal); a self-loop draw (`from === to`) yields exactly
+ * that one node. Insertion order follows the draft's node order, so the set
+ * is deterministic across runs.
+ */
+export function backedgeRegion(
+  def: WirePipelineDefinition,
+  from: string,
+  to: string
+): Set<string> {
+  const adjacency = buildAdjacency(def);
+  const region = new Set<string>([to, from]);
+  const nodeIds = isV1Definition(def)
+    ? def.stages.map((stage) => stage.id)
+    : def.root.nodes.map((node) => node.id);
+  for (const node of nodeIds) {
+    if (region.has(node)) continue;
+    // to ⇝* node (node is downstream of the edge's target) AND node ⇝* from
+    // (node is upstream of the edge's source) — node lies on the cycle.
+    if (reachesThrough(adjacency, node, to) && reachesThrough(adjacency, from, node)) {
+      region.add(node);
+    }
+  }
+  return region;
+}
+
+/**
  * Generates a stage id from a skill id (lowercased, non-id characters
  * collapsed to `-`), uniquified against the draft's existing stage ids with a
  * numeric suffix. Panel-editable afterward via `renameStage`.
@@ -2752,11 +2784,47 @@ export interface SubgraphExtractionResult {
  * and the rewritten endpoint changed (`v2ConnectionIdFor` convention). Nothing
  * is stamped `legacyRuntimeOwner` — the ref is built by `insertCompositeRef`
  * with exactly `{ id, kind, declarationId }`.
+ *
+ * Internally two steps (canvas-backedge-loop-inference design D3) —
+ * {@link extractSubgraphIntoDeclaration} (validate + declare + remove from
+ * root) and {@link rewireCrossingsOnto} (the positional cut rewire,
+ * parameterized by the replacement node) — so the back-edge loop path reuses
+ * the same rules with a `BoundedLoop` as the replacement instead of
+ * duplicating them. One implementation of every rule; only the replacement
+ * node differs.
  */
 export function extractSubgraph(
   def: WirePipelineDefinitionV2,
   input: SubgraphExtractionInput
 ): SubgraphExtractionResult {
+  const derived = deriveSubgraphContract(def, input.nodeIds);
+  const { next: declared, declarationId } = extractSubgraphIntoDeclaration(def, input);
+  // Appended through the same gesture `insertCompositeRef` runs, so its
+  // existence/referenceability checks execute against the just-created
+  // declaration; the id minted here is the one it appends (same root state).
+  const refId = v2NodeIdFor('CompositeRef', declared);
+  const next = rewireCrossingsOnto(
+    insertCompositeRef(declared, declarationId),
+    def,
+    input.nodeIds,
+    refId,
+    input,
+    derived
+  );
+  return { next, declarationId, refId };
+}
+
+/**
+ * Extraction step one: re-run every refusal and id/row rule, then move the
+ * node set into a new custom Composite declaration and out of the root graph
+ * (verbatim values, ids included). Leaves the replacement to the caller —
+ * `extractSubgraph` inserts a `CompositeRef`, the back-edge loop path mints a
+ * `BoundedLoop`.
+ */
+function extractSubgraphIntoDeclaration(
+  def: WirePipelineDefinitionV2,
+  input: SubgraphExtractionInput
+): { next: WirePipelineDefinitionV2; declarationId: string } {
   const refusals = subgraphExtractionRefusalsForNodeIds(def, input.nodeIds);
   if (refusals.length > 0) {
     throw new Error(refusals.join(' '));
@@ -2771,8 +2839,6 @@ export function extractSubgraph(
   assertNamedContractRows('declaration artifact', input.artifacts);
   assertNamedOutcomes('declaration', input.outcomes);
 
-  const derived = deriveSubgraphContract(def, input.nodeIds);
-  const { incomingKeys, outgoingKeys } = computeSubgraphCut(def, input.nodeIds);
   const declaration: WireCompositeDeclaration = {
     id: input.id,
     kind: 'Composite',
@@ -2789,7 +2855,7 @@ export function extractSubgraph(
       ),
     },
   };
-  let next: WirePipelineDefinitionV2 = {
+  const next: WirePipelineDefinitionV2 = {
     ...def,
     declarations: [...def.declarations, declaration],
     root: {
@@ -2802,47 +2868,155 @@ export function extractSubgraph(
       ),
     },
   };
-  // Appended through the same gesture `insertCompositeRef` runs, so its
-  // existence/referenceability checks execute against the just-created
-  // declaration; the id minted here is the one it appends (same root state).
-  const refId = v2NodeIdFor('CompositeRef', next);
-  next = insertCompositeRef(next, input.id);
+  return { next, declarationId: input.id };
+}
 
-  for (const connection of def.root.connections) {
-    if (input.nodeIds.has(connection.to.node) && !input.nodeIds.has(connection.from.node)) {
+/**
+ * Extraction step two: rewire every root connection that crossed the moved
+ * node set onto the REPLACEMENT node's mapped ports — positionally onto the
+ * reviewed rows in derivation order, with the derived names as fallback
+ * (`extractSubgraph`'s documented rule, unchanged). `preExtractionDef` is the
+ * definition the cut was taken from (the caller's pre-state); `next` is the
+ * post-declaration state the rewired connections land on.
+ */
+function rewireCrossingsOnto(
+  next: WirePipelineDefinitionV2,
+  preExtractionDef: WirePipelineDefinitionV2,
+  nodeIds: ReadonlySet<string>,
+  replacementId: string,
+  rows: {
+    inputs: readonly WireDefinitionPort[];
+    outcomes: readonly string[];
+  },
+  derived: {
+    inputs: readonly WireDefinitionPort[];
+    outcomes: readonly string[];
+  }
+): WirePipelineDefinitionV2 {
+  const { incomingKeys, outgoingKeys } = computeSubgraphCut(preExtractionDef, nodeIds);
+  let result = next;
+  for (const connection of preExtractionDef.root.connections) {
+    if (nodeIds.has(connection.to.node) && !nodeIds.has(connection.from.node)) {
       const index = incomingKeys.indexOf(cutKey(connection.to.node, connection.to.port));
-      const port = input.inputs[index]?.name ?? derived.inputs[index]!.name;
-      const id = v2ConnectionIdFor(next, {
+      const port = rows.inputs[index]?.name ?? derived.inputs[index]!.name;
+      const id = v2ConnectionIdFor(result, {
         source: connection.from.node,
         sourcePort: connection.from.port,
-        target: refId,
+        target: replacementId,
         targetPort: port,
       });
-      next = addV2Connection(next, {
+      result = addV2Connection(result, {
         ...connection,
         id,
-        to: { node: refId, port },
+        to: { node: replacementId, port },
       });
     } else if (
-      input.nodeIds.has(connection.from.node) &&
-      !input.nodeIds.has(connection.to.node)
+      nodeIds.has(connection.from.node) &&
+      !nodeIds.has(connection.to.node)
     ) {
       const index = outgoingKeys.indexOf(
         cutKey(connection.from.node, connection.from.port)
       );
-      const port = input.outcomes[index] ?? derived.outcomes[index]!;
-      const id = v2ConnectionIdFor(next, {
-        source: refId,
+      const port = rows.outcomes[index] ?? derived.outcomes[index]!;
+      const id = v2ConnectionIdFor(result, {
+        source: replacementId,
         sourcePort: port,
         target: connection.to.node,
         targetPort: connection.to.port,
       });
-      next = addV2Connection(next, {
+      result = addV2Connection(result, {
         ...connection,
         id,
-        from: { node: refId, port },
+        from: { node: replacementId, port },
       });
     }
   }
-  return { next, declarationId: input.id, refId };
+  return result;
+}
+
+// ===== Back-edge loop synthesis (canvas-backedge-loop-inference design D3-D5) =====
+
+/** The reviewed loop synthesis — {@link synthesizeBoundedLoopFromBackedge}'s input. */
+export interface BackedgeLoopSynthesisInput {
+  /** The drawn back-edge's source node (the edge was never written to the draft). */
+  from: string;
+  /** The drawn back-edge's target node. */
+  to: string;
+  id: string;
+  inputs: WireDefinitionPort[];
+  artifacts: WireDefinitionArtifact[];
+  outcomes: string[];
+  /** The author's iteration bound — a positive integer. */
+  maxIterations: number;
+  /** The definition outcome the loop's exit resolves to. */
+  exitOutcome: string;
+}
+
+export interface BackedgeLoopSynthesisResult {
+  next: WirePipelineDefinitionV2;
+  declarationId: string;
+  loopId: string;
+}
+
+/**
+ * The one loop-synthesis transaction (design D3/D4): turns a refused
+ * cycle-closing draw into a `BoundedLoop` over the region the edge closes.
+ * Region -> refusals -> declare (child-2's extraction, via
+ * `extractSubgraphIntoDeclaration`) -> mint the loop exactly like
+ * `addBoundedLoopOverDeclaration` except `body` = the just-extracted
+ * declaration and `limits.maxIterations` = the author's bound -> rewire the
+ * crossings onto the loop's ports (`rewireCrossingsOnto`). No `CompositeRef`
+ * is inserted — the loop IS the replacement. Pure; never mutates.
+ *
+ * The drawn back-edge itself never entered the draft (`onConnect` refuses it
+ * before writing), so nothing must be excluded from the body move: the
+ * connections that move are the region's internal edges, all acyclic. The
+ * back-edge exists only as loop semantics.
+ *
+ * The review is not trusted: the region is recomputed from the endpoints, the
+ * child-2 refusals/id/row validators re-run, and the bound must be a positive
+ * integer (the review's integer field blocks confirm client-side; the model
+ * re-owns the rule). Nothing is stamped `legacyRuntimeOwner`.
+ */
+export function synthesizeBoundedLoopFromBackedge(
+  def: WirePipelineDefinitionV2,
+  input: BackedgeLoopSynthesisInput
+): BackedgeLoopSynthesisResult {
+  const region = backedgeRegion(def, input.from, input.to);
+  const { next: declared, declarationId } = extractSubgraphIntoDeclaration(def, {
+    nodeIds: region,
+    id: input.id,
+    inputs: input.inputs,
+    artifacts: input.artifacts,
+    outcomes: input.outcomes,
+  });
+  if (!Number.isSafeInteger(input.maxIterations) || input.maxIterations <= 0) {
+    throw new Error('Loop maximum iterations must be a positive integer.');
+  }
+  const declaration = declared.declarations.find((d) => d.id === declarationId)!;
+  const loopId = v2NodeIdFor('BoundedLoop', declared);
+  const loopNode: WireBoundedLoopNode = {
+    id: loopId,
+    kind: 'BoundedLoop',
+    body: declarationId,
+    limits: { maxIterations: input.maxIterations, maxActions: 12, budget: 12 },
+    lifecycle: createDefaultBoundedLoopLifecycle(),
+    exits: Object.fromEntries(
+      declaration.outcomes.map((outcome, index) => [
+        outcome,
+        index === declaration.outcomes.length - 1
+          ? { action: 'exit' as const, outcome: input.exitOutcome }
+          : { action: 'continue' as const },
+      ])
+    ),
+  };
+  const next = rewireCrossingsOnto(
+    addV2Node(declared, loopNode),
+    def,
+    region,
+    loopId,
+    input,
+    deriveSubgraphContract(def, region)
+  );
+  return { next, declarationId, loopId };
 }

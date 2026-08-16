@@ -49,6 +49,7 @@ import {
   addRequire,
   addStage,
   addV2Connection,
+  backedgeRegion,
   CanvasSelection,
   definitionIssuePathTarget,
   deriveSubgraphContract,
@@ -81,6 +82,7 @@ import {
   singletonNodeId,
   spliceConditionOntoConnection,
   stageIdFor,
+  synthesizeBoundedLoopFromBackedge,
   unavailableRootGestures,
   unspliceChoice,
   updateBodyStage,
@@ -116,6 +118,10 @@ import {
   V2ExtractReviewPanel,
   type SubgraphExtractionReview,
 } from './V2ExtractReviewPanel.js';
+import {
+  V2LoopReviewPanel,
+  type BoundedLoopSynthesisReview,
+} from './V2LoopReviewPanel.js';
 import { IssuesDrawer } from './IssuesDrawer.js';
 import { EngineSupportPanel } from './EngineSupportPanel.js';
 import { consumePendingDraft, setPendingDraft } from './pending-draft.js';
@@ -133,6 +139,14 @@ interface ExportState {
   status: 'idle' | 'exporting' | 'done' | 'error';
   message?: string;
 }
+
+/**
+ * The authoring-draft error scope the loop review's max-iterations field owns
+ * (canvas-backedge-loop-inference design D6): an invalid integer blocks
+ * confirm until repaired, and the scope is cleared whenever the review closes
+ * — the same discipline every other integer field on this page follows.
+ */
+const LOOP_REVIEW_INTEGER_FIELD = 'loop-review:maxIterations';
 
 /**
  * The pipeline graph route (`/p/:projectId/pipelines/:name`,
@@ -220,6 +234,27 @@ export function PipelineCanvasPage() {
   const [extractReview, setExtractReview] = useState<{
     nodeIds: ReadonlySet<string>;
     derived: ReturnType<typeof deriveSubgraphContract>;
+    stageCount: number;
+    internalConnectionCount: number;
+    defaultId: string;
+    error: string | null;
+  } | null>(null);
+  /**
+   * The open back-edge loop review (canvas-backedge-loop-inference design
+   * D6): the drawn edge's endpoints, the enclosed region, the derivation
+   * defaults, the definition's outcomes (captured at open — the review is
+   * modal, the draft cannot change underneath it), the open-time refusals,
+   * and the model's last confirm-time refusal. Null when no review is open;
+   * the drawn Connection itself is NEVER written to the draft, so cancel
+   * equals today's pre-change refusal outcome exactly.
+   */
+  const [loopReview, setLoopReview] = useState<{
+    from: string;
+    to: string;
+    nodeIds: ReadonlySet<string>;
+    derived: ReturnType<typeof deriveSubgraphContract>;
+    definitionOutcomes: readonly string[];
+    refusals: readonly string[];
     stageCount: number;
     internalConnectionCount: number;
     defaultId: string;
@@ -747,7 +782,34 @@ export function PipelineCanvasPage() {
   function onConnect(connection: Connection) {
     if (!draft || !connection.source || !connection.target) return;
     if (wouldCreateCycle(draft, connection.source, connection.target)) {
-      showToast(`Rejected: ${connection.source} → ${connection.target} would create a cycle`);
+      // A refused cycle-closing draw IS loop intent by construction
+      // (canvas-backedge-loop-inference design D1) — in the v2 editor, over
+      // editable nodes, it opens the loop review instead of dead-ending. The
+      // toast still fires first (the author sees why the edge was not added
+      // as a plain connection); cancel leaves exactly this state. v1 and
+      // non-editable endpoints keep the plain refusal. `wouldCreateCycle`
+      // stays the single owner of cycle semantics — there is no second
+      // "is this a back-edge" predicate to drift.
+      const refusal = `Rejected: ${connection.source} → ${connection.target} would create a cycle`;
+      if (draft.version === 2) {
+        const sourceNode = draft.root.nodes.find(
+          (node) => node.id === connection.source
+        );
+        const targetNode = draft.root.nodes.find(
+          (node) => node.id === connection.target
+        );
+        if (
+          sourceNode &&
+          targetNode &&
+          isV2EditableNodeKind(sourceNode.kind) &&
+          isV2EditableNodeKind(targetNode.kind)
+        ) {
+          showToast(refusal);
+          openLoopReview(connection.source, connection.target);
+          return;
+        }
+      }
+      showToast(refusal);
       return;
     }
     if (draft.version === 2) {
@@ -1157,6 +1219,100 @@ export function PipelineCanvasPage() {
     showToast(
       `Packaged ${extractReview.stageCount} stage${extractReview.stageCount === 1 ? '' : 's'} into '${result.declarationId}'.`
     );
+  }
+
+  // --- Back-edge loop inference (canvas-backedge-loop-inference D1/D6) ----
+
+  /**
+   * Opens the loop review for a refused cycle-closing draw. The region, the
+   * derivation, and the refusals live in `draft.ts` (`backedgeRegion`,
+   * `deriveSubgraphContract`, `subgraphExtractionRefusals`); this handler
+   * only captures what the author is about to review. The drawn connection
+   * is never written to the draft — the review state carries the endpoints
+   * as data, so cancel reproduces today's refusal outcome exactly.
+   */
+  function openLoopReview(from: string, to: string) {
+    if (!draft || draft.version !== 2) return;
+    const nodeIds = backedgeRegion(draft, from, to);
+    const derived = deriveSubgraphContract(draft, nodeIds);
+    const refusals = subgraphExtractionRefusals(draft, {
+      nodeIds,
+      connectionIds: new Set<string>(),
+    });
+    const internalConnectionCount = draft.root.connections.filter(
+      (connection) =>
+        nodeIds.has(connection.from.node) && nodeIds.has(connection.to.node)
+    ).length;
+    // `loop-body`, `loop-body-2`, … — the `v2NodeIdFor` suffix convention
+    // over the model's uniqueness rule.
+    let defaultId = 'loop-body';
+    for (let suffix = 2; !isDeclarationIdUnique(draft, defaultId); suffix += 1) {
+      defaultId = `loop-body-${suffix}`;
+    }
+    removeAuthoringDraftErrorScopes([LOOP_REVIEW_INTEGER_FIELD]);
+    setLoopReview({
+      from,
+      to,
+      nodeIds: new Set(nodeIds),
+      derived,
+      definitionOutcomes: [...draft.outcomes],
+      refusals,
+      stageCount: nodeIds.size,
+      internalConnectionCount,
+      defaultId,
+      error: null,
+    });
+  }
+
+  /**
+   * Confirms the review: one `synthesizeBoundedLoopFromBackedge` transaction,
+   * then the same selectionOverride pairing `confirmExtractReview` uses —
+   * both selection truths in the same tick (the region's node ids are gone
+   * from the draft, so the mirror must become the loop in the same update
+   * that rebuilds the flow, or React Flow's listener reverts it one commit
+   * later). A model refusal keeps the draft unchanged, toasts the message,
+   * and leaves the review open with its edits intact (child-2's rule).
+   */
+  function confirmLoopReview(review: BoundedLoopSynthesisReview) {
+    if (!draft || draft.version !== 2 || !loopReview) return;
+    let result;
+    try {
+      result = synthesizeBoundedLoopFromBackedge(draft, {
+        from: loopReview.from,
+        to: loopReview.to,
+        ...review,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Could not turn this back-edge into a loop.';
+      setLoopReview((current) => (current ? { ...current, error: message } : current));
+      showToast(message);
+      return;
+    }
+    setLoopReview(null);
+    removeAuthoringDraftErrorScopes([LOOP_REVIEW_INTEGER_FIELD]);
+    const nextSelection: CanvasSelection = {
+      nodeIds: new Set([result.loopId]),
+      connectionIds: new Set<string>(),
+    };
+    setDraft(result.next);
+    setSelection(nextSelection);
+    recomputeFlow(result.next, catalog, nextSelection);
+    markDraftChanged();
+    showToast(
+      `Loop created from back-edge over ${loopReview.stageCount} stage${loopReview.stageCount === 1 ? '' : 's'} ('${result.declarationId}').`
+    );
+  }
+
+  /**
+   * Cancels the review: today's refusal outcome, exactly — the draft was
+   * never touched (the drawn edge never entered it) and the draw-time
+   * rejection toast stands. Only the review's integer-error scope needs
+   * clearing, so it cannot linger to block the next authoring action.
+   */
+  function cancelLoopReview() {
+    setLoopReview(null);
+    removeAuthoringDraftErrorScopes([LOOP_REVIEW_INTEGER_FIELD]);
   }
 
   // --- Custom Composite declaration authoring (ECP-2 8.5/8.6) -------------
@@ -2333,6 +2489,24 @@ export function PipelineCanvasPage() {
           error={extractReview.error}
           onConfirm={confirmExtractReview}
           onCancel={() => setExtractReview(null)}
+        />
+      )}
+
+      {loopReview && (
+        <V2LoopReviewPanel
+          from={loopReview.from}
+          to={loopReview.to}
+          regionNodeIds={[...loopReview.nodeIds]}
+          definitionOutcomes={loopReview.definitionOutcomes}
+          defaultId={loopReview.defaultId}
+          derived={loopReview.derived}
+          defaultMaxIterations={3}
+          refusals={loopReview.refusals}
+          integerDraftError={authoringDraftErrors[LOOP_REVIEW_INTEGER_FIELD] ?? null}
+          onIntegerDraftError={setAuthoringDraftError}
+          error={loopReview.error}
+          onConfirm={confirmLoopReview}
+          onCancel={cancelLoopReview}
         />
       )}
 

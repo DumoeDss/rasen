@@ -273,6 +273,35 @@ vi.mock('@xyflow/react', async () => {
         >
           connect production-shaped AtomicStages
         </button>
+        {/* Back-edge draws for the loop-inference flow: the LAST AtomicStage
+            (draft node order) drawn back onto the FIRST, and onto the SECOND
+            (skipping an external upstream). Both connect rendered control
+            handles, exactly like a real drag between node cards. */}
+        {[0, 1].map((skip) => {
+          const source = atomicNodes[atomicNodes.length - 1];
+          const target = atomicNodes[skip];
+          return (
+            <button
+              key={skip}
+              type="button"
+              data-testid={
+                skip === 0 ? 'mock-connect-backedge' : 'mock-connect-backedge-inner'
+              }
+              disabled={!source || !target || atomicNodes.length <= skip}
+              onClick={() => {
+                if (!source || !target) return;
+                props.onConnect?.({
+                  source: source.id,
+                  sourceHandle: source.data?.outputPorts?.[0]?.id ?? null,
+                  target: target.id,
+                  targetHandle: target.data?.inputPorts?.[0]?.id ?? null,
+                });
+              }}
+            >
+              connect back-edge over {skip === 0 ? 'all' : 'inner'} atomics
+            </button>
+          );
+        })}
         {authoredRoute.map(([source, sourceHandle, target, targetHandle]) => {
           const sourceNode = props.nodes.find((node) => node.id === source);
           const targetNode = props.nodes.find((node) => node.id === target);
@@ -5640,5 +5669,378 @@ describe('PipelineCanvasPage — package into reusable block', () => {
     expect(submitted.declarations).toHaveLength(1);
     expect(submitted.root.nodes.map((node) => node.id)).toContain('work-b');
     expect(submitted.root.nodes.map((node) => node.id)).toContain('work-c');
+  });
+});
+
+describe('PipelineCanvasPage — back-edge loop inference', () => {
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    __resetLocaleForTesting();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+  });
+
+  afterEach(() => {
+    render(null, container);
+    document.body.removeChild(container);
+    window.history.replaceState({}, '', '/');
+    __resetLocaleForTesting();
+    vi.clearAllMocks();
+  });
+
+  async function clickAndFlush(el: Element | null): Promise<void> {
+    await act(async () => {
+      (el as HTMLElement).click();
+      await flushMicrotasks();
+    });
+  }
+
+  async function setValueAndFlush(
+    el: Element | null,
+    value: string,
+    eventType: 'change' | 'input' = 'change'
+  ): Promise<void> {
+    await act(async () => {
+      const input = el as HTMLInputElement;
+      input.value = value;
+      input.dispatchEvent(new Event(eventType, { bubbles: true }));
+      await flushMicrotasks();
+    });
+  }
+
+  /**
+   * The canonical back-edge shape: upstream -> work-b -> work-c -> work-d ->
+   * finish. The inner back-edge (work-d -> work-b — the mock's
+   * `mock-connect-backedge-inner`, last AtomicStage onto the second) encloses
+   * the three middle stages between the external upstream and the external
+   * finish; the full back-edge (work-d -> upstream — `mock-connect-backedge`)
+   * encloses the whole chain.
+   */
+  function backedgeDetail(
+    extra: {
+      outcomes?: string[];
+      middleNode?: Record<string, unknown>;
+    } = {}
+  ): PipelineDetailResponse {
+    const stage = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: 'skill:rasen-apply', version: 'digest-apply' },
+      execution: {
+        version: 1 as const,
+        role: 'implementer' as const,
+        workspace: { access: 'write' as const },
+        retainedExecutionNote: `keep ${id}`,
+      },
+    });
+    const middle = extra.middleNode
+      ? [stage('work-b'), extra.middleNode as never, stage('work-d')]
+      : [stage('work-b'), stage('work-c'), stage('work-d')];
+    const chain = [
+      'upstream',
+      ...middle.map((node: { id: string }) => node.id),
+      'finish',
+    ];
+    const definition = {
+      version: 2 as const,
+      id: 'definition:backedge',
+      sourceId: 'fixture:backedge',
+      name: 'backedge',
+      inputs: [],
+      artifacts: [],
+      outcomes: extra.outcomes ?? ['done'],
+      declarations: [],
+      root: {
+        nodes: [stage('upstream'), ...middle, { id: 'finish', kind: 'Finish' as const, outcome: 'done' }],
+        connections: chain.slice(0, -1).map((node, index) => ({
+          id: `${node}:done->${chain[index + 1]}:input`,
+          from: { node, port: 'done' },
+          to: { node: chain[index + 1]!, port: 'input' },
+          ...(index === 0 ? { condition: 'always' as const } : {}),
+        })),
+      },
+    };
+    return {
+      ...pipelineDetailFixture,
+      pipeline: {
+        ...pipelineDetailFixture.pipeline,
+        name: 'backedge',
+        description: 'Back-edge fixture',
+        provenance: 'user' as const,
+        sourceLayer: 'user' as const,
+        stages: [],
+        authoredVersion: 2 as const,
+        normalizedVersion: 2 as const,
+        definitionValid: true,
+        planAvailable: true,
+        executable: false,
+        executionMode: 'unavailable' as const,
+        unavailableReason: 'ecp_v2_runtime_unavailable',
+      },
+      definition,
+      preparation: v2Preparation,
+      editable: true,
+    } as PipelineDetailResponse;
+  }
+
+  async function mountBackedgeEdit(detail: PipelineDetailResponse): Promise<void> {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(detail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/backedge');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+  }
+
+  async function submittedDefinition(): Promise<WirePipelineDefinitionV2> {
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    return vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+  }
+
+  it('a refused cycle-closing draw opens the loop review with the draft unchanged', async () => {
+    await mountBackedgeEdit(backedgeDetail());
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge-inner"]'));
+
+    // The review opened, headed by the drawn endpoints and the computed
+    // region (to first, then from, then intermediates in node order).
+    const review = container.querySelector('[data-testid="v2-loop-review-panel"]');
+    expect(review).not.toBeNull();
+    expect(review!.querySelector('[data-testid="v2-loop-review-endpoints"]')!.textContent)
+      .toContain('work-d → work-b');
+    expect(review!.querySelector('[data-testid="v2-loop-review-region"]')!.textContent)
+      .toContain('work-b, work-d, work-c');
+    expect(
+      (review!.querySelector('[data-testid="v2-loop-review-id"]') as HTMLInputElement).value
+    ).toBe('loop-body');
+    expect(
+      (review!.querySelector('[data-testid="v2-loop-review-max-iterations"]') as HTMLInputElement)
+        .value
+    ).toBe('3');
+    expect(
+      (review!.querySelector('[data-testid="v2-loop-review-exit-outcome"]') as HTMLSelectElement)
+        .value
+    ).toBe('done');
+    expect(
+      (review!.querySelector('[data-testid="v2-loop-review-input-name"]') as HTMLInputElement)
+        .value
+    ).toBe('work-b');
+    expect(
+      (review!.querySelector('[data-testid="v2-loop-review-outcomes"]') as HTMLInputElement).value
+    ).toBe('work-d');
+
+    // The draw-time refusal toast stands, and NOTHING was added: the
+    // submitted definition still carries the untouched chain.
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toContain(
+      'Rejected: work-d → work-b would create a cycle'
+    );
+    const submitted = await submittedDefinition();
+    expect(submitted.root.nodes.map((node) => node.id)).toEqual([
+      'upstream',
+      'work-b',
+      'work-c',
+      'work-d',
+      'finish',
+    ]);
+    expect(submitted.root.connections).toHaveLength(4);
+  });
+
+  it('cancel leaves the refusal message and the draft untouched', async () => {
+    await mountBackedgeEdit(backedgeDetail());
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge-inner"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-loop-review-cancel"]'));
+
+    expect(container.querySelector('[data-testid="v2-loop-review-panel"]')).toBeNull();
+    // Today's refusal outcome exactly: the toast message stands.
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toContain(
+      'Rejected: work-d → work-b would create a cycle'
+    );
+    const submitted = await submittedDefinition();
+    expect(submitted.root.nodes.map((node) => node.id)).toEqual([
+      'upstream',
+      'work-b',
+      'work-c',
+      'work-d',
+      'finish',
+    ]);
+    expect(submitted.root.connections).toHaveLength(4);
+    expect(submitted.declarations).toHaveLength(0);
+  });
+
+  it('confirm synthesizes the loop: region gone, externals rewired, loop selected, no legacyRuntimeOwner in the POST body', async () => {
+    await mountBackedgeEdit(backedgeDetail());
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge-inner"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-loop-review-confirm"]'));
+
+    expect(container.querySelector('[data-testid="v2-loop-review-panel"]')).toBeNull();
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toContain(
+      "Loop created from back-edge over 3 stages ('loop-body')."
+    );
+
+    // The loop IS the selection (both selection truths in one tick) and its
+    // properties panel is open.
+    expect(
+      container
+        .querySelector('[data-testid="mock-node"][data-node-id="bounded-loop"]')
+        ?.getAttribute('data-selected')
+    ).toBe('true');
+    expect(
+      container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-node')
+    ).toBe('bounded-loop');
+
+    // The region's nodes left the canvas; the declaration row landed.
+    const flowText = container.querySelector('[data-testid="mock-reactflow"]')!.textContent!;
+    for (const id of ['work-b', 'work-c', 'work-d']) {
+      expect(flowText).not.toContain(id);
+    }
+    const row = container.querySelector('[data-testid="declaration-row"][data-declaration-id="loop-body"]');
+    expect(row).not.toBeNull();
+    expect(row!.getAttribute('data-provenance')).toBe('custom');
+
+    // The definition actually sent to validation: externals rewired onto the
+    // loop's derived ports (extension fields carried — the inbound
+    // condition), body verbatim, the back-edge nowhere, and NO node carries
+    // legacyRuntimeOwner (the POST-body half of the two-layer guard).
+    const submitted = await submittedDefinition();
+    expect(submitted.root.nodes.map((node) => node.id)).toEqual([
+      'upstream',
+      'finish',
+      'bounded-loop',
+    ]);
+    expect(
+      submitted.root.connections.some(
+        (connection) => connection.from.node === 'work-d' || connection.to.node === 'work-b'
+      )
+    ).toBe(false);
+    expect(submitted.root.connections.map((connection) => connection.id)).toEqual([
+      'upstream:done->bounded-loop:work-b',
+      'bounded-loop:work-d->finish:input',
+    ]);
+    expect(
+      submitted.root.connections.find(
+        (connection) => connection.id === 'upstream:done->bounded-loop:work-b'
+      )
+    ).toHaveProperty('condition', 'always');
+
+    const declaration = submitted.declarations.find((d) => d.id === 'loop-body')!;
+    expect(declaration.provenance).toBe('custom');
+    expect(declaration.inputs).toEqual([{ name: 'work-b', type: 'input' }]);
+    expect(declaration.outcomes).toEqual(['work-d']);
+    expect(declaration.graph.nodes.map((node) => node.id)).toEqual(['work-b', 'work-c', 'work-d']);
+    expect(declaration.graph.nodes[0]).toHaveProperty('execution.retainedExecutionNote', 'keep work-b');
+
+    const loop = submitted.root.nodes[2] as WireBoundedLoopNode;
+    expect(loop.kind).toBe('BoundedLoop');
+    expect(loop.body).toBe('loop-body');
+    expect(loop.limits).toEqual({ maxIterations: 3, maxActions: 12, budget: 12 });
+    expect(loop.exits).toEqual({ 'work-d': { action: 'exit', outcome: 'done' } });
+
+    const everyNode = [
+      ...submitted.root.nodes,
+      ...submitted.declarations.flatMap((d) => d.graph.nodes),
+    ];
+    expect(everyNode.length).toBeGreaterThan(0);
+    for (const node of everyNode) {
+      expect(node).not.toHaveProperty('legacyRuntimeOwner');
+    }
+  });
+
+  it('the exit mapping follows the author-chosen definition outcome', async () => {
+    await mountBackedgeEdit(backedgeDetail({ outcomes: ['done', 'archived'] }));
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge-inner"]'));
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-loop-review-exit-outcome"]'),
+      'archived'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="v2-loop-review-confirm"]'));
+
+    const submitted = await submittedDefinition();
+    const loop = submitted.root.nodes[2] as WireBoundedLoopNode;
+    expect(loop.exits).toEqual({ 'work-d': { action: 'exit', outcome: 'archived' } });
+  });
+
+  it('an invalid iteration bound blocks confirm under the authoring-draft-errors discipline', async () => {
+    await mountBackedgeEdit(backedgeDetail());
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge-inner"]'));
+
+    const bound = () =>
+      container.querySelector('[data-testid="v2-loop-review-max-iterations"]') as HTMLInputElement;
+    // A fraction the field must refuse (jsdom sanitizes non-numeric text on
+    // number inputs, so '1.5' is the invalid value that survives).
+    await setValueAndFlush(bound(), '1.5', 'input');
+    expect(bound().getAttribute('aria-invalid')).toBe('true');
+    expect(
+      container.querySelector('[data-testid="integer-contract-error"]')!.textContent
+    ).toBe('Max iterations must be a positive integer.');
+    const confirm = container.querySelector(
+      '[data-testid="v2-loop-review-confirm"]'
+    ) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    // The page's own discipline agrees: validation is blocked until repair.
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    expect(vi.mocked(client.validatePipeline)).not.toHaveBeenCalled();
+    // A click on the disabled confirm synthesizes nothing — the review stays
+    // open and the region is still on the canvas.
+    await clickAndFlush(confirm);
+    expect(container.querySelector('[data-testid="v2-loop-review-panel"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent!).toContain(
+      'work-b'
+    );
+
+    // Repair unblocks confirm, and the repaired bound is the one that lands.
+    await setValueAndFlush(bound(), '4', 'input');
+    expect(bound().getAttribute('aria-invalid')).toBe('false');
+    expect(
+      (container.querySelector('[data-testid="v2-loop-review-confirm"]') as HTMLButtonElement)
+        .disabled
+    ).toBe(false);
+    await clickAndFlush(container.querySelector('[data-testid="v2-loop-review-confirm"]'));
+    const submitted = await submittedDefinition();
+    expect((submitted.root.nodes[2] as WireBoundedLoopNode).limits.maxIterations).toBe(4);
+  });
+
+  it('reports the named blockers for an unextractable region and offers no confirm', async () => {
+    // A Choice mid-chain: the full back-edge's region includes it, and only
+    // plain stages may be enclosed.
+    await mountBackedgeEdit(
+      backedgeDetail({ middleNode: { id: 'branch', kind: 'Choice', outcomes: ['taken', 'skipped'] } })
+    );
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge"]'));
+
+    const review = container.querySelector('[data-testid="v2-loop-review-panel"]');
+    expect(review).not.toBeNull();
+    expect(container.querySelector('[data-testid="v2-loop-review-confirm"]')).toBeNull();
+    const refusals = review!.querySelector('[data-testid="v2-loop-review-refusals"]')!;
+    expect(refusals.textContent).toMatch(
+      /Only plain stages can be packaged into a reusable block — 'branch' is a Choice/
+    );
+
+    // Cancel leaves the draft unchanged.
+    await clickAndFlush(container.querySelector('[data-testid="v2-loop-review-cancel"]'));
+    const submitted = await submittedDefinition();
+    expect(submitted.root.nodes.map((node) => node.id)).toEqual([
+      'upstream',
+      'work-b',
+      'branch',
+      'work-d',
+      'finish',
+    ]);
+    expect(submitted.declarations).toHaveLength(0);
+  });
+
+  it('the explicit palette loop gesture still works after a synthesis', async () => {
+    await mountBackedgeEdit(backedgeDetail());
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge-inner"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-loop-review-confirm"]'));
+
+    // No capability hole: the palette gesture still mints a BoundedLoop over
+    // the first declaration carrying a body — the one just extracted.
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-gesture-loop"]'));
+    const flowText = container.querySelector('[data-testid="mock-reactflow"]')!.textContent!;
+    expect(flowText).toContain('bounded-loop');
+    expect(flowText).toContain('bounded-loop-2');
+    const submitted = await submittedDefinition();
+    const secondLoop = submitted.root.nodes[3] as WireBoundedLoopNode;
+    expect(secondLoop.id).toBe('bounded-loop-2');
+    expect(secondLoop.body).toBe('loop-body');
   });
 });

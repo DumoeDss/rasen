@@ -10,14 +10,18 @@ import {
   addBodyStage,
   addDeclaration,
   addRequire,
+  backedgeRegion,
   bodyWouldCreateCycle,
   createBlankCanvasPipelineDefinitionV2,
+  createDefaultBoundedLoopLifecycle,
   createParallelPair,
   deriveSubgraphContract,
   EMPTY_CANVAS_SELECTION,
   extractSubgraph,
   insertCompositeRef,
   subgraphExtractionRefusals,
+  synthesizeBoundedLoopFromBackedge,
+  updateBoundedLoopContract,
   updateBodyStage,
   addStage,
   addV2Connection,
@@ -1575,5 +1579,294 @@ describe('extractSubgraph', () => {
         expect(outcomeNames).toContain(connection.from.port);
       }
     }
+  });
+});
+
+// ===== canvas-backedge-loop-inference: region, synthesis transaction =====
+
+describe('backedgeRegion', () => {
+  /**
+   * The diamond: a fans out to b and c, both reconverge at d; a side branch
+   * leaves b for s (s reaches nothing back), and an upstream u feeds a. The
+   * back-edge d -> a makes the region {a, b, c, d} — u and s stay outside.
+   */
+  function diamondDef(): WirePipelineDefinitionV2 {
+    const stage = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: `skill:${id}`, version: `sha256:${id}` },
+    });
+    const edge = (from: string, to: string) => ({
+      id: `e-${from}-${to}`,
+      from: { node: from, port: 'done' },
+      to: { node: to, port: 'input' },
+    });
+    return {
+      version: 2,
+      id: 'definition:diamond',
+      sourceId: 'fixture:diamond',
+      name: 'diamond',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [],
+      root: {
+        nodes: [stage('u'), stage('a'), stage('b'), stage('c'), stage('d'), stage('s')],
+        connections: [
+          edge('u', 'a'),
+          edge('a', 'b'),
+          edge('a', 'c'),
+          edge('b', 'd'),
+          edge('c', 'd'),
+          edge('b', 's'),
+        ],
+      },
+    };
+  }
+
+  it('returns the diamond cycle with both endpoints, excluding side branches in BOTH directions', () => {
+    const def = diamondDef();
+    // The draw is refused exactly because a ⇝* d — the same rule that
+    // recognizes it as loop intent.
+    expect(wouldCreateCycle(def, 'd', 'a')).toBe(true);
+    const region = backedgeRegion(def, 'd', 'a');
+    // s is on `a ⇝* s` but not `s ⇝* d` (downstream-only side branch) — outside.
+    // u is on `u ⇝* a` but not `a ⇝* u` (upstream-only feeder) — outside.
+    expect([...region].sort()).toEqual(['a', 'b', 'c', 'd']);
+    // Order-stable: the endpoints first (`to` then `from` — the set
+    // literal's order), then the intermediates in the draft's node order.
+    expect([...region]).toEqual(['a', 'd', 'b', 'c']);
+  });
+
+  it('returns exactly the node for a self-loop draw', () => {
+    const def = diamondDef();
+    expect(wouldCreateCycle(def, 'b', 'b')).toBe(true);
+    expect([...backedgeRegion(def, 'b', 'b')]).toEqual(['b']);
+  });
+
+  it('returns only the endpoints when nothing else lies on the cycle (v1 requires edges)', () => {
+    // The v1 half of the shared-adjacency pin: buildAdjacency reads `requires`.
+    const def: WirePipelineDefinitionV1 = {
+      version: 1,
+      name: 'chain',
+      stages: [
+        { id: 'a', kind: 'standard', requires: [], gate: false, leadReview: false },
+        { id: 'b', kind: 'standard', requires: ['a'], gate: false, leadReview: false },
+        { id: 'c', kind: 'standard', requires: ['b'], gate: false, leadReview: false },
+      ],
+    };
+    expect(wouldCreateCycle(def, 'b', 'a')).toBe(true);
+    // c is downstream of b (a ⇝* c) but does not reach back to b — excluded.
+    expect([...backedgeRegion(def, 'b', 'a')]).toEqual(['a', 'b']);
+  });
+});
+
+describe('synthesizeBoundedLoopFromBackedge', () => {
+  /**
+   * The canonical back-edge shape over extractionDef's chain
+   * a -> b -> c -> f: the draw c -> b is refused (b ⇝* c), the region is the
+   * middle pair {b, c} between the externals a and f.
+   */
+  function synthesize(
+    def: WirePipelineDefinitionV2 = extractionDef(),
+    over: Partial<Parameters<typeof synthesizeBoundedLoopFromBackedge>[1]> = {}
+  ) {
+    return synthesizeBoundedLoopFromBackedge(def, {
+      from: 'c',
+      to: 'b',
+      id: 'loop-body',
+      inputs: [{ name: 'b', type: 'input' }],
+      artifacts: [],
+      outcomes: ['c'],
+      maxIterations: 5,
+      exitOutcome: def.outcomes[0] ?? 'done',
+      ...over,
+    });
+  }
+
+  it('synthesizes the declaration plus loop node with no CompositeRef, and never writes the back-edge', () => {
+    const def = extractionDef();
+    const bNode = def.root.nodes[1]!;
+    const result = synthesize(def);
+
+    expect(result.declarationId).toBe('loop-body');
+    expect(result.loopId).toBe('bounded-loop');
+
+    // The declaration: custom, reviewed rows, verbatim body (same values).
+    const declaration = result.next.declarations.find((d) => d.id === 'loop-body')!;
+    expect(declaration.provenance).toBe('custom');
+    expect(declaration.inputs).toEqual([{ name: 'b', type: 'input' }]);
+    expect(declaration.outcomes).toEqual(['c']);
+    expect(declaration.graph.nodes.map((node) => node.id)).toEqual(['b', 'c']);
+    expect(declaration.graph.nodes[0]).toBe(bNode);
+
+    // The root keeps only the externals plus the loop — no CompositeRef.
+    expect(result.next.root.nodes.map((node) => node.id)).toEqual([
+      'a',
+      'f',
+      'bounded-loop',
+    ]);
+    expect(
+      result.next.root.nodes.some((node) => node.kind === 'CompositeRef')
+    ).toBe(false);
+
+    // The loop mirrors the explicit gesture's shape, with the author's knobs.
+    const loop = result.next.root.nodes[2]!;
+    expect(loop).toEqual({
+      id: 'bounded-loop',
+      kind: 'BoundedLoop',
+      body: 'loop-body',
+      limits: { maxIterations: 5, maxActions: 12, budget: 12 },
+      lifecycle: createDefaultBoundedLoopLifecycle(),
+      // The single (last) body outcome exits to the author's definition outcome.
+      exits: { c: { action: 'exit', outcome: 'done' } },
+    });
+
+    // The back-edge exists only as loop semantics: every surviving connection
+    // runs between an external and the loop's ports — none mentions b or c,
+    // and the drawn c -> b pairing is nowhere in the root graph.
+    expect(result.next.root.connections.map((connection) => connection.id)).toEqual([
+      'a:done->bounded-loop:b',
+      'bounded-loop:c->f:input',
+    ]);
+    for (const connection of result.next.root.connections) {
+      expect(['a', 'f', 'bounded-loop']).toContain(connection.from.node);
+      expect(['a', 'f', 'bounded-loop']).toContain(connection.to.node);
+    }
+  });
+
+  it('rewires the crossings onto the loop with extension fields preserved and reviewed rows honored', () => {
+    const result = synthesize(extractionDef(), {
+      inputs: [{ name: 'entry', type: 'control' }],
+      outcomes: ['complete'],
+    });
+    const [inbound, outbound] = result.next.root.connections;
+    // The reviewed rows rename the ports the crossings land on, and the
+    // severed edges keep their extension fields (the inbound `condition`).
+    expect(inbound!.id).toBe('a:done->bounded-loop:entry');
+    expect(inbound!.from).toEqual({ node: 'a', port: 'done' });
+    expect(inbound!.to).toEqual({ node: 'bounded-loop', port: 'entry' });
+    expect(inbound!.condition).toBe('always');
+    expect(outbound!.id).toBe('bounded-loop:complete->f:input');
+    expect(outbound!.from).toEqual({ node: 'bounded-loop', port: 'complete' });
+    expect(outbound!.to).toEqual({ node: 'f', port: 'input' });
+  });
+
+  it('maps the exit to the author-chosen definition outcome, defaulting to def.outcomes[0]', () => {
+    const def = extractionDef();
+    def.outcomes = ['done', 'failed'];
+    const chosen = synthesize(def, { exitOutcome: 'failed' });
+    const chosenLoop = chosen.next.root.nodes[2]!;
+    expect(chosenLoop.exits).toEqual({ c: { action: 'exit', outcome: 'failed' } });
+
+    const defaulted = synthesize(def, { exitOutcome: def.outcomes[0]! });
+    const defaultedLoop = defaulted.next.root.nodes[2]!;
+    expect(defaultedLoop.exits).toEqual({ c: { action: 'exit', outcome: 'done' } });
+  });
+
+  it('keeps the multi-outcome last-exits convention the gesture uses', () => {
+    const def = extractionDef();
+    // b gains a second severed outgoing edge (to f) so the cut yields two
+    // outgoing points; the reviewed rows keep derivation order (cut keys
+    // follow draft-connection order: c's edge precedes b's).
+    def.root.connections.push({
+      id: 'e-bf',
+      from: { node: 'b', port: 'review' },
+      to: { node: 'f', port: 'review' },
+    });
+    const result = synthesize(def, { outcomes: ['c', 'b'] });
+    const declaration = result.next.declarations.find((d) => d.id === 'loop-body')!;
+    expect(declaration.outcomes).toEqual(['c', 'b']);
+    expect(result.next.root.nodes[2]!.exits).toEqual({
+      c: { action: 'continue' },
+      b: { action: 'exit', outcome: 'done' },
+    });
+    // Each severed outgoing edge lands on its reviewed port positionally.
+    expect(result.next.root.connections.map((connection) => connection.id)).toEqual([
+      'a:done->bounded-loop:b',
+      'bounded-loop:c->f:input',
+      'bounded-loop:b->f:review',
+    ]);
+  });
+
+  it('validates the iteration bound as a positive integer', () => {
+    for (const maxIterations of [0, -1, 2.5, Number.NaN]) {
+      expect(() => synthesize(extractionDef(), { maxIterations }), String(maxIterations)).toThrow(
+        /positive integer/
+      );
+    }
+  });
+
+  it('surfaces the child-2 refusal strings verbatim for an unextractable region', () => {
+    // A back-edge whose region includes the Finish node: only plain stages
+    // may be enclosed.
+    expect(() =>
+      synthesize(extractionDef(), { from: 'f', to: 'a' })
+    ).toThrow(/Only plain stages can be packaged into a reusable block — 'f' is a Finish/);
+
+    // An outside Gate targeting an enclosed stage.
+    const gated = extractionDef();
+    gated.root.nodes.push({
+      id: 'gate-1',
+      kind: 'Gate',
+      target: 'b',
+      outcomes: ['approve'],
+      dispositions: { approve: 'proceed' },
+    });
+    expect(() => synthesize(gated)).toThrow(
+      /Stage 'b' is targeted by Gate 'gate-1' outside the selection/
+    );
+  });
+
+  it('reuses the declaration id and contract row validators with the model vocabulary', () => {
+    const taken = extractionDef();
+    taken.declarations.push({
+      id: 'loop-body',
+      kind: 'Composite',
+      provenance: 'custom',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      graph: { nodes: [], connections: [] },
+    });
+    expect(() => synthesize(taken)).toThrow(/Declaration id 'loop-body' already exists/);
+    expect(() =>
+      synthesize(extractionDef(), { inputs: [{ name: '', type: 'input' }] })
+    ).toThrow(/name cannot be blank/);
+    expect(() => synthesize(extractionDef(), { outcomes: ['', 'c'] })).toThrow(
+      /outcome cannot be blank/
+    );
+  });
+
+  it('stamps no legacyRuntimeOwner on the loop or any moved body node', () => {
+    const result = synthesize();
+    for (const declaration of result.next.declarations) {
+      for (const node of declaration.graph.nodes) {
+        expect(node).not.toHaveProperty('legacyRuntimeOwner');
+      }
+    }
+    for (const node of result.next.root.nodes) {
+      expect(node).not.toHaveProperty('legacyRuntimeOwner');
+    }
+  });
+
+  it('leaves the result authorable — the loop patches and the declaration re-references', () => {
+    const result = synthesize();
+
+    // The properties panel's patch path still owns the loop.
+    const patched = updateBoundedLoopContract(result.next, 'bounded-loop', {
+      limits: { maxIterations: 9 },
+      exits: { c: { action: 'exit', outcome: 'done' } },
+    });
+    const patchedLoop = patched.root.nodes.find((node) => node.id === 'bounded-loop')!;
+    if (patchedLoop.kind !== 'BoundedLoop') throw new Error('expected a BoundedLoop');
+    expect(patchedLoop.limits.maxIterations).toBe(9);
+
+    // The declarations row's insert action still accepts the new declaration.
+    const reReferenced = insertCompositeRef(patched, 'loop-body');
+    const ref = reReferenced.root.nodes.find(
+      (node) => node.kind === 'CompositeRef' && node.declarationId === 'loop-body'
+    )!;
+    expect(ref.id).toBe('composite-ref');
   });
 });
