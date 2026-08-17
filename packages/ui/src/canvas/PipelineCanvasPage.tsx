@@ -52,8 +52,10 @@ import {
   addV2Connection,
   backedgeRegion,
   CanvasSelection,
+  completedFrontier,
   definitionIssuePathTarget,
   deriveSubgraphContract,
+  detectParallelFrontiers,
   duplicateV2Definition,
   EMPTY_CANVAS_SELECTION,
   extractSubgraph,
@@ -84,6 +86,7 @@ import {
   spliceConditionOntoConnection,
   stageIdFor,
   synthesizeBoundedLoopFromBackedge,
+  synthesizeParallelFrontier,
   unavailableRootGestures,
   unspliceChoice,
   updateBodyStage,
@@ -123,6 +126,10 @@ import {
   V2LoopReviewPanel,
   type BoundedLoopSynthesisReview,
 } from './V2LoopReviewPanel.js';
+import {
+  V2ParallelReviewPanel,
+  type ParallelFrontierReview,
+} from './V2ParallelReviewPanel.js';
 import { IssuesDrawer } from './IssuesDrawer.js';
 import { EngineSupportPanel } from './EngineSupportPanel.js';
 import { consumePendingDraft, setPendingDraft } from './pending-draft.js';
@@ -148,6 +155,24 @@ interface ExportState {
  * — the same discipline every other integer field on this page follows.
  */
 const LOOP_REVIEW_INTEGER_FIELD = 'loop-review:maxIterations';
+
+/**
+ * The authoring-draft error scopes the parallel review's two integer fields
+ * own (canvas-parallel-frontier-inference design D3): an invalid cap or
+ * budget blocks confirm until repaired, and the scopes are cleared whenever
+ * the review closes — the same discipline every other integer field on this
+ * page follows.
+ */
+const PARALLEL_REVIEW_INTEGER_FIELDS = [
+  'parallel-review:concurrencyCap',
+  'parallel-review:budget',
+];
+
+/** The toast's optional action (design D4): a button riding the toast. */
+interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
 
 /**
  * The pipeline graph route (`/p/:projectId/pipelines/:name`,
@@ -223,6 +248,13 @@ export function PipelineCanvasPage() {
   // (spec: never submit a second mutation while one is in flight).
   const savingRef = useRef(false);
   const [toast, setToast] = useState('');
+  /**
+   * The current toast's optional action (design D4): while present the toast
+   * renders a button and never auto-dismisses — a toast with an action is a
+   * question (the parallel-frontier offer), not a notification. Every
+   * existing `showToast` caller passes no action and keeps today's behavior.
+   */
+  const [toastAction, setToastAction] = useState<ToastAction | null>(null);
   const [pendingExit, setPendingExit] = useState<(() => void) | null>(null);
   const [duplicateDialog, setDuplicateDialog] = useState<{ name: string; error: string | null } | null>(null);
   /**
@@ -259,6 +291,21 @@ export function PipelineCanvasPage() {
     stageCount: number;
     internalConnectionCount: number;
     defaultId: string;
+    error: string | null;
+  } | null>(null);
+  /**
+   * The open parallel-frontier review (canvas-parallel-frontier-inference
+   * design D1/D3): the drawn sandwich's outer endpoints and its clean
+   * branches (re-detected at open — a stale offer refuses cleanly), the
+   * open-time refusals, and the model's last confirm-time refusal. Null when
+   * no review is open; the drawn edges are LEGAL and stay in the draft, so
+   * cancel changes nothing.
+   */
+  const [parallelReview, setParallelReview] = useState<{
+    source: string;
+    target: string;
+    branches: readonly string[];
+    refusals: readonly string[];
     error: string | null;
   } | null>(null);
 
@@ -534,9 +581,42 @@ export function PipelineCanvasPage() {
     );
   }
 
-  function showToast(message: string) {
+  /**
+   * The live toast's auto-dismiss timer (review m1): exactly one handle, so a
+   * previous toast's pending clear can never fire against a newer toast — a
+   * notification within the 2.5s window used to wipe a freshly surfaced
+   * parallel offer, which nothing re-offers (the completing connection is
+   * already drawn).
+   */
+  const toastTimerRef = useRef<number | null>(null);
+
+  function clearToast() {
+    if (toastTimerRef.current !== null) {
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+    setToast('');
+    setToastAction(null);
+  }
+
+  function showToast(message: string, action?: ToastAction) {
+    // Clear the previous toast's timer before replacing it — only the newest
+    // toast's clear may ever run (see toastTimerRef).
+    if (toastTimerRef.current !== null) {
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
     setToast(message);
-    setTimeout(() => setToast(''), 2500);
+    setToastAction(action ?? null);
+    // A toast with an action is a question, not a notification (design D4):
+    // it stays until answered (the action), dismissed, or replaced by the
+    // next toast. Every existing caller passes no action and keeps the
+    // auto-dismiss.
+    if (action) return;
+    toastTimerRef.current = window.setTimeout(() => {
+      toastTimerRef.current = null;
+      setToast('');
+    }, 2500);
   }
 
   function requestExit(action: () => void) {
@@ -848,6 +928,28 @@ export function PipelineCanvasPage() {
       setDraft(nextDraft);
       recomputeFlow(nextDraft);
       markDraftChanged();
+      // A successfully drawn connection that completes a drawn
+      // fan-out/reconverge sandwich earns the non-blocking parallel offer
+      // (canvas-parallel-frontier-inference design D1): detection over the
+      // POST-connect draft, filtered to frontiers whose branch-edge set
+      // contains this connection. The edge is legal and stays either way —
+      // dismissing or declining the offer changes nothing.
+      const frontier = completedFrontier(nextDraft, {
+        source: endpoints.source,
+        target: endpoints.target,
+      });
+      if (frontier) {
+        showToast(
+          `Detected a parallel frontier: ${frontier.source} fans out to ` +
+            `${frontier.branches.length} branches that reconverge at ` +
+            `${frontier.target}.`,
+          {
+            label: 'Run in parallel',
+            onClick: () =>
+              openParallelReviewRef.current(frontier.source, frontier.target),
+          }
+        );
+      }
       return;
     }
     setDraft(addRequire(draft, connection.source, connection.target));
@@ -1315,6 +1417,99 @@ export function PipelineCanvasPage() {
     setLoopReview(null);
     removeAuthoringDraftErrorScopes([LOOP_REVIEW_INTEGER_FIELD]);
   }
+
+  // --- Parallel frontier inference (canvas-parallel-frontier-inference D1/D3) -
+
+  /**
+   * Opens the parallel review from the offer's action. The branches are
+   * RE-DETECTED here against the live draft: the offer carried `(source,
+   * target)` as data and the toast does not block the editor, so the draft may
+   * have moved under it — a stale offer must refuse cleanly rather than
+   * confirm against a shape that no longer exists. The drawn edges stay in
+   * the draft the whole time; cancel changes nothing.
+   */
+  function openParallelReview(source: string, target: string) {
+    if (!draft || draft.version !== 2) return;
+    const frontier = detectParallelFrontiers(draft).find(
+      (candidate) => candidate.source === source && candidate.target === target
+    );
+    const refusals = frontier
+      ? []
+      : [
+          'The drawn connections changed — this fan-out and reconverge shape is no longer a clean parallel frontier.',
+        ];
+    removeAuthoringDraftErrorScopes(PARALLEL_REVIEW_INTEGER_FIELDS);
+    setParallelReview({
+      source,
+      target,
+      branches: frontier?.branches ?? [],
+      refusals,
+      error: null,
+    });
+  }
+
+  /**
+   * Confirms the review: one `synthesizeParallelFrontier` transaction
+   * (consume the drawn sandwich, mint the pair, wire the four families),
+   * then the same selectionOverride pairing `confirmLoopReview` uses — both
+   * selection truths in the same tick, with the fan-out as the selection. A
+   * model refusal keeps the draft unchanged, toasts the message, and leaves
+   * the review open with its edits intact (child-2's rule).
+   */
+  function confirmParallelReview(review: ParallelFrontierReview) {
+    if (!draft || draft.version !== 2 || !parallelReview) return;
+    let result;
+    try {
+      result = synthesizeParallelFrontier(draft, {
+        source: parallelReview.source,
+        target: parallelReview.target,
+        members: review.members,
+        concurrencyCap: review.concurrencyCap,
+        budget: review.budget,
+        outcomes: review.outcomes,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Could not turn these branches into a parallel frontier.';
+      setParallelReview((current) =>
+        current ? { ...current, error: message } : current
+      );
+      showToast(message);
+      return;
+    }
+    setParallelReview(null);
+    removeAuthoringDraftErrorScopes(PARALLEL_REVIEW_INTEGER_FIELDS);
+    const nextSelection: CanvasSelection = {
+      nodeIds: new Set([result.fanOutId]),
+      connectionIds: new Set<string>(),
+    };
+    setDraft(result.next);
+    setSelection(nextSelection);
+    recomputeFlow(result.next, catalog, nextSelection);
+    markDraftChanged();
+    showToast(`Parallel frontier created over ${review.members.length} branches.`);
+  }
+
+  /**
+   * Cancels the review: the drawn connections are legal and stay exactly as
+   * drawn — the offer was never blocking. Only the integer-error scopes need
+   * clearing, so they cannot linger to block the next authoring action.
+   */
+  function cancelParallelReview() {
+    setParallelReview(null);
+    removeAuthoringDraftErrorScopes(PARALLEL_REVIEW_INTEGER_FIELDS);
+  }
+
+  // The offer's toast action outlives the render that created it (its
+  // auto-dismiss is suppressed), so it must reach the LATEST
+  // `openParallelReview` — the one closing over the draft the completing
+  // edge landed in — not the pre-connect closure it was minted with. The
+  // ref is re-stamped every render; the re-detection inside stays the
+  // staleness guard (a draft that genuinely moved under the offer refuses).
+  const openParallelReviewRef = useRef(openParallelReview);
+  openParallelReviewRef.current = openParallelReview;
 
   // --- Custom Composite declaration authoring (ECP-2 8.5/8.6) -------------
   //
@@ -2511,6 +2706,33 @@ export function PipelineCanvasPage() {
         />
       )}
 
+      {parallelReview && (
+        <V2ParallelReviewPanel
+          source={parallelReview.source}
+          target={parallelReview.target}
+          branchIds={[...parallelReview.branches]}
+          definitionOutcomes={
+            draft?.version === 2 ? [...draft.outcomes] : []
+          }
+          defaultConcurrencyCap={Math.max(
+            1,
+            Math.min(3, parallelReview.branches.length)
+          )}
+          defaultBudget={Math.max(1, parallelReview.branches.length)}
+          refusals={parallelReview.refusals}
+          capDraftError={
+            authoringDraftErrors['parallel-review:concurrencyCap'] ?? null
+          }
+          budgetDraftError={
+            authoringDraftErrors['parallel-review:budget'] ?? null
+          }
+          onIntegerDraftError={setAuthoringDraftError}
+          error={parallelReview.error}
+          onConfirm={confirmParallelReview}
+          onCancel={cancelParallelReview}
+        />
+      )}
+
       <div class="pipeline-canvas__body">
         {editable && (
           <PalettePanel
@@ -2578,8 +2800,38 @@ export function PipelineCanvasPage() {
         <div class="pipeline-canvas__flow-column">
           <div class="pipeline-canvas__flow" data-testid="pipeline-canvas-flow">
             {toast && (
-              <div class="pipeline-canvas__toast" data-testid="pipeline-canvas-toast">
-                {toast}
+              <div
+                class={`pipeline-canvas__toast${
+                  toastAction ? ' pipeline-canvas__toast--with-action' : ''
+                }`}
+                data-testid="pipeline-canvas-toast"
+              >
+                <span class="pipeline-canvas__toast-message">{toast}</span>
+                {toastAction && (
+                  <>
+                    <button
+                      type="button"
+                      class="pipeline-canvas__toast-action"
+                      data-testid="pipeline-canvas-toast-action"
+                      onClick={() => {
+                        const action = toastAction;
+                        clearToast();
+                        action.onClick();
+                      }}
+                    >
+                      {toastAction.label}
+                    </button>
+                    <button
+                      type="button"
+                      class="pipeline-canvas__toast-dismiss"
+                      data-testid="pipeline-canvas-toast-dismiss"
+                      aria-label="Dismiss"
+                      onClick={clearToast}
+                    >
+                      ×
+                    </button>
+                  </>
+                )}
               </div>
             )}
             <ReactFlowProvider>

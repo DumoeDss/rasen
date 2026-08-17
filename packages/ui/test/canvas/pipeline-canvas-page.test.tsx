@@ -435,6 +435,8 @@ import type {
   ThresholdValue,
   WireBoundedLoopNode,
   WireConsultationBinding,
+  WireFanOutNode,
+  WireJoinNode,
   WirePipelineDefinition,
   WirePipelineDefinitionV2,
 } from '../../src/api/types.js';
@@ -6067,5 +6069,402 @@ describe('PipelineCanvasPage — back-edge loop inference', () => {
     const secondLoop = submitted.root.nodes[3] as WireBoundedLoopNode;
     expect(secondLoop.id).toBe('bounded-loop-2');
     expect(secondLoop.body).toBe('loop-body');
+  });
+});
+
+describe('PipelineCanvasPage — parallel frontier inference', () => {
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    __resetLocaleForTesting();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+  });
+
+  afterEach(() => {
+    render(null, container);
+    document.body.removeChild(container);
+    window.history.replaceState({}, '', '/');
+    __resetLocaleForTesting();
+    vi.clearAllMocks();
+  });
+
+  async function clickAndFlush(el: Element | null): Promise<void> {
+    await act(async () => {
+      (el as HTMLElement).click();
+      await flushMicrotasks();
+    });
+  }
+
+  async function setValueAndFlush(
+    el: Element | null,
+    value: string,
+    eventType: 'change' | 'input' = 'change'
+  ): Promise<void> {
+    await act(async () => {
+      const input = el as HTMLInputElement;
+      input.value = value;
+      input.dispatchEvent(new Event(eventType, { bubbles: true }));
+      await flushMicrotasks();
+    });
+  }
+
+  /**
+   * The canonical frontier shape minus exactly one drawn edge: source fans
+   * out to branch-2, both branches reconverge at the Finish target, and the
+   * mock's `mock-connect-production-atomics` (first AtomicStage onto the
+   * second: source -> branch-1, from the 'patch' artifact handle) draws the
+   * completing dispatch half. With `edges` overridden, the same trigger
+   * draws a FIRST branch edge instead (both barrier halves pre-authored, no
+   * source dispatch yet).
+   */
+  function frontierDetail(
+    extra: { outcomes?: string[]; edges?: Array<[string, string]> } = {}
+  ): PipelineDetailResponse {
+    const stage = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: 'skill:rasen-apply', version: 'digest-apply' },
+      execution: {
+        version: 1 as const,
+        role: 'implementer' as const,
+        workspace: { access: 'write' as const },
+        retainedExecutionNote: `keep ${id}`,
+      },
+    });
+    const edges = extra.edges ?? [
+      ['source', 'branch-2'],
+      ['branch-1', 'target'],
+      ['branch-2', 'target'],
+    ];
+    const definition = {
+      version: 2 as const,
+      id: 'definition:frontier',
+      sourceId: 'fixture:frontier',
+      name: 'frontier',
+      inputs: [],
+      artifacts: [],
+      outcomes: extra.outcomes ?? ['done', 'rejected'],
+      declarations: [],
+      root: {
+        nodes: [
+          stage('source'),
+          stage('branch-1'),
+          stage('branch-2'),
+          { id: 'target', kind: 'Finish' as const, outcome: 'done' },
+        ],
+        connections: edges.map(([from, to]) => ({
+          id: `${from}:done->${to}:input`,
+          from: { node: from, port: 'done' },
+          to: { node: to, port: 'input' },
+        })),
+      },
+    };
+    return {
+      ...pipelineDetailFixture,
+      pipeline: {
+        ...pipelineDetailFixture.pipeline,
+        name: 'frontier',
+        description: 'Frontier fixture',
+        provenance: 'user' as const,
+        sourceLayer: 'user' as const,
+        stages: [],
+        authoredVersion: 2 as const,
+        normalizedVersion: 2 as const,
+        definitionValid: true,
+        planAvailable: true,
+        executable: false,
+        executionMode: 'unavailable' as const,
+        unavailableReason: 'ecp_v2_runtime_unavailable',
+      },
+      definition,
+      preparation: v2Preparation,
+      editable: true,
+    } as PipelineDetailResponse;
+  }
+
+  async function mountFrontierEdit(detail: PipelineDetailResponse): Promise<void> {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(detail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/frontier');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+  }
+
+  async function submittedDefinition(): Promise<WirePipelineDefinitionV2> {
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    return vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+  }
+
+  it('surfaces the offer only when a connection COMPLETES a frontier, not on the first branch edge', async () => {
+    // Completing edge: source -> branch-1 lands last and closes the sandwich.
+    await mountFrontierEdit(frontierDetail());
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-production-atomics"]'));
+
+    const toast = container.querySelector('[data-testid="pipeline-canvas-toast"]');
+    expect(toast).not.toBeNull();
+    expect(toast!.textContent).toContain('parallel frontier');
+    expect(toast!.textContent).toContain('reconverge at target');
+    const action = container.querySelector('[data-testid="pipeline-canvas-toast-action"]');
+    expect(action).not.toBeNull();
+    expect(action!.textContent).toBe('Run in parallel');
+
+    // First branch edge: both barrier halves pre-authored but no dispatch
+    // yet — the same trigger now draws the FIRST branch edge and no offer
+    // appears (one clean branch is below the minimum).
+    render(null, container);
+    await mountFrontierEdit(
+      frontierDetail({ edges: [['branch-1', 'target'], ['branch-2', 'target']] })
+    );
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-production-atomics"]'));
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')).toBeNull();
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast-action"]')).toBeNull();
+  });
+
+  it('dismissing the offer leaves the draft unchanged — every drawn connection stays', async () => {
+    await mountFrontierEdit(frontierDetail());
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-production-atomics"]'));
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-toast-dismiss"]'));
+
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')).toBeNull();
+    const submitted = await submittedDefinition();
+    expect(submitted.root.nodes.map((node) => node.id)).toEqual([
+      'source',
+      'branch-1',
+      'branch-2',
+      'target',
+    ]);
+    // The three pre-authored halves plus the just-drawn completing edge.
+    expect(submitted.root.connections.map((connection) => connection.id).sort()).toEqual([
+      'branch-1:done->target:input',
+      'branch-2:done->target:input',
+      'source:done->branch-2:input',
+      'source:patch->branch-1:input',
+    ]);
+    expect(submitted.root.nodes.some((node) => node.kind === 'FanOut' || node.kind === 'Join')).toBe(false);
+  });
+
+  it("the review's toggles, cap, budget, and outcome picks land in the POSTed definition", async () => {
+    await mountFrontierEdit(frontierDetail({ outcomes: ['done', 'rejected', 'archived'] }));
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-production-atomics"]'));
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-toast-action"]'));
+
+    // The review opened prefilled from detection: route read-only, both
+    // branches required by default, gesture-default cap/budget, first/second
+    // outcome picks.
+    const review = container.querySelector('[data-testid="v2-parallel-review-panel"]');
+    expect(review).not.toBeNull();
+    expect(review!.querySelector('[data-testid="v2-parallel-review-route"]')!.textContent)
+      .toBe('source → fan-out → 2 branches → barrier → target');
+    expect(
+      (review!.querySelector(
+        '[data-testid="v2-parallel-review-member-required"][data-member-id="branch-1"]'
+      ) as HTMLInputElement).checked
+    ).toBe(true);
+    expect(
+      (review!.querySelector('[data-testid="v2-parallel-review-concurrency-cap"]') as HTMLInputElement)
+        .value
+    ).toBe('2');
+    expect(
+      (review!.querySelector('[data-testid="v2-parallel-review-budget"]') as HTMLInputElement).value
+    ).toBe('2');
+    expect(
+      (review!.querySelector('[data-testid="v2-parallel-review-proceed-outcome"]') as HTMLSelectElement)
+        .value
+    ).toBe('done');
+    expect(
+      (review!.querySelector('[data-testid="v2-parallel-review-failed-outcome"]') as HTMLSelectElement)
+        .value
+    ).toBe('rejected');
+
+    // One branch optional, budget 4, proceed = the definition's third outcome.
+    await clickAndFlush(
+      review!.querySelector(
+        '[data-testid="v2-parallel-review-member-required"][data-member-id="branch-2"]'
+      )
+    );
+    await setValueAndFlush(
+      review!.querySelector('[data-testid="v2-parallel-review-budget"]'),
+      '4',
+      'input'
+    );
+    await setValueAndFlush(
+      review!.querySelector('[data-testid="v2-parallel-review-proceed-outcome"]'),
+      'archived'
+    );
+    await clickAndFlush(review!.querySelector('[data-testid="v2-parallel-review-confirm"]'));
+
+    expect(container.querySelector('[data-testid="v2-parallel-review-panel"]')).toBeNull();
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toContain(
+      'Parallel frontier created over 2 branches.'
+    );
+
+    // The fan-out IS the selection (both selection truths in one tick) and
+    // its properties panel is open.
+    expect(
+      container
+        .querySelector('[data-testid="mock-node"][data-node-id="fan-out"]')
+        ?.getAttribute('data-selected')
+    ).toBe('true');
+    expect(
+      container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-node')
+    ).toBe('fan-out');
+
+    // The definition actually sent to validation: the drawn sandwich gone,
+    // the four wiring families on the rendered handle ids (the S->fan-out
+    // edge preserves the first drawn source handle — the pre-authored
+    // 'done'), the reviewed contract, and NO node carries
+    // legacyRuntimeOwner (the POST-body half of the two-layer guard).
+    const submitted = await submittedDefinition();
+    expect(
+      submitted.root.connections.some(
+        (connection) =>
+          (connection.from.node === 'source' &&
+            ['branch-1', 'branch-2'].includes(connection.to.node)) ||
+          (['branch-1', 'branch-2'].includes(connection.from.node) &&
+            connection.to.node === 'target')
+      )
+    ).toBe(false);
+    expect(submitted.root.connections.map((connection) => connection.id)).toEqual([
+      'source:done->fan-out:input',
+      'fan-out:branch-1->branch-1:input',
+      'branch-1:done->join:branch-1',
+      'fan-out:branch-2->branch-2:input',
+      'branch-2:done->join:branch-2',
+      'join:archived->target:input',
+    ]);
+    const fanOut = submitted.root.nodes.find((node) => node.id === 'fan-out') as WireFanOutNode;
+    expect(fanOut.kind).toBe('FanOut');
+    expect(fanOut.branches).toEqual(['branch-1', 'branch-2']);
+    expect(fanOut.concurrencyCap).toBe(2);
+    expect(fanOut.budget).toBe(4);
+    expect(fanOut.members).toEqual([
+      { id: 'branch-1', hierarchicalPath: 'branch-1', required: true, condition: 'always' },
+      { id: 'branch-2', hierarchicalPath: 'branch-2', required: false, condition: 'always' },
+    ]);
+    expect(fanOut.joinNodeId).toBe('join');
+    const join = submitted.root.nodes.find((node) => node.id === 'join') as WireJoinNode;
+    expect(join.requiredMembers).toEqual(['branch-1']);
+    expect(join.optionalMembers).toEqual(['branch-2']);
+    expect(join.outcomes).toEqual({ proceed: 'archived', failed: 'rejected' });
+    // Branch content survives verbatim — only the connections changed.
+    expect(
+      (submitted.root.nodes.find((node) => node.id === 'branch-1') as { execution?: { retainedExecutionNote?: string } })
+        .execution?.retainedExecutionNote
+    ).toBe('keep branch-1');
+    for (const node of submitted.root.nodes) {
+      expect(node).not.toHaveProperty('legacyRuntimeOwner');
+    }
+  });
+
+  it('an invalid cap blocks confirm under the authoring-draft-errors discipline', async () => {
+    await mountFrontierEdit(frontierDetail());
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-production-atomics"]'));
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-toast-action"]'));
+
+    const cap = () =>
+      container.querySelector('[data-testid="v2-parallel-review-concurrency-cap"]') as HTMLInputElement;
+    await setValueAndFlush(cap(), '1.5', 'input');
+    expect(cap().getAttribute('aria-invalid')).toBe('true');
+    expect(
+      container.querySelector('[data-testid="integer-contract-error"]')!.textContent
+    ).toBe('Concurrency cap must be a positive integer.');
+    const confirm = container.querySelector(
+      '[data-testid="v2-parallel-review-confirm"]'
+    ) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    // The page's own discipline agrees: validation is blocked until repair.
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    expect(vi.mocked(client.validatePipeline)).not.toHaveBeenCalled();
+
+    // Repair unblocks confirm.
+    await setValueAndFlush(cap(), '1', 'input');
+    expect((container.querySelector('[data-testid="v2-parallel-review-confirm"]') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('a stale offer re-detects at open and offers no confirm', async () => {
+    await mountFrontierEdit(frontierDetail());
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-production-atomics"]'));
+    // The offer toast stays (no auto-dismiss with an action, and this legal
+    // draw fires no new toast). Dirty one branch: branch-2 -> branch-1 makes
+    // branch-1's incoming set {source, branch-2}.
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge-inner"]'));
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-toast-action"]'));
+
+    const review = container.querySelector('[data-testid="v2-parallel-review-panel"]');
+    expect(review).not.toBeNull();
+    expect(review!.querySelector('[data-testid="v2-parallel-review-confirm"]')).toBeNull();
+    expect(review!.querySelector('[data-testid="v2-parallel-review-refusals"]')!.textContent)
+      .toMatch(/no longer a clean parallel frontier/);
+
+    // Cancel leaves the draft exactly as drawn — including both drawn edges.
+    await clickAndFlush(review!.querySelector('[data-testid="v2-parallel-review-cancel"]'));
+    const submitted = await submittedDefinition();
+    expect(submitted.root.nodes.map((node) => node.id)).toEqual([
+      'source',
+      'branch-1',
+      'branch-2',
+      'target',
+    ]);
+    expect(submitted.root.connections.map((connection) => connection.id).sort()).toEqual([
+      'branch-1:done->target:input',
+      'branch-2:done->target:input',
+      'branch-2:patch->branch-1:input',
+      'source:done->branch-2:input',
+      'source:patch->branch-1:input',
+    ]);
+  });
+
+  it('the palette parallel gesture still works after a synthesis', async () => {
+    await mountFrontierEdit(frontierDetail());
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-production-atomics"]'));
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-toast-action"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-parallel-review-confirm"]'));
+
+    // No capability hole: the gesture still mints a pair over every root
+    // AtomicStage, ids uniquified past the synthesized pair.
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-gesture-parallel"]'));
+    const flowText = container.querySelector('[data-testid="mock-reactflow"]')!.textContent!;
+    expect(flowText).toContain('fan-out');
+    expect(flowText).toContain('fan-out-2');
+    const submitted = await submittedDefinition();
+    const secondFanOut = submitted.root.nodes.find(
+      (node) => node.id === 'fan-out-2'
+    ) as WireFanOutNode;
+    expect(secondFanOut.branches).toEqual(['source', 'branch-1', 'branch-2']);
+    expect(secondFanOut.joinNodeId).toBe('join-2');
+  });
+
+  it('a notification toast inside its 2.5s window cannot wipe a freshly surfaced offer (review m1)', async () => {
+    await mountFrontierEdit(frontierDetail());
+    // Fire a plain notification toast: the refused cycle-closing draw
+    // branch-2 -> source (last AtomicStage onto the first). The loop review
+    // it opens is cancelled immediately — the draw-time rejection toast
+    // stands, exactly like the child-3 cancel scenario.
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge"]'));
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toContain(
+      'Rejected: branch-2 → source would create a cycle'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="v2-loop-review-cancel"]'));
+
+    // Complete the frontier inside the rejection toast's 2.5s auto-dismiss
+    // window: the offer must REPLACE the notification and own the surface.
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-production-atomics"]'));
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toContain(
+      'parallel frontier'
+    );
+
+    // Outlive the FIRST toast's window. Pre-m1, its pending
+    // setTimeout(() => setToast('')) fired here and silently erased the
+    // offer — which nothing re-offers (the completing connection is already
+    // drawn). Post-m1 there is exactly one stored timer and it belongs to
+    // the offer, which carries an action and never auto-dismisses.
+    await new Promise((resolve) => setTimeout(resolve, 2700));
+    const toast = container.querySelector('[data-testid="pipeline-canvas-toast"]');
+    expect(toast).not.toBeNull();
+    expect(toast!.textContent).toContain('parallel frontier');
+    const action = container.querySelector('[data-testid="pipeline-canvas-toast-action"]');
+    expect(action).not.toBeNull();
+    expect(action!.textContent).toBe('Run in parallel');
   });
 });

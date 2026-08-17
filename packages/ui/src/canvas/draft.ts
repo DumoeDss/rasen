@@ -3020,3 +3020,252 @@ export function synthesizeBoundedLoopFromBackedge(
   );
   return { next, declarationId, loopId };
 }
+
+// --- Parallel frontier inference (canvas-parallel-frontier-inference D1/D2) --
+
+/** One detected drawn frontier: the sandwich between `source` and `target`. */
+export interface ParallelFrontier {
+  source: string;
+  target: string;
+  /** The clean branch ids, in the draft's node order. */
+  branches: readonly string[];
+}
+
+/**
+ * Detects drawn parallel frontiers over the root graph (design D1): for each
+ * ordered pair (S, T), S ≠ T, both editable kinds and neither a FanOut nor a
+ * Join (an already-paired endpoint means the IR structure exists), the branch
+ * set is `{m | S→m ∈ conns ∧ m→T ∈ conns ∧ in(m) = {S} ∧ out(m) = {T} ∧ m is
+ * an AtomicStage}` — exactly the sandwich the `FanOut`/`Join` pair encodes. A
+ * frontier exists iff at least two branches are clean.
+ *
+ * Strictness is the honesty rule: `FanOut.members`/`Join.inputs` semantics
+ * presume the pair dispatches every branch and the barrier collects them, so
+ * a branch with any other edge is EXCLUDED (not repaired). The adjacency is
+ * the SAME `buildAdjacency` the cycle check and `backedgeRegion` use — one
+ * builder, no second reachability; the predecessor map is derived from it.
+ * Pure; deterministic (branch order follows the draft's node order).
+ */
+export function detectParallelFrontiers(
+  def: WirePipelineDefinitionV2
+): ParallelFrontier[] {
+  const forward = buildAdjacency(def);
+  const backward = new Map<string, string[]>();
+  for (const [from, tos] of forward) {
+    for (const to of tos) {
+      const arr = backward.get(to) ?? [];
+      arr.push(from);
+      backward.set(to, arr);
+    }
+  }
+  const eligible = (node: WireDefinitionNode): boolean =>
+    node.kind !== 'FanOut' &&
+    node.kind !== 'Join' &&
+    isV2EditableNodeKind(node.kind);
+  const frontiers: ParallelFrontier[] = [];
+  const cleanBranches = new Set<string>();
+  for (const source of def.root.nodes) {
+    if (!eligible(source)) continue;
+    for (const target of def.root.nodes) {
+      if (target.id === source.id || !eligible(target)) continue;
+      for (const member of forward.get(source.id) ?? []) {
+        if (
+          member !== source.id &&
+          member !== target.id &&
+          (forward.get(member) ?? []).includes(target.id) &&
+          setEquals(backward.get(member) ?? [], [source.id]) &&
+          setEquals(forward.get(member) ?? [], [target.id]) &&
+          def.root.nodes.some(
+            (node) => node.id === member && node.kind === 'AtomicStage'
+          )
+        ) {
+          cleanBranches.add(member);
+        }
+      }
+      if (cleanBranches.size >= 2) {
+        // Branch order follows the draft's node order (the backedgeRegion
+        // determinism discipline).
+        frontiers.push({
+          source: source.id,
+          target: target.id,
+          branches: def.root.nodes
+            .filter((node) => cleanBranches.has(node.id))
+            .map((node) => node.id),
+        });
+      }
+      cleanBranches.clear();
+    }
+  }
+  return frontiers;
+}
+
+function setEquals(actual: readonly string[], expected: readonly string[]): boolean {
+  if (actual.length !== expected.length) return false;
+  return expected.every((id) => actual.includes(id));
+}
+
+/**
+ * The completing-connect hook (design D1): detection over the POST-connect
+ * draft, filtered to the frontier whose branch-edge set contains the
+ * just-drawn connection — the connection is an S→m dispatch half (its target
+ * is a branch) or an m→T barrier half (its source is a branch). Ports do not
+ * participate: detection is node-level, exactly like the adjacency it reads.
+ */
+export function completedFrontier(
+  def: WirePipelineDefinitionV2,
+  connection: { source: string; target: string }
+): ParallelFrontier | null {
+  return (
+    detectParallelFrontiers(def).find(
+      (frontier) =>
+        (frontier.source === connection.source &&
+          frontier.branches.includes(connection.target)) ||
+        (frontier.target === connection.target &&
+          frontier.branches.includes(connection.source))
+    ) ?? null
+  );
+}
+
+export interface ParallelFrontierMemberReview {
+  id: string;
+  required: boolean;
+}
+
+export interface ParallelFrontierSynthesisInput {
+  source: string;
+  target: string;
+  /** The reviewed membership: one required/optional choice per branch. */
+  members: readonly ParallelFrontierMemberReview[];
+  concurrencyCap: number;
+  budget: number;
+  outcomes: WireJoinNode['outcomes'];
+}
+
+export interface ParallelFrontierSynthesisResult {
+  next: WirePipelineDefinitionV2;
+  fanOutId: string;
+  joinId: string;
+}
+
+/**
+ * The one frontier-synthesis transaction (design D2): turns the drawn
+ * fan-out/reconverge sandwich into the `FanOut`/`Join` pair via
+ * `createParallelPair`-shaped machinery. Steps: (1) re-detect from
+ * `(source, target)` on the live draft — the review is not trusted
+ * (child-2/3's rule) and the reviewed membership must still be exactly the
+ * detected branches; (2) consume the drawn sandwich — every S→m and m→T
+ * connection is removed, never surviving alongside the pair (the author's
+ * transient plain edges, mirroring how the back-edge died at draw time in
+ * child 3); (3) mint the pair through `createParallelPair` with
+ * `v2NodeIdFor` ids — its own validators are the refusal surface, reused
+ * verbatim; (4) add the wiring on the rendered handle ids
+ * (`layout.ts`: FanOut input 'input', one output per branch named by the
+ * member id; Join inputs named by member id, outputs from the outcome
+ * values): S@drawnSourcePort → FanOut@input, per member FanOut@<m> → m@input
+ * and m@done → Join@<m>, Join@<proceed> → T@input. Pure; never mutates;
+ * stamps nothing (`createParallelPair` and `addV2Connection` never write
+ * `legacyRuntimeOwner`).
+ */
+export function synthesizeParallelFrontier(
+  def: WirePipelineDefinitionV2,
+  input: ParallelFrontierSynthesisInput
+): ParallelFrontierSynthesisResult {
+  const frontier = detectParallelFrontiers(def).find(
+    (candidate) =>
+      candidate.source === input.source && candidate.target === input.target
+  );
+  if (!frontier) {
+    throw new Error(
+      'This frontier is no longer a clean fan-out and reconverge shape.'
+    );
+  }
+  const branchSet = new Set(frontier.branches);
+  const reviewedRequired = new Map(
+    input.members.map((member) => [member.id, member.required])
+  );
+  if (
+    reviewedRequired.size !== frontier.branches.length ||
+    frontier.branches.some((id) => !reviewedRequired.has(id))
+  ) {
+    throw new Error(
+      'The frontier branches changed while reviewing them — reopen the review.'
+    );
+  }
+  // The drawn source port dies with the consumed S→m edges, so read it before
+  // the filter: the author drew from that handle, and the S→FanOut edge is its
+  // replacement (first drawn S→m in draft-connection order, deterministic).
+  const drawnSourcePort =
+    def.root.connections.find(
+      (connection) =>
+        connection.from.node === input.source && branchSet.has(connection.to.node)
+    )?.from.port ?? CONTROL_SOURCE_PORT;
+  const consumed: WirePipelineDefinitionV2 = {
+    ...def,
+    root: {
+      ...def.root,
+      connections: def.root.connections.filter(
+        (connection) =>
+          !(
+            (connection.from.node === input.source &&
+              branchSet.has(connection.to.node)) ||
+            (branchSet.has(connection.from.node) &&
+              connection.to.node === input.target)
+          )
+      ),
+    },
+  };
+  const fanOutId = v2NodeIdFor('FanOut', consumed);
+  const joinId = v2NodeIdFor('Join', consumed);
+  let next = createParallelPair(consumed, {
+    fanOutId,
+    joinId,
+    memberNodeIds: frontier.branches,
+    requiredMemberIds: frontier.branches.filter((id) => reviewedRequired.get(id)),
+    concurrencyCap: input.concurrencyCap,
+    budget: input.budget,
+    outcomes: input.outcomes,
+  });
+  next = addV2Connection(next, {
+    id: v2ConnectionIdFor(next, {
+      source: input.source,
+      sourcePort: drawnSourcePort,
+      target: fanOutId,
+      targetPort: CONTROL_TARGET_PORT,
+    }),
+    from: { node: input.source, port: drawnSourcePort },
+    to: { node: fanOutId, port: CONTROL_TARGET_PORT },
+  });
+  for (const member of frontier.branches) {
+    next = addV2Connection(next, {
+      id: v2ConnectionIdFor(next, {
+        source: fanOutId,
+        sourcePort: member,
+        target: member,
+        targetPort: CONTROL_TARGET_PORT,
+      }),
+      from: { node: fanOutId, port: member },
+      to: { node: member, port: CONTROL_TARGET_PORT },
+    });
+    next = addV2Connection(next, {
+      id: v2ConnectionIdFor(next, {
+        source: member,
+        sourcePort: CONTROL_SOURCE_PORT,
+        target: joinId,
+        targetPort: member,
+      }),
+      from: { node: member, port: CONTROL_SOURCE_PORT },
+      to: { node: joinId, port: member },
+    });
+  }
+  next = addV2Connection(next, {
+    id: v2ConnectionIdFor(next, {
+      source: joinId,
+      sourcePort: input.outcomes.proceed,
+      target: input.target,
+      targetPort: CONTROL_TARGET_PORT,
+    }),
+    from: { node: joinId, port: input.outcomes.proceed },
+    to: { node: input.target, port: CONTROL_TARGET_PORT },
+  });
+  return { next, fanOutId, joinId };
+}

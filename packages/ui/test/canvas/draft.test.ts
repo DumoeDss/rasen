@@ -18,8 +18,12 @@ import {
   deriveSubgraphContract,
   EMPTY_CANVAS_SELECTION,
   extractSubgraph,
+  completedFrontier,
+  detectParallelFrontiers,
   insertCompositeRef,
+  setParallelMembers,
   subgraphExtractionRefusals,
+  synthesizeParallelFrontier,
   synthesizeBoundedLoopFromBackedge,
   updateBoundedLoopContract,
   updateBodyStage,
@@ -1868,5 +1872,509 @@ describe('synthesizeBoundedLoopFromBackedge', () => {
       (node) => node.kind === 'CompositeRef' && node.declarationId === 'loop-body'
     )!;
     expect(ref.id).toBe('composite-ref');
+  });
+});
+
+describe('detectParallelFrontiers', () => {
+  /**
+   * The canonical sandwich: s fans out to b1 and b2, both reconverge at t.
+   * Variants below add side edges, non-stage branches, or pair endpoints.
+   */
+  function frontierDef(
+    extra: {
+      connections?: Array<[string, string]>;
+      nodes?: Array<{ id: string; kind: string }>;
+      outcomes?: string[];
+    } = {}
+  ): WirePipelineDefinitionV2 {
+    const stage = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: `skill:${id}`, version: `sha256:${id}` },
+      execution: {
+        version: 1 as const,
+        role: 'implementer' as const,
+        workspace: { access: 'write' as const },
+      },
+      retained: { note: `keep ${id}` },
+    });
+    const extraNodes = (extra.nodes ?? []).map((node) =>
+      node.kind === 'Choice'
+        ? { id: node.id, kind: 'Choice' as const, outcomes: ['taken', 'skipped'] }
+        : node.kind === 'FanOut'
+          ? {
+              id: node.id,
+              kind: 'FanOut' as const,
+              branches: [],
+              concurrencyCap: 2,
+              budget: 2,
+              joinNodeId: 'pair-join',
+              members: [],
+            }
+          : node.kind === 'Join'
+            ? {
+                id: node.id,
+                kind: 'Join' as const,
+                inputs: [],
+                requiredMembers: [],
+                optionalMembers: [],
+                outcomes: { proceed: 'done', failed: 'failed' },
+              }
+            : stage(node.id)
+    );
+    const edges = extra.connections ?? [
+      ['s', 'b1'],
+      ['s', 'b2'],
+      ['b1', 't'],
+      ['b2', 't'],
+    ];
+    return {
+      version: 2,
+      id: 'definition:frontier',
+      sourceId: 'fixture:frontier',
+      name: 'frontier',
+      inputs: [],
+      artifacts: [],
+      outcomes: extra.outcomes ?? ['done'],
+      declarations: [],
+      root: {
+        nodes: [
+          stage('s'),
+          stage('b1'),
+          stage('b2'),
+          stage('t'),
+          ...extraNodes,
+        ],
+        connections: edges.map(([from, to]) => ({
+          id: `e-${from}-${to}`,
+          from: { node: from, port: 'done' },
+          to: { node: to, port: 'input' },
+        })),
+      },
+    };
+  }
+
+  it('detects the clean sandwich with branches in draft node order', () => {
+    expect(detectParallelFrontiers(frontierDef())).toEqual([
+      { source: 's', target: 't', branches: ['b1', 'b2'] },
+    ]);
+  });
+
+  it('two clean branches are the minimum — one offers nothing', () => {
+    const def = frontierDef({
+      connections: [
+        ['s', 'b1'],
+        ['b1', 't'],
+        ['b2', 't'],
+      ],
+    });
+    expect(detectParallelFrontiers(def)).toEqual([]);
+  });
+
+  it('excludes a branch with an extra incoming or outgoing edge, and the offer disappears below two', () => {
+    // b1 also receives from an outsider: in(b1) = {s, x} — not clean.
+    const dirtyIn = frontierDef({
+      nodes: [{ id: 'x', kind: 'AtomicStage' }],
+      connections: [
+        ['s', 'b1'],
+        ['s', 'b2'],
+        ['b1', 't'],
+        ['b2', 't'],
+        ['x', 'b1'],
+      ],
+    });
+    expect(detectParallelFrontiers(dirtyIn)).toEqual([]);
+
+    // b2 also sends onward besides t: out(b2) = {t, y} — not clean.
+    const dirtyOut = frontierDef({
+      nodes: [{ id: 'y', kind: 'AtomicStage' }],
+      connections: [
+        ['s', 'b1'],
+        ['s', 'b2'],
+        ['b1', 't'],
+        ['b2', 't'],
+        ['b2', 'y'],
+      ],
+    });
+    expect(detectParallelFrontiers(dirtyOut)).toEqual([]);
+
+    // Three branches, one shared: the shared one is excluded from membership
+    // and the frontier still stands on the two clean ones (the spec's
+    // "a shared branch does not count" scenario).
+    const shared = frontierDef({
+      nodes: [
+        { id: 'b3', kind: 'AtomicStage' },
+        { id: 'x', kind: 'AtomicStage' },
+      ],
+      connections: [
+        ['s', 'b1'],
+        ['s', 'b2'],
+        ['s', 'b3'],
+        ['b1', 't'],
+        ['b2', 't'],
+        ['b3', 't'],
+        ['x', 'b3'],
+      ],
+    });
+    expect(detectParallelFrontiers(shared)).toEqual([
+      { source: 's', target: 't', branches: ['b1', 'b2'] },
+    ]);
+  });
+
+  it('excludes a non-AtomicStage branch — the pair grammar requires root AtomicStages', () => {
+    const def = frontierDef({
+      nodes: [{ id: 'branch-choice', kind: 'Choice' }],
+      connections: [
+        ['s', 'b1'],
+        ['s', 'branch-choice'],
+        ['b1', 't'],
+        ['branch-choice', 't'],
+      ],
+    });
+    expect(detectParallelFrontiers(def)).toEqual([]);
+  });
+
+  it('offers nothing when the source or target is already a pair half', () => {
+    const source = frontierDef({
+      nodes: [
+        { id: 'pair-fan-out', kind: 'FanOut' },
+        { id: 'pair-join', kind: 'Join' },
+        { id: 'b3', kind: 'AtomicStage' },
+      ],
+      connections: [
+        ['pair-fan-out', 'b1'],
+        ['pair-fan-out', 'b2'],
+        ['pair-fan-out', 'b3'],
+        ['b1', 't'],
+        ['b2', 't'],
+        ['b3', 't'],
+      ],
+    });
+    expect(detectParallelFrontiers(source)).toEqual([]);
+
+    const target = frontierDef({
+      nodes: [
+        { id: 'b3', kind: 'AtomicStage' },
+        { id: 'pair-join', kind: 'Join' },
+      ],
+      connections: [
+        ['s', 'b1'],
+        ['s', 'b2'],
+        ['s', 'b3'],
+        ['b1', 'pair-join'],
+        ['b2', 'pair-join'],
+        ['b3', 'pair-join'],
+      ],
+    });
+    expect(detectParallelFrontiers(target)).toEqual([]);
+  });
+
+  it('adjacency sanity: a direct source→target edge is not a phantom branch', () => {
+    const def = frontierDef({
+      connections: [
+        ['s', 't'],
+        ['s', 'b1'],
+        ['s', 'b2'],
+        ['b1', 't'],
+        ['b2', 't'],
+      ],
+    });
+    // The direct edge participates in no branch (t reaches no target of its
+    // own); the sandwich on b1/b2 is still the one frontier.
+    expect(detectParallelFrontiers(def)).toEqual([
+      { source: 's', target: 't', branches: ['b1', 'b2'] },
+    ]);
+  });
+});
+
+describe('completedFrontier', () => {
+  function sandwichDef(): WirePipelineDefinitionV2 {
+    const stage = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: `skill:${id}`, version: `sha256:${id}` },
+    });
+    return {
+      version: 2,
+      id: 'definition:sandwich',
+      sourceId: 'fixture:sandwich',
+      name: 'sandwich',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [],
+      root: {
+        nodes: [stage('s'), stage('b1'), stage('b2'), stage('t')],
+        connections: [
+          { id: 'c1', from: { node: 's', port: 'done' }, to: { node: 'b1', port: 'input' } },
+          { id: 'c2', from: { node: 's', port: 'done' }, to: { node: 'b2', port: 'input' } },
+          { id: 'c3', from: { node: 'b1', port: 'done' }, to: { node: 't', port: 'input' } },
+          { id: 'c4', from: { node: 'b2', port: 'done' }, to: { node: 't', port: 'input' } },
+        ],
+      },
+    };
+  }
+
+  it('fires for the completing dispatch half (S→m) and the completing barrier half (m→T)', () => {
+    // Either family of the sandwich completes the shape: the last fan-out
+    // branch drawn (s→b1 landing after s→b2) ...
+    expect(completedFrontier(sandwichDef(), { source: 's', target: 'b1' })).toEqual({
+      source: 's',
+      target: 't',
+      branches: ['b1', 'b2'],
+    });
+    // ... and the last reconverging edge (b2→t landing after b1→t).
+    expect(completedFrontier(sandwichDef(), { source: 'b2', target: 't' })).toEqual({
+      source: 's',
+      target: 't',
+      branches: ['b1', 'b2'],
+    });
+  });
+
+  it('does not fire for a connection outside every frontier branch-edge set', () => {
+    // Neither an S→m nor an m→T edge of any detected frontier.
+    expect(completedFrontier(sandwichDef(), { source: 's', target: 't' })).toBeNull();
+    expect(completedFrontier(sandwichDef(), { source: 't', target: 's' })).toBeNull();
+    // And a draft with no frontier at all offers nothing.
+    const stage = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: `skill:${id}`, version: `sha256:${id}` },
+    });
+    const single: WirePipelineDefinitionV2 = {
+      version: 2,
+      id: 'definition:single',
+      sourceId: 'fixture:single',
+      name: 'single',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [],
+      root: {
+        nodes: [stage('s'), stage('b1'), stage('t')],
+        connections: [
+          { id: 'c1', from: { node: 's', port: 'done' }, to: { node: 'b1', port: 'input' } },
+          { id: 'c2', from: { node: 'b1', port: 'done' }, to: { node: 't', port: 'input' } },
+        ],
+      },
+    };
+    expect(completedFrontier(single, { source: 's', target: 'b1' })).toBeNull();
+  });
+});
+
+describe('synthesizeParallelFrontier', () => {
+  function synthesize(
+    def: WirePipelineDefinitionV2 = sandwichDef(),
+    over: Partial<Parameters<typeof synthesizeParallelFrontier>[1]> = {}
+  ) {
+    return synthesizeParallelFrontier(def, {
+      source: 's',
+      target: 't',
+      members: [
+        { id: 'b1', required: true },
+        { id: 'b2', required: true },
+      ],
+      concurrencyCap: 2,
+      budget: 2,
+      outcomes: { proceed: 'done', failed: 'failed' },
+      ...over,
+    });
+  }
+
+  function sandwichDef(extraConnections: Array<[string, string, string]> = []): WirePipelineDefinitionV2 {
+    const stage = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: `skill:${id}`, version: `sha256:${id}` },
+      execution: {
+        version: 1 as const,
+        role: 'implementer' as const,
+        workspace: { access: 'write' as const },
+      },
+      retained: { note: `keep ${id}` },
+    });
+    return {
+      version: 2,
+      id: 'definition:synthesis',
+      sourceId: 'fixture:synthesis',
+      name: 'synthesis',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done', 'failed'],
+      declarations: [],
+      root: {
+        nodes: [stage('s'), stage('b1'), stage('b2'), stage('t')],
+        connections: [
+          { id: 'c1', from: { node: 's', port: 'done' }, to: { node: 'b1', port: 'input' } },
+          { id: 'c2', from: { node: 's', port: 'done' }, to: { node: 'b2', port: 'input' } },
+          { id: 'c3', from: { node: 'b1', port: 'done' }, to: { node: 't', port: 'input' } },
+          { id: 'c4', from: { node: 'b2', port: 'done' }, to: { node: 't', port: 'input' } },
+          ...extraConnections.map(([from, to, id]) => ({
+            id,
+            from: { node: from, port: 'done' },
+            to: { node: to, port: 'input' },
+          })),
+        ],
+      },
+    };
+  }
+
+  it('consumes the drawn sandwich and wires the four families with exact endpoint/port ids', () => {
+    const result = synthesize();
+
+    expect(result.fanOutId).toBe('fan-out');
+    expect(result.joinId).toBe('join');
+    // Consumption: none of S→m / m→T survives alongside the pair.
+    expect(
+      result.next.root.connections.some(
+        (connection) =>
+          (connection.from.node === 's' &&
+            ['b1', 'b2'].includes(connection.to.node)) ||
+          (['b1', 'b2'].includes(connection.from.node) && connection.to.node === 't')
+      )
+    ).toBe(false);
+    // The four wiring families on the rendered handle ids (layout.ts):
+    // FanOut input 'input', one output per branch; Join inputs named by
+    // member id, outputs from the outcome values.
+    expect(result.next.root.connections.map((connection) => connection.id)).toEqual([
+      's:done->fan-out:input',
+      'fan-out:b1->b1:input',
+      'b1:done->join:b1',
+      'fan-out:b2->b2:input',
+      'b2:done->join:b2',
+      'join:done->t:input',
+    ]);
+    const fanOut = result.next.root.nodes.find((node) => node.id === 'fan-out')!;
+    if (fanOut.kind !== 'FanOut') throw new Error('expected a FanOut');
+    expect(fanOut.branches).toEqual(['b1', 'b2']);
+    expect(fanOut.joinNodeId).toBe('join');
+    const join = result.next.root.nodes.find((node) => node.id === 'join')!;
+    if (join.kind !== 'Join') throw new Error('expected a Join');
+    expect(join.inputs).toEqual(['b1', 'b2']);
+  });
+
+  it('preserves the drawn source port on the source→fan-out edge', () => {
+    // The author drew S's typed artifact handle, not the conventional control
+    // port — the replacement edge keeps the author's handle.
+    const def = sandwichDef();
+    def.root.connections[0] = {
+      id: 'c1',
+      from: { node: 's', port: 'patch' },
+      to: { node: 'b1', port: 'input' },
+    };
+    const result = synthesize(def);
+    expect(
+      result.next.root.connections.map((connection) => connection.id)
+    ).toContain('s:patch->fan-out:input');
+  });
+
+  it('follows the reviewed required/optional split, cap, budget, and outcome picks', () => {
+    const result = synthesize(sandwichDef(), {
+      members: [
+        { id: 'b1', required: true },
+        { id: 'b2', required: false },
+      ],
+      concurrencyCap: 5,
+      budget: 9,
+      outcomes: { proceed: 'failed', failed: 'done' },
+    });
+    const fanOut = result.next.root.nodes.find((node) => node.id === 'fan-out')!;
+    if (fanOut.kind !== 'FanOut') throw new Error('expected a FanOut');
+    expect(fanOut.concurrencyCap).toBe(5);
+    expect(fanOut.budget).toBe(9);
+    expect(fanOut.members).toEqual([
+      { id: 'b1', hierarchicalPath: 'b1', required: true, condition: 'always' },
+      { id: 'b2', hierarchicalPath: 'b2', required: false, condition: 'always' },
+    ]);
+    const join = result.next.root.nodes.find((node) => node.id === 'join')!;
+    if (join.kind !== 'Join') throw new Error('expected a Join');
+    expect(join.requiredMembers).toEqual(['b1']);
+    expect(join.optionalMembers).toEqual(['b2']);
+    expect(join.outcomes).toEqual({ proceed: 'failed', failed: 'done' });
+    // The reviewed proceed outcome is the port the barrier→target edge uses.
+    expect(
+      result.next.root.connections.map((connection) => connection.id)
+    ).toContain('join:failed->t:input');
+  });
+
+  it('keeps branch execution settings verbatim — only the connections change', () => {
+    const def = sandwichDef();
+    const b1 = def.root.nodes[1]!;
+    const result = synthesize(def);
+    expect(result.next.root.nodes.find((node) => node.id === 'b1')).toBe(b1);
+  });
+
+  it('surfaces createParallelPair refusal strings verbatim', () => {
+    expect(() => synthesize(sandwichDef(), { concurrencyCap: 0 })).toThrow(
+      'Parallel concurrency cap must be positive.'
+    );
+    expect(() => synthesize(sandwichDef(), { budget: -1 })).toThrow(
+      'Parallel budget must be positive.'
+    );
+  });
+
+  it('refuses a stale review: the sandwich no longer exists or drifted underneath', () => {
+    // A second synthesis against the result: the sandwich is consumed, so
+    // re-detection finds no frontier.
+    const first = synthesize();
+    expect(() => synthesize(first.next)).toThrow(
+      /no longer a clean fan-out and reconverge shape/
+    );
+    // A drifted membership (the review's member list is not the detected
+    // branch set) refuses rather than guessing.
+    expect(() =>
+      synthesize(sandwichDef(), {
+        members: [
+          { id: 'b1', required: true },
+          { id: 'b2', required: true },
+          { id: 't', required: true },
+        ],
+      })
+    ).toThrow(/branches changed while reviewing/);
+  });
+
+  it('stamps no legacyRuntimeOwner on any node in next', () => {
+    const result = synthesize();
+    expect(result.next.root.nodes.length).toBeGreaterThan(0);
+    for (const node of result.next.root.nodes) {
+      expect(node).not.toHaveProperty('legacyRuntimeOwner');
+    }
+  });
+
+  it('leaves the pair authorable — setParallelMembers edits the synthesized membership', () => {
+    const result = synthesize();
+    const edited = setParallelMembers(result.next, 'fan-out', ['b2', 'b1']);
+    const fanOut = edited.root.nodes.find((node) => node.id === 'fan-out')!;
+    if (fanOut.kind !== 'FanOut') throw new Error('expected a FanOut');
+    expect(fanOut.branches).toEqual(['b2', 'b1']);
+    const join = edited.root.nodes.find((node) => node.id === 'join')!;
+    if (join.kind !== 'Join') throw new Error('expected a Join');
+    expect(join.inputs).toEqual(['b2', 'b1']);
+  });
+
+  it('mints non-colliding ids beside an existing pair', () => {
+    const def = sandwichDef();
+    def.root.nodes.push(
+      {
+        id: 'fan-out',
+        kind: 'FanOut',
+        branches: ['t'],
+        concurrencyCap: 1,
+        budget: 1,
+        joinNodeId: 'join',
+        members: [{ id: 't', hierarchicalPath: 't', required: true, condition: 'always' }],
+      },
+      {
+        id: 'join',
+        kind: 'Join',
+        inputs: ['t'],
+        requiredMembers: ['t'],
+        optionalMembers: [],
+        outcomes: { proceed: 'done', failed: 'failed' },
+      }
+    );
+    const result = synthesize(def);
+    expect(result.fanOutId).toBe('fan-out-2');
+    expect(result.joinId).toBe('join-2');
   });
 });
