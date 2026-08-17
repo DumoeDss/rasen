@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { useLocation, useRoute } from 'preact-iso';
 import {
   ReactFlow,
@@ -6,6 +6,7 @@ import {
   Controls,
   ReactFlowProvider,
   useReactFlow,
+  useUpdateNodeInternals,
   addEdge,
   applyNodeChanges,
   applyEdgeChanges,
@@ -60,7 +61,9 @@ import {
   CanvasSelection,
   completedFrontier,
   declareDefinitionOutcome,
+  defaultBoundedLoopExitOutcomeValues,
   definitionIssuePathTarget,
+  deriveBackedgeLoopContract,
   deriveSubgraphContract,
   detectParallelFrontiers,
   duplicateV2Definition,
@@ -97,6 +100,7 @@ import {
   synthesizeBoundedLoopFromBackedge,
   synthesizeParallelFrontier,
   unavailableRootGestures,
+  underivableBodyStageRefusals,
   unspliceChoice,
   updateBodyStage,
   updateBodyStageExecution,
@@ -124,6 +128,7 @@ import { DefinitionContractPanel } from './DefinitionContractPanel.js';
 import type { IntegerContractDraftError } from './IntegerContractField.js';
 import { PalettePanel, PALETTE_DND_TYPE } from './PalettePanel.js';
 import { StagePanel } from './StagePanel.js';
+import { V2BodyStagePanel } from './V2BodyStagePanel.js';
 import { V2NodePanel } from './V2NodePanel.js';
 import { V2ConnectionPanel } from './V2ConnectionPanel.js';
 import { V2SelectionPanel } from './V2SelectionPanel.js';
@@ -176,6 +181,16 @@ const PARALLEL_REVIEW_INTEGER_FIELDS = [
   'parallel-review:concurrencyCap',
   'parallel-review:budget',
 ];
+
+/**
+ * The default lifecycle's exit-action outcome values (under
+ * `createDefaultBoundedLoopLifecycle` exactly `['iteration-limit']`) — what
+ * every canvas-minted loop emits on top of its chosen exit outcome. The
+ * loop review renders these (minus what the definition already declares)
+ * as its declare-notice line, from the model's own function rather than a
+ * second copy of the lifecycle vocabulary.
+ */
+const LOOP_LIFECYCLE_EXIT_OUTCOMES = defaultBoundedLoopExitOutcomeValues();
 
 /** The toast's optional action (design D4): a button riding the toast. */
 interface ToastAction {
@@ -267,6 +282,29 @@ export function PipelineCanvasPage() {
    */
   const authorPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   /**
+   * The session's expanded frames (canvas-loop-body-visibility design D2):
+   * root node ids currently rendered as frames. A ref, not state — the
+   * flow-node rebuild IS the render truth (the placement cache's pattern):
+   * the toggle writes the ref and calls `recomputeFlow`, with no draft
+   * mutation and no `markDraftChanged` (expansion is edit-session state
+   * only, never part of the saved definition). Reset by `enterEditWith`
+   * (every session starts collapsed).
+   */
+  const expandedFramesRef = useRef<Set<string>>(new Set());
+  /**
+   * The body stage selected inside an expanded frame (design D3): opens the
+   * read-only `V2BodyStagePanel`. Mutually exclusive with root selection
+   * (the round-1 node/edge pattern — selecting either clears the other; the
+   * pane click clears both). Body cards are React Flow-unselectable by
+   * construction, so `CanvasSelection` and every selection consumer never
+   * see a body id.
+   */
+  const [bodySelection, setBodySelection] = useState<{
+    frameId: string;
+    declarationId: string;
+    nodeId: string;
+  } | null>(null);
+  /**
    * The definition contract panel's aliases for the sink offer's locate
    * action (canvas-root-contract-editor design D6): the outcomes input's ref
    * (focus) and the panel root's ref (scrollIntoView). jsdom asserts focus
@@ -314,7 +352,7 @@ export function PipelineCanvasPage() {
     from: string;
     to: string;
     nodeIds: ReadonlySet<string>;
-    derived: ReturnType<typeof deriveSubgraphContract>;
+    derived: ReturnType<typeof deriveBackedgeLoopContract>;
     refusals: readonly string[];
     stageCount: number;
     internalConnectionCount: number;
@@ -549,11 +587,16 @@ export function PipelineCanvasPage() {
     catalogOverride: PipelineCatalogResponse | null = catalog,
     selectionOverride: CanvasSelection = selection
   ) {
-    const { nodes, edges } = draftToGraph(def, catalogOverride);
+    const { nodes, edges, frameChildren } = draftToGraph(
+      def,
+      catalogOverride,
+      def.version === 2 ? expandedFramesRef.current : undefined
+    );
     const laidOut = layoutGraph(
       nodes,
       edges,
-      def.version === 2 ? authorPositionsRef.current : undefined
+      def.version === 2 ? authorPositionsRef.current : undefined,
+      frameChildren
     ).map((node) =>
       node.type === 'stage' && def.version === 1
         ? { ...node, draggable: true, connectable: true, deletable: true }
@@ -564,12 +607,30 @@ export function PipelineCanvasPage() {
     // visually deselects everything. Handlers that replace the selection in
     // the same tick pass the NEXT selection explicitly — this closure's
     // `selection` is still the pre-replace value.
-    setFlowNodes(
-      laidOut.map((node) =>
-        selectionOverride.nodeIds.has(node.id)
-          ? { ...node, selected: true }
-          : node
+    //
+    // Measurement-carry (canvas-loop-body-visibility): the rebuild's fresh
+    // node objects must PRESERVE React Flow's `measured` for ids that
+    // persist. An adopted node without `measured` renders
+    // `visibility: hidden` until its ResizeObserver re-measures — and a
+    // re-observed element whose size did not change never re-fires, which
+    // wedged expanded frames hidden (their body edges never initialized)
+    // until a collapse/expand cycle remounted them. Carrying `measured`
+    // keeps `handleBounds` alive through adoption (the same stability
+    // `applyNodeChanges`-only updates give a controlled flow).
+    const measuredById = new Map(
+      flowNodes.flatMap((node) =>
+        node.measured ? ([[node.id, node.measured] as const] as const) : []
       )
+    );
+    setFlowNodes(
+      laidOut.map((node) => {
+        const stamped =
+          selectionOverride.nodeIds.has(node.id) && !node.selected
+            ? { ...node, selected: true }
+            : node;
+        const measured = measuredById.get(node.id);
+        return measured && !stamped.measured ? { ...stamped, measured } : stamped;
+      })
     );
     setFlowEdges(
       edges.map((edge) =>
@@ -581,14 +642,82 @@ export function PipelineCanvasPage() {
     // Placement invalidation (canvas-durable-node-positioning design D3):
     // after the rebuild the cache is exactly "placements of nodes present in
     // the root graph" — deleted/extracted nodes drop theirs, so a re-added
-    // id lays out afresh instead of resurrecting a departed placement.
+    // id lays out afresh instead of resurrecting a departed placement. Body
+    // children never enter it: `nodes` is the ROOT projection only.
     if (def.version === 2) {
       authorPositionsRef.current = pruneAuthorPositions(
         authorPositionsRef.current,
         nodes.map((node) => node.id)
       );
+      // The open body panel survives a rebuild only while its frame, its
+      // declaration, and its stage all still exist in the draft.
+      setBodySelection((current) => {
+        if (!current) return null;
+        const framePresent = def.root.nodes.some(
+          (node) => node.id === current.frameId
+        );
+        const stagePresent = def.declarations
+          .find((declaration) => declaration.id === current.declarationId)
+          ?.graph.nodes.some((node) => node.id === current.nodeId);
+        return framePresent && stagePresent ? current : null;
+      });
+    } else {
+      setBodySelection(null);
     }
   }
+
+  /**
+   * Live-state mirror for the two node-data callbacks (canvas-loop-body-
+   * visibility design D2/D3). The callbacks ride React Flow node objects,
+   * whose IDENTITY must stay stable between flow rebuilds — React Flow's
+   * controlled adoption (`adoptUserNodes` checkEquality) re-initializes any
+   * node whose object identity changed, clearing `measured`/`handleBounds`
+   * and ping-ponging with the ResizeObserver-driven measurement loop (found
+   * live as a wedged renderer). So the callbacks are created ONCE and read
+   * the current draft/catalog/selection through this ref instead of closing
+   * over render state.
+   */
+  const latestFlowInputsRef = useRef<{
+    draft: WirePipelineDefinition | null;
+    catalog: PipelineCatalogResponse | null;
+    selection: CanvasSelection;
+  }>({ draft: null, catalog: null, selection: EMPTY_CANVAS_SELECTION });
+  latestFlowInputsRef.current = { draft, catalog, selection };
+
+  /**
+   * The frame chevron (canvas-loop-body-visibility design D2): a session-only
+   * ref write plus a flow rebuild — NO draft mutation, no `markDraftChanged`
+   * (expansion never touches the definition), no selection change. A
+   * collapsing frame stops rendering its body, so an open body panel for that
+   * frame goes with it. Stable identity (see `latestFlowInputsRef`).
+   */
+  const toggleFrameExpand = useCallback((frameId: string) => {
+    const current = latestFlowInputsRef.current.draft;
+    if (!current) return;
+    if (expandedFramesRef.current.has(frameId)) {
+      expandedFramesRef.current.delete(frameId);
+      setBodySelection((sel) => (sel?.frameId === frameId ? null : sel));
+    } else {
+      expandedFramesRef.current.add(frameId);
+    }
+    const { catalog: liveCatalog, selection: liveSelection } =
+      latestFlowInputsRef.current;
+    recomputeFlow(current, liveCatalog, liveSelection);
+  }, []);
+
+  /**
+   * A body card's click (design D3): opens the read-only panel and REPLACES
+   * the root selection with empty (mutually exclusive, the round-1 pattern;
+   * `replaceSelection` pairs both selection truths so React Flow's listener
+   * cannot revert it one commit later). Stable identity (see above).
+   */
+  const selectBodyStage = useCallback(
+    (frameId: string, declarationId: string, nodeId: string) => {
+      setBodySelection({ frameId, declarationId, nodeId });
+      replaceSelection([]);
+    },
+    []
+  );
 
   function enterEditWith(
     seed: WirePipelineDefinition,
@@ -598,6 +727,10 @@ export function PipelineCanvasPage() {
     // Every session starts from computed layout (design D6): no placement
     // from a previous session can leak across definitions or reloads.
     authorPositionsRef.current = new Map();
+    // Every session also starts COLLAPSED (canvas-loop-body-visibility
+    // design D2): expansion is edit-session state, never carried across.
+    expandedFramesRef.current = new Set();
+    setBodySelection(null);
     setDraft(seed);
     setLoadedDefinition(seed);
     setMode('edit');
@@ -677,6 +810,7 @@ export function PipelineCanvasPage() {
     setDraft(null);
     setLoadedDefinition(null);
     setSelection(EMPTY_CANVAS_SELECTION);
+    setBodySelection(null);
     setSelectedDeclarationId(null);
     setSelectedIssueTarget(null);
     setSelectedIssueSeverity(null);
@@ -1097,6 +1231,7 @@ export function PipelineCanvasPage() {
     // v1 editing is excluded (different coordinate contract for its group
     // children).
     if (draft?.version === 2) {
+      const rootIds = new Set(draft.root.nodes.map((node) => node.id));
       for (const change of changes) {
         if (
           change.type !== 'position' ||
@@ -1105,6 +1240,11 @@ export function PipelineCanvasPage() {
         ) {
           continue;
         }
+        // Root-keyed by capture guard too (canvas-loop-body-visibility): a
+        // body child is never draggable in React Flow, but a stray position
+        // change under a body id is skipped on arrival — frame-local
+        // positions are layout-owned, recomputed every rebuild.
+        if (!rootIds.has(change.id)) continue;
         authorPositionsRef.current.set(change.id, {
           x: change.position.x,
           y: change.position.y,
@@ -1153,6 +1293,27 @@ export function PipelineCanvasPage() {
   function onSelectionChange({ nodes, edges }: OnSelectionChangeParams) {
     const nodeIds = new Set(nodes.map((node) => node.id));
     const connectionIds = new Set(edges.map((edge) => edge.id));
+    // Root selection and body selection are mutually exclusive
+    // (canvas-loop-body-visibility design D3): a REAL selection WITH CONTENT
+    // — user interaction or a programmatic replace that diverged from the
+    // mirror — closes the body panel. An EMPTYING selection deliberately
+    // does NOT: the body click itself empties the mirror
+    // (`replaceSelection([])`), and the listener's identity-driven re-fire
+    // against this render's PRE-replace mirror would read that as a change
+    // and wipe the panel one commit after it opened (an intermittent race,
+    // found live). The pane-click path owns the empty case.
+    const sameNodes =
+      selection.nodeIds.size === nodeIds.size &&
+      [...nodeIds].every((id) => selection.nodeIds.has(id));
+    const sameConnections =
+      selection.connectionIds.size === connectionIds.size &&
+      [...connectionIds].every((id) => selection.connectionIds.has(id));
+    if (
+      (nodeIds.size > 0 || connectionIds.size > 0) &&
+      (!sameNodes || !sameConnections)
+    ) {
+      setBodySelection(null);
+    }
     setSelection((current) => {
       const sameNodes =
         current.nodeIds.size === nodeIds.size &&
@@ -1164,6 +1325,19 @@ export function PipelineCanvasPage() {
         ? current
         : { nodeIds, connectionIds };
     });
+  }
+
+  /**
+   * The pane click (canvas-loop-body-visibility design D3): clears BOTH
+   * selection truths — the root mirror (React Flow reports the deselect when
+   * something was selected; `replaceSelection` re-stamps both so the
+   * listener re-fire carries the same value) and the body panel (a pane
+   * click with nothing selected never fires `onSelectionChange`, so the
+   * panel needs this explicit clear).
+   */
+  function onPaneClick() {
+    setBodySelection(null);
+    replaceSelection([]);
   }
 
   function onDropStage(skill: PipelineCatalogSkill, position: { x: number; y: number }) {
@@ -1260,6 +1434,10 @@ export function PipelineCanvasPage() {
       showToast(error instanceof Error ? error.message : 'Could not add this gesture.');
       return;
     }
+    // Moment-of-formation feedback (canvas-loop-body-visibility design D2):
+    // the just-minted loop opens EXPANDED — the author sees what the gesture
+    // captured immediately.
+    if (gesture === 'loop') expandedFramesRef.current.add(ids[0]!);
     setDraft(nextDraft);
     recomputeFlow(nextDraft, catalog, selectAddedNodes(ids));
     markDraftChanged();
@@ -1377,6 +1555,9 @@ export function PipelineCanvasPage() {
       return;
     }
     setExtractReview(null);
+    // Moment-of-formation feedback (canvas-loop-body-visibility design D2):
+    // the replacing ref opens EXPANDED — the packaged body shows itself.
+    expandedFramesRef.current.add(result.refId);
     const nextSelection: CanvasSelection = {
       nodeIds: new Set([result.refId]),
       connectionIds: new Set<string>(),
@@ -1395,19 +1576,26 @@ export function PipelineCanvasPage() {
   /**
    * Opens the loop review for a refused cycle-closing draw. The region, the
    * derivation, and the refusals live in `draft.ts` (`backedgeRegion`,
-   * `deriveSubgraphContract`, `subgraphExtractionRefusals`); this handler
-   * only captures what the author is about to review. The drawn connection
-   * is never written to the draft — the review state carries the endpoints
-   * as data, so cancel reproduces today's refusal outcome exactly.
+   * `deriveBackedgeLoopContract` — the cut contract with control-typed entry
+   * rows and the body's producible terminal outcomes, from the catalog;
+   * `subgraphExtractionRefusals`; `underivableBodyStageRefusals` — a body
+   * stage whose capability is not in the catalog blocks confirm here because
+   * the loop's exit outcomes cannot be derived for it); this handler only
+   * captures what the author is about to review. The drawn connection is
+   * never written to the draft — the review state carries the endpoints as
+   * data, so cancel reproduces today's refusal outcome exactly.
    */
   function openLoopReview(from: string, to: string) {
     if (!draft || draft.version !== 2) return;
     const nodeIds = backedgeRegion(draft, from, to);
-    const derived = deriveSubgraphContract(draft, nodeIds);
-    const refusals = subgraphExtractionRefusals(draft, {
-      nodeIds,
-      connectionIds: new Set<string>(),
-    });
+    const derived = deriveBackedgeLoopContract(draft, nodeIds, to, catalog);
+    const refusals = [
+      ...subgraphExtractionRefusals(draft, {
+        nodeIds,
+        connectionIds: new Set<string>(),
+      }),
+      ...underivableBodyStageRefusals(draft, nodeIds, catalog),
+    ];
     const internalConnectionCount = draft.root.connections.filter(
       (connection) =>
         nodeIds.has(connection.from.node) && nodeIds.has(connection.to.node)
@@ -1445,11 +1633,15 @@ export function PipelineCanvasPage() {
     if (!draft || draft.version !== 2 || !loopReview) return;
     let result;
     try {
-      result = synthesizeBoundedLoopFromBackedge(draft, {
-        from: loopReview.from,
-        to: loopReview.to,
-        ...review,
-      });
+      result = synthesizeBoundedLoopFromBackedge(
+        draft,
+        {
+          from: loopReview.from,
+          to: loopReview.to,
+          ...review,
+        },
+        catalog
+      );
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Could not turn this back-edge into a loop.';
@@ -1459,6 +1651,10 @@ export function PipelineCanvasPage() {
     }
     setLoopReview(null);
     removeAuthoringDraftErrorScopes([LOOP_REVIEW_INTEGER_FIELD]);
+    // Moment-of-formation feedback (canvas-loop-body-visibility design D2):
+    // the synthesized loop opens EXPANDED — the captured region shows itself
+    // immediately (the point of the round-3 question this change answers).
+    expandedFramesRef.current.add(result.loopId);
     const nextSelection: CanvasSelection = {
       nodeIds: new Set([result.loopId]),
       connectionIds: new Set<string>(),
@@ -2246,6 +2442,55 @@ export function PipelineCanvasPage() {
 
   const backHref = space ? spaceHref(space, 'pipelines') : '/';
 
+  /**
+   * Frame affordance wiring (canvas-loop-body-visibility design D1/D2): the
+   * flow state stays serializable — layout.ts emits the STATE only (which
+   * cards are frames / body stages) — and the handlers are attached here.
+   * Memoized on `flowNodes` with STABLE callbacks (see
+   * `latestFlowInputsRef`): the wired array's identity changes exactly when
+   * the flow rebuilds, never on unrelated page renders — React Flow's
+   * adoption must not see new node identities per render (it re-initializes
+   * them, wedging the measurement loop). A rebuild-time-only closure would
+   * also freeze against the rebuild's draft snapshot (the chevron on a
+   * just-synthesized loop would collapse the PRE-synthesis draft) — the
+   * stable-callback + live-ref shape gives freshness WITHOUT identity churn.
+   */
+  const wiredFlowNodes = useMemo(
+    () =>
+      flowNodes.map((node) => {
+        if (node.type !== 'stage') return node;
+        if (node.data.frameToggle) {
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              frameToggle: {
+                ...node.data.frameToggle,
+                onToggleExpand: toggleFrameExpand,
+              },
+            },
+          };
+        }
+        if (node.data.bodyStage) {
+          const { frameId, declarationId } = node.data.bodyStage;
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              bodyStage: {
+                frameId,
+                declarationId,
+                onSelectBody: () =>
+                  selectBodyStage(frameId, declarationId, node.data.id),
+              },
+            },
+          };
+        }
+        return node;
+      }),
+    [flowNodes, toggleFrameExpand, selectBodyStage]
+  );
+
   // Singleton derivations (design D3): the panel objects come from
   // `singletonNodeId`/`singletonConnectionId`, so singleton panel behavior —
   // including `key={id}` remount semantics below — is unchanged while a
@@ -2286,6 +2531,25 @@ export function PipelineCanvasPage() {
         : null,
     [draft, primarySelectedConnectionId]
   );
+  /**
+   * The selected body stage's panel facts (canvas-loop-body-visibility
+   * design D3): read straight from the owning declaration's graph — the
+   * same source of truth the frame children render from. Null (panel
+   * closed) whenever the selection left the draft, which `recomputeFlow`'s
+   * prune already enforced.
+   */
+  const selectedBodyStage = useMemo(() => {
+    if (draft?.version !== 2 || !bodySelection) return null;
+    const node = draft.declarations
+      .find((declaration) => declaration.id === bodySelection.declarationId)
+      ?.graph.nodes.find((candidate) => candidate.id === bodySelection.nodeId);
+    if (!node) return null;
+    const capability =
+      node.kind === 'AtomicStage' && node.capability
+        ? { id: node.capability.id, version: node.capability.version }
+        : null;
+    return { node, kind: node.kind, capability };
+  }, [draft, bodySelection]);
   const existingGroups = useMemo(
     () =>
       draft?.version === 1
@@ -2864,6 +3128,7 @@ export function PipelineCanvasPage() {
           defaultId={loopReview.defaultId}
           derived={loopReview.derived}
           defaultMaxIterations={3}
+          lifecycleExitOutcomes={LOOP_LIFECYCLE_EXIT_OUTCOMES}
           refusals={loopReview.refusals}
           integerDraftError={authoringDraftErrors[LOOP_REVIEW_INTEGER_FIELD] ?? null}
           onIntegerDraftError={setAuthoringDraftError}
@@ -3006,13 +3271,14 @@ export function PipelineCanvasPage() {
             )}
             <ReactFlowProvider>
               <CanvasFlow
-                nodes={mode === 'view' ? viewFlowNodes(detail) : flowNodes}
+                nodes={mode === 'view' ? viewFlowNodes(detail) : wiredFlowNodes}
                 edges={mode === 'view' ? viewFlowEdges(detail) : flowEdges}
                 editable={editable}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
                 onSelectionChange={onSelectionChange}
+                onPaneClick={onPaneClick}
                 onDropStage={onDropStage}
               />
             </ReactFlowProvider>
@@ -3119,6 +3385,17 @@ export function PipelineCanvasPage() {
             onClose={() => replaceSelection([])}
           />
         )}
+        {editable && bodySelection && selectedBodyStage && (
+          <V2BodyStagePanel
+            key={`${bodySelection.frameId}::${bodySelection.nodeId}`}
+            stageId={bodySelection.nodeId}
+            kind={selectedBodyStage.kind}
+            capability={selectedBodyStage.capability}
+            declarationId={bodySelection.declarationId}
+            frameId={bodySelection.frameId}
+            onClose={() => setBodySelection(null)}
+          />
+        )}
         {editable && draft && selectionPanelMode(selection) === 'multi' && (
           <V2SelectionPanel
             // The summary serves both editors; v1's elements are stage
@@ -3163,6 +3440,7 @@ function CanvasFlow({
   onEdgesChange,
   onConnect,
   onSelectionChange,
+  onPaneClick,
   onDropStage,
 }: {
   nodes: PipelineFlowNode[];
@@ -3172,9 +3450,28 @@ function CanvasFlow({
   onEdgesChange: (changes: EdgeChange[]) => void;
   onConnect: (connection: Connection) => void;
   onSelectionChange: (params: OnSelectionChangeParams) => void;
+  onPaneClick: () => void;
   onDropStage: (skill: PipelineCatalogSkill, position: { x: number; y: number }) => void;
 }) {
   const { screenToFlowPosition } = useReactFlow();
+  /**
+   * External-layout measurement discipline (canvas-loop-body-visibility):
+   * the page rebuilds node objects wholesale on every draft mutation, and a
+   * node whose element persists through the rebuild can end up re-adopted
+   * with `measured` cleared while its ResizeObserver never re-delivers (a
+   * re-observed element whose size did not change fires no observation) —
+   * `handleBounds` stays undefined, and an edge whose endpoint never
+   * initializes renders NOTHING (observed live: body-frame edges missing
+   * until a collapse/expand cycle remounted the frame). Forcing one batched
+   * internals refresh whenever the node ID SET changes (mount, add, remove,
+   * expand, collapse — exactly the moments elements appear or disappear)
+   * makes measurement deterministic instead of observer-dependent.
+   */
+  const updateNodeInternals = useUpdateNodeInternals();
+  const nodeIdKey = nodes.map((node) => node.id).join(',');
+  useEffect(() => {
+    if (nodeIdKey) updateNodeInternals(nodeIdKey.split(','));
+  }, [nodeIdKey, updateNodeInternals]);
 
   function onDrop(event: DragEvent) {
     event.preventDefault();
@@ -3214,6 +3511,7 @@ function CanvasFlow({
       onEdgesChange={editable ? onEdgesChange : undefined}
       onConnect={editable ? onConnect : undefined}
       onSelectionChange={editable ? onSelectionChange : undefined}
+      onPaneClick={editable ? onPaneClick : undefined}
       onDrop={editable ? onDrop : undefined}
       onDragOver={editable ? onDragOver : undefined}
     >

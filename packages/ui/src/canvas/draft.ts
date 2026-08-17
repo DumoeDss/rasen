@@ -29,6 +29,7 @@ import type {
   WireGoalCycleVariant,
   WireGoalCyclePhase,
   WireJoinNode,
+  WireLoopLifecycleBlockedExit,
   WirePipelineDefinition,
   WirePipelineDefinitionV1,
   WirePipelineDefinitionV2,
@@ -58,6 +59,21 @@ import type {
  */
 export const CONTROL_SOURCE_PORT = 'done';
 export const CONTROL_TARGET_PORT = 'input';
+
+/**
+ * The engine's control-flow port TYPE (`CONTROL_PORT_TYPE`,
+ * `src/core/pipeline-registry/definition.ts`) — the type every control edge
+ * carries. A derived declaration INPUT row must carry it VERBATIM: the
+ * engine types a Composite declaration's input rows straight from
+ * `portMap(declaration.inputs)` (name → authored type) with NONE of the
+ * conventional control-port widening an empty-descriptor AtomicStage gets —
+ * the `CONTROL_INPUT_PORTS` widening in `contractForNode` is AtomicStage-only
+ * — so a derived row typed with the port NAME ('input') leaves every
+ * connection onto it a PORT_MISMATCH (`validateTypedPorts`). Round one and
+ * child-1 both minted name-typed rows; canvas-loop-validate-clean-synthesis
+ * re-types every derived loop-path row with this constant.
+ */
+export const CONTROL_PORT_TYPE = 'ecp/control';
 
 export function isV1Definition(
   def: WirePipelineDefinition
@@ -584,6 +600,69 @@ export function createDefaultBoundedLoopLifecycle(): WireBoundedLoopLifecyclePol
 }
 
 /**
+ * Every exit-ACTION outcome value a loop's exit mappings can emit — the
+ * union of `exits` and `lifecycle.exits` values with `action: 'exit'`. This
+ * is exactly the set the engine reads as a BoundedLoop's OUTPUT ports
+ * (`contractForNode`), and therefore exactly the set of definition outcomes
+ * a minted loop needs declared (its unconsumed outputs are terminal
+ * outcomes of the owner graph). The fail/escalate/human-required entries
+ * produce no control output and never enter the set.
+ */
+function loopExitOutcomeValues(
+  exits: WireBoundedLoopNode['exits'],
+  lifecycle: WireBoundedLoopLifecyclePolicyV1 | undefined
+): string[] {
+  // The lifecycle map's index signature types `Object.values` as `unknown[]`
+  // even though every declared entry is an exit shape — narrow by hand.
+  const lifecycleExits = lifecycle
+    ? (Object.values(lifecycle.exits) as WireLoopLifecycleBlockedExit[])
+    : [];
+  return [...Object.values(exits), ...lifecycleExits]
+    .filter(
+      (exit): exit is { action: 'exit'; outcome: string } =>
+        exit.action === 'exit'
+    )
+    .map((exit) => exit.outcome);
+}
+
+/**
+ * The default lifecycle's exit-action outcome values — under
+ * {@link createDefaultBoundedLoopLifecycle} exactly `['iteration-limit']`.
+ * Exported for the loop review's declare-notice line (the names confirming
+ * will declare) so the panel renders model truth instead of hardcoding the
+ * lifecycle's vocabulary a second time.
+ */
+export function defaultBoundedLoopExitOutcomeValues(): readonly string[] {
+  return loopExitOutcomeValues({}, createDefaultBoundedLoopLifecycle());
+}
+
+/**
+ * Declares, in the definition's outcome contract, every outcome the minted
+ * loop can emit as an exit that the definition does not already declare —
+ * through {@link declareDefinitionOutcome}, the single rule site (round-2's
+ * single-home verdict; no local append). Called by BOTH loop-minting paths
+ * (`synthesizeBoundedLoopFromBackedge`, `addBoundedLoopOverDeclaration`) so
+ * the drawn back-edge and the palette gesture declare identically. Without
+ * this, every canvas-synthesized loop leaves the root graph reporting the
+ * default lifecycle's `iteration-limit` as an undeclared terminal outcome —
+ * the class-3 defect canvas-loop-validate-clean-synthesis fixes.
+ * Already-declared names are left alone (the rule site would refuse the
+ * duplicate anyway).
+ */
+export function ensureLoopExitOutcomesDeclared(
+  def: WirePipelineDefinitionV2,
+  loop: WireBoundedLoopNode
+): WirePipelineDefinitionV2 {
+  let next = def;
+  for (const outcome of loopExitOutcomeValues(loop.exits, loop.lifecycle)) {
+    if (!next.outcomes.includes(outcome)) {
+      next = declareDefinitionOutcome(next, outcome);
+    }
+  }
+  return next;
+}
+
+/**
  * Rebuilds one loop's domain exits against the outcomes reachable from its
  * body contract. Retained outcomes keep their authored mapping, retired
  * outcomes disappear, and newly reachable outcomes receive a deterministic
@@ -962,7 +1041,15 @@ export function addParallelFrontier(
   });
 }
 
-/** Loop gesture: a `BoundedLoop` over the first declaration carrying a body graph. */
+/**
+ * Loop gesture: a `BoundedLoop` over the first declaration carrying a body
+ * graph. The gesture runs through the same declare-on-synthesis step as the
+ * back-edge path (`ensureLoopExitOutcomesDeclared`, canvas-loop-validate-
+ * clean-synthesis D3): under the default lifecycle that appends
+ * `iteration-limit`, plus the exit value itself when the definition declared
+ * no outcomes (`def.outcomes[0] ?? 'done'`), so a palette-gesture loop
+ * validates clean without contract repair too.
+ */
 export function addBoundedLoopOverDeclaration(
   def: WirePipelineDefinitionV2
 ): WirePipelineDefinitionV2 {
@@ -986,7 +1073,7 @@ export function addBoundedLoopOverDeclaration(
       ])
     ),
   };
-  return addV2Node(def, node);
+  return ensureLoopExitOutcomesDeclared(addV2Node(def, node), node);
 }
 
 /** Finish gesture: a terminal node mapped to the definition's first outcome. */
@@ -2840,6 +2927,210 @@ export function deriveSubgraphContract(
   };
 }
 
+/**
+ * The catalog slice the loop-body derivations resolve capabilities from.
+ * Structurally satisfied by `PipelineCatalogResponse`, so the page passes
+ * its catalog whole; tests build `{ skills: [...] }` directly.
+ */
+export interface LoopBodyCatalogSlice {
+  skills: readonly PipelineCatalogSkill[];
+}
+
+/**
+ * Resolves a stage's exact capability revision in the catalog, the same
+ * `(id, version)` lookup the engine's descriptor resolution uses. `enabled`
+ * is deliberately NOT consulted: the engine resolves a disabled-but-listed
+ * capability's contract the same way, and a bound stage's producible
+ * outcomes do not depend on profile enablement.
+ */
+function catalogCapabilityFor(
+  catalog: LoopBodyCatalogSlice | null | undefined,
+  capability: { id: string; version: string }
+) {
+  return catalog?.skills.find(
+    (skill) =>
+      skill.capability?.id === capability.id &&
+      skill.capability.version === capability.version
+  )?.capability;
+}
+
+/**
+ * Browser-safe mirror of the engine's `loopPhaseOutcomeNames`
+ * (`src/core/pipeline-registry/definition.ts`): a phase-tagged stage's
+ * capability outcomes are REPLACED by the closed control ports its cycle
+ * consumes — review→`findings`, triage→`ready`, fix→`fixed`,
+ * re-review→`clean`+`needs_fix`, goal work→`ready`, goal judge→
+ * `clean`+`needs_fix`. The mirror exists because ignoring phases would
+ * silently derive unproducible names; a unit test pins every projection.
+ */
+function loopPhaseOutcomeNamesMirror(
+  node: WireAtomicStageNode
+): readonly string[] | undefined {
+  switch (node.reviewCyclePhase) {
+    case 'review':
+      return ['findings'];
+    case 'triage':
+      return ['ready'];
+    case 'fix':
+      return ['fixed'];
+    case 're-review':
+      return ['clean', 'needs_fix'];
+  }
+  switch (node.goalCyclePhase) {
+    case 'work':
+      return ['ready'];
+    case 'judge':
+      return ['clean', 'needs_fix'];
+  }
+  return undefined;
+}
+
+/**
+ * Derives a loop body's PRODUCIBLE terminal outcomes (canvas-loop-validate-
+ * clean-synthesis D1) — the names the engine's
+ * `resolveGraphTerminalOutcomes` computes over the body graph, mirrored over
+ * the AtomicStage-only shapes the extraction refusals guarantee:
+ *
+ * - per region stage, its capability's `outcomes` (resolved in the catalog
+ *   by `(id, version)`), REPLACED by the engine's loop-phase projection when
+ *   the node carries a phase tag;
+ * - minus every outcome an INTERNAL region connection consumes (outcome
+ *   ports are the control edges a body carries; `(from.node, from.port)` of
+ *   each internal edge, mirroring the engine's control-edge consumption);
+ * - distinct, in body-node order then descriptor order, first occurrence
+ *   kept — deterministic.
+ *
+ * The engine's exact-cover rule (`validateOwnerTerminalOutcomes`) accepts
+ * only this set as the declaration's outcome rows, both directions: a
+ * producible name left out is "not declared", an unproducible name added is
+ * "cannot be produced". A stage whose capability is missing from the
+ * catalog contributes nothing here and is reported by
+ * {@link underivableBodyStages} instead — never left for Validate.
+ */
+export function bodyTerminalOutcomes(
+  def: WirePipelineDefinitionV2,
+  region: ReadonlySet<string>,
+  catalog: LoopBodyCatalogSlice | null | undefined
+): string[] {
+  const nodes = def.root.nodes.filter(
+    (node): node is WireAtomicStageNode =>
+      region.has(node.id) && node.kind === 'AtomicStage'
+  );
+  const consumed = new Set<string>();
+  for (const connection of def.root.connections) {
+    if (region.has(connection.from.node) && region.has(connection.to.node)) {
+      consumed.add(cutKey(connection.from.node, connection.from.port));
+    }
+  }
+  const outcomes: string[] = [];
+  for (const node of nodes) {
+    const descriptor = catalogCapabilityFor(catalog, node.capability);
+    if (!descriptor) continue;
+    const produced =
+      loopPhaseOutcomeNamesMirror(node) ?? descriptor.outcomes;
+    for (const name of produced) {
+      if (consumed.has(cutKey(node.id, name))) continue;
+      if (!outcomes.includes(name)) outcomes.push(name);
+    }
+  }
+  return outcomes;
+}
+
+/**
+ * The region stages whose exact capability revision the catalog does not
+ * carry — the probe behind the loop review's underivable-capability refusal
+ * and the confirm-time re-check (the review is not trusted). A null catalog
+ * reports every region stage: without the catalog the producible outcomes
+ * cannot be derived, and an honest refusal beats a loop that validates red.
+ */
+export function underivableBodyStages(
+  def: WirePipelineDefinitionV2,
+  region: ReadonlySet<string>,
+  catalog: LoopBodyCatalogSlice | null | undefined
+): string[] {
+  return def.root.nodes
+    .filter(
+      (node): node is WireAtomicStageNode =>
+        region.has(node.id) && node.kind === 'AtomicStage'
+    )
+    .filter((node) => !catalogCapabilityFor(catalog, node.capability))
+    .map((node) => node.id);
+}
+
+/**
+ * The refusal strings for {@link underivableBodyStages} — one per stage,
+ * naming the stage and its capability. Composed here (not in the page) so
+ * the review-open refusal list and the model's confirm-time throw render
+ * the same words from one home.
+ */
+export function underivableBodyStageRefusals(
+  def: WirePipelineDefinitionV2,
+  region: ReadonlySet<string>,
+  catalog: LoopBodyCatalogSlice | null | undefined
+): string[] {
+  return def.root.nodes
+    .filter(
+      (node): node is WireAtomicStageNode =>
+        region.has(node.id) && node.kind === 'AtomicStage'
+    )
+    .filter((node) => !catalogCapabilityFor(catalog, node.capability))
+    .map(
+      (node) =>
+        `Stage '${node.id}' binds capability '${node.capability.id}' that is not in the catalog, so the loop's exit outcomes cannot be derived.`
+    );
+}
+
+/**
+ * Derives the loop body's contract for a refused back-edge draw
+ * (canvas-loop-port-inference D1/D2, superseded in part by
+ * canvas-loop-validate-clean-synthesis):
+ *
+ * - INPUT rows keep the boundary naming convention on every side — a side
+ *   whose extraction severs connections keeps the severed names VERBATIM
+ *   ({@link deriveSubgraphContract}'s), a side that severs none falls back
+ *   to the back-edge's target `to` (the body's unique root: the draft is
+ *   acyclic — the back-edge was refused precisely because it would close a
+ *   cycle — so no internal edge can enter `to`, and it is where control
+ *   re-enters each iteration). Every row, severed or fallback, is TYPED
+ *   {@link CONTROL_PORT_TYPE}: the engine gives a declaration's input rows
+ *   no control-port widening, so a connection onto the row validates only
+ *   with the engine's control type (the class-2 fix; round one and child-1
+ *   both typed rows with the port name, engine-red by construction).
+ * - OUTCOME rows are {@link bodyTerminalOutcomes} on EVERY side alike
+ *   (the class-1 fix): the engine's exact cover
+ *   (`validateOwnerTerminalOutcomes`) requires the declaration's outcomes to
+ *   BE the body's producible terminal outcomes, both directions, so
+ *   round-one's severed stage-id names and child-1's back-edge-source
+ *   fallback are superseded DELIBERATELY here — they were unproducible by
+ *   construction. The severed/fallback distinction now governs INPUT naming
+ *   only, which is also why the derivation no longer needs the back-edge's
+ *   source.
+ *
+ * A body stage whose capability is missing from the catalog contributes no
+ * outcome here; the review surfaces {@link underivableBodyStageRefusals}
+ * for it and the confirm transaction re-checks (the review is not trusted).
+ * The extract/CompositeRef path never calls this: it has no back-edge to
+ * derive from (explicit non-goal) and keeps `deriveSubgraphContract`
+ * directly, byte-identical.
+ */
+export function deriveBackedgeLoopContract(
+  def: WirePipelineDefinitionV2,
+  region: ReadonlySet<string>,
+  to: string,
+  catalog: LoopBodyCatalogSlice | null | undefined
+): DerivedSubgraphContract {
+  const base = deriveSubgraphContract(def, region);
+  const { incomingKeys } = computeSubgraphCut(def, region);
+  return {
+    ...base,
+    inputs:
+      incomingKeys.length > 0
+        ? base.inputs.map((row) => ({ ...row, type: CONTROL_PORT_TYPE }))
+        : [{ name: to, type: CONTROL_PORT_TYPE }],
+    outcomes: bodyTerminalOutcomes(def, region, catalog),
+  };
+}
+
 /** The reviewed contract plus which nodes move — {@link extractSubgraph}'s input. */
 export interface SubgraphExtractionInput {
   nodeIds: ReadonlySet<string>;
@@ -2966,9 +3257,17 @@ function extractSubgraphIntoDeclaration(
  * Extraction step two: rewire every root connection that crossed the moved
  * node set onto the REPLACEMENT node's mapped ports — positionally onto the
  * reviewed rows in derivation order, with the derived names as fallback
- * (`extractSubgraph`'s documented rule, unchanged). `preExtractionDef` is the
- * definition the cut was taken from (the caller's pre-state); `next` is the
- * post-declaration state the rewired connections land on.
+ * (`extractSubgraph`'s documented rule, unchanged for the extract path).
+ * `preExtractionDef` is the definition the cut was taken from (the caller's
+ * pre-state); `next` is the post-declaration state the rewired connections
+ * land on.
+ *
+ * `outgoingPortOverride` (canvas-loop-validate-clean-synthesis D4) is the
+ * loop path's alone: a BoundedLoop's OUTPUT ports are its exit-ACTION
+ * outcome values (the engine's `contractForNode`), not its declaration's
+ * outcome row names, so every outgoing crossing rewires onto the one
+ * supplied port — the review's exit outcome. The extract path passes
+ * nothing and keeps the positional row mapping byte-identically.
  */
 function rewireCrossingsOnto(
   next: WirePipelineDefinitionV2,
@@ -2982,7 +3281,8 @@ function rewireCrossingsOnto(
   derived: {
     inputs: readonly WireDefinitionPort[];
     outcomes: readonly string[];
-  }
+  },
+  outgoingPortOverride?: string
 ): WirePipelineDefinitionV2 {
   const { incomingKeys, outgoingKeys } = computeSubgraphCut(preExtractionDef, nodeIds);
   let result = next;
@@ -3008,7 +3308,8 @@ function rewireCrossingsOnto(
       const index = outgoingKeys.indexOf(
         cutKey(connection.from.node, connection.from.port)
       );
-      const port = rows.outcomes[index] ?? derived.outcomes[index]!;
+      const port =
+        outgoingPortOverride ?? rows.outcomes[index] ?? derived.outcomes[index]!;
       const id = v2ConnectionIdFor(result, {
         source: replacementId,
         sourcePort: port,
@@ -3050,30 +3351,52 @@ export interface BackedgeLoopSynthesisResult {
 }
 
 /**
- * The one loop-synthesis transaction (design D3/D4): turns a refused
+ * The one loop-synthesis transaction (design D3/D4, extended by
+ * canvas-loop-validate-clean-synthesis D3/D4): turns a refused
  * cycle-closing draw into a `BoundedLoop` over the region the edge closes.
  * Region -> refusals -> declare (child-2's extraction, via
  * `extractSubgraphIntoDeclaration`) -> mint the loop exactly like
  * `addBoundedLoopOverDeclaration` except `body` = the just-extracted
- * declaration and `limits.maxIterations` = the author's bound -> rewire the
- * crossings onto the loop's ports (`rewireCrossingsOnto`). No `CompositeRef`
- * is inserted — the loop IS the replacement. Pure; never mutates.
+ * declaration and `limits.maxIterations` = the author's bound -> declare
+ * every outcome the loop can emit as an exit
+ * (`ensureLoopExitOutcomesDeclared`) -> rewire the crossings onto the
+ * loop's ports (`rewireCrossingsOnto`, outgoing side onto the exit
+ * outcome). No `CompositeRef` is inserted — the loop IS the replacement.
+ * Pure; never mutates.
  *
  * The drawn back-edge itself never entered the draft (`onConnect` refuses it
  * before writing), so nothing must be excluded from the body move: the
  * connections that move are the region's internal edges, all acyclic. The
  * back-edge exists only as loop semantics.
  *
- * The review is not trusted: the region is recomputed from the endpoints, the
- * child-2 refusals/id/row validators re-run, and the bound must be a positive
- * integer (the review's integer field blocks confirm client-side; the model
- * re-owns the rule). Nothing is stamped `legacyRuntimeOwner`.
+ * The review is not trusted: the region is recomputed from the endpoints,
+ * the child-2 refusals/id/row validators re-run, the bound must be a
+ * positive integer (the review's integer field blocks confirm client-side;
+ * the model re-owns the rule), the exit outcome must be a DECLARED
+ * definition outcome (the review's select only offers declared ones, so the
+ * zero-edit flow never trips this; the model owns the rule for programmatic
+ * callers), and every body stage's capability must resolve in the catalog
+ * (`underivableBodyStageRefusals` — the same check the review-open refusal
+ * list rendered). Nothing is stamped `legacyRuntimeOwner`.
  */
 export function synthesizeBoundedLoopFromBackedge(
   def: WirePipelineDefinitionV2,
-  input: BackedgeLoopSynthesisInput
+  input: BackedgeLoopSynthesisInput,
+  catalog: LoopBodyCatalogSlice | null | undefined
 ): BackedgeLoopSynthesisResult {
+  if (!def.outcomes.includes(input.exitOutcome)) {
+    throw new Error(
+      `Exit outcome '${input.exitOutcome}' is not a declared definition outcome.`
+    );
+  }
+  if (!Number.isSafeInteger(input.maxIterations) || input.maxIterations <= 0) {
+    throw new Error('Loop maximum iterations must be a positive integer.');
+  }
   const region = backedgeRegion(def, input.from, input.to);
+  const underivable = underivableBodyStageRefusals(def, region, catalog);
+  if (underivable.length > 0) {
+    throw new Error(underivable.join(' '));
+  }
   const { next: declared, declarationId } = extractSubgraphIntoDeclaration(def, {
     nodeIds: region,
     id: input.id,
@@ -3081,9 +3404,6 @@ export function synthesizeBoundedLoopFromBackedge(
     artifacts: input.artifacts,
     outcomes: input.outcomes,
   });
-  if (!Number.isSafeInteger(input.maxIterations) || input.maxIterations <= 0) {
-    throw new Error('Loop maximum iterations must be a positive integer.');
-  }
   const declaration = declared.declarations.find((d) => d.id === declarationId)!;
   const loopId = v2NodeIdFor('BoundedLoop', declared);
   const loopNode: WireBoundedLoopNode = {
@@ -3102,12 +3422,13 @@ export function synthesizeBoundedLoopFromBackedge(
     ),
   };
   const next = rewireCrossingsOnto(
-    addV2Node(declared, loopNode),
+    ensureLoopExitOutcomesDeclared(addV2Node(declared, loopNode), loopNode),
     def,
     region,
     loopId,
     input,
-    deriveSubgraphContract(def, region)
+    deriveBackedgeLoopContract(def, region, input.to, catalog),
+    input.exitOutcome
   );
   return { next, declarationId, loopId };
 }
