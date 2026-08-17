@@ -1585,6 +1585,12 @@ export interface PipelineCatalogSkill {
   description: string;
   /** Whether the skill is enabled in the active profile selection (a disabled skill is still listed, greyed out in the palette). */
   enabled: boolean;
+  /**
+   * The skill's declared workflow kind, passed through by the server from the
+   * workflow registry — never inferred client-side. Absent on older servers;
+   * the palette degrades such skills to the workflows group.
+   */
+  kind?: 'task' | 'driver' | 'internal' | 'expert';
   /** Exact trusted Definition capability revision; absent on older servers. */
   capability?: {
     id: string;

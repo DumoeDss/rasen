@@ -505,8 +505,8 @@ import {
 const catalogFixture: PipelineCatalogResponse = {
   roles: ['planner', 'implementer', 'reviewer', 'fixer', 'shipper'],
   skills: [
-    { id: 'rasen-propose', description: 'Propose a change', enabled: true },
-    { id: 'rasen-apply', description: 'Apply tasks', enabled: true },
+    { id: 'rasen-propose', description: 'Propose a change', enabled: true, kind: 'task' },
+    { id: 'rasen-apply', description: 'Apply tasks', enabled: true, kind: 'task' },
   ],
   runtimes: ['claude', 'codex'],
   stageKinds: ['standard', 'decompose'],
@@ -547,6 +547,7 @@ const v2CatalogWithUnplaceableSkills = {
       id: 'rasen-profile-disabled',
       description: 'Off in the active profile',
       enabled: false,
+      kind: 'task',
       capability: {
         id: 'skill:rasen-profile-disabled',
         version: 'digest-disabled',
@@ -559,6 +560,7 @@ const v2CatalogWithUnplaceableSkills = {
       id: 'rasen-no-capability',
       description: 'Served without an exact capability revision',
       enabled: true,
+      kind: 'task',
     },
   ],
 } as PipelineCatalogResponse;

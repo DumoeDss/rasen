@@ -1686,6 +1686,19 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 .palette-card__id { font-family: var(--font-mono); }
 .palette-card__state { font-size: var(--text-xs); color: var(--meta); text-transform: uppercase; }
 
+/* Palette sections (canvas-palette-grouping): the grouped headings inside
+   `.palette-panel__list` and the v2 Stage gesture group. Experts get the ONE
+   visually distinct heading — the terracotta accent, reserved for emphasis,
+   used as a quiet underline so expert skills read as their own class of
+   thing, not a differently-themed card. Structure is asserted in jsdom; the
+   on-screen distinctness is proven in the real-browser check. */
+.palette-section { display: flex; flex-direction: column; gap: var(--space-2); }
+.palette-section__title {
+  margin: 0; font-size: var(--text-xs); color: var(--meta);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.palette-section__title--experts { color: var(--accent); box-shadow: inset 0 -1px 0 var(--accent); padding-bottom: 1px; }
+
 .stage-panel {
   width: 280px; flex-shrink: 0; border: 1px solid var(--border); border-radius: var(--radius-lg);
   padding: var(--space-3); background: var(--surface); display: flex; flex-direction: column; gap: var(--space-3);

@@ -803,6 +803,83 @@ export function unavailableRootGestures(
 }
 
 /**
+ * The common core stages, pinned to the top of the palette in PIPELINE order
+ * (propose, apply, review, ship, archive). These are exact installed skill
+ * template names, verified against the template sources — NOT workflow ids
+ * (`propose`, `apply`... live server-side in `CORE_WORKFLOW_IDS` and are a
+ * different namespace; coupling them would need an id translation the UI does
+ * not otherwise have). A core id the catalog does not deliver simply does not
+ * render; the constant names ids whose renames are repo-wide events, and the
+ * real-browser gate renders against the real catalog, so a rename surfaces
+ * there as a missing core entry.
+ */
+export const CORE_PALETTE_SKILL_IDS: readonly string[] = [
+  'rasen-propose',
+  'rasen-apply-change',
+  'rasen-review-cycle',
+  'rasen-ship',
+  'rasen-archive-change',
+];
+
+/** The ordered palette group identities `groupPaletteSkills` produces. */
+export type PaletteSectionId = 'core' | 'workflows' | 'experts' | 'internal';
+
+/** One ordered palette group produced by `groupPaletteSkills`. */
+export interface PaletteSkillSection {
+  /** Stable section identity — the panel derives its heading testid from it. */
+  id: PaletteSectionId;
+  skills: PipelineCatalogSkill[];
+}
+
+/**
+ * The ONE grouping rule for the assembly palette (canvas-palette-grouping
+ * design D2): core stages first in `CORE_PALETTE_SKILL_IDS` order, then the
+ * ordinary workflows (kinds `task` and `driver`), then the experts in their
+ * own visually distinct section, then the internal workflows — grouped, not
+ * hidden, so nothing becomes unreachable. Within every section the catalog's
+ * own order is preserved (deterministic given the same catalog), EXCEPT core,
+ * whose order is the constant's pipeline order. Grouping rests exclusively on
+ * the kind the catalog wire delivers — this helper never infers a kind from a
+ * name or any other heuristic. A skill without a kind (older server) falls
+ * into workflows, the registry's own default semantics. Sections with no
+ * members are omitted, so an absent core id (or a kind-less catalog with no
+ * experts) renders nothing rather than an empty heading.
+ *
+ * Both palette branches (the v1 skill cards and the v2 Stage expansion) render
+ * this same output; the panel calls the helper and decides nothing, the same
+ * read-only-rule posture as `isBindableSkill` above.
+ */
+export function groupPaletteSkills(
+  skills: readonly PipelineCatalogSkill[]
+): readonly PaletteSkillSection[] {
+  const coreIds = new Set(CORE_PALETTE_SKILL_IDS);
+  const workflows: PipelineCatalogSkill[] = [];
+  const experts: PipelineCatalogSkill[] = [];
+  const internal: PipelineCatalogSkill[] = [];
+  const core: PipelineCatalogSkill[] = [];
+  for (const skill of skills) {
+    if (coreIds.has(skill.id)) {
+      core.push(skill);
+      continue;
+    }
+    if (skill.kind === 'expert') experts.push(skill);
+    else if (skill.kind === 'internal') internal.push(skill);
+    else workflows.push(skill);
+  }
+  // Core renders in the CONSTANT's pipeline order, whatever order the catalog
+  // delivered the five in; ids the catalog never delivered stay absent.
+  const coreInPipelineOrder = CORE_PALETTE_SKILL_IDS.map((id) =>
+    core.find((skill) => skill.id === id)
+  ).filter((skill): skill is PipelineCatalogSkill => Boolean(skill));
+  const sections: PaletteSkillSection[] = [];
+  if (coreInPipelineOrder.length > 0) sections.push({ id: 'core', skills: coreInPipelineOrder });
+  if (workflows.length > 0) sections.push({ id: 'workflows', skills: workflows });
+  if (experts.length > 0) sections.push({ id: 'experts', skills: experts });
+  if (internal.length > 0) sections.push({ id: 'internal', skills: internal });
+  return sections;
+}
+
+/**
  * Whether a declaration may be referenced by a root-level `CompositeRef`: a
  * custom declaration, or a built-in one that actually carries a body graph.
  *

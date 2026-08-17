@@ -88,6 +88,7 @@ const catalogFixture: PipelineCatalogResponse = {
       id: CATALOG_ENTRY.id.replace(/^skill:/, ''),
       description: 'Canvas-authored body capability',
       enabled: true,
+      kind: 'task',
       capability: {
         id: CATALOG_ENTRY.id,
         version: CATALOG_ENTRY.version,
