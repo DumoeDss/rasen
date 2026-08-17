@@ -29,6 +29,7 @@ interface MockNode {
   id: string;
   type?: string;
   selected?: boolean;
+  position?: { x: number; y: number };
   data?: {
     definitionKind?: string;
     editorSupported?: boolean;
@@ -46,10 +47,16 @@ interface MockEdge {
   data?: { issueSeverity?: string };
 }
 
-/** The change shapes the mock's ReactFlow emits and applies — the two the page's handlers act on. */
+/** The change shapes the mock's ReactFlow emits and applies — the three the page's handlers act on. */
 type MockFlowChange =
   | { type: 'remove'; id: string }
-  | { type: 'select'; id: string; selected: boolean };
+  | { type: 'select'; id: string; selected: boolean }
+  | {
+      type: 'position';
+      id: string;
+      position: { x: number; y: number };
+      dragging: boolean;
+    };
 
 vi.mock('@xyflow/react', async () => {
   const { useEffect } = await import('preact/hooks');
@@ -154,6 +161,22 @@ vi.mock('@xyflow/react', async () => {
     return (
     <div data-testid="mock-reactflow-wrapper" data-hide-attribution={String(props.proOptions?.hideAttribution)} data-selection-key={props.selectionKeyCode ?? ''} data-selection-mode={props.selectionMode ?? ''}>
       <div data-testid="mock-reactflow">{props.nodes.map((n) => n.id).join(',')}</div>
+      {/* Positions dump (canvas-durable-node-positioning): every stage
+          node's rendered position, so page tests assert placements without
+          depending on the canvas's own rendering. */}
+      <div data-testid="mock-node-positions">
+        {props.nodes
+          .filter((node) => node.type === 'stage')
+          .map((node) => (
+            <span
+              key={node.id}
+              data-testid="mock-node-position"
+              data-node-id={node.id}
+              data-x={String(node.position?.x)}
+              data-y={String(node.position?.y)}
+            />
+          ))}
+      </div>
       <div data-testid="mock-rendered-node-types">
         {props.nodes
           .filter((node) => node.type === 'stage')
@@ -241,6 +264,31 @@ vi.mock('@xyflow/react', async () => {
                 onClick={() => props.onNodesChange?.([{ type: 'remove', id: n.id }])}
               >
                 remove {n.id}
+              </button>
+              {/* Drag stand-in (canvas-durable-node-positioning): displaces
+                  the node by a fixed delta and emits the DRAG-FINAL change
+                  (`dragging: false`) exactly as controlled-mode React Flow
+                  does at drag end — mid-drag intermediates are not modeled,
+                  matching what the page's cache capture consumes. */}
+              <button
+                type="button"
+                data-testid="mock-node-drag"
+                data-node-id={n.id}
+                onClick={() =>
+                  props.onNodesChange?.([
+                    {
+                      type: 'position',
+                      id: n.id,
+                      position: {
+                        x: (n.position?.x ?? 0) + 180,
+                        y: (n.position?.y ?? 0) + 120,
+                      },
+                      dragging: false,
+                    },
+                  ])
+                }
+              >
+                drag {n.id}
               </button>
             </span>
           ))}
@@ -378,10 +426,11 @@ vi.mock('@xyflow/react', async () => {
   // pipeline-canvas-edit additions: the editor's connect/drag/drop wiring.
   useReactFlow: () => ({ screenToFlowPosition: (p: { x: number; y: number }) => p }),
   addEdge: (edge: unknown, edges: unknown[]) => [...edges, edge],
-  // Minimal but real: the two change types this page's handlers feed back —
+  // Minimal but real: the three change types this page's handlers feed back —
   // `select` so interaction echoes land on the flags (controlled-mode RF
   // keeps its store only because the page re-passes them), `remove` so the
-  // Delete key's cards leave the canvas as they do in the real app.
+  // Delete key's cards leave the canvas as they do in the real app, and
+  // `position` so a drag moves the controlled node (mirroring real RF).
   applyNodeChanges: (changes: MockFlowChange[], nodes: MockNode[]) =>
     changes.reduce<MockNode[]>(
       (acc, change) =>
@@ -393,7 +442,13 @@ vi.mock('@xyflow/react', async () => {
                   ? { ...node, selected: change.selected }
                   : node
               )
-            : acc,
+            : change.type === 'position'
+              ? acc.map((node) =>
+                  node.id === change.id
+                    ? { ...node, position: change.position }
+                    : node
+                )
+              : acc,
       nodes
     ),
   applyEdgeChanges: (changes: MockFlowChange[], edges: MockEdge[]) =>
@@ -421,6 +476,7 @@ import { DefinitionContractPanel } from '../../src/canvas/DefinitionContractPane
 import { PipelineCanvasPage } from '../../src/canvas/PipelineCanvasPage.js';
 import { V2LoopReviewPanel } from '../../src/canvas/V2LoopReviewPanel.js';
 import { V2NodePanel } from '../../src/canvas/V2NodePanel.js';
+import { draftToGraph, layoutGraph } from '../../src/canvas/layout.js';
 import * as client from '../../src/api/client.js';
 import { ApiError } from '../../src/api/client.js';
 import { pipelineDetailFixture } from '../fixtures/pipelines.js';
@@ -7150,3 +7206,412 @@ describe('PipelineCanvasPage — sink promotion', () => {
     ).toBe(false);
   });
 });
+
+describe('PipelineCanvasPage — durable node positioning', () => {
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    __resetLocaleForTesting();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+  });
+
+  afterEach(() => {
+    render(null, container);
+    document.body.removeChild(container);
+    window.history.replaceState({}, '', '/');
+    __resetLocaleForTesting();
+    vi.clearAllMocks();
+  });
+
+  async function clickAndFlush(el: Element | null): Promise<void> {
+    await act(async () => {
+      (el as HTMLElement).click();
+      await flushMicrotasks();
+    });
+  }
+
+  async function setValueAndFlush(
+    el: Element | null,
+    value: string,
+    eventType: 'change' | 'input' = 'change'
+  ): Promise<void> {
+    await act(async () => {
+      const input = el as HTMLInputElement;
+      input.value = value;
+      input.dispatchEvent(new Event(eventType, { bubbles: true }));
+      await flushMicrotasks();
+    });
+  }
+
+  function nodeButton(
+    kind: 'click' | 'augment' | 'remove' | 'drag',
+    id: string
+  ): Element | null {
+    return container.querySelector(
+      `[data-testid="mock-node-${kind}"][data-node-id="${id}"]`
+    );
+  }
+
+  async function mountV2Edit(): Promise<void> {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+  }
+
+  async function submittedDefinition(): Promise<WirePipelineDefinitionV2> {
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    return vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+  }
+
+  /** The drag trigger's fixed displacement — one delta, every drag assertion. */
+  const DRAG_DELTA = { x: 180, y: 120 } as const;
+
+  /** Reads every stage node's rendered position from the mock's dump. */
+  function renderedPositions(): Map<string, { x: number; y: number }> {
+    const positions = new Map<string, { x: number; y: number }>();
+    for (const span of container.querySelectorAll('[data-testid="mock-node-position"]')) {
+      const x = Number(span.getAttribute('data-x'));
+      const y = Number(span.getAttribute('data-y'));
+      expect(Number.isFinite(x)).toBe(true);
+      expect(Number.isFinite(y)).toBe(true);
+      positions.set(span.getAttribute('data-node-id')!, { x, y });
+    }
+    return positions;
+  }
+
+  /**
+   * The pure computed layout for the draft the page CURRENTLY holds (the
+   * definition the last Validate call submitted), run through the same
+   * geometry the page runs with NO author cache — the oracle for "lays out
+   * afresh" assertions without pinning dagre bytes.
+   */
+  async function computedLayoutPositions(): Promise<Map<string, { x: number; y: number }>> {
+    const submitted = await submittedDefinition();
+    const { nodes, edges } = draftToGraph(submitted, v2CatalogFixture);
+    return new Map(
+      layoutGraph(nodes, edges)
+        .filter((node) => node.type === 'stage')
+        .map((node) => [node.id, node.position])
+    );
+  }
+
+  async function dragNode(id: string): Promise<{ x: number; y: number }> {
+    const before = renderedPositions().get(id)!;
+    await clickAndFlush(await nodeButton('drag', id));
+    const placement = { x: before.x + DRAG_DELTA.x, y: before.y + DRAG_DELTA.y };
+    expect(renderedPositions().get(id)).toEqual(placement);
+    return placement;
+  }
+
+  /** Renames the selected node through the node panel's id field (blur commit). */
+  async function renameSelectedViaPanel(newId: string): Promise<void> {
+    const idInput = container.querySelector(
+      '[data-testid="v2-node-panel-id"]'
+    ) as HTMLInputElement;
+    idInput.focus();
+    await setValueAndFlush(idInput, newId, 'input');
+    await act(async () => {
+      idInput.blur();
+      await flushMicrotasks();
+    });
+  }
+
+  /** No placement/coordinate field exists anywhere in a wire definition. */
+  function containsPlacementField(value: unknown): boolean {
+    if (Array.isArray(value)) {
+      return value.some((entry) => containsPlacementField(entry));
+    }
+    if (value !== null && typeof value === 'object') {
+      return Object.entries(value as Record<string, unknown>).some(
+        ([key, entry]) =>
+          key === 'position' || key === 'x' || key === 'y' || containsPlacementField(entry)
+      );
+    }
+    return false;
+  }
+
+  it('a dragged node keeps its placement across a palette add; the new node lays out afresh (spec scenario 1)', async () => {
+    await mountV2Edit();
+    const placement = await dragNode('atomic');
+
+    // Follow-up mutation: a palette add rebuilds the whole flow from layout.
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-propose"]')
+    );
+
+    const after = renderedPositions();
+    // THE durable assertion: the dragged node still sits where the author
+    // put it — without the cache this snaps back to the dagre position.
+    expect(after.get('atomic')).toEqual(placement);
+    // The added node rendered at a computed layout position, and so did
+    // every other (uncached) node.
+    const computed = await computedLayoutPositions();
+    expect(after.has('atomic-stage')).toBe(true);
+    for (const [id, position] of after) {
+      if (id === 'atomic') continue;
+      expect(position).toEqual(computed.get(id));
+    }
+  });
+
+  it('a dragged node keeps its placement across a definition-contract edit (spec scenario 2)', async () => {
+    await mountV2Edit();
+    const placement = await dragNode('gate');
+
+    // Definition-contract edit: declare a new outcome through child 1's
+    // NameListField (commit on blur) — a full-draft patch that rebuilds.
+    const outcomesField = () =>
+      container.querySelector('[data-testid="definition-outcomes"]') as HTMLInputElement;
+    outcomesField().focus();
+    await setValueAndFlush(outcomesField(), 'done,rejected,declared', 'input');
+    await act(async () => {
+      outcomesField().blur();
+      await flushMicrotasks();
+    });
+
+    const after = renderedPositions();
+    expect(after.get('gate')).toEqual(placement);
+    const computed = await computedLayoutPositions();
+    expect((await submittedDefinition()).outcomes).toEqual([
+      'done',
+      'rejected',
+      'declared',
+    ]);
+    for (const [id, position] of after) {
+      if (id === 'gate') continue;
+      expect(position).toEqual(computed.get(id));
+    }
+  });
+
+  it('elements with no captured placement always lay out afresh on rebuild (spec scenario 3)', async () => {
+    await mountV2Edit();
+    // Mutations with an EMPTY cache: a palette stage add plus the finish
+    // gesture — both synthesized elements must land on computed layout.
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-propose"]')
+    );
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-gesture-finish"]'));
+
+    const after = renderedPositions();
+    const computed = await computedLayoutPositions();
+    expect(after.size).toBe(computed.size);
+    expect(after.has('atomic-stage')).toBe(true);
+    expect(after.has('finish-2')).toBe(true);
+    for (const [id, position] of after) {
+      expect(position).toEqual(computed.get(id));
+    }
+  });
+
+  it('placement follows a rename: the renamed node keeps it under the new id (spec scenario 4)', async () => {
+    await mountV2Edit();
+    const placement = await dragNode('choice');
+
+    await clickAndFlush(await nodeButton('click', 'choice'));
+    await renameSelectedViaPanel('picker');
+
+    const after = renderedPositions();
+    expect(after.has('choice')).toBe(false);
+    // The placement followed the id change — a rename must not teleport the
+    // node to its dagre position.
+    expect(after.get('picker')).toEqual(placement);
+    const computed = await computedLayoutPositions();
+    for (const [id, position] of after) {
+      if (id === 'picker') continue;
+      expect(position).toEqual(computed.get(id));
+    }
+  });
+
+  it('a departed placement is dropped: re-adding the same id via the palette lays out afresh (spec scenario 5)', async () => {
+    await mountV2Edit();
+    const placement = await dragNode('finish');
+
+    // 'finish' is unreferenced — the delete is accepted and the rebuild's
+    // prune drops its placement.
+    await clickAndFlush(await nodeButton('remove', 'finish'));
+    expect(renderedPositions().has('finish')).toBe(false);
+
+    // Re-create under the SAME id: the palette finish gesture mints 'finish'
+    // again now that the id is free.
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-gesture-finish"]'));
+
+    const after = renderedPositions();
+    expect(after.has('finish')).toBe(true);
+    const computed = await computedLayoutPositions();
+    expect(after.get('finish')).toEqual(computed.get('finish'));
+    expect(after.get('finish')).not.toEqual(placement);
+  });
+
+  it('extraction drops the moved nodes\' placements: the replacing ref lays out afresh (spec scenario 5)', async () => {
+    // upstream -> work-b -> work-c -> finish; the middle pair packages.
+    const detail = extractablePositioningDetail();
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(detail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/positioning');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+
+    const placement = await dragNode('work-b');
+
+    await clickAndFlush(await nodeButton('click', 'work-b'));
+    await clickAndFlush(await nodeButton('augment', 'work-c'));
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-selection-panel-package"]')
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-extract-review-confirm"]')
+    );
+
+    // The moved nodes left the root graph; the ref replaced them and sits at
+    // its computed position — never at the dragged placement.
+    const after = renderedPositions();
+    expect(after.has('work-b')).toBe(false);
+    expect(after.has('work-c')).toBe(false);
+    expect(after.has('composite-ref')).toBe(true);
+    const computed = await computedLayoutPositions();
+    expect(after.get('composite-ref')).toEqual(computed.get('composite-ref'));
+    expect(after.get('composite-ref')).not.toEqual(placement);
+  });
+
+  it('a fresh edit session starts from computed layout (no placement leaks across sessions)', async () => {
+    await mountV2Edit();
+    const placement = await dragNode('choice');
+
+    // A drag alone does not dirty the draft — one description keystroke does,
+    // so the Discard path back to view mode is available in the same page
+    // instance (no remount: the ref under test would be recreated anyway).
+    const description = container.querySelector(
+      '[data-testid="pipeline-canvas-description"]'
+    ) as HTMLInputElement;
+    await act(async () => {
+      description.value = 'edited';
+      description.dispatchEvent(new Event('input', { bubbles: true }));
+      await flushMicrotasks();
+    });
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-discard"]'));
+    expect(container.querySelector('[data-testid="pipeline-canvas-edit"]')).not.toBeNull();
+
+    // Re-enter edit on the SAME definition: the session's cache was reset, so
+    // the previously dragged node starts at its computed layout position —
+    // not the placement captured by the previous session.
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+    const reopened = renderedPositions();
+    const computed = await computedLayoutPositions();
+    expect(reopened.get('choice')).toEqual(computed.get('choice'));
+    expect(reopened.get('choice')).not.toEqual(placement);
+  });
+
+  it('Re-layout resets every placement, later edits treat all nodes as undragged, and the saved payload carries no placement fields (spec scenario 6)', async () => {
+    await mountV2Edit();
+    const before = renderedPositions();
+    await dragNode('atomic');
+    await dragNode('choice');
+    expect(renderedPositions().get('atomic')).toEqual({
+      x: before.get('atomic')!.x + DRAG_DELTA.x,
+      y: before.get('atomic')!.y + DRAG_DELTA.y,
+    });
+
+    // Re-layout: the explicit reset returns every node to computed layout.
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-relayout"]'));
+    let after = renderedPositions();
+    let computed = await computedLayoutPositions();
+    for (const [id, position] of after) {
+      expect(position).toEqual(computed.get(id));
+    }
+
+    // A later edit still treats them as undragged (the cache was CLEARED,
+    // not merely unapplied): the rebuild keeps pure layout positions.
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-propose"]')
+    );
+    after = renderedPositions();
+    computed = await computedLayoutPositions();
+    for (const [id, position] of after) {
+      expect(position).toEqual(computed.get(id));
+    }
+
+    // The definition the canvas SAVES carries no placement fields anywhere.
+    vi.mocked(client.mutatePipeline).mockResolvedValueOnce({
+      pipeline: { name: 'v2-canvas', path: '/pipelines/v2-canvas' },
+      created: false,
+    });
+    vi.mocked(client.getPipelineDetail).mockResolvedValueOnce(v2EditableDetail);
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+    expect(client.mutatePipeline).toHaveBeenCalledTimes(1);
+    const savedBody = vi.mocked(client.mutatePipeline).mock.calls[0][0] as {
+      definition: unknown;
+    };
+    expect(containsPlacementField(savedBody.definition)).toBe(false);
+  });
+});
+
+/**
+ * The extraction-fixture shape for the positioning suite: the canonical
+ * `upstream -> work-b -> work-c -> finish` chain the package gesture cuts.
+ */
+function extractablePositioningDetail(): PipelineDetailResponse {
+  const stage = (id: string) => ({
+    id,
+    kind: 'AtomicStage' as const,
+    capability: { id: 'skill:rasen-apply', version: 'digest-apply' },
+    execution: {
+      version: 1 as const,
+      role: 'implementer' as const,
+      workspace: { access: 'write' as const },
+    },
+  });
+  return {
+    ...pipelineDetailFixture,
+    pipeline: {
+      ...pipelineDetailFixture.pipeline,
+      name: 'positioning',
+      provenance: 'user' as const,
+      sourceLayer: 'user' as const,
+      stages: [],
+      authoredVersion: 2 as const,
+      normalizedVersion: 2 as const,
+      definitionValid: true,
+      planAvailable: true,
+      executable: false,
+      executionMode: 'unavailable' as const,
+      unavailableReason: 'ecp_v2_runtime_unavailable',
+    },
+    definition: {
+      version: 2 as const,
+      id: 'definition:positioning',
+      sourceId: 'fixture:positioning',
+      name: 'positioning',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [],
+      root: {
+        nodes: [
+          stage('upstream'),
+          stage('work-b'),
+          stage('work-c'),
+          { id: 'finish', kind: 'Finish' as const, outcome: 'done' },
+        ],
+        connections: [
+          {
+            id: 'upstream:done->work-b:input',
+            from: { node: 'upstream', port: 'done' },
+            to: { node: 'work-b', port: 'input' },
+          },
+          {
+            id: 'work-b:done->work-c:input',
+            from: { node: 'work-b', port: 'done' },
+            to: { node: 'work-c', port: 'input' },
+          },
+          {
+            id: 'work-c:done->finish:input',
+            from: { node: 'work-c', port: 'done' },
+            to: { node: 'finish', port: 'input' },
+          },
+        ],
+      },
+    },
+    preparation: v2Preparation,
+    editable: true,
+  } as PipelineDetailResponse;
+}

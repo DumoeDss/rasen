@@ -34,7 +34,13 @@ import type {
   WirePipelineDefinitionStage,
 } from '../api/types.js';
 import { useSpace, spaceHref } from '../store/use-space.js';
-import { definitionToGraph, draftToGraph, layoutGraph, type PipelineFlowNode } from './layout.js';
+import {
+  definitionToGraph,
+  draftToGraph,
+  layoutGraph,
+  pruneAuthorPositions,
+  type PipelineFlowNode,
+} from './layout.js';
 import { stageNodeTypes } from './StageNode.js';
 import {
   CONTROL_SOURCE_PORT,
@@ -250,6 +256,16 @@ export function PipelineCanvasPage() {
   // render happens; the ref is set/read synchronously with the click instead
   // (spec: never submit a second mutation while one is in flight).
   const savingRef = useRef(false);
+  /**
+   * The session's author placements (canvas-durable-node-positioning design
+   * D1): node id -> where the author's last drag ended. Written ONLY by the
+   * drag-final position change (`dragging === false`, v2 edit sessions),
+   * consumed by `recomputeFlow` (apply, then prune to the current root ids),
+   * reset by `enterEditWith` (every session starts from layout) and cleared
+   * by `relayout`. Edit-session state only — never written to the draft, the
+   * definition payload, or any storage.
+   */
+  const authorPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   /**
    * The definition contract panel's aliases for the sink offer's locate
    * action (canvas-root-contract-editor design D6): the outcomes input's ref
@@ -534,7 +550,11 @@ export function PipelineCanvasPage() {
     selectionOverride: CanvasSelection = selection
   ) {
     const { nodes, edges } = draftToGraph(def, catalogOverride);
-    const laidOut = layoutGraph(nodes, edges).map((node) =>
+    const laidOut = layoutGraph(
+      nodes,
+      edges,
+      def.version === 2 ? authorPositionsRef.current : undefined
+    ).map((node) =>
       node.type === 'stage' && def.version === 1
         ? { ...node, draggable: true, connectable: true, deletable: true }
         : node
@@ -558,6 +578,16 @@ export function PipelineCanvasPage() {
           : edge
       )
     );
+    // Placement invalidation (canvas-durable-node-positioning design D3):
+    // after the rebuild the cache is exactly "placements of nodes present in
+    // the root graph" — deleted/extracted nodes drop theirs, so a re-added
+    // id lays out afresh instead of resurrecting a departed placement.
+    if (def.version === 2) {
+      authorPositionsRef.current = pruneAuthorPositions(
+        authorPositionsRef.current,
+        nodes.map((node) => node.id)
+      );
+    }
   }
 
   function enterEditWith(
@@ -565,6 +595,9 @@ export function PipelineCanvasPage() {
     preparation: WireDefinitionPreparation | null = null,
     initialIssues: PipelineValidationIssue[] = []
   ) {
+    // Every session starts from computed layout (design D6): no placement
+    // from a previous session can leak across definitions or reloads.
+    authorPositionsRef.current = new Map();
     setDraft(seed);
     setLoadedDefinition(seed);
     setMode('edit');
@@ -1056,6 +1089,27 @@ export function PipelineCanvasPage() {
       setFlowEdges((eds) => eds.filter((e) => !removedIds.has(e.source) && !removedIds.has(e.target)));
       pruneSelectionToDraft(nextDraft);
       markDraftChanged();
+    }
+    // Author placement capture (canvas-durable-node-positioning design D1):
+    // the drag-final position change (`dragging === false`) records where
+    // the author's drag ended, so the next `recomputeFlow` honors it.
+    // Mid-drag intermediates (`dragging === true`) never enter the cache, and
+    // v1 editing is excluded (different coordinate contract for its group
+    // children).
+    if (draft?.version === 2) {
+      for (const change of changes) {
+        if (
+          change.type !== 'position' ||
+          change.dragging !== false ||
+          !change.position
+        ) {
+          continue;
+        }
+        authorPositionsRef.current.set(change.id, {
+          x: change.position.x,
+          y: change.position.y,
+        });
+      }
     }
     setFlowNodes((nds) => applyNodeChanges(changes, nds) as PipelineFlowNode[]);
   }
@@ -2033,6 +2087,16 @@ export function PipelineCanvasPage() {
       return;
     }
     const nextDraft = renameV2Node(draft, currentId, newId);
+    // The author's placement follows the rename across the id change
+    // (canvas-durable-node-positioning design D4) — the same
+    // identity-follows-rename posture the selection has below. Without the
+    // carry, the rebuild's prune would drop the entry and the renamed node
+    // would teleport to its dagre position.
+    const carriedPlacement = authorPositionsRef.current.get(currentId);
+    if (carriedPlacement) {
+      authorPositionsRef.current.delete(currentId);
+      authorPositionsRef.current.set(newId, carriedPlacement);
+    }
     // The renamed node survives under its new id — the selection follows
     // the rename rather than being cleared (design D3).
     const nextSelection: CanvasSelection = {
@@ -2143,6 +2207,10 @@ export function PipelineCanvasPage() {
 
   function relayout() {
     if (!draft) return;
+    // Re-layout is the explicit placement reset (canvas-durable-node-positioning
+    // design D5): clearing the cache returns every dragged node to computed
+    // layout, and later edits treat them as undragged again.
+    authorPositionsRef.current = new Map();
     recomputeFlow(draft);
   }
 
