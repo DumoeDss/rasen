@@ -351,6 +351,39 @@ vi.mock('@xyflow/react', async () => {
             </button>
           );
         })}
+        {/* Loop-entry draw (canvas-loop-port-inference): the FIRST
+            AtomicStage's LAST output handle (AtomicStage cards render
+            artifacts then outcomes, so the last is the control outcome)
+            onto the FIRST BoundedLoop's first input handle — the
+            connect-after-synthesis acceptance draws onto whatever entry
+            port the loop's declaration contract renders (disabled until
+            both handles render, exactly like a real drag). */}
+        {(() => {
+          const loopNode = props.nodes.find(
+            (node) => node.data?.definitionKind === 'BoundedLoop'
+          );
+          const sourcePorts = sourceAtomic?.data?.outputPorts ?? [];
+          const sourceHandleId = sourcePorts[sourcePorts.length - 1]?.id ?? null;
+          const targetHandleId = loopNode?.data?.inputPorts?.[0]?.id ?? null;
+          return (
+            <button
+              type="button"
+              data-testid="mock-connect-loop-entry"
+              disabled={!sourceAtomic || !loopNode || !sourceHandleId || !targetHandleId}
+              onClick={() => {
+                if (!sourceAtomic || !loopNode) return;
+                props.onConnect?.({
+                  source: sourceAtomic.id,
+                  sourceHandle: sourceHandleId,
+                  target: loopNode.id,
+                  targetHandle: targetHandleId,
+                });
+              }}
+            >
+              connect first atomic onto the loop entry
+            </button>
+          );
+        })()}
         {authoredRoute.map(([source, sourceHandle, target, targetHandle]) => {
           const sourceNode = props.nodes.find((node) => node.id === source);
           const targetNode = props.nodes.find((node) => node.id === target);
@@ -6511,6 +6544,135 @@ describe('PipelineCanvasPage — back-edge loop inference', () => {
       (container.querySelector('[data-testid="v2-loop-review-id"]') as HTMLInputElement)
         .value
     ).toBe('renamed-loop');
+  });
+
+  /**
+   * The empty-canvas acceptance shape (canvas-loop-port-inference): the
+   * cycle is closed BEFORE anything external is wired. `external` is a
+   * bystander stage with no edges — it is on no path between the back-edge
+   * endpoints, so the region {review, fix} severs NOTHING and, before this
+   * change, the synthesized loop rendered zero input handles. Node order is
+   * deliberate: the mock's inner back-edge (last AtomicStage onto the
+   * second) draws exactly fix -> review.
+   */
+  function standaloneCycleDetail(): PipelineDetailResponse {
+    const stage = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: 'skill:rasen-apply', version: 'digest-apply' },
+      execution: {
+        version: 1 as const,
+        role: 'implementer' as const,
+        workspace: { access: 'write' as const },
+        retainedExecutionNote: `keep ${id}`,
+      },
+    });
+    const definition = {
+      version: 2 as const,
+      id: 'definition:standalone-cycle',
+      sourceId: 'fixture:standalone-cycle',
+      name: 'standalone-cycle',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [],
+      root: {
+        nodes: [stage('external'), stage('review'), stage('fix')],
+        connections: [
+          {
+            id: 'review:done->fix:input',
+            from: { node: 'review', port: 'done' },
+            to: { node: 'fix', port: 'input' },
+          },
+        ],
+      },
+    };
+    return {
+      ...pipelineDetailFixture,
+      pipeline: {
+        ...pipelineDetailFixture.pipeline,
+        name: 'standalone-cycle',
+        description: 'Standalone cycle fixture',
+        provenance: 'user' as const,
+        sourceLayer: 'user' as const,
+        stages: [],
+        authoredVersion: 2 as const,
+        normalizedVersion: 2 as const,
+        definitionValid: true,
+        planAvailable: true,
+        executable: false,
+        executionMode: 'unavailable' as const,
+        unavailableReason: 'ecp_v2_runtime_unavailable',
+      },
+      definition,
+      preparation: v2Preparation,
+      editable: true,
+    } as PipelineDetailResponse;
+  }
+
+  it('cycle-first on a near-empty canvas: fallback rows in the review, both handles on the loop, externals connect after, Validate clean', async () => {
+    await mountBackedgeEdit(standaloneCycleDetail());
+
+    // The refused cycle-closing draw fix -> review opens the loop review.
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-connect-backedge-inner"]')
+    );
+    const review = container.querySelector('[data-testid="v2-loop-review-panel"]');
+    expect(review).not.toBeNull();
+    // The review opens on the FALLBACK rows: the entry named for the
+    // back-edge's target, the exit outcome for its source — where the
+    // round-one review opened with no input row and generic 'done'.
+    expect(
+      (review!.querySelector('[data-testid="v2-loop-review-input-name"]') as HTMLInputElement)
+        .value
+    ).toBe('review');
+    expect(
+      (review!.querySelector('[data-testid="v2-loop-review-outcomes"]') as HTMLInputElement)
+        .value
+    ).toBe('fix');
+
+    // Confirm synthesizes the loop over {review, fix} with the unedited
+    // defaults; the loop is the selection.
+    await clickAndFlush(container.querySelector('[data-testid="v2-loop-review-confirm"]'));
+    expect(container.querySelector('[data-testid="v2-loop-review-panel"]')).toBeNull();
+
+    // The rendered flow node exposes BOTH handles — port descriptors read
+    // straight from the declaration contract (lookupDeclarationPorts), so
+    // the assertions are over the same rows the connection drag targets.
+    const loopNode = container.querySelector(
+      '[data-testid="mock-node"][data-node-id="bounded-loop"]'
+    );
+    expect(loopNode).not.toBeNull();
+    expect(JSON.parse(loopNode!.getAttribute('data-input-ports')!)).toEqual([
+      { id: 'review', type: 'input' },
+    ]);
+    expect(JSON.parse(loopNode!.getAttribute('data-output-ports')!)).toEqual([
+      { id: 'fix', type: 'outcome/fix' },
+    ]);
+
+    // The external stage's connection onto the entry handle lands on the
+    // entry port (nothing was connectable before this change).
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-loop-entry"]'));
+
+    // Validate: the posted definition is the wired graph and the page
+    // reports the clean result.
+    const submitted = await submittedDefinition();
+    expect(submitted.root.nodes.map((node) => node.id)).toEqual([
+      'external',
+      'bounded-loop',
+    ]);
+    expect(submitted.root.connections.map((connection) => connection.id)).toEqual([
+      'external:done->bounded-loop:review',
+    ]);
+    const declaration = submitted.declarations.find((d) => d.id === 'loop-body')!;
+    expect(declaration.inputs).toEqual([{ name: 'review', type: 'input' }]);
+    expect(declaration.outcomes).toEqual(['fix']);
+    const loop = submitted.root.nodes[1] as WireBoundedLoopNode;
+    expect(loop.exits).toEqual({ fix: { action: 'exit', outcome: 'done' } });
+    expect(
+      container.querySelector('[data-testid="pipeline-canvas-validation-result"]')!
+        .textContent
+    ).toContain('No issues');
   });
 });
 

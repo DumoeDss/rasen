@@ -16,6 +16,7 @@ import {
   createBlankCanvasPipelineDefinitionV2,
   createDefaultBoundedLoopLifecycle,
   createParallelPair,
+  deriveBackedgeLoopContract,
   deriveSubgraphContract,
   EMPTY_CANVAS_SELECTION,
   extractSubgraph,
@@ -1876,6 +1877,256 @@ describe('synthesizeBoundedLoopFromBackedge', () => {
       (node) => node.kind === 'CompositeRef' && node.declarationId === 'loop-body'
     )!;
     expect(ref.id).toBe('composite-ref');
+  });
+});
+
+// ===== canvas-loop-port-inference: back-edge fallback rows =====
+
+describe('deriveBackedgeLoopContract', () => {
+  /**
+   * The live round-3 shape: review -> fix on an otherwise empty root. The
+   * back-edge draw fix -> review is refused (review ⇝* fix), the region is
+   * the pair, and NOTHING is severed — before this change the declaration
+   * got inputs: [] (zero input handles on the loop) and the generic 'done'
+   * outcome.
+   */
+  function standaloneCycleDef(): WirePipelineDefinitionV2 {
+    const stage = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: `skill:${id}`, version: `sha256:${id}` },
+      execution: {
+        version: 1 as const,
+        role: 'implementer' as const,
+        workspace: { access: 'write' as const },
+      },
+    });
+    return {
+      version: 2,
+      id: 'definition:cycle',
+      sourceId: 'fixture:cycle',
+      name: 'cycle',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [],
+      root: {
+        nodes: [stage('review'), stage('fix')],
+        connections: [
+          {
+            id: 'e-review-fix',
+            from: { node: 'review', port: 'done' },
+            to: { node: 'fix', port: 'input' },
+          },
+        ],
+      },
+    };
+  }
+
+  it('derives the entry input and exit outcome from the back-edge for a standalone cycle', () => {
+    const def = standaloneCycleDef();
+    expect(wouldCreateCycle(def, 'fix', 'review')).toBe(true);
+    const region = backedgeRegion(def, 'fix', 'review');
+    expect([...region]).toEqual(['review', 'fix']);
+    // The base severs nothing: inputs [] and the generic 'done' default.
+    expect(deriveSubgraphContract(def, region)).toEqual({
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+    });
+    // The composed contract: entry named for the back-edge's target (the
+    // body's unique root), exit outcome for its source (the unique sink).
+    expect(deriveBackedgeLoopContract(def, region, 'fix', 'review')).toEqual({
+      inputs: [{ name: 'review', type: 'input' }],
+      artifacts: [],
+      outcomes: ['fix'],
+    });
+  });
+
+  it('synthesizes the standalone cycle into a connectable loop — inputs exactly [{ name: <to>, type: "input" }], outcomes exactly [<from>]', () => {
+    const def = standaloneCycleDef();
+    // The unedited confirm: the review opens with the derived rows and the
+    // author confirms them as-is (the panel submits its opening defaults).
+    const derived = deriveBackedgeLoopContract(
+      def,
+      backedgeRegion(def, 'fix', 'review'),
+      'fix',
+      'review'
+    );
+    const result = synthesizeBoundedLoopFromBackedge(def, {
+      from: 'fix',
+      to: 'review',
+      id: 'review-cycle',
+      inputs: derived.inputs,
+      artifacts: derived.artifacts,
+      outcomes: derived.outcomes,
+      maxIterations: 3,
+      exitOutcome: 'done',
+    });
+
+    const declaration = result.next.declarations.find((d) => d.id === 'review-cycle')!;
+    expect(declaration.inputs).toEqual([{ name: 'review', type: 'input' }]);
+    expect(declaration.outcomes).toEqual(['fix']);
+    expect(declaration.graph.nodes.map((node) => node.id)).toEqual(['review', 'fix']);
+
+    const loop = result.next.root.nodes.find((node) => node.kind === 'BoundedLoop')!;
+    if (loop.kind !== 'BoundedLoop') throw new Error('expected a BoundedLoop');
+    expect(loop.id).toBe('bounded-loop');
+    // The single fallback outcome carries the exit onto the author's
+    // definition outcome (the last-outcome-exits convention).
+    expect(loop.exits).toEqual({ fix: { action: 'exit', outcome: 'done' } });
+
+    // Standalone means no crossings: the root holds only the loop.
+    expect(result.next.root.nodes.map((node) => node.id)).toEqual(['bounded-loop']);
+    expect(result.next.root.connections).toEqual([]);
+  });
+
+  it('names both fallback rows for the single stage of a self-loop draw', () => {
+    const def = standaloneCycleDef();
+    // Drop the forward edge so fix is a lone stage drawn back onto itself.
+    def.root.connections = [];
+    def.root.nodes = def.root.nodes.filter((node) => node.id === 'fix');
+    expect(wouldCreateCycle(def, 'fix', 'fix')).toBe(true);
+    const region = backedgeRegion(def, 'fix', 'fix');
+    expect([...region]).toEqual(['fix']);
+    // Separate namespaces (input ports vs outcomes): both rows may name the
+    // one stage — it is the body's root and sink of itself.
+    expect(deriveBackedgeLoopContract(def, region, 'fix', 'fix')).toEqual({
+      inputs: [{ name: 'fix', type: 'input' }],
+      artifacts: [],
+      outcomes: ['fix'],
+    });
+
+    const result = synthesizeBoundedLoopFromBackedge(def, {
+      from: 'fix',
+      to: 'fix',
+      id: 'self-loop',
+      inputs: [{ name: 'fix', type: 'input' }],
+      artifacts: [],
+      outcomes: ['fix'],
+      maxIterations: 2,
+      exitOutcome: 'done',
+    });
+    const declaration = result.next.declarations.find((d) => d.id === 'self-loop')!;
+    // The body graph is the one node with no connections.
+    expect(declaration.graph.nodes.map((node) => node.id)).toEqual(['fix']);
+    expect(declaration.graph.connections).toEqual([]);
+    const loop = result.next.root.nodes.find((node) => node.kind === 'BoundedLoop')!;
+    if (loop.kind !== 'BoundedLoop') throw new Error('expected a BoundedLoop');
+    expect(loop.exits).toEqual({ fix: { action: 'exit', outcome: 'done' } });
+  });
+
+  it('mixed sides take their own rule: incoming severed keeps its rows, empty outgoing falls back', () => {
+    // a -> b -> c with the back-edge c -> b over {b, c}: the a -> b edge is
+    // severed; nothing leaves c, so the outcome side would be empty.
+    const def = standaloneCycleDef();
+    def.root.nodes.unshift({
+      id: 'a',
+      kind: 'AtomicStage' as const,
+      capability: { id: 'skill:a', version: 'sha256:a' },
+      execution: {
+        version: 1 as const,
+        role: 'implementer' as const,
+        workspace: { access: 'write' as const },
+      },
+    });
+    def.root.connections.unshift({
+      id: 'e-a-review',
+      from: { node: 'a', port: 'done' },
+      to: { node: 'review', port: 'input' },
+    });
+    const region = backedgeRegion(def, 'fix', 'review');
+    expect(deriveSubgraphContract(def, region)).toEqual({
+      inputs: [{ name: 'review', type: 'input' }],
+      artifacts: [],
+      outcomes: ['done'],
+    });
+    expect(deriveBackedgeLoopContract(def, region, 'fix', 'review')).toEqual({
+      // The severed side passes through VERBATIM...
+      inputs: [{ name: 'review', type: 'input' }],
+      artifacts: [],
+      // ...the empty side falls back to the back-edge source.
+      outcomes: ['fix'],
+    });
+  });
+
+  it('mixed sides take their own rule: outgoing severed keeps its rows, empty incoming falls back', () => {
+    // review -> fix -> finish with the back-edge fix -> review over
+    // {review, fix}: the fix -> finish edge is severed; nothing enters
+    // review, so the input side would be empty.
+    const def = standaloneCycleDef();
+    def.root.nodes.push({ id: 'finish', kind: 'Finish' as const, outcome: 'done' });
+    def.root.connections.push({
+      id: 'e-fix-finish',
+      from: { node: 'fix', port: 'done' },
+      to: { node: 'finish', port: 'input' },
+    });
+    const region = backedgeRegion(def, 'fix', 'review');
+    expect(deriveSubgraphContract(def, region)).toEqual({
+      inputs: [],
+      artifacts: [],
+      outcomes: ['fix'],
+    });
+    expect(deriveBackedgeLoopContract(def, region, 'fix', 'review')).toEqual({
+      // The empty side falls back to the back-edge target...
+      inputs: [{ name: 'review', type: 'input' }],
+      artifacts: [],
+      // ...the severed side passes through VERBATIM.
+      outcomes: ['fix'],
+    });
+
+    // The synthesized loop keeps BOTH rules at once: the severed outgoing
+    // edge rewires onto its derived port positionally while the loop offers
+    // the fallback entry handle.
+    const result = synthesizeBoundedLoopFromBackedge(def, {
+      from: 'fix',
+      to: 'review',
+      id: 'review-cycle',
+      inputs: [{ name: 'review', type: 'input' }],
+      artifacts: [],
+      outcomes: ['fix'],
+      maxIterations: 3,
+      exitOutcome: 'done',
+    });
+    expect(result.next.root.nodes.map((node) => node.id)).toEqual([
+      'finish',
+      'bounded-loop',
+    ]);
+    expect(result.next.root.connections.map((connection) => connection.id)).toEqual([
+      'bounded-loop:fix->finish:input',
+    ]);
+  });
+
+  it('deep-equals deriveSubgraphContract for the externals-first shape — the round-one results unchanged', () => {
+    // The round-one acceptance region: extractionDef's {b, c} between the
+    // externals a and f severs both sides, so the fallback never fires.
+    const region = new Set(['b', 'c']);
+    const def = extractionDef();
+    expect(deriveBackedgeLoopContract(def, region, 'c', 'b')).toEqual(
+      deriveSubgraphContract(def, region)
+    );
+  });
+
+  it('honors author-renamed fallback rows over the derivation on confirm', () => {
+    // The review's rows are editable defaults; the confirm transaction
+    // writes the AUTHOR's rows, not the derivation's.
+    const result = synthesizeBoundedLoopFromBackedge(standaloneCycleDef(), {
+      from: 'fix',
+      to: 'review',
+      id: 'review-cycle',
+      inputs: [{ name: 'entry', type: 'input' }],
+      artifacts: [],
+      outcomes: ['repeat'],
+      maxIterations: 5,
+      exitOutcome: 'done',
+    });
+    const declaration = result.next.declarations.find((d) => d.id === 'review-cycle')!;
+    expect(declaration.inputs).toEqual([{ name: 'entry', type: 'input' }]);
+    expect(declaration.outcomes).toEqual(['repeat']);
+    const loop = result.next.root.nodes.find((node) => node.kind === 'BoundedLoop')!;
+    if (loop.kind !== 'BoundedLoop') throw new Error('expected a BoundedLoop');
+    // The exit map follows the authored rows: 'repeat' exits to 'done'.
+    expect(loop.exits).toEqual({ repeat: { action: 'exit', outcome: 'done' } });
   });
 });
 

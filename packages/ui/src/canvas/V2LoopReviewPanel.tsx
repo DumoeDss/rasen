@@ -5,7 +5,9 @@
  * author who wants a different region draws a different back-edge), edits the
  * derived declaration contract rows, sets the iteration bound and the exit
  * outcome, and confirms. Presentational — the page computed the region and
- * defaults via `backedgeRegion`/`deriveSubgraphContract`, the model
+ * defaults via `backedgeRegion`/`deriveBackedgeLoopContract` (the cut
+ * contract plus the back-edge fallback rows for sides that severed
+ * nothing), the model
  * (`synthesizeBoundedLoopFromBackedge`) re-validates every rule on confirm,
  * and the model's thrown message comes back as the `error` prop (the same
  * overlay pattern as `V2ExtractReviewPanel`, whose rows UX this reuses via
@@ -80,7 +82,7 @@ export function V2LoopReviewPanel({
   definitionOutcomes: readonly string[];
   /** `loop-body`, `loop-body-2`, … — minted by the page via `isDeclarationIdUnique`. */
   defaultId: string;
-  /** The derivation the dialog opened with (`deriveSubgraphContract`). */
+  /** The derivation the dialog opened with (`deriveBackedgeLoopContract`). */
   derived: {
     inputs: WireDefinitionPort[];
     artifacts: WireDefinitionArtifact[];

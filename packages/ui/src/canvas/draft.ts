@@ -2840,6 +2840,58 @@ export function deriveSubgraphContract(
   };
 }
 
+/**
+ * Derives the loop body's contract for a refused back-edge draw
+ * (canvas-loop-port-inference design D1/D2): the base cut contract from
+ * {@link deriveSubgraphContract}, with each side that severed NO connection
+ * falling back to the back-edge itself under the SAME boundary naming
+ * convention severed rows follow — the entry input is named for the
+ * back-edge's target `to` and typed {@link CONTROL_TARGET_PORT} (exactly
+ * what a severed incoming edge onto `to` would derive, since inputs are
+ * named after the severed edge's target stage), and the exit outcome is
+ * named for the back-edge's source `from` (exactly what a severed outgoing
+ * edge from `from` would derive, since outcomes are named after the source
+ * stage; this replaces the generic `'done'` default for the loop path's
+ * empty side only).
+ *
+ * Soundness of the names: the draft is acyclic — the back-edge was refused
+ * precisely because it would close a cycle — so no internal edge can enter
+ * `to` (an edge `m -> to` with `m` in the region would imply the
+ * pre-existing cycle `to ⇝* m ⇝* to`), and every other region member is
+ * reachable from `to` through members only. `to` is therefore the body's
+ * UNIQUE ROOT (where control re-enters each iteration) and, by the mirrored
+ * argument, `from` its UNIQUE SINK (the tail the body runs to before the
+ * exit decision). A self-loop draw (`from === to`) names both rows for that
+ * one stage — separate namespaces, no collision.
+ *
+ * Per-side precedence, byte-preserving: a side whose extraction severs
+ * connections passes through VERBATIM (identical to `deriveSubgraphContract`
+ * — the externals-first results are unchanged), and the fallback fires only
+ * on a side that would otherwise be empty, checked against the cut's own
+ * key lists (the base materializes an empty severed-outcome side as
+ * `['done']`, so the emptiness test is the cut's, not the materialized
+ * list's — a severed outcome could legitimately be named `'done'`). The
+ * extract/CompositeRef path never calls this: it has no back-edge to derive
+ * from (explicit non-goal) and keeps `deriveSubgraphContract` directly.
+ */
+export function deriveBackedgeLoopContract(
+  def: WirePipelineDefinitionV2,
+  region: ReadonlySet<string>,
+  from: string,
+  to: string
+): DerivedSubgraphContract {
+  const base = deriveSubgraphContract(def, region);
+  const { incomingKeys, outgoingKeys } = computeSubgraphCut(def, region);
+  return {
+    ...base,
+    inputs:
+      incomingKeys.length > 0
+        ? base.inputs
+        : [{ name: to, type: CONTROL_TARGET_PORT }],
+    outcomes: outgoingKeys.length > 0 ? base.outcomes : [from],
+  };
+}
+
 /** The reviewed contract plus which nodes move — {@link extractSubgraph}'s input. */
 export interface SubgraphExtractionInput {
   nodeIds: ReadonlySet<string>;
@@ -3107,7 +3159,7 @@ export function synthesizeBoundedLoopFromBackedge(
     region,
     loopId,
     input,
-    deriveSubgraphContract(def, region)
+    deriveBackedgeLoopContract(def, region, input.from, input.to)
   );
   return { next, declarationId, loopId };
 }

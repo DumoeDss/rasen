@@ -61,6 +61,7 @@ import {
   completedFrontier,
   declareDefinitionOutcome,
   definitionIssuePathTarget,
+  deriveBackedgeLoopContract,
   deriveSubgraphContract,
   detectParallelFrontiers,
   duplicateV2Definition,
@@ -314,7 +315,7 @@ export function PipelineCanvasPage() {
     from: string;
     to: string;
     nodeIds: ReadonlySet<string>;
-    derived: ReturnType<typeof deriveSubgraphContract>;
+    derived: ReturnType<typeof deriveBackedgeLoopContract>;
     refusals: readonly string[];
     stageCount: number;
     internalConnectionCount: number;
@@ -1395,15 +1396,16 @@ export function PipelineCanvasPage() {
   /**
    * Opens the loop review for a refused cycle-closing draw. The region, the
    * derivation, and the refusals live in `draft.ts` (`backedgeRegion`,
-   * `deriveSubgraphContract`, `subgraphExtractionRefusals`); this handler
-   * only captures what the author is about to review. The drawn connection
-   * is never written to the draft — the review state carries the endpoints
-   * as data, so cancel reproduces today's refusal outcome exactly.
+   * `deriveBackedgeLoopContract` — the cut contract plus the back-edge
+   * fallback rows for sides that severed nothing, `subgraphExtractionRefusals`);
+   * this handler only captures what the author is about to review. The drawn
+   * connection is never written to the draft — the review state carries the
+   * endpoints as data, so cancel reproduces today's refusal outcome exactly.
    */
   function openLoopReview(from: string, to: string) {
     if (!draft || draft.version !== 2) return;
     const nodeIds = backedgeRegion(draft, from, to);
-    const derived = deriveSubgraphContract(draft, nodeIds);
+    const derived = deriveBackedgeLoopContract(draft, nodeIds, from, to);
     const refusals = subgraphExtractionRefusals(draft, {
       nodeIds,
       connectionIds: new Set<string>(),
