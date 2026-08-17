@@ -23,6 +23,13 @@ import {
 export const NODE_WIDTH = 200;
 export const NODE_HEIGHT = 92;
 
+/**
+ * An author-dragged placement for a stage node, keyed by node id
+ * (canvas-durable-node-positioning design D2). Edit-session state only: the
+ * page's cache, never the definition payload.
+ */
+export type AuthorPosition = { x: number; y: number };
+
 const GROUP_PADDING = 24;
 const GROUP_LABEL_HEIGHT = 28;
 /** Rank separation grows when groups exist so a group box has room to breathe between ranks. */
@@ -597,8 +604,17 @@ export function draftToGraph(
  * top-left corner (React Flow's contract for child-of-group positioning).
  * Group nodes are returned before their members — required order for React
  * Flow to resolve `parentId` on first render.
+ *
+ * `authorPositions` (canvas-durable-node-positioning design D2), when given,
+ * overrides the dagre position of a stage node whose id has a cached
+ * placement — the author's drag survives the rebuild. Optional so view-mode
+ * callers (no cache) are unchanged.
  */
-export function layoutGraph(nodes: UnpositionedStage[], edges: Edge[]): PipelineFlowNode[] {
+export function layoutGraph(
+  nodes: UnpositionedStage[],
+  edges: Edge[],
+  authorPositions?: ReadonlyMap<string, AuthorPosition>
+): PipelineFlowNode[] {
   const hasGroups = nodes.some((node) => node.parallelGroup !== undefined);
 
   const g = new dagre.graphlib.Graph();
@@ -610,9 +626,19 @@ export function layoutGraph(nodes: UnpositionedStage[], edges: Edge[]): Pipeline
 
   const absolute = nodes.map((node) => {
     const { x, y } = g.node(node.id);
+    // Author placement (canvas-durable-node-positioning design D2): a stage
+    // node whose id has a cached position renders where the author dragged
+    // it, replacing the dagre position; absent ids change nothing. Group
+    // members are skipped — their rendered position is RELATIVE to the
+    // group's box (a different coordinate contract), and the cache is only
+    // ever populated for v2 sessions, which have no groups.
+    const cached =
+      node.parallelGroup === undefined
+        ? authorPositions?.get(node.id)
+        : undefined;
     return {
       ...node,
-      absPosition: { x: x - NODE_WIDTH / 2, y: y - NODE_HEIGHT / 2 },
+      absPosition: cached ?? { x: x - NODE_WIDTH / 2, y: y - NODE_HEIGHT / 2 },
     };
   });
 
@@ -671,4 +697,23 @@ export function layoutGraph(nodes: UnpositionedStage[], edges: Edge[]): Pipeline
   });
 
   return [...groupNodes, ...stageNodes];
+}
+
+/**
+ * Rebuilds a placement cache keyed to exactly the given stage-node ids
+ * (canvas-durable-node-positioning design D3): entries whose owner left the
+ * root graph are dropped, so a node later re-added under the same id lays
+ * out afresh instead of resurrecting a departed placement. Pure — returns a
+ * new Map, never mutates the input.
+ */
+export function pruneAuthorPositions(
+  positions: ReadonlyMap<string, AuthorPosition>,
+  presentStageIds: Iterable<string>
+): Map<string, AuthorPosition> {
+  const pruned = new Map<string, AuthorPosition>();
+  for (const id of presentStageIds) {
+    const cached = positions.get(id);
+    if (cached) pruned.set(id, cached);
+  }
+  return pruned;
 }

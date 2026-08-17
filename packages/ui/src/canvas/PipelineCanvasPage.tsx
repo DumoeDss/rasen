@@ -34,7 +34,13 @@ import type {
   WirePipelineDefinitionStage,
 } from '../api/types.js';
 import { useSpace, spaceHref } from '../store/use-space.js';
-import { definitionToGraph, draftToGraph, layoutGraph, type PipelineFlowNode } from './layout.js';
+import {
+  definitionToGraph,
+  draftToGraph,
+  layoutGraph,
+  pruneAuthorPositions,
+  type PipelineFlowNode,
+} from './layout.js';
 import { stageNodeTypes } from './StageNode.js';
 import {
   CONTROL_SOURCE_PORT,
@@ -53,6 +59,7 @@ import {
   backedgeRegion,
   CanvasSelection,
   completedFrontier,
+  declareDefinitionOutcome,
   definitionIssuePathTarget,
   deriveSubgraphContract,
   detectParallelFrontiers,
@@ -249,6 +256,24 @@ export function PipelineCanvasPage() {
   // render happens; the ref is set/read synchronously with the click instead
   // (spec: never submit a second mutation while one is in flight).
   const savingRef = useRef(false);
+  /**
+   * The session's author placements (canvas-durable-node-positioning design
+   * D1): node id -> where the author's last drag ended. Written ONLY by the
+   * drag-final position change (`dragging === false`, v2 edit sessions),
+   * consumed by `recomputeFlow` (apply, then prune to the current root ids),
+   * reset by `enterEditWith` (every session starts from layout) and cleared
+   * by `relayout`. Edit-session state only — never written to the draft, the
+   * definition payload, or any storage.
+   */
+  const authorPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+  /**
+   * The definition contract panel's aliases for the sink offer's locate
+   * action (canvas-root-contract-editor design D6): the outcomes input's ref
+   * (focus) and the panel root's ref (scrollIntoView). jsdom asserts focus
+   * and the wiring only; the real-browser check covers visibility.
+   */
+  const definitionOutcomesInputRef = useRef<HTMLInputElement | null>(null);
+  const definitionContractPanelRef = useRef<HTMLElement | null>(null);
   const [toast, setToast] = useState('');
   /**
    * The current toast's optional action (design D4): while present the toast
@@ -277,18 +302,19 @@ export function PipelineCanvasPage() {
   /**
    * The open back-edge loop review (canvas-backedge-loop-inference design
    * D6): the drawn edge's endpoints, the enclosed region, the derivation
-   * defaults, the definition's outcomes (captured at open — the review is
-   * modal, the draft cannot change underneath it), the open-time refusals,
-   * and the model's last confirm-time refusal. Null when no review is open;
-   * the drawn Connection itself is NEVER written to the draft, so cancel
-   * equals today's pre-change refusal outcome exactly.
+   * defaults, the open-time refusals, and the model's last confirm-time
+   * refusal. Null when no review is open; the drawn Connection itself is
+   * NEVER written to the draft, so cancel equals today's pre-change refusal
+   * outcome exactly. The definition's outcomes are NOT captured here — the
+   * review reads them live from the draft (the parallel review's posture,
+   * canvas-root-contract-editor design D5), because the review's own inline
+   * declare writes them while it is open.
    */
   const [loopReview, setLoopReview] = useState<{
     from: string;
     to: string;
     nodeIds: ReadonlySet<string>;
     derived: ReturnType<typeof deriveSubgraphContract>;
-    definitionOutcomes: readonly string[];
     refusals: readonly string[];
     stageCount: number;
     internalConnectionCount: number;
@@ -524,7 +550,11 @@ export function PipelineCanvasPage() {
     selectionOverride: CanvasSelection = selection
   ) {
     const { nodes, edges } = draftToGraph(def, catalogOverride);
-    const laidOut = layoutGraph(nodes, edges).map((node) =>
+    const laidOut = layoutGraph(
+      nodes,
+      edges,
+      def.version === 2 ? authorPositionsRef.current : undefined
+    ).map((node) =>
       node.type === 'stage' && def.version === 1
         ? { ...node, draggable: true, connectable: true, deletable: true }
         : node
@@ -548,6 +578,16 @@ export function PipelineCanvasPage() {
           : edge
       )
     );
+    // Placement invalidation (canvas-durable-node-positioning design D3):
+    // after the rebuild the cache is exactly "placements of nodes present in
+    // the root graph" — deleted/extracted nodes drop theirs, so a re-added
+    // id lays out afresh instead of resurrecting a departed placement.
+    if (def.version === 2) {
+      authorPositionsRef.current = pruneAuthorPositions(
+        authorPositionsRef.current,
+        nodes.map((node) => node.id)
+      );
+    }
   }
 
   function enterEditWith(
@@ -555,6 +595,9 @@ export function PipelineCanvasPage() {
     preparation: WireDefinitionPreparation | null = null,
     initialIssues: PipelineValidationIssue[] = []
   ) {
+    // Every session starts from computed layout (design D6): no placement
+    // from a previous session can leak across definitions or reloads.
+    authorPositionsRef.current = new Map();
     setDraft(seed);
     setLoadedDefinition(seed);
     setMode('edit');
@@ -1047,6 +1090,27 @@ export function PipelineCanvasPage() {
       pruneSelectionToDraft(nextDraft);
       markDraftChanged();
     }
+    // Author placement capture (canvas-durable-node-positioning design D1):
+    // the drag-final position change (`dragging === false`) records where
+    // the author's drag ended, so the next `recomputeFlow` honors it.
+    // Mid-drag intermediates (`dragging === true`) never enter the cache, and
+    // v1 editing is excluded (different coordinate contract for its group
+    // children).
+    if (draft?.version === 2) {
+      for (const change of changes) {
+        if (
+          change.type !== 'position' ||
+          change.dragging !== false ||
+          !change.position
+        ) {
+          continue;
+        }
+        authorPositionsRef.current.set(change.id, {
+          x: change.position.x,
+          y: change.position.y,
+        });
+      }
+    }
     setFlowNodes((nds) => applyNodeChanges(changes, nds) as PipelineFlowNode[]);
   }
 
@@ -1360,7 +1424,6 @@ export function PipelineCanvasPage() {
       to,
       nodeIds: new Set(nodeIds),
       derived,
-      definitionOutcomes: [...draft.outcomes],
       refusals,
       stageCount: nodeIds.size,
       internalConnectionCount,
@@ -1418,6 +1481,32 @@ export function PipelineCanvasPage() {
   function cancelLoopReview() {
     setLoopReview(null);
     removeAuthoringDraftErrorScopes([LOOP_REVIEW_INTEGER_FIELD]);
+  }
+
+  /**
+   * The loop review's inline declare (canvas-root-contract-editor design
+   * D3/D5): the review's overlay covers the contract panel, so while the
+   * definition declares no outcomes the review offers a name field whose
+   * confirm performs exactly one `declareDefinitionOutcome` transaction —
+   * the same rule site the contract panel writes through. The review stays
+   * open; the live outcomes read (D5) is what makes the new option reach
+   * the exit-outcome select. A refusal toasts the message and leaves the
+   * draft untouched.
+   */
+  function declareOutcomeFromLoopReview(name: string) {
+    if (!draft || draft.version !== 2) return;
+    let nextDraft;
+    try {
+      nextDraft = declareDefinitionOutcome(draft, name);
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : 'Could not declare the outcome.'
+      );
+      return;
+    }
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
+    markDraftChanged();
   }
 
   // --- Parallel frontier inference (canvas-parallel-frontier-inference D1/D3) -
@@ -1537,6 +1626,18 @@ export function PipelineCanvasPage() {
     recomputeFlow(result.next, catalog, nextSelection);
     markDraftChanged();
     showToast('Finish added for this endpoint.');
+  }
+
+  /**
+   * The sink offer's locate action (canvas-root-contract-editor design
+   * D6): scroll the definition contract panel into view within the
+   * authoring column and focus its outcomes field. Read-only over the
+   * contract by design — the panel beside this one is the home for
+   * declaring.
+   */
+  function locateDefinitionOutcomes() {
+    definitionContractPanelRef.current?.scrollIntoView({ block: 'nearest' });
+    definitionOutcomesInputRef.current?.focus();
   }
 
   // The offer's toast action outlives the render that created it (its
@@ -1986,6 +2087,16 @@ export function PipelineCanvasPage() {
       return;
     }
     const nextDraft = renameV2Node(draft, currentId, newId);
+    // The author's placement follows the rename across the id change
+    // (canvas-durable-node-positioning design D4) — the same
+    // identity-follows-rename posture the selection has below. Without the
+    // carry, the rebuild's prune would drop the entry and the renamed node
+    // would teleport to its dagre position.
+    const carriedPlacement = authorPositionsRef.current.get(currentId);
+    if (carriedPlacement) {
+      authorPositionsRef.current.delete(currentId);
+      authorPositionsRef.current.set(newId, carriedPlacement);
+    }
     // The renamed node survives under its new id — the selection follows
     // the rename rather than being cleared (design D3).
     const nextSelection: CanvasSelection = {
@@ -2096,6 +2207,10 @@ export function PipelineCanvasPage() {
 
   function relayout() {
     if (!draft) return;
+    // Re-layout is the explicit placement reset (canvas-durable-node-positioning
+    // design D5): clearing the cache returns every dragged node to computed
+    // layout, and later edits treat them as undragged again.
+    authorPositionsRef.current = new Map();
     recomputeFlow(draft);
   }
 
@@ -2743,13 +2858,16 @@ export function PipelineCanvasPage() {
           from={loopReview.from}
           to={loopReview.to}
           regionNodeIds={[...loopReview.nodeIds]}
-          definitionOutcomes={loopReview.definitionOutcomes}
+          // Live draft read (design D5), matching the parallel review below:
+          // the review's own inline declare changes these while it is open.
+          definitionOutcomes={draft?.version === 2 ? [...draft.outcomes] : []}
           defaultId={loopReview.defaultId}
           derived={loopReview.derived}
           defaultMaxIterations={3}
           refusals={loopReview.refusals}
           integerDraftError={authoringDraftErrors[LOOP_REVIEW_INTEGER_FIELD] ?? null}
           onIntegerDraftError={setAuthoringDraftError}
+          onDeclareOutcome={declareOutcomeFromLoopReview}
           error={loopReview.error}
           onConfirm={confirmLoopReview}
           onCancel={cancelLoopReview}
@@ -2813,6 +2931,8 @@ export function PipelineCanvasPage() {
               draftErrors={authoringDraftErrors}
               onPatch={patchDefinitionContract}
               onInvalidChange={setAuthoringDraftError}
+              outcomesInputRef={definitionOutcomesInputRef}
+              panelRef={definitionContractPanelRef}
             />
             <DeclarationsPanel
               definition={draft}
@@ -2984,6 +3104,7 @@ export function PipelineCanvasPage() {
                     outcomes: selectedV2SinkOutcomes,
                     onPromote: (outcome) =>
                       confirmSinkPromotion(selectedV2Node.id, outcome),
+                    onLocateDefinitionOutcomes: locateDefinitionOutcomes,
                   }
                 : undefined
             }

@@ -70,6 +70,22 @@ describe('v2 authoring column CSS contract (design D1/D8)', () => {
     );
   });
 
+  it('renders the toast above the review dialogs scrim (a refusal while a modal is open stays visible)', () => {
+    // canvas-root-contract-editor review m1: the loop review's inline-declare
+    // refusal (and any review-time refusal toast) fired while the fixed
+    // `.pipeline-canvas__dialog-overlay` (z-index 20) was open rendered
+    // UNDER the scrim. The toast must sit above it. jsdom does no painting,
+    // so this is the string-level property+value pin; the stacking claim
+    // (no ancestor between the two creates a stacking context) is why the
+    // z-index comparison is direct.
+    expect(blockForSelectorAmong('.pipeline-canvas__toast')).toMatch(
+      declares('z-index', '30')
+    );
+    expect(blockForSelectorAmong('.pipeline-canvas__dialog-overlay')).toMatch(
+      declares('z-index', '20')
+    );
+  });
+
   it('the property/value anchoring itself rejects the near-misses it exists to catch', () => {
     // Guarding the guard. Without this, a future refactor of `declares()` back
     // to a substring match would leave every pin above green while silently

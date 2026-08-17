@@ -26,6 +26,7 @@ export const CANVAS_V2_AUTHORING_CATALOG = {
       id: 'rasen-apply-change',
       description: 'Apply tasks from a Rasen change',
       enabled: true,
+      kind: 'task',
       capability: {
         ...CANVAS_V2_APPLY_CAPABILITY,
         inputs: [],

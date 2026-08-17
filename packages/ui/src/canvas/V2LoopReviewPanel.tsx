@@ -22,8 +22,16 @@
  * offers no confirm, only cancel. Mounted fresh per open (conditionally
  * rendered), so local state never carries across openings; modal by
  * construction.
+ *
+ * The definition's outcomes arrive as a prop read LIVE from the draft
+ * (canvas-root-contract-editor design D5), and while that list is empty the
+ * review renders its inline declare affordance (design D3's one carve-out:
+ * this modal's overlay covers the contract panel, the single home for
+ * declaring, so the review borrows a thin write instead of blocking it) — a
+ * name plus confirm that hands the page one `onDeclareOutcome(name)` call;
+ * the panel decides nothing (no local append, no rule copy).
  */
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import type {
   WireDefinitionArtifact,
   WireDefinitionPort,
@@ -55,6 +63,7 @@ export function V2LoopReviewPanel({
   refusals,
   integerDraftError,
   onIntegerDraftError,
+  onDeclareOutcome,
   error,
   onConfirm,
   onCancel,
@@ -64,7 +73,10 @@ export function V2LoopReviewPanel({
   to: string;
   /** The enclosed region, in `backedgeRegion` order — read-only. */
   regionNodeIds: readonly string[];
-  /** The definition's outcomes — the exit-outcome select's option set. */
+  /**
+   * The definition's CURRENT outcomes (a live prop, design D5) — the
+   * exit-outcome select's option set, and the flag for the inline declare.
+   */
   definitionOutcomes: readonly string[];
   /** `loop-body`, `loop-body-2`, … — minted by the page via `isDeclarationIdUnique`. */
   defaultId: string;
@@ -84,6 +96,11 @@ export function V2LoopReviewPanel({
     field: string,
     error: IntegerContractDraftError | null
   ) => void;
+  /**
+   * The inline declare's thin callback (design D3): the page performs one
+   * `declareDefinitionOutcome` transaction; the panel keeps no model logic.
+   */
+  onDeclareOutcome: (name: string) => void;
   /** The model's last confirm-time refusal, if confirm was refused. */
   error: string | null;
   onConfirm: (review: BoundedLoopSynthesisReview) => void;
@@ -95,6 +112,15 @@ export function V2LoopReviewPanel({
   const [outcomes, setOutcomes] = useState(derived.outcomes);
   const [maxIterations, setMaxIterations] = useState(defaultMaxIterations);
   const [exitOutcome, setExitOutcome] = useState(definitionOutcomes[0] ?? '');
+  const [declareName, setDeclareName] = useState('');
+  // The exit select initialized empty (no outcomes declared at open); once
+  // the inline declare lands one, adopt it so the select shows — and confirm
+  // submits — the outcome the author just declared.
+  useEffect(() => {
+    if (!exitOutcome && definitionOutcomes.length > 0) {
+      setExitOutcome(definitionOutcomes[0] ?? '');
+    }
+  }, [definitionOutcomes, exitOutcome]);
   const blocked = integerDraftError !== null || refusals.length > 0;
   return (
     <div class="pipeline-canvas__dialog-overlay" data-testid="v2-loop-review-panel">
@@ -153,6 +179,36 @@ export function V2LoopReviewPanel({
             ))}
           </select>
         </label>
+        {definitionOutcomes.length === 0 && (
+          <div
+            class="stage-panel__section"
+            data-testid="v2-loop-review-declare"
+          >
+            <p class="stage-panel__muted">
+              The definition declares no outcomes, so there is nothing to exit
+              on. Declare one here (the definition contract panel, the usual
+              home, is behind this dialog) and the exit choice above picks it
+              up:
+            </p>
+            <input
+              type="text"
+              data-testid="v2-loop-review-declare-name"
+              aria-label="Declare outcome name"
+              value={declareName}
+              onInput={(event) =>
+                setDeclareName((event.target as HTMLInputElement).value)
+              }
+            />
+            <button
+              type="button"
+              data-testid="v2-loop-review-declare-confirm"
+              disabled={!declareName.trim()}
+              onClick={() => onDeclareOutcome(declareName.trim())}
+            >
+              Declare outcome
+            </button>
+          </div>
+        )}
         <PortListEditor
           label="Inputs"
           testIdPrefix="v2-loop-review-input"

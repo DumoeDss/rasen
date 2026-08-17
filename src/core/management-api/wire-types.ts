@@ -297,6 +297,13 @@ export interface PipelineCatalogSkill {
   /** Whether the skill is enabled in the active profile selection (a disabled skill is still listed, greyed out in the palette). */
   enabled: boolean;
   /**
+   * The skill's workflow kind, passed through from the registry's
+   * `WorkflowDefinition.kind` (never inferred). Optional so older servers and
+   * existing catalog fixtures stay source-compatible (the `capability?`
+   * precedent); an absent kind degrades to the workflows group in the palette.
+   */
+  kind?: 'task' | 'driver' | 'internal' | 'expert';
+  /**
    * Exact trusted Definition capability revision. Optional so older catalog
    * fixtures and v1-only clients remain source-compatible.
    */

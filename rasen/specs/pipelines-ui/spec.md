@@ -903,3 +903,150 @@ unchanged. No node the editor creates SHALL carry runtime-ownership metadata.
 - **WHEN** the terminal stage carried unedited execution settings
 - **THEN** the stage keeps its settings verbatim, and neither the Finish nor the wiring carries runtime-ownership metadata
 
+### Requirement: The canvas declares the definition's outcome contract
+
+The v2 canvas edit session SHALL let the author declare the root definition's named
+outcome contract in the definition contract panel: edit the named outcome list (adding,
+renaming, or removing entries) with the list-field idiom used for declaration outcomes,
+committing on blur. The list-field commit SHALL canonicalize the text into the trimmed,
+non-blank, deduplicated names in typed order, so a blank or duplicate entry in the text
+never reaches the contract from the list. Refusal of blank and duplicate names SHALL
+live at the contract rule site every contract write goes through (the typed input and
+artifact row edits and the single-outcome declare helper reach it): a refusal there
+SHALL surface a diagnostic and keep the previous contract. The definition's typed input
+and artifact rows SHALL remain editable in the same panel under the same refusal rules.
+Outcome pickers elsewhere on the canvas SHALL stay read-only over the declared contract:
+the loop review's exit-outcome choice and the sink endpoint offer SHALL offer exactly the
+declared outcomes and create none on their own. The loop review SHALL read the
+definition's current outcomes while it is open, and, while it is open and the definition
+declares no outcomes, SHALL offer an inline declare affordance that appends one outcome
+through the same contract rule site without closing the review. The sink endpoint offer,
+when the definition declares no outcomes, SHALL say so and SHALL offer an action that
+locates the definition contract's outcome list instead of presenting an empty choice.
+
+#### Scenario: An undeclared terminal outcome is declared from the contract panel
+
+- **WHEN** a definition whose graph produces a terminal outcome that its contract does not declare shows the corresponding issue, and the author adds that outcome to the definition contract panel's named outcome list and re-runs validation
+- **THEN** the issue is gone and no other edit was made to the definition
+
+#### Scenario: The outcome list commits on blur and canonicalizes
+
+- **WHEN** the author edits the named outcome list text and focus leaves the field
+- **THEN** the definition's outcomes equal the trimmed, non-blank, deduplicated names in typed order
+- **WHEN** the committed text contains a blank or duplicate outcome name
+- **THEN** the commit canonicalizes it away (blanks dropped, duplicates merged) and no refusal is raised, because the list-field commit never submits a blank or duplicate name to the contract rule site
+
+#### Scenario: Typed input and artifact rows stay editable
+
+- **WHEN** the author adds, renames, or removes a typed input row or an artifact row in the definition contract panel
+- **THEN** the definition contract reflects the edited rows, and a blank or duplicate row name is refused with a diagnostic
+
+#### Scenario: The loop review reads the live contract and can declare inline
+
+- **WHEN** the loop review is open and the definition declares no outcomes, and the author enters a name in the inline declare affordance and confirms it
+- **THEN** the definition gains that outcome as its single declaring transaction, the exit-outcome choice offers it, and the review stays open with its other edits intact
+- **WHEN** the inline declare name is blank
+- **THEN** the affordance's confirm action stays disabled, so a blank never reaches the contract rule site; a duplicate cannot be submitted through this affordance (it renders only while the definition declares nothing), and the rule site's own blank/duplicate refusal is the model's guarantee for every write path
+
+#### Scenario: The sink endpoint offer points at the contract when no outcomes exist
+
+- **WHEN** the selected promotable sink's endpoint offer renders while the definition declares no outcomes
+- **THEN** the offer states that no outcomes are declared and presents an action that locates the definition contract's outcome list rather than an empty outcome choice
+
+#### Scenario: Pickers offer exactly the declared outcomes
+
+- **WHEN** the definition declares one or more outcomes and the loop review or the sink endpoint offer renders
+- **THEN** their outcome choices list exactly the declared outcomes and none beyond them
+
+### Requirement: The canvas keeps the author's node placement
+
+In a v2 edit session the canvas SHALL keep the placement an author gives a node by
+dragging: after any subsequent non-destructive edit that rebuilds the flow (adding a
+node, editing a contract, declaring an outcome, wiring a connection), a dragged node
+SHALL render at the author's placement. Elements the author has not dragged (palette
+adds, synthesized references, loops, parallel pairs, inserted declaration refs) SHALL
+receive computed layout positions. The canvas SHALL capture a placement when a drag ends
+and SHALL apply it by node identity. Placement SHALL follow a node through a rename.
+When an element leaves the root graph (deletion or extraction into a declaration) the
+canvas SHALL drop its placement, and an element later added under the same id SHALL
+receive a computed layout position. The Re-layout action SHALL clear the session's
+placement memory and return every element to computed layout. Placement SHALL remain
+edit-session state: the definition payload the canvas saves SHALL carry no placement
+fields, and a fresh edit session SHALL start from computed layout.
+
+#### Scenario: A dragged node keeps its placement across a follow-up edit
+
+- **WHEN** the author drags a node in a v2 edit session and then adds another node from the palette
+- **THEN** the dragged node renders at the author's placement and the added node renders at a computed layout position
+
+#### Scenario: A dragged node keeps its placement across a contract edit
+
+- **WHEN** the author drags a node and then edits the definition contract (for example declaring an outcome) in the same session
+- **THEN** the dragged node still renders at the author's placement after the rebuild
+
+#### Scenario: Undragged elements always lay out afresh
+
+- **WHEN** the flow is rebuilt after a mutation and an element has no captured placement (palette add, synthesized reference, loop, pair, or inserted declaration ref)
+- **THEN** that element renders at its computed layout position
+
+#### Scenario: Placement follows a rename
+
+- **WHEN** the author renames a node that has a captured placement
+- **THEN** the renamed node renders at the same placement under its new identity
+
+#### Scenario: A departed element leaves no placement behind
+
+- **WHEN** a node with a captured placement leaves the root graph by deletion or by being packaged into a declaration, and an element with the same id is later added again
+- **THEN** the re-added element renders at a computed layout position, not the departed placement
+
+#### Scenario: Re-layout resets placement and the payload stays clean
+
+- **WHEN** the author presses Re-layout after dragging nodes, and then saves
+- **THEN** every element returns to computed layout, subsequent edits keep treating all elements as undragged, and the definition payload the canvas submits contains no placement fields
+
+### Requirement: The palette groups the stage vocabulary
+
+The assembly palette SHALL present the installed skill vocabulary in ordered groups: the
+common core stages first (propose, apply, review, ship, archive, in pipeline order),
+then the ordinary workflows, then the experts in their own visually distinct section,
+then the internal workflows in their own section. Within every group the palette SHALL
+preserve the catalog's own order, so the same catalog always renders the same palette.
+Grouping SHALL rest on the skill's declared workflow kind as delivered by the pipeline
+catalog, and the palette SHALL NOT infer a skill's kind from its name or any other
+heuristic. A skill the catalog delivers without a kind SHALL render in the workflows
+group. A core stage the catalog does not deliver SHALL simply not render; the palette
+SHALL NOT show a placeholder for it. Every listed skill SHALL keep its bindability
+state exactly as before grouping (a disabled skill stays listed, visibly disabled, in
+its group), and both palette renderings (the version 1 skill cards and the version 2
+Stage gesture expansion) SHALL present the same grouped order.
+
+#### Scenario: The core stages lead the palette
+
+- **WHEN** the palette renders a catalog that contains the core stage skills
+- **THEN** those five skills appear first, in pipeline order (propose, apply, review, ship, archive), ahead of every other skill
+
+#### Scenario: Experts render in their own distinct section
+
+- **WHEN** the palette renders a catalog containing expert-kind skills
+- **THEN** those skills appear in a separate, visually distinct experts section after the ordinary workflows, not interleaved with them
+
+#### Scenario: Ordinary and internal workflows keep stable order in their own sections
+
+- **WHEN** the palette renders the same catalog twice, or a catalog whose entries arrive in a different order
+- **THEN** each section's members are exactly the skills of its kind, in the catalog's own order within the section, and internal workflows appear in their own section after the experts section
+
+#### Scenario: A catalog without kind metadata still groups
+
+- **WHEN** the palette renders a catalog whose skills carry no kind field
+- **THEN** every such skill renders in the workflows section and the palette renders without error
+
+#### Scenario: Both palette branches present the same groups
+
+- **WHEN** a version 1 draft and a version 2 draft render the palette in the same space
+- **THEN** the version 1 skill cards and the version 2 Stage gesture expansion list the same skills in the same grouped order
+
+#### Scenario: Grouping never changes bindability
+
+- **WHEN** a disabled skill renders in any group
+- **THEN** it stays listed, visibly disabled, and behaves exactly as it did before grouping
+

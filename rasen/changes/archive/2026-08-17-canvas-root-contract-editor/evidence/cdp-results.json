@@ -1,0 +1,95 @@
+{
+  "allOk": true,
+  "results": [
+    {
+      "name": "the fresh definition declares no outcomes (blank seed)",
+      "ok": true,
+      "detail": "\"\""
+    },
+    {
+      "name": "the palette offers a stage gesture",
+      "ok": true,
+      "detail": "v2-palette-gesture-stage-rasen-propose"
+    },
+    {
+      "name": "exactly the two unconnected stage sinks are on the canvas",
+      "ok": true,
+      "detail": "[\"atomic-stage\",\"atomic-stage-2\"]"
+    },
+    {
+      "name": "no connections were drawn (unconnected sinks)",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "name": "the real engine raises the PORT_MISMATCH naming terminal outcome done",
+      "ok": true,
+      "detail": "errorPORT_MISMATCHDefinition graph produces terminal outcome 'done', but it is not declared by the owner contract./root/nodes/0/capability/root/nodes/1/capability The same undeclared terminal outcome is also produced here.atomic-stage →"
+    },
+    {
+      "name": "the PORT_MISMATCH issue offers navigation to its target",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the issue click selects the producing sink node",
+      "ok": true,
+      "detail": "atomic-stage"
+    },
+    {
+      "name": "the Finish-here offer renders (empty contract state)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "no dead-end outcome select is rendered",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the empty state states that no outcomes are declared",
+      "ok": true,
+      "detail": "The definition declares no outcomes yet, so there is no endpoint to name. Declare one in the definition contract panel:Locate outcome list"
+    },
+    {
+      "name": "the locate action focuses the definition outcomes field",
+      "ok": true,
+      "detail": "definition-outcomes"
+    },
+    {
+      "name": "the definition contract panel is on-screen",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the outcomes field commits done on blur",
+      "ok": true,
+      "detail": "\"done\""
+    },
+    {
+      "name": "the sink offer now offers exactly the declared outcome",
+      "ok": true,
+      "detail": "[\"done\"]"
+    },
+    {
+      "name": "the PORT_MISMATCH is gone after the declare",
+      "ok": true,
+      "detail": "[\"warningDropping unknown workflow id(s) from stored profile: codebase-design, navigator, prototype, tdd, workflow-review/\"]"
+    },
+    {
+      "name": "the result chip reports zero errors",
+      "ok": true,
+      "detail": "✕ 0 errors · 1 warning"
+    },
+    {
+      "name": "no other edit was made (the same two nodes, still unconnected)",
+      "ok": true,
+      "detail": "[\"atomic-stage\",\"atomic-stage-2\"]"
+    },
+    {
+      "name": "tab is alive after the full pass (no listener freeze)",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

@@ -12,6 +12,7 @@ import {
   layoutGraph,
   NODE_HEIGHT,
   NODE_WIDTH,
+  pruneAuthorPositions,
 } from '../../src/canvas/layout.js';
 import { pipelineDetailFixture } from '../fixtures/pipelines.js';
 import {
@@ -152,5 +153,97 @@ describe('layoutGraph', () => {
     const result = layoutGraph(graph.nodes, graph.edges);
     expect(result.every((n) => n.type === 'stage')).toBe(true);
     expect(result.some((n) => n.type === 'group')).toBe(false);
+  });
+});
+
+describe('layoutGraph author positions (canvas-durable-node-positioning)', () => {
+  // Ungrouped v2-shaped input: the cache only ever holds v2 placements, and
+  // group members are excluded by contract, so the override surface here is
+  // plain stage nodes.
+  const { nodes: v2Nodes, edges: v2Edges } = draftToGraph(
+    structuredClone(CANVAS_V2_AUTHORING_DEFINITION),
+    CANVAS_V2_AUTHORING_CATALOG
+  );
+  const baseline = layoutGraph(v2Nodes, v2Edges);
+
+  function positionsOf(result: ReturnType<typeof layoutGraph>) {
+    return Object.fromEntries(
+      result.map((node) => [node.id, node.position])
+    );
+  }
+
+  it('renders a stage node with a cached placement at that placement, by id', () => {
+    const placement = { x: 777, y: 333 };
+    const result = layoutGraph(
+      v2Nodes,
+      v2Edges,
+      new Map([['atomic-stage', placement]])
+    );
+    expect(result.find((n) => n.id === 'atomic-stage')?.position).toEqual(placement);
+    // Every OTHER node keeps its computed layout position exactly.
+    const basePositions = positionsOf(baseline);
+    for (const node of result) {
+      if (node.id === 'atomic-stage') continue;
+      expect(node.position).toEqual(basePositions[node.id]);
+    }
+  });
+
+  it('no cache (undefined or empty) is identical output to today', () => {
+    expect(layoutGraph(v2Nodes, v2Edges, new Map())).toEqual(baseline);
+    expect(layoutGraph(v2Nodes, v2Edges, undefined)).toEqual(baseline);
+  });
+
+  it('ignores cache entries whose ids are not in the graph', () => {
+    const result = layoutGraph(
+      v2Nodes,
+      v2Edges,
+      new Map([
+        ['departed-node', { x: 500, y: 500 }],
+        ['group:checks', { x: 900, y: 900 }],
+      ])
+    );
+    expect(result).toEqual(baseline);
+  });
+
+  it('group members and group nodes never take a cached position', () => {
+    const { nodes, edges } = definitionToGraph(pipelineDetailFixture);
+    const groupedBaseline = layoutGraph(nodes, edges);
+    const result = layoutGraph(
+      nodes,
+      edges,
+      new Map([
+        // 'review' is a member of group:checks — parent-relative coordinates,
+        // excluded from the override by contract.
+        ['review', { x: 4242, y: 2424 }],
+        // A key shaped like a synthesized group node id — nothing matches it.
+        ['group:checks', { x: 8484, y: 4848 }],
+      ])
+    );
+    expect(result).toEqual(groupedBaseline);
+  });
+});
+
+describe('pruneAuthorPositions', () => {
+  it('drops departed ids and keeps present ones', () => {
+    const cache = new Map([
+      ['stays', { x: 1, y: 2 }],
+      ['departs', { x: 3, y: 4 }],
+    ]);
+    const pruned = pruneAuthorPositions(cache, ['stays', 'newcomer']);
+    expect([...pruned.keys()].sort()).toEqual(['stays']);
+    expect(pruned.get('stays')).toEqual({ x: 1, y: 2 });
+    // Pure: the input map is untouched, and the result is a fresh Map — a
+    // re-added 'departs' cannot resurrect its departed placement.
+    expect(cache.has('departs')).toBe(true);
+    const reAdded = pruneAuthorPositions(cache, ['departs']);
+    expect([...reAdded.keys()]).toEqual(['departs']);
+  });
+
+  it('an empty present set yields an empty cache', () => {
+    const pruned = pruneAuthorPositions(
+      new Map([['gone', { x: 0, y: 0 }]]),
+      []
+    );
+    expect(pruned.size).toBe(0);
   });
 });

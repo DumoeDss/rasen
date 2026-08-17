@@ -1,0 +1,58 @@
+{
+  "change": "canvas-palette-grouping",
+  "archivedAt": "2026-08-17T07:13:51.183Z",
+  "codeCommit": "e483bb670d34e5f75344f1f0e407908772be4bc6",
+  "planningBranch": "feat/canvas-authoring-followups",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/01-palette-grouped-full.png",
+      "sha256": "e3cf75652b5fbcfb1908c1b468a63a2d61a6f5467a4a11064f8d770edfb5faee"
+    },
+    {
+      "path": "evidence/02-palette-grouped-sections.png",
+      "sha256": "990bc2a2390ab76043493242a9488c87a37057e70eab00d946ad6d56f818f2f0"
+    },
+    {
+      "path": "evidence/cdp-palette-grouping-check.mjs",
+      "sha256": "fa987ae48403c85b0c17aef3454cf6201317c87a51ceacd6e8ab507332b2a118"
+    },
+    {
+      "path": "evidence/cdp-results.json",
+      "sha256": "ae10ba154e9ecc5a598b48841c0a23a6d8df0b175ce628187f125f284a3495bf"
+    },
+    {
+      "path": "evidence/cdp-transcript.md",
+      "sha256": "c2c55f0c673418d92b4f14a350167162f576be75f78f96fe951cec2532b8b80b"
+    },
+    {
+      "path": "evidence/gates-5.md",
+      "sha256": "a42b25ba63e6dffece93e40e9f97b3e137ff499c39224e9874784bce0553db63"
+    },
+    {
+      "path": "evidence/handoff/implementer-1.md",
+      "sha256": "bc241c2dba3d54b23445aa79eea44124d387171564f27ab25099384f70cea5ce"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "2ebc915ff603eb7772f501d8bebc145f6b822ff074ad4869ebf7c0e1eb94b77b"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "e734cd87301320420fbf08699e778c0b7eaf5db5cce71027a12d1e1941113020"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [
+    {
+      "file": "handoff/implementer-1.md",
+      "outcome": "preserved"
+    }
+  ],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

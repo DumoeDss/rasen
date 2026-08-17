@@ -761,6 +761,9 @@ export async function handlePipelineCatalog(
       id,
       description: definition.skill.template.description,
       enabled: enabledSkillNames.has(id),
+      // The registry's own classification, passed through verbatim — the
+      // palette groups on it and MUST NOT infer a kind from names.
+      kind: definition.kind,
       ...(capability
         ? {
             capability: {
