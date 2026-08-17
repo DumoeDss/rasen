@@ -113,7 +113,7 @@ SHALL not change what the loop offers.
 - **THEN** the connections land on the loop's entry port and exit outcome
 - **AND** Validate reports zero errors for the wired graph with no author edits to any contract
 
-#### Scenario: Severed connections keep precedence for entry names
+#### Scenario: Severed connections keep precedence
 
 - **WHEN** the region's extraction severs connections on a side, as when external stages were wired before the cycle was closed
 - **THEN** that side's entry row names derive from the severed connections exactly as before this change
@@ -124,7 +124,7 @@ SHALL not change what the loop offers.
 - **WHEN** the region's extraction severs incoming connections but none outgoing, or severs outgoing connections but none incoming
 - **THEN** the severed side derives its entry names from the severed connections and the empty side falls back to the back-edge's target, while the outcome rows always derive from the body's producible terminal outcomes
 
-#### Scenario: Input names stay the author's to change
+#### Scenario: The derived names stay the author's to change
 
 - **WHEN** the review is open over a standalone cycle and the author renames the derived input row before confirming
 - **THEN** the confirmed declaration and the loop's rendered handles use the author's name
