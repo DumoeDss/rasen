@@ -83,6 +83,7 @@ export function V2NodePanel({
   onConsultationPatch,
   onConsultationRemove,
   onInvalidChange,
+  sinkPromotion,
   onClose,
 }: {
   node: WireDefinitionNode;
@@ -122,6 +123,16 @@ export function V2NodePanel({
     field: string,
     error: IntegerContractDraftError | null
   ) => void;
+  /**
+   * The endpoint-naming offer (canvas-sink-finish-inference design D2): the
+   * page passes this group only when the selected node is a promotable sink;
+   * the panel decides nothing. Presentational by contract — the promotion
+   * rule and the confirm-time re-validation live in `draft.ts`.
+   */
+  sinkPromotion?: {
+    outcomes: readonly string[];
+    onPromote: (outcome: string) => void;
+  };
   onClose: () => void;
 }) {
   const supported = isV2EditableNodeKind(node.kind);
@@ -394,9 +405,73 @@ export function V2NodePanel({
               onDeletePair={onDeleteParallelPair}
             />
           )}
+
+          {sinkPromotion && (
+            <SinkPromotionSection
+              outcomes={sinkPromotion.outcomes}
+              onPromote={sinkPromotion.onPromote}
+            />
+          )}
         </>
       )}
     </aside>
+  );
+}
+
+/**
+ * The endpoint-naming offer (canvas-sink-finish-inference design D2): one
+ * compact section — label, outcome select defaulting to the definition's
+ * first outcome, confirm button — rendered only when the page passed the
+ * `sinkPromotion` prop group (the page computed the node IS a promotable
+ * sink). Pull, not push: sink-ness is the common state of every growing
+ * draft, so the author names an endpoint from its properties panel when they
+ * are done building, never from a toast. Fully presentational: the promotion
+ * rule and the confirm-time re-validation live in `draft.ts`.
+ */
+function SinkPromotionSection({
+  outcomes,
+  onPromote,
+}: {
+  outcomes: readonly string[];
+  onPromote: (outcome: string) => void;
+}) {
+  const defaultPick = outcomes[0] ?? '';
+  const [pick, setPick] = useState(defaultPick);
+  // The same authoritative-value reset discipline as the panel's id/outcomes
+  // drafts: a definition outcome-list edit re-keys the default without
+  // clobbering an unchanged pick.
+  useEffect(() => {
+    setPick(defaultPick);
+  }, [defaultPick]);
+  return (
+    <section
+      class="stage-panel__section"
+      data-testid="v2-node-panel-sink-promotion"
+    >
+      <h4 class="stage-panel__section-title">Finish here</h4>
+      <label class="stage-panel__field">
+        <span>Endpoint outcome</span>
+        <select
+          data-testid="v2-node-panel-sink-outcome"
+          value={pick}
+          onChange={(event) =>
+            setPick((event.target as HTMLSelectElement).value)
+          }
+        >
+          {outcomes.map((outcome) => (
+            <option key={outcome} value={outcome}>{outcome}</option>
+          ))}
+        </select>
+      </label>
+      <button
+        type="button"
+        data-testid="v2-node-panel-sink-confirm"
+        disabled={!pick}
+        onClick={() => onPromote(pick)}
+      >
+        Name outcome
+      </button>
+    </section>
   );
 }
 

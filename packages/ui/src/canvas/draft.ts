@@ -327,6 +327,38 @@ export function bodyWouldCreateCycle(
 }
 
 /**
+ * The region a refused back-edge `from -> to` closes
+ * (canvas-backedge-loop-inference design D2): `{to, from}` plus every node
+ * on a path between them — `{n | to ⇝* n ∧ n ⇝* from}` — computed over the
+ * SAME adjacency builder {@link wouldCreateCycle} uses, so the region can
+ * never disagree with the rule that recognized the draw as loop intent.
+ * Both endpoints are always members (the existing path `to ⇝* from` is what
+ * made the draw a refusal); a self-loop draw (`from === to`) yields exactly
+ * that one node. Insertion order follows the draft's node order, so the set
+ * is deterministic across runs.
+ */
+export function backedgeRegion(
+  def: WirePipelineDefinition,
+  from: string,
+  to: string
+): Set<string> {
+  const adjacency = buildAdjacency(def);
+  const region = new Set<string>([to, from]);
+  const nodeIds = isV1Definition(def)
+    ? def.stages.map((stage) => stage.id)
+    : def.root.nodes.map((node) => node.id);
+  for (const node of nodeIds) {
+    if (region.has(node)) continue;
+    // to ⇝* node (node is downstream of the edge's target) AND node ⇝* from
+    // (node is upstream of the edge's source) — node lies on the cycle.
+    if (reachesThrough(adjacency, node, to) && reachesThrough(adjacency, from, node)) {
+      region.add(node);
+    }
+  }
+  return region;
+}
+
+/**
  * Generates a stage id from a skill id (lowercased, non-id characters
  * collapsed to `-`), uniquified against the draft's existing stage ids with a
  * numeric suffix. Panel-editable afterward via `renameStage`.
@@ -1211,6 +1243,120 @@ export function removeV2Node(
   };
 }
 
+export interface V2NodeRemovalRefusal {
+  id: string;
+  reason: string;
+}
+
+export interface V2NodeRemovalPlan {
+  next: WirePipelineDefinitionV2;
+  /** Every root node id actually gone from `next`, in draft order — including co-deleted barriers a pair removal carried away unselected. */
+  removedIds: string[];
+  refused: readonly V2NodeRemovalRefusal[];
+}
+
+/**
+ * Best-effort batch removal over a set of selected root node ids
+ * (canvas-multi-selection design D5). One call owns the whole delete:
+ *
+ * - A selected `FanOut` routes through `removeParallelPair` — its `Join`
+ *   travels with it whether or not the Join was also selected.
+ * - A lone selected `Join` (its FanOut not selected) is refused with
+ *   `removeV2Node`'s existing paired-deletion message; same for a
+ *   Gate-targeted node and a parallel pair's last member — every refusal
+ *   reuses `removeV2Node`'s own thrown message verbatim, so this helper
+ *   adds no new vocabulary.
+ * - Kinds outside the editable vocabulary (a future engine node the UI
+ *   does not know) are skipped silently and are NOT refusals — they were
+ *   never selectable-editable.
+ *
+ * Best-effort, not atomic: eligible nodes delete while refusals collect.
+ * The caller reports `refused` as ONE summary for the whole deletion.
+ */
+export function removeV2Nodes(
+  def: WirePipelineDefinitionV2,
+  ids: ReadonlySet<string>
+): V2NodeRemovalPlan {
+  const refusals: V2NodeRemovalRefusal[] = [];
+  let next = def;
+  // Selected FanOuts go FIRST: their pair removal deletes the whole
+  // parallel unit's structure, so any selected members that follow are
+  // judged as plain nodes instead of being refused as "the only parallel
+  // member" of a FanOut the same batch is already deleting (an order
+  // artifact a box-select of a frontier + its members would otherwise hit).
+  for (const pass of ['pairs', 'rest'] as const) {
+    for (const node of def.root.nodes) {
+      if (!ids.has(node.id)) continue;
+      if (pass === 'pairs' ? node.kind !== 'FanOut' : node.kind === 'FanOut') {
+        continue;
+      }
+      // A pair removal can carry away an unselected (or not-yet-iterated)
+      // Join before its own turn arrives.
+      if (!next.root.nodes.some((candidate) => candidate.id === node.id)) {
+        continue;
+      }
+      if (!isV2EditableNodeKind(node.kind)) continue;
+      if (node.kind === 'FanOut') {
+        try {
+          next = removeParallelPair(next, node.id);
+        } catch (error) {
+          refusals.push({
+            id: node.id,
+            reason: removalRefusalMessage(node.id, error),
+          });
+        }
+        continue;
+      }
+      if (node.kind === 'Join') {
+        // Its FanOut is also selected: the pair is (or was) handled as one
+        // unit at the FanOut, so this half is neither refused nor re-removed.
+        const ownerSelected = def.root.nodes.some(
+          (candidate) =>
+            candidate.kind === 'FanOut' &&
+            candidate.joinNodeId === node.id &&
+            ids.has(candidate.id)
+        );
+        if (ownerSelected) continue;
+        try {
+          next = removeV2Node(next, node.id);
+        } catch (error) {
+          refusals.push({
+            id: node.id,
+            reason: removalRefusalMessage(node.id, error),
+          });
+        }
+        continue;
+      }
+      try {
+        next = removeV2Node(next, node.id);
+      } catch (error) {
+        refusals.push({
+          id: node.id,
+          reason: removalRefusalMessage(node.id, error),
+        });
+      }
+    }
+  }
+  // "Actually deleted" is the before/after difference in draft order, so a
+  // co-deleted barrier (or a member a pair removal carried away after its
+  // own refusal was recorded) is reported as removed, and...
+  const removedIds = def.root.nodes
+    .map((node) => node.id)
+    .filter((id) => !next.root.nodes.some((node) => node.id === id));
+  // ...a refusal whose node no longer exists is not a refusal — a later
+  // pair removal in the same batch resolved it.
+  const refused = refusals.filter((refusal) =>
+    next.root.nodes.some((node) => node.id === refusal.id)
+  );
+  return { next, removedIds, refused };
+}
+
+function removalRefusalMessage(id: string, error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : `Node '${id}' could not be removed.`;
+}
+
 /**
  * Gate as a stage property (design D4). `GateNode` already *names* the stage
  * it guards (`target`), which is why it reads naturally as that stage's
@@ -1721,6 +1867,70 @@ export type DefinitionIssueTarget =
       sourceStage: string;
       field?: string;
     };
+
+// ===== Canvas selection model (canvas-multi-selection design D1/D2) =====
+
+/**
+ * The canvas editor's selection: a set of node ids and a set of connection
+ * ids, never a single chosen element. React Flow owns the interaction truth
+ * (`node.selected`/`edge.selected`, driven by its Shift+drag box-select and
+ * multi-select-key augmentation); the page keeps exactly ONE derived mirror
+ * of this shape, written by `onSelectionChange` (user actions) and by the
+ * explicit programmatic replacers at the gesture/rename/issue handlers.
+ * Panels and the later portfolio children (subgraph extraction, loop
+ * inference, frontier inference) consume `nodeIds` — never a re-derived
+ * "what is selected" of their own.
+ *
+ * Lives here, beside `DefinitionIssueTarget`, because `draft.ts` is the one
+ * home for canvas model vocabulary: a second encoding of "what does this
+ * selection mean" in a panel would be exactly the drift this module's
+ * vocabulary comments warn about.
+ */
+export interface CanvasSelection {
+  nodeIds: ReadonlySet<string>;
+  connectionIds: ReadonlySet<string>;
+}
+
+export const EMPTY_CANVAS_SELECTION: CanvasSelection = {
+  nodeIds: new Set<string>(),
+  connectionIds: new Set<string>(),
+};
+
+/**
+ * The one selected node when the selection is exactly one node and nothing
+ * else; `null` for every other shape (this is how singleton panel behavior
+ * is preserved by derivation — a mixed or multi selection is not a node
+ * selection).
+ */
+export function singletonNodeId(selection: CanvasSelection): string | null {
+  if (selection.nodeIds.size !== 1 || selection.connectionIds.size > 0) {
+    return null;
+  }
+  return [...selection.nodeIds][0]!;
+}
+
+/** The one selected connection when the selection is exactly one connection and nothing else; `null` otherwise. */
+export function singletonConnectionId(selection: CanvasSelection): string | null {
+  if (selection.connectionIds.size !== 1 || selection.nodeIds.size > 0) {
+    return null;
+  }
+  return [...selection.connectionIds][0]!;
+}
+
+/**
+ * Which right-column panel a selection opens: exactly one node → the node
+ * panel; exactly one connection → the connection panel; two or more
+ * elements, or any node+connection mix → the selection summary; nothing →
+ * none. The page never re-derives this.
+ */
+export function selectionPanelMode(
+  selection: CanvasSelection
+): 'empty' | 'node' | 'connection' | 'multi' {
+  const total = selection.nodeIds.size + selection.connectionIds.size;
+  if (total === 0) return 'empty';
+  if (total === 1) return selection.nodeIds.size === 1 ? 'node' : 'connection';
+  return 'multi';
+}
 
 function jsonPointerSegments(path: string): string[] | null {
   if (!path.startsWith('/')) return null;
@@ -2317,4 +2527,839 @@ export function removeBodyConnection(
       };
     }),
   };
+}
+
+// ===== Subgraph extraction (canvas-subgraph-extraction design D1-D3) =====
+
+/**
+ * The prefix the engine's v1 normalizer writes into cross-node structural
+ * references (`Gate.target`, `Join.inputs`, `FanOut.members[].hierarchicalPath`
+ * — `src/core/pipeline-registry/definition.ts:3599`, `:3681-3692`) while
+ * authored v2 writes raw ids. Reference checks below test BOTH forms, plus the
+ * reverse hybrid (a prefixed node id referenced raw — the shape a definition
+ * carrying definition-level consultations over v1-normalized nodes produces,
+ * since `consultations[].sourceStage` mirrors the v1 stage id, not the node id).
+ */
+const STAGE_REFERENCE_PREFIX = 'stage:';
+
+/**
+ * Resolves a structural reference against the selected node ids, accepting
+ * both authored forms. Returns the SELECTED node id the reference points at
+ * (the id as it appears in the draft — what a refusal should name), or null.
+ */
+function referencedSelectedStage(
+  reference: string,
+  selected: ReadonlySet<string>
+): string | null {
+  if (selected.has(reference)) return reference;
+  if (reference.startsWith(STAGE_REFERENCE_PREFIX)) {
+    const raw = reference.slice(STAGE_REFERENCE_PREFIX.length);
+    if (selected.has(raw)) return raw;
+  }
+  const prefixed = `${STAGE_REFERENCE_PREFIX}${reference}`;
+  if (selected.has(prefixed)) return prefixed;
+  return null;
+}
+
+/**
+ * Why a selection cannot be packaged into a reusable declaration (design D3) —
+ * empty array means extractable. Each entry is one author-readable blocker,
+ * and the MODEL owns every rule:
+ *
+ * 1. The selection is non-empty and every selected node is an `AtomicStage`
+ *    (`V2_BODY_PALETTE_KINDS` — the body vocabulary a spec forbids widening);
+ *    any other kind is named.
+ * 2. No OUTSIDE `Gate` targets a selected stage — a disposition cannot cross
+ *    a declaration boundary, so a cut that would sever it is refused, not
+ *    migrated.
+ * 3. No OUTSIDE `FanOut` counts a selected stage among its branches or
+ *    members (id or hierarchicalPath) — same boundary rule for parallel pairs.
+ * 4. No OUTSIDE `Join` lists a selected stage in its inputs or member sets.
+ * 5. No consultation binding names a selected stage as its source.
+ *
+ * "Outside" only matters for kinds rule 1 already refuses, but the checks are
+ * written structurally so they hold regardless of what is selected.
+ */
+export function subgraphExtractionRefusals(
+  def: WirePipelineDefinitionV2,
+  selection: CanvasSelection
+): string[] {
+  return subgraphExtractionRefusalsForNodeIds(def, selection.nodeIds);
+}
+
+function subgraphExtractionRefusalsForNodeIds(
+  def: WirePipelineDefinitionV2,
+  selected: ReadonlySet<string>
+): string[] {
+  const refusals: string[] = [];
+  if (selected.size === 0) {
+    refusals.push('Select at least one stage to package into a reusable block.');
+    return refusals;
+  }
+  for (const id of selected) {
+    const node = def.root.nodes.find((candidate) => candidate.id === id);
+    if (!node) {
+      refusals.push(`Node '${id}' does not exist in this draft.`);
+      continue;
+    }
+    if (!V2_BODY_PALETTE_KINDS.includes(node.kind)) {
+      refusals.push(
+        `Only plain stages can be packaged into a reusable block — '${id}' is a ${node.kind}.`
+      );
+    }
+  }
+  for (const node of def.root.nodes) {
+    if (selected.has(node.id)) continue;
+    if (node.kind === 'Gate') {
+      const hit = referencedSelectedStage(node.target, selected);
+      if (hit) {
+        refusals.push(
+          `Stage '${hit}' is targeted by Gate '${node.id}' outside the selection.`
+        );
+      }
+      continue;
+    }
+    if (node.kind === 'FanOut') {
+      const references = [
+        ...node.branches,
+        ...node.members.flatMap((member) => [member.id, member.hierarchicalPath]),
+      ];
+      const hit = references
+        .map((reference) => referencedSelectedStage(reference, selected))
+        .find((hit): hit is string => hit !== null);
+      if (hit) {
+        refusals.push(
+          `Stage '${hit}' is a branch or member of FanOut '${node.id}' outside the selection.`
+        );
+      }
+      continue;
+    }
+    if (node.kind === 'Join') {
+      const references = [
+        ...node.inputs,
+        ...node.requiredMembers,
+        ...node.optionalMembers,
+      ];
+      const hit = references
+        .map((reference) => referencedSelectedStage(reference, selected))
+        .find((hit): hit is string => hit !== null);
+      if (hit) {
+        refusals.push(
+          `Stage '${hit}' is an input of Join '${node.id}' outside the selection.`
+        );
+      }
+    }
+  }
+  for (const binding of readConsultations(def)) {
+    const hit = referencedSelectedStage(binding.sourceStage, selected);
+    if (hit) {
+      refusals.push(`Stage '${hit}' is referenced by a consultation binding.`);
+    }
+  }
+  return refusals;
+}
+
+/** The derived contract a review dialog opens with (design D2) — review-editable defaults. */
+export interface DerivedSubgraphContract {
+  inputs: WireDefinitionPort[];
+  artifacts: WireDefinitionArtifact[];
+  outcomes: string[];
+}
+
+/** Joins node and port with the U+0000 separator below, so ids containing `stage:`-style colons cannot forge key collisions. */
+const CUT_KEY_SEPARATOR = String.fromCharCode(0);
+function cutKey(node: string, port: string): string {
+  return node + CUT_KEY_SEPARATOR + port;
+}
+
+/**
+ * Enumerates the cut a node set implies, in draft connection order: the
+ * distinct severed-incoming `(target stage, target port)` pairs and the
+ * distinct severed-outgoing `(source stage, source port)` pairs. Parallel to
+ * the rows {@link deriveSubgraphContract} derives and the mapping
+ * {@link extractSubgraph} rewires through — one enumeration, three readers.
+ */
+function computeSubgraphCut(
+  def: WirePipelineDefinitionV2,
+  nodeIds: ReadonlySet<string>
+): { incomingKeys: string[]; outgoingKeys: string[] } {
+  const incomingKeys: string[] = [];
+  const outgoingKeys: string[] = [];
+  for (const connection of def.root.connections) {
+    if (nodeIds.has(connection.to.node) && !nodeIds.has(connection.from.node)) {
+      const key = cutKey(connection.to.node, connection.to.port);
+      if (!incomingKeys.includes(key)) incomingKeys.push(key);
+    } else if (
+      nodeIds.has(connection.from.node) &&
+      !nodeIds.has(connection.to.node)
+    ) {
+      const key = cutKey(connection.from.node, connection.from.port);
+      if (!outgoingKeys.includes(key)) outgoingKeys.push(key);
+    }
+  }
+  return { incomingKeys, outgoingKeys };
+}
+
+/** `base`, then `base-2`, `base-3`, … — the `v2NodeIdFor` suffix convention. */
+function suffixedName(base: string, used: Set<string>): string {
+  if (!used.has(base)) {
+    used.add(base);
+    return base;
+  }
+  let suffix = 2;
+  while (used.has(`${base}-${suffix}`)) suffix += 1;
+  const name = `${base}-${suffix}`;
+  used.add(name);
+  return name;
+}
+
+/**
+ * Derives the declaration contract a cut implies (design D2), all defaults the
+ * review may edit:
+ *
+ * - One input port per distinct severed-incoming `(target stage, port)`,
+ *   named after the target stage (suffixed on collision), typed by the severed
+ *   edge's target port (typically `CONTROL_TARGET_PORT`), `required` unset.
+ * - One outcome per distinct severed-outgoing `(source stage, port)`, named
+ *   after the source stage (suffixed on collision); when no outgoing edge is
+ *   severed, the single default outcome `'done'` (`addDeclaration`'s own).
+ * - Artifacts default to `[]` — control edges carry no artifact semantics.
+ */
+export function deriveSubgraphContract(
+  def: WirePipelineDefinitionV2,
+  nodeIds: ReadonlySet<string>
+): DerivedSubgraphContract {
+  const { incomingKeys, outgoingKeys } = computeSubgraphCut(def, nodeIds);
+  const usedInputNames = new Set<string>();
+  const inputs = incomingKeys.map((key) => {
+    const [node, port] = key.split(CUT_KEY_SEPARATOR);
+    return {
+      name: suffixedName(node!, usedInputNames),
+      type: port!,
+    };
+  });
+  const usedOutcomeNames = new Set<string>();
+  const outcomes = outgoingKeys.map((key) =>
+    suffixedName(key.split(CUT_KEY_SEPARATOR)[0]!, usedOutcomeNames)
+  );
+  return {
+    inputs,
+    artifacts: [],
+    outcomes: outcomes.length > 0 ? outcomes : ['done'],
+  };
+}
+
+/** The reviewed contract plus which nodes move — {@link extractSubgraph}'s input. */
+export interface SubgraphExtractionInput {
+  nodeIds: ReadonlySet<string>;
+  id: string;
+  inputs: WireDefinitionPort[];
+  artifacts: WireDefinitionArtifact[];
+  outcomes: string[];
+}
+
+export interface SubgraphExtractionResult {
+  next: WirePipelineDefinitionV2;
+  declarationId: string;
+  refId: string;
+}
+
+/**
+ * The one extraction transaction (design D1): moves the selected plain stages
+ * into a new custom Composite declaration, replaces them in the root graph
+ * with one `CompositeRef`, and rewires every severed crossing connection onto
+ * the ref's mapped ports. Pure — returns the next definition, never mutates.
+ *
+ * The dialog is not trusted: refusals are re-run here, the reviewed id is
+ * validated by the same blank/unique rules `addDeclaration` enforces, and the
+ * reviewed rows by `assertNamedContractRows`/`assertNamedOutcomes`. Severed
+ * edges map onto reviewed rows POSITIONALLY in derivation order — a renamed
+ * row renames the port its edge lands on; a deleted derived row leaves its
+ * edge on the derived default name (and the definition may then validate red —
+ * the Validate button stays the authority, the design's stated posture).
+ *
+ * Content preservation: moved stages and internal connections are the SAME
+ * values (verbatim, ids included — body ids are declaration-scoped); crossing
+ * connections keep every extension field via the spread, with only identity
+ * and the rewritten endpoint changed (`v2ConnectionIdFor` convention). Nothing
+ * is stamped `legacyRuntimeOwner` — the ref is built by `insertCompositeRef`
+ * with exactly `{ id, kind, declarationId }`.
+ *
+ * Internally two steps (canvas-backedge-loop-inference design D3) —
+ * {@link extractSubgraphIntoDeclaration} (validate + declare + remove from
+ * root) and {@link rewireCrossingsOnto} (the positional cut rewire,
+ * parameterized by the replacement node) — so the back-edge loop path reuses
+ * the same rules with a `BoundedLoop` as the replacement instead of
+ * duplicating them. One implementation of every rule; only the replacement
+ * node differs.
+ */
+export function extractSubgraph(
+  def: WirePipelineDefinitionV2,
+  input: SubgraphExtractionInput
+): SubgraphExtractionResult {
+  const derived = deriveSubgraphContract(def, input.nodeIds);
+  const { next: declared, declarationId } = extractSubgraphIntoDeclaration(def, input);
+  // Appended through the same gesture `insertCompositeRef` runs, so its
+  // existence/referenceability checks execute against the just-created
+  // declaration; the id minted here is the one it appends (same root state).
+  const refId = v2NodeIdFor('CompositeRef', declared);
+  const next = rewireCrossingsOnto(
+    insertCompositeRef(declared, declarationId),
+    def,
+    input.nodeIds,
+    refId,
+    input,
+    derived
+  );
+  return { next, declarationId, refId };
+}
+
+/**
+ * Extraction step one: re-run every refusal and id/row rule, then move the
+ * node set into a new custom Composite declaration and out of the root graph
+ * (verbatim values, ids included). Leaves the replacement to the caller —
+ * `extractSubgraph` inserts a `CompositeRef`, the back-edge loop path mints a
+ * `BoundedLoop`.
+ */
+function extractSubgraphIntoDeclaration(
+  def: WirePipelineDefinitionV2,
+  input: SubgraphExtractionInput
+): { next: WirePipelineDefinitionV2; declarationId: string } {
+  const refusals = subgraphExtractionRefusalsForNodeIds(def, input.nodeIds);
+  if (refusals.length > 0) {
+    throw new Error(refusals.join(' '));
+  }
+  if (input.id.trim().length === 0) {
+    throw new Error('A declaration id cannot be blank.');
+  }
+  if (!isDeclarationIdUnique(def, input.id)) {
+    throw new Error(`Declaration id '${input.id}' already exists.`);
+  }
+  assertNamedContractRows('declaration input', input.inputs);
+  assertNamedContractRows('declaration artifact', input.artifacts);
+  assertNamedOutcomes('declaration', input.outcomes);
+
+  const declaration: WireCompositeDeclaration = {
+    id: input.id,
+    kind: 'Composite',
+    provenance: 'custom',
+    inputs: input.inputs,
+    artifacts: input.artifacts,
+    outcomes: input.outcomes,
+    graph: {
+      nodes: def.root.nodes.filter((node) => input.nodeIds.has(node.id)),
+      connections: def.root.connections.filter(
+        (connection) =>
+          input.nodeIds.has(connection.from.node) &&
+          input.nodeIds.has(connection.to.node)
+      ),
+    },
+  };
+  const next: WirePipelineDefinitionV2 = {
+    ...def,
+    declarations: [...def.declarations, declaration],
+    root: {
+      ...def.root,
+      nodes: def.root.nodes.filter((node) => !input.nodeIds.has(node.id)),
+      connections: def.root.connections.filter(
+        (connection) =>
+          !input.nodeIds.has(connection.from.node) &&
+          !input.nodeIds.has(connection.to.node)
+      ),
+    },
+  };
+  return { next, declarationId: input.id };
+}
+
+/**
+ * Extraction step two: rewire every root connection that crossed the moved
+ * node set onto the REPLACEMENT node's mapped ports — positionally onto the
+ * reviewed rows in derivation order, with the derived names as fallback
+ * (`extractSubgraph`'s documented rule, unchanged). `preExtractionDef` is the
+ * definition the cut was taken from (the caller's pre-state); `next` is the
+ * post-declaration state the rewired connections land on.
+ */
+function rewireCrossingsOnto(
+  next: WirePipelineDefinitionV2,
+  preExtractionDef: WirePipelineDefinitionV2,
+  nodeIds: ReadonlySet<string>,
+  replacementId: string,
+  rows: {
+    inputs: readonly WireDefinitionPort[];
+    outcomes: readonly string[];
+  },
+  derived: {
+    inputs: readonly WireDefinitionPort[];
+    outcomes: readonly string[];
+  }
+): WirePipelineDefinitionV2 {
+  const { incomingKeys, outgoingKeys } = computeSubgraphCut(preExtractionDef, nodeIds);
+  let result = next;
+  for (const connection of preExtractionDef.root.connections) {
+    if (nodeIds.has(connection.to.node) && !nodeIds.has(connection.from.node)) {
+      const index = incomingKeys.indexOf(cutKey(connection.to.node, connection.to.port));
+      const port = rows.inputs[index]?.name ?? derived.inputs[index]!.name;
+      const id = v2ConnectionIdFor(result, {
+        source: connection.from.node,
+        sourcePort: connection.from.port,
+        target: replacementId,
+        targetPort: port,
+      });
+      result = addV2Connection(result, {
+        ...connection,
+        id,
+        to: { node: replacementId, port },
+      });
+    } else if (
+      nodeIds.has(connection.from.node) &&
+      !nodeIds.has(connection.to.node)
+    ) {
+      const index = outgoingKeys.indexOf(
+        cutKey(connection.from.node, connection.from.port)
+      );
+      const port = rows.outcomes[index] ?? derived.outcomes[index]!;
+      const id = v2ConnectionIdFor(result, {
+        source: replacementId,
+        sourcePort: port,
+        target: connection.to.node,
+        targetPort: connection.to.port,
+      });
+      result = addV2Connection(result, {
+        ...connection,
+        id,
+        from: { node: replacementId, port },
+      });
+    }
+  }
+  return result;
+}
+
+// ===== Back-edge loop synthesis (canvas-backedge-loop-inference design D3-D5) =====
+
+/** The reviewed loop synthesis — {@link synthesizeBoundedLoopFromBackedge}'s input. */
+export interface BackedgeLoopSynthesisInput {
+  /** The drawn back-edge's source node (the edge was never written to the draft). */
+  from: string;
+  /** The drawn back-edge's target node. */
+  to: string;
+  id: string;
+  inputs: WireDefinitionPort[];
+  artifacts: WireDefinitionArtifact[];
+  outcomes: string[];
+  /** The author's iteration bound — a positive integer. */
+  maxIterations: number;
+  /** The definition outcome the loop's exit resolves to. */
+  exitOutcome: string;
+}
+
+export interface BackedgeLoopSynthesisResult {
+  next: WirePipelineDefinitionV2;
+  declarationId: string;
+  loopId: string;
+}
+
+/**
+ * The one loop-synthesis transaction (design D3/D4): turns a refused
+ * cycle-closing draw into a `BoundedLoop` over the region the edge closes.
+ * Region -> refusals -> declare (child-2's extraction, via
+ * `extractSubgraphIntoDeclaration`) -> mint the loop exactly like
+ * `addBoundedLoopOverDeclaration` except `body` = the just-extracted
+ * declaration and `limits.maxIterations` = the author's bound -> rewire the
+ * crossings onto the loop's ports (`rewireCrossingsOnto`). No `CompositeRef`
+ * is inserted — the loop IS the replacement. Pure; never mutates.
+ *
+ * The drawn back-edge itself never entered the draft (`onConnect` refuses it
+ * before writing), so nothing must be excluded from the body move: the
+ * connections that move are the region's internal edges, all acyclic. The
+ * back-edge exists only as loop semantics.
+ *
+ * The review is not trusted: the region is recomputed from the endpoints, the
+ * child-2 refusals/id/row validators re-run, and the bound must be a positive
+ * integer (the review's integer field blocks confirm client-side; the model
+ * re-owns the rule). Nothing is stamped `legacyRuntimeOwner`.
+ */
+export function synthesizeBoundedLoopFromBackedge(
+  def: WirePipelineDefinitionV2,
+  input: BackedgeLoopSynthesisInput
+): BackedgeLoopSynthesisResult {
+  const region = backedgeRegion(def, input.from, input.to);
+  const { next: declared, declarationId } = extractSubgraphIntoDeclaration(def, {
+    nodeIds: region,
+    id: input.id,
+    inputs: input.inputs,
+    artifacts: input.artifacts,
+    outcomes: input.outcomes,
+  });
+  if (!Number.isSafeInteger(input.maxIterations) || input.maxIterations <= 0) {
+    throw new Error('Loop maximum iterations must be a positive integer.');
+  }
+  const declaration = declared.declarations.find((d) => d.id === declarationId)!;
+  const loopId = v2NodeIdFor('BoundedLoop', declared);
+  const loopNode: WireBoundedLoopNode = {
+    id: loopId,
+    kind: 'BoundedLoop',
+    body: declarationId,
+    limits: { maxIterations: input.maxIterations, maxActions: 12, budget: 12 },
+    lifecycle: createDefaultBoundedLoopLifecycle(),
+    exits: Object.fromEntries(
+      declaration.outcomes.map((outcome, index) => [
+        outcome,
+        index === declaration.outcomes.length - 1
+          ? { action: 'exit' as const, outcome: input.exitOutcome }
+          : { action: 'continue' as const },
+      ])
+    ),
+  };
+  const next = rewireCrossingsOnto(
+    addV2Node(declared, loopNode),
+    def,
+    region,
+    loopId,
+    input,
+    deriveSubgraphContract(def, region)
+  );
+  return { next, declarationId, loopId };
+}
+
+// --- Parallel frontier inference (canvas-parallel-frontier-inference D1/D2) --
+
+/** One detected drawn frontier: the sandwich between `source` and `target`. */
+export interface ParallelFrontier {
+  source: string;
+  target: string;
+  /** The clean branch ids, in the draft's node order. */
+  branches: readonly string[];
+}
+
+/**
+ * Detects drawn parallel frontiers over the root graph (design D1): for each
+ * ordered pair (S, T), S ≠ T, both editable kinds and neither a FanOut nor a
+ * Join (an already-paired endpoint means the IR structure exists), the branch
+ * set is `{m | S→m ∈ conns ∧ m→T ∈ conns ∧ in(m) = {S} ∧ out(m) = {T} ∧ m is
+ * an AtomicStage}` — exactly the sandwich the `FanOut`/`Join` pair encodes. A
+ * frontier exists iff at least two branches are clean.
+ *
+ * Strictness is the honesty rule: `FanOut.members`/`Join.inputs` semantics
+ * presume the pair dispatches every branch and the barrier collects them, so
+ * a branch with any other edge is EXCLUDED (not repaired). The adjacency is
+ * the SAME `buildAdjacency` the cycle check and `backedgeRegion` use — one
+ * builder, no second reachability; the predecessor map is derived from it.
+ * Pure; deterministic (branch order follows the draft's node order).
+ */
+export function detectParallelFrontiers(
+  def: WirePipelineDefinitionV2
+): ParallelFrontier[] {
+  const forward = buildAdjacency(def);
+  const backward = new Map<string, string[]>();
+  for (const [from, tos] of forward) {
+    for (const to of tos) {
+      const arr = backward.get(to) ?? [];
+      arr.push(from);
+      backward.set(to, arr);
+    }
+  }
+  const eligible = (node: WireDefinitionNode): boolean =>
+    node.kind !== 'FanOut' &&
+    node.kind !== 'Join' &&
+    isV2EditableNodeKind(node.kind);
+  const frontiers: ParallelFrontier[] = [];
+  const cleanBranches = new Set<string>();
+  for (const source of def.root.nodes) {
+    if (!eligible(source)) continue;
+    for (const target of def.root.nodes) {
+      if (target.id === source.id || !eligible(target)) continue;
+      for (const member of forward.get(source.id) ?? []) {
+        if (
+          member !== source.id &&
+          member !== target.id &&
+          (forward.get(member) ?? []).includes(target.id) &&
+          setEquals(backward.get(member) ?? [], [source.id]) &&
+          setEquals(forward.get(member) ?? [], [target.id]) &&
+          def.root.nodes.some(
+            (node) => node.id === member && node.kind === 'AtomicStage'
+          )
+        ) {
+          cleanBranches.add(member);
+        }
+      }
+      if (cleanBranches.size >= 2) {
+        // Branch order follows the draft's node order (the backedgeRegion
+        // determinism discipline).
+        frontiers.push({
+          source: source.id,
+          target: target.id,
+          branches: def.root.nodes
+            .filter((node) => cleanBranches.has(node.id))
+            .map((node) => node.id),
+        });
+      }
+      cleanBranches.clear();
+    }
+  }
+  return frontiers;
+}
+
+function setEquals(actual: readonly string[], expected: readonly string[]): boolean {
+  if (actual.length !== expected.length) return false;
+  return expected.every((id) => actual.includes(id));
+}
+
+/**
+ * The completing-connect hook (design D1): detection over the POST-connect
+ * draft, filtered to the frontier whose branch-edge set contains the
+ * just-drawn connection — the connection is an S→m dispatch half (its target
+ * is a branch) or an m→T barrier half (its source is a branch). Ports do not
+ * participate: detection is node-level, exactly like the adjacency it reads.
+ */
+export function completedFrontier(
+  def: WirePipelineDefinitionV2,
+  connection: { source: string; target: string }
+): ParallelFrontier | null {
+  return (
+    detectParallelFrontiers(def).find(
+      (frontier) =>
+        (frontier.source === connection.source &&
+          frontier.branches.includes(connection.target)) ||
+        (frontier.target === connection.target &&
+          frontier.branches.includes(connection.source))
+    ) ?? null
+  );
+}
+
+export interface ParallelFrontierMemberReview {
+  id: string;
+  required: boolean;
+}
+
+export interface ParallelFrontierSynthesisInput {
+  source: string;
+  target: string;
+  /** The reviewed membership: one required/optional choice per branch. */
+  members: readonly ParallelFrontierMemberReview[];
+  concurrencyCap: number;
+  budget: number;
+  outcomes: WireJoinNode['outcomes'];
+}
+
+export interface ParallelFrontierSynthesisResult {
+  next: WirePipelineDefinitionV2;
+  fanOutId: string;
+  joinId: string;
+}
+
+/**
+ * The one frontier-synthesis transaction (design D2): turns the drawn
+ * fan-out/reconverge sandwich into the `FanOut`/`Join` pair via
+ * `createParallelPair`-shaped machinery. Steps: (1) re-detect from
+ * `(source, target)` on the live draft — the review is not trusted
+ * (child-2/3's rule) and the reviewed membership must still be exactly the
+ * detected branches; (2) consume the drawn sandwich — every S→m and m→T
+ * connection is removed, never surviving alongside the pair (the author's
+ * transient plain edges, mirroring how the back-edge died at draw time in
+ * child 3); (3) mint the pair through `createParallelPair` with
+ * `v2NodeIdFor` ids — its own validators are the refusal surface, reused
+ * verbatim; (4) add the wiring on the rendered handle ids
+ * (`layout.ts`: FanOut input 'input', one output per branch named by the
+ * member id; Join inputs named by member id, outputs from the outcome
+ * values): S@drawnSourcePort → FanOut@input, per member FanOut@<m> → m@input
+ * and m@done → Join@<m>, Join@<proceed> → T@input. Pure; never mutates;
+ * stamps nothing (`createParallelPair` and `addV2Connection` never write
+ * `legacyRuntimeOwner`).
+ */
+export function synthesizeParallelFrontier(
+  def: WirePipelineDefinitionV2,
+  input: ParallelFrontierSynthesisInput
+): ParallelFrontierSynthesisResult {
+  const frontier = detectParallelFrontiers(def).find(
+    (candidate) =>
+      candidate.source === input.source && candidate.target === input.target
+  );
+  if (!frontier) {
+    throw new Error(
+      'This frontier is no longer a clean fan-out and reconverge shape.'
+    );
+  }
+  const branchSet = new Set(frontier.branches);
+  const reviewedRequired = new Map(
+    input.members.map((member) => [member.id, member.required])
+  );
+  if (
+    reviewedRequired.size !== frontier.branches.length ||
+    frontier.branches.some((id) => !reviewedRequired.has(id))
+  ) {
+    throw new Error(
+      'The frontier branches changed while reviewing them — reopen the review.'
+    );
+  }
+  // The drawn source port dies with the consumed S→m edges, so read it before
+  // the filter: the author drew from that handle, and the S→FanOut edge is its
+  // replacement (first drawn S→m in draft-connection order, deterministic).
+  const drawnSourcePort =
+    def.root.connections.find(
+      (connection) =>
+        connection.from.node === input.source && branchSet.has(connection.to.node)
+    )?.from.port ?? CONTROL_SOURCE_PORT;
+  const consumed: WirePipelineDefinitionV2 = {
+    ...def,
+    root: {
+      ...def.root,
+      connections: def.root.connections.filter(
+        (connection) =>
+          !(
+            (connection.from.node === input.source &&
+              branchSet.has(connection.to.node)) ||
+            (branchSet.has(connection.from.node) &&
+              connection.to.node === input.target)
+          )
+      ),
+    },
+  };
+  const fanOutId = v2NodeIdFor('FanOut', consumed);
+  const joinId = v2NodeIdFor('Join', consumed);
+  let next = createParallelPair(consumed, {
+    fanOutId,
+    joinId,
+    memberNodeIds: frontier.branches,
+    requiredMemberIds: frontier.branches.filter((id) => reviewedRequired.get(id)),
+    concurrencyCap: input.concurrencyCap,
+    budget: input.budget,
+    outcomes: input.outcomes,
+  });
+  next = addV2Connection(next, {
+    id: v2ConnectionIdFor(next, {
+      source: input.source,
+      sourcePort: drawnSourcePort,
+      target: fanOutId,
+      targetPort: CONTROL_TARGET_PORT,
+    }),
+    from: { node: input.source, port: drawnSourcePort },
+    to: { node: fanOutId, port: CONTROL_TARGET_PORT },
+  });
+  for (const member of frontier.branches) {
+    next = addV2Connection(next, {
+      id: v2ConnectionIdFor(next, {
+        source: fanOutId,
+        sourcePort: member,
+        target: member,
+        targetPort: CONTROL_TARGET_PORT,
+      }),
+      from: { node: fanOutId, port: member },
+      to: { node: member, port: CONTROL_TARGET_PORT },
+    });
+    next = addV2Connection(next, {
+      id: v2ConnectionIdFor(next, {
+        source: member,
+        sourcePort: CONTROL_SOURCE_PORT,
+        target: joinId,
+        targetPort: member,
+      }),
+      from: { node: member, port: CONTROL_SOURCE_PORT },
+      to: { node: joinId, port: member },
+    });
+  }
+  next = addV2Connection(next, {
+    id: v2ConnectionIdFor(next, {
+      source: joinId,
+      sourcePort: input.outcomes.proceed,
+      target: input.target,
+      targetPort: CONTROL_TARGET_PORT,
+    }),
+    from: { node: joinId, port: input.outcomes.proceed },
+    to: { node: input.target, port: CONTROL_TARGET_PORT },
+  });
+  return { next, fanOutId, joinId };
+}
+
+// ===== Sink promotion (canvas-sink-finish-inference design D1-D3) =========
+
+/**
+ * The promotable terminal kinds (design D1): exactly the two whose authored
+ * terminal wiring the surface already draws — a plain stage's control-out and
+ * a barrier's outcome-valued output are the handles the renderer paints, so
+ * the promotion's edge lands on a real handle. Every other sink kind (a
+ * loop's end, a composite reference, a gate, a branch point) keeps the
+ * explicit Finish gesture; per-kind rendered-port resolution is deferred.
+ * A FanOut can never qualify alone by construction: its pair's collector is
+ * the Join.
+ */
+const PROMOTABLE_SINK_KINDS: ReadonlySet<WireDefinitionNode['kind']> = new Set([
+  'AtomicStage',
+  'Join',
+]);
+
+/**
+ * Whether `node` is a promotable terminal node (design D1): it exists in the
+ * ROOT graph (a declaration body's sinks are that declaration's own outcome
+ * contract, not this rule's territory), the ROOT node's kind is promotable,
+ * and NO root connection leaves it. The out-edge scan rides `buildAdjacency`
+ * — the same root-connection enumeration `wouldCreateCycle` and
+ * `detectParallelFrontiers` read — so "terminal" can never disagree with the
+ * rules that recognize loop and parallel shapes.
+ */
+export function isPromotableSink(
+  def: WirePipelineDefinitionV2,
+  node: WireDefinitionNode
+): boolean {
+  const root = def.root.nodes.find((candidate) => candidate.id === node.id);
+  if (!root || !PROMOTABLE_SINK_KINDS.has(root.kind)) return false;
+  return (buildAdjacency(def).get(root.id) ?? []).length === 0;
+}
+
+export interface SinkPromotionResult {
+  next: WirePipelineDefinitionV2;
+  finishId: string;
+}
+
+/**
+ * The one sink-promotion transaction (design D3): appends a Finish carrying
+ * the author's PICKED outcome and wires the sink to it. Steps: (1)
+ * re-validate — the panel is not trusted; the node must still be a promotable
+ * sink and the outcome a non-blank member of `def.outcomes` (the select only
+ * offers those, but the model owns the rule); (2) append the Finish with
+ * exactly `addFinishNode`'s node shape but the picked outcome — nothing else
+ * is stamped, so the promoted node is indistinguishable from an authored one;
+ * (3) wire sink→Finish via the `addV2Connection`/`v2ConnectionIdFor`
+ * convention with the sink's rendered control-out handle: an `AtomicStage`
+ * sources `CONTROL_SOURCE_PORT`, a `Join` sources its `outcomes.proceed`
+ * VALUE (the barrier's rendered output port, `layout.ts`'s Join output
+ * mapping — the same rendered-id discipline children 2-4 used); the Finish's
+ * input is its control port. The sink node itself is untouched — no move, no
+ * rewrite; its extension fields and execution settings survive verbatim by
+ * construction. Pure; never mutates; stamps nothing.
+ */
+export function promoteSinkToFinish(
+  def: WirePipelineDefinitionV2,
+  sinkId: string,
+  outcome: string
+): SinkPromotionResult {
+  const node = def.root.nodes.find((candidate) => candidate.id === sinkId);
+  if (!node) {
+    throw new Error(`Node '${sinkId}' does not exist.`);
+  }
+  if (!isPromotableSink(def, node)) {
+    throw new Error(
+      'This node is no longer a terminal plain stage or parallel barrier.'
+    );
+  }
+  const picked = outcome.trim();
+  if (!picked || !def.outcomes.includes(picked)) {
+    throw new Error(
+      `Outcome '${picked}' is not one of this definition's named outcomes.`
+    );
+  }
+  const finishId = v2NodeIdFor('Finish', def);
+  let next = addV2Node(def, { id: finishId, kind: 'Finish', outcome: picked });
+  const sourcePort =
+    node.kind === 'Join' ? node.outcomes.proceed : CONTROL_SOURCE_PORT;
+  next = addV2Connection(next, {
+    id: v2ConnectionIdFor(next, {
+      source: sinkId,
+      sourcePort,
+      target: finishId,
+      targetPort: CONTROL_TARGET_PORT,
+    }),
+    from: { node: sinkId, port: sourcePort },
+    to: { node: finishId, port: CONTROL_TARGET_PORT },
+  });
+  return { next, finishId };
 }

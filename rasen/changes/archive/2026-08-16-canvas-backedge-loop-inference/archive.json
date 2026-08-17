@@ -1,0 +1,80 @@
+{
+  "change": "canvas-backedge-loop-inference",
+  "archivedAt": "2026-08-16T23:42:05.516Z",
+  "codeCommit": "41dda20db11b736c38ad19bde267cf3f64cec96b",
+  "planningBranch": "feat/canvas-gesture-ir-compiler",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/01-not-found.png",
+      "sha256": "1cf3f4aa3b6f4bfd7004176fdab77bc0376a02d62507b430351b415cd719a86c"
+    },
+    {
+      "path": "evidence/02-authored-chain.png",
+      "sha256": "3cf55b653d9c17883b0e3971db9093dc2325e113196922ce801c82e1b7eb1913"
+    },
+    {
+      "path": "evidence/03-m2-probe-done.png",
+      "sha256": "3cf55b653d9c17883b0e3971db9093dc2325e113196922ce801c82e1b7eb1913"
+    },
+    {
+      "path": "evidence/04-review-open-with-defaults.png",
+      "sha256": "125e3f515559ba226d474d61a9a4aed6db6bcd63f5ee5e48776a2bb3a4348361"
+    },
+    {
+      "path": "evidence/05-invalid-bound-blocks-confirm.png",
+      "sha256": "d05bbfbccfbbe733ce12262397d27d246cf3e9e6465d23d3a0d39670cb0bd447"
+    },
+    {
+      "path": "evidence/06-loop-synthesized-rewired.png",
+      "sha256": "859477cca353d48673b3e8b629f87bfce05e1ce68b4467ba1b84a1cff293e46d"
+    },
+    {
+      "path": "evidence/07-explicit-gesture-still-works.png",
+      "sha256": "aa2963161100285cc62d4946e9e38e47fb17d2c83bceb40ac4b0d6fa85863e14"
+    },
+    {
+      "path": "evidence/cdp-backedge-loop-check.mjs",
+      "sha256": "5b999807b703044190a5cccd35aa95ed75d49bacedbac48328febdc5ca2101fc"
+    },
+    {
+      "path": "evidence/cdp-results.json",
+      "sha256": "b75e57fad110ecc50b0f6411f3e595d307e8dbc39fac162399c68a36eabdbd8e"
+    },
+    {
+      "path": "evidence/cdp-transcript.md",
+      "sha256": "c6cb6605afefcb54a5f0682096f7f2ebe60cff30e2453d139468640b538d28b3"
+    },
+    {
+      "path": "evidence/gates-5-2.md",
+      "sha256": "5fd24d43474641948379602309e3694b7da1fe1c5b1a4439ef4e2a765ff5b6ef"
+    },
+    {
+      "path": "evidence/handoff/implementer-1.md",
+      "sha256": "6d28866258e53a445cec9d670413d34b8b898d7c3d130a59d0038f3c5b6369f3"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "20a18917a8463af7398917cb95f99d08c4fb2523890832af29cf7392ca514d8e"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "5468e7fb3b8499bae13e5923adb9deadd1891bf729d0968882d0ddde5fb0ee1a"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [
+    {
+      "file": "handoff/implementer-1.md",
+      "outcome": "preserved"
+    },
+    {
+      "file": "handoff/shipper-1.md",
+      "outcome": "absorbed"
+    }
+  ],
+  "ephemeraDiscarded": [],
+  "missing": [
+    "verification-report"
+  ]
+}
