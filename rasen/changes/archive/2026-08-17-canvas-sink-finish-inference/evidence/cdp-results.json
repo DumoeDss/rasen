@@ -1,0 +1,135 @@
+{
+  "allOk": true,
+  "results": [
+    {
+      "name": "the palette offers a stage gesture",
+      "ok": true,
+      "detail": "v2-palette-gesture-stage-rasen-propose"
+    },
+    {
+      "name": "selecting the terminal stage opens its properties panel",
+      "ok": true,
+      "detail": "atomic-stage-2"
+    },
+    {
+      "name": "the endpoint-naming section is offered for the terminal stage",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the section defaults to the first definition outcome",
+      "ok": true,
+      "detail": "done"
+    },
+    {
+      "name": "the section offers exactly the definition outcomes",
+      "ok": true,
+      "detail": "[\"done\",\"archived\"]"
+    },
+    {
+      "name": "the wired source opens a panel without the section",
+      "ok": true,
+      "detail": "atomic-stage"
+    },
+    {
+      "name": "confirm surfaces the plain success toast",
+      "ok": true,
+      "detail": "Finish added for this endpoint."
+    },
+    {
+      "name": "the Finish IS the selection after confirm",
+      "ok": true,
+      "detail": "[\"finish\"]"
+    },
+    {
+      "name": "the Finish panel is open with the picked outcome",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the promotion wired exactly one edge on the rendered handle ids",
+      "ok": true,
+      "detail": "[\"atomic-stage:done->atomic-stage-2:input\",\"atomic-stage-2:done->finish:input\"]"
+    },
+    {
+      "name": "the Finish panel carries no endpoint-naming section",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the terminal stage keeps its capability binding verbatim",
+      "ok": true,
+      "detail": "skill:rasen-propose\u0000sha256:950fbdbff5734ef2760fc9c04d60399e43caaf869a7f24ba11ddcbb2d6bb1907 -> skill:rasen-propose\u0000sha256:950fbdbff5734ef2760fc9c04d60399e43caaf869a7f24ba11ddcbb2d6bb1907"
+    },
+    {
+      "name": "the now-wired stage no longer offers the section",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the completing reconverge surfaces child 4 offer (children compose)",
+      "ok": true,
+      "detail": "Detected a parallel frontier: atomic-stage fans out to 2 branches that reconverge at finish.Run in parallel×"
+    },
+    {
+      "name": "the frontier synthesis wired the pair incl. join -> finish",
+      "ok": true,
+      "detail": "[\"atomic-stage:done->fan-out:input\",\"fan-out:atomic-stage-2->atomic-stage-2:input\",\"atomic-stage-2:done->join:atomic-stage-2\",\"fan-out:atomic-stage-3->atomic-stage-3:input\",\"atomic-stage-3:done->join:atomic-stage-3\",\"join:done->finish:input\"]"
+    },
+    {
+      "name": "the finish node is selected for deletion",
+      "ok": true,
+      "detail": "[\"finish\"]"
+    },
+    {
+      "name": "deleting the finish dropped the join -> finish edge with it",
+      "ok": true,
+      "detail": "[\"atomic-stage:done->fan-out:input\",\"fan-out:atomic-stage-2->atomic-stage-2:input\",\"atomic-stage-2:done->join:atomic-stage-2\",\"fan-out:atomic-stage-3->atomic-stage-3:input\",\"atomic-stage-3:done->join:atomic-stage-3\"]"
+    },
+    {
+      "name": "selecting the terminal barrier opens its properties panel",
+      "ok": true,
+      "detail": "join"
+    },
+    {
+      "name": "the barrier panel is the Join kind",
+      "ok": true,
+      "detail": "Join"
+    },
+    {
+      "name": "the endpoint-naming section is offered for the terminal barrier",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the barrier-promoted Finish IS the selection",
+      "ok": true,
+      "detail": "[\"finish\"]"
+    },
+    {
+      "name": "the barrier promotion wired join -> finish on the proceed VALUE port",
+      "ok": true,
+      "detail": "[\"atomic-stage:done->fan-out:input\",\"fan-out:atomic-stage-2->atomic-stage-2:input\",\"atomic-stage-2:done->join:atomic-stage-2\",\"fan-out:atomic-stage-3->atomic-stage-3:input\",\"atomic-stage-3:done->join:atomic-stage-3\",\"join:done->finish:input\"]"
+    },
+    {
+      "name": "the barrier itself still exists as a node (appended, never converted)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the gesture Finish is unwired (exactly addFinishNode behavior)",
+      "ok": true,
+      "detail": "[\"atomic-stage:done->fan-out:input\",\"fan-out:atomic-stage-2->atomic-stage-2:input\",\"atomic-stage-2:done->join:atomic-stage-2\",\"fan-out:atomic-stage-3->atomic-stage-3:input\",\"atomic-stage-3:done->join:atomic-stage-3\",\"join:done->finish:input\"]"
+    },
+    {
+      "name": "the gesture Finish carries the first-outcome default",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "tab is alive after the full pass (no listener freeze)",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

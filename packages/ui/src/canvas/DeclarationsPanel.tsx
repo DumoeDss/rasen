@@ -11,6 +11,7 @@ import type {
 } from '../api/types.js';
 import {
   V2_BODY_PALETTE_KINDS,
+  isReferenceableDeclaration,
   type AtomicStageExecutionPatch,
 } from './draft.js';
 import { V2ExecutionEditor } from './V2ExecutionEditor.js';
@@ -67,6 +68,7 @@ export function DeclarationsPanel({
   onPatchBodyExecution,
   onAddBodyConnection,
   onRemoveBodyConnection,
+  onInsertRef,
 }: {
   definition: WirePipelineDefinitionV2;
   selectedId: string | null;
@@ -113,6 +115,11 @@ export function DeclarationsPanel({
   ) => void;
   onAddBodyConnection: (declarationId: string, from: string, to: string) => void;
   onRemoveBodyConnection: (declarationId: string, connectionId: string) => void;
+  /** Appends a `CompositeRef` targeting this declaration to the root graph
+   * (design D6) — the replacement affordance for the withdrawn CompositeRef
+   * palette entry. Absent `isReferenceableDeclaration(declaration)`, the row
+   * action is disabled rather than failing on click. */
+  onInsertRef?: (declarationId: string) => void;
 }) {
   const [newId, setNewId] = useState('');
   const declarations = definition.declarations ?? [];
@@ -174,6 +181,16 @@ export function DeclarationsPanel({
             </button>
             <button
               type="button"
+              class="declarations-panel__insert-ref"
+              data-testid="declaration-insert-ref"
+              data-declaration-id={declaration.id}
+              disabled={!isReferenceableDeclaration(declaration)}
+              onClick={() => onInsertRef?.(declaration.id)}
+            >
+              Insert into graph
+            </button>
+            <button
+              type="button"
               class="declarations-panel__delete"
               data-testid="declaration-delete"
               data-declaration-id={declaration.id}
@@ -220,8 +237,12 @@ export function DeclarationsPanel({
   );
 }
 
-/** One editable comma-separated name list (outcomes). */
-function NameListField({
+/**
+ * One editable comma-separated name list (outcomes). Exported for the
+ * extraction review dialog (`V2ExtractReviewPanel`), which reuses the exact
+ * row UX — one implementation of "how an author edits a contract list".
+ */
+export function NameListField({
   label,
   testId,
   value,
@@ -267,8 +288,10 @@ function NameListField({
 /**
  * Editable `name: type` port rows with add/remove/rename, used for both the
  * declared inputs and the declared artifacts (identical shape on the wire).
+ * Exported for the extraction review dialog (`V2ExtractReviewPanel`), which
+ * reuses the exact row UX.
  */
-function PortListEditor({
+export function PortListEditor({
   label,
   testIdPrefix,
   ports,

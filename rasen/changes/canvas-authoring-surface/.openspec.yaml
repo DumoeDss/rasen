@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-08-16
+goal: "Canvas v2 authoring surface: fix the unstyled authoring column stealing
+  canvas width, and re-divide the ROOT NODES palette so authors work in gestures
+  (Stage/Parallel/Loop/Finish) instead of the 8 ECP IR node kinds. IR
+  unchanged."

@@ -49,6 +49,9 @@ vi.mock('@xyflow/react', () => ({
   ReactFlowProvider: ({ children }: { children: unknown }) => <>{children}</>,
   Handle: () => null,
   Position: { Left: 'left', Right: 'right' },
+  // Mirrors @xyflow/system's real enum values: PipelineCanvasPage now
+  // imports SelectionMode, which must resolve under this mock too.
+  SelectionMode: { Partial: 'partial', Full: 'full' },
   useReactFlow: () => ({ screenToFlowPosition: (p: { x: number; y: number }) => p }),
   addEdge: (edge: unknown, edges: unknown[]) => [...edges, edge],
   applyNodeChanges: (_c: unknown[], nodes: unknown[]) => nodes,
@@ -285,8 +288,12 @@ describe('ECP-5 task 7.6: a Custom Composite authored through the Canvas', () =>
       container.querySelectorAll('[data-testid="declaration-body-connection"]')
     ).toHaveLength(1);
 
-    // 3. Reference it from the root graph via a CompositeRef.
-    await click('[data-testid="v2-palette-add-CompositeRef"]');
+    // 3. Reference it from the root graph via a CompositeRef — CompositeRef
+    //    is no longer a root-palette kind (design D6), so this goes through
+    //    the declaration row's own "Insert into graph" action instead.
+    await click(
+      '[data-testid="declaration-insert-ref"][data-declaration-id="closure-composite"]'
+    );
 
     // 4. Save — and read the definition the Canvas actually POSTs.
     vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });

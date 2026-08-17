@@ -15,6 +15,7 @@ import type {
   WirePipelineDefinitionV2,
 } from '../api/types.js';
 import {
+  gateForStage,
   getConsultationBindingForStage,
   isV2EditableNodeKind,
   type AtomicStageExecutionPatch,
@@ -43,6 +44,11 @@ function stringList(value: unknown): readonly string[] {
     : [];
 }
 
+/** Narrow an untyped wire-node field to a string before rendering it. */
+function stringField(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
 function parseList(value: string): string[] {
   return Array.from(
     new Set(
@@ -65,7 +71,9 @@ export function V2NodePanel({
   onRename,
   onPatch,
   onAtomicExecutionPatch,
+  onStageGateToggle,
   onGateDisposition,
+  onUnspliceChoice,
   onBoundedLoopPatch,
   onParallelMembers,
   onParallelMemberPatch,
@@ -75,6 +83,7 @@ export function V2NodePanel({
   onConsultationPatch,
   onConsultationRemove,
   onInvalidChange,
+  sinkPromotion,
   onClose,
 }: {
   node: WireDefinitionNode;
@@ -87,10 +96,14 @@ export function V2NodePanel({
   onRename: (id: string) => void;
   onPatch: (patch: Partial<WireDefinitionNode>) => boolean | void;
   onAtomicExecutionPatch?: (patch: AtomicStageExecutionPatch) => void;
+  /** Toggles the approval `Gate` targeting this `AtomicStage` on or off (design D4). */
+  onStageGateToggle?: (stageId: string, enabled: boolean) => void;
   onGateDisposition?: (
     decision: string,
     disposition: WireGateNode['dispositions'][string]
   ) => void;
+  /** Removes a spliced `Choice` and restores its direct connection (design D5). */
+  onUnspliceChoice?: (choiceId: string) => void;
   onBoundedLoopPatch?: (patch: BoundedLoopContractPatch) => void;
   onParallelMembers?: (fanOutId: string, memberIds: readonly string[]) => void;
   onParallelMemberPatch?: (
@@ -110,6 +123,16 @@ export function V2NodePanel({
     field: string,
     error: IntegerContractDraftError | null
   ) => void;
+  /**
+   * The endpoint-naming offer (canvas-sink-finish-inference design D2): the
+   * page passes this group only when the selected node is a promotable sink;
+   * the panel decides nothing. Presentational by contract — the promotion
+   * rule and the confirm-time re-validation live in `draft.ts`.
+   */
+  sinkPromotion?: {
+    outcomes: readonly string[];
+    onPromote: (outcome: string) => void;
+  };
   onClose: () => void;
 }) {
   const supported = isV2EditableNodeKind(node.kind);
@@ -119,12 +142,20 @@ export function V2NodePanel({
       ? listValue(node.outcomes)
       : '';
   const [outcomesDraft, setOutcomesDraft] = useState(authoritativeOutcomes);
+  const authoritativeExpression =
+    node.kind === 'Choice'
+      ? stringField((node as Record<string, unknown>).expression)
+      : '';
+  const [expressionDraft, setExpressionDraft] = useState(authoritativeExpression);
   useEffect(() => {
     setIdDraft(node.id);
   }, [node.id]);
   useEffect(() => {
     setOutcomesDraft(authoritativeOutcomes);
   }, [node.id, authoritativeOutcomes]);
+  useEffect(() => {
+    setExpressionDraft(authoritativeExpression);
+  }, [node.id, authoritativeExpression]);
   const commitRename = () => {
     const next = idDraft.trim();
     if (next && next !== node.id) {
@@ -144,6 +175,15 @@ export function V2NodePanel({
     setOutcomesDraft(
       accepted === false ? authoritativeOutcomes : listValue(outcomes)
     );
+  };
+  const commitExpression = () => {
+    const trimmed = expressionDraft.trim();
+    if (!trimmed) {
+      setExpressionDraft(authoritativeExpression);
+      return;
+    }
+    const accepted = onPatch({ expression: trimmed });
+    setExpressionDraft(accepted === false ? authoritativeExpression : trimmed);
   };
   const fieldClass = (field: string) => nestedFieldClass(fieldIssues, field);
 
@@ -206,6 +246,20 @@ export function V2NodePanel({
                 onCapabilityPatch={(capability) => onPatch({ capability })}
                 onExecutionPatch={(patch) => onAtomicExecutionPatch?.(patch)}
               />
+              <label class="stage-panel__field stage-panel__field--checkbox">
+                <input
+                  type="checkbox"
+                  data-testid="v2-node-panel-gate-toggle"
+                  checked={definition ? Boolean(gateForStage(definition, node.id)) : false}
+                  onChange={(event) =>
+                    onStageGateToggle?.(
+                      node.id,
+                      (event.target as HTMLInputElement).checked
+                    )
+                  }
+                />
+                Require approval before this stage proceeds
+              </label>
               {fullDefinition && (
                 <ConsultationBindingEditor
                   stageId={node.id}
@@ -247,6 +301,41 @@ export function V2NodePanel({
                 }}
               />
             </label>
+          )}
+
+          {node.kind === 'Choice' && (
+            <>
+              <label class={fieldClass('expression')}>
+                <span>Branch condition</span>
+                <input
+                  data-testid="v2-node-panel-choice-expression"
+                  value={expressionDraft}
+                  onInput={(event) =>
+                    setExpressionDraft((event.target as HTMLInputElement).value)
+                  }
+                  onBlur={commitExpression}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      (event.currentTarget as HTMLInputElement).blur();
+                    }
+                  }}
+                />
+              </label>
+              {/* Deliberately a SIBLING of the label, not a child of it:
+                  interactive content nested in a `<label>` is invalid HTML,
+                  and the label's activation behavior would forward this
+                  button's click to the labelled input — focusing then blurring
+                  it, running `commitExpression` as a side effect of pressing
+                  an unrelated control. */}
+              <button
+                type="button"
+                data-testid="v2-node-panel-unsplice-choice"
+                onClick={() => onUnspliceChoice?.(node.id)}
+              >
+                Remove condition
+              </button>
+            </>
           )}
 
           {node.kind === 'Gate' && (
@@ -316,9 +405,73 @@ export function V2NodePanel({
               onDeletePair={onDeleteParallelPair}
             />
           )}
+
+          {sinkPromotion && (
+            <SinkPromotionSection
+              outcomes={sinkPromotion.outcomes}
+              onPromote={sinkPromotion.onPromote}
+            />
+          )}
         </>
       )}
     </aside>
+  );
+}
+
+/**
+ * The endpoint-naming offer (canvas-sink-finish-inference design D2): one
+ * compact section — label, outcome select defaulting to the definition's
+ * first outcome, confirm button — rendered only when the page passed the
+ * `sinkPromotion` prop group (the page computed the node IS a promotable
+ * sink). Pull, not push: sink-ness is the common state of every growing
+ * draft, so the author names an endpoint from its properties panel when they
+ * are done building, never from a toast. Fully presentational: the promotion
+ * rule and the confirm-time re-validation live in `draft.ts`.
+ */
+function SinkPromotionSection({
+  outcomes,
+  onPromote,
+}: {
+  outcomes: readonly string[];
+  onPromote: (outcome: string) => void;
+}) {
+  const defaultPick = outcomes[0] ?? '';
+  const [pick, setPick] = useState(defaultPick);
+  // The same authoritative-value reset discipline as the panel's id/outcomes
+  // drafts: a definition outcome-list edit re-keys the default without
+  // clobbering an unchanged pick.
+  useEffect(() => {
+    setPick(defaultPick);
+  }, [defaultPick]);
+  return (
+    <section
+      class="stage-panel__section"
+      data-testid="v2-node-panel-sink-promotion"
+    >
+      <h4 class="stage-panel__section-title">Finish here</h4>
+      <label class="stage-panel__field">
+        <span>Endpoint outcome</span>
+        <select
+          data-testid="v2-node-panel-sink-outcome"
+          value={pick}
+          onChange={(event) =>
+            setPick((event.target as HTMLSelectElement).value)
+          }
+        >
+          {outcomes.map((outcome) => (
+            <option key={outcome} value={outcome}>{outcome}</option>
+          ))}
+        </select>
+      </label>
+      <button
+        type="button"
+        data-testid="v2-node-panel-sink-confirm"
+        disabled={!pick}
+        onClick={() => onPromote(pick)}
+      >
+        Name outcome
+      </button>
+    </section>
   );
 }
 
