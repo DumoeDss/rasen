@@ -579,8 +579,9 @@ server-provided reason.
 
 The canvas editor SHALL treat selection as a set of nodes and connections rather than a single
 chosen element. Holding Shift and dragging on the canvas SHALL draw a selection box that selects
-every node and connection it encloses; clicking with the platform multi-select key held
-(Control on Windows and Linux, Command on macOS) SHALL add one element to the selection or
+every node and connection the box overlaps — full containment is NOT required, and a box that
+clips any part of a node's bounds selects that node; clicking with the platform multi-select key
+held (Control on Windows and Linux, Command on macOS) SHALL add one element to the selection or
 remove it if already selected; a plain click on an element SHALL leave exactly that element
 selected; clicking empty canvas SHALL leave nothing selected. Nodes and connections SHALL be
 selectable together in one selection.
@@ -610,6 +611,16 @@ deleting SHALL remove all of them together with every dependency reference to th
 
 - **WHEN** the user holds Shift and drags a selection box around four nodes in the v2 editor
 - **THEN** all four nodes are selected together and the selection summary reports four nodes
+
+#### Scenario: A clipped node still selects
+
+- **WHEN** the user holds Shift and drags a selection box that fully covers three nodes but enters only the outer ten pixels of a fourth node's left edge
+- **THEN** all four nodes are selected — overlap, not full containment, is the rule
+
+#### Scenario: A single-node rectangle selects its node
+
+- **WHEN** the user holds Shift and drags a small selection box that overlaps exactly one node without fully containing it
+- **THEN** that node is selected and the selection summary reports one node
 
 #### Scenario: Multi-select key augments the selection
 
