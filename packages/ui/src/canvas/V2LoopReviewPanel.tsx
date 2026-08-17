@@ -5,9 +5,10 @@
  * author who wants a different region draws a different back-edge), edits the
  * derived declaration contract rows, sets the iteration bound and the exit
  * outcome, and confirms. Presentational — the page computed the region and
- * defaults via `backedgeRegion`/`deriveBackedgeLoopContract` (the cut
- * contract plus the back-edge fallback rows for sides that severed
- * nothing), the model
+ * defaults via `backedgeRegion`/`deriveBackedgeLoopContract` (control-typed
+ * entry rows under the boundary naming convention, outcome rows naming the
+ * body's producible terminal outcomes — canvas-loop-validate-clean-
+ * synthesis), the model
  * (`synthesizeBoundedLoopFromBackedge`) re-validates every rule on confirm,
  * and the model's thrown message comes back as the `error` prop (the same
  * overlay pattern as `V2ExtractReviewPanel`, whose rows UX this reuses via
@@ -62,6 +63,7 @@ export function V2LoopReviewPanel({
   defaultId,
   derived,
   defaultMaxIterations,
+  lifecycleExitOutcomes,
   refusals,
   integerDraftError,
   onIntegerDraftError,
@@ -90,6 +92,12 @@ export function V2LoopReviewPanel({
   };
   /** The iteration bound the dialog opens with (the gesture's default, 3). */
   defaultMaxIterations: number;
+  /**
+   * The default lifecycle's exit-action outcome values (the page passes the
+   * model's `defaultBoundedLoopExitOutcomeValues()`) — with the author's
+   * exit pick, the candidates of the declare-notice line below.
+   */
+  lifecycleExitOutcomes: readonly string[];
   /** Why the region cannot be extracted right now — non-empty hides Confirm. */
   refusals: readonly string[];
   /** The page's authoring-draft error for `loop-review:maxIterations`, if any. */
@@ -123,6 +131,16 @@ export function V2LoopReviewPanel({
       setExitOutcome(definitionOutcomes[0] ?? '');
     }
   }, [definitionOutcomes, exitOutcome]);
+  // The declare-notice line (canvas-loop-validate-clean-synthesis D3):
+  // confirming declares every loop-emitted exit outcome the definition does
+  // not already carry — under the default lifecycle that is
+  // `iteration-limit` (the exit pick itself is always a declared outcome;
+  // an empty pick means nothing is declared yet and the inline declare
+  // covers it). Presentational only: the names come from the model's
+  // lifecycle values, the transaction from the model's confirm.
+  const declaresOnConfirm = [
+    ...new Set([exitOutcome, ...lifecycleExitOutcomes].filter(Boolean)),
+  ].filter((name) => !definitionOutcomes.includes(name));
   const blocked = integerDraftError !== null || refusals.length > 0;
   return (
     <div class="pipeline-canvas__dialog-overlay" data-testid="v2-loop-review-panel">
@@ -210,6 +228,12 @@ export function V2LoopReviewPanel({
               Declare outcome
             </button>
           </div>
+        )}
+        {declaresOnConfirm.length > 0 && (
+          <p class="stage-panel__muted" data-testid="v2-loop-review-declares">
+            Confirming will declare {declaresOnConfirm.join(', ')} in the
+            definition's outcome contract (the loop's exit outcomes).
+          </p>
         )}
         <PortListEditor
           label="Inputs"

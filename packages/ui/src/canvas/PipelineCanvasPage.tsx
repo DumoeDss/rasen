@@ -60,6 +60,7 @@ import {
   CanvasSelection,
   completedFrontier,
   declareDefinitionOutcome,
+  defaultBoundedLoopExitOutcomeValues,
   definitionIssuePathTarget,
   deriveBackedgeLoopContract,
   deriveSubgraphContract,
@@ -98,6 +99,7 @@ import {
   synthesizeBoundedLoopFromBackedge,
   synthesizeParallelFrontier,
   unavailableRootGestures,
+  underivableBodyStageRefusals,
   unspliceChoice,
   updateBodyStage,
   updateBodyStageExecution,
@@ -177,6 +179,16 @@ const PARALLEL_REVIEW_INTEGER_FIELDS = [
   'parallel-review:concurrencyCap',
   'parallel-review:budget',
 ];
+
+/**
+ * The default lifecycle's exit-action outcome values (under
+ * `createDefaultBoundedLoopLifecycle` exactly `['iteration-limit']`) — what
+ * every canvas-minted loop emits on top of its chosen exit outcome. The
+ * loop review renders these (minus what the definition already declares)
+ * as its declare-notice line, from the model's own function rather than a
+ * second copy of the lifecycle vocabulary.
+ */
+const LOOP_LIFECYCLE_EXIT_OUTCOMES = defaultBoundedLoopExitOutcomeValues();
 
 /** The toast's optional action (design D4): a button riding the toast. */
 interface ToastAction {
@@ -1396,20 +1408,26 @@ export function PipelineCanvasPage() {
   /**
    * Opens the loop review for a refused cycle-closing draw. The region, the
    * derivation, and the refusals live in `draft.ts` (`backedgeRegion`,
-   * `deriveBackedgeLoopContract` — the cut contract plus the back-edge
-   * fallback rows for sides that severed nothing, `subgraphExtractionRefusals`);
-   * this handler only captures what the author is about to review. The drawn
-   * connection is never written to the draft — the review state carries the
-   * endpoints as data, so cancel reproduces today's refusal outcome exactly.
+   * `deriveBackedgeLoopContract` — the cut contract with control-typed entry
+   * rows and the body's producible terminal outcomes, from the catalog;
+   * `subgraphExtractionRefusals`; `underivableBodyStageRefusals` — a body
+   * stage whose capability is not in the catalog blocks confirm here because
+   * the loop's exit outcomes cannot be derived for it); this handler only
+   * captures what the author is about to review. The drawn connection is
+   * never written to the draft — the review state carries the endpoints as
+   * data, so cancel reproduces today's refusal outcome exactly.
    */
   function openLoopReview(from: string, to: string) {
     if (!draft || draft.version !== 2) return;
     const nodeIds = backedgeRegion(draft, from, to);
-    const derived = deriveBackedgeLoopContract(draft, nodeIds, from, to);
-    const refusals = subgraphExtractionRefusals(draft, {
-      nodeIds,
-      connectionIds: new Set<string>(),
-    });
+    const derived = deriveBackedgeLoopContract(draft, nodeIds, to, catalog);
+    const refusals = [
+      ...subgraphExtractionRefusals(draft, {
+        nodeIds,
+        connectionIds: new Set<string>(),
+      }),
+      ...underivableBodyStageRefusals(draft, nodeIds, catalog),
+    ];
     const internalConnectionCount = draft.root.connections.filter(
       (connection) =>
         nodeIds.has(connection.from.node) && nodeIds.has(connection.to.node)
@@ -1447,11 +1465,15 @@ export function PipelineCanvasPage() {
     if (!draft || draft.version !== 2 || !loopReview) return;
     let result;
     try {
-      result = synthesizeBoundedLoopFromBackedge(draft, {
-        from: loopReview.from,
-        to: loopReview.to,
-        ...review,
-      });
+      result = synthesizeBoundedLoopFromBackedge(
+        draft,
+        {
+          from: loopReview.from,
+          to: loopReview.to,
+          ...review,
+        },
+        catalog
+      );
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Could not turn this back-edge into a loop.';
@@ -2866,6 +2888,7 @@ export function PipelineCanvasPage() {
           defaultId={loopReview.defaultId}
           derived={loopReview.derived}
           defaultMaxIterations={3}
+          lifecycleExitOutcomes={LOOP_LIFECYCLE_EXIT_OUTCOMES}
           refusals={loopReview.refusals}
           integerDraftError={authoringDraftErrors[LOOP_REVIEW_INTEGER_FIELD] ?? null}
           onIntegerDraftError={setAuthoringDraftError}

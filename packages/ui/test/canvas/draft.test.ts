@@ -10,15 +10,19 @@ import {
   addBodyStage,
   addDeclaration,
   addFinishNode,
+  addBoundedLoopOverDeclaration,
   addRequire,
   backedgeRegion,
+  bodyTerminalOutcomes,
   bodyWouldCreateCycle,
   createBlankCanvasPipelineDefinitionV2,
   createDefaultBoundedLoopLifecycle,
   createParallelPair,
   deriveBackedgeLoopContract,
   deriveSubgraphContract,
+  defaultBoundedLoopExitOutcomeValues,
   EMPTY_CANVAS_SELECTION,
+  ensureLoopExitOutcomesDeclared,
   extractSubgraph,
   completedFrontier,
   detectParallelFrontiers,
@@ -29,6 +33,8 @@ import {
   subgraphExtractionRefusals,
   synthesizeParallelFrontier,
   synthesizeBoundedLoopFromBackedge,
+  underivableBodyStages,
+  underivableBodyStageRefusals,
   updateBoundedLoopContract,
   updateBodyStage,
   addStage,
@@ -58,6 +64,7 @@ import {
   v2ConnectionIdFor,
   v2NodeIdFor,
   wouldCreateCycle,
+  type LoopBodyCatalogSlice,
 } from '../../src/canvas/draft.js';
 import type {
   WireDefinitionNode,
@@ -1058,6 +1065,54 @@ function extractionDef(): WirePipelineDefinitionV2 {
   };
 }
 
+/**
+ * A catalog slice for the loop-derivation fixtures
+ * (canvas-loop-validate-clean-synthesis): one skill per capability the
+ * fixture stages bind, carrying exactly the descriptor shape the engine
+ * resolves (production-shaped — no typed inputs) with the outcome list each
+ * test names. `extractionDef`'s chain stages bind `skill:a`/`skill:b`/
+ * `skill:c`; `standaloneCycleDef`'s pair binds `skill:review`/`skill:fix`.
+ */
+function catalogOver(
+  capabilities: Array<{
+    id: string;
+    version: string;
+    outcomes?: string[];
+  }>
+): LoopBodyCatalogSlice {
+  return {
+    skills: capabilities.map((capability) => ({
+      id: capability.id.replace(/^skill:/, ''),
+      description: `Fixture skill ${capability.id}`,
+      enabled: true,
+      capability: {
+        id: capability.id,
+        version: capability.version,
+        inputs: [],
+        artifacts: [],
+        outcomes: capability.outcomes ?? ['done'],
+      },
+    })),
+  };
+}
+
+/** The catalog covering `extractionDef`'s three chain stages. */
+function extractionCatalog(): LoopBodyCatalogSlice {
+  return catalogOver([
+    { id: 'skill:a', version: 'sha256:a' },
+    { id: 'skill:b', version: 'sha256:b' },
+    { id: 'skill:c', version: 'sha256:c' },
+  ]);
+}
+
+/** The catalog covering `standaloneCycleDef`'s review/fix pair. */
+function standaloneCycleCatalog(): LoopBodyCatalogSlice {
+  return catalogOver([
+    { id: 'skill:review', version: 'sha256:review' },
+    { id: 'skill:fix', version: 'sha256:fix' },
+  ]);
+}
+
 describe('subgraphExtractionRefusals', () => {
   const refusals = (def: WirePipelineDefinitionV2, ids: readonly string[]) =>
     subgraphExtractionRefusals(def, {
@@ -1678,19 +1733,30 @@ describe('synthesizeBoundedLoopFromBackedge', () => {
    */
   function synthesize(
     def: WirePipelineDefinitionV2 = extractionDef(),
-    over: Partial<Parameters<typeof synthesizeBoundedLoopFromBackedge>[1]> = {}
+    over: Partial<Parameters<typeof synthesizeBoundedLoopFromBackedge>[1]> = {},
+    catalog: LoopBodyCatalogSlice | null | undefined = extractionCatalog()
   ) {
-    return synthesizeBoundedLoopFromBackedge(def, {
-      from: 'c',
-      to: 'b',
-      id: 'loop-body',
-      inputs: [{ name: 'b', type: 'input' }],
-      artifacts: [],
-      outcomes: ['c'],
-      maxIterations: 5,
-      exitOutcome: def.outcomes[0] ?? 'done',
-      ...over,
-    });
+    return synthesizeBoundedLoopFromBackedge(
+      def,
+      {
+        from: 'c',
+        to: 'b',
+        id: 'loop-body',
+        // The unedited confirm's rows = the review's opening defaults =
+        // `deriveBackedgeLoopContract` (the zero-edit shape this change
+        // guarantees): the severed entry name re-typed `ecp/control`, the
+        // body's producible terminal outcomes (was `['c']` — the severed
+        // stage-id convention, superseded by canvas-loop-validate-clean-
+        // synthesis because stage-id names are unproducible by construction).
+        inputs: [{ name: 'b', type: 'ecp/control' }],
+        artifacts: [],
+        outcomes: ['done'],
+        maxIterations: 5,
+        exitOutcome: def.outcomes[0] ?? 'done',
+        ...over,
+      },
+      catalog
+    );
   }
 
   it('synthesizes the declaration plus loop node with no CompositeRef, and never writes the back-edge', () => {
@@ -1704,8 +1770,8 @@ describe('synthesizeBoundedLoopFromBackedge', () => {
     // The declaration: custom, reviewed rows, verbatim body (same values).
     const declaration = result.next.declarations.find((d) => d.id === 'loop-body')!;
     expect(declaration.provenance).toBe('custom');
-    expect(declaration.inputs).toEqual([{ name: 'b', type: 'input' }]);
-    expect(declaration.outcomes).toEqual(['c']);
+    expect(declaration.inputs).toEqual([{ name: 'b', type: 'ecp/control' }]);
+    expect(declaration.outcomes).toEqual(['done']);
     expect(declaration.graph.nodes.map((node) => node.id)).toEqual(['b', 'c']);
     expect(declaration.graph.nodes[0]).toBe(bNode);
 
@@ -1728,15 +1794,21 @@ describe('synthesizeBoundedLoopFromBackedge', () => {
       limits: { maxIterations: 5, maxActions: 12, budget: 12 },
       lifecycle: createDefaultBoundedLoopLifecycle(),
       // The single (last) body outcome exits to the author's definition outcome.
-      exits: { c: { action: 'exit', outcome: 'done' } },
+      exits: { done: { action: 'exit', outcome: 'done' } },
     });
+    // Declare-on-synthesis (canvas-loop-validate-clean-synthesis D3): the
+    // definition contract gained the default lifecycle's exit outcome.
+    expect(result.next.outcomes).toEqual(['done', 'iteration-limit']);
 
     // The back-edge exists only as loop semantics: every surviving connection
     // runs between an external and the loop's ports — none mentions b or c,
-    // and the drawn c -> b pairing is nowhere in the root graph.
+    // and the drawn c -> b pairing is nowhere in the root graph. The
+    // outgoing crossing lands on the loop's EXIT outcome (was the severed
+    // row name 'c' — superseded: the engine reads a BoundedLoop's output
+    // ports from its exit mappings, not its declaration rows).
     expect(result.next.root.connections.map((connection) => connection.id)).toEqual([
       'a:done->bounded-loop:b',
-      'bounded-loop:c->f:input',
+      'bounded-loop:done->f:input',
     ]);
     for (const connection of result.next.root.connections) {
       expect(['a', 'f', 'bounded-loop']).toContain(connection.from.node);
@@ -1746,19 +1818,29 @@ describe('synthesizeBoundedLoopFromBackedge', () => {
 
   it('rewires the crossings onto the loop with extension fields preserved and reviewed rows honored', () => {
     const result = synthesize(extractionDef(), {
-      inputs: [{ name: 'entry', type: 'control' }],
+      inputs: [{ name: 'entry', type: 'ecp/control' }],
       outcomes: ['complete'],
     });
     const [inbound, outbound] = result.next.root.connections;
-    // The reviewed rows rename the ports the crossings land on, and the
+    // The reviewed INPUT rows rename the port the crossing lands on, and the
     // severed edges keep their extension fields (the inbound `condition`).
     expect(inbound!.id).toBe('a:done->bounded-loop:entry');
     expect(inbound!.from).toEqual({ node: 'a', port: 'done' });
     expect(inbound!.to).toEqual({ node: 'bounded-loop', port: 'entry' });
     expect(inbound!.condition).toBe('always');
-    expect(outbound!.id).toBe('bounded-loop:complete->f:input');
-    expect(outbound!.from).toEqual({ node: 'bounded-loop', port: 'complete' });
+    // The reviewed OUTCOME rows rename the declaration's rows (and the exit
+    // map keys) but NOT the outgoing port: a BoundedLoop's output port is
+    // its exit-action outcome VALUE (engine contractForNode), so the
+    // crossing lands on the review's exit outcome 'done' regardless of the
+    // row names (canvas-loop-validate-clean-synthesis D4).
+    expect(outbound!.id).toBe('bounded-loop:done->f:input');
+    expect(outbound!.from).toEqual({ node: 'bounded-loop', port: 'done' });
     expect(outbound!.to).toEqual({ node: 'f', port: 'input' });
+    const declaration = result.next.declarations.find((d) => d.id === 'loop-body')!;
+    expect(declaration.outcomes).toEqual(['complete']);
+    expect(result.next.root.nodes[2]!.exits).toEqual({
+      complete: { action: 'exit', outcome: 'done' },
+    });
   });
 
   it('maps the exit to the author-chosen definition outcome, defaulting to def.outcomes[0]', () => {
@@ -1766,18 +1848,18 @@ describe('synthesizeBoundedLoopFromBackedge', () => {
     def.outcomes = ['done', 'failed'];
     const chosen = synthesize(def, { exitOutcome: 'failed' });
     const chosenLoop = chosen.next.root.nodes[2]!;
-    expect(chosenLoop.exits).toEqual({ c: { action: 'exit', outcome: 'failed' } });
+    expect(chosenLoop.exits).toEqual({ done: { action: 'exit', outcome: 'failed' } });
 
     const defaulted = synthesize(def, { exitOutcome: def.outcomes[0]! });
     const defaultedLoop = defaulted.next.root.nodes[2]!;
-    expect(defaultedLoop.exits).toEqual({ c: { action: 'exit', outcome: 'done' } });
+    expect(defaultedLoop.exits).toEqual({ done: { action: 'exit', outcome: 'done' } });
   });
 
   it('keeps the multi-outcome last-exits convention the gesture uses', () => {
     const def = extractionDef();
     // b gains a second severed outgoing edge (to f) so the cut yields two
-    // outgoing points; the reviewed rows keep derivation order (cut keys
-    // follow draft-connection order: c's edge precedes b's).
+    // outgoing points; the author's reviewed rows carry two outcomes (the
+    // derivation itself would offer the single producible 'done').
     def.root.connections.push({
       id: 'e-bf',
       from: { node: 'b', port: 'review' },
@@ -1790,11 +1872,14 @@ describe('synthesizeBoundedLoopFromBackedge', () => {
       c: { action: 'continue' },
       b: { action: 'exit', outcome: 'done' },
     });
-    // Each severed outgoing edge lands on its reviewed port positionally.
+    // EVERY severed outgoing edge lands on the loop's exit outcome — the
+    // engine's loop output port — no longer positionally on the reviewed
+    // rows (deliberate supersession by canvas-loop-validate-clean-synthesis;
+    // the row-positional mapping survives only on the extract path).
     expect(result.next.root.connections.map((connection) => connection.id)).toEqual([
       'a:done->bounded-loop:b',
-      'bounded-loop:c->f:input',
-      'bounded-loop:b->f:review',
+      'bounded-loop:done->f:input',
+      'bounded-loop:done->f:review',
     ]);
   });
 
@@ -1865,7 +1950,7 @@ describe('synthesizeBoundedLoopFromBackedge', () => {
     // The properties panel's patch path still owns the loop.
     const patched = updateBoundedLoopContract(result.next, 'bounded-loop', {
       limits: { maxIterations: 9 },
-      exits: { c: { action: 'exit', outcome: 'done' } },
+      exits: { done: { action: 'exit', outcome: 'done' } },
     });
     const patchedLoop = patched.root.nodes.find((node) => node.id === 'bounded-loop')!;
     if (patchedLoop.kind !== 'BoundedLoop') throw new Error('expected a BoundedLoop');
@@ -1878,9 +1963,224 @@ describe('synthesizeBoundedLoopFromBackedge', () => {
     )!;
     expect(ref.id).toBe('composite-ref');
   });
+
+  // --- Model refusals (canvas-loop-validate-clean-synthesis D4/D1) ---------
+
+  it('refuses a confirm naming an exit outcome the definition does not declare, naming the outcome', () => {
+    // The review's select only offers declared outcomes, so the zero-edit
+    // flow never trips this; the model owns the rule for programmatic
+    // callers (the review is not trusted).
+    expect(() => synthesize(extractionDef(), { exitOutcome: 'shipped' })).toThrow(
+      /Exit outcome 'shipped' is not a declared definition outcome/
+    );
+  });
+
+  it('re-checks the catalog gap at confirm — a body stage whose capability the catalog lacks is refused by name', () => {
+    // The same standalone review->fix cycle the derivation describe uses
+    // (that describe's fixture is local to it).
+    const cycleDef = (): WirePipelineDefinitionV2 => {
+      const stage = (id: string) => ({
+        id,
+        kind: 'AtomicStage' as const,
+        capability: { id: `skill:${id}`, version: `sha256:${id}` },
+      });
+      return {
+        version: 2,
+        id: 'definition:cycle',
+        sourceId: 'fixture:cycle',
+        name: 'cycle',
+        inputs: [],
+        artifacts: [],
+        outcomes: ['done'],
+        declarations: [],
+        root: {
+          nodes: [stage('review'), stage('fix')],
+          connections: [
+            {
+              id: 'e-review-fix',
+              from: { node: 'review', port: 'done' },
+              to: { node: 'fix', port: 'input' },
+            },
+          ],
+        },
+      };
+    };
+    const input = {
+      from: 'fix',
+      to: 'review',
+      id: 'review-cycle',
+      inputs: [{ name: 'review', type: 'ecp/control' }],
+      artifacts: [],
+      outcomes: ['done'],
+      maxIterations: 3,
+      exitOutcome: 'done',
+    };
+    // The catalog covers skill:fix but not skill:review: the region's entry
+    // stage is underivable, so the confirm transaction refuses even though
+    // the review-open refusal list was the surface that was supposed to
+    // catch it (the review is not trusted).
+    const gap = catalogOver([{ id: 'skill:fix', version: 'sha256:fix' }]);
+    expect(() => synthesizeBoundedLoopFromBackedge(cycleDef(), input, gap)).toThrow(
+      /Stage 'review' binds capability 'skill:review' that is not in the catalog, so the loop's exit outcomes cannot be derived/
+    );
+    // A null catalog reports every region stage — without the catalog the
+    // producible outcomes cannot be derived at all.
+    expect(() => synthesizeBoundedLoopFromBackedge(cycleDef(), input, null)).toThrow(
+      /Stage 'review' binds capability 'skill:review'/
+    );
+    expect(() => synthesizeBoundedLoopFromBackedge(cycleDef(), input, null)).toThrow(
+      /Stage 'fix' binds capability 'skill:fix'/
+    );
+  });
 });
 
 // ===== canvas-loop-port-inference: back-edge fallback rows =====
+// (outcome-row derivation and row typing superseded by
+// canvas-loop-validate-clean-synthesis — see each test's supersession note)
+
+describe('bodyTerminalOutcomes (canvas-loop-validate-clean-synthesis D1)', () => {
+  /** One AtomicStage body per spec: capabilities by `skill:<name>`, edges as (from, fromPort, to) triples. */
+  function bodyDef(
+    nodes: Array<{
+      id: string;
+      capability: string;
+      reviewCyclePhase?: 'review' | 'triage' | 'fix' | 're-review';
+      goalCyclePhase?: 'work' | 'judge';
+    }>,
+    edges: Array<[string, string, string]>
+  ): WirePipelineDefinitionV2 {
+    return {
+      version: 2,
+      id: 'definition:body',
+      sourceId: 'fixture:body',
+      name: 'body',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [],
+      root: {
+        nodes: nodes.map((node) => ({
+          id: node.id,
+          kind: 'AtomicStage' as const,
+          capability: {
+            id: `skill:${node.capability}`,
+            version: `sha256:${node.capability}`,
+          },
+          ...(node.reviewCyclePhase ? { reviewCyclePhase: node.reviewCyclePhase } : {}),
+          ...(node.goalCyclePhase ? { goalCyclePhase: node.goalCyclePhase } : {}),
+        })),
+        connections: edges.map(([from, port, to], index) => ({
+          id: `e-${index}`,
+          from: { node: from, port },
+          to: { node: to, port: 'input' },
+        })),
+      },
+    };
+  }
+
+  it('excludes an outcome an internal connection consumes, keeping the rest in body-node order', () => {
+    const def = bodyDef(
+      [
+        { id: 'prod', capability: 'prod' },
+        { id: 'cons', capability: 'cons' },
+      ],
+      [['prod', 'alpha', 'cons']]
+    );
+    const catalog = catalogOver([
+      { id: 'skill:prod', version: 'sha256:prod', outcomes: ['alpha', 'beta'] },
+      { id: 'skill:cons', version: 'sha256:cons', outcomes: ['gamma'] },
+    ]);
+    const region = new Set(['prod', 'cons']);
+    // 'alpha' is consumed by the internal edge; 'beta' and 'gamma' are the
+    // body's producible terminal outcomes (mirroring the engine's
+    // resolveGraphTerminalOutcomes over the same body).
+    expect(bodyTerminalOutcomes(def, region, catalog)).toEqual(['beta', 'gamma']);
+  });
+
+  it('unions every sink the body reaches — a two-sink body keeps both, deduplicated in body-node order', () => {
+    const catalog = catalogOver([
+      { id: 'skill:fan', version: 'sha256:fan', outcomes: ['go'] },
+      { id: 'skill:left', version: 'sha256:left', outcomes: ['done'] },
+      { id: 'skill:right', version: 'sha256:right', outcomes: ['final'] },
+    ]);
+    const def = bodyDef(
+      [
+        { id: 'fan', capability: 'fan' },
+        { id: 'left', capability: 'left' },
+        { id: 'right', capability: 'right' },
+      ],
+      [
+        ['fan', 'go', 'left'],
+        ['fan', 'go', 'right'],
+      ]
+    );
+    const region = new Set(['fan', 'left', 'right']);
+    // fan's outcome is consumed twice over; BOTH sinks are terminal.
+    expect(bodyTerminalOutcomes(def, region, catalog)).toEqual(['done', 'final']);
+
+    // Duplicate names deduplicate keeping the FIRST occurrence in body-node
+    // order (the engine keys its outcome map the same way).
+    const dedupCatalog = catalogOver([
+      { id: 'skill:fan', version: 'sha256:fan', outcomes: ['go'] },
+      { id: 'skill:left', version: 'sha256:left', outcomes: ['done'] },
+      { id: 'skill:right', version: 'sha256:right', outcomes: ['done'] },
+    ]);
+    expect(bodyTerminalOutcomes(def, region, dedupCatalog)).toEqual(['done']);
+  });
+
+  it('projects a phase-tagged stage to the engine loop-phase outcome names, replacing the capability outcomes', () => {
+    // The engine REPLACES a phase-tagged stage's outcomes wholesale
+    // (loopPhaseOutcomeNames, definition.ts) — the mirror must agree name
+    // for name or the derived rows are unproducible.
+    const cases: Array<
+      [
+        'review' | 'triage' | 'fix' | 're-review' | 'work' | 'judge',
+        string[],
+        { reviewCyclePhase?: 'review' | 'triage' | 'fix' | 're-review'; goalCyclePhase?: 'work' | 'judge' },
+      ]
+    > = [
+      ['review', ['findings'], { reviewCyclePhase: 'review' }],
+      ['triage', ['ready'], { reviewCyclePhase: 'triage' }],
+      ['fix', ['fixed'], { reviewCyclePhase: 'fix' }],
+      ['re-review', ['clean', 'needs_fix'], { reviewCyclePhase: 're-review' }],
+      ['work', ['ready'], { goalCyclePhase: 'work' }],
+      ['judge', ['clean', 'needs_fix'], { goalCyclePhase: 'judge' }],
+    ];
+    const catalog = catalogOver([
+      { id: 'skill:plain', version: 'sha256:plain', outcomes: ['done'] },
+    ]);
+    for (const [phase, expected, tag] of cases) {
+      const def = bodyDef([{ id: 'solo', capability: 'plain', ...tag }], []);
+      expect(
+        bodyTerminalOutcomes(def, new Set(['solo']), catalog),
+        phase
+      ).toEqual(expected);
+    }
+  });
+
+  it('reports catalog-missing capabilities through the probe — the derivation skips them instead of guessing', () => {
+    const catalog = catalogOver([
+      { id: 'skill:present', version: 'sha256:present', outcomes: ['done'] },
+    ]);
+    const def = bodyDef(
+      [
+        { id: 'ghost', capability: 'ghost' },
+        { id: 'present', capability: 'present' },
+      ],
+      []
+    );
+    const region = new Set(['ghost', 'present']);
+    // ghost contributes nothing (no derivation is possible without the
+    // capability descriptor) — never a guessed 'done'.
+    expect(bodyTerminalOutcomes(def, region, catalog)).toEqual(['done']);
+    expect(underivableBodyStages(def, region, catalog)).toEqual(['ghost']);
+    expect(underivableBodyStageRefusals(def, region, catalog)).toEqual([
+      "Stage 'ghost' binds capability 'skill:ghost' that is not in the catalog, so the loop's exit outcomes cannot be derived.",
+    ]);
+    // A null catalog reports every region stage.
+    expect(underivableBodyStages(def, region, null)).toEqual(['ghost', 'present']);
+  });
+});
 
 describe('deriveBackedgeLoopContract', () => {
   /**
@@ -1923,8 +2223,9 @@ describe('deriveBackedgeLoopContract', () => {
     };
   }
 
-  it('derives the entry input and exit outcome from the back-edge for a standalone cycle', () => {
+  it('derives the entry input from the back-edge and the outcome rows from the body for a standalone cycle', () => {
     const def = standaloneCycleDef();
+    const catalog = standaloneCycleCatalog();
     expect(wouldCreateCycle(def, 'fix', 'review')).toBe(true);
     const region = backedgeRegion(def, 'fix', 'review');
     expect([...region]).toEqual(['review', 'fix']);
@@ -1934,47 +2235,66 @@ describe('deriveBackedgeLoopContract', () => {
       artifacts: [],
       outcomes: ['done'],
     });
-    // The composed contract: entry named for the back-edge's target (the
-    // body's unique root), exit outcome for its source (the unique sink).
-    expect(deriveBackedgeLoopContract(def, region, 'fix', 'review')).toEqual({
-      inputs: [{ name: 'review', type: 'input' }],
+    // The composed contract: the entry named for the back-edge's target
+    // (the body's unique root) typed ecp/control, and the outcome rows
+    // naming the body's producible terminal outcomes — the internal
+    // review->fix edge consumes review's 'done', so 'fix' alone produces
+    // its terminal 'done'. DELIBERATE SUPERSESSION by
+    // canvas-loop-validate-clean-synthesis: child-1 derived the outcome row
+    // from the back-edge source ('fix' — unproducible, engine-red by the
+    // exact-cover rule); the producible name is the only validating choice.
+    expect(deriveBackedgeLoopContract(def, region, 'review', catalog)).toEqual({
+      inputs: [{ name: 'review', type: 'ecp/control' }],
       artifacts: [],
-      outcomes: ['fix'],
+      outcomes: ['done'],
     });
   });
 
-  it('synthesizes the standalone cycle into a connectable loop — inputs exactly [{ name: <to>, type: "input" }], outcomes exactly [<from>]', () => {
+  it('synthesizes the standalone cycle into a connectable loop with zero contract repair (task 4.2 shape)', () => {
     const def = standaloneCycleDef();
     // The unedited confirm: the review opens with the derived rows and the
     // author confirms them as-is (the panel submits its opening defaults).
     const derived = deriveBackedgeLoopContract(
       def,
       backedgeRegion(def, 'fix', 'review'),
-      'fix',
-      'review'
+      'review',
+      standaloneCycleCatalog()
     );
-    const result = synthesizeBoundedLoopFromBackedge(def, {
-      from: 'fix',
-      to: 'review',
-      id: 'review-cycle',
-      inputs: derived.inputs,
-      artifacts: derived.artifacts,
-      outcomes: derived.outcomes,
-      maxIterations: 3,
-      exitOutcome: 'done',
-    });
+    const result = synthesizeBoundedLoopFromBackedge(
+      def,
+      {
+        from: 'fix',
+        to: 'review',
+        id: 'review-cycle',
+        inputs: derived.inputs,
+        artifacts: derived.artifacts,
+        outcomes: derived.outcomes,
+        maxIterations: 3,
+        exitOutcome: 'done',
+      },
+      standaloneCycleCatalog()
+    );
 
     const declaration = result.next.declarations.find((d) => d.id === 'review-cycle')!;
-    expect(declaration.inputs).toEqual([{ name: 'review', type: 'input' }]);
-    expect(declaration.outcomes).toEqual(['fix']);
+    expect(declaration.inputs).toEqual([{ name: 'review', type: 'ecp/control' }]);
+    expect(declaration.outcomes).toEqual(['done']);
     expect(declaration.graph.nodes.map((node) => node.id)).toEqual(['review', 'fix']);
 
     const loop = result.next.root.nodes.find((node) => node.kind === 'BoundedLoop')!;
     if (loop.kind !== 'BoundedLoop') throw new Error('expected a BoundedLoop');
     expect(loop.id).toBe('bounded-loop');
-    // The single fallback outcome carries the exit onto the author's
-    // definition outcome (the last-outcome-exits convention).
-    expect(loop.exits).toEqual({ fix: { action: 'exit', outcome: 'done' } });
+    // The exits cover every outcome row, the last carrying the exit onto
+    // the author's definition outcome.
+    expect(loop.exits).toEqual({ done: { action: 'exit', outcome: 'done' } });
+    // Declare-on-synthesis: the definition contract gained the default
+    // lifecycle's exit outcome without any author edit.
+    expect(result.next.outcomes).toEqual(['done', 'iteration-limit']);
+    for (const node of [
+      ...result.next.root.nodes,
+      ...result.next.declarations.flatMap((d) => d.graph.nodes),
+    ]) {
+      expect(node).not.toHaveProperty('legacyRuntimeOwner');
+    }
 
     // Standalone means no crossings: the root holds only the loop.
     expect(result.next.root.nodes.map((node) => node.id)).toEqual(['bounded-loop']);
@@ -1983,42 +2303,50 @@ describe('deriveBackedgeLoopContract', () => {
 
   it('names both fallback rows for the single stage of a self-loop draw', () => {
     const def = standaloneCycleDef();
+    const catalog = standaloneCycleCatalog();
     // Drop the forward edge so fix is a lone stage drawn back onto itself.
     def.root.connections = [];
     def.root.nodes = def.root.nodes.filter((node) => node.id === 'fix');
     expect(wouldCreateCycle(def, 'fix', 'fix')).toBe(true);
     const region = backedgeRegion(def, 'fix', 'fix');
     expect([...region]).toEqual(['fix']);
-    // Separate namespaces (input ports vs outcomes): both rows may name the
-    // one stage — it is the body's root and sink of itself.
-    expect(deriveBackedgeLoopContract(def, region, 'fix', 'fix')).toEqual({
-      inputs: [{ name: 'fix', type: 'input' }],
+    // Separate namespaces: the entry names the one stage (its own root),
+    // the outcome rows name what that stage produces ('done' — the
+    // stage-id name 'fix' was never producible; superseded by
+    // canvas-loop-validate-clean-synthesis).
+    expect(deriveBackedgeLoopContract(def, region, 'fix', catalog)).toEqual({
+      inputs: [{ name: 'fix', type: 'ecp/control' }],
       artifacts: [],
-      outcomes: ['fix'],
+      outcomes: ['done'],
     });
 
-    const result = synthesizeBoundedLoopFromBackedge(def, {
-      from: 'fix',
-      to: 'fix',
-      id: 'self-loop',
-      inputs: [{ name: 'fix', type: 'input' }],
-      artifacts: [],
-      outcomes: ['fix'],
-      maxIterations: 2,
-      exitOutcome: 'done',
-    });
+    const result = synthesizeBoundedLoopFromBackedge(
+      def,
+      {
+        from: 'fix',
+        to: 'fix',
+        id: 'self-loop',
+        inputs: [{ name: 'fix', type: 'ecp/control' }],
+        artifacts: [],
+        outcomes: ['done'],
+        maxIterations: 2,
+        exitOutcome: 'done',
+      },
+      catalog
+    );
     const declaration = result.next.declarations.find((d) => d.id === 'self-loop')!;
     // The body graph is the one node with no connections.
     expect(declaration.graph.nodes.map((node) => node.id)).toEqual(['fix']);
     expect(declaration.graph.connections).toEqual([]);
     const loop = result.next.root.nodes.find((node) => node.kind === 'BoundedLoop')!;
     if (loop.kind !== 'BoundedLoop') throw new Error('expected a BoundedLoop');
-    expect(loop.exits).toEqual({ fix: { action: 'exit', outcome: 'done' } });
+    expect(loop.exits).toEqual({ done: { action: 'exit', outcome: 'done' } });
+    expect(result.next.outcomes).toEqual(['done', 'iteration-limit']);
   });
 
-  it('mixed sides take their own rule: incoming severed keeps its rows, empty outgoing falls back', () => {
-    // a -> b -> c with the back-edge c -> b over {b, c}: the a -> b edge is
-    // severed; nothing leaves c, so the outcome side would be empty.
+  it('mixed sides take their own rule: incoming severed keeps its names, empty outgoing derives from the body', () => {
+    // a -> review -> fix with the back-edge fix -> review over
+    // {review, fix}: the a -> review edge is severed; nothing leaves fix.
     const def = standaloneCycleDef();
     def.root.nodes.unshift({
       id: 'a',
@@ -2035,22 +2363,25 @@ describe('deriveBackedgeLoopContract', () => {
       from: { node: 'a', port: 'done' },
       to: { node: 'review', port: 'input' },
     });
+    const catalog = standaloneCycleCatalog();
     const region = backedgeRegion(def, 'fix', 'review');
     expect(deriveSubgraphContract(def, region)).toEqual({
       inputs: [{ name: 'review', type: 'input' }],
       artifacts: [],
       outcomes: ['done'],
     });
-    expect(deriveBackedgeLoopContract(def, region, 'fix', 'review')).toEqual({
-      // The severed side passes through VERBATIM...
-      inputs: [{ name: 'review', type: 'input' }],
+    expect(deriveBackedgeLoopContract(def, region, 'review', catalog)).toEqual({
+      // The severed side keeps its NAME (boundary convention intact) and
+      // gains the control type (supersession: round one typed it 'input')...
+      inputs: [{ name: 'review', type: 'ecp/control' }],
       artifacts: [],
-      // ...the empty side falls back to the back-edge source.
-      outcomes: ['fix'],
+      // ...while the outcome rows ALWAYS derive from the body's producible
+      // terminal outcomes, whichever side severed.
+      outcomes: ['done'],
     });
   });
 
-  it('mixed sides take their own rule: outgoing severed keeps its rows, empty incoming falls back', () => {
+  it('mixed sides take their own rule: outgoing severed keeps its crossings, empty incoming falls back', () => {
     // review -> fix -> finish with the back-edge fix -> review over
     // {review, fix}: the fix -> finish edge is severed; nothing enters
     // review, so the input side would be empty.
@@ -2061,65 +2392,102 @@ describe('deriveBackedgeLoopContract', () => {
       from: { node: 'fix', port: 'done' },
       to: { node: 'finish', port: 'input' },
     });
+    const catalog = standaloneCycleCatalog();
     const region = backedgeRegion(def, 'fix', 'review');
     expect(deriveSubgraphContract(def, region)).toEqual({
       inputs: [],
       artifacts: [],
       outcomes: ['fix'],
     });
-    expect(deriveBackedgeLoopContract(def, region, 'fix', 'review')).toEqual({
+    expect(deriveBackedgeLoopContract(def, region, 'review', catalog)).toEqual({
       // The empty side falls back to the back-edge target...
-      inputs: [{ name: 'review', type: 'input' }],
+      inputs: [{ name: 'review', type: 'ecp/control' }],
       artifacts: [],
-      // ...the severed side passes through VERBATIM.
-      outcomes: ['fix'],
+      // ...the outcome rows always derive from the body (the base's
+      // severed row 'fix' was unproducible — superseded).
+      outcomes: ['done'],
     });
 
     // The synthesized loop keeps BOTH rules at once: the severed outgoing
-    // edge rewires onto its derived port positionally while the loop offers
-    // the fallback entry handle.
-    const result = synthesizeBoundedLoopFromBackedge(def, {
-      from: 'fix',
-      to: 'review',
-      id: 'review-cycle',
-      inputs: [{ name: 'review', type: 'input' }],
-      artifacts: [],
-      outcomes: ['fix'],
-      maxIterations: 3,
-      exitOutcome: 'done',
-    });
+    // edge rewires onto the loop's EXIT OUTCOME (the engine's loop output
+    // port — supersession: it used to land on the severed row name 'fix')
+    // while the loop offers the fallback entry handle.
+    const result = synthesizeBoundedLoopFromBackedge(
+      def,
+      {
+        from: 'fix',
+        to: 'review',
+        id: 'review-cycle',
+        inputs: [{ name: 'review', type: 'ecp/control' }],
+        artifacts: [],
+        outcomes: ['done'],
+        maxIterations: 3,
+        exitOutcome: 'done',
+      },
+      catalog
+    );
     expect(result.next.root.nodes.map((node) => node.id)).toEqual([
       'finish',
       'bounded-loop',
     ]);
     expect(result.next.root.connections.map((connection) => connection.id)).toEqual([
-      'bounded-loop:fix->finish:input',
+      'bounded-loop:done->finish:input',
     ]);
   });
 
-  it('deep-equals deriveSubgraphContract for the externals-first shape — the round-one results unchanged', () => {
+  it('externals-first shape: the deliberate supersession inventory (was a deep-equal pin of deriveSubgraphContract)', () => {
     // The round-one acceptance region: extractionDef's {b, c} between the
-    // externals a and f severs both sides, so the fallback never fires.
+    // externals a and f severs both sides. canvas-loop-validate-clean-
+    // synthesis DELIBERATELY changed three shapes here (design D5): input
+    // row TYPES ('input' -> 'ecp/control'), outcome row NAMES (stage ids ->
+    // producible terminal outcomes), and the outgoing rewire's source port
+    // (row name -> the exit outcome; pinned in the synthesis tests above).
+    // The old pin asserted byte-equality with `deriveSubgraphContract` —
+    // it was pinning engine-red output.
     const region = new Set(['b', 'c']);
     const def = extractionDef();
-    expect(deriveBackedgeLoopContract(def, region, 'c', 'b')).toEqual(
-      deriveSubgraphContract(def, region)
-    );
+    expect(deriveBackedgeLoopContract(def, region, 'b', extractionCatalog())).toEqual({
+      // UNCHANGED: the severed input row's NAME and derivation order.
+      inputs: [{ name: 'b', type: 'ecp/control' }],
+      artifacts: [],
+      // CHANGED on purpose: the b->c edge consumes b's 'done', so 'c' alone
+      // produces the terminal 'done' — the body's producible set.
+      outcomes: ['done'],
+    });
+    // What STAYS identical for the externals-first path: the base cut, the
+    // refusals, and the extract path end-to-end (deriveSubgraphContract
+    // itself is byte-identical — pinned by its own describe above).
+    expect(deriveSubgraphContract(def, region)).toEqual({
+      inputs: [{ name: 'b', type: 'input' }],
+      artifacts: [],
+      outcomes: ['c'],
+    });
+    expect(
+      subgraphExtractionRefusals(def, {
+        nodeIds: region,
+        connectionIds: new Set<string>(),
+      })
+    ).toEqual([]);
   });
 
   it('honors author-renamed fallback rows over the derivation on confirm', () => {
     // The review's rows are editable defaults; the confirm transaction
-    // writes the AUTHOR's rows, not the derivation's.
-    const result = synthesizeBoundedLoopFromBackedge(standaloneCycleDef(), {
-      from: 'fix',
-      to: 'review',
-      id: 'review-cycle',
-      inputs: [{ name: 'entry', type: 'input' }],
-      artifacts: [],
-      outcomes: ['repeat'],
-      maxIterations: 5,
-      exitOutcome: 'done',
-    });
+    // writes the AUTHOR's rows, not the derivation's (an author may still
+    // mint a red contract — Validate stays the authority).
+    const result = synthesizeBoundedLoopFromBackedge(
+      standaloneCycleDef(),
+      {
+        from: 'fix',
+        to: 'review',
+        id: 'review-cycle',
+        inputs: [{ name: 'entry', type: 'input' }],
+        artifacts: [],
+        outcomes: ['repeat'],
+        maxIterations: 5,
+        exitOutcome: 'done',
+      },
+      standaloneCycleCatalog()
+    );
     const declaration = result.next.declarations.find((d) => d.id === 'review-cycle')!;
     expect(declaration.inputs).toEqual([{ name: 'entry', type: 'input' }]);
     expect(declaration.outcomes).toEqual(['repeat']);
@@ -2127,6 +2495,89 @@ describe('deriveBackedgeLoopContract', () => {
     if (loop.kind !== 'BoundedLoop') throw new Error('expected a BoundedLoop');
     // The exit map follows the authored rows: 'repeat' exits to 'done'.
     expect(loop.exits).toEqual({ repeat: { action: 'exit', outcome: 'done' } });
+    // Declare-on-synthesis still ran: the lifecycle exit outcome is
+    // declared even when the author renamed the rows.
+    expect(result.next.outcomes).toEqual(['done', 'iteration-limit']);
+  });
+});
+
+describe('addBoundedLoopOverDeclaration — declare-on-synthesis (canvas-loop-validate-clean-synthesis D3)', () => {
+  /** A palette-gesture body: one declaration holding review -> fix. */
+  function paletteLoopDef(outcomes: string[]): WirePipelineDefinitionV2 {
+    const stage = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: `skill:${id}`, version: `sha256:${id}` },
+    });
+    return {
+      version: 2,
+      id: 'definition:palette',
+      sourceId: 'fixture:palette',
+      name: 'palette',
+      inputs: [],
+      artifacts: [],
+      outcomes,
+      declarations: [
+        {
+          id: 'block',
+          kind: 'Composite' as const,
+          provenance: 'custom' as const,
+          inputs: [{ name: 'review', type: 'ecp/control' }],
+          artifacts: [],
+          outcomes: ['done'],
+          graph: {
+            nodes: [stage('review'), stage('fix')],
+            connections: [
+              {
+                id: 'e-review-fix',
+                from: { node: 'review', port: 'done' },
+                to: { node: 'fix', port: 'input' },
+              },
+            ],
+          },
+        },
+      ],
+      root: { nodes: [], connections: [] },
+    };
+  }
+
+  it('the default lifecycle exit values are exactly iteration-limit (the review notice and the declarations share one source)', () => {
+    expect(defaultBoundedLoopExitOutcomeValues()).toEqual(['iteration-limit']);
+  });
+
+  it('declares the lifecycle exit outcome when absent, leaving the loop in the gesture shape', () => {
+    const result = addBoundedLoopOverDeclaration(paletteLoopDef(['done']));
+    expect(result.outcomes).toEqual(['done', 'iteration-limit']);
+    const loop = result.root.nodes.find((node) => node.kind === 'BoundedLoop')!;
+    if (loop.kind !== 'BoundedLoop') throw new Error('expected a BoundedLoop');
+    expect(loop.body).toBe('block');
+    expect(loop.lifecycle).toEqual(createDefaultBoundedLoopLifecycle());
+    expect(loop.exits).toEqual({ done: { action: 'exit', outcome: 'done' } });
+  });
+
+  it('declares the exit VALUE too when the definition declared no outcomes', () => {
+    // The gesture's exit pick falls back to 'done' when the definition
+    // declares nothing; the synthesis transaction declares both that value
+    // and the lifecycle outcome.
+    const result = addBoundedLoopOverDeclaration(paletteLoopDef([]));
+    expect(result.outcomes).toEqual(['done', 'iteration-limit']);
+    const loop = result.root.nodes.find((node) => node.kind === 'BoundedLoop')!;
+    if (loop.kind !== 'BoundedLoop') throw new Error('expected a BoundedLoop');
+    expect(loop.exits).toEqual({ done: { action: 'exit', outcome: 'done' } });
+  });
+
+  it('leaves an already-declaring definition unchanged', () => {
+    const result = addBoundedLoopOverDeclaration(
+      paletteLoopDef(['done', 'iteration-limit'])
+    );
+    expect(result.outcomes).toEqual(['done', 'iteration-limit']);
+    // The helper itself is idempotent over an already-declaring contract:
+    // re-running it on the same loop changes nothing.
+    const loop = result.root.nodes.find((node) => node.kind === 'BoundedLoop')!;
+    if (loop.kind !== 'BoundedLoop') throw new Error('expected a BoundedLoop');
+    expect(
+      ensureLoopExitOutcomesDeclared(paletteLoopDef(['done', 'iteration-limit']), loop)
+    ).toEqual(paletteLoopDef(['done', 'iteration-limit']));
   });
 });
 

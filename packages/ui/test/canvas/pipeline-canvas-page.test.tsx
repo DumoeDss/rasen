@@ -154,6 +154,11 @@ vi.mock('@xyflow/react', async () => {
     const authoredRoute = [
       ['composite-ref', 'body-report', 'bounded-loop', 'brief'],
       ['bounded-loop', 'done', 'fan-out', 'input'],
+      // The loop's exit-outcome handle onto a Finish (canvas-loop-validate-
+      // clean-synthesis task 5.1: the loop-onward half of the zero-edit
+      // acceptance — the handle is the declaration's 'done' outcome row,
+      // which the synthesized loop also emits as its exit value).
+      ['bounded-loop', 'done', 'finish', 'input'],
       ['fan-out', 'atomic-stage', 'atomic-stage', 'input'],
       ['atomic-stage', 'done', 'join', 'atomic-stage'],
       ['join', 'done', 'finish', 'input'],
@@ -6183,9 +6188,28 @@ describe('PipelineCanvasPage — back-edge loop inference', () => {
       (review!.querySelector('[data-testid="v2-loop-review-input-name"]') as HTMLInputElement)
         .value
     ).toBe('work-b');
+    // DELIBERATE SUPERSESSION (canvas-loop-validate-clean-synthesis): the
+    // outcome rows now name the body's producible terminal outcomes ('done'
+    // — the chain consumes work-b's and work-c's, work-d alone produces the
+    // terminal one), not the severed stage id ('work-d' — unproducible by
+    // the engine's exact-cover rule).
     expect(
       (review!.querySelector('[data-testid="v2-loop-review-outcomes"]') as HTMLInputElement).value
-    ).toBe('work-d');
+    ).toBe('done');
+    // The entry row carries the engine's control type (was 'input' — the
+    // port name typed as a type, engine-red on any connection).
+    expect(
+      (
+        review!.querySelector(
+          '[data-testid="v2-loop-review-input-type"][data-port-index="0"]'
+        ) as HTMLInputElement
+      ).value
+    ).toBe('ecp/control');
+    // The declare-notice line: confirming will declare the default
+    // lifecycle's exit outcome (the definition declares only 'done').
+    expect(
+      review!.querySelector('[data-testid="v2-loop-review-declares"]')!.textContent
+    ).toContain('iteration-limit');
 
     // The draw-time refusal toast stands, and NOTHING was added: the
     // submitted definition still carries the untouched chain.
@@ -6271,8 +6295,13 @@ describe('PipelineCanvasPage — back-edge loop inference', () => {
       )
     ).toBe(false);
     expect(submitted.root.connections.map((connection) => connection.id)).toEqual([
+      // Incoming crossing: positional rewire onto the derived entry row's
+      // NAME (unchanged from round one), now control-typed.
       'upstream:done->bounded-loop:work-b',
-      'bounded-loop:work-d->finish:input',
+      // Outgoing crossing: onto the loop's EXIT OUTCOME (was the severed
+      // row name 'work-d' — deliberate supersession, the engine reads a
+      // BoundedLoop's output ports from its exit mappings).
+      'bounded-loop:done->finish:input',
     ]);
     expect(
       submitted.root.connections.find(
@@ -6282,8 +6311,8 @@ describe('PipelineCanvasPage — back-edge loop inference', () => {
 
     const declaration = submitted.declarations.find((d) => d.id === 'loop-body')!;
     expect(declaration.provenance).toBe('custom');
-    expect(declaration.inputs).toEqual([{ name: 'work-b', type: 'input' }]);
-    expect(declaration.outcomes).toEqual(['work-d']);
+    expect(declaration.inputs).toEqual([{ name: 'work-b', type: 'ecp/control' }]);
+    expect(declaration.outcomes).toEqual(['done']);
     expect(declaration.graph.nodes.map((node) => node.id)).toEqual(['work-b', 'work-c', 'work-d']);
     expect(declaration.graph.nodes[0]).toHaveProperty('execution.retainedExecutionNote', 'keep work-b');
 
@@ -6291,7 +6320,10 @@ describe('PipelineCanvasPage — back-edge loop inference', () => {
     expect(loop.kind).toBe('BoundedLoop');
     expect(loop.body).toBe('loop-body');
     expect(loop.limits).toEqual({ maxIterations: 3, maxActions: 12, budget: 12 });
-    expect(loop.exits).toEqual({ 'work-d': { action: 'exit', outcome: 'done' } });
+    expect(loop.exits).toEqual({ done: { action: 'exit', outcome: 'done' } });
+    // Declare-on-synthesis: the definition contract gained the default
+    // lifecycle's exit outcome with zero author edits.
+    expect(submitted.outcomes).toEqual(['done', 'iteration-limit']);
 
     const everyNode = [
       ...submitted.root.nodes,
@@ -6314,7 +6346,7 @@ describe('PipelineCanvasPage — back-edge loop inference', () => {
 
     const submitted = await submittedDefinition();
     const loop = submitted.root.nodes[2] as WireBoundedLoopNode;
-    expect(loop.exits).toEqual({ 'work-d': { action: 'exit', outcome: 'archived' } });
+    expect(loop.exits).toEqual({ done: { action: 'exit', outcome: 'archived' } });
   });
 
   it('an invalid iteration bound blocks confirm under the authoring-draft-errors discipline', async () => {
@@ -6486,8 +6518,9 @@ describe('PipelineCanvasPage — back-edge loop inference', () => {
       to: 'work-b',
       regionNodeIds: ['work-b', 'work-c', 'work-d'],
       defaultId: 'loop-body',
-      derived: { inputs: [], artifacts: [], outcomes: ['work-d'] },
+      derived: { inputs: [], artifacts: [], outcomes: ['done'] },
       defaultMaxIterations: 3,
+      lifecycleExitOutcomes: ['iteration-limit'],
       refusals: [],
       integerDraftError: null,
       onIntegerDraftError: vi.fn(),
@@ -6610,7 +6643,7 @@ describe('PipelineCanvasPage — back-edge loop inference', () => {
     } as PipelineDetailResponse;
   }
 
-  it('cycle-first on a near-empty canvas: fallback rows in the review, both handles on the loop, externals connect after, Validate clean', async () => {
+  it('cycle-first on a near-empty canvas: zero-edit acceptance — engine-clean defaults, both handles, externals both sides, Validate clean', async () => {
     await mountBackedgeEdit(standaloneCycleDetail());
 
     // The refused cycle-closing draw fix -> review opens the loop review.
@@ -6619,20 +6652,36 @@ describe('PipelineCanvasPage — back-edge loop inference', () => {
     );
     const review = container.querySelector('[data-testid="v2-loop-review-panel"]');
     expect(review).not.toBeNull();
-    // The review opens on the FALLBACK rows: the entry named for the
-    // back-edge's target, the exit outcome for its source — where the
-    // round-one review opened with no input row and generic 'done'.
+    // The review opens on the derived rows: the entry named for the
+    // back-edge's target (child-1's fallback naming, kept) and TYPED
+    // ecp/control (canvas-loop-validate-clean-synthesis), the outcome rows
+    // naming the body's producible terminal outcomes ('done' — the internal
+    // review->fix edge consumes review's, fix alone produces the terminal
+    // one; DELIBERATE SUPERSESSION of child-1's 'fix' row, which was
+    // unproducible by the engine's exact-cover rule).
     expect(
       (review!.querySelector('[data-testid="v2-loop-review-input-name"]') as HTMLInputElement)
         .value
     ).toBe('review');
     expect(
+      (
+        review!.querySelector(
+          '[data-testid="v2-loop-review-input-type"][data-port-index="0"]'
+        ) as HTMLInputElement
+      ).value
+    ).toBe('ecp/control');
+    expect(
       (review!.querySelector('[data-testid="v2-loop-review-outcomes"]') as HTMLInputElement)
         .value
-    ).toBe('fix');
+    ).toBe('done');
+    // The declare-notice names what confirming will declare: only the
+    // lifecycle's exit outcome ('done' is already declared here).
+    expect(
+      review!.querySelector('[data-testid="v2-loop-review-declares"]')!.textContent
+    ).toContain('iteration-limit');
 
     // Confirm synthesizes the loop over {review, fix} with the unedited
-    // defaults; the loop is the selection.
+    // defaults — ZERO contract edits anywhere; the loop is the selection.
     await clickAndFlush(container.querySelector('[data-testid="v2-loop-review-confirm"]'));
     expect(container.querySelector('[data-testid="v2-loop-review-panel"]')).toBeNull();
 
@@ -6644,31 +6693,49 @@ describe('PipelineCanvasPage — back-edge loop inference', () => {
     );
     expect(loopNode).not.toBeNull();
     expect(JSON.parse(loopNode!.getAttribute('data-input-ports')!)).toEqual([
-      { id: 'review', type: 'input' },
+      { id: 'review', type: 'ecp/control' },
     ]);
     expect(JSON.parse(loopNode!.getAttribute('data-output-ports')!)).toEqual([
-      { id: 'fix', type: 'outcome/fix' },
+      { id: 'done', type: 'outcome/done' },
     ]);
 
     // The external stage's connection onto the entry handle lands on the
     // entry port (nothing was connectable before this change).
     await clickAndFlush(container.querySelector('[data-testid="mock-connect-loop-entry"]'));
+    // And the loop onward: a Finish from the palette gesture, then the
+    // loop's exit-outcome handle onto it (the zero-edit flow's second half).
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-finish"]')
+    );
+    await clickAndFlush(
+      container.querySelector(
+        '[data-testid="mock-connect-authored-route-bounded-loop-done-finish-input"]'
+      )
+    );
 
     // Validate: the posted definition is the wired graph and the page
-    // reports the clean result.
+    // reports the clean result. (The badge runs against the standard mocked
+    // validate response — this file's idiom; the REAL engine verdict over
+    // this exact synthesized shape is pinned in
+    // test/core/pipeline-registry/canvas-loop-synthesis-engine-clean.test.ts.)
     const submitted = await submittedDefinition();
     expect(submitted.root.nodes.map((node) => node.id)).toEqual([
       'external',
       'bounded-loop',
+      'finish',
     ]);
     expect(submitted.root.connections.map((connection) => connection.id)).toEqual([
       'external:done->bounded-loop:review',
+      'bounded-loop:done->finish:input',
     ]);
     const declaration = submitted.declarations.find((d) => d.id === 'loop-body')!;
-    expect(declaration.inputs).toEqual([{ name: 'review', type: 'input' }]);
-    expect(declaration.outcomes).toEqual(['fix']);
+    expect(declaration.inputs).toEqual([{ name: 'review', type: 'ecp/control' }]);
+    expect(declaration.outcomes).toEqual(['done']);
     const loop = submitted.root.nodes[1] as WireBoundedLoopNode;
-    expect(loop.exits).toEqual({ fix: { action: 'exit', outcome: 'done' } });
+    expect(loop.exits).toEqual({ done: { action: 'exit', outcome: 'done' } });
+    // Declare-on-synthesis ran inside the confirm: the definition contract
+    // carries the lifecycle's exit outcome without any author edit.
+    expect(submitted.outcomes).toEqual(['done', 'iteration-limit']);
     expect(
       container.querySelector('[data-testid="pipeline-canvas-validation-result"]')!
         .textContent
