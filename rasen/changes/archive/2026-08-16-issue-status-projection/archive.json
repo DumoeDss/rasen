@@ -1,0 +1,48 @@
+{
+  "change": "issue-status-projection",
+  "archivedAt": "2026-08-16T22:23:22.690Z",
+  "codeCommit": "e16fb06f3693328903a046348b51631f53f69d59",
+  "planningBranch": "feat/issue-layer",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/dogfood-receipt-1-planning.md",
+      "sha256": "2b0991df583f0b95ddb1935e8e51ef7b66f7346fd0288a527b53975df9ab867a"
+    },
+    {
+      "path": "evidence/dogfood-receipt-2-active.md",
+      "sha256": "2131849fd8512f2f6b605e9e3f8b6de549f48ab233f2eefb47f6b322685f89ac"
+    },
+    {
+      "path": "evidence/dogfood-receipt-3-verify.md",
+      "sha256": "a1bcab9152ba95878092322e12cdf2a8f3c8b8c0a804a7110e11ff696f019a57"
+    },
+    {
+      "path": "evidence/fix-round-1.md",
+      "sha256": "60161bb28f0e6b6508f7aea7c72bc21c069eedcbdd1a2f5f9abb692aecdf86f7"
+    },
+    {
+      "path": "evidence/handoff/implementer-1.md",
+      "sha256": "ad3307938a2e05388da60a86fd4f60bc11b6589254e7397630bfd4d38e70b980"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "a3c66f665f9d65c991779e4f21bc39eb1a37967450f3494e67dec29375a83d79"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "a26fade9ca5ed5a579162d290ce292251c4a3c429e344859ecdb9a1dd07db9d4"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [
+    {
+      "file": "handoff/implementer-1.md",
+      "outcome": "preserved"
+    }
+  ],
+  "ephemeraDiscarded": [],
+  "missing": [
+    "verification-report"
+  ]
+}

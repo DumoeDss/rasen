@@ -1,7 +1,7 @@
 /**
- * `rasen store issue new|list|show|state|plan` — the CLI for the Store-level
- * Issue Module (`StoreIssues`) and the Issue-facing slice of the aggregate
- * query (`StoreAggregateQuery.{listIssues,showIssue}`).
+ * `rasen store issue new|list|show|state|plan|start|acceptance|accept` — the
+ * CLI for the Store-level Issue Module (`StoreIssues`) and the Issue-facing
+ * slice of the aggregate query (`StoreAggregateQuery.{listIssues,showIssue}`).
  *
  * An Issue is Store-level cross-project intent, so every subcommand takes
  * only `--store`: never `--project`, never `--target-line`. Issue content is
@@ -18,6 +18,9 @@ import {
   ISSUE_STATES,
   StoreIssuesModuleInstance,
   issueError,
+  type AcceptanceConditionInput,
+  type AcceptanceConditionsResult,
+  type AcceptIssueResult,
   type ExecutionPlanNodeInput,
   type ExecutionPlanResult,
   type IssueRecordResult,
@@ -26,10 +29,42 @@ import {
 } from '../core/store/issues/index.js';
 import {
   StoreAggregateQuery,
+  nodeStoreQueryFileSystem,
+  productionStoreQueryDependencies,
+  resolveQueryStore,
   type AggregateProblem,
   type IssueDetail,
+  type IssueSummary,
   type IssueSummaryPage,
 } from '../core/store/query/index.js';
+import {
+  listAllWorkspaceIndexEntries,
+  type WorkspaceIndexEntry,
+} from '../core/store/workspace/registry.js';
+import { listPipelines } from '../core/pipeline-registry/resolver.js';
+import { resolveSessionLaunchContext } from '../core/management-api/session-launch-context.js';
+import {
+  projectIssueStatus,
+  type IssueStatus,
+  type IssueStatusProblem,
+  type ProjectIssueStatusInput,
+} from '../core/issue-status/index.js';
+import {
+  refusalFix,
+  resolveIssueLaunchBinding,
+  type IssueLaunchBinding,
+  type IssueStartRefusal,
+} from '../core/issue-execution/index.js';
+import {
+  acceptIssue,
+  readIssueAcceptanceFacts,
+  type IssueAcceptanceBlocker,
+  type IssueAcceptanceGateEvaluation,
+} from '../core/issue-acceptance/index.js';
+import {
+  resolvedExecutionProjectRoot,
+  resolveOpenSpecRoot,
+} from '../core/root-selection.js';
 import { emitFailure, printJson } from './shared-output.js';
 
 export interface StoreIssueOptions {
@@ -39,6 +74,9 @@ export interface StoreIssueOptions {
   state?: string;
   reason?: string;
   fromFile?: string;
+  node?: string;
+  pipeline?: string;
+  note?: string;
   json?: boolean;
 }
 
@@ -59,6 +97,33 @@ function planPayload(result: ExecutionPlanResult): unknown {
   return {
     issueId: result.issueId,
     revision: result.revision,
+    storeId: result.storeId,
+    storeUid: result.storeUid,
+    checkoutRoot: result.checkoutRoot,
+    checkoutRef: result.checkoutRef,
+    written: result.written,
+    suggestedCommits: result.suggestedCommits,
+  };
+}
+
+function acceptancePayload(result: AcceptanceConditionsResult): unknown {
+  return {
+    issueId: result.issueId,
+    revision: result.revision,
+    storeId: result.storeId,
+    storeUid: result.storeUid,
+    checkoutRoot: result.checkoutRoot,
+    checkoutRef: result.checkoutRef,
+    written: result.written,
+    suggestedCommits: result.suggestedCommits,
+  };
+}
+
+function acceptPayload(result: AcceptIssueResult): unknown {
+  return {
+    issueId: result.issueId,
+    record: result.record,
+    state: result.state,
     storeId: result.storeId,
     storeUid: result.storeUid,
     checkoutRoot: result.checkoutRoot,
@@ -92,6 +157,27 @@ function renderPlanWrite(result: ExecutionPlanResult): void {
   renderCommitSuggestions(result.suggestedCommits);
 }
 
+function renderAcceptanceWrite(result: AcceptanceConditionsResult): void {
+  console.log(
+    `Issue ${result.issueId}: acceptance conditions revision ${result.revision.revisionId}`
+  );
+  console.log(`  supersedes: ${result.revision.supersedes ?? '(none)'}`);
+  console.log(`  conditions: ${result.revision.conditions.length}`);
+  renderCommitSuggestions(result.suggestedCommits);
+}
+
+function renderAcceptWrite(result: AcceptIssueResult): void {
+  console.log(`Issue ${result.issueId} accepted (${result.state})`);
+  console.log(
+    `  conditions: revision ${result.record.conditionsRevisionId} (${result.record.conditionsSha256})`
+  );
+  console.log(
+    `  gate: ${result.record.gate.completed}/${result.record.gate.total} ${result.record.gate.health}, 0 problems standing`
+  );
+  if (result.record.note !== null) console.log(`  note: ${result.record.note}`);
+  renderCommitSuggestions(result.suggestedCommits);
+}
+
 /**
  * Items that were read and could not be understood, in the HUMAN form — the
  * same list the JSON form carries under `problems`. A malformed Issue whose id
@@ -111,14 +197,278 @@ function renderProblems(problems: readonly AggregateProblem[]): void {
   }
 }
 
-function renderIssueList(page: IssueSummaryPage): void {
+// -----------------------------------------------------------------------------
+// Status projection (read enrichment)
+// -----------------------------------------------------------------------------
+
+/**
+ * The machine-local inputs the projection needs: resolved from the WORKING
+ * DIRECTORY the command runs from, best-effort. An Issue is Store content and
+ * readable from anywhere, so a directory that resolves no project execution
+ * root degrades to a visibility-`none` answer — committed evidence still
+ * derives; never a failure of the store-scoped command.
+ */
+async function resolveProjectionContext(): Promise<{
+  executionRoot?: string;
+  changesDir?: string;
+  projectRoot?: string;
+}> {
+  try {
+    const root = await resolveOpenSpecRoot({ startPath: process.cwd(), reporter: false });
+    return {
+      executionRoot: resolvedExecutionProjectRoot(root),
+      changesDir: root.changesDir,
+      projectRoot: root.path,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function statusInputFor(
+  detail: IssueDetail,
+  context: {
+    executionRoot?: string;
+    changesDir?: string;
+    storeRoot?: string;
+    workspaceEntries?: readonly WorkspaceIndexEntry[];
+    acceptance?: Awaited<ReturnType<typeof readIssueAcceptanceFacts>>;
+  }
+): ProjectIssueStatusInput {
+  return {
+    detail,
+    ...(context.executionRoot === undefined ? {} : { executionRoot: context.executionRoot }),
+    ...(context.changesDir === undefined ? {} : { changesDir: context.changesDir }),
+    ...(context.storeRoot === undefined ? {} : { storeRoot: context.storeRoot }),
+    ...(context.workspaceEntries === undefined ? {} : { workspaceEntries: context.workspaceEntries }),
+    ...(context.acceptance === undefined ? {} : { acceptance: context.acceptance }),
+  };
+}
+
+/**
+ * The Store-scoped widening inputs, gathered ONCE per command: the resolved
+ * Store's registered root (the store-side active-change address for evidence
+ * locators) and the machine workspace index entries filtered to that Store's
+ * uid — exactly the storeUid-first filter `gatherReferenceEvidence` applies,
+ * so an index entry from another Store can never masquerade as this one's.
+ * Returns an empty widening when no `--store` was given; the Store-scoped
+ * query itself refuses that case before any of this matters.
+ */
+async function resolveStoreWideningContext(
+  store: string | undefined
+): Promise<{
+  storeId?: string;
+  storeUid?: string;
+  storeRoot?: string;
+  workspaceEntries?: readonly WorkspaceIndexEntry[];
+}> {
+  if (store === undefined) return {};
+  const resolved = await resolveQueryStore({ fs: nodeStoreQueryFileSystem }, { store });
+  const workspaceEntries = (
+    await listAllWorkspaceIndexEntries(productionStoreQueryDependencies.coordination())
+  ).filter(entry => entry.storeUid === resolved.storeUid);
+  return {
+    storeId: resolved.storeId,
+    storeUid: resolved.storeUid,
+    storeRoot: resolved.registeredRoot,
+    workspaceEntries,
+  };
+}
+
+/**
+ * `list` has the summary page but not the plans, so each Issue's latest plan
+ * is resolved here (one `resolveExecutionPlan` per Issue — accepted at
+ * single-project scale) and assembled into the `IssueDetail` shape the
+ * projection consumes.
+ */
+async function detailForList(
+  scope: { store?: string; startPath: string },
+  summary: IssueSummary,
+  page: IssueSummaryPage
+): Promise<IssueDetail> {
+  const plan =
+    summary.latestRevisionId === null
+      ? null
+      : await StoreAggregateQuery.resolveExecutionPlan({
+          ...(scope.store === undefined ? {} : { store: scope.store }),
+          startPath: scope.startPath,
+          issueId: summary.issueId,
+        });
+  return {
+    issue: summary,
+    plan,
+    complete: plan === null ? page.complete : plan.complete,
+    unsearchedRefs: plan === null ? page.unsearchedRefs : plan.unsearchedRefs,
+    problems: plan === null ? page.problems : plan.problems,
+  };
+}
+
+function renderProgress(status: IssueStatus): string {
+  return status.progress === null ? '-/-' : `${status.progress.completed}/${status.progress.total}`;
+}
+
+function renderRunStateVisibility(status: IssueStatus): string {
+  return status.runStateVisibility.kind === 'execution-root'
+    ? `run-state: ${status.runStateVisibility.executionRoot}`
+    : 'run-state: none visible from this directory';
+}
+
+/**
+ * The per-node line the show command prints: identifier, kind, alias,
+ * observation, then whatever explains it — a dependency that has not
+ * finalized, or the diagnostic behind an `unknown`.
+ */
+function renderStatusNode(node: IssueStatus['nodes'][number]): string {
+  const head =
+    node.alias === null
+      ? `${node.nodeId} ${node.kind} — ${node.observation}`
+      : `${node.nodeId} ${node.kind} ${node.alias} — ${node.observation}`;
+  const parts = [head];
+  if (node.blockedBy.length > 0) parts.push(`(blockedBy ${node.blockedBy.join(', ')})`);
+  if (node.diagnostic !== null) parts.push(`(${node.diagnostic})`);
+  return `      ${parts.join(' ')}`;
+}
+
+/**
+ * The attribution lines under one node line — the Run/Session facts that join
+ * the node's execution back to the Issue (pipeline, locator, durable session
+ * pointers, evidence directory). Emitted only when a fact exists to print:
+ * an all-null attribution carries no line, the same absence the JSON form's
+ * null fields report.
+ */
+function renderAttributionLines(node: IssueStatus['nodes'][number]): string[] {
+  const { attribution, locatedBy } = node;
+  const lines: string[] = [];
+  if (attribution.pipeline !== null || locatedBy !== null) {
+    const located = locatedBy === null ? '' : ` (located by ${locatedBy})`;
+    lines.push(`        pipeline: ${attribution.pipeline ?? 'none recorded'}${located}`);
+  }
+  for (const session of attribution.sessions) {
+    const who = [session.runtime, session.role].filter(part => part !== null).join(' ') || 'worker';
+    const pointers = [
+      ...(session.sessionId === undefined ? [] : [`sessionId=${session.sessionId}`]),
+      ...(session.threadId === undefined ? [] : [`threadId=${session.threadId}`]),
+      ...(session.transcript === undefined ? [] : [`transcript=${session.transcript}`]),
+    ].join(' ');
+    lines.push(`        session ${session.stageId} (${who}): ${pointers}`);
+  }
+  if (attribution.evidenceLocator !== null) {
+    lines.push(`        evidence: ${attribution.evidenceLocator}`);
+  }
+  return lines;
+}
+
+function renderStatusProblems(problems: readonly IssueStatusProblem[]): void {
+  if (problems.length === 0) return;
+  console.log('');
+  console.log(`STATUS PROBLEMS: ${problems.length} fact(s) could not be derived.`);
+  for (const problem of problems) {
+    const at = problem.ref === null ? '' : ` ${problem.ref}`;
+    const node = problem.node === null ? '' : ` ${problem.node}`;
+    console.log(`  ${problem.kind}${node}${at}: ${problem.reason}`);
+  }
+}
+
+/** One gate blocker's human line — the taxonomy is closed, so it is total. */
+function renderAcceptanceBlocker(blocker: IssueAcceptanceBlocker): string {
+  switch (blocker.kind) {
+    case 'un-terminal-node':
+      return `node ${blocker.nodeId} is ${blocker.observation}`;
+    case 'failing-node':
+      return `node ${blocker.nodeId} is failed`;
+    case 'status-problem':
+      return `status problem ${blocker.problemKind}${
+        blocker.node === null ? '' : ` on ${blocker.node}`
+      }: ${blocker.reason}`;
+    case 'incomplete-read':
+      return blocker.reason;
+  }
+}
+
+/** One gate evaluation's human line: eligible, or every blocker named together. */
+function renderGateLine(gate: IssueAcceptanceGateEvaluation): string[] {
+  if (gate.eligible) {
+    return [`    gate: eligible (would accept conditions revision ${gate.conditionsRevisionId})`];
+  }
+  if (gate.blockers.length === 0) {
+    return [`    gate: not eligible — ${gate.message}`];
+  }
+  return [
+    '    gate: not eligible',
+    `      ${gate.message.split(' — ')[0]}`,
+    ...gate.blockers.map(blocker => `      - ${renderAcceptanceBlocker(blocker)}`),
+  ];
+}
+
+/**
+ * The acceptance section of `show` (design D8): the latest conditions with
+ * per-item requirement and verification note, the gate line — eligible or
+ * every named blocker — and the accepted record when present. Both forms
+ * carry the same facts; `--json` carries them via `status.acceptance`.
+ */
+function renderAcceptanceSection(status: IssueStatus): void {
+  if (status.acceptance === null) return;
+  const { conditions, gate, record } = status.acceptance;
+  // A blank line separates this section from the status block above — the
+  // same spacing the UNREADABLE/INCOMPLETE blocks use — so it never reads as
+  // a continuation of STATUS PROBLEMS when problems were printed.
+  console.log('');
+  console.log('  acceptance:');
+  if (conditions.revision === null) {
+    if (conditions.diagnostic === null) {
+      console.log('    conditions: (none published)');
+    } else {
+      console.log(`    conditions: UNREADABLE revision ${conditions.revisionId ?? '(unknown)'}`);
+      console.log(`      ${conditions.diagnostic}`);
+    }
+  } else {
+    console.log(
+      `    conditions: revision ${conditions.revision.revisionId} (${conditions.revision.conditions.length} condition(s))`
+    );
+    for (const condition of conditions.revision.conditions) {
+      const verification =
+        condition.verification === undefined ? '' : ` (verification: ${condition.verification})`;
+      console.log(`      ${condition.id}: ${condition.requirement}${verification}`);
+    }
+  }
+  for (const line of renderGateLine(gate)) console.log(line);
+  if (record !== null) {
+    console.log(
+      `    record: accepted ${record.acceptedAt} under revision ${record.conditionsRevisionId} (gate ${record.gate.completed}/${record.gate.total} ${record.gate.health})`
+    );
+    if (record.note !== null) console.log(`      note: ${record.note}`);
+  } else {
+    console.log('    record: (not accepted)');
+  }
+}
+
+function renderIssueStatus(status: IssueStatus): void {
+  console.log('  status:');
+  console.log(`    phase: ${status.phase}`);
+  console.log(`    health: ${status.health}`);
+  console.log(`    progress: ${renderProgress(status)}`);
+  console.log(`    ${renderRunStateVisibility(status)}`);
+  if (status.nodes.length > 0) {
+    console.log('    nodes:');
+    for (const node of status.nodes) {
+      console.log(renderStatusNode(node));
+      for (const line of renderAttributionLines(node)) console.log(line);
+    }
+  }
+  renderStatusProblems(status.problems);
+}
+
+function renderIssueList(page: IssueSummaryPage, statuses: readonly IssueStatus[] = []): void {
   if (page.issues.length === 0) {
     console.log('No Issues found.');
   }
-  for (const summary of page.issues) {
+  page.issues.forEach((summary, index) => {
     const state = summary.record?.state ?? (summary.divergence ? '(divergent)' : '(unknown)');
     const title = summary.record?.title ?? '';
-    console.log(`${summary.issueId}  [${state}]  ${title}`);
+    const status = statuses[index];
+    const statusSegment =
+      status === undefined ? '' : `  ${status.phase}/${status.health} ${renderProgress(status)}`;
+    console.log(`${summary.issueId}  [${state}]${statusSegment}  ${title}`);
     // The reason there is no record, on the item's own line. `(unknown)` names
     // the fact and hides the cause; the machine form carries the cause, so the
     // human form does too.
@@ -131,6 +481,23 @@ function renderIssueList(page: IssueSummaryPage): void {
     for (const copy of summary.divergence?.copies ?? []) {
       console.log(`    ${copy.storeRef ?? '(local checkout)'}  ${copy.sha256}`);
     }
+  });
+  // One shared label for the whole listing: run-state visibility comes from
+  // the working directory, not from any single Issue.
+  if (page.issues.length > 0 && statuses.length > 0) {
+    const anyVisible = statuses.some(
+      status => status.runStateVisibility.kind === 'execution-root'
+    );
+    console.log('');
+    if (anyVisible) {
+      const root = (statuses.find(
+        status => status.runStateVisibility.kind === 'execution-root'
+      ) as { runStateVisibility: { kind: 'execution-root'; executionRoot: string } })
+        .runStateVisibility.executionRoot;
+      console.log(`Run-state visible at: ${root}`);
+    } else {
+      console.log('No local run-state visible: no execution root resolved from this directory.');
+    }
   }
   if (page.unsearchedRefs.length > 0) {
     console.log('');
@@ -142,7 +509,7 @@ function renderIssueList(page: IssueSummaryPage): void {
   renderProblems(page.problems);
 }
 
-function renderIssueDetail(detail: IssueDetail): void {
+function renderIssueDetail(detail: IssueDetail, status?: IssueStatus): void {
   const summary = detail.issue;
   console.log(`Issue ${summary.issueId}`);
   if (summary.record) {
@@ -179,6 +546,14 @@ function renderIssueDetail(detail: IssueDetail): void {
       console.log(`  plan PROBLEM: ${detail.plan.diagnostic}`);
     }
   }
+  // The tri-axis projection, node by node — the answer to "where is this
+  // Issue right now" the record's operator-declared state never carried.
+  if (status !== undefined) {
+    renderIssueStatus(status);
+    // The acceptance section sits beside the status block: conditions, the
+    // gate, and the record — visible before the gate is crossed (D8).
+    renderAcceptanceSection(status);
+  }
   if (detail.unsearchedRefs.length > 0) {
     console.log('');
     console.log(`INCOMPLETE: ${detail.unsearchedRefs.length} ref(s) could not be read.`);
@@ -189,6 +564,49 @@ function renderIssueDetail(detail: IssueDetail): void {
     }
   }
   renderProblems(detail.problems);
+}
+
+// -----------------------------------------------------------------------------
+// Launch binding (`start`)
+// -----------------------------------------------------------------------------
+
+/**
+ * The launch contract in human form. Renderers stay English-literal per this
+ * file's convention; both forms carry the same facts (`--json` wraps the
+ * binding object unchanged).
+ */
+function renderLaunchBinding(binding: IssueLaunchBinding): void {
+  const modeHead =
+    binding.mode === 'fresh'
+      ? 'fresh launch'
+      : binding.mode === 'already-running'
+        ? 'already running (resume-oriented)'
+        : 'already complete';
+  console.log(`Issue ${binding.issueId} node ${binding.nodeId} — ${modeHead}`);
+  console.log(`  change: ${binding.alias ?? '(no alias)'} (${binding.changeInstanceId})`);
+  console.log(`  project: ${binding.projectId}  target-line: ${binding.targetLineId}`);
+  if (binding.launch !== null) {
+    console.log(`  binding: ${binding.launch.form}`);
+    console.log(`    cwd: ${binding.launch.cwd}`);
+    if (binding.launch.attachedRoots.length > 0) {
+      console.log(`    attached: ${binding.launch.attachedRoots.join(', ')}`);
+    }
+  } else if (binding.mode === 'already-complete') {
+    console.log("  no launch contract: the node's work is complete.");
+  } else if (binding.launchDiagnostic !== undefined) {
+    console.log(`  no launch contract: ${binding.launchDiagnostic}`);
+  }
+  console.log(`  pipeline: ${binding.pipeline ?? '(chosen at launch)'}`);
+  if (binding.runStatePath !== null) {
+    const located = binding.locatedBy === null ? '' : ` (located by ${binding.locatedBy})`;
+    console.log(`  run-state: ${binding.runStatePath}${located}`);
+  }
+}
+
+/** A binding refusal surfaces with its own taxonomy code, not a generic one. */
+function refusalError(refusal: IssueStartRefusal): StoreError {
+  const fix = refusalFix(refusal);
+  return new StoreError(refusal.message, refusal.code, fix === undefined ? {} : { fix });
 }
 
 export function registerStoreIssueCommand(store: Command): void {
@@ -248,16 +666,36 @@ export function registerStoreIssueCommand(store: Command): void {
           startPath: process.cwd(),
           ...(options.state === undefined ? {} : { state: options.state as IssueState }),
         });
+        const scope = {
+          ...(options.store === undefined ? {} : { store: options.store }),
+          startPath: process.cwd(),
+        };
+        const context = await resolveProjectionContext();
+        const widening = await resolveStoreWideningContext(options.store);
+        const statuses: IssueStatus[] = [];
+        for (const summary of page.issues) {
+          const detail = await detailForList(scope, summary, page);
+          // Done follows the recorded acceptance, so the list's phase needs
+          // each Issue's acceptance facts exactly as show's does.
+          const acceptance = await readIssueAcceptanceFacts({
+            ...(options.store === undefined ? {} : { store: options.store }),
+            startPath: process.cwd(),
+            issueId: summary.issueId,
+          });
+          statuses.push(
+            await projectIssueStatus(statusInputFor(detail, { ...context, ...widening, acceptance }))
+          );
+        }
         if (options.json) {
           printJson({
-            issues: page.issues,
+            issues: page.issues.map((summary, index) => ({ ...summary, status: statuses[index] })),
             complete: page.complete,
             unsearchedRefs: page.unsearchedRefs,
             problems: page.problems,
           });
           return;
         }
-        renderIssueList(page);
+        renderIssueList(page, statuses);
       } catch (error) {
         emitFailure(options.json, { issues: [] }, error, 'store_issue_list_failed');
       }
@@ -275,17 +713,29 @@ export function registerStoreIssueCommand(store: Command): void {
           startPath: process.cwd(),
           issueId,
         });
+        const status = await projectIssueStatus(
+          statusInputFor(detail, {
+            ...(await resolveProjectionContext()),
+            ...(await resolveStoreWideningContext(options.store)),
+            acceptance: await readIssueAcceptanceFacts({
+              ...(options.store === undefined ? {} : { store: options.store }),
+              startPath: process.cwd(),
+              issueId,
+            }),
+          })
+        );
         if (options.json) {
           printJson({
             issue: detail.issue,
             plan: detail.plan,
+            status,
             complete: detail.complete,
             unsearchedRefs: detail.unsearchedRefs,
             problems: detail.problems,
           });
           return;
         }
-        renderIssueDetail(detail);
+        renderIssueDetail(detail, status);
       } catch (error) {
         emitFailure(options.json, { issue: null }, error, 'store_issue_show_failed');
       }
@@ -349,6 +799,121 @@ export function registerStoreIssueCommand(store: Command): void {
         else renderPlanWrite(result);
       } catch (error) {
         emitFailure(options.json, { revision: null }, error, 'store_issue_plan_failed');
+      }
+    });
+
+  issue
+    .command('acceptance <issue-id>')
+    .description('')
+    .option('--store <id>', '')
+    .option('--from-file <path>', '')
+    .option('--json', '')
+    .action(async (issueId: string, options: StoreIssueOptions) => {
+      try {
+        if (options.fromFile === undefined) {
+          throw issueError(
+            'issue_acceptance_from_file_required',
+            'Publishing acceptance conditions requires --from-file.',
+            { fix: 'Add --from-file <path to a YAML file with a conditions: list>.' }
+          );
+        }
+        const draft = parseYaml(fs.readFileSync(options.fromFile, 'utf8')) as {
+          conditions?: readonly AcceptanceConditionInput[];
+        };
+        if (draft.conditions === undefined) {
+          throw issueError(
+            'issue_acceptance_conditions_list_required',
+            'An acceptance conditions file must carry a conditions: list.',
+            { fix: 'Author the file as "conditions:" followed by one "- id/requirement" item per condition.' }
+          );
+        }
+        const result = await StoreIssuesModuleInstance.publishAcceptance({
+          ...(options.store === undefined ? {} : { store: options.store }),
+          startPath: process.cwd(),
+          issueId,
+          conditions: draft.conditions,
+        });
+        if (options.json) printJson(acceptancePayload(result));
+        else renderAcceptanceWrite(result);
+      } catch (error) {
+        emitFailure(options.json, { revision: null }, error, 'store_issue_acceptance_failed');
+      }
+    });
+
+  issue
+    .command('accept <issue-id>')
+    .description('')
+    .option('--store <id>', '')
+    .option('--note <note>', '')
+    .option('--json', '')
+    .action(async (issueId: string, options: StoreIssueOptions) => {
+      try {
+        // Evaluate FRESH from this working directory's run-state, then write
+        // under the lock with the evaluated snapshot (design D6) — the same
+        // machine-local context resolution every read command here performs.
+        const context = await resolveProjectionContext();
+        const widening = await resolveStoreWideningContext(options.store);
+        const result = await acceptIssue({
+          ...(options.store === undefined ? {} : { store: options.store }),
+          startPath: process.cwd(),
+          issueId,
+          ...(options.note === undefined ? {} : { note: options.note }),
+          projection: { ...context, ...widening },
+        });
+        if (options.json) printJson(acceptPayload(result));
+        else renderAcceptWrite(result);
+      } catch (error) {
+        emitFailure(options.json, { record: null }, error, 'store_issue_accept_failed');
+      }
+    });
+
+  issue
+    .command('start <issue-id>')
+    .description('')
+    .option('--store <id>', '')
+    .option('--node <nodeId>', '')
+    .option('--pipeline <name>', '')
+    .option('--json', '')
+    .action(async (issueId: string, options: StoreIssueOptions) => {
+      try {
+        const detail = await StoreAggregateQuery.showIssue({
+          ...(options.store === undefined ? {} : { store: options.store }),
+          startPath: process.cwd(),
+          issueId,
+        });
+        const context = await resolveProjectionContext();
+        const widening = await resolveStoreWideningContext(options.store);
+        const status = await projectIssueStatus(
+          statusInputFor(detail, { ...context, ...widening })
+        );
+        // The member-project checkout route is the SAME session-launch
+        // composition a supervised session uses, addressed by the Store's
+        // permanent identity so a display-name collision can never resolve
+        // the wrong Store's membership.
+        const launchContextFor = (projectId: string) =>
+          resolveSessionLaunchContext({
+            ...(widening.storeUid === undefined ? {} : { space: `store:${widening.storeUid}` }),
+            execution: `project:${projectId}`,
+            launchProject: null,
+          });
+        // Root-aware pipeline validation: the pipelines visible from the root
+        // this command runs in (project-local layers included).
+        const pipelineKnown = (name: string) =>
+          listPipelines(context.projectRoot).includes(name.replace(/\.ya?ml$/, ''));
+        const result = await resolveIssueLaunchBinding({
+          detail,
+          status,
+          workspaceEntries: widening.workspaceEntries ?? [],
+          launchContextFor,
+          ...(options.pipeline === undefined ? {} : { pipeline: options.pipeline, pipelineKnown }),
+          ...(options.node === undefined ? {} : { nodeId: options.node }),
+          ...(widening.storeId === undefined ? {} : { storeId: widening.storeId }),
+        });
+        if (!result.ok) throw refusalError(result.refusal);
+        if (options.json) printJson({ issueId, binding: result.binding });
+        else renderLaunchBinding(result.binding);
+      } catch (error) {
+        emitFailure(options.json, { issue: null, binding: null }, error, 'store_issue_start_failed');
       }
     });
 }

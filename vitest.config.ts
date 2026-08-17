@@ -95,6 +95,17 @@ const KNOWN_SLOW_TEST_WEIGHTS_MS: Record<string, number> = {
   // higher observation is entered deliberately — under-entering is the failure
   // mode the `workspace-cleanup` entry above already demonstrates.
   'test/core/store/store-issue-scope.test.ts': 16150,
+  // issue-acceptance-close: three real-Git-fixture suites and one runCLI
+  // subprocess-per-case CLI suite, the same underestimated classes as the
+  // entries above. The CLI file was measured twice: 145128ms during fix round
+  // 1 under a warm tree and 194524ms solo on the reviewer's pass — the
+  // HIGHER observation is entered (review round 1, Info-5), for the same
+  // reason as `store-aggregate-query` above: underestimating a spawn-heavy
+  // file skews the whole shard, overestimating only costs balance.
+  'test/core/store/store-issue-acceptance-content.test.ts': 1100,
+  'test/core/store/store-issue-acceptance-mutations.test.ts': 24000,
+  'test/core/issue-acceptance/issue-acceptance-gate.test.ts': 45000,
+  'test/commands/store-issue-acceptance-cli.test.ts': 200000,
 };
 
 function listTestFiles(directory: string, root: string): TestFile[] {

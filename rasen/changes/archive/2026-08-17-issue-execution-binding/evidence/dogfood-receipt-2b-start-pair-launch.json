@@ -1,0 +1,22 @@
+﻿{
+  "issueId": "issue-layer-phase1",
+  "binding": {
+    "issueId": "issue-layer-phase1",
+    "nodeId": "g-001",
+    "changeInstanceId": "ci_5672040993c48bc37ebc81fea7eb6f92d64a537d811b7c2f1035f9aa4ad88f81",
+    "alias": "issue-status-projection",
+    "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+    "targetLineId": "main",
+    "launch": {
+      "form": "workspace-pair",
+      "cwd": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-dogfood-exec-g001",
+      "attachedRoots": [
+        "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-issue-layer-dogfood--issue-status-projection"
+      ]
+    },
+    "pipeline": "small-feature",
+    "mode": "fresh",
+    "runStatePath": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-dogfood-exec-g001\\.rasen\\changes\\issue-status-projection\\ephemera\\auto-run.json",
+    "locatedBy": "workspace-index"
+  }
+}

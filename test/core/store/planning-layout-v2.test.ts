@@ -586,6 +586,19 @@ describe('pure Store planning layout v2', () => {
           flavor
         )
       ).toBe(api.resolve(root, 'rasen', 'issues', issueId, 'plans', '0007.yaml'));
+      expect(
+        resolveStorePlanningLayoutV2Path(root, { kind: 'acceptance-conditions', issueId }, flavor)
+      ).toBe(api.resolve(root, 'rasen', 'issues', issueId, 'acceptance'));
+      expect(
+        resolveStorePlanningLayoutV2Path(
+          root,
+          { kind: 'acceptance-condition', issueId, revisionId: '0007' },
+          flavor
+        )
+      ).toBe(api.resolve(root, 'rasen', 'issues', issueId, 'acceptance', '0007.yaml'));
+      expect(
+        resolveStorePlanningLayoutV2Path(root, { kind: 'issue-accepted-record', issueId }, flavor)
+      ).toBe(api.resolve(root, 'rasen', 'issues', issueId, 'accepted.yaml'));
     }
   );
 
@@ -596,6 +609,9 @@ describe('pure Store planning layout v2', () => {
         { kind: 'issue-record' as const, issueId },
         { kind: 'execution-plans' as const, issueId },
         { kind: 'execution-plan' as const, issueId, revisionId: '0001' },
+        { kind: 'acceptance-conditions' as const, issueId },
+        { kind: 'acceptance-condition' as const, issueId, revisionId: '0001' },
+        { kind: 'issue-accepted-record' as const, issueId },
       ];
       for (const address of addresses) {
         expect(
@@ -613,6 +629,14 @@ describe('pure Store planning layout v2', () => {
         resolveStorePlanningLayoutV2Path(
           '/store',
           { kind: 'execution-plan', issueId: 'refresh-cache', revisionId },
+          'posix'
+        )
+      ).toThrow(StorePlanningValidationError);
+      // The acceptance-conditions revision kind shares the ordinal contract.
+      expect(() =>
+        resolveStorePlanningLayoutV2Path(
+          '/store',
+          { kind: 'acceptance-condition', issueId: 'refresh-cache', revisionId },
           'posix'
         )
       ).toThrow(StorePlanningValidationError);

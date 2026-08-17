@@ -32,6 +32,8 @@ export type StorePlanningValidationErrorCode =
   | 'invalid_archive_v2'
   | 'invalid_issue_record'
   | 'invalid_execution_plan'
+  | 'invalid_acceptance_conditions'
+  | 'invalid_acceptance_record'
   | 'planning_path_escape';
 
 export class StorePlanningValidationError extends Error {

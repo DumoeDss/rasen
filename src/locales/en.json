@@ -2056,6 +2056,51 @@
                       "description": "Output as JSON"
                     }
                   }
+                },
+                "acceptance": {
+                  "description": "Publish a new immutable acceptance-conditions revision for an Issue from a YAML condition list",
+                  "options": {
+                    "store": {
+                      "description": "Store holding the Issue"
+                    },
+                    "from-file": {
+                      "description": "Path to a YAML file listing the acceptance conditions"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "accept": {
+                  "description": "Accept an Issue explicitly: evaluate the acceptance gate and, only when it holds, record the acceptance and close the Issue",
+                  "options": {
+                    "store": {
+                      "description": "Store holding the Issue"
+                    },
+                    "note": {
+                      "description": "Note recorded alongside the acceptance"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "start": {
+                  "description": "Resolve the next plan node's bound execution context and emit the launch contract; starting resolves and verifies, it never spawns",
+                  "options": {
+                    "store": {
+                      "description": "Store holding the Issue"
+                    },
+                    "node": {
+                      "description": "Plan node to address; omit to derive the single runnable frontier node"
+                    },
+                    "pipeline": {
+                      "description": "Pipeline to record in the launch contract, validated against the pipeline registry"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
                 }
               }
             },

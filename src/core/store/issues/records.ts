@@ -60,7 +60,11 @@ function recordError(
 export function assertPortableIssueText(
   value: string,
   field: string,
-  code: 'invalid_issue_record' | 'invalid_execution_plan' = 'invalid_issue_record'
+  code:
+    | 'invalid_issue_record'
+    | 'invalid_execution_plan'
+    | 'invalid_acceptance_conditions'
+    | 'invalid_acceptance_record' = 'invalid_issue_record'
 ): void {
   const fail = (message: string): never => {
     throw new StorePlanningValidationError(code, field, message);

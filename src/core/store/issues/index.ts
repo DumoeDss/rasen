@@ -37,6 +37,20 @@ export {
   type GraphViolation,
 } from './plans.js';
 export {
+  acceptanceConditionsDigest,
+  acceptedRecordDigest,
+  acceptanceConditionsDigestBody,
+  acceptedRecordDigestBody,
+  assertCoherentGateSnapshot,
+  normalizeAcceptanceConditions,
+  parseAcceptanceConditionsRevision,
+  parseAcceptedRecord,
+  serializeAcceptanceConditionsRevision,
+  serializeAcceptedRecord,
+  validateAcceptanceConditionsRevision,
+  validateAcceptedRecord,
+} from './acceptance.js';
+export {
   compileMigrationIssueTree,
   type CompiledMigrationIssueFile,
   type CompiledMigrationIssueTree,
@@ -60,6 +74,7 @@ export {
   type StoreLockKind,
 } from './locks.js';
 export {
+  acceptanceRevisionAddress,
   issueAddresses,
   issuePathspec,
   resolveIssueScope,

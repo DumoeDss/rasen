@@ -1,0 +1,47 @@
+{
+  "change": "issue-execution-binding",
+  "archivedAt": "2026-08-17T00:35:29.294Z",
+  "codeCommit": "aee0171799007b52e4cb94384bf01ccf3498dbf8",
+  "planningBranch": "feat/issue-layer",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/dogfood-receipt-1-fresh-launch.json",
+      "sha256": "ff08c043a8ecf576eb18af40baa76e418ba9051d593980113c97435df6f1320c"
+    },
+    {
+      "path": "evidence/dogfood-receipt-2-show-from-store-root.txt",
+      "sha256": "6ab709827c2330725e4ddf26f6cf69d7b9eb3443076327842d20969a0c52ec39"
+    },
+    {
+      "path": "evidence/dogfood-receipt-2b-start-pair-launch.json",
+      "sha256": "46286702f0f3451ed2a9e8c562cc681672782b67143245986be8ccbb7741886a"
+    },
+    {
+      "path": "evidence/dogfood-receipt-2c-start-blocked-refusal.json",
+      "sha256": "c250c86c23685aa1f8d078e7be3c1be85a6b9f0afcb80819405a9a40cb83a346"
+    },
+    {
+      "path": "evidence/dogfood-receipt-summary.md",
+      "sha256": "f794559f4e59c766f71794f80519644616e64c77d2439db90c48bcface13bb43"
+    },
+    {
+      "path": "evidence/fix-round-1.md",
+      "sha256": "fa25c4405c346bf55974b10d637a56f2a2da428787aea1808b61f4537dd07ef5"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "9bbe0b13ca5574edfe27a84c2b3a1942328025ab51bfe718bf71af06324463f8"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "d397f01e235f3195ef31854ff0ba8446b0caa1fcde3bce60828c508f1892f469"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [],
+  "missing": [
+    "verification-report"
+  ]
+}

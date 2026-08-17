@@ -1,0 +1,28 @@
+$ node bin/rasen.js store issue show issue-layer-phase1 --store issue-layer-dogfood   (acceptance section + gate; run from the worktree cwd)
+
+    progress: 1/3
+    run-state: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer
+    nodes:
+      g-001 change issue-status-projection — unknown (Invalid run-state: openFindings.0: Invalid input: expected object, received string; openFindings.1: Invalid input: expected object, received string)
+        pipeline: none recorded (located by execution-root)
+        evidence: C:\Users\Sayo\AppData\Local\Temp\rasen-issue-layer-dogfood\rasen\projects\e2ee72ed-04a1-4395-86aa-7e77d2b83ec7\changes\issue-status-projection\evidence
+      g-002 change issue-execution-binding — run-terminal (blockedBy g-001)
+        pipeline: small-feature (located by execution-root)
+        evidence: C:\Users\Sayo\AppData\Local\Temp\rasen-issue-layer-dogfood\rasen\projects\e2ee72ed-04a1-4395-86aa-7e77d2b83ec7\changes\issue-execution-binding\evidence
+      g-003 change issue-acceptance-close — in-flight (blockedBy g-001, g-002)
+        pipeline: small-feature (located by execution-root)
+        evidence: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer\rasen\changes\issue-acceptance-close\evidence
+
+STATUS PROBLEMS: 1 fact(s) could not be derived.
+  invalid-run-state g-001 E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer\.rasen\changes\issue-status-projection\ephemera\auto-run.json: Invalid run-state: openFindings.0: Invalid input: expected object, received string; openFindings.1: Invalid input: expected object, received string
+  acceptance:
+    conditions: revision 0001 (3 condition(s))
+      acceptance-gate-proven: The acceptance gate holds while required work is un-terminal and closes the Issue only through an explicit accepted record (verification: this change's HOLD and CLOSE dogfood receipts plus the unit gate table)
+      binding-loop-proven: The execution binding loop is proven end-to-end (start resolves a launch contract; run-state attribution flows back) (verification: child g-002 dogfood receipts over the workspace-index closed loop)
+      projection-shipped: The tri-axis status projection (phase, health, progress) is shipped and archived with its CLI surface (verification: child g-001 archived with synced specs and a green suite)
+    gate: not eligible
+      not accepted yet
+      - node g-001 is unknown
+      - node g-003 is in-flight
+      - status problem invalid-run-state on g-001: Invalid run-state: openFindings.0: Invalid input: expected object, received string; openFindings.1: Invalid input: expected object, received string
+    record: (not accepted)

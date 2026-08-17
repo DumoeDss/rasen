@@ -71,6 +71,25 @@ export type StoreIssueErrorCode =
   | 'execution_plan_node_duplicate'
   /** A published revision no longer matches its recorded canonical digest. */
   | 'execution_plan_digest_mismatch'
+  /** An acceptance-conditions revision ordinal that already exists. */
+  | 'acceptance_conditions_revision_exists'
+  /** The acceptance input names a conditions revision that does not read back. */
+  | 'issue_accept_conditions_unreadable'
+  /** The acceptance note is blank or not portable durable text. */
+  | 'issue_accept_note_invalid'
+  /** The acceptance publish reached without --from-file (input shape, not scope). */
+  | 'issue_acceptance_from_file_required'
+  /** The acceptance publish file carries no conditions: list. */
+  | 'issue_acceptance_conditions_list_required'
+  /** The Issue is already carrying an acceptance record. */
+  | 'issue_accept_already_accepted'
+  /** A dropped Issue is abandoned, not acceptable. */
+  | 'issue_accept_dropped'
+  /** The gate's structural refusals (no plan / no conditions revision). */
+  | 'issue_accept_requires_plan'
+  | 'issue_accept_conditions_required'
+  /** The gate's fact blockers hold the acceptance. */
+  | 'issue_accept_blocked'
   /** A mutation reached with a scope segment missing or not declared. */
   | 'store_query_scope_incomplete'
   /** A Store ref could not be read. NEVER evidence of absence. */
@@ -166,6 +185,75 @@ export interface ExecutionPlanDraft {
   readonly nodes: readonly ExecutionPlanNodeInput[];
 }
 
+// -----------------------------------------------------------------------------
+// Acceptance content
+// -----------------------------------------------------------------------------
+
+/**
+ * One acceptance condition: a stable identifier, the requirement statement,
+ * and an optional note on how it was or will be verified. The MACHINE gate is
+ * the derived node/health/problem state; the checklist's satisfaction is
+ * attested by the act of accepting, frozen with the gate snapshot.
+ */
+export interface AcceptanceCondition {
+  readonly id: string;
+  readonly requirement: string;
+  readonly verification?: string;
+}
+
+/** A condition as authored, before canonicalization. */
+export interface AcceptanceConditionInput {
+  readonly id: string;
+  readonly requirement: string;
+  readonly verification?: string;
+}
+
+/**
+ * `rasen/issues/<issueId>/acceptance/<revisionId>.yaml`, immutable once
+ * published — the same ordinal/digest/supersedes discipline an Execution Plan
+ * revision follows, reused rather than rebuilt.
+ */
+export interface AcceptanceConditionsRevisionV1 {
+  readonly version: 1;
+  readonly issueId: IssueId;
+  readonly revisionId: ExecutionPlanRevisionId;
+  readonly supersedes: ExecutionPlanRevisionId | null;
+  readonly createdAt: string;
+  readonly contentSha256: Sha256Digest;
+  readonly conditions: readonly AcceptanceCondition[];
+}
+
+/**
+ * The gate facts an acceptance freezes: counts, the health value, and that no
+ * status problem stood — portable facts only, no paths, no machine names
+ * (design D7). A snapshot a different machine cannot read would be a defect in
+ * a Store-level artifact.
+ */
+export interface AcceptanceGateSnapshot {
+  readonly completed: number;
+  readonly total: number;
+  readonly health: string;
+  readonly problemsStanding: number;
+}
+
+/**
+ * `rasen/issues/<issueId>/accepted.yaml` — ONE record per Issue, never
+ * rewritten. It freezes WHAT was accepted (the conditions revision id and that
+ * revision's digest, so a later revision cannot change what the record says
+ * was accepted), the gate snapshot at acceptance, an optional note, and its
+ * own content digest.
+ */
+export interface IssueAcceptedRecordV1 {
+  readonly version: 1;
+  readonly issueId: IssueId;
+  readonly acceptedAt: string;
+  readonly conditionsRevisionId: ExecutionPlanRevisionId;
+  readonly conditionsSha256: Sha256Digest;
+  readonly gate: AcceptanceGateSnapshot;
+  readonly note: string | null;
+  readonly contentSha256: Sha256Digest;
+}
+
 export interface ExecutionPlanChangeNodeInput {
   readonly nodeId: string;
   readonly kind: 'change';
@@ -218,6 +306,23 @@ export interface PublishExecutionPlanInput extends StoreIssueSelector {
   readonly nodes: readonly ExecutionPlanNodeInput[];
 }
 
+export interface PublishAcceptanceConditionsInput extends StoreIssueSelector {
+  readonly conditions: readonly AcceptanceConditionInput[];
+}
+
+/**
+ * The already-evaluated gate an acceptance is recorded under. The mutation
+ * takes the snapshot as input and performs no run-state reads itself (design
+ * D6: evaluate fresh, then write under the lock — the snapshot states the
+ * facts the acceptance was made under, so the boundary is auditable).
+ */
+export interface AcceptIssueInput extends StoreIssueSelector {
+  readonly conditionsRevisionId: string;
+  readonly conditionsSha256: Sha256Digest;
+  readonly gate: AcceptanceGateSnapshot;
+  readonly note?: string;
+}
+
 /**
  * A commit suggestion. Issue content is Git-tracked Store content, so a write
  * prints the pathspec that would commit it and stages, commits, fetches, and
@@ -251,6 +356,16 @@ export interface ExecutionPlanResult extends IssueWriteReport {
   readonly revision: ExecutionPlanRevisionV1;
 }
 
+export interface AcceptanceConditionsResult extends IssueWriteReport {
+  readonly revision: AcceptanceConditionsRevisionV1;
+}
+
+export interface AcceptIssueResult extends IssueWriteReport {
+  readonly record: IssueAcceptedRecordV1;
+  /** The Issue's state after the mutation: `resolved` on both D5 write rows. */
+  readonly state: IssueState;
+}
+
 /**
  * The Store-level Issue Module.
  *
@@ -262,4 +377,6 @@ export interface StoreIssues {
   create(input: CreateIssueInput): Promise<IssueRecordResult>;
   setState(input: SetIssueStateInput): Promise<IssueRecordResult>;
   publishPlan(input: PublishExecutionPlanInput): Promise<ExecutionPlanResult>;
+  publishAcceptance(input: PublishAcceptanceConditionsInput): Promise<AcceptanceConditionsResult>;
+  accept(input: AcceptIssueInput): Promise<AcceptIssueResult>;
 }
