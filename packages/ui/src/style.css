@@ -1597,6 +1597,36 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
   position: absolute; top: 4px; left: var(--space-2); font-size: var(--text-xs);
   font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent);
 }
+
+/* Expandable frames (canvas-loop-body-visibility): the loop/composite card
+   opened as a subflow frame. React Flow sizes the node wrapper from the
+   node's explicit style width/height; this card fills it, and the body
+   region's insets mirror layout.ts's GROUP_LABEL_HEIGHT (28) and
+   GROUP_PADDING (24) — the same numbers the frame box arithmetic uses, so
+   the tinted region sits exactly under the laid-out children. Pinned in
+   test/style/canvas-frame.test.ts. */
+.stage-node--frame {
+  width: 100%; height: 100%; position: relative; display: block; padding: 0;
+  border-style: dashed; background: var(--accent-tint); box-shadow: none;
+}
+.stage-node__frame-header {
+  display: flex; align-items: center; gap: var(--space-2);
+  height: 28px; padding: 0 var(--space-1) 0 var(--space-2);
+  border-bottom: 1px dashed var(--border-strong);
+}
+.stage-node__frame-body {
+  position: absolute; top: 52px; left: 24px; right: 24px; bottom: 24px;
+  border: 1px dashed var(--border); border-radius: var(--radius);
+  background: var(--surface);
+}
+.stage-node__frame-toggle {
+  margin-left: auto; border: none; background: transparent; cursor: pointer;
+  color: var(--accent); font-size: var(--text-sm); padding: 0 var(--space-1);
+}
+.stage-node__frame-toggle:hover { color: var(--fg); }
+/* Body cards are see-and-select only: the pointer advertises the one thing a
+   click does (open the read-only panel). */
+.stage-node--body { cursor: pointer; }
 .pipeline-section__graph-link {
   font-size: var(--text-sm); color: var(--accent); text-decoration: none; font-weight: 600;
 }

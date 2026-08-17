@@ -39,6 +39,9 @@ interface MockNode {
   };
   deletable?: boolean;
   connectable?: boolean;
+  parentId?: string;
+  extent?: string;
+  style?: { width?: number; height?: number };
 }
 
 interface MockEdge {
@@ -69,6 +72,7 @@ vi.mock('@xyflow/react', async () => {
       FunctionComponent<{ data: MockNode['data'] }>
     >;
     onSelectionChange?: (params: { nodes: MockNode[]; edges: MockEdge[] }) => void;
+    onPaneClick?: () => void;
     onConnect?: (connection: {
       source: string;
       sourceHandle: string | null;
@@ -245,6 +249,9 @@ vi.mock('@xyflow/react', async () => {
               data-deletable={String(n.deletable)}
               data-connectable={String(n.connectable)}
               data-selected={String(n.selected)}
+              data-parent-id={n.parentId}
+              data-extent={n.extent}
+              data-node-style={JSON.stringify(n.style ?? null)}
             >
               <button
                 type="button"
@@ -415,7 +422,17 @@ vi.mock('@xyflow/react', async () => {
             </button>
           );
         })}
-        <button type="button" data-testid="mock-pane-click" onClick={() => emitSelection(new Set<string>())}>
+        {/* The pane click, as React Flow sequences it: the store deselects
+            (selection listener fires with the emptied truth) AND the page's
+            onPaneClick fires — the body-panel clear rides the second. */}
+        <button
+          type="button"
+          data-testid="mock-pane-click"
+          onClick={() => {
+            emitSelection(new Set<string>());
+            props.onPaneClick?.();
+          }}
+        >
           pane
         </button>
         {/* The Delete key: removes the store's selection — flagged nodes
@@ -463,6 +480,10 @@ vi.mock('@xyflow/react', async () => {
   SelectionMode: { Partial: 'partial', Full: 'full' },
   // pipeline-canvas-edit additions: the editor's connect/drag/drop wiring.
   useReactFlow: () => ({ screenToFlowPosition: (p: { x: number; y: number }) => p }),
+  // canvas-loop-body-visibility: the page forces an internals refresh when
+  // the node id set changes (real-browser measurement determinism); jsdom
+  // measures nothing, so the stand-in is a no-op.
+  useUpdateNodeInternals: () => () => undefined,
   addEdge: (edge: unknown, edges: unknown[]) => [...edges, edge],
   // Minimal but real: the three change types this page's handlers feed back —
   // `select` so interaction echoes land on the flags (controlled-mode RF
@@ -6270,11 +6291,19 @@ describe('PipelineCanvasPage — back-edge loop inference', () => {
       container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-node')
     ).toBe('bounded-loop');
 
-    // The region's nodes left the canvas; the declaration row landed.
+    // The region's nodes left the ROOT graph; the declaration row landed.
+    // (DELIBERATE SUPERSESSION — canvas-loop-body-visibility: the synthesized
+    // loop now opens EXPANDED, so the region's ids DO render — as namespaced
+    // BODY children `bounded-loop::<id>` inside the frame. "Gone" is now a
+    // statement about the root ids, asserted by the exact root list.)
     const flowText = container.querySelector('[data-testid="mock-reactflow"]')!.textContent!;
-    for (const id of ['work-b', 'work-c', 'work-d']) {
-      expect(flowText).not.toContain(id);
-    }
+    expect(flowText.split(',').filter((id) => !id.includes('::'))).toEqual([
+      'upstream',
+      'finish',
+      'bounded-loop',
+    ]);
+    expect(flowText).toContain('bounded-loop::work-b');
+    expect(flowText).toContain('bounded-loop::work-d');
     const row = container.querySelector('[data-testid="declaration-row"][data-declaration-id="loop-body"]');
     expect(row).not.toBeNull();
     expect(row!.getAttribute('data-provenance')).toBe('custom');
@@ -7773,6 +7802,356 @@ describe('PipelineCanvasPage — durable node positioning', () => {
       definition: unknown;
     };
     expect(containsPlacementField(savedBody.definition)).toBe(false);
+  });
+});
+
+describe('PipelineCanvasPage — loop body visibility (canvas-loop-body-visibility)', () => {
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    __resetLocaleForTesting();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+  });
+
+  afterEach(() => {
+    render(null, container);
+    document.body.removeChild(container);
+    window.history.replaceState({}, '', '/');
+    __resetLocaleForTesting();
+    vi.clearAllMocks();
+  });
+
+  async function clickAndFlush(el: Element | null): Promise<void> {
+    await act(async () => {
+      (el as HTMLElement).click();
+      await flushMicrotasks();
+    });
+  }
+
+  function nodeButton(kind: 'click' | 'augment' | 'drag', id: string): Element | null {
+    return container.querySelector(
+      `[data-testid="mock-node-${kind}"][data-node-id="${id}"]`
+    );
+  }
+
+  function mockNode(id: string): Element | null {
+    return container.querySelector(`[data-testid="mock-node"][data-node-id="${id}"]`);
+  }
+
+  function frameToggle(frameId: string): Element | null {
+    return container.querySelector(
+      `[data-testid="stage-node-frame-toggle"][data-frame-id="${frameId}"]`
+    );
+  }
+
+  /** The real StageNode card rendered for a BODY child, clickable like on the canvas. */
+  function bodyCard(frameId: string, stageId: string): Element | null {
+    return container.querySelector(
+      `[data-testid="mock-rendered-node-types"] [data-testid="stage-node"][data-frame-id="${frameId}"][data-stage="${stageId}"]`
+    );
+  }
+
+  function flowIds(): string[] {
+    return (container.querySelector('[data-testid="mock-reactflow"]')!.textContent ?? '')
+      .split(',')
+      .filter(Boolean);
+  }
+
+  function bodyPanel(): Element | null {
+    return container.querySelector('[data-testid="v2-body-stage-panel"]');
+  }
+
+  /**
+   * The canonical round-3 flow: the back-edge fixture's inner cycle
+   * (work-d → work-b) confirmed into a BoundedLoop over the three middle
+   * stages — mounted, review confirmed, the synthesized loop left EXPANDED
+   * (the moment-of-formation default this change introduces).
+   */
+  async function mountSynthesizedLoop(): Promise<void> {
+    const stage = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: 'skill:rasen-apply', version: 'digest-apply' },
+      execution: {
+        version: 1 as const,
+        role: 'implementer' as const,
+        workspace: { access: 'write' as const },
+      },
+    });
+    const definition = {
+      version: 2 as const,
+      id: 'definition:backedge',
+      sourceId: 'fixture:backedge',
+      name: 'backedge',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [],
+      root: {
+        nodes: [
+          stage('upstream'),
+          stage('work-b'),
+          stage('work-c'),
+          stage('work-d'),
+          { id: 'finish', kind: 'Finish' as const, outcome: 'done' },
+        ],
+        connections: [
+          'upstream->work-b',
+          'work-b->work-c',
+          'work-c->work-d',
+          'work-d->finish',
+        ].map((pair, index) => {
+          const [from, to] = pair.split('->');
+          return {
+            id: `${from}:done->${to}:input`,
+            from: { node: from!, port: 'done' },
+            to: { node: to!, port: 'input' },
+            ...(index === 0 ? { condition: 'always' as const } : {}),
+          };
+        }),
+      },
+    };
+    const detail = {
+      ...pipelineDetailFixture,
+      pipeline: {
+        ...pipelineDetailFixture.pipeline,
+        name: 'backedge',
+        provenance: 'user' as const,
+        sourceLayer: 'user' as const,
+        stages: [],
+        authoredVersion: 2 as const,
+        normalizedVersion: 2 as const,
+        definitionValid: true,
+        planAvailable: true,
+        executable: false,
+        executionMode: 'unavailable' as const,
+        unavailableReason: 'ecp_v2_runtime_unavailable',
+      },
+      definition,
+      preparation: v2Preparation,
+      editable: true,
+    } as PipelineDetailResponse;
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(detail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/backedge');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge-inner"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-loop-review-confirm"]'));
+  }
+
+  async function submittedDefinition(): Promise<WirePipelineDefinitionV2> {
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    return vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+  }
+
+  it('collapsed default parity: no body nodes anywhere, and no chevron on a loop whose body is empty (spec scenario 1)', async () => {
+    // v2EditableDetail's loop references a declaration with an EMPTY body —
+    // today's compact card is all there is to render.
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+
+    const loop = mockNode('loop')!;
+    expect(loop).not.toBeNull();
+    // Today's card assertions, unchanged: kind badge, declaration-derived
+    // ports, compact (no explicit style), and NOTHING namespaced.
+    expect(loop.getAttribute('data-definition-kind')).toBe('BoundedLoop');
+    expect(JSON.parse(loop.getAttribute('data-output-ports')!)).toEqual([
+      { id: 'done', type: 'outcome/done' },
+    ]);
+    expect(loop.getAttribute('data-node-style')).toBe('null');
+    expect(flowIds().every((id) => !id.includes('::'))).toBe(true);
+    expect(frameToggle('loop')).toBeNull();
+    expect(bodyPanel()).toBeNull();
+  });
+
+  it('expand and collapse: body cards and the internal edge render inside the frame; external handles and edges never move (spec scenarios 2-3)', async () => {
+    await mountSynthesizedLoop();
+
+    // Auto-expanded (spec scenario 4's loop-review half is asserted in its
+    // own test): the frame carries its box, the body children and their
+    // connection render inside.
+    const loop = mockNode('bounded-loop')!;
+    const style = JSON.parse(loop.getAttribute('data-node-style')!);
+    expect(style.width).toBeGreaterThan(200);
+    expect(style.height).toBeGreaterThan(92);
+    for (const childId of [
+      'bounded-loop::work-b',
+      'bounded-loop::work-c',
+      'bounded-loop::work-d',
+    ]) {
+      const child = mockNode(childId)!;
+      expect(child.getAttribute('data-parent-id')).toBe('bounded-loop');
+      expect(child.getAttribute('data-extent')).toBe('parent');
+      // Body cards are inert in React Flow terms.
+      expect(child.getAttribute('data-connectable')).toBe('false');
+    }
+    expect(
+      container.querySelector('[data-testid="mock-edge"][data-edge-id^="body:bounded-loop:"]')
+    ).not.toBeNull();
+
+    // The frame's external contract, captured now and re-asserted after each
+    // toggle: handles from the declaration, and both external edges.
+    const externalPorts = () => ({
+      input: mockNode('bounded-loop')!.getAttribute('data-input-ports'),
+      output: mockNode('bounded-loop')!.getAttribute('data-output-ports'),
+    });
+    const externalEdgeIds = () =>
+      Array.from(container.querySelectorAll('[data-testid="mock-edge"]'))
+        .map((edge) => edge.getAttribute('data-edge-id')!)
+        .filter((id) => !id.startsWith('body:'));
+    const before = { ports: externalPorts(), edges: externalEdgeIds() };
+
+    // Collapse: the compact card returns (no namespaced ids, no style, the
+    // chevron now on the collapsed card), externals byte-identical.
+    await clickAndFlush(frameToggle('bounded-loop'));
+    expect(flowIds().every((id) => !id.includes('::'))).toBe(true);
+    expect(mockNode('bounded-loop')!.getAttribute('data-node-style')).toBe('null');
+    expect(frameToggle('bounded-loop')!.getAttribute('data-expanded')).toBe('false');
+    expect(externalPorts()).toEqual(before.ports);
+    expect(externalEdgeIds()).toEqual(before.edges);
+
+    // Re-expand: everything is back, externals STILL byte-identical.
+    await clickAndFlush(frameToggle('bounded-loop'));
+    expect(flowIds().filter((id) => id.includes('::'))).toHaveLength(3);
+    expect(externalPorts()).toEqual(before.ports);
+    expect(externalEdgeIds()).toEqual(before.edges);
+  });
+
+  it('body selection: the read-only panel opens with the stage facts, is mutually exclusive with root selection, the pane clears it, and no body interaction mutates the draft (spec scenarios 5-6)', async () => {
+    await mountSynthesizedLoop();
+    const postSynthesis = await submittedDefinition();
+
+    // The loop WAS the selection; clicking a body card replaces it.
+    expect(mockNode('bounded-loop')!.getAttribute('data-selected')).toBe('true');
+    await clickAndFlush(bodyCard('bounded-loop', 'work-b'));
+
+    const panel = bodyPanel()!;
+    expect(panel).not.toBeNull();
+    expect(panel.getAttribute('data-stage')).toBe('work-b');
+    expect(panel.getAttribute('data-declaration')).toBe('loop-body');
+    expect(panel.getAttribute('data-frame')).toBe('bounded-loop');
+    expect(
+      panel.querySelector('[data-testid="v2-body-stage-panel-kind"]')!.textContent
+    ).toBe('AtomicStage');
+    expect(
+      panel.querySelector('[data-testid="v2-body-stage-panel-capability"]')!.textContent
+    ).toContain('skill:rasen-apply');
+    // Root selection cleared (mutual exclusivity, both truths).
+    expect(mockNode('bounded-loop')!.getAttribute('data-selected')).toBe('false');
+    // The panel offers no mutating control.
+    expect(panel.querySelectorAll('button')).toHaveLength(1); // the close button
+    expect(panel.querySelector('[data-testid="v2-body-stage-panel-editing"]')!.textContent)
+      .toContain('future change');
+
+    // Pane click clears the panel (the RF deselect handles the mirror).
+    await clickAndFlush(container.querySelector('[data-testid="mock-pane-click"]'));
+    expect(bodyPanel()).toBeNull();
+
+    // Re-open, then a root node click clears it (and selects the node).
+    await clickAndFlush(bodyCard('bounded-loop', 'work-c'));
+    expect(bodyPanel()!.getAttribute('data-stage')).toBe('work-c');
+    await clickAndFlush(nodeButton('click', 'upstream'));
+    expect(bodyPanel()).toBeNull();
+    expect(mockNode('upstream')!.getAttribute('data-selected')).toBe('true');
+
+    // Inertness end-to-end: clicks, toggles, and a stray drag under a body
+    // id change NOTHING in the definition the editor holds.
+    await clickAndFlush(bodyCard('bounded-loop', 'work-b'));
+    await clickAndFlush(nodeButton('drag', 'bounded-loop::work-b'));
+    await clickAndFlush(frameToggle('bounded-loop'));
+    await clickAndFlush(frameToggle('bounded-loop'));
+    const after = await submittedDefinition();
+    expect(after).toEqual(postSynthesis);
+  });
+
+  it('auto-expand at formation: loop-review confirm, the palette loop gesture, and extract confirm each render the new node expanded (spec scenario 4)', async () => {
+    await mountSynthesizedLoop();
+    // 1. Loop-review confirm — the setup flow just did it.
+    expect(flowIds()).toContain('bounded-loop::work-b');
+    expect(mockNode('bounded-loop')!.getAttribute('data-parent-id')).toBeNull();
+
+    // 2. The palette loop gesture over the now-nonempty declaration.
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-gesture-loop"]'));
+    expect(flowIds()).toContain('bounded-loop-2::work-b');
+    expect(mockNode('bounded-loop-2::work-d')!.getAttribute('data-parent-id')).toBe(
+      'bounded-loop-2'
+    );
+
+    // 3. Extract confirm: the replacing ref opens expanded too. (Fresh
+    // container for the second mount — the same mid-test remount pattern the
+    // extract suite uses.)
+    render(null, container);
+    document.body.removeChild(container);
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    const positioning = extractablePositioningDetail();
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(positioning);
+    await mountAt(container, '/p/proj_x/pipelines/positioning');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+    await clickAndFlush(nodeButton('click', 'work-b'));
+    await clickAndFlush(nodeButton('augment', 'work-c'));
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-selection-panel-package"]')
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-extract-review-confirm"]')
+    );
+    expect(flowIds()).toContain('composite-ref::work-b');
+    expect(mockNode('composite-ref::work-c')!.getAttribute('data-parent-id')).toBe(
+      'composite-ref'
+    );
+    expect(
+      container.querySelector('[data-testid="mock-edge"][data-edge-id^="body:composite-ref:"]')
+    ).not.toBeNull();
+  });
+
+  it('placement survival: a dragged root node keeps its placement across expand/collapse, and body ids never enter the placement cache (spec scenario 8)', async () => {
+    await mountSynthesizedLoop();
+    const DRAG_DELTA = { x: 180, y: 120 } as const;
+    function renderedPosition(id: string): { x: number; y: number } {
+      const span = container.querySelector(
+        `[data-testid="mock-node-position"][data-node-id="${id}"]`
+      )!;
+      return {
+        x: Number(span.getAttribute('data-x')),
+        y: Number(span.getAttribute('data-y')),
+      };
+    }
+
+    const before = renderedPosition('upstream');
+    await clickAndFlush(nodeButton('drag', 'upstream'));
+    const placement = {
+      x: before.x + DRAG_DELTA.x,
+      y: before.y + DRAG_DELTA.y,
+    };
+    expect(renderedPosition('upstream')).toEqual(placement);
+
+    // The body child's LAYOUT position, captured before the rogue drag.
+    const bodyLayoutPosition = renderedPosition('bounded-loop::work-b');
+    // A stray drag-final change under a BODY id (React Flow never emits one
+    // — body cards are undraggable — but if it did, the capture guard skips
+    // it): React Flow's renderer still applies the visual move, but the
+    // layout-owned position must win the next rebuild.
+    await clickAndFlush(nodeButton('drag', 'bounded-loop::work-b'));
+    expect(renderedPosition('bounded-loop::work-b')).not.toEqual(bodyLayoutPosition);
+
+    // Collapse and re-expand the loop: the dragged root keeps the author's
+    // placement throughout; the body child re-renders at its LAYOUT
+    // position, never the rogue drag position.
+    await clickAndFlush(frameToggle('bounded-loop'));
+    await clickAndFlush(frameToggle('bounded-loop'));
+    expect(renderedPosition('upstream')).toEqual(placement);
+    expect(renderedPosition('bounded-loop::work-b')).toEqual(bodyLayoutPosition);
+
+    // And the saved payload carries no frame/expansion fields anywhere.
+    const submitted = await submittedDefinition();
+    const serialized = JSON.stringify(submitted);
+    expect(serialized).not.toContain('::');
+    expect(serialized).not.toContain('expandedFrame');
   });
 });
 

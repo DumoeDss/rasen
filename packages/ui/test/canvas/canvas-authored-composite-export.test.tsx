@@ -53,6 +53,9 @@ vi.mock('@xyflow/react', () => ({
   // imports SelectionMode, which must resolve under this mock too.
   SelectionMode: { Partial: 'partial', Full: 'full' },
   useReactFlow: () => ({ screenToFlowPosition: (p: { x: number; y: number }) => p }),
+  // canvas-loop-body-visibility: the page forces a node-internals refresh
+  // when the node id set changes; jsdom measures nothing, so a no-op.
+  useUpdateNodeInternals: () => () => undefined,
   addEdge: (edge: unknown, edges: unknown[]) => [...edges, edge],
   applyNodeChanges: (_c: unknown[], nodes: unknown[]) => nodes,
   applyEdgeChanges: (_c: unknown[], edges: unknown[]) => edges,
