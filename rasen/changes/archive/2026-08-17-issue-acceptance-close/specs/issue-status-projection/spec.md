@@ -57,7 +57,7 @@ AND whose acceptance record reads back verified. Archived Changes alone SHALL NO
 - **WHEN** one Change node of an Issue's plan has recorded run-state with completed stages while its siblings have not started
 - **THEN** its phase is `active`
 
-#### Scenario: Completed implementation awaiting the Issue's acceptance is review
+#### Scenario: Completed implementation awaiting the Issue's own close is review
 
 - **WHEN** every Change node of an Issue's plan is complete or finalized, no intent node remains, and no verified acceptance record exists
 - **THEN** its phase is `review`
@@ -68,7 +68,7 @@ AND whose acceptance record reads back verified. Archived Changes alone SHALL NO
 - **THEN** its phase reads `review` and its health reads `waiting-human`
 - **AND** its acceptance gate still names the un-terminal node, so no acceptance is possible until the work is real
 
-#### Scenario: Done belongs to the recorded acceptance, not to the archive or a state flip
+#### Scenario: Done belongs to the operator, not to the archive
 
 - **WHEN** every Change node of an Issue's plan is finalized and its state is resolved without an acceptance record
 - **THEN** its phase remains `review`
