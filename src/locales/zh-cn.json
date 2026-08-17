@@ -2056,6 +2056,23 @@
                       "description": "以 JSON 输出"
                     }
                   }
+                },
+                "start": {
+                  "description": "解析下一个计划节点绑定的执行上下文并输出启动契约；启动是解析与验证，绝不生成进程",
+                  "options": {
+                    "store": {
+                      "description": "持有该 Issue 的仓库"
+                    },
+                    "node": {
+                      "description": "要寻址的计划节点；省略则推导唯一的可执行前沿节点"
+                    },
+                    "pipeline": {
+                      "description": "记录进启动契约的流水线，会对照流水线注册表校验"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
                 }
               }
             },

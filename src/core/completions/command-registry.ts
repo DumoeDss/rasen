@@ -668,6 +668,20 @@ const COMMANDS: readonly CommandDefinition[] = [
               COMMON_FLAGS.json,
             ],
           },
+          {
+            // Resolves and verifies the next node's launch binding — it never
+            // spawns; the contract is for the operator or agent session that
+            // receives it.
+            name: 'start',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-id' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'node', takesValue: true },
+              { name: 'pipeline', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
         ],
       },
       {

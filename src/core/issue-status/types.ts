@@ -20,6 +20,7 @@
  * capability records a real blockage or staleness signal.
  */
 import type { IssueDetail } from '../store/query/index.js';
+import type { WorkspaceIndexEntry } from '../store/workspace/registry.js';
 
 /** Where the work stands. Precedence: `done > review > active > ready > planning`. */
 export type IssuePhase = 'planning' | 'ready' | 'active' | 'review' | 'done';
@@ -87,6 +88,51 @@ export interface IssueStatusProblem {
   readonly reason: string;
 }
 
+/**
+ * Which locator found a node's run-state (the widened visibility vocabulary):
+ * the working directory's own execution-root chain, or the workspace index
+ * entry recorded for the Change's instance — the second is what lets an Issue
+ * read from the Store root or any unrelated directory still observe a member
+ * project's recorded activity. Null when no run-state was located.
+ */
+export type IssueRunStateLocator = 'execution-root' | 'workspace-index';
+
+/**
+ * One durable session pointer a located run-state's stage records. Carries
+ * ONLY durable facts — the session id, thread id, and transcript location
+ * that stage's worker recorded. `agentId` is a live handle (a valid target
+ * only within the session that spawned the worker) and is excluded by
+ * construction: it is never read, so it can never be presented as durable.
+ */
+export interface IssueNodeSession {
+  readonly stageId: string;
+  readonly role: string | null;
+  readonly runtime: string | null;
+  readonly sessionId?: string;
+  readonly threadId?: string;
+  readonly transcript?: string;
+}
+
+/**
+ * The facts that join a node's execution back to the Issue (attribution is
+ * derived at read time and persisted nowhere):
+ *
+ *  - `pipeline` — the pipeline the located run-state records. Null when no
+ *    run-state was located, and for a portfolio record (its shape carries no
+ *    single parent pipeline — child pipelines belong to the children).
+ *  - `sessions` — per-stage durable worker pointers. A portfolio record
+ *    carries no stage workers, so portfolio-observed nodes report none —
+ *    honestly, and without substituting the parent's own per-change record.
+ *  - `evidenceLocator` — the Change's evidence directory when its planning
+ *    address resolves (the current changes directory, or the store-side
+ *    active-change address). Null when it does not — never a guess.
+ */
+export interface IssueNodeAttribution {
+  readonly pipeline: string | null;
+  readonly sessions: readonly IssueNodeSession[];
+  readonly evidenceLocator: string | null;
+}
+
 /** One plan node, observed. */
 export interface IssueNodeStatus {
   readonly nodeId: string;
@@ -106,6 +152,10 @@ export interface IssueNodeStatus {
   readonly diagnostic: string | null;
   /** The run-state file the observation was read from, when one was. */
   readonly runStatePath: string | null;
+  /** Which locator found `runStatePath`; null when nothing was located. */
+  readonly locatedBy: IssueRunStateLocator | null;
+  /** The attribution facts for this node (always present; facts are null/empty when unrecorded). */
+  readonly attribution: IssueNodeAttribution;
 }
 
 /**
@@ -156,6 +206,22 @@ export interface ProjectIssueStatusInput {
   readonly executionRoot?: string;
   /** The planning-home changes directory — the sticky-legacy chain's tail. */
   readonly changesDir?: string;
+  /**
+   * The Store's registered root (an absolute path). Enables the store-side
+   * active-change address for evidence locators — where a member project's
+   * Change planning content lives even when the read runs from an unrelated
+   * directory. Omitted inputs reproduce C1 behavior exactly.
+   */
+  readonly storeRoot?: string;
+  /**
+   * Workspace index entries, ALREADY filtered to the resolved Store's uid by
+   * the caller. Per change node, after the current-root chain finds nothing,
+   * each matching entry's execution root is probed with its own chain (design
+   * D6: ephemera first, then the entry's planning-side active-change address —
+   * no legacy work-dir leg on index roots). Matching is by the node's
+   * `changeInstanceId`; first hit wins.
+   */
+  readonly workspaceEntries?: readonly WorkspaceIndexEntry[];
   /**
    * Resolves the legacy machine-home work directory for one alias. Defaults to
    * `resolveChangeWorkDir(executionRoot, alias, { ensure: false })` — the same

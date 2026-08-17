@@ -1,0 +1,12 @@
+﻿{
+  "issue": null,
+  "binding": null,
+  "status": [
+    {
+      "severity": "error",
+      "code": "issue_start_node_not_runnable",
+      "message": "Node 'g-002' is not runnable: the work of g-001 is not complete.",
+      "fix": "Complete the named dependencies’ work (terminal run-state or finalized evidence), then re-run."
+    }
+  ]
+}

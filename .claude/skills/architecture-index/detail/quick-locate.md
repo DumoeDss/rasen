@@ -23,6 +23,7 @@
 | Store 注册 CRUD | `src/core/store/registry.ts` |
 | Store 生命周期（setup/register/clone） | `src/core/store/operations.ts` |
 | Issue 三轴状态投影（phase/health/progress） | `src/core/issue-status/projection.ts`（`projectIssueStatus`；CLI 面 `src/commands/store-issue.ts` list/show） |
+| Issue 节点启动绑定（launch contract / start 子命令） | `src/core/issue-execution/binding.ts`（`resolveIssueLaunchBinding`；CLI 面 `src/commands/store-issue.ts` start） |
 | `rasen store` 命令 | `src/commands/store.ts` |
 | `rasen store issue` 命令（Issue CRUD + 状态面） | `src/commands/store-issue.ts` |
 | **Workflow / Pipeline** | |

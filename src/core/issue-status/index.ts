@@ -10,10 +10,13 @@
 export { projectIssueStatus } from './projection.js';
 export type {
   IssueHealth,
+  IssueNodeAttribution,
   IssueNodeObservation,
+  IssueNodeSession,
   IssueNodeStatus,
   IssuePhase,
   IssueProgress,
+  IssueRunStateLocator,
   IssueRunStateVisibility,
   IssueStatus,
   IssueStatusProblem,

@@ -2056,6 +2056,23 @@
                       "description": "Output as JSON"
                     }
                   }
+                },
+                "start": {
+                  "description": "Resolve the next plan node's bound execution context and emit the launch contract; starting resolves and verifies, it never spawns",
+                  "options": {
+                    "store": {
+                      "description": "Store holding the Issue"
+                    },
+                    "node": {
+                      "description": "Plan node to address; omit to derive the single runnable frontier node"
+                    },
+                    "pipeline": {
+                      "description": "Pipeline to record in the launch contract, validated against the pipeline registry"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
                 }
               }
             },

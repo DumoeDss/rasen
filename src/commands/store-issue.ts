@@ -1,7 +1,7 @@
 /**
- * `rasen store issue new|list|show|state|plan` — the CLI for the Store-level
- * Issue Module (`StoreIssues`) and the Issue-facing slice of the aggregate
- * query (`StoreAggregateQuery.{listIssues,showIssue}`).
+ * `rasen store issue new|list|show|state|plan|start` — the CLI for the
+ * Store-level Issue Module (`StoreIssues`) and the Issue-facing slice of the
+ * aggregate query (`StoreAggregateQuery.{listIssues,showIssue}`).
  *
  * An Issue is Store-level cross-project intent, so every subcommand takes
  * only `--store`: never `--project`, never `--target-line`. Issue content is
@@ -26,17 +26,32 @@ import {
 } from '../core/store/issues/index.js';
 import {
   StoreAggregateQuery,
+  nodeStoreQueryFileSystem,
+  productionStoreQueryDependencies,
+  resolveQueryStore,
   type AggregateProblem,
   type IssueDetail,
   type IssueSummary,
   type IssueSummaryPage,
 } from '../core/store/query/index.js';
 import {
+  listAllWorkspaceIndexEntries,
+  type WorkspaceIndexEntry,
+} from '../core/store/workspace/registry.js';
+import { listPipelines } from '../core/pipeline-registry/resolver.js';
+import { resolveSessionLaunchContext } from '../core/management-api/session-launch-context.js';
+import {
   projectIssueStatus,
   type IssueStatus,
   type IssueStatusProblem,
   type ProjectIssueStatusInput,
 } from '../core/issue-status/index.js';
+import {
+  refusalFix,
+  resolveIssueLaunchBinding,
+  type IssueLaunchBinding,
+  type IssueStartRefusal,
+} from '../core/issue-execution/index.js';
 import {
   resolvedExecutionProjectRoot,
   resolveOpenSpecRoot,
@@ -50,6 +65,8 @@ export interface StoreIssueOptions {
   state?: string;
   reason?: string;
   fromFile?: string;
+  node?: string;
+  pipeline?: string;
   json?: boolean;
 }
 
@@ -136,12 +153,14 @@ function renderProblems(problems: readonly AggregateProblem[]): void {
 async function resolveProjectionContext(): Promise<{
   executionRoot?: string;
   changesDir?: string;
+  projectRoot?: string;
 }> {
   try {
     const root = await resolveOpenSpecRoot({ startPath: process.cwd(), reporter: false });
     return {
       executionRoot: resolvedExecutionProjectRoot(root),
       changesDir: root.changesDir,
+      projectRoot: root.path,
     };
   } catch {
     return {};
@@ -150,12 +169,49 @@ async function resolveProjectionContext(): Promise<{
 
 function statusInputFor(
   detail: IssueDetail,
-  context: { executionRoot?: string; changesDir?: string }
+  context: {
+    executionRoot?: string;
+    changesDir?: string;
+    storeRoot?: string;
+    workspaceEntries?: readonly WorkspaceIndexEntry[];
+  }
 ): ProjectIssueStatusInput {
   return {
     detail,
     ...(context.executionRoot === undefined ? {} : { executionRoot: context.executionRoot }),
     ...(context.changesDir === undefined ? {} : { changesDir: context.changesDir }),
+    ...(context.storeRoot === undefined ? {} : { storeRoot: context.storeRoot }),
+    ...(context.workspaceEntries === undefined ? {} : { workspaceEntries: context.workspaceEntries }),
+  };
+}
+
+/**
+ * The Store-scoped widening inputs, gathered ONCE per command: the resolved
+ * Store's registered root (the store-side active-change address for evidence
+ * locators) and the machine workspace index entries filtered to that Store's
+ * uid — exactly the storeUid-first filter `gatherReferenceEvidence` applies,
+ * so an index entry from another Store can never masquerade as this one's.
+ * Returns an empty widening when no `--store` was given; the Store-scoped
+ * query itself refuses that case before any of this matters.
+ */
+async function resolveStoreWideningContext(
+  store: string | undefined
+): Promise<{
+  storeId?: string;
+  storeUid?: string;
+  storeRoot?: string;
+  workspaceEntries?: readonly WorkspaceIndexEntry[];
+}> {
+  if (store === undefined) return {};
+  const resolved = await resolveQueryStore({ fs: nodeStoreQueryFileSystem }, { store });
+  const workspaceEntries = (
+    await listAllWorkspaceIndexEntries(productionStoreQueryDependencies.coordination())
+  ).filter(entry => entry.storeUid === resolved.storeUid);
+  return {
+    storeId: resolved.storeId,
+    storeUid: resolved.storeUid,
+    storeRoot: resolved.registeredRoot,
+    workspaceEntries,
   };
 }
 
@@ -213,6 +269,35 @@ function renderStatusNode(node: IssueStatus['nodes'][number]): string {
   return `      ${parts.join(' ')}`;
 }
 
+/**
+ * The attribution lines under one node line — the Run/Session facts that join
+ * the node's execution back to the Issue (pipeline, locator, durable session
+ * pointers, evidence directory). Emitted only when a fact exists to print:
+ * an all-null attribution carries no line, the same absence the JSON form's
+ * null fields report.
+ */
+function renderAttributionLines(node: IssueStatus['nodes'][number]): string[] {
+  const { attribution, locatedBy } = node;
+  const lines: string[] = [];
+  if (attribution.pipeline !== null || locatedBy !== null) {
+    const located = locatedBy === null ? '' : ` (located by ${locatedBy})`;
+    lines.push(`        pipeline: ${attribution.pipeline ?? 'none recorded'}${located}`);
+  }
+  for (const session of attribution.sessions) {
+    const who = [session.runtime, session.role].filter(part => part !== null).join(' ') || 'worker';
+    const pointers = [
+      ...(session.sessionId === undefined ? [] : [`sessionId=${session.sessionId}`]),
+      ...(session.threadId === undefined ? [] : [`threadId=${session.threadId}`]),
+      ...(session.transcript === undefined ? [] : [`transcript=${session.transcript}`]),
+    ].join(' ');
+    lines.push(`        session ${session.stageId} (${who}): ${pointers}`);
+  }
+  if (attribution.evidenceLocator !== null) {
+    lines.push(`        evidence: ${attribution.evidenceLocator}`);
+  }
+  return lines;
+}
+
 function renderStatusProblems(problems: readonly IssueStatusProblem[]): void {
   if (problems.length === 0) return;
   console.log('');
@@ -232,7 +317,10 @@ function renderIssueStatus(status: IssueStatus): void {
   console.log(`    ${renderRunStateVisibility(status)}`);
   if (status.nodes.length > 0) {
     console.log('    nodes:');
-    for (const node of status.nodes) console.log(renderStatusNode(node));
+    for (const node of status.nodes) {
+      console.log(renderStatusNode(node));
+      for (const line of renderAttributionLines(node)) console.log(line);
+    }
   }
   renderStatusProblems(status.problems);
 }
@@ -340,6 +428,49 @@ function renderIssueDetail(detail: IssueDetail, status?: IssueStatus): void {
   renderProblems(detail.problems);
 }
 
+// -----------------------------------------------------------------------------
+// Launch binding (`start`)
+// -----------------------------------------------------------------------------
+
+/**
+ * The launch contract in human form. Renderers stay English-literal per this
+ * file's convention; both forms carry the same facts (`--json` wraps the
+ * binding object unchanged).
+ */
+function renderLaunchBinding(binding: IssueLaunchBinding): void {
+  const modeHead =
+    binding.mode === 'fresh'
+      ? 'fresh launch'
+      : binding.mode === 'already-running'
+        ? 'already running (resume-oriented)'
+        : 'already complete';
+  console.log(`Issue ${binding.issueId} node ${binding.nodeId} — ${modeHead}`);
+  console.log(`  change: ${binding.alias ?? '(no alias)'} (${binding.changeInstanceId})`);
+  console.log(`  project: ${binding.projectId}  target-line: ${binding.targetLineId}`);
+  if (binding.launch !== null) {
+    console.log(`  binding: ${binding.launch.form}`);
+    console.log(`    cwd: ${binding.launch.cwd}`);
+    if (binding.launch.attachedRoots.length > 0) {
+      console.log(`    attached: ${binding.launch.attachedRoots.join(', ')}`);
+    }
+  } else if (binding.mode === 'already-complete') {
+    console.log("  no launch contract: the node's work is complete.");
+  } else if (binding.launchDiagnostic !== undefined) {
+    console.log(`  no launch contract: ${binding.launchDiagnostic}`);
+  }
+  console.log(`  pipeline: ${binding.pipeline ?? '(chosen at launch)'}`);
+  if (binding.runStatePath !== null) {
+    const located = binding.locatedBy === null ? '' : ` (located by ${binding.locatedBy})`;
+    console.log(`  run-state: ${binding.runStatePath}${located}`);
+  }
+}
+
+/** A binding refusal surfaces with its own taxonomy code, not a generic one. */
+function refusalError(refusal: IssueStartRefusal): StoreError {
+  const fix = refusalFix(refusal);
+  return new StoreError(refusal.message, refusal.code, fix === undefined ? {} : { fix });
+}
+
 export function registerStoreIssueCommand(store: Command): void {
   const issue = store.command('issue').description('');
 
@@ -402,10 +533,11 @@ export function registerStoreIssueCommand(store: Command): void {
           startPath: process.cwd(),
         };
         const context = await resolveProjectionContext();
+        const widening = await resolveStoreWideningContext(options.store);
         const statuses: IssueStatus[] = [];
         for (const summary of page.issues) {
           const detail = await detailForList(scope, summary, page);
-          statuses.push(await projectIssueStatus(statusInputFor(detail, context)));
+          statuses.push(await projectIssueStatus(statusInputFor(detail, { ...context, ...widening })));
         }
         if (options.json) {
           printJson({
@@ -435,7 +567,10 @@ export function registerStoreIssueCommand(store: Command): void {
           issueId,
         });
         const status = await projectIssueStatus(
-          statusInputFor(detail, await resolveProjectionContext())
+          statusInputFor(detail, {
+            ...(await resolveProjectionContext()),
+            ...(await resolveStoreWideningContext(options.store)),
+          })
         );
         if (options.json) {
           printJson({
@@ -512,6 +647,56 @@ export function registerStoreIssueCommand(store: Command): void {
         else renderPlanWrite(result);
       } catch (error) {
         emitFailure(options.json, { revision: null }, error, 'store_issue_plan_failed');
+      }
+    });
+
+  issue
+    .command('start <issue-id>')
+    .description('')
+    .option('--store <id>', '')
+    .option('--node <nodeId>', '')
+    .option('--pipeline <name>', '')
+    .option('--json', '')
+    .action(async (issueId: string, options: StoreIssueOptions) => {
+      try {
+        const detail = await StoreAggregateQuery.showIssue({
+          ...(options.store === undefined ? {} : { store: options.store }),
+          startPath: process.cwd(),
+          issueId,
+        });
+        const context = await resolveProjectionContext();
+        const widening = await resolveStoreWideningContext(options.store);
+        const status = await projectIssueStatus(
+          statusInputFor(detail, { ...context, ...widening })
+        );
+        // The member-project checkout route is the SAME session-launch
+        // composition a supervised session uses, addressed by the Store's
+        // permanent identity so a display-name collision can never resolve
+        // the wrong Store's membership.
+        const launchContextFor = (projectId: string) =>
+          resolveSessionLaunchContext({
+            ...(widening.storeUid === undefined ? {} : { space: `store:${widening.storeUid}` }),
+            execution: `project:${projectId}`,
+            launchProject: null,
+          });
+        // Root-aware pipeline validation: the pipelines visible from the root
+        // this command runs in (project-local layers included).
+        const pipelineKnown = (name: string) =>
+          listPipelines(context.projectRoot).includes(name.replace(/\.ya?ml$/, ''));
+        const result = await resolveIssueLaunchBinding({
+          detail,
+          status,
+          workspaceEntries: widening.workspaceEntries ?? [],
+          launchContextFor,
+          ...(options.pipeline === undefined ? {} : { pipeline: options.pipeline, pipelineKnown }),
+          ...(options.node === undefined ? {} : { nodeId: options.node }),
+          ...(widening.storeId === undefined ? {} : { storeId: widening.storeId }),
+        });
+        if (!result.ok) throw refusalError(result.refusal);
+        if (options.json) printJson({ issueId, binding: result.binding });
+        else renderLaunchBinding(result.binding);
+      } catch (error) {
+        emitFailure(options.json, { issue: null, binding: null }, error, 'store_issue_start_failed');
       }
     });
 }

@@ -41,9 +41,18 @@ Spec、Requirement/Scenario、Change/Delta 的 canonical 校验定义。
 回答"这个 Issue 现在在哪"：`phase`(`planning|ready|active|review|done`) × `health`(`healthy|blocked|failed|waiting-human|stale`，后两者为保留值) × `progress`(完成必需节点/总数)。每次读取从三个输入现推——最新 Execution Plan 修订、committed Store evidence、机器本地 run-state——不写任何地方（source guard + byte-identical 行为测试双保险）。
 
 - **关键文件**：`projection.ts`（`projectIssueStatus(input)`：per-node run-state 定位 + D4 观察映射 + phase/health/progress 推导）、`types.ts`（闭词汇表 + `ProjectIssueStatusInput`，显式路径输入零 ambient read）、`index.ts`（barrel）。
-- **定位配方 = `pipeline resume` 原样复用**：`stateFileSearchChain` + `runStatePath`/`portfolioStatePath` + `readRunStateDetailed`/`readPortfolioStateDetailed`（`ephemera → workDir → planning change dir` 三段 sticky-legacy 链）；portfolio-run.json 存在即权威；escalated child/delivery = failed、escalated stage = waiting-human。
-- **边界**：只 import 不改 `src/core/pipeline-registry/`（冻结）与 `src/core/store/query/`（store-pure 契约不含 run-state——这就是它独立成顶层模块的原因）。CLI 缝在 `src/commands/store-issue.ts`：best-effort 解析 execution root（失败降级 visibility-none），list 行加 `phase/health n/m`，show 加 status 块，两命令 `--json` 增生 `status` 对象。
+- **定位配方 = `pipeline resume` 原样复用**：`stateFileSearchChain` + `runStatePath`/`portfolioStatePath` + `readRunStateDetailed`/`readPortfolioStateDetailed`（`ephemera → workDir → planning change dir` 三段 sticky-legacy 链）；portfolio-run.json 存在即权威；escalated child/delivery = failed、escalated stage = waiting-human。C2 加宽：当前根链未命中后，逐个匹配的 workspace index 条目以其 execution root 自有链再探（ephemera → 条目 planning 侧 active-change 地址；index 根无 work-dir 腿），节点带 `locatedBy`（execution-root|workspace-index|null）与 attribution（pipeline/sessions/evidenceLocator——sessions 只含 durable 指针，agentId 构造上排除）。
+- **边界**：只 import 不改 `src/core/pipeline-registry/`（冻结）与 `src/core/store/query/`（store-pure 契约不含 run-state——这就是它独立成顶层模块的原因）。CLI 缝在 `src/commands/store-issue.ts`：best-effort 解析 execution root（失败降级 visibility-none），list 行加 `phase/health n/m`，show 加 status 块 + 每节点 attribution 行，两命令 `--json` 增生 `status` 对象；index 条目每命令收集一次（`listAllWorkspaceIndexEntries` 按 store uid 过滤）。
 - **连接**：被 `src/commands/store-issue.ts` 消费；g-002（execution binding）的 Run/Session 归属回流应 import/扩展此模块。
+
+## `issue-execution/` — Issue 节点启动绑定（resolve + verify + emit，不 spawn）
+
+回答"这个 Issue 的下一个节点从哪里启动"：从 plan 修订 + 投影 observations 推导 runnable frontier（observation 规则，非 query 的 archive-based `blockedBy`），经固定路由序解析绑定的执行上下文（D4：workspace pair index 条目 → L6 `resolveSessionLaunchContext` 成员 checkout → unprepared 拒绝并给出确切 `store workspace plan --existing-change` 准备命令），输出 launch contract（cwd/attached/pipeline/mode）。读时推导、零写入；refusal 闭集七码，每条拒结名名候选/阻塞/准备命令/L6 诊断。
+
+- **关键文件**：`binding.ts`（`resolveIssueLaunchBinding` + `refusalFix`）、`types.ts`（`IssueLaunchBinding`/refusal taxonomy/injectable `launchContextFor`/`pipelineKnown`）、`index.ts`（barrel）。
+- **组合而非重建**：import L6 `management-api/session-launch-context.ts`（经可注入 seam，生产默认 `store:<uid>` + `project:<id>`）、`store/workspace/registry.ts` 的 index 读取、`issue-status` 的投影（attribution.pipeline 即 D5 的 recorded pipeline 来源）、`pipeline-registry/resolver.ts` 的 catalog（`--pipeline` 校验）。只 import 不改 `src/core/pipeline-registry/`。
+- **边界**：CLI 缝在 `src/commands/store-issue.ts` 的 `start` 子命令（`--node/--pipeline/--store/--json`；索引条目每命令收集一次，按 resolved store 的 uid 过滤）。
+- **连接**：被 `src/commands/store-issue.ts` 消费；g-003 的验收/close 若需复用 frontier 规则，应 import 此模块。
 
 ## `change-metadata/` — 每 change 元数据（`change.yaml`）
 

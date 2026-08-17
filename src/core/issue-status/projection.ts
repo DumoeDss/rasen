@@ -22,7 +22,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { resolveChangeWorkDir } from '../change-work.js';
-import { ephemeraDir } from '../file-placement.js';
+import { ephemeraDir, evidenceDir } from '../file-placement.js';
 import {
   readRunStateDetailed,
   runStatePath,
@@ -37,11 +37,16 @@ import {
   type PortfolioState,
 } from '../pipeline-registry/portfolio-state.js';
 import type { IssueDetail, ResolvedPlanNode } from '../store/query/index.js';
+import { resolveStorePlanningLayoutV2Path } from '../store/planning-layout-v2.js';
+import type { WorkspaceIndexEntry } from '../store/workspace/registry.js';
 import type {
   IssueHealth,
+  IssueNodeAttribution,
   IssueNodeObservation,
+  IssueNodeSession,
   IssueNodeStatus,
   IssuePhase,
+  IssueRunStateLocator,
   IssueStatus,
   IssueStatusProblem,
   ProjectIssueStatusInput,
@@ -86,6 +91,204 @@ async function workDirFor(input: ProjectIssueStatusInput, alias: string): Promis
   if (input.workDirFor !== undefined) return input.workDirFor(alias);
   if (input.executionRoot === undefined) return null;
   return resolveChangeWorkDir(input.executionRoot, alias, { ensure: false });
+}
+
+const NO_SESSIONS: readonly IssueNodeSession[] = [];
+
+/**
+ * The durable session pointers a run-state's stages record (design D7).
+ * `agentId` is a live handle and is excluded by construction — it is never
+ * read, so it can never be presented as durable. A worker that recorded no
+ * durable pointer (a bare string label, or a structured record with none of
+ * session id / thread id / transcript) contributes no session fact: none is
+ * synthesized.
+ */
+function sessionsFromStages(state: RunState): readonly IssueNodeSession[] {
+  const sessions: IssueNodeSession[] = [];
+  for (const [stageId, stage] of Object.entries(state.stages ?? {})) {
+    const worker = stage.worker;
+    if (typeof worker !== 'object' || worker === null) continue;
+    const sessionId = typeof worker.sessionId === 'string' ? worker.sessionId : undefined;
+    const threadId = typeof worker.threadId === 'string' ? worker.threadId : undefined;
+    const transcript = typeof worker.transcript === 'string' ? worker.transcript : undefined;
+    if (sessionId === undefined && threadId === undefined && transcript === undefined) {
+      continue;
+    }
+    sessions.push({
+      stageId,
+      role: typeof worker.role === 'string' ? worker.role : null,
+      runtime: typeof worker.runtime === 'string' ? worker.runtime : null,
+      ...(sessionId === undefined ? {} : { sessionId }),
+      ...(threadId === undefined ? {} : { threadId }),
+      ...(transcript === undefined ? {} : { transcript }),
+    });
+  }
+  return sessions;
+}
+
+/**
+ * The Change's evidence directory when its planning address resolves (design
+ * D7): the current planning-home changes directory first, then the store-side
+ * active-change address computed from `storeRoot` and the committed
+ * claimant's ids. Both legs are explicit inputs — no ambient reads — and a
+ * relative `storeRoot` would make `resolveStorePlanningLayoutV2Path` produce
+ * a cwd-dependent path, so it is treated as absent.
+ */
+function evidenceLocatorFor(
+  resolved: ResolvedPlanNode,
+  input: ProjectIssueStatusInput
+): string | null {
+  if (resolved.node.kind !== 'change' || resolved.resolution.status !== 'resolved') {
+    return null;
+  }
+  const claimant = resolved.resolution.claimants[0];
+  if (claimant === undefined) return null;
+  if (input.changesDir !== undefined && path.isAbsolute(input.changesDir)) {
+    const local = path.join(input.changesDir, claimant.changeId);
+    if (fs.existsSync(local)) return evidenceDir(local);
+  }
+  if (input.storeRoot !== undefined && path.isAbsolute(input.storeRoot)) {
+    try {
+      const addressed = resolveStorePlanningLayoutV2Path(input.storeRoot, {
+        kind: 'active-change',
+        projectId: claimant.projectId,
+        changeId: claimant.changeId,
+      });
+      if (fs.existsSync(addressed)) return evidenceDir(addressed);
+    } catch {
+      // An address that does not validate names no directory: no locator.
+    }
+  }
+  return null;
+}
+
+/**
+ * The index-root probe chain (design D6): for each entry matching the node's
+ * Change instance, that entry's execution root probed with its OWN chain —
+ * its ephemera directory keyed by the node's alias, then the entry's
+ * planning-side active-change address computed from the entry's own recorded
+ * ids. The legacy machine-home work-dir leg applies ONLY to the current
+ * execution root: it is keyed to that root's identity, not to an index root.
+ * An entry whose recorded address does not validate contributes no planning
+ * leg; its ephemera leg still probes.
+ */
+function indexChainFor(
+  entries: readonly WorkspaceIndexEntry[],
+  changeInstanceId: string,
+  alias: string
+): readonly string[] {
+  const chain: string[] = [];
+  for (const entry of entries) {
+    if (entry.changeInstanceId !== changeInstanceId) continue;
+    chain.push(ephemeraDir(entry.execution.root, alias));
+    try {
+      chain.push(
+        resolveStorePlanningLayoutV2Path(entry.planning.root, {
+          kind: 'active-change',
+          projectId: entry.projectId,
+          changeId: entry.changeId,
+        })
+      );
+    } catch {
+      // The entry's planning side does not address a change directory; the
+      // ephemera leg above still probes this entry's execution root.
+    }
+  }
+  return chain;
+}
+
+/**
+ * Reads a located state file into a node status. Portfolio records carry no
+ * parent pipeline and no stage workers, so their attribution is honestly
+ * empty (design D7); a per-change record contributes its pipeline and its
+ * stages' durable pointers. Returns null for the vanished-between-reads race
+ * both readers report as `absent` after a locate, so the caller falls through
+ * to the next probe rather than asserting either way.
+ */
+function nodeFromLocated(
+  resolved: ResolvedPlanNode,
+  alias: string,
+  record: 'portfolio' | 'run',
+  at: LocatedStateFile,
+  locatedBy: IssueRunStateLocator,
+  evidenceLocator: string | null,
+  problems: IssueStatusProblem[]
+): IssueNodeStatus | null {
+  const nodeId = resolved.node.nodeId;
+  if (record === 'portfolio') {
+    const read = readPortfolioStateDetailed(at.dir);
+    if (read.kind === 'invalid') {
+      problems.push({
+        kind: 'invalid-run-state',
+        node: nodeId,
+        ref: at.path,
+        reason: read.reason,
+      });
+      return {
+        nodeId,
+        kind: 'change',
+        alias,
+        observation: 'unknown',
+        blockedBy: resolved.blockedBy,
+        diagnostic: read.reason,
+        runStatePath: at.path,
+        locatedBy,
+        attribution: { pipeline: null, sessions: NO_SESSIONS, evidenceLocator },
+      };
+    }
+    if (read.kind === 'ok') {
+      return {
+        nodeId,
+        kind: 'change',
+        alias,
+        observation: observePortfolio(read.state),
+        blockedBy: resolved.blockedBy,
+        diagnostic: null,
+        runStatePath: at.path,
+        locatedBy,
+        attribution: { pipeline: null, sessions: NO_SESSIONS, evidenceLocator },
+      };
+    }
+    return null;
+  }
+  const read = readRunStateDetailed(at.dir);
+  if (read.kind === 'invalid') {
+    problems.push({
+      kind: 'invalid-run-state',
+      node: nodeId,
+      ref: at.path,
+      reason: read.reason,
+    });
+    return {
+      nodeId,
+      kind: 'change',
+      alias,
+      observation: 'unknown',
+      blockedBy: resolved.blockedBy,
+      diagnostic: read.reason,
+      runStatePath: at.path,
+      locatedBy,
+      attribution: { pipeline: null, sessions: NO_SESSIONS, evidenceLocator },
+    };
+  }
+  if (read.kind === 'ok') {
+    return {
+      nodeId,
+      kind: 'change',
+      alias,
+      observation: observeAutoRun(read.state),
+      blockedBy: resolved.blockedBy,
+      diagnostic: null,
+      runStatePath: at.path,
+      locatedBy,
+      attribution: {
+        pipeline: read.state.pipeline,
+        sessions: sessionsFromStages(read.state),
+        evidenceLocator,
+      },
+    };
+  }
+  return null;
 }
 
 /**
@@ -163,6 +366,8 @@ async function observeNode(
       blockedBy: resolved.blockedBy,
       diagnostic: null,
       runStatePath: null,
+      locatedBy: null,
+      attribution: { pipeline: null, sessions: NO_SESSIONS, evidenceLocator: null },
     };
   }
 
@@ -196,6 +401,8 @@ async function observeNode(
       blockedBy: resolved.blockedBy,
       diagnostic: reason,
       runStatePath: null,
+      locatedBy: null,
+      attribution: { pipeline: null, sessions: NO_SESSIONS, evidenceLocator: null },
     };
   }
 
@@ -212,6 +419,12 @@ async function observeNode(
       blockedBy: resolved.blockedBy,
       diagnostic: null,
       runStatePath: null,
+      locatedBy: null,
+      attribution: {
+        pipeline: null,
+        sessions: NO_SESSIONS,
+        evidenceLocator: evidenceLocatorFor(resolved, input),
+      },
     };
   }
 
@@ -225,8 +438,12 @@ async function observeNode(
       blockedBy: resolved.blockedBy,
       diagnostic: 'no change alias available to locate run-state',
       runStatePath: null,
+      locatedBy: null,
+      attribution: { pipeline: null, sessions: NO_SESSIONS, evidenceLocator: null },
     };
   }
+
+  const evidenceLocator = evidenceLocatorFor(resolved, input);
 
   // The same sticky-legacy chain `pipeline resume` searches: the execution
   // root's ephemera directory first, then the legacy machine-home work
@@ -263,81 +480,73 @@ async function observeNode(
   // orchestration model than the one this Change actually ran.
   const portfolioAt = locateInChain(chain, portfolioStatePath);
   if (portfolioAt !== null) {
-    const read = readPortfolioStateDetailed(portfolioAt.dir);
-    if (read.kind === 'invalid') {
-      problems.push({
-        kind: 'invalid-run-state',
-        node: node.nodeId,
-        ref: portfolioAt.path,
-        reason: read.reason,
-      });
-      return {
-        nodeId: node.nodeId,
-        kind: 'change',
-        alias,
-        observation: 'unknown',
-        blockedBy: resolved.blockedBy,
-        diagnostic: read.reason,
-        runStatePath: portfolioAt.path,
-      };
-    }
     // `absent` after a locate means the file vanished between the two reads;
-    // fall through to the per-change record rather than asserting either way.
-    if (read.kind === 'ok') {
-      return {
-        nodeId: node.nodeId,
-        kind: 'change',
-        alias,
-        observation: observePortfolio(read.state),
-        blockedBy: resolved.blockedBy,
-        diagnostic: null,
-        runStatePath: portfolioAt.path,
-      };
-    }
+    // the helper's null falls through to the per-change record rather than
+    // asserting either way.
+    const observed = nodeFromLocated(
+      resolved,
+      alias,
+      'portfolio',
+      portfolioAt,
+      'execution-root',
+      evidenceLocator,
+      problems
+    );
+    if (observed !== null) return observed;
   }
 
   const runAt = locateInChain(chain, runStatePath);
-  if (runAt === null) {
-    return {
-      nodeId: node.nodeId,
-      kind: 'change',
+  if (runAt !== null) {
+    const observed = nodeFromLocated(
+      resolved,
       alias,
-      observation: 'not-started',
-      blockedBy: resolved.blockedBy,
-      diagnostic: null,
-      runStatePath: null,
-    };
+      'run',
+      runAt,
+      'execution-root',
+      evidenceLocator,
+      problems
+    );
+    if (observed !== null) return observed;
   }
-  const read = readRunStateDetailed(runAt.dir);
-  if (read.kind === 'invalid') {
-    problems.push({
-      kind: 'invalid-run-state',
-      node: node.nodeId,
-      ref: runAt.path,
-      reason: read.reason,
-    });
-    return {
-      nodeId: node.nodeId,
-      kind: 'change',
-      alias,
-      observation: 'unknown',
-      blockedBy: resolved.blockedBy,
-      diagnostic: read.reason,
-      runStatePath: runAt.path,
-    };
+  // Design D6 — the widened locator: after the working directory's own
+  // execution-root chain finds nothing, each matching index entry's execution
+  // root is probed with its own chain. This is what lets an Issue read from
+  // the Store root or any unrelated directory still observe a member
+  // project's recorded activity, and the node labels the workspace index as
+  // the locator that found it. The same portfolio-authoritative rule and the
+  // same per-dir order apply on the index chain.
+  if (input.workspaceEntries !== undefined) {
+    const indexChain = indexChainFor(input.workspaceEntries, node.changeInstanceId, alias);
+    if (indexChain.length > 0) {
+      const portfolioAtIndex = locateInChain(indexChain, portfolioStatePath);
+      if (portfolioAtIndex !== null) {
+        const observed = nodeFromLocated(
+          resolved,
+          alias,
+          'portfolio',
+          portfolioAtIndex,
+          'workspace-index',
+          evidenceLocator,
+          problems
+        );
+        if (observed !== null) return observed;
+      }
+      const runAtIndex = locateInChain(indexChain, runStatePath);
+      if (runAtIndex !== null) {
+        const observed = nodeFromLocated(
+          resolved,
+          alias,
+          'run',
+          runAtIndex,
+          'workspace-index',
+          evidenceLocator,
+          problems
+        );
+        if (observed !== null) return observed;
+      }
+    }
   }
-  if (read.kind === 'ok') {
-    return {
-      nodeId: node.nodeId,
-      kind: 'change',
-      alias,
-      observation: observeAutoRun(read.state),
-      blockedBy: resolved.blockedBy,
-      diagnostic: null,
-      runStatePath: runAt.path,
-    };
-  }
-  // `absent` after a locate: the file vanished between the two reads.
+
   return {
     nodeId: node.nodeId,
     kind: 'change',
@@ -346,6 +555,8 @@ async function observeNode(
     blockedBy: resolved.blockedBy,
     diagnostic: null,
     runStatePath: null,
+    locatedBy: null,
+    attribution: { pipeline: null, sessions: NO_SESSIONS, evidenceLocator },
   };
 }
 
