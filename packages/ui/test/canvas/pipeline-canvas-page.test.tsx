@@ -419,6 +419,7 @@ import { LocationProvider, Router, Route } from 'preact-iso';
 import { SelectionMode } from '@xyflow/react';
 import { DefinitionContractPanel } from '../../src/canvas/DefinitionContractPanel.js';
 import { PipelineCanvasPage } from '../../src/canvas/PipelineCanvasPage.js';
+import { V2LoopReviewPanel } from '../../src/canvas/V2LoopReviewPanel.js';
 import { V2NodePanel } from '../../src/canvas/V2NodePanel.js';
 import * as client from '../../src/api/client.js';
 import { ApiError } from '../../src/api/client.js';
@@ -1210,6 +1211,88 @@ describe('PipelineCanvasPage — edit mode', () => {
     );
   });
 
+  it('acceptance: an undeclared terminal outcome is declared from the contract panel and re-validation clears it (spec scenario 1)', async () => {
+    // The live-testing dead end this change resolves (proposal Why): a
+    // fresh v2 definition seeds `outcomes: []`, its sinks produce `done`,
+    // the engine raises PORT_MISMATCH — and the fix must be satisfiable at
+    // the moment of need, from the definition contract panel.
+    vi.mocked(client.getPipelineDetail).mockRejectedValue(
+      new ApiError(404, {
+        error: { code: 'not_found', message: 'No pipeline named "contract-editor".' },
+      })
+    );
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(CANVAS_V2_AUTHORING_CATALOG);
+    vi.mocked(client.validatePipeline)
+      .mockResolvedValueOnce({
+        valid: false,
+        issues: [
+          {
+            severity: 'error',
+            code: 'PORT_MISMATCH',
+            path: '/root/nodes/0/capability',
+            message:
+              "Definition graph produces terminal outcome 'done', but it is not declared by the owner contract.",
+            related: [
+              {
+                path: '/root/nodes/1/capability',
+                message: "Also produces terminal outcome 'done'.",
+              },
+            ],
+          },
+        ],
+      })
+      .mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/contract-editor');
+    await clickAndFlush(
+      container.querySelector('[data-testid="pipeline-canvas-start-assembling"]')
+    );
+
+    // Two unconnected stage sinks from the catalog's one bindable skill.
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-apply-change"]')
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-apply-change"]')
+    );
+
+    // Validate: the engine-shaped PORT_MISMATCH lands in the drawer.
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    expect(client.validatePipeline).toHaveBeenCalledTimes(1);
+    const withIssue = vi.mocked(client.validatePipeline).mock.calls[0]![0] as WirePipelineDefinitionV2;
+    expect(withIssue.outcomes).toEqual([]);
+    expect(withIssue.root.nodes).toHaveLength(2);
+    const beforeNodes = withIssue.root.nodes.map((node) => ({ ...node }));
+    const beforeConnections = withIssue.root.connections.map((connection) => ({
+      ...connection,
+    }));
+    expect(container.querySelector('[data-testid="issues-drawer"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="issues-drawer-item"]')!.textContent
+    ).toContain("terminal outcome 'done'");
+
+    // The fix: declare `done` in the definition contract panel (blur commit).
+    const outcomesField = () =>
+      container.querySelector('[data-testid="definition-outcomes"]') as HTMLInputElement;
+    outcomesField().focus();
+    await setValueAndFlush(outcomesField(), 'done', 'input');
+    await act(async () => {
+      outcomesField().blur();
+      await flushMicrotasks();
+    });
+
+    // Re-run Validate: clean — the issue is gone and NO other edit was made
+    // to the definition (nodes and connections byte-identical).
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    const fixed = vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+    expect(fixed.outcomes).toEqual(['done']);
+    expect(fixed.root.nodes).toEqual(beforeNodes);
+    expect(fixed.root.connections).toEqual(beforeConnections);
+    expect(container.querySelector('[data-testid="issues-drawer"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="pipeline-canvas-validation-result"]')!.textContent
+    ).toContain('No issues');
+  });
+
   it('authors the shared all-eight v2 request from a real blank Canvas, through the closed gesture vocabulary, and submits it unchanged to validate and save', async () => {
     // Same "one of every node kind" claim as the pre-refactor version of this
     // test, but reached exclusively through the four root gestures and the
@@ -1273,10 +1356,22 @@ describe('PipelineCanvasPage — edit mode', () => {
       'report',
       'input'
     );
+    // The outcomes field commits on blur (the NameListField idiom), so drive
+    // it with the same focus/input/blur pattern the declaration-outcomes
+    // field below uses — a bare input event no longer patches the contract.
+    const definitionOutcomes = container.querySelector(
+      '[data-testid="definition-outcomes"]'
+    ) as HTMLInputElement;
+    definitionOutcomes.focus();
     await setValueAndFlush(
-      container.querySelector('[data-testid="definition-outcomes"]'),
-      CANVAS_V2_GESTURE_AUTHORED_DEFINITION.outcomes.join(',')
+      definitionOutcomes,
+      CANVAS_V2_GESTURE_AUTHORED_DEFINITION.outcomes.join(','),
+      'input'
     );
+    await act(async () => {
+      definitionOutcomes.blur();
+      await flushMicrotasks();
+    });
     await setValueAndFlush(
       container.querySelector('[data-testid="definition-limit-max-actions"]'),
       '32',
@@ -1938,6 +2033,41 @@ describe('PipelineCanvasPage — edit mode', () => {
     // Both the chip AND the drawer clear — no stale findings survive the edit.
     expect(container.querySelector('[data-testid="pipeline-canvas-validation-result"]')).toBeNull();
     expect(container.querySelector('[data-testid="issues-drawer"]')).toBeNull();
+  });
+
+  it('a no-edit blur of the outcomes field commits nothing and keeps the validation findings (review m2)', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline).mockResolvedValue({
+      valid: false,
+      issues: [
+        { severity: 'error', path: '/root/nodes/0/capability', message: 'Something to fix.' },
+      ],
+    });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    expect(container.querySelector('[data-testid="issues-drawer"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="pipeline-canvas-validation-result"]')).not.toBeNull();
+
+    // Focus the outcomes field, retype its UNCHANGED canonical value
+    // ('done,rejected' — the fixture's outcomes), blur: the identical-value
+    // guard must keep this a no-op. Pre-m2 the blur committed a
+    // content-identical patch whose markDraftChanged wiped the chip and the
+    // drawer even though no contract value changed.
+    const outcomes = container.querySelector(
+      '[data-testid="definition-outcomes"]'
+    ) as HTMLInputElement;
+    outcomes.focus();
+    await setValueAndFlush(outcomes, 'done,rejected', 'input');
+    await act(async () => {
+      outcomes.blur();
+      await flushMicrotasks();
+    });
+    expect(container.querySelector('[data-testid="pipeline-canvas-validation-result"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="issues-drawer"]')).not.toBeNull();
+    expect(client.validatePipeline).toHaveBeenCalledTimes(1);
   });
 
   it('dismissing the drawer also clears the blocked-save message it referenced', async () => {
@@ -3882,6 +4012,82 @@ describe('PipelineCanvasPage — edit mode', () => {
     expect(onInvalidChange).toHaveBeenLastCalledWith('limits/budget', null);
   });
 
+  it('definition outcomes: the list-field idiom, committed on blur only (NameListField swap)', async () => {
+    const onPatch = vi.fn();
+    const outcomesPatchOf = () =>
+      onPatch.mock.calls.at(-1)![0] as { outcomes: string[] };
+    await act(async () => {
+      render(
+        <DefinitionContractPanel
+          definition={{
+            ...(structuredClone(v2Definition) as WirePipelineDefinitionV2),
+            outcomes: ['done', 'partial'],
+          }}
+          focusedField={null}
+          onPatch={onPatch}
+          onInvalidChange={vi.fn()}
+        />,
+        container
+      );
+      await flushMicrotasks();
+    });
+
+    const field = () =>
+      container.querySelector('[data-testid="definition-outcomes"]') as HTMLInputElement;
+    // The field renders the current contract as comma text.
+    expect(field().value).toBe('done,partial');
+
+    // Intermediate keystrokes never reach the model (the per-keystroke full
+    // draft patch this field used to perform is gone).
+    field().focus();
+    await setValueAndFlush(field(), 'done,partial,re', 'input');
+    expect(onPatch).not.toHaveBeenCalled();
+
+    // Blur commits the canonical parse: trimmed, non-blank, deduplicated,
+    // typed order preserved.
+    await act(async () => {
+      field().blur();
+      await flushMicrotasks();
+    });
+    expect(onPatch).toHaveBeenCalledTimes(1);
+    expect(outcomesPatchOf().outcomes).toEqual(['done', 'partial', 're']);
+
+    // A duplicate in the text is deduplicated by the same parse — the
+    // canonical value equals the contract's, so the guard commits NOTHING
+    // (review m2: an unchanged value must not fire the commit path's
+    // draft-change bookkeeping) while the displayed text re-normalizes.
+    field().focus();
+    await setValueAndFlush(field(), '  done , done , partial  , ', 'input');
+    await act(async () => {
+      field().blur();
+      await flushMicrotasks();
+    });
+    expect(onPatch).toHaveBeenCalledTimes(1);
+    expect(field().value).toBe('done,partial');
+
+    // The outcomes focused-field key still ring-marks the field for issue
+    // navigation (shared stylesheet class with the declaration editor's).
+    await act(async () => {
+      render(
+        <DefinitionContractPanel
+          definition={
+            structuredClone(v2Definition) as WirePipelineDefinitionV2
+          }
+          focusedField="outcomes"
+          onPatch={onPatch}
+          onInvalidChange={vi.fn()}
+        />,
+        container
+      );
+      await flushMicrotasks();
+    });
+    expect(
+      field().closest('.declaration-editor__field')?.classList.contains(
+        'declaration-editor__field--focused'
+      )
+    ).toBe(true);
+  });
+
   it('keeps invalid loop, lifecycle, and paired-parallel integers raw and blocks every action until repair', async () => {
     vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
     vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
@@ -4124,6 +4330,36 @@ describe('PipelineCanvasPage — edit mode', () => {
     ).toEqual(['done', 'partial']);
   });
 
+  it('the definition contract panel refuses blank/duplicate row names with a diagnostic and keeps the previous contract', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    // Two typed-input rows; renaming the second onto the first's name makes
+    // the patch hit the model's uniqueness rule — the panel's refusal path
+    // (the outcomes list itself pre-dedupes through the NameListField parse,
+    // pinned by the component test above; the rule site is shared).
+    await clickAndFlush(container.querySelector('[data-testid="definition-input-add"]'));
+    await clickAndFlush(container.querySelector('[data-testid="definition-input-add"]'));
+    const inputName = (index: number) =>
+      container.querySelector(
+        `[data-testid="definition-input-name"][data-row-index="${index}"]`
+      ) as HTMLInputElement;
+    await setValueAndFlush(inputName(0), 'same', 'input');
+    await setValueAndFlush(inputName(1), 'same', 'input');
+
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent)
+      .toContain('definition input names must be unique');
+
+    // The refused patch never landed: the submitted contract keeps the
+    // pre-refusal rows verbatim.
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    const submitted = vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+    expect(submitted.inputs.map((row) => row.name)).toEqual(['same', 'input-2']);
+  });
+
   it('authors definition, AtomicStage, Gate, loop lifecycle, and parallel fields through mounted controls', async () => {
     vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
     vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
@@ -4152,10 +4388,15 @@ describe('PipelineCanvasPage — edit mode', () => {
       'report',
       'input'
     );
-    await setValueAndFlush(
-      container.querySelector('[data-testid="definition-outcomes"]'),
-      'done,partial'
-    );
+    const mountedOutcomes = container.querySelector(
+      '[data-testid="definition-outcomes"]'
+    ) as HTMLInputElement;
+    mountedOutcomes.focus();
+    await setValueAndFlush(mountedOutcomes, 'done,partial', 'input');
+    await act(async () => {
+      mountedOutcomes.blur();
+      await flushMicrotasks();
+    });
     await setValueAndFlush(
       container.querySelector('[data-testid="definition-limit-max-actions"]'),
       '24',
@@ -6070,6 +6311,149 @@ describe('PipelineCanvasPage — back-edge loop inference', () => {
     expect(secondLoop.id).toBe('bounded-loop-2');
     expect(secondLoop.body).toBe('loop-body');
   });
+
+  it('declares an outcome inline while the review is open and the exit select reads it live', async () => {
+    await mountBackedgeEdit(backedgeDetail({ outcomes: [] }));
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge-inner"]'));
+
+    // Fresh-contract corner (canvas-root-contract-editor design D3/D5): the
+    // exit select has nothing to offer and the inline declare affordance
+    // stands in for the contract panel this modal covers.
+    const review = container.querySelector('[data-testid="v2-loop-review-panel"]')!;
+    const exitSelect = review.querySelector(
+      '[data-testid="v2-loop-review-exit-outcome"]'
+    ) as HTMLSelectElement;
+    expect(exitSelect.options).toHaveLength(0);
+    expect(review.querySelector('[data-testid="v2-loop-review-declare"]')).not.toBeNull();
+
+    // One declaring transaction, the trimmed name.
+    await setValueAndFlush(
+      review.querySelector('[data-testid="v2-loop-review-declare-name"]'),
+      '  done  ',
+      'input'
+    );
+    await clickAndFlush(
+      review.querySelector('[data-testid="v2-loop-review-declare-confirm"]')
+    );
+
+    // The review stays open, the affordance is gone (the contract is no
+    // longer empty), and the exit select — reading the LIVE draft, not the
+    // open-time snapshot this render used to capture — offers the new
+    // outcome, adopted as the pick.
+    expect(container.querySelector('[data-testid="v2-loop-review-panel"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="v2-loop-review-declare"]')).toBeNull();
+    const liveSelect = container.querySelector(
+      '[data-testid="v2-loop-review-exit-outcome"]'
+    ) as HTMLSelectElement;
+    expect(Array.from(liveSelect.options).map((option) => option.value)).toEqual(['done']);
+    expect(liveSelect.value).toBe('done');
+
+    // The definition actually sent: the one outcome appended, the graph
+    // untouched (the review's own confirm never ran — still the chain).
+    const submitted = await submittedDefinition();
+    expect(submitted.outcomes).toEqual(['done']);
+    expect(submitted.root.nodes.map((node) => node.id)).toEqual([
+      'upstream',
+      'work-b',
+      'work-c',
+      'work-d',
+      'finish',
+    ]);
+    expect(submitted.root.connections).toHaveLength(4);
+    expect(submitted.declarations).toHaveLength(0);
+  });
+
+  it('the loop review reads a contract edited while it is open (no open-time snapshot)', async () => {
+    // The declare is the only writer while the modal is open, so drive it:
+    // open on an empty contract, declare twice in sequence — the second
+    // affordance pass proves the select re-reads the draft each render.
+    await mountBackedgeEdit(backedgeDetail({ outcomes: [] }));
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge-inner"]'));
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-loop-review-declare-name"]'),
+      'done',
+      'input'
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-loop-review-declare-confirm"]')
+    );
+    // Declared one — the affordance hides; the exit select now lists exactly
+    // the declared set (pickers stay read-only over the contract).
+    const select = () =>
+      container.querySelector(
+        '[data-testid="v2-loop-review-exit-outcome"]'
+      ) as HTMLSelectElement;
+    expect(Array.from(select().options).map((option) => option.value)).toEqual(['done']);
+    const submitted = await submittedDefinition();
+    expect(submitted.outcomes).toEqual(['done']);
+  });
+
+  it('inline declare affordance (direct render): hidden once outcomes exist, hands over the trimmed name, keeps the review open', async () => {
+    const onDeclareOutcome = vi.fn();
+    const baseProps = {
+      from: 'work-d',
+      to: 'work-b',
+      regionNodeIds: ['work-b', 'work-c', 'work-d'],
+      defaultId: 'loop-body',
+      derived: { inputs: [], artifacts: [], outcomes: ['work-d'] },
+      defaultMaxIterations: 3,
+      refusals: [],
+      integerDraftError: null,
+      onIntegerDraftError: vi.fn(),
+      onDeclareOutcome,
+      error: null,
+      onConfirm: vi.fn(),
+      onCancel: vi.fn(),
+    };
+    const renderPanel = async (definitionOutcomes: readonly string[]) => {
+      await act(async () => {
+        render(
+          <V2LoopReviewPanel {...baseProps} definitionOutcomes={definitionOutcomes} />,
+          container
+        );
+        await flushMicrotasks();
+      });
+    };
+
+    // Affordance hidden when outcomes exist.
+    await renderPanel(['done']);
+    expect(container.querySelector('[data-testid="v2-loop-review-declare"]')).toBeNull();
+
+    // Visible while the contract is empty; a blank name disables confirm.
+    await renderPanel([]);
+    const affordance = () =>
+      container.querySelector('[data-testid="v2-loop-review-declare"]')!;
+    const declareName = () =>
+      affordance().querySelector(
+        '[data-testid="v2-loop-review-declare-name"]'
+      ) as HTMLInputElement;
+    expect(declareName().value).toBe('');
+    expect(
+      (affordance().querySelector(
+        '[data-testid="v2-loop-review-declare-confirm"]'
+      ) as HTMLButtonElement).disabled
+    ).toBe(true);
+
+    // A local edit the review must keep across the declare: its id draft.
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-loop-review-id"]'),
+      'renamed-loop',
+      'input'
+    );
+
+    await setValueAndFlush(declareName(), '  done  ', 'input');
+    await clickAndFlush(
+      affordance().querySelector('[data-testid="v2-loop-review-declare-confirm"]')
+    );
+    expect(onDeclareOutcome).toHaveBeenCalledTimes(1);
+    expect(onDeclareOutcome).toHaveBeenCalledWith('done');
+    // The review is still mounted with its other local edits intact.
+    expect(container.querySelector('[data-testid="v2-loop-review-panel"]')).not.toBeNull();
+    expect(
+      (container.querySelector('[data-testid="v2-loop-review-id"]') as HTMLInputElement)
+        .value
+    ).toBe('renamed-loop');
+  });
 });
 
 describe('PipelineCanvasPage — parallel frontier inference', () => {
@@ -6655,6 +7039,39 @@ describe('PipelineCanvasPage — sink promotion', () => {
     // And with the loop wired after end, end is no longer terminal either.
     await selectNode('end');
     expect(container.querySelector('[data-testid="v2-node-panel-sink-promotion"]')).toBeNull();
+  });
+
+  it('with no declared outcomes the offer states so and locates the contract panel instead of an empty select', async () => {
+    await mountSinkEdit(sinkDetail({ outcomes: [] }));
+    await selectNode('end');
+
+    const section = container.querySelector('[data-testid="v2-node-panel-sink-promotion"]')!;
+    expect(section).not.toBeNull();
+    // The dead end is gone: no empty outcome select, no disabled confirm.
+    expect(section.querySelector('[data-testid="v2-node-panel-sink-outcome"]')).toBeNull();
+    expect(section.querySelector('[data-testid="v2-node-panel-sink-confirm"]')).toBeNull();
+    const empty = section.querySelector('[data-testid="v2-node-panel-sink-empty"]')!;
+    expect(empty.textContent).toContain('declares no outcomes');
+
+    // Locate: scroll the contract panel into view (jsdom performs no layout,
+    // so the assertion is the call, not geometry) and focus its outcomes
+    // field — the single home for declaring, pointed at read-only.
+    const scrollIntoView = vi.fn();
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      await clickAndFlush(section.querySelector('[data-testid="v2-node-panel-sink-locate"]'));
+    } finally {
+      if (originalScrollIntoView) Element.prototype.scrollIntoView = originalScrollIntoView;
+      else delete Element.prototype.scrollIntoView;
+    }
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView.mock.calls[0]![0]).toEqual({ block: 'nearest' });
+    expect(document.activeElement?.getAttribute('data-testid')).toBe('definition-outcomes');
+
+    // Read-only pointer by design: the definition was not touched.
+    const submitted = await submittedDefinition();
+    expect(submitted.outcomes).toEqual([]);
   });
 
   it('picking the second outcome and confirming lands the wired Finish in the POSTed definition and selects it', async () => {

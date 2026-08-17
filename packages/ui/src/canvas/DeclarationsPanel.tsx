@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
+import type { Ref } from 'preact';
 import type {
   PipelineCatalogResponse,
   WireAtomicStageNode,
@@ -241,6 +242,8 @@ export function DeclarationsPanel({
  * One editable comma-separated name list (outcomes). Exported for the
  * extraction review dialog (`V2ExtractReviewPanel`), which reuses the exact
  * row UX — one implementation of "how an author edits a contract list".
+ * `inputRef`, when given, aliases the text input so a host page can focus it
+ * (the sink offer's locate action focuses the definition outcomes field).
  */
 export function NameListField({
   label,
@@ -248,12 +251,14 @@ export function NameListField({
   value,
   onCommit,
   focused = false,
+  inputRef,
 }: {
   label: string;
   testId: string;
   value: readonly string[];
   onCommit: (next: string[]) => void;
   focused?: boolean;
+  inputRef?: Ref<HTMLInputElement>;
 }) {
   const authoritative = value.join(',');
   const [draft, setDraft] = useState(authoritative);
@@ -261,6 +266,7 @@ export function NameListField({
     <label class={`declaration-editor__field${focused ? ' declaration-editor__field--focused' : ''}`}>
       <span>{label}</span>
       <input
+        ref={inputRef}
         type="text"
         data-testid={testId}
         value={draft}
@@ -268,6 +274,9 @@ export function NameListField({
         // Commit on blur, like the Gate/Choice outcomes editor: a raw draft
         // survives intermediate keystrokes (typing "a," must not drop the
         // trailing separator) and only the canonical parse reaches the model.
+        // An unchanged canonical value commits NOTHING: the commit path's
+        // bookkeeping (a draft-change that wipes the validation result) must
+        // not fire for a blur that changed no contract value (review m2).
         onBlur={() => {
           const next = Array.from(
             new Set(
@@ -277,8 +286,8 @@ export function NameListField({
                 .filter(Boolean)
             )
           );
-          onCommit(next);
           setDraft(next.join(','));
+          if (next.join(',') !== authoritative) onCommit(next);
         }}
       />
     </label>

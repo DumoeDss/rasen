@@ -529,6 +529,20 @@ export function updateDefinitionContracts(
   return next;
 }
 
+/**
+ * Appends one name to the definition's named-outcome contract. The thin
+ * "declare one more outcome" wrapper: `updateDefinitionContracts` stays the
+ * sole rule site (a blank or already-declared name is refused with that
+ * family's own message), and the wrapper only assembles the append so no
+ * call site (the loop review's inline declare) re-implements the guard.
+ */
+export function declareDefinitionOutcome(
+  def: WirePipelineDefinitionV2,
+  name: string
+): WirePipelineDefinitionV2 {
+  return updateDefinitionContracts(def, { outcomes: [...def.outcomes, name.trim()] });
+}
+
 export interface BoundedLoopContractPatch {
   body?: string;
   goalCycleVariant?: WireGoalCycleVariant | null;

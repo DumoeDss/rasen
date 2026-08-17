@@ -5,6 +5,7 @@ import {
   addFinishNode,
   addParallelFrontier,
   createParallelPair,
+  declareDefinitionOutcome,
   definitionIssuePathTarget,
   duplicateV2Definition,
   gateForStage,
@@ -432,6 +433,58 @@ describe('lossless nested v2 patches', () => {
       base.root.nodes.find((node) => node.id === 'work')
     );
     expect(next.root.connections).toBe(base.root.connections);
+  });
+});
+
+describe('declareDefinitionOutcome (the thin declare-one-more wrapper)', () => {
+  it('appends to an empty and a non-empty outcome list, trimming the name, order preserved', () => {
+    // The fresh-draft corner the loop review's inline declare lives on: an
+    // empty contract gains its first outcome.
+    const blank = {
+      ...definition(),
+      outcomes: [],
+    } as WirePipelineDefinitionV2;
+    expect(declareDefinitionOutcome(blank, 'done').outcomes).toEqual(['done']);
+    expect(declareDefinitionOutcome(blank, '  done  ').outcomes).toEqual(['done']);
+
+    const next = declareDefinitionOutcome(definition(), 'archived');
+    expect(next.outcomes).toEqual(['done', 'failed', 'archived']);
+  });
+
+  it('refuses blank and duplicate names through the rule site without mutating the input', () => {
+    const base = definition();
+    expect(() => declareDefinitionOutcome(base, '   ')).toThrow(
+      'A definition outcome cannot be blank.'
+    );
+    expect(() => declareDefinitionOutcome(base, 'done')).toThrow(
+      'definition outcomes must be unique.'
+    );
+    // Refusal left the input untouched (the wrapper never writes in place).
+    expect(base.outcomes).toEqual(['done', 'failed']);
+
+    // Declaring onto an empty contract refuses a blank the same way.
+    expect(() =>
+      declareDefinitionOutcome({ ...base, outcomes: [] } as WirePipelineDefinitionV2, ' ')
+    ).toThrow('A definition outcome cannot be blank.');
+  });
+
+  it('preserves every other definition field and the input object itself', () => {
+    const base = definition();
+    const next = declareDefinitionOutcome(base, 'archived');
+    expect(next).not.toBe(base);
+    expect(next.outcomes).toEqual(['done', 'failed', 'archived']);
+    expect(base.outcomes).toEqual(['done', 'failed']);
+    // Same-references for untouched owners — the updateDefinitionContracts
+    // spread, verified here so a future in-place regression cannot hide
+    // behind the wrapper.
+    expect(next.inputs).toBe(base.inputs);
+    expect(next.artifacts).toBe(base.artifacts);
+    expect(next.declarations).toBe(base.declarations);
+    expect(next.root).toBe(base.root);
+    expect(next.limits).toBe(base.limits);
+    expect(next.name).toBe(base.name);
+    expect(next.id).toBe(base.id);
+    expect(next.sourceId).toBe(base.sourceId);
   });
 });
 

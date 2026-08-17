@@ -53,6 +53,7 @@ import {
   backedgeRegion,
   CanvasSelection,
   completedFrontier,
+  declareDefinitionOutcome,
   definitionIssuePathTarget,
   deriveSubgraphContract,
   detectParallelFrontiers,
@@ -249,6 +250,14 @@ export function PipelineCanvasPage() {
   // render happens; the ref is set/read synchronously with the click instead
   // (spec: never submit a second mutation while one is in flight).
   const savingRef = useRef(false);
+  /**
+   * The definition contract panel's aliases for the sink offer's locate
+   * action (canvas-root-contract-editor design D6): the outcomes input's ref
+   * (focus) and the panel root's ref (scrollIntoView). jsdom asserts focus
+   * and the wiring only; the real-browser check covers visibility.
+   */
+  const definitionOutcomesInputRef = useRef<HTMLInputElement | null>(null);
+  const definitionContractPanelRef = useRef<HTMLElement | null>(null);
   const [toast, setToast] = useState('');
   /**
    * The current toast's optional action (design D4): while present the toast
@@ -277,18 +286,19 @@ export function PipelineCanvasPage() {
   /**
    * The open back-edge loop review (canvas-backedge-loop-inference design
    * D6): the drawn edge's endpoints, the enclosed region, the derivation
-   * defaults, the definition's outcomes (captured at open — the review is
-   * modal, the draft cannot change underneath it), the open-time refusals,
-   * and the model's last confirm-time refusal. Null when no review is open;
-   * the drawn Connection itself is NEVER written to the draft, so cancel
-   * equals today's pre-change refusal outcome exactly.
+   * defaults, the open-time refusals, and the model's last confirm-time
+   * refusal. Null when no review is open; the drawn Connection itself is
+   * NEVER written to the draft, so cancel equals today's pre-change refusal
+   * outcome exactly. The definition's outcomes are NOT captured here — the
+   * review reads them live from the draft (the parallel review's posture,
+   * canvas-root-contract-editor design D5), because the review's own inline
+   * declare writes them while it is open.
    */
   const [loopReview, setLoopReview] = useState<{
     from: string;
     to: string;
     nodeIds: ReadonlySet<string>;
     derived: ReturnType<typeof deriveSubgraphContract>;
-    definitionOutcomes: readonly string[];
     refusals: readonly string[];
     stageCount: number;
     internalConnectionCount: number;
@@ -1360,7 +1370,6 @@ export function PipelineCanvasPage() {
       to,
       nodeIds: new Set(nodeIds),
       derived,
-      definitionOutcomes: [...draft.outcomes],
       refusals,
       stageCount: nodeIds.size,
       internalConnectionCount,
@@ -1418,6 +1427,32 @@ export function PipelineCanvasPage() {
   function cancelLoopReview() {
     setLoopReview(null);
     removeAuthoringDraftErrorScopes([LOOP_REVIEW_INTEGER_FIELD]);
+  }
+
+  /**
+   * The loop review's inline declare (canvas-root-contract-editor design
+   * D3/D5): the review's overlay covers the contract panel, so while the
+   * definition declares no outcomes the review offers a name field whose
+   * confirm performs exactly one `declareDefinitionOutcome` transaction —
+   * the same rule site the contract panel writes through. The review stays
+   * open; the live outcomes read (D5) is what makes the new option reach
+   * the exit-outcome select. A refusal toasts the message and leaves the
+   * draft untouched.
+   */
+  function declareOutcomeFromLoopReview(name: string) {
+    if (!draft || draft.version !== 2) return;
+    let nextDraft;
+    try {
+      nextDraft = declareDefinitionOutcome(draft, name);
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : 'Could not declare the outcome.'
+      );
+      return;
+    }
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
+    markDraftChanged();
   }
 
   // --- Parallel frontier inference (canvas-parallel-frontier-inference D1/D3) -
@@ -1537,6 +1572,18 @@ export function PipelineCanvasPage() {
     recomputeFlow(result.next, catalog, nextSelection);
     markDraftChanged();
     showToast('Finish added for this endpoint.');
+  }
+
+  /**
+   * The sink offer's locate action (canvas-root-contract-editor design
+   * D6): scroll the definition contract panel into view within the
+   * authoring column and focus its outcomes field. Read-only over the
+   * contract by design — the panel beside this one is the home for
+   * declaring.
+   */
+  function locateDefinitionOutcomes() {
+    definitionContractPanelRef.current?.scrollIntoView({ block: 'nearest' });
+    definitionOutcomesInputRef.current?.focus();
   }
 
   // The offer's toast action outlives the render that created it (its
@@ -2743,13 +2790,16 @@ export function PipelineCanvasPage() {
           from={loopReview.from}
           to={loopReview.to}
           regionNodeIds={[...loopReview.nodeIds]}
-          definitionOutcomes={loopReview.definitionOutcomes}
+          // Live draft read (design D5), matching the parallel review below:
+          // the review's own inline declare changes these while it is open.
+          definitionOutcomes={draft?.version === 2 ? [...draft.outcomes] : []}
           defaultId={loopReview.defaultId}
           derived={loopReview.derived}
           defaultMaxIterations={3}
           refusals={loopReview.refusals}
           integerDraftError={authoringDraftErrors[LOOP_REVIEW_INTEGER_FIELD] ?? null}
           onIntegerDraftError={setAuthoringDraftError}
+          onDeclareOutcome={declareOutcomeFromLoopReview}
           error={loopReview.error}
           onConfirm={confirmLoopReview}
           onCancel={cancelLoopReview}
@@ -2813,6 +2863,8 @@ export function PipelineCanvasPage() {
               draftErrors={authoringDraftErrors}
               onPatch={patchDefinitionContract}
               onInvalidChange={setAuthoringDraftError}
+              outcomesInputRef={definitionOutcomesInputRef}
+              panelRef={definitionContractPanelRef}
             />
             <DeclarationsPanel
               definition={draft}
@@ -2984,6 +3036,7 @@ export function PipelineCanvasPage() {
                     outcomes: selectedV2SinkOutcomes,
                     onPromote: (outcome) =>
                       confirmSinkPromotion(selectedV2Node.id, outcome),
+                    onLocateDefinitionOutcomes: locateDefinitionOutcomes,
                   }
                 : undefined
             }

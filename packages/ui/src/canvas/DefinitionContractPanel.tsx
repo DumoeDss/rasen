@@ -1,3 +1,4 @@
+import type { Ref } from 'preact';
 import type {
   WireDefinitionArtifact,
   WireDefinitionPort,
@@ -8,6 +9,7 @@ import {
   IntegerContractField,
   type IntegerContractDraftError,
 } from './IntegerContractField.js';
+import { NameListField } from './DeclarationsPanel.js';
 
 function fieldClass(focusedField: string | null, field: string): string {
   return `definition-contract__field${
@@ -164,6 +166,8 @@ export function DefinitionContractPanel({
   draftErrors = {},
   onPatch,
   onInvalidChange,
+  outcomesInputRef,
+  panelRef,
 }: {
   definition: WirePipelineDefinitionV2;
   focusedField: string | null;
@@ -173,11 +177,19 @@ export function DefinitionContractPanel({
     field: string,
     error: IntegerContractDraftError | null
   ) => void;
+  /**
+   * Aliases the named-outcomes text input (design D6): the sink offer's
+   * locate action focuses it from the page without querying the DOM.
+   */
+  outcomesInputRef?: Ref<HTMLInputElement>;
+  /** Aliases the panel's root element for the locate action's scrollIntoView. */
+  panelRef?: Ref<HTMLElement>;
 }) {
   const limits = definition.limits ?? {};
   const definitionKey = `${definition.name}\0${definition.id}\0${definition.sourceId}`;
   return (
     <aside
+      ref={panelRef}
       class="definition-contract"
       data-testid="definition-contract-panel"
       data-focused-field={focusedField ?? ''}
@@ -195,25 +207,23 @@ export function DefinitionContractPanel({
         focusedField={focusedField}
         onChange={(artifacts) => onPatch({ artifacts: artifacts as WireDefinitionArtifact[] })}
       />
-      <label class={fieldClass(focusedField, 'outcomes')}>
-        <span>Named outcomes</span>
-        <input
-          data-testid="definition-outcomes"
-          value={definition.outcomes.join(',')}
-          onChange={(event) =>
-            onPatch({
-              outcomes: Array.from(
-                new Set(
-                  (event.target as HTMLInputElement).value
-                    .split(',')
-                    .map((value) => value.trim())
-                    .filter(Boolean)
-                )
-              ),
-            })
-          }
-        />
-      </label>
+      {/*
+        The same list-field idiom every other outcome list uses (design D2):
+        comma text committed on blur, so intermediate keystrokes never patch
+        the whole definition (the per-keystroke input this replaces re-ran
+        recomputeFlow on every character). Keeps the `definition-outcomes`
+        testid and the `outcomes` focused-field key for issue navigation.
+      */}
+      <NameListField
+        label="Named outcomes"
+        testId="definition-outcomes"
+        value={definition.outcomes}
+        focused={
+          focusedField === 'outcomes' || !!focusedField?.startsWith('outcomes/')
+        }
+        inputRef={outcomesInputRef}
+        onCommit={(outcomes) => onPatch({ outcomes })}
+      />
       {(['maxActions', 'budget'] as const).map((key) => (
         <PositiveLimitField
           key={key}

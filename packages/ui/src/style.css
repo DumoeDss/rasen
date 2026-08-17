@@ -1649,7 +1649,12 @@ button:focus-visible { box-shadow: var(--ring), var(--focus-ring); }
 .pipeline-canvas__toast {
   position: absolute; top: var(--space-3); left: 50%; transform: translateX(-50%);
   background: var(--danger-fg); color: #fff; padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius); font-size: var(--text-sm); font-weight: 600; z-index: 10;
+  /* Above the review dialogs' fixed overlay (z-index 20): a refusal toast
+     fired while a review modal is open (e.g. the loop review's inline
+     declare refusal) must stay visible above the scrim, not under it. No
+     ancestor between this element and the overlay creates a stacking
+     context, so the two compete directly. */
+  border-radius: var(--radius); font-size: var(--text-sm); font-weight: 600; z-index: 30;
 }
 /* A toast carrying an action (the parallel-frontier offer) lays out its
    message and buttons on one row; every text-only toast keeps the rule
