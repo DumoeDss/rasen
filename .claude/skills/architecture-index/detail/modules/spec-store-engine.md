@@ -38,12 +38,13 @@ Spec、Requirement/Scenario、Change/Delta 的 canonical 校验定义。
 
 ## `issue-status/` — Issue 三轴状态投影（读时推导，不持久化）
 
-回答"这个 Issue 现在在哪"：`phase`(`planning|ready|active|review|done`) × `health`(`healthy|blocked|failed|waiting-human|stale`，后两者为保留值) × `progress`(完成必需节点/总数)。每次读取从三个输入现推——最新 Execution Plan 修订、committed Store evidence、机器本地 run-state——不写任何地方（source guard + byte-identical 行为测试双保险）。
+回答"这个 Issue 现在在哪"：`phase`(`planning|ready|active|review|done`) × `health`(`healthy|blocked|failed|waiting-human|stale`，后两者为保留值) × `progress`(完成必需节点/总数)。每次读取从四个输入现推——最新 Execution Plan 修订、committed Store evidence、机器本地 run-state、Issue 的已记录验收（acceptance 内容，C3 起为第四输入）——不写任何地方（source guard + byte-identical 行为测试双保险）。
 
-- **关键文件**：`projection.ts`（`projectIssueStatus(input)`：per-node run-state 定位 + D4 观察映射 + phase/health/progress 推导）、`types.ts`（闭词汇表 + `ProjectIssueStatusInput`，显式路径输入零 ambient read）、`index.ts`（barrel）。
+- **关键文件**：`projection.ts`（`projectIssueStatus(input)`：per-node run-state 定位 + D4 观察映射 + phase/health/progress 推导 + acceptance 块组装）、`types.ts`（闭词汇表 + `ProjectIssueStatusInput`，显式路径输入零 ambient read）、`index.ts`（barrel）。
 - **定位配方 = `pipeline resume` 原样复用**：`stateFileSearchChain` + `runStatePath`/`portfolioStatePath` + `readRunStateDetailed`/`readPortfolioStateDetailed`（`ephemera → workDir → planning change dir` 三段 sticky-legacy 链）；portfolio-run.json 存在即权威；escalated child/delivery = failed、escalated stage = waiting-human。C2 加宽：当前根链未命中后，逐个匹配的 workspace index 条目以其 execution root 自有链再探（ephemera → 条目 planning 侧 active-change 地址；index 根无 work-dir 腿），节点带 `locatedBy`（execution-root|workspace-index|null）与 attribution（pipeline/sessions/evidenceLocator——sessions 只含 durable 指针，agentId 构造上排除）。
-- **边界**：只 import 不改 `src/core/pipeline-registry/`（冻结）与 `src/core/store/query/`（store-pure 契约不含 run-state——这就是它独立成顶层模块的原因）。CLI 缝在 `src/commands/store-issue.ts`：best-effort 解析 execution root（失败降级 visibility-none），list 行加 `phase/health n/m`，show 加 status 块 + 每节点 attribution 行，两命令 `--json` 增生 `status` 对象；index 条目每命令收集一次（`listAllWorkspaceIndexEntries` 按 store uid 过滤）。
-- **连接**：被 `src/commands/store-issue.ts` 消费；g-002（execution binding）的 Run/Session 归属回流应 import/扩展此模块。
+- **done 规则（C3 起）**：`resolved` ∧ 验证过的 accepted 记录 → `done`；仅 resolved（含历史 close）→ `review`+`waiting-human`；archived 计数与裸状态翻转永不推导 done。验收内容读不回（篡改/无效）→ status problem（`unreadable-acceptance`）。`IssueStatus.acceptance` 块 = 最新条件修订 + 本次读取上求值的闸门（来自 `issue-acceptance/gate.ts` 的唯一 runtime 边）+ 已验证记录；省略 acceptance 输入时块为 null 且其余推导与 C2 逐字节一致。
+- **边界**：只 import 不改 `src/core/pipeline-registry/`（冻结）与 `src/core/store/query/`（store-pure 契约不含 run-state——这就是它独立成顶层模块的原因）。CLI 缝在 `src/commands/store-issue.ts`：best-effort 解析 execution root（失败降级 visibility-none），list 行加 `phase/health n/m`，show 加 status 块 + 每节点 attribution 行 + acceptance 节，两命令 `--json` 增生 `status` 对象（含 `status.acceptance`）；index 条目每命令收集一次（`listAllWorkspaceIndexEntries` 按 store uid 过滤）；list/show 每命令额外经 `readIssueAcceptanceFacts` 读一次验收内容。
+- **连接**：被 `src/commands/store-issue.ts` 与 `src/core/issue-acceptance/orchestration.ts` 消费（一条状态缝）。
 
 ## `issue-execution/` — Issue 节点启动绑定（resolve + verify + emit，不 spawn）
 
@@ -53,6 +54,15 @@ Spec、Requirement/Scenario、Change/Delta 的 canonical 校验定义。
 - **组合而非重建**：import L6 `management-api/session-launch-context.ts`（经可注入 seam，生产默认 `store:<uid>` + `project:<id>`）、`store/workspace/registry.ts` 的 index 读取、`issue-status` 的投影（attribution.pipeline 即 D5 的 recorded pipeline 来源）、`pipeline-registry/resolver.ts` 的 catalog（`--pipeline` 校验）。只 import 不改 `src/core/pipeline-registry/`。
 - **边界**：CLI 缝在 `src/commands/store-issue.ts` 的 `start` 子命令（`--node/--pipeline/--store/--json`；索引条目每命令收集一次，按 resolved store 的 uid 过滤）。
 - **连接**：被 `src/commands/store-issue.ts` 消费；g-003 的验收/close 若需复用 frontier 规则，应 import 此模块。
+
+## `issue-acceptance/` — Issue 验收闸门与显式 accept/close（C3 交付）
+
+回答"这个 Issue 现在能不能被接受、不接受还差什么"：`evaluateIssueAcceptanceGate(view, facts)` 按 D3 规则求值——每个必需节点 observation ∈ {finalized, run-terminal}（与 execution binding 同一条工作完成规则，非 query 的 archive-based `blockedBy`）、health ≠ failed、读取完备且零 status problem——事实阻塞项**一起点名**（un-terminal 节点带 observation、failed 节点、status problem）；结构化拒绝为独立码（`issue_accept_requires_plan`/`issue_accept_conditions_required`/`issue_accept_already_accepted`/`issue_accept_dropped`）。
+
+- **关键文件**：`types.ts`（闸门契约：`IssueAcceptanceFacts`/`GateView`/闭集 blocker 分类法/`IssueAcceptanceStatusBlock`）、`gate.ts`（纯求值 + `acceptanceRefusalFix`；被 projection import 填 `status.acceptance.gate`——唯一 runtime 边且无回流，零加载环）、`orchestration.ts`（`readIssueAcceptanceFacts`：验收内容的唯一读取者，checkout 工作树 + digest 验证；`acceptIssue`：D6 evaluate-fresh-then-lock——经 issue-status 一条缝读状态 → 求值 → 带快照调 `StoreIssues.accept`）、`index.ts`（barrel）。
+- **拓扑守则**：组合模式（同 C2）；`store/issues` 保持零上向依赖——mutation 只收已求值的可移植快照，锁内零 run-state 读。TOCTOU 边界（求值与加锁之间 run-state 可移动）由记录内快照自标注，不遮掩。
+- **CLI 缝**：`src/commands/store-issue.ts` 的 `acceptance`（`--from-file` 发布条件修订）与 `accept`（`--note`）子命令；show 的 acceptance 节（条件 + 闸门行 + 记录）。
+- **连接**：被 `src/commands/store-issue.ts` 与 `src/core/issue-status/projection.ts`（反向仅 gate.js）消费。
 
 ## `change-metadata/` — 每 change 元数据（`change.yaml`）
 

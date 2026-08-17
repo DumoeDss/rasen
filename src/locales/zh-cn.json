@@ -2057,6 +2057,34 @@
                     }
                   }
                 },
+                "acceptance": {
+                  "description": "从 YAML 条件清单为 Issue 发布一个新的不可变验收条件修订",
+                  "options": {
+                    "store": {
+                      "description": "持有该 Issue 的仓库"
+                    },
+                    "from-file": {
+                      "description": "列出验收条件的 YAML 文件路径"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                },
+                "accept": {
+                  "description": "显式接受一个 Issue：评估验收闸门，仅在闸门成立时记录验收并关闭该 Issue",
+                  "options": {
+                    "store": {
+                      "description": "持有该 Issue 的仓库"
+                    },
+                    "note": {
+                      "description": "随验收一并记录的备注"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                },
                 "start": {
                   "description": "解析下一个计划节点绑定的执行上下文并输出启动契约；启动是解析与验证，绝不生成进程",
                   "options": {

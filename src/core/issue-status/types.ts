@@ -21,6 +21,10 @@
  */
 import type { IssueDetail } from '../store/query/index.js';
 import type { WorkspaceIndexEntry } from '../store/workspace/registry.js';
+import type {
+  IssueAcceptanceFacts,
+  IssueAcceptanceStatusBlock,
+} from '../issue-acceptance/types.js';
 
 /** Where the work stands. Precedence: `done > review > active > ready > planning`. */
 export type IssuePhase = 'planning' | 'ready' | 'active' | 'review' | 'done';
@@ -75,6 +79,8 @@ export type IssueStatusProblemKind =
   | 'ambiguous-reference'
   /** A located run-state file exists but cannot be parsed. */
   | 'invalid-run-state'
+  /** Acceptance content exists but does not read back (tampered or invalid). */
+  | 'unreadable-acceptance'
   /** Store refs this read could not search — never evidence of absence. */
   | 'unsearched-refs';
 
@@ -189,6 +195,13 @@ export interface IssueStatus {
    * unreadable item and a reported one.
    */
   readonly complete: boolean;
+  /**
+   * The acceptance block (design D2/D4): latest conditions revision, the gate
+   * evaluated over THIS status, and the verified acceptance record. Null when
+   * the caller supplied no acceptance facts — every pre-acceptance derivation
+   * above is unchanged by that omission.
+   */
+  readonly acceptance: IssueAcceptanceStatusBlock | null;
 }
 
 /**
@@ -229,4 +242,13 @@ export interface ProjectIssueStatusInput {
    * touch a real machine registry.
    */
   readonly workDirFor?: (alias: string) => Promise<string | null>;
+  /**
+   * The Issue's recorded acceptance, as one read found it — the fourth input
+   * (design D4): the latest acceptance-conditions revision and the acceptance
+   * record, both digest-verified by the reader. Omitted means the caller
+   * asserts no acceptance facts; every pre-acceptance derivation is unchanged
+   * by that omission, and `done` — which requires a verified record — stays
+   * out of reach without one.
+   */
+  readonly acceptance?: IssueAcceptanceFacts;
 }

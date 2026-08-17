@@ -31,6 +31,7 @@ import { StoreQueryModuleImpl } from '../../../src/core/store/query/index.js';
 import { writeRunState } from '../../../src/core/pipeline-registry/run-state.js';
 import { ephemeraDir } from '../../../src/core/file-placement.js';
 import { projectIssueStatus } from '../../../src/core/issue-status/index.js';
+import { readIssueAcceptanceFacts } from '../../../src/core/issue-acceptance/index.js';
 
 const REPO_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -225,6 +226,30 @@ describe('A status projection mutates nothing on disk', () => {
       stages: { propose: { status: 'done' }, apply: { status: 'in_progress' } },
     });
 
+    // Acceptance content present on disk too: a conditions revision the gate
+    // reads back, and (on a second Issue) an accepted record. Reading status
+    // over both must leave every acceptance byte identical — the projection's
+    // acceptance block is a read, and the accept mutation's writes belong to
+    // the mutation tests, not to this guard.
+    await issues.publishAcceptance({
+      ...scope,
+      issueId: ISSUE,
+      conditions: [{ id: 'cond-1', requirement: 'Guarded condition' }],
+    });
+    await issues.create({ ...scope, issueId: 'iss-guard-2', title: 'Accepted twin' });
+    const twin = await issues.publishAcceptance({
+      ...scope,
+      issueId: 'iss-guard-2',
+      conditions: [{ id: 'cond-1', requirement: 'Twin condition' }],
+    });
+    await issues.accept({
+      ...scope,
+      issueId: 'iss-guard-2',
+      conditionsRevisionId: twin.revision.revisionId,
+      conditionsSha256: twin.revision.contentSha256,
+      gate: { completed: 0, total: 0, health: 'healthy', problemsStanding: 0 },
+    });
+
     const issuesBefore = digestTree(path.join(f.storeRoot, 'rasen', 'issues'));
     const execBefore = digestTree(path.join(execRoot, '.rasen'));
 
@@ -234,9 +259,25 @@ describe('A status projection mutates nothing on disk', () => {
       executionRoot: execRoot,
       changesDir: path.join(execRoot, 'rasen', 'changes'),
       workDirFor: async () => null,
+      acceptance: await readIssueAcceptanceFacts({ ...scope, issueId: ISSUE }),
     });
-    // The read reached the run-state, so the guard is not vacuous.
+    // The read reached the run-state AND the acceptance content, so the guard
+    // is not vacuous on either axis.
     expect(status.nodes[0].observation).toBe('in-flight');
+    expect(status.acceptance?.conditions.revision?.revisionId).toBe('0001');
+    expect(status.acceptance?.gate.eligible).toBe(false);
+
+    const twinDetail = await new StoreQueryModuleImpl().showIssue({
+      ...scope,
+      issueId: 'iss-guard-2',
+    });
+    const twinStatus = await projectIssueStatus({
+      detail: twinDetail,
+      workDirFor: async () => null,
+      acceptance: await readIssueAcceptanceFacts({ ...scope, issueId: 'iss-guard-2' }),
+    });
+    // The accepted twin read its record back — done from verified bytes.
+    expect(twinStatus.phase).toBe('done');
 
     expect(digestTree(path.join(f.storeRoot, 'rasen', 'issues'))).toEqual(issuesBefore);
     expect(digestTree(path.join(execRoot, '.rasen'))).toEqual(execBefore);

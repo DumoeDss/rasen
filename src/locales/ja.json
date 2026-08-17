@@ -2057,6 +2057,34 @@
                     }
                   }
                 },
+                "acceptance": {
+                  "description": "YAMLの条件リストから、Issueの不変な受け入れ条件リビジョンを新規公開します",
+                  "options": {
+                    "store": {
+                      "description": "Issueを保持するストア"
+                    },
+                    "from-file": {
+                      "description": "受け入れ条件を列挙したYAMLファイルのパス"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "accept": {
+                  "description": "Issueを明示的に受け入れます。受け入れゲートを評価し、成立した場合のみ受け入れを記録してIssueをクローズします",
+                  "options": {
+                    "store": {
+                      "description": "Issueを保持するストア"
+                    },
+                    "note": {
+                      "description": "受け入れとともに記録するメモ"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
                 "start": {
                   "description": "次に実行する計画ノードのバインド済み実行コンテキストを解決し、起動契約を出力します。起動は解決と検証であり、プロセスを生成しません",
                   "options": {

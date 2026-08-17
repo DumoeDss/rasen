@@ -1,0 +1,6 @@
+$ node bin/rasen.js store issue accept issue-layer-phase1 --store issue-layer-dogfood   (cwd = the issue-layer worktree, the execution root where g-003 is live RIGHT NOW)
+
+Error: Accepting Issue 'issue-layer-phase1' is refused: not accepted yet — node g-001 is unknown (work not complete or finalized); node g-003 is in-flight (work not complete or finalized); status problem invalid-run-state on g-001: Invalid run-state: openFindings.0: Invalid input: expected object, received string; openFindings.1: Invalid input: expected object, received string.
+Fix: Address the named blockers — un-terminal nodes, failing nodes, open status problems — then accept again.
+
+exit code: 1 (verified by a separate re-run; the block above piped through tee, so $? there was tee's)

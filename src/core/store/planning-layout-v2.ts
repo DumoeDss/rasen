@@ -32,12 +32,13 @@ export type StorePlanningLayoutV2Address =
   | { readonly kind: 'project-specs'; readonly projectId: string | ProjectId }
   | { readonly kind: 'store-design-docs' }
   /**
-   * Store-level cross-project Issue content. These four addresses are the only
+   * Store-level cross-project Issue content. These addresses are the only
    * ones in this contract that take neither a project nor a target line: an
    * Issue spans projects by construction, so requiring either would contradict
    * the resource. Each of the directory, the record file, the revisions
-   * directory, and ONE revision file is its own address, so no caller appends a
-   * filename to a returned directory.
+   * directories, ONE revision file of either kind, and the acceptance record
+   * is its own address, so no caller appends a filename to a returned
+   * directory.
    */
   | { readonly kind: 'issue'; readonly issueId: string | IssueId }
   | { readonly kind: 'issue-record'; readonly issueId: string | IssueId }
@@ -47,6 +48,13 @@ export type StorePlanningLayoutV2Address =
       readonly issueId: string | IssueId;
       readonly revisionId: string | ExecutionPlanRevisionId;
     }
+  | { readonly kind: 'acceptance-conditions'; readonly issueId: string | IssueId }
+  | {
+      readonly kind: 'acceptance-condition';
+      readonly issueId: string | IssueId;
+      readonly revisionId: string | ExecutionPlanRevisionId;
+    }
+  | { readonly kind: 'issue-accepted-record'; readonly issueId: string | IssueId }
   | { readonly kind: 'project-design-docs'; readonly projectId: string | ProjectId }
   | {
       readonly kind: 'active-change';
@@ -222,6 +230,34 @@ export function resolveStorePlanningLayoutV2Path(
         api,
         root,
         ['rasen', 'issues', issueId, 'plans', `${revisionId}.yaml`],
+        address.kind
+      );
+    }
+    case 'acceptance-conditions': {
+      const issueId = parseIssueId(address.issueId);
+      return containedPath(
+        api,
+        root,
+        ['rasen', 'issues', issueId, 'acceptance'],
+        address.kind
+      );
+    }
+    case 'acceptance-condition': {
+      const issueId = parseIssueId(address.issueId);
+      const revisionId = parseExecutionPlanRevisionId(address.revisionId);
+      return containedPath(
+        api,
+        root,
+        ['rasen', 'issues', issueId, 'acceptance', `${revisionId}.yaml`],
+        address.kind
+      );
+    }
+    case 'issue-accepted-record': {
+      const issueId = parseIssueId(address.issueId);
+      return containedPath(
+        api,
+        root,
+        ['rasen', 'issues', issueId, 'accepted.yaml'],
         address.kind
       );
     }

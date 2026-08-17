@@ -669,6 +669,30 @@ const COMMANDS: readonly CommandDefinition[] = [
             ],
           },
           {
+            // Publishes the next immutable acceptance-conditions revision —
+            // the checklist an Issue is accepted against.
+            name: 'acceptance',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-id' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'from-file', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            // The explicit close: evaluates the acceptance gate and records
+            // the acceptance only when it holds.
+            name: 'accept',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-id' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'note', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
             // Resolves and verifies the next node's launch binding — it never
             // spawns; the contract is for the operator or agent session that
             // receives it.

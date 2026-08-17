@@ -1,14 +1,16 @@
 /**
  * `issue-status-projection` — deriving an Issue's tri-axis status.
  *
- * The projection composes two worlds the Store query keeps apart on purpose:
- * the Store's committed evidence (portable, authoritative) and machine-local
+ * The projection composes the worlds the Store query keeps apart on purpose:
+ * the Store's committed evidence (portable, authoritative), machine-local
  * run-state (ephemeral, keyed by change alias, on whatever root executed the
- * work). `store-aggregate-query`'s contract is store-pure, so this module —
- * not the query — is where they meet. It imports and never modifies the
- * pipeline-registry run-state readers, mirroring `pipeline resume`'s location
- * recipe exactly so the projection and resume can never disagree about where
- * a Change's state lives.
+ * work), and — since issue-acceptance-close — the Issue's recorded acceptance
+ * (conditions revisions and the acceptance record, supplied as verified facts
+ * by the caller's one reader). `store-aggregate-query`'s contract is
+ * store-pure, so this module — not the query — is where they meet. It imports
+ * and never modifies the pipeline-registry run-state readers, mirroring
+ * `pipeline resume`'s location recipe exactly so the projection and resume
+ * can never disagree about where a Change's state lives.
  *
  * Read-only by construction: no write call exists here (asserted by
  * `test/core/issue-status/issue-status-read-only-guard.test.ts`), and reading
@@ -39,6 +41,15 @@ import {
 import type { IssueDetail, ResolvedPlanNode } from '../store/query/index.js';
 import { resolveStorePlanningLayoutV2Path } from '../store/planning-layout-v2.js';
 import type { WorkspaceIndexEntry } from '../store/workspace/registry.js';
+// The one runtime edge into the acceptance module: the projection fills the
+// `status.acceptance` block's gate from the SAME derivation this read just
+// performed. `gate.js` imports no runtime symbol back, so the edge stays
+// one-directional at load time and `store/issues` gains nothing upward.
+import { evaluateIssueAcceptanceGate } from '../issue-acceptance/gate.js';
+import type {
+  IssueAcceptanceFacts,
+  IssueAcceptanceStatusBlock,
+} from '../issue-acceptance/types.js';
 import type {
   IssueHealth,
   IssueNodeAttribution,
@@ -565,12 +576,19 @@ function isTerminal(observation: IssueNodeObservation): boolean {
 }
 
 /**
- * Phase precedence `done > review > active > ready > planning` (design D5).
- * `done` is operator-declared only — archived nodes alone never produce it.
+ * Phase precedence `done > review > active > ready > planning` (design D5,
+ * revised by issue-acceptance-close D4). `done` follows explicit acceptance:
+ * the resolved state AND an acceptance record that reads back verified —
+ * never an archived count, and never the resolved state alone. A resolved
+ * Issue without a verified record (the pre-capability close, a tampered
+ * record, or a read that supplied no acceptance facts) is `review`: its work
+ * stands complete, its acceptance unproven — and `review` implies
+ * `waiting-human`, which is the human who can accept it.
  * `review` requires every node's work complete or finalized AND no intent
- * node left AND an open record. `active` covers any begun graph that is not
- * uniformly terminal (including failure and waiting, which are health facts,
- * not phases), and deliberately also an `unknown` node: a located-but-
+ * node left AND a record whose close is not proven (an open Issue, or one
+ * resolved without a verified record). `active` covers any begun graph that
+ * is not uniformly terminal (including failure and waiting, which are health
+ * facts, not phases), and deliberately also an `unknown` node: a located-but-
  * unreadable run-state or a reference that broke after publication is
  * activity-adjacent trouble — the graph reached execution and hit it — so the
  * phase derives from the OBSERVATION, never from the unreadable bytes.
@@ -579,9 +597,17 @@ function isTerminal(observation: IssueNodeObservation): boolean {
  * node's observation. `ready` needs at least one change node with nothing
  * started.
  */
-function derivePhase(detail: IssueDetail, nodes: readonly IssueNodeStatus[]): IssuePhase {
+function derivePhase(
+  detail: IssueDetail,
+  nodes: readonly IssueNodeStatus[],
+  acceptance: IssueAcceptanceFacts | undefined
+): IssuePhase {
   const state = detail.issue.record?.state;
-  if (state === 'resolved') return 'done';
+  if (state === 'resolved') {
+    // The record proves the acceptance; the resolved state records the close;
+    // anything else — including bytes that no longer verify — is unproven.
+    return acceptance?.acceptedRecord.record != null ? 'done' : 'review';
+  }
   if (
     nodes.length > 0 &&
     state === 'open' &&
@@ -657,10 +683,66 @@ export async function projectIssueStatus(input: ProjectIssueStatusInput): Promis
     }
   }
 
-  const phase = derivePhase(detail, nodes);
+  // Acceptance content that exists but does not read back is reported as a
+  // problem — never as done-from-unreadable-bytes, and never trimmed away
+  // (design D4). Absent content reports nothing: an Issue that simply has no
+  // acceptance yet has no unreadable bytes.
+  const acceptance = input.acceptance;
+  if (acceptance !== undefined) {
+    if (acceptance.conditions.diagnostic !== null) {
+      problems.push({
+        kind: 'unreadable-acceptance',
+        node: null,
+        ref: acceptance.conditions.path,
+        reason: acceptance.conditions.diagnostic,
+      });
+    }
+    if (acceptance.acceptedRecord.present && acceptance.acceptedRecord.record === null) {
+      problems.push({
+        kind: 'unreadable-acceptance',
+        node: null,
+        ref: acceptance.acceptedRecord.path,
+        reason: acceptance.acceptedRecord.diagnostic ?? 'the acceptance record does not verify',
+      });
+    }
+  }
+
+  const phase = derivePhase(detail, nodes, acceptance);
+  const health = deriveHealth(phase, nodes);
+  const complete =
+    detail.complete &&
+    problems.every(
+      problem =>
+        problem.kind !== 'invalid-run-state' &&
+        problem.kind !== 'unreadable-plan' &&
+        problem.kind !== 'unreadable-acceptance'
+    );
+
+  // The acceptance block (design D2): the facts as read, the gate evaluated
+  // over THIS status, and the verified record. Structural facts the gate
+  // needs that the tri-axis answer does not carry — the Issue's declared
+  // state — come from the same detail every other derivation here reads.
+  const acceptanceBlock: IssueAcceptanceStatusBlock | null =
+    acceptance === undefined
+      ? null
+      : {
+          conditions: acceptance.conditions,
+          gate: evaluateIssueAcceptanceGate(
+            {
+              issueState: detail.issue.record?.state ?? null,
+              nodes,
+              problems,
+              health,
+              complete,
+            },
+            acceptance
+          ),
+          record: acceptance.acceptedRecord.record,
+        };
+
   return {
     phase,
-    health: deriveHealth(phase, nodes),
+    health,
     progress:
       plan !== null && plan.revision !== null
         ? {
@@ -676,10 +758,7 @@ export async function projectIssueStatus(input: ProjectIssueStatusInput): Promis
       input.executionRoot === undefined
         ? { kind: 'none' }
         : { kind: 'execution-root', executionRoot: input.executionRoot },
-    complete:
-      detail.complete &&
-      problems.every(
-        problem => problem.kind !== 'invalid-run-state' && problem.kind !== 'unreadable-plan'
-      ),
+    complete,
+    acceptance: acceptanceBlock,
   };
 }

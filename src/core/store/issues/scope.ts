@@ -145,7 +145,7 @@ export async function assertIssueWriteLocation(
   );
 }
 
-/** The four Store-level Issue addresses, all computed from the layout contract. */
+/** The Store-level Issue addresses, all computed from the layout contract. */
 export function issueAddresses(
   storeCheckoutRoot: string,
   issueId: string
@@ -153,6 +153,8 @@ export function issueAddresses(
   readonly directory: string;
   readonly record: string;
   readonly plans: string;
+  readonly acceptance: string;
+  readonly accepted: string;
   readonly readme: string;
 } {
   const directory = resolveStorePlanningLayoutV2Path(storeCheckoutRoot, {
@@ -169,6 +171,14 @@ export function issueAddresses(
       kind: 'execution-plans',
       issueId,
     }),
+    acceptance: resolveStorePlanningLayoutV2Path(storeCheckoutRoot, {
+      kind: 'acceptance-conditions',
+      issueId,
+    }),
+    accepted: resolveStorePlanningLayoutV2Path(storeCheckoutRoot, {
+      kind: 'issue-accepted-record',
+      issueId,
+    }),
     // The narrative is optional and is never parsed for facts, so it is not a
     // layout address; it is the one Issue file whose absence changes nothing.
     readme: path.join(directory, 'README.md'),
@@ -182,6 +192,19 @@ export function revisionAddress(
 ): string {
   return resolveStorePlanningLayoutV2Path(storeCheckoutRoot, {
     kind: 'execution-plan',
+    issueId,
+    revisionId,
+  });
+}
+
+/** ONE acceptance-conditions revision's own address — never a composed filename. */
+export function acceptanceRevisionAddress(
+  storeCheckoutRoot: string,
+  issueId: string,
+  revisionId: string
+): string {
+  return resolveStorePlanningLayoutV2Path(storeCheckoutRoot, {
+    kind: 'acceptance-condition',
     issueId,
     revisionId,
   });

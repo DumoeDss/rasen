@@ -181,7 +181,11 @@ describe('rasen store issue status surface', () => {
     expect(showJson.status.nodes).toEqual(listStatus.nodes);
     expect(showJson.status.problems).toEqual(listStatus.problems);
     expect(showJson.status.runStateVisibility).toEqual(listStatus.runStateVisibility);
-  });
+    // Six CLI invocations that each grew ~1-2s when list/show began reading
+    // acceptance content per Issue (issue-acceptance-close): the budget is
+    // raised to keep this scenario whole rather than splitting the parity
+    // story. Solo wall-clock sits near 27s of the default 30s.
+  }, 60_000);
 
   it('degrades to a labelled visibility-none answer from an unrelated directory', async () => {
     await createStoreIssue();

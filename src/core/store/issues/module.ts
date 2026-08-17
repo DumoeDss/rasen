@@ -41,11 +41,23 @@ import {
   serializeExecutionPlanRevision,
 } from './plans.js';
 import {
+  acceptedRecordDigest,
+  assertCoherentGateSnapshot,
+  normalizeAcceptanceConditions,
+  parseAcceptedRecord,
+  parseAcceptanceConditionsRevision,
+  acceptanceConditionsDigest,
+  serializeAcceptanceConditionsRevision,
+  serializeAcceptedRecord,
+} from './acceptance.js';
+import {
+  assertPortableIssueText,
   isPermittedIssueTransition,
   parseIssueRecord,
   serializeIssueRecord,
 } from './records.js';
 import {
+  acceptanceRevisionAddress,
   assertIssueWriteLocation,
   issueAddresses,
   issuePathspec,
@@ -54,12 +66,18 @@ import {
   type ResolvedIssueScope,
 } from './scope.js';
 import type {
+  AcceptanceConditionsResult,
+  AcceptanceConditionsRevisionV1,
+  AcceptIssueInput,
+  AcceptIssueResult,
   CreateIssueInput,
   ExecutionPlanNode,
   ExecutionPlanResult,
   ExecutionPlanRevisionV1,
+  IssueAcceptedRecordV1,
   IssueRecordResult,
   IssueRecordV1,
+  PublishAcceptanceConditionsInput,
   PublishExecutionPlanInput,
   SetIssueStateInput,
   StoreIssues,
@@ -72,6 +90,10 @@ export interface StoreIssuesOptions {
 
 function canonicalTimestamp(now: Date): string {
   return now.toISOString();
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 const README_SCAFFOLD = [
@@ -242,6 +264,256 @@ export class StoreIssuesModule implements StoreIssues {
           `chore(store): publish execution plan ${issueId}/${next}`
         ),
         revision,
+      };
+    });
+  }
+
+  async publishAcceptance(
+    input: PublishAcceptanceConditionsInput
+  ): Promise<AcceptanceConditionsResult> {
+    const issueId = parseIssueId(input.issueId);
+    return this.withWriteLock(input, issueId, async (scope) => {
+      const addresses = issueAddresses(scope.checkoutRoot, issueId);
+      await this.requireRecord(addresses.record, issueId, scope);
+
+      // Pure validation first, exactly like a plan publication: the schema,
+      // the portable-text contract, and duplicate condition identifiers are
+      // decided before a single ordinal is allocated.
+      const conditions = normalizeAcceptanceConditions(input.conditions);
+
+      const { previous, next } = await this.allocateOrdinal(addresses.acceptance);
+      const target = acceptanceRevisionAddress(scope.checkoutRoot, issueId, next);
+      if ((await this.dependencies.fs.statKind(target)) !== 'absent') {
+        throw issueRefusal(
+          'acceptance_conditions_revision_exists',
+          `Acceptance conditions revision '${next}' of Issue '${issueId}' already exists.`,
+          {
+            expected: 'an unpublished ordinal',
+            actual: target,
+            target,
+            fix: 'A published revision is never overwritten. Re-run the publication so it allocates the next ordinal, and resolve any add/add Git conflict on the revision path in Git.',
+          }
+        );
+      }
+
+      const draft: Omit<AcceptanceConditionsRevisionV1, 'contentSha256'> = {
+        version: 1,
+        issueId,
+        revisionId: next,
+        supersedes: previous,
+        createdAt: canonicalTimestamp(this.dependencies.now()),
+        conditions,
+      };
+      const revision: AcceptanceConditionsRevisionV1 = {
+        ...draft,
+        contentSha256: acceptanceConditionsDigest(draft),
+      };
+      const serialized = serializeAcceptanceConditionsRevision(revision);
+      await this.dependencies.fs.mkdirp(addresses.acceptance);
+      await this.dependencies.fs.writeText(target, serialized);
+
+      return {
+        ...this.report(
+          scope,
+          issueId,
+          [target],
+          `chore(store): publish acceptance conditions ${issueId}/${next}`
+        ),
+        revision,
+      };
+    });
+  }
+
+  /**
+   * Records one Issue's acceptance. The gate has ALREADY been evaluated by the
+   * caller (`issue-acceptance`'s orchestration); this mutation receives the
+   * portable snapshot it was evaluated under, enforces the D5 state matrix,
+   * and reads no run-state. The conditions revision it freezes is re-read and
+   * digest-verified under the lock, so the record can never name a conditions
+   * revision that does not exist in this Store checkout.
+   */
+  async accept(input: AcceptIssueInput): Promise<AcceptIssueResult> {
+    const issueId = parseIssueId(input.issueId);
+    return this.withWriteLock(input, issueId, async (scope) => {
+      const addresses = issueAddresses(scope.checkoutRoot, issueId);
+      const current = await this.requireRecord(addresses.record, issueId, scope);
+
+      // One record per Issue, never rewritten — even a record that no longer
+      // parses is an existing acceptance, and overwriting it would be exactly
+      // the silent repair this Module refuses everywhere else.
+      const existingText = await this.dependencies.fs.readText(addresses.accepted);
+      if (existingText !== null) {
+        let reason = 'the file is present';
+        try {
+          const existing = parseAcceptedRecord(existingText, { verifyDigest: true });
+          reason = `accepted at ${existing.acceptedAt} under conditions revision ${existing.conditionsRevisionId}`;
+        } catch (error) {
+          reason = `the file is present but does not read back (${messageOf(error)})`;
+        }
+        throw issueRefusal(
+          'issue_accept_already_accepted',
+          `Issue '${issueId}' already carries an acceptance record: ${reason}.`,
+          {
+            expected: 'no acceptance record for this Issue',
+            actual: addresses.accepted,
+            target: addresses.accepted,
+            fix: 'An acceptance record is never rewritten. Open a new Issue for follow-up work rather than re-accepting this one.',
+          }
+        );
+      }
+
+      if (current.state === 'dropped') {
+        throw issueRefusal(
+          'issue_accept_dropped',
+          `Issue '${issueId}' is dropped — abandoned, not acceptable.`,
+          {
+            expected: 'an Issue whose state is open or resolved',
+            actual: 'dropped',
+            target: addresses.record,
+            fix: 'A dropped Issue records work that will not be done. Open a new Issue for any revived intent.',
+          }
+        );
+      }
+
+      // The transition an open Issue's acceptance implies is checked BEFORE
+      // any byte is written, through the same lifecycle gate `setState` uses
+      // (review Info-2): under the current table `open` → `resolved` is
+      // always permitted, but if a future lifecycle ever refused it, the
+      // refusal must land with NOTHING durable — no record written against a
+      // state that never moved, which would be an Issue that can neither
+      // present done nor re-accept.
+      if (current.state === 'open' && !isPermittedIssueTransition(current.state, 'resolved')) {
+        throw issueRefusal(
+          'issue_state_transition_refused',
+          `Issue '${issueId}' is '${current.state}', which does not permit 'resolved'.`,
+          {
+            expected: "a transition permitted from 'open'",
+            actual: 'resolved',
+            target: addresses.record,
+            fix: 'Set the Issue state explicitly with the state subcommand if the lifecycle has changed.',
+          }
+        );
+      }
+
+      assertCoherentGateSnapshot(input.gate);
+
+      // What the record freezes must be real: the named conditions revision is
+      // read back under the lock and its digest verified against the input.
+      const conditionsPath = acceptanceRevisionAddress(
+        scope.checkoutRoot,
+        issueId,
+        input.conditionsRevisionId
+      );
+      const conditionsText = await this.dependencies.fs.readText(conditionsPath);
+      if (conditionsText === null) {
+        throw issueRefusal(
+          'issue_accept_conditions_unreadable',
+          `Acceptance conditions revision '${input.conditionsRevisionId}' of Issue '${issueId}' does not exist in Store checkout ${scope.checkoutRoot}.`,
+          {
+            expected: 'a published acceptance conditions revision',
+            actual: '(absent)',
+            target: conditionsPath,
+            fix: `Publish conditions first with 'rasen store issue acceptance ${issueId} --from-file <path>'.`,
+          }
+        );
+      }
+      let conditions: AcceptanceConditionsRevisionV1;
+      try {
+        conditions = parseAcceptanceConditionsRevision(conditionsText, { verifyDigest: true });
+      } catch (error) {
+        throw issueRefusal(
+          'issue_accept_conditions_unreadable',
+          `Acceptance conditions revision '${input.conditionsRevisionId}' of Issue '${issueId}' does not read back: ${messageOf(error)}`,
+          {
+            expected: 'a readable acceptance conditions revision',
+            actual: messageOf(error),
+            target: conditionsPath,
+            fix: 'The revision is Store content whose digest no longer matches. Re-publish conditions as a new revision rather than repairing the old one.',
+          }
+        );
+      }
+      if (conditions.contentSha256 !== input.conditionsSha256) {
+        throw issueRefusal(
+          'issue_accept_conditions_unreadable',
+          `The acceptance names conditions digest '${input.conditionsSha256}', but revision '${input.conditionsRevisionId}' carries '${conditions.contentSha256}'.`,
+          {
+            expected: input.conditionsSha256,
+            actual: conditions.contentSha256,
+            target: conditionsPath,
+            fix: 'Re-evaluate the gate so the acceptance freezes the revision that is actually latest.',
+          }
+        );
+      }
+
+      const note = input.note === undefined ? null : input.note.trim();
+      if (note === '') {
+        throw issueRefusal(
+          'issue_accept_note_invalid',
+          `Accepting Issue '${issueId}' with --note requires a non-empty note.`,
+          {
+            expected: 'a non-empty note or no note at all',
+            actual: '(blank)',
+            target: addresses.accepted,
+            fix: 'Drop --note, or give the note content.',
+          }
+        );
+      }
+      if (note !== null) {
+        // The note becomes durable Store content, so the portable-text
+        // contract applies here too — refused, never trimmed.
+        try {
+          assertPortableIssueText(note, 'note', 'invalid_acceptance_record');
+        } catch (error) {
+          throw issueError(
+            'issue_accept_note_invalid',
+            `The acceptance note is not portable durable text: ${messageOf(error)}`,
+            { target: addresses.accepted, fix: 'Remove machine paths and credentials from the note.' }
+          );
+        }
+      }
+
+      const draft: Omit<IssueAcceptedRecordV1, 'contentSha256'> = {
+        version: 1,
+        issueId,
+        acceptedAt: canonicalTimestamp(this.dependencies.now()),
+        conditionsRevisionId: conditions.revisionId,
+        conditionsSha256: conditions.contentSha256,
+        gate: input.gate,
+        note,
+      };
+      const record: IssueAcceptedRecordV1 = {
+        ...draft,
+        contentSha256: acceptedRecordDigest(draft),
+      };
+      const serialized = serializeAcceptedRecord(record);
+      await this.dependencies.fs.mkdirp(addresses.acceptance);
+      await this.dependencies.fs.writeText(addresses.accepted, serialized);
+
+      // D5: an open Issue resolves in the SAME serialized mutation; a legacy
+      // resolved close is upgraded in place with no transition attempted.
+      const written: string[] = [addresses.accepted];
+      let state = current.state;
+      if (current.state === 'open') {
+        // The transition was already checked above, before any write, so the
+        // state record and the acceptance record land as one durable pair.
+        const nextRecord: IssueRecordV1 = { ...current, state: 'resolved' };
+        await this.dependencies.fs.writeText(
+          addresses.record,
+          serializeIssueRecord(nextRecord)
+        );
+        written.push(addresses.record);
+        state = 'resolved';
+      }
+
+      return {
+        ...this.report(
+          scope,
+          issueId,
+          written,
+          `chore(store): accept issue ${issueId}`
+        ),
+        record,
+        state,
       };
     });
   }

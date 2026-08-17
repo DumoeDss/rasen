@@ -33,6 +33,7 @@
 
 **Store / Bootstrap**：
 - `store.ts`（~53KB）— `registerStoreCommands`：setup/list/remove/add-project/doctor。管理 Rasen stores。
+- `store-issue.ts` — `registerStoreIssueCommand`：`store issue new/list/show/state/plan/start/acceptance/accept`（Issue CRUD + 状态面 + 验收面；加子命令须三面同步：commander 树 + en/ja/zh-cn locale + completions `COMMAND_REGISTRY`，CLI 测试跑 dist/）。
 - `bootstrap.ts` — `registerBootstrapCommand`：初始项目 setup。
 - `store-migration.ts` — store 迁移工具（`registerArchiveRelocateSubcommand`/`registerHomeCommand`）。
 

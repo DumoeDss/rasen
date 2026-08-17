@@ -24,8 +24,10 @@
 | Store 生命周期（setup/register/clone） | `src/core/store/operations.ts` |
 | Issue 三轴状态投影（phase/health/progress） | `src/core/issue-status/projection.ts`（`projectIssueStatus`；CLI 面 `src/commands/store-issue.ts` list/show） |
 | Issue 节点启动绑定（launch contract / start 子命令） | `src/core/issue-execution/binding.ts`（`resolveIssueLaunchBinding`；CLI 面 `src/commands/store-issue.ts` start） |
+| Issue 验收闸门 / 显式 accept（done 规则） | `src/core/issue-acceptance/gate.ts`（`evaluateIssueAcceptanceGate`）+ `orchestration.ts`（`readIssueAcceptanceFacts`/`acceptIssue`；CLI 面 `src/commands/store-issue.ts` acceptance/accept） |
+| Issue 验收内容 schema（条件修订 / accepted 记录） | `src/core/store/issues/acceptance.ts`（digest/serialize，镜像 plans.ts 纪律）；地址 = planning-layout-v2 的 `acceptance-conditions`/`acceptance-condition`/`issue-accepted-record` 三 kind |
 | `rasen store` 命令 | `src/commands/store.ts` |
-| `rasen store issue` 命令（Issue CRUD + 状态面） | `src/commands/store-issue.ts` |
+| `rasen store issue` 命令（Issue CRUD + 状态面 + 验收面） | `src/commands/store-issue.ts` |
 | **Workflow / Pipeline** | |
 | 添加 / 修改 built-in workflow 定义 | `src/core/workflow-registry/builtins.ts`（ID 表 + 适配表） |
 | workflow 目录加载（built-in + user） | `src/core/workflow-registry/registry.ts`（`loadWorkflowCatalog`） |

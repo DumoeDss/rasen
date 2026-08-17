@@ -45,6 +45,7 @@ import {
 } from '../../../src/core/pipeline-registry/run-state.js';
 import { ephemeraDir } from '../../../src/core/file-placement.js';
 import { projectIssueStatus } from '../../../src/core/issue-status/index.js';
+import { readIssueAcceptanceFacts } from '../../../src/core/issue-acceptance/index.js';
 
 const NOW = '2026-08-07T00:00:00.000Z';
 const LINE = 'main';
@@ -370,7 +371,7 @@ describe('the issue status projection', () => {
     expect(status.nodes[0].observation).toBe('run-terminal');
   });
 
-  it('derives review + waiting-human when every node is complete and the record is open', async () => {
+  it('derives review + waiting-human when every node is complete, and done only through a recorded acceptance', async () => {
     const ids = [
       seedAndCommit('child-a', 'a1'.repeat(16)),
       seedAndCommit('child-b', 'b2'.repeat(16)),
@@ -405,13 +406,97 @@ describe('the issue status projection', () => {
     // change must be committed Store content before the read reflects it.
     f.git(f.storeRoot, ['add', '-A']);
     f.git(f.storeRoot, ['commit', '-m', 'resolve issue']);
-    const resolved = await projectIssueStatus({
+    // The done rule since issue-acceptance-close: the resolved state alone is
+    // a bare operator flip and derives REVIEW, not done. The same read also
+    // carries no acceptance facts, which is the honest input for a store with
+    // no acceptance content yet.
+    const flipped = await projectIssueStatus({
       detail: await showIssue(),
       executionRoot: execRoot,
       changesDir,
       workDirFor: NO_WORK_DIR,
     });
-    expect(resolved.phase).toBe('done');
+    expect(flipped.phase).toBe('review');
+    expect(flipped.health).toBe('waiting-human');
+
+    // Recording the acceptance — through the real mutations, exactly as the
+    // accept orchestration drives them — is what moves the phase to done.
+    const published = await issues().publishAcceptance({
+      ...scope(),
+      issueId: ISSUE,
+      conditions: [{ id: 'cond-1', requirement: 'The projection is shipped' }],
+    });
+    const accepted = await issues().accept({
+      ...scope(),
+      issueId: ISSUE,
+      conditionsRevisionId: published.revision.revisionId,
+      conditionsSha256: published.revision.contentSha256,
+      gate: { completed: 3, total: 3, health: 'healthy', problemsStanding: 0 },
+    });
+    expect(accepted.state).toBe('resolved');
+    const done = await projectIssueStatus({
+      detail: await showIssue(),
+      executionRoot: execRoot,
+      changesDir,
+      workDirFor: NO_WORK_DIR,
+      acceptance: await readIssueAcceptanceFacts({ ...scope(), issueId: ISSUE }),
+    });
+    expect(done.phase).toBe('done');
+    expect(done.health).toBe('healthy');
+    expect(done.acceptance?.record?.conditionsRevisionId).toBe('0001');
+    // An already-accepted Issue is no longer acceptable — the gate says so
+    // over the SAME read that presents it done.
+    expect(done.acceptance?.gate.eligible).toBe(false);
+    if (done.acceptance !== null && !done.acceptance.gate.eligible) {
+      expect(done.acceptance.gate.refusalCode).toBe('issue_accept_already_accepted');
+    }
+  });
+
+  it('reads review/waiting-human for a premature close while a child is still in flight', async () => {
+    // Minor-1's pin: a resolved Issue without an acceptance record reads
+    // review WHATEVER its nodes' state — the operator declared the work over,
+    // so only the unproven acceptance remains — and the gate still names the
+    // un-terminal node, so no acceptance is possible until the work is real.
+    const ids = [
+      seedAndCommit('child-a', 'a1'.repeat(16)),
+      seedAndCommit('child-b', 'b2'.repeat(16)),
+      seedAndCommit('child-c', 'c3'.repeat(16)),
+    ];
+    await publishPlan(threeChangeNodes(ids as [string, string, string]));
+    writeRunStateFor('child-a', stages({ propose: 'done', apply: 'in_progress' }));
+    await issues().publishAcceptance({
+      ...scope(),
+      issueId: ISSUE,
+      conditions: [{ id: 'cond-1', requirement: 'Premature close scenario' }],
+    });
+    await issues().setState({ ...scope(), issueId: ISSUE, state: 'resolved' });
+    f.git(f.storeRoot, ['add', '-A']);
+    f.git(f.storeRoot, ['commit', '-m', 'premature resolve']);
+
+    const status = await projectIssueStatus({
+      detail: await showIssue(),
+      executionRoot: execRoot,
+      changesDir,
+      workDirFor: NO_WORK_DIR,
+      acceptance: await readIssueAcceptanceFacts({ ...scope(), issueId: ISSUE }),
+    });
+    expect(status.phase).toBe('review');
+    expect(status.health).toBe('waiting-human');
+    const gate = status.acceptance?.gate;
+    expect(gate?.eligible).toBe(false);
+    if (gate && !gate.eligible) {
+      expect(gate.refusalCode).toBe('issue_accept_blocked');
+      expect(gate.blockers).toContainEqual({
+        kind: 'un-terminal-node',
+        nodeId: 'g-001',
+        observation: 'in-flight',
+      });
+      expect(gate.blockers).toContainEqual({
+        kind: 'un-terminal-node',
+        nodeId: 'g-002',
+        observation: 'not-started',
+      });
+    }
   });
 
   // ---------------------------------------------------------------------------

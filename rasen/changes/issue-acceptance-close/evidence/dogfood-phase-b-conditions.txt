@@ -1,0 +1,9 @@
+$ node bin/rasen.js store issue acceptance issue-layer-phase1 --store issue-layer-dogfood --from-file %LOCALAPPDATA%\Temp\rasen-issue-layer-conditions.yaml
+
+Issue issue-layer-phase1: acceptance conditions revision 0001
+  supersedes: (none)
+  conditions: 3
+
+  Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing.
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-issue-layer-dogfood add rasen/issues/issue-layer-phase1/acceptance/0001.yaml
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-issue-layer-dogfood commit -m "chore(store): publish acceptance conditions issue-layer-phase1/0001"
