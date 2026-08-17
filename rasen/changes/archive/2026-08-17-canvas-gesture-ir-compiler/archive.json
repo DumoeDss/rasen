@@ -1,0 +1,22 @@
+{
+  "change": "canvas-gesture-ir-compiler",
+  "archivedAt": "2026-08-17T03:07:53.513Z",
+  "codeCommit": "e73e9ce93ec080db460c504861c44bf9090aa2f5",
+  "planningBranch": null,
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "0ca6a01d6d62a439df11d4d2a4325a3e764d2162fea73b8252161cb199c40075"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [
+    "auto-run.json",
+    "portfolio-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}
