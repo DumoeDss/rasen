@@ -49,6 +49,9 @@ vi.mock('@xyflow/react', () => ({
   ReactFlowProvider: ({ children }: { children: unknown }) => <>{children}</>,
   Handle: () => null,
   Position: { Left: 'left', Right: 'right' },
+  // Mirrors @xyflow/system's real enum values: PipelineCanvasPage now
+  // imports SelectionMode, which must resolve under this mock too.
+  SelectionMode: { Partial: 'partial', Full: 'full' },
   useReactFlow: () => ({ screenToFlowPosition: (p: { x: number; y: number }) => p }),
   addEdge: (edge: unknown, edges: unknown[]) => [...edges, edge],
   applyNodeChanges: (_c: unknown[], nodes: unknown[]) => nodes,

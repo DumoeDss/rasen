@@ -9,6 +9,7 @@ import {
   addEdge,
   applyNodeChanges,
   applyEdgeChanges,
+  SelectionMode,
   type Connection,
   type Edge,
   type NodeChange,
@@ -2775,6 +2776,7 @@ function CanvasFlow({
       edgesFocusable={editable}
       elementsSelectable
       selectionKeyCode="Shift"
+      selectionMode={SelectionMode.Partial}
       deleteKeyCode={editable ? ['Backspace', 'Delete'] : null}
       onNodesChange={editable ? onNodesChange : undefined}
       onEdgesChange={editable ? onEdgesChange : undefined}

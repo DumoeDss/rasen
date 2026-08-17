@@ -71,6 +71,7 @@ vi.mock('@xyflow/react', async () => {
     onNodesChange?: (changes: MockFlowChange[]) => void;
     onEdgesChange?: (changes: MockFlowChange[]) => void;
     selectionKeyCode?: string | null;
+    selectionMode?: string;
     proOptions?: { hideAttribution?: boolean };
   }) => {
     // Selection stand-ins for the real library's two truths (review m1 —
@@ -151,7 +152,7 @@ vi.mock('@xyflow/react', async () => {
       ['join', 'done', 'finish', 'input'],
     ] as const;
     return (
-    <div data-testid="mock-reactflow-wrapper" data-hide-attribution={String(props.proOptions?.hideAttribution)} data-selection-key={props.selectionKeyCode ?? ''}>
+    <div data-testid="mock-reactflow-wrapper" data-hide-attribution={String(props.proOptions?.hideAttribution)} data-selection-key={props.selectionKeyCode ?? ''} data-selection-mode={props.selectionMode ?? ''}>
       <div data-testid="mock-reactflow">{props.nodes.map((n) => n.id).join(',')}</div>
       <div data-testid="mock-rendered-node-types">
         {props.nodes
@@ -370,6 +371,10 @@ vi.mock('@xyflow/react', async () => {
     />
   ),
   Position: { Left: 'left', Right: 'right' },
+  // Mirrors @xyflow/system's real enum values ('partial'/'full', verified
+  // against the installed package): the page imports SelectionMode from the
+  // mocked module, so without this stand-in the prop's expression throws.
+  SelectionMode: { Partial: 'partial', Full: 'full' },
   // pipeline-canvas-edit additions: the editor's connect/drag/drop wiring.
   useReactFlow: () => ({ screenToFlowPosition: (p: { x: number; y: number }) => p }),
   addEdge: (edge: unknown, edges: unknown[]) => [...edges, edge],
@@ -409,6 +414,9 @@ vi.mock('@xyflow/react', async () => {
 });
 
 import { LocationProvider, Router, Route } from 'preact-iso';
+// Resolves to the vi.mock('@xyflow/react') stand-in above — the selection
+// prop-pin test compares the page's passed selectionMode against this enum.
+import { SelectionMode } from '@xyflow/react';
 import { DefinitionContractPanel } from '../../src/canvas/DefinitionContractPanel.js';
 import { PipelineCanvasPage } from '../../src/canvas/PipelineCanvasPage.js';
 import { V2NodePanel } from '../../src/canvas/V2NodePanel.js';
@@ -5162,6 +5170,23 @@ describe('PipelineCanvasPage — multi-selection', () => {
     expect(flowText).not.toContain('propose');
     expect(flowText).not.toContain('apply');
     expect(container.querySelector('[data-testid="v2-selection-panel"]')).toBeNull();
+  });
+
+  // PROP PIN (canvas-boxselect-containment-fix design D2): jsdom performs no
+  // layout, so the mock cannot express box-select rect geometry — this pins
+  // only that CanvasFlow configures React Flow for overlap selection
+  // (SelectionMode.Partial, not the v12 default Full containment that
+  // dropped every clipped node). The BEHAVIORAL pin is the real-browser CDP
+  // probe recorded in the change's evidence dir.
+  it('passes selectionMode Partial to React Flow (prop pin)', async () => {
+    await mountV2Edit();
+    const mode = container
+      .querySelector('[data-testid="mock-reactflow-wrapper"]')
+      ?.getAttribute('data-selection-mode');
+    expect(mode).toBe(SelectionMode.Partial);
+    // The stand-in mirrors @xyflow/system's real enum value; this anchor
+    // keeps a mutated stand-in from making a wrong source value pass.
+    expect(mode).toBe('partial');
   });
 });
 
