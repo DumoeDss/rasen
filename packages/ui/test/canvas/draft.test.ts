@@ -9,6 +9,7 @@ import {
   addBodyConnection,
   addBodyStage,
   addDeclaration,
+  addFinishNode,
   addRequire,
   backedgeRegion,
   bodyWouldCreateCycle,
@@ -21,6 +22,8 @@ import {
   completedFrontier,
   detectParallelFrontiers,
   insertCompositeRef,
+  isPromotableSink,
+  promoteSinkToFinish,
   setParallelMembers,
   subgraphExtractionRefusals,
   synthesizeParallelFrontier,
@@ -56,6 +59,7 @@ import {
   wouldCreateCycle,
 } from '../../src/canvas/draft.js';
 import type {
+  WireDefinitionNode,
   WirePipelineDefinition,
   WirePipelineDefinitionV1,
   WirePipelineDefinitionV2,
@@ -2376,5 +2380,287 @@ describe('synthesizeParallelFrontier', () => {
     const result = synthesize(def);
     expect(result.fanOutId).toBe('fan-out-2');
     expect(result.joinId).toBe('join-2');
+  });
+});
+
+describe('isPromotableSink', () => {
+  /**
+   * The sink farm: s is wired onward to end, so end is the terminal plain
+   * stage; the barrier join and the non-promotable terminal kinds carry no
+   * outgoing connection. Variants below add an outgoing edge or drop a node
+   * from the root to falsify each clause.
+   */
+  function sinkFarm(
+    extra: {
+      connections?: Array<[string, string]>;
+      dropNodes?: string[];
+    } = {}
+  ): WirePipelineDefinitionV2 {
+    const stage = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: `skill:${id}`, version: `sha256:${id}` },
+      execution: {
+        version: 1 as const,
+        role: 'implementer' as const,
+        workspace: { access: 'write' as const },
+      },
+      retained: { note: `keep ${id}` },
+    });
+    const nodes: WireDefinitionNode[] = [
+      stage('s'),
+      stage('end'),
+      {
+        id: 'barrier',
+        kind: 'Join' as const,
+        inputs: ['s'],
+        requiredMembers: ['s'],
+        optionalMembers: [],
+        outcomes: { proceed: 'shipped', failed: 'failed' },
+      },
+      {
+        id: 'loop-end',
+        kind: 'BoundedLoop' as const,
+        body: 'decl:body',
+        limits: { maxIterations: 3 },
+        exits: {},
+      },
+      { id: 'ref-end', kind: 'CompositeRef' as const, declarationId: 'decl:body' },
+      {
+        id: 'gate-end',
+        kind: 'Gate' as const,
+        target: 's',
+        outcomes: ['approved'],
+        dispositions: { approved: 'proceed' as const },
+      },
+      { id: 'choice-end', kind: 'Choice' as const, outcomes: ['taken', 'skipped'] },
+      {
+        id: 'fan-out',
+        kind: 'FanOut' as const,
+        branches: ['s'],
+        concurrencyCap: 1,
+        budget: 1,
+        joinNodeId: 'barrier',
+        members: [
+          { id: 's', hierarchicalPath: 's', required: true, condition: 'always' },
+        ],
+      },
+      { id: 'finish', kind: 'Finish' as const, outcome: 'done' },
+    ].filter((node) => !(extra.dropNodes ?? []).includes(node.id));
+    return {
+      version: 2,
+      id: 'definition:sink-farm',
+      sourceId: 'fixture:sink-farm',
+      name: 'sink-farm',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done', 'rejected', 'archived'],
+      declarations: [],
+      root: {
+        nodes,
+        connections: (extra.connections ?? [['s', 'end']]).map(
+          ([from, to], index) => ({
+            id: `e${index}`,
+            from: { node: from, port: 'done' },
+            to: { node: to, port: 'input' },
+          })
+        ),
+      },
+    };
+  }
+
+  it('recognizes a plain stage with no outgoing connection', () => {
+    const def = sinkFarm();
+    const end = def.root.nodes.find((node) => node.id === 'end')!;
+    expect(isPromotableSink(def, end)).toBe(true);
+  });
+
+  it('recognizes a terminal parallel barrier', () => {
+    const def = sinkFarm();
+    const barrier = def.root.nodes.find((node) => node.id === 'barrier')!;
+    expect(isPromotableSink(def, barrier)).toBe(true);
+  });
+
+  it('refuses a node with an outgoing connection — stage and barrier alike', () => {
+    const wiredStage = sinkFarm({ connections: [['s', 'end'], ['end', 'finish']] });
+    expect(
+      isPromotableSink(wiredStage, wiredStage.root.nodes.find((n) => n.id === 'end')!)
+    ).toBe(false);
+    const wiredBarrier = sinkFarm({
+      connections: [['s', 'end'], ['barrier', 'finish']],
+    });
+    expect(
+      isPromotableSink(wiredBarrier, wiredBarrier.root.nodes.find((n) => n.id === 'barrier')!)
+    ).toBe(false);
+  });
+
+  it('refuses the other terminal kinds — loop, composite reference, gate, choice, fan-out, finish', () => {
+    const def = sinkFarm();
+    for (const id of ['loop-end', 'ref-end', 'gate-end', 'choice-end', 'fan-out', 'finish']) {
+      const node = def.root.nodes.find((candidate) => candidate.id === id)!;
+      expect(isPromotableSink(def, node)).toBe(false);
+    }
+  });
+
+  it('ignores a declaration body node — the root graph is the only scope', () => {
+    const def = sinkFarm();
+    // A body-graph stage object whose id is not in the root: the root lookup
+    // fails, so no rule applies regardless of shape.
+    const bodyNode = {
+      id: 'body-stage',
+      kind: 'AtomicStage' as const,
+      capability: { id: 'skill:body', version: 'sha256:body' },
+    };
+    expect(isPromotableSink(def, bodyNode)).toBe(false);
+  });
+});
+
+describe('promoteSinkToFinish', () => {
+  function sinkDef(
+    extra: { outcomes?: string[] } = {}
+  ): WirePipelineDefinitionV2 {
+    const stage = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: `skill:${id}`, version: `sha256:${id}` },
+      execution: {
+        version: 1 as const,
+        role: 'implementer' as const,
+        workspace: { access: 'write' as const },
+      },
+      retained: { note: `keep ${id}` },
+    });
+    return {
+      version: 2,
+      id: 'definition:sink',
+      sourceId: 'fixture:sink',
+      name: 'sink',
+      inputs: [],
+      artifacts: [],
+      outcomes: extra.outcomes ?? ['done', 'rejected', 'archived'],
+      declarations: [],
+      root: {
+        nodes: [
+          stage('s'),
+          stage('end'),
+          {
+            id: 'barrier',
+            kind: 'Join' as const,
+            inputs: ['s'],
+            requiredMembers: ['s'],
+            optionalMembers: [],
+            outcomes: { proceed: 'shipped', failed: 'failed' },
+          },
+        ],
+        connections: [
+          {
+            id: 'e0',
+            from: { node: 's', port: 'done' },
+            to: { node: 'end', port: 'input' },
+          },
+        ],
+      },
+    };
+  }
+
+  it('appends the Finish in exactly the gesture node shape with the picked outcome and wires it on the rendered handle ids', () => {
+    const def = sinkDef();
+    const result = promoteSinkToFinish(def, 'end', 'rejected');
+
+    expect(result.finishId).toBe('finish');
+    const promoted = result.next.root.nodes.find((node) => node.id === 'finish')!;
+    // toEqual-pinned against the explicit gesture's node shape, only the
+    // outcome replaced by the author's pick.
+    const gesture = addFinishNode(def);
+    const gestureFinish = gesture.root.nodes.find((node) => node.id === 'finish')!;
+    expect(promoted).toEqual({ ...gestureFinish, outcome: 'rejected' });
+    expect(promoted).toEqual({ id: 'finish', kind: 'Finish', outcome: 'rejected' });
+    // Exactly one connection added: sink control-out -> Finish control-in.
+    expect(result.next.root.connections).toEqual([
+      {
+        id: 'e0',
+        from: { node: 's', port: 'done' },
+        to: { node: 'end', port: 'input' },
+      },
+      {
+        id: 'end:done->finish:input',
+        from: { node: 'end', port: 'done' },
+        to: { node: 'finish', port: 'input' },
+      },
+    ]);
+  });
+
+  it('keeps the sink verbatim and mutates nothing in the input draft', () => {
+    const def = sinkDef();
+    const end = def.root.nodes.find((node) => node.id === 'end')!;
+    const result = promoteSinkToFinish(def, 'end', 'rejected');
+    // Reference equality: the sink object survives untouched — extension
+    // fields and execution settings verbatim by construction.
+    expect(result.next.root.nodes.find((node) => node.id === 'end')).toBe(end);
+    expect(result.next).not.toBe(def);
+    expect(def.root.nodes.length).toBe(3);
+    expect(def.root.connections.length).toBe(1);
+  });
+
+  it('wires a barrier sink from its outcomes.proceed VALUE — the rendered barrier output port', () => {
+    const def = sinkDef();
+    const result = promoteSinkToFinish(def, 'barrier', 'archived');
+    expect(
+      result.next.root.connections.map((connection) => connection.id)
+    ).toContain('barrier:shipped->finish:input');
+    // The barrier itself is never converted: still a Join, semantics intact.
+    const barrier = result.next.root.nodes.find((node) => node.id === 'barrier')!;
+    expect(barrier.kind).toBe('Join');
+  });
+
+  it('refuses a stale non-sink and a foreign or blank outcome', () => {
+    const def = sinkDef();
+    // Stale: the first promotion wires the sink, so a second refuses.
+    const first = promoteSinkToFinish(def, 'end', 'done');
+    expect(() => promoteSinkToFinish(first.next, 'end', 'done')).toThrow(
+      'This node is no longer a terminal plain stage or parallel barrier.'
+    );
+    // Foreign outcome: not a member of def.outcomes.
+    expect(() => promoteSinkToFinish(def, 'end', 'shipped')).toThrow(
+      "Outcome 'shipped' is not one of this definition's named outcomes."
+    );
+    // Blank outcome: trimmed to nothing.
+    expect(() => promoteSinkToFinish(def, 'end', '   ')).toThrow(
+      "Outcome '' is not one of this definition's named outcomes."
+    );
+    // Unknown node id.
+    expect(() => promoteSinkToFinish(def, 'nope', 'done')).toThrow(
+      "Node 'nope' does not exist."
+    );
+  });
+
+  it('stamps no legacyRuntimeOwner on any node in next', () => {
+    const result = promoteSinkToFinish(sinkDef(), 'end', 'rejected');
+    expect(result.next.root.nodes.length).toBeGreaterThan(0);
+    for (const node of result.next.root.nodes) {
+      expect(node).not.toHaveProperty('legacyRuntimeOwner');
+    }
+  });
+
+  it('the promoted Finish patches through updateV2NodeFields exactly like an authored one', () => {
+    const result = promoteSinkToFinish(sinkDef(), 'end', 'rejected');
+    const edited = updateV2NodeFields(result.next, 'finish', { outcome: 'archived' });
+    const finish = edited.root.nodes.find((node) => node.id === 'finish')!;
+    expect(finish.kind).toBe('Finish');
+    expect(finish.outcome).toBe('archived');
+    // The wiring survives the patch untouched.
+    expect(
+      edited.root.connections.map((connection) => connection.id)
+    ).toContain('end:done->finish:input');
+  });
+
+  it('mints a non-colliding finish id beside an existing Finish', () => {
+    const def = sinkDef();
+    def.root.nodes.push({ id: 'finish', kind: 'Finish', outcome: 'done' });
+    const result = promoteSinkToFinish(def, 'end', 'rejected');
+    expect(result.finishId).toBe('finish-2');
+    expect(
+      result.next.root.connections.map((connection) => connection.id)
+    ).toContain('end:done->finish-2:input');
   });
 });

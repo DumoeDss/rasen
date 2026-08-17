@@ -6468,3 +6468,268 @@ describe('PipelineCanvasPage — parallel frontier inference', () => {
     expect(action!.textContent).toBe('Run in parallel');
   });
 });
+
+describe('PipelineCanvasPage — sink promotion', () => {
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    __resetLocaleForTesting();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+  });
+
+  afterEach(() => {
+    render(null, container);
+    document.body.removeChild(container);
+    window.history.replaceState({}, '', '/');
+    __resetLocaleForTesting();
+    vi.clearAllMocks();
+  });
+
+  async function clickAndFlush(el: Element | null): Promise<void> {
+    await act(async () => {
+      (el as HTMLElement).click();
+      await flushMicrotasks();
+    });
+  }
+
+  async function setValueAndFlush(
+    el: Element | null,
+    value: string,
+    eventType: 'change' | 'input' = 'change'
+  ): Promise<void> {
+    await act(async () => {
+      const input = el as HTMLInputElement;
+      input.value = value;
+      input.dispatchEvent(new Event(eventType, { bubbles: true }));
+      await flushMicrotasks();
+    });
+  }
+
+  /**
+   * A chain ending in a plain stage: source -> end, with `end` terminal. The
+   * `loop` variant appends an unwired BoundedLoop (a terminal kind that must
+   * NOT get the offer) and, when `wireLoop` is set, wires end -> loop so the
+   * loop is the sole sink.
+   */
+  function sinkDetail(
+    extra: { outcomes?: string[]; loop?: boolean; wireLoop?: boolean } = {}
+  ): PipelineDetailResponse {
+    const stage = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: 'skill:rasen-apply', version: 'digest-apply' },
+      execution: {
+        version: 1 as const,
+        role: 'implementer' as const,
+        workspace: { access: 'write' as const },
+        retainedExecutionNote: `keep ${id}`,
+      },
+    });
+    const nodes: Array<Record<string, unknown>> = [stage('source'), stage('end')];
+    const edges: Array<[string, string]> = [['source', 'end']];
+    if (extra.loop) {
+      nodes.push({
+        id: 'loop-end',
+        kind: 'BoundedLoop' as const,
+        body: 'composite:body',
+        limits: { maxIterations: 2, maxActions: 8, budget: 8 },
+        lifecycle: {
+          version: 1 as const,
+          thresholds: { stallIterations: 2, sameBlockerAttempts: 2 },
+          strategy: { maxAttempts: 0, requireMaterialChange: true as const },
+          exits: {},
+        },
+        exits: { done: { action: 'exit' as const, outcome: 'done' } },
+      });
+      if (extra.wireLoop) edges.push(['end', 'loop-end']);
+    }
+    const definition = {
+      version: 2 as const,
+      id: 'definition:sink-promotion',
+      sourceId: 'fixture:sink-promotion',
+      name: 'sink-promotion',
+      inputs: [],
+      artifacts: [],
+      outcomes: extra.outcomes ?? ['done', 'rejected', 'archived'],
+      declarations: extra.loop
+        ? [
+            {
+              id: 'composite:body',
+              kind: 'Composite' as const,
+              provenance: 'custom' as const,
+              inputs: [],
+              artifacts: [],
+              outcomes: ['done'],
+              graph: { nodes: [], connections: [] },
+            },
+          ]
+        : [],
+      root: {
+        nodes,
+        connections: edges.map(([from, to]) => ({
+          id: `${from}:done->${to}:input`,
+          from: { node: from, port: 'done' },
+          to: { node: to, port: 'input' },
+        })),
+      },
+    };
+    return {
+      ...pipelineDetailFixture,
+      pipeline: {
+        ...pipelineDetailFixture.pipeline,
+        name: 'sink-promotion',
+        description: 'Sink promotion fixture',
+        provenance: 'user' as const,
+        sourceLayer: 'user' as const,
+        stages: [],
+        authoredVersion: 2 as const,
+        normalizedVersion: 2 as const,
+        definitionValid: true,
+        planAvailable: true,
+        executable: false,
+        executionMode: 'unavailable' as const,
+        unavailableReason: 'ecp_v2_runtime_unavailable',
+      },
+      definition,
+      preparation: v2Preparation,
+      editable: true,
+    } as PipelineDetailResponse;
+  }
+
+  async function mountSinkEdit(detail: PipelineDetailResponse): Promise<void> {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(detail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/sink-promotion');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+  }
+
+  async function submittedDefinition(): Promise<WirePipelineDefinitionV2> {
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    return vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+  }
+
+  async function selectNode(id: string): Promise<void> {
+    await clickAndFlush(
+      container.querySelector(`[data-testid="mock-node-click"][data-node-id="${id}"]`)
+    );
+  }
+
+  it('renders the endpoint-naming section for a selected stage sink, never for a wired node or a loop end', async () => {
+    await mountSinkEdit(sinkDetail());
+
+    // The terminal stage: the section offers the definition's outcomes,
+    // defaulted to the first.
+    await selectNode('end');
+    const sinkPanel = container.querySelector('[data-testid="v2-node-panel"]');
+    expect(sinkPanel?.getAttribute('data-node')).toBe('end');
+    const section = container.querySelector('[data-testid="v2-node-panel-sink-promotion"]');
+    expect(section).not.toBeNull();
+    const outcomeSelect = section!.querySelector(
+      '[data-testid="v2-node-panel-sink-outcome"]'
+    ) as HTMLSelectElement;
+    expect(outcomeSelect.value).toBe('done');
+    expect(
+      Array.from(outcomeSelect.options).map((option) => option.value)
+    ).toEqual(['done', 'rejected', 'archived']);
+
+    // The wired source: its panel opens, the section is absent.
+    await selectNode('source');
+    expect(
+      container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-node')
+    ).toBe('source');
+    expect(container.querySelector('[data-testid="v2-node-panel-sink-promotion"]')).toBeNull();
+
+    // A loop end keeps the explicit path: section absent for it too.
+    render(null, container);
+    document.body.removeChild(container);
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    await mountSinkEdit(sinkDetail({ loop: true, wireLoop: true }));
+    await selectNode('loop-end');
+    expect(
+      container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-node')
+    ).toBe('loop-end');
+    expect(container.querySelector('[data-testid="v2-node-panel-sink-promotion"]')).toBeNull();
+    // And with the loop wired after end, end is no longer terminal either.
+    await selectNode('end');
+    expect(container.querySelector('[data-testid="v2-node-panel-sink-promotion"]')).toBeNull();
+  });
+
+  it('picking the second outcome and confirming lands the wired Finish in the POSTed definition and selects it', async () => {
+    await mountSinkEdit(sinkDetail());
+    await selectNode('end');
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-node-panel-sink-outcome"]'),
+      'rejected'
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-node-panel-sink-confirm"]')
+    );
+
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toContain(
+      'Finish added'
+    );
+
+    // The Finish IS the selection (both selection truths in one tick) and its
+    // own properties panel is open with the picked outcome.
+    expect(
+      container
+        .querySelector('[data-testid="mock-node"][data-node-id="finish"]')
+        ?.getAttribute('data-selected')
+    ).toBe('true');
+    const finishPanel = container.querySelector('[data-testid="v2-node-panel"]');
+    expect(finishPanel?.getAttribute('data-node')).toBe('finish');
+    expect(
+      (finishPanel!.querySelector(
+        '[data-testid="v2-node-panel-outcome"]'
+      ) as HTMLSelectElement).value
+    ).toBe('rejected');
+    // The offer never re-offers itself: the Finish is not a promotable sink.
+    expect(finishPanel!.querySelector('[data-testid="v2-node-panel-sink-promotion"]')).toBeNull();
+
+    // The definition actually sent to validation: the Finish appended with
+    // the picked outcome, wired on the rendered handle ids, the stage's own
+    // settings untouched, and NO node carries legacyRuntimeOwner (the
+    // POST-body half of the two-layer guard).
+    const submitted = await submittedDefinition();
+    expect(
+      submitted.root.nodes.find((node) => node.id === 'finish')
+    ).toEqual({ id: 'finish', kind: 'Finish', outcome: 'rejected' });
+    expect(submitted.root.connections.map((connection) => connection.id)).toEqual([
+      'source:done->end:input',
+      'end:done->finish:input',
+    ]);
+    expect(
+      (submitted.root.nodes.find((node) => node.id === 'end') as {
+        execution?: { retainedExecutionNote?: string };
+      }).execution?.retainedExecutionNote
+    ).toBe('keep end');
+    for (const node of submitted.root.nodes) {
+      expect(node).not.toHaveProperty('legacyRuntimeOwner');
+    }
+  });
+
+  it('the palette Finish gesture still works after a promotion (no capability hole)', async () => {
+    await mountSinkEdit(sinkDetail());
+    await selectNode('end');
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-node-panel-sink-confirm"]')
+    );
+
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-gesture-finish"]'));
+    const flowText = container.querySelector('[data-testid="mock-reactflow"]')!.textContent!;
+    expect(flowText).toContain('finish');
+    expect(flowText).toContain('finish-2');
+    // The gesture's Finish stays UNWIRED with the first-outcome default —
+    // exactly addFinishNode's behavior beside the promoted one.
+    const submitted = await submittedDefinition();
+    expect(
+      submitted.root.nodes.find((node) => node.id === 'finish-2')
+    ).toEqual({ id: 'finish-2', kind: 'Finish', outcome: 'done' });
+    expect(
+      submitted.root.connections.some((connection) => connection.from.node === 'finish-2')
+    ).toBe(false);
+  });
+});

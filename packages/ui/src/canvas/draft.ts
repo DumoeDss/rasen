@@ -3269,3 +3269,97 @@ export function synthesizeParallelFrontier(
   });
   return { next, fanOutId, joinId };
 }
+
+// ===== Sink promotion (canvas-sink-finish-inference design D1-D3) =========
+
+/**
+ * The promotable terminal kinds (design D1): exactly the two whose authored
+ * terminal wiring the surface already draws — a plain stage's control-out and
+ * a barrier's outcome-valued output are the handles the renderer paints, so
+ * the promotion's edge lands on a real handle. Every other sink kind (a
+ * loop's end, a composite reference, a gate, a branch point) keeps the
+ * explicit Finish gesture; per-kind rendered-port resolution is deferred.
+ * A FanOut can never qualify alone by construction: its pair's collector is
+ * the Join.
+ */
+const PROMOTABLE_SINK_KINDS: ReadonlySet<WireDefinitionNode['kind']> = new Set([
+  'AtomicStage',
+  'Join',
+]);
+
+/**
+ * Whether `node` is a promotable terminal node (design D1): it exists in the
+ * ROOT graph (a declaration body's sinks are that declaration's own outcome
+ * contract, not this rule's territory), the ROOT node's kind is promotable,
+ * and NO root connection leaves it. The out-edge scan rides `buildAdjacency`
+ * — the same root-connection enumeration `wouldCreateCycle` and
+ * `detectParallelFrontiers` read — so "terminal" can never disagree with the
+ * rules that recognize loop and parallel shapes.
+ */
+export function isPromotableSink(
+  def: WirePipelineDefinitionV2,
+  node: WireDefinitionNode
+): boolean {
+  const root = def.root.nodes.find((candidate) => candidate.id === node.id);
+  if (!root || !PROMOTABLE_SINK_KINDS.has(root.kind)) return false;
+  return (buildAdjacency(def).get(root.id) ?? []).length === 0;
+}
+
+export interface SinkPromotionResult {
+  next: WirePipelineDefinitionV2;
+  finishId: string;
+}
+
+/**
+ * The one sink-promotion transaction (design D3): appends a Finish carrying
+ * the author's PICKED outcome and wires the sink to it. Steps: (1)
+ * re-validate — the panel is not trusted; the node must still be a promotable
+ * sink and the outcome a non-blank member of `def.outcomes` (the select only
+ * offers those, but the model owns the rule); (2) append the Finish with
+ * exactly `addFinishNode`'s node shape but the picked outcome — nothing else
+ * is stamped, so the promoted node is indistinguishable from an authored one;
+ * (3) wire sink→Finish via the `addV2Connection`/`v2ConnectionIdFor`
+ * convention with the sink's rendered control-out handle: an `AtomicStage`
+ * sources `CONTROL_SOURCE_PORT`, a `Join` sources its `outcomes.proceed`
+ * VALUE (the barrier's rendered output port, `layout.ts`'s Join output
+ * mapping — the same rendered-id discipline children 2-4 used); the Finish's
+ * input is its control port. The sink node itself is untouched — no move, no
+ * rewrite; its extension fields and execution settings survive verbatim by
+ * construction. Pure; never mutates; stamps nothing.
+ */
+export function promoteSinkToFinish(
+  def: WirePipelineDefinitionV2,
+  sinkId: string,
+  outcome: string
+): SinkPromotionResult {
+  const node = def.root.nodes.find((candidate) => candidate.id === sinkId);
+  if (!node) {
+    throw new Error(`Node '${sinkId}' does not exist.`);
+  }
+  if (!isPromotableSink(def, node)) {
+    throw new Error(
+      'This node is no longer a terminal plain stage or parallel barrier.'
+    );
+  }
+  const picked = outcome.trim();
+  if (!picked || !def.outcomes.includes(picked)) {
+    throw new Error(
+      `Outcome '${picked}' is not one of this definition's named outcomes.`
+    );
+  }
+  const finishId = v2NodeIdFor('Finish', def);
+  let next = addV2Node(def, { id: finishId, kind: 'Finish', outcome: picked });
+  const sourcePort =
+    node.kind === 'Join' ? node.outcomes.proceed : CONTROL_SOURCE_PORT;
+  next = addV2Connection(next, {
+    id: v2ConnectionIdFor(next, {
+      source: sinkId,
+      sourcePort,
+      target: finishId,
+      targetPort: CONTROL_TARGET_PORT,
+    }),
+    from: { node: sinkId, port: sourcePort },
+    to: { node: finishId, port: CONTROL_TARGET_PORT },
+  });
+  return { next, finishId };
+}

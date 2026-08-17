@@ -62,10 +62,12 @@ import {
   insertCompositeRef,
   isBindableSkill,
   isDeclarationIdUnique,
+  isPromotableSink,
   isDirty,
   isV2EditableNodeKind,
   issuePathTarget,
   bodyConnectionIdFor,
+  promoteSinkToFinish,
   removeBodyConnection,
   removeBodyStage,
   removeDeclaration,
@@ -1502,6 +1504,41 @@ export function PipelineCanvasPage() {
     removeAuthoringDraftErrorScopes(PARALLEL_REVIEW_INTEGER_FIELDS);
   }
 
+  // --- Sink promotion (canvas-sink-finish-inference design D2/D3) ---------
+
+  /**
+   * Confirms the endpoint-naming section on the selected promotable sink: one
+   * `promoteSinkToFinish` transaction (append the Finish in the explicit
+   * gesture's node shape with the picked outcome, wire the sink to it on the
+   * rendered handle ids), then the same selectionOverride pairing
+   * `confirmParallelReview` uses — both selection truths in the same tick,
+   * with the new Finish as the selection. A model refusal keeps the draft
+   * unchanged and toasts the message.
+   */
+  function confirmSinkPromotion(sinkId: string, outcome: string) {
+    if (!draft || draft.version !== 2) return;
+    let result;
+    try {
+      result = promoteSinkToFinish(draft, sinkId, outcome);
+    } catch (error) {
+      showToast(
+        error instanceof Error
+          ? error.message
+          : 'Could not name this endpoint.'
+      );
+      return;
+    }
+    const nextSelection: CanvasSelection = {
+      nodeIds: new Set([result.finishId]),
+      connectionIds: new Set<string>(),
+    };
+    setDraft(result.next);
+    setSelection(nextSelection);
+    recomputeFlow(result.next, catalog, nextSelection);
+    markDraftChanged();
+    showToast('Finish added for this endpoint.');
+  }
+
   // The offer's toast action outlives the render that created it (its
   // auto-dismiss is suppressed), so it must reach the LATEST
   // `openParallelReview` — the one closing over the draft the completing
@@ -2113,6 +2150,19 @@ export function PipelineCanvasPage() {
         ? draft.root.nodes.find((node) => node.id === primarySelectedNodeId) ?? null
         : null,
     [draft, primarySelectedNodeId]
+  );
+  /**
+   * The selected node's outcome list when it IS a promotable sink (the
+   * endpoint-naming offer's data), null otherwise — the ONE place the page
+   * consults `isPromotableSink`, so the offer can never disagree with the
+   * model's own confirm-time re-validation.
+   */
+  const selectedV2SinkOutcomes = useMemo(
+    () =>
+      draft?.version === 2 && selectedV2Node && isPromotableSink(draft, selectedV2Node)
+        ? draft.outcomes
+        : null,
+    [draft, selectedV2Node]
   );
   const selectedConnection = useMemo(
     () =>
@@ -2928,6 +2978,15 @@ export function PipelineCanvasPage() {
             onParallelContractPatch={editParallelContract}
             onDeleteParallelPair={deleteParallel}
             onInvalidChange={setAuthoringDraftError}
+            sinkPromotion={
+              selectedV2SinkOutcomes
+                ? {
+                    outcomes: selectedV2SinkOutcomes,
+                    onPromote: (outcome) =>
+                      confirmSinkPromotion(selectedV2Node.id, outcome),
+                  }
+                : undefined
+            }
             onClose={() => replaceSelection([])}
           />
         )}
