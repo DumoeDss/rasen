@@ -1,0 +1,50 @@
+{
+  "planId": "ec3cfb6a1812970f7ac2d259d8ed70c41cd8061ec7a9ebc41a05730907c42360",
+  "scope": {
+    "storeUid": "f76edc31-229a-42bc-a5c7-848021eeb2da",
+    "storeId": "issue-registry",
+    "storeRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+    "projectId": "6ca78b98-777f-45bc-8d9b-b84c34e1a531",
+    "targetLineId": "line-0.2",
+    "planningScopeId": "ps_ed19005104ae84f9e85f3ed5f45f4dd62c16433acb22b02e79c8359870bfd79c"
+  },
+  "targetLine": {
+    "targetLineId": "line-0.2",
+    "storeRef": "refs/heads/main",
+    "storeRefOid": "2583bf86630801f4ac6af1241346151bc85abf42",
+    "codeRef": "refs/heads/main",
+    "codeRefOid": "2dc9e31379e0d03230945cd20032cca7b700f9a6"
+  },
+  "changeId": "document-multi-project-issues",
+  "bindingState": "bound",
+  "planning": {
+    "side": "planning",
+    "root": "E:\\rasen-pairs\\dmpi",
+    "repositoryRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+    "exists": true,
+    "linked": true,
+    "worktreeInstanceId": "wt_ae941ebd428b39598ae4fe99938953497d869ee5b3476c9ace04fcbfe7c7ff2b",
+    "repositoryIdentity": "e:\\ai\\chatai\\agents\\vibecodingprojects\\workflow\\reference\\rasen-issue-store\\.git",
+    "ref": "refs/heads/change/line-0.2/6ca78b98-777f-45bc-8d9b-b84c34e1a531/document-multi-project-issues",
+    "headOid": "2583bf86630801f4ac6af1241346151bc85abf42"
+  },
+  "execution": {
+    "side": "execution",
+    "root": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-site--document-multi-project-issues",
+    "repositoryRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-site",
+    "exists": true,
+    "linked": true,
+    "worktreeInstanceId": "wt_cf0ec3d1ec4d3a653be22f638ed231114c4eb675010637f6b466c38bf8129781",
+    "repositoryIdentity": "e:\\ai\\chatai\\agents\\vibecodingprojects\\workflow\\reference\\rasen-site\\.git",
+    "ref": "refs/heads/change/line-0.2/6ca78b98-777f-45bc-8d9b-b84c34e1a531/document-multi-project-issues",
+    "headOid": "2dc9e31379e0d03230945cd20032cca7b700f9a6"
+  },
+  "created": [
+    "E:\\rasen-pairs\\dmpi",
+    "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-site--document-multi-project-issues"
+  ],
+  "reused": [],
+  "suggestedCommits": [],
+  "changeInstanceId": "ci_4950d004af6e4085c862933dc877396e904522b71d50d07573e4dfe68b8d72c4",
+  "workspacePairId": "wp_71c0ef9eb7a7d30b85f5659d206f0f3660a677a4100e903e0cde66d9cbec627d"
+}
