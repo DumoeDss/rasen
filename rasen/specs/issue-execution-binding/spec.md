@@ -23,7 +23,13 @@ next-to-execute node SHALL be the node the operator names with `--node`, or the 
 the lifecycles the plan still wants — `required` or `optional` — that has not started and whose
 dependencies' work is complete; when several nodes qualify the command
 SHALL refuse naming every candidate rather than choose one, and when none qualifies it SHALL
-refuse naming why. A node the operator names whose lifecycle is `cancelled` or `superseded`
+refuse naming why. Dependency gating SHALL be edge-wise and project-blind: a dependency whose
+node targets another member project gates its downstream exactly as a same-project dependency
+does, and the gate releases on completed work — terminal run-state or finalized evidence —
+never on archiving. A refusal that names blockers SHALL name each one's node identifier, its
+target project, and its current observed state, and SHALL distinguish a dependency no local
+run-state explains from one observed not-started, and a dependency whose reference or run-state
+could not be read (`unknown`, with its diagnostic) from either. A node the operator names whose lifecycle is `cancelled` or `superseded`
 SHALL be refused, naming that lifecycle and the node's recorded reason, because the plan says
 its work is not wanted. An Issue with no readable published plan SHALL be refused toward planning.
 The command resolves and verifies the binding; launching the pipeline itself remains an action
@@ -45,6 +51,30 @@ directory.
 
 - **WHEN** `--node` names a node whose dependencies' work is not complete
 - **THEN** the command refuses, naming the nodes whose work must complete first
+
+#### Scenario: A cross-project blocker is named with its project and state
+
+- **WHEN** `--node` names a not-started node one of whose dependencies targets another member project and is in flight
+- **THEN** the command refuses, naming that dependency's node, its target project, and its in-flight observation
+- **AND** the refusal names every other non-terminal dependency the same way, each with its own project and observed state
+
+#### Scenario: A cross-project dependency releases on completed work
+
+- **WHEN** a dependency targeting another member project has terminal run-state while its Change is not yet archived
+- **THEN** the downstream node is runnable and its launch contract is emitted
+- **AND** the gate does not wait for the dependency's archive
+
+#### Scenario: A blocker with no local run-state is named as such
+
+- **WHEN** a non-terminal dependency's run-state is not visible from the machine the command runs on
+- **THEN** the refusal names that dependency with its project and says no local run-state explains it
+- **AND** the absence is not presented as a recorded not-started state
+
+#### Scenario: An unreadable blocker is named unknown with its diagnostic
+
+- **WHEN** a dependency's reference does not resolve or its run-state file cannot be parsed
+- **THEN** the refusal names that dependency as unknown with its project and the diagnostic
+- **AND** the dependency still gates its downstream
 
 #### Scenario: An Issue without a plan is refused toward planning
 

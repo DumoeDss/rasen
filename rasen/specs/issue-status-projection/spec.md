@@ -272,9 +272,15 @@ node SHALL have its recorded reason shown with it. A node's target project
 SHALL be shown as the fact the revision records — the project the plan's
 author targeted — and SHALL drive no phase, health, or progress value: a
 revision whose nodes name one project and a revision whose nodes name several
-derive their axes by the same rules. The `--json` form of both commands
+derive their axes by the same rules. A node line's dependency facts SHALL
+follow the same rule start enforces — the work-complete rule — so the read
+surface explains exactly what a launch will wait for: each dependency whose
+observed work is not complete SHALL be named on the downstream node's line
+with its node identifier, its target project, and its observed state, and a
+dependency whose observed work is complete SHALL NOT be named as a blocker
+even before its Change is archived. The `--json` form of both commands
 SHALL carry every fact the human form carries, including per-node target
-project, per-node lifecycle, observations and status
+project, per-node dependency facts, per-node lifecycle, observations and status
 problems.
 
 #### Scenario: The list carries the status column
@@ -300,6 +306,24 @@ problems.
 - **THEN** its phase, health, and progress are the values the same evidence derived before
 - **AND** the target project is reported on the node line, not interpreted into any axis
 
+#### Scenario: Cross-project blockers name the project they wait on
+
+- **WHEN** an Issue's plan carries a node whose dependency targets another member project and that dependency's work is not complete
+- **THEN** the downstream node's line names the dependency with its target project and its observed state
+- **AND** the human and `--json` forms carry the same dependency facts
+
+#### Scenario: A dependency whose work is complete is no blocker
+
+- **WHEN** a dependency has terminal run-state while its Change is not yet archived
+- **THEN** the downstream node's line does not name it as a blocker
+- **AND** the dependency's own node line still reports its terminal observation
+
+#### Scenario: Dependency waits stay healthy
+
+- **WHEN** an Issue's plan is a serial chain across two member projects and the second node awaits the first
+- **THEN** the Issue's health is `healthy`
+- **AND** each wait is named on the downstream node line as a dependency fact
+
 #### Scenario: Node lines name the lifecycle a node carries
 
 - **WHEN** an Issue's plan carries one optional node and one cancelled node with a recorded reason
@@ -309,4 +333,4 @@ problems.
 #### Scenario: Both forms agree
 
 - **WHEN** the same Issue is listed and shown in human form and in `--json` form
-- **THEN** the phase, health, progress, per-node target projects, per-node lifecycles, per-node observations, and status problems are the same facts in both forms
+- **THEN** the phase, health, progress, per-node target projects, per-node dependency facts, per-node lifecycles, per-node observations, and status problems are the same facts in both forms
