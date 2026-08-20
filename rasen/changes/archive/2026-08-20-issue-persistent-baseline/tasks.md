@@ -49,15 +49,16 @@
   real completion criteria); `rasen store issue show --store issue-registry`
   from the worktree captures the live tri-axis (2/3, dependencies
   respected); commit
-<!-- 4.3/4.4 staged for LEAD portfolio close (design D5; apply staged UP TO
-     the gate-holds receipt 4-2-tri-axis-gate-holds.json and did NOT accept).
-     Ready-to-run commands + capture steps in evidence/4-issue-loop.md. -->
-- [ ] 4.3 Drive g-003 to ship/archive (the LEAD's loop); capture the
-  projection moving to 3/3 and `review`
-- [ ] 4.4 At portfolio close: evaluate the gate (all required nodes
-  run-terminal or finalized; per-child run-state visible from the worktree),
-  `rasen store issue accept`, confirm the Issue reads resolved and `done`;
-  commit the acceptance record on the store
+<!-- LEAD reconciliation 2026-08-20: former tasks 4.3/4.4 (drive g-003
+     ship/archive; portfolio-close gate evaluation + `store issue accept`) are
+     LEAD-owned close acts of the PARENT portfolio, not work items of this
+     change — the engine's incomplete-tasks gate correctly refuses a child
+     archive while they sit as open checkboxes (self-reference: 4.3 IS the
+     archive drive). Relocated — not completed, not dropped — to the parent
+     close sequence where D5 already places them: authoritative checklist with
+     ready-to-run commands in evidence/4-issue-loop.md (also recorded in the
+     ship log and the parent planning-context). This change's own work ends
+     at the gate-holds receipt 4-2-tri-axis-gate-holds.json. -->
 
 ## 5. Receipts, durability, closeout
 

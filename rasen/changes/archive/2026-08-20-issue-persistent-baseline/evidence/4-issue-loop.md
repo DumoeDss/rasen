@@ -78,4 +78,8 @@ run as-is (cwd = the worktree):
    (`rasen/issues/issue-multi-change-execution/`).
 
 Per the LEAD's disposition this apply stages UP TO the gate-holds state and
-does NOT accept. Tasks 4.3/4.4 stay open for the close.
+does NOT accept. The close acts below (3/3 capture; gate evaluation; accept;
+store-side acceptance-record commit) are the PARENT portfolio's close
+checklist, owned by the LEAD — relocated here from the change's task list on
+2026-08-20 (engine tasks-gate reconciliation). Sequencing guard (review M2):
+run from the worktree BEFORE any worktree cleanup/reset.
