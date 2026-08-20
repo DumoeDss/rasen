@@ -320,8 +320,22 @@ describe('rasen store issue start', () => {
     const refusal = json.status.find(
       (entry: { code: string }) => entry.code === 'issue_start_node_not_runnable'
     );
-    expect(refusal.message).toContain('g-001');
+    // The refusal names the dependency's project and observed state — the
+    // same facts the node line carries, with the no-local-run-state
+    // refinement for a dependency nothing on this machine explains.
+    expect(refusal.message).toContain(`g-001@${PROJECT} (not-started, no local run-state)`);
     expect(refusal.message).toContain('not complete');
+    // The human form carries the same facts in its message (stderr).
+    const human = await run(
+      ['store', 'issue', 'start', ISSUE, '--store', f.storeId, '--node', 'g-002'],
+      nowhere
+    );
+    expect(
+      human.exitCode,
+      `${human.command}\nstdout:\n${human.stdout}\nstderr:\n${human.stderr}`
+    ).toBe(1);
+    expect(human.stderr).toContain(`g-001@${PROJECT} (not-started, no local run-state)`);
+    expect(human.stderr).toContain('not complete');
   });
 
   it('reports an in-flight node as already running with its recorded pipeline', async () => {

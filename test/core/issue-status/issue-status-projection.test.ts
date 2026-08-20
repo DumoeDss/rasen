@@ -287,9 +287,16 @@ describe('the issue status projection', () => {
       'not-started',
     ]);
     // Serial ordering is sequencing, not sickness: the awaiting siblings still
-    // name their not-yet-finalized dependencies.
-    expect(status.nodes[1].blockedBy).toEqual(['g-001']);
-    expect(status.nodes[2].blockedBy).toEqual(['g-001', 'g-002']);
+    // name their dependencies — since g-002 as structured facts on the
+    // work-complete basis, each carrying the dependency's target project and
+    // observed state.
+    expect(status.nodes[1].blockedBy).toEqual([
+      { nodeId: 'g-001', projectId: PROJECT, observation: 'not-started' },
+    ]);
+    expect(status.nodes[2].blockedBy).toEqual([
+      { nodeId: 'g-001', projectId: PROJECT, observation: 'not-started' },
+      { nodeId: 'g-002', projectId: PROJECT, observation: 'not-started' },
+    ]);
   });
 
   it('derives planning for an all-intent plan (no runnable node)', async () => {
@@ -1089,5 +1096,194 @@ describe('the issue status projection', () => {
     const first = await readStatus({ executionRoot: execRoot, changesDir });
     const second = await readStatus({ executionRoot: execRoot, changesDir });
     expect(second).toEqual(first);
+  });
+});
+
+describe('the displayed dependency facts — the work-complete basis (g-002)', () => {
+  const PROJECT_B = 'app-b';
+  let f: StoreWorkspaceFixture;
+  const scope = () => ({
+    store: f.storeId,
+    startPath: f.storeRoot,
+    globalDataDir: f.globalDataDir,
+  });
+  let execRoot: string;
+  let changesDir: string;
+  const NO_WORK_DIR = async (): Promise<null> => null;
+
+  function seedAndCommit(changeId: string, instanceSeed: string, projectId: string): string {
+    const seeded = f.seedChange({
+      root: f.storeRoot,
+      projectId,
+      targetLineId: LINE,
+      changeId,
+      instanceSeed,
+    });
+    f.git(f.storeRoot, ['add', '-A']);
+    f.git(f.storeRoot, ['commit', '-m', `seed ${changeId}`]);
+    return seeded.instanceId;
+  }
+
+  function issues(): StoreIssuesModule {
+    return new StoreIssuesModule({
+      dependencies: withDeterministicIssueClock(productionStoreIssueDependencies, NOW),
+    });
+  }
+
+  function writeRunStateFor(alias: string, state: RunState): void {
+    writeRunState(ephemeraDir(execRoot, alias), state);
+  }
+
+  /** The cross-project plan: downstream in app-a waits on upstream in app-b. */
+  async function publishCrossPlan(): Promise<void> {
+    seedAndCommit('child-up', 'e5'.repeat(16), PROJECT_B);
+    seedAndCommit('child-down', 'f6'.repeat(16), PROJECT);
+    await issues().create({ ...scope(), issueId: ISSUE, title: 'Cross-project gating' });
+    await issues().publishPlan({
+      ...scope(),
+      issueId: ISSUE,
+      nodes: [
+        {
+          nodeId: 'g-up',
+          kind: 'change',
+          projectId: PROJECT_B,
+          targetLineId: LINE,
+          changeInstanceId: deriveChangeInstanceId({
+            planningScopeId: f.planningScopeId(PROJECT_B, LINE),
+            instanceSeed: 'e5'.repeat(16),
+          }),
+          changeAlias: 'child-up',
+          dependsOn: [],
+        },
+        {
+          nodeId: 'g-down',
+          kind: 'change',
+          projectId: PROJECT,
+          targetLineId: LINE,
+          changeInstanceId: deriveChangeInstanceId({
+            planningScopeId: f.planningScopeId(PROJECT, LINE),
+            instanceSeed: 'f6'.repeat(16),
+          }),
+          changeAlias: 'child-down',
+          dependsOn: ['g-up'],
+        },
+      ],
+    });
+    f.git(f.storeRoot, ['add', '-A']);
+    f.git(f.storeRoot, ['commit', '-m', 'issue + cross plan']);
+  }
+
+  async function readStatus() {
+    const detail = await new StoreQueryModuleImpl().showIssue({ ...scope(), issueId: ISSUE });
+    return projectIssueStatus({
+      detail,
+      executionRoot: execRoot,
+      changesDir,
+      workDirFor: NO_WORK_DIR,
+    });
+  }
+
+  beforeEach(async () => {
+    f = await createStoreWorkspaceFixture({
+      prefix: 'rasen-issue-blockers-',
+      projects: [PROJECT, PROJECT_B],
+      lines: [
+        { id: LINE, storeRef: 'refs/heads/main', codeRefs: { [PROJECT]: 'refs/heads/main' } },
+      ],
+    });
+    execRoot = f.beside('exec');
+    changesDir = path.join(execRoot, 'rasen', 'changes');
+  });
+
+  afterEach(() => {
+    f.cleanup();
+  });
+
+  it('names a cross-project blocker with its target project and observed state', async () => {
+    await publishCrossPlan();
+    writeRunStateFor('child-up', stages({ propose: 'done', apply: 'in_progress' }));
+
+    const status = await readStatus();
+    // Publication normalizes node order (nodeId-sorted), so rows are found by
+    // id, never by position.
+    const upstream = status.nodes.find(node => node.nodeId === 'g-up');
+    const downstream = status.nodes.find(node => node.nodeId === 'g-down');
+    expect(upstream?.observation).toBe('in-flight');
+    // The downstream's wait names WHICH member project the blocker runs in
+    // and the state its work is in.
+    expect(downstream?.blockedBy).toEqual([
+      { nodeId: 'g-up', projectId: PROJECT_B, observation: 'in-flight' },
+    ]);
+    // An edge wait is ordinary ordering: healthy, never a blockage signal.
+    expect(status.health).toBe('healthy');
+    expect(status.phase).toBe('active');
+  });
+
+  it('drops a dependency whose work is terminal but unarchived from the blocker list', async () => {
+    await publishCrossPlan();
+    // Terminal WORK with NO archive: the discriminating cell between the two
+    // bases — the archive-based list kept this edge, the work-complete rule
+    // `start` enforces does not.
+    writeRunStateFor(
+      'child-up',
+      stages({
+        propose: 'done',
+        apply: 'done',
+        verify: 'done',
+        'review-loop': 'done',
+        ship: 'done',
+        archive: 'done',
+      })
+    );
+
+    const status = await readStatus();
+    const upstream = status.nodes.find(node => node.nodeId === 'g-up');
+    const downstream = status.nodes.find(node => node.nodeId === 'g-down');
+    expect(upstream?.observation).toBe('run-terminal');
+    // The dependency whose work is done stops reading as a blocker before its
+    // Change is archived, while its own line still reports run-terminal.
+    expect(downstream?.blockedBy).toEqual([]);
+    expect(status.progress).toEqual({ completed: 1, total: 2 });
+  });
+
+  it('names an intent dependency with its project and not-started observation', async () => {
+    seedAndCommit('child-down', 'f6'.repeat(16), PROJECT);
+    await issues().create({ ...scope(), issueId: ISSUE, title: 'Intent dep' });
+    await issues().publishPlan({
+      ...scope(),
+      issueId: ISSUE,
+      nodes: [
+        {
+          nodeId: 'i-up',
+          kind: 'intent',
+          projectId: PROJECT_B,
+          targetLineId: LINE,
+          summary: 'Work declared but no Change exists yet',
+          dependsOn: [],
+        },
+        {
+          nodeId: 'g-down',
+          kind: 'change',
+          projectId: PROJECT,
+          targetLineId: LINE,
+          changeInstanceId: deriveChangeInstanceId({
+            planningScopeId: f.planningScopeId(PROJECT, LINE),
+            instanceSeed: 'f6'.repeat(16),
+          }),
+          changeAlias: 'child-down',
+          dependsOn: ['i-up'],
+        },
+      ],
+    });
+    f.git(f.storeRoot, ['add', '-A']);
+    f.git(f.storeRoot, ['commit', '-m', 'issue + intent plan']);
+
+    const status = await readStatus();
+    // An intent dependency holds its downstream (no Change exists, nothing
+    // completed) and is named with the intent node's own target project.
+    const downstream = status.nodes.find(node => node.nodeId === 'g-down');
+    expect(downstream?.blockedBy).toEqual([
+      { nodeId: 'i-up', projectId: PROJECT_B, observation: 'not-started' },
+    ]);
   });
 });

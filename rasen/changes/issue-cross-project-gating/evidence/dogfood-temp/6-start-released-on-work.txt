@@ -1,0 +1,25 @@
+$ rasen store issue start dogfood-cross --node alpha-work --json --store dogfood-store
+(exit 0)
+
+{
+  "issueId": "dogfood-cross",
+  "binding": {
+    "issueId": "dogfood-cross",
+    "nodeId": "alpha-work",
+    "changeInstanceId": "ci_b05b383ef554779369a5f4bf5054edba8774455b9636dd04a32e086eb859b762",
+    "alias": "alpha-down",
+    "projectId": "alpha-core",
+    "targetLineId": "main",
+    "launch": {
+      "form": "project-checkout",
+      "cwd": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-dogfood-gating-Hu2QdF\\alpha-core",
+      "attachedRoots": [
+        "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-dogfood-gating-Hu2QdF\\store"
+      ]
+    },
+    "pipeline": null,
+    "mode": "fresh",
+    "runStatePath": null,
+    "locatedBy": null
+  }
+}

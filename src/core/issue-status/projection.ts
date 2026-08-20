@@ -74,12 +74,18 @@ interface LocatedStateFile {
  * An observed node before the plan's lifecycle is resolved onto it. The
  * observation branches stay lifecycle-unaware; `withLifecycle` at the one
  * assembly point adds the fields, so no branch can spell the default
- * differently or forget it.
+ * differently or forget it. `blockedBy` is absent here too: the displayed
+ * dependency facts are derived once, in the `withBlockerFacts` post-pass over
+ * the statuses this build produced — no branch copies the plan read's
+ * archive-based list, and no second writer exists.
  */
 type ObservedNode = Omit<
   IssueNodeStatus,
-  'lifecycle' | 'reason' | 'projectId' | 'targetLineId'
+  'lifecycle' | 'reason' | 'projectId' | 'targetLineId' | 'blockedBy'
 >;
+
+/** The assembled node before the dependency-facts post-pass completes it. */
+type NodeSansBlockers = Omit<IssueNodeStatus, 'blockedBy'>;
 
 function locateInChain(
   chain: readonly string[],
@@ -252,7 +258,6 @@ function nodeFromLocated(
         kind: 'change',
         alias,
         observation: 'unknown',
-        blockedBy: resolved.blockedBy,
         diagnostic: read.reason,
         runStatePath: at.path,
         locatedBy,
@@ -265,7 +270,6 @@ function nodeFromLocated(
         kind: 'change',
         alias,
         observation: observePortfolio(read.state),
-        blockedBy: resolved.blockedBy,
         diagnostic: null,
         runStatePath: at.path,
         locatedBy,
@@ -287,7 +291,6 @@ function nodeFromLocated(
       kind: 'change',
       alias,
       observation: 'unknown',
-      blockedBy: resolved.blockedBy,
       diagnostic: read.reason,
       runStatePath: at.path,
       locatedBy,
@@ -300,7 +303,6 @@ function nodeFromLocated(
       kind: 'change',
       alias,
       observation: observeAutoRun(read.state),
-      blockedBy: resolved.blockedBy,
       diagnostic: null,
       runStatePath: at.path,
       locatedBy,
@@ -386,7 +388,6 @@ async function observeNode(
       kind: 'intent',
       alias: null,
       observation: 'not-started',
-      blockedBy: resolved.blockedBy,
       diagnostic: null,
       runStatePath: null,
       locatedBy: null,
@@ -421,7 +422,6 @@ async function observeNode(
       kind: 'change',
       alias: aliasFor(resolved),
       observation: 'unknown',
-      blockedBy: resolved.blockedBy,
       diagnostic: reason,
       runStatePath: null,
       locatedBy: null,
@@ -439,7 +439,6 @@ async function observeNode(
       kind: 'change',
       alias: aliasFor(resolved),
       observation: 'finalized',
-      blockedBy: resolved.blockedBy,
       diagnostic: null,
       runStatePath: null,
       locatedBy: null,
@@ -458,7 +457,6 @@ async function observeNode(
       kind: 'change',
       alias: null,
       observation: 'not-started',
-      blockedBy: resolved.blockedBy,
       diagnostic: 'no change alias available to locate run-state',
       runStatePath: null,
       locatedBy: null,
@@ -575,7 +573,6 @@ async function observeNode(
     kind: 'change',
     alias,
     observation: 'not-started',
-    blockedBy: resolved.blockedBy,
     diagnostic: null,
     runStatePath: null,
     locatedBy: null,
@@ -583,7 +580,12 @@ async function observeNode(
   };
 }
 
-function isTerminal(observation: IssueNodeObservation): boolean {
+/**
+ * The projection's work-complete test — the same pair `store issue start`
+ * gates on. `undefined` (no row at all) is not terminal: fail-closed, exactly
+ * like the gate.
+ */
+function isTerminal(observation: IssueNodeObservation | undefined): boolean {
   return observation === 'finalized' || observation === 'run-terminal';
 }
 
@@ -608,12 +610,13 @@ function isRequired(node: IssueNodeStatus): boolean {
  * lifecycle at all (null); the node's target project and line are copied from
  * the revision node verbatim — the one projection-seam widening, so every
  * observation branch reports the project and none can forget or default it.
- * One wrapper for every observation branch.
+ * One wrapper for every observation branch. The dependency facts are still
+ * absent; `withBlockerFacts` below is their sole writer.
  */
 function withLifecycle(
   planNode: ExecutionPlanNode,
   observed: ObservedNode
-): IssueNodeStatus {
+): NodeSansBlockers {
   if (planNode.kind !== 'change') {
     return {
       ...observed,
@@ -630,6 +633,63 @@ function withLifecycle(
     lifecycle: planNode.lifecycle ?? 'required',
     reason: planNode.reason ?? null,
   };
+}
+
+/**
+ * The state label a dependency wait reads as, on both surfaces that name one
+ * (the node line's `blockedBy` segment and `store issue start`'s refusals):
+ * the observation itself, with the two honest refinements the cross-project
+ * era adds — a `not-started` dependency no local run-state explains says so
+ * (absence is a visibility fact, never a recorded state), and an `unknown`
+ * dependency carries its diagnostic rather than being guessed at. `undefined`
+ * (no status row at all — a dangling edge readable revisions exclude) reads
+ * `unknown` with the same fallback diagnostic the refusal vocabulary uses.
+ */
+export function issueBlockerState(
+  status: Pick<IssueNodeStatus, 'observation' | 'locatedBy' | 'diagnostic'> | undefined
+): string {
+  if (status === undefined || status.observation === 'unknown') {
+    return `unknown (${status?.diagnostic ?? 'its reference or run-state could not be read'})`;
+  }
+  if (status.observation === 'not-started' && status.locatedBy === null) {
+    return 'not-started, no local run-state';
+  }
+  return status.observation;
+}
+
+/**
+ * The displayed dependency facts (design D2 of issue-cross-project-gating): a
+ * post-pass over the statuses this build just produced, on the WORK-COMPLETE
+ * basis — the one rule `store issue start` enforces — never the plan read's
+ * archive-based list (which stays the query's own truth for `readyToResolve`).
+ * Each dependency whose observed work is not complete is listed with its node
+ * id, target project, and observation, in declaration order; one whose work is
+ * terminal is not listed even before its Change is archived. A dependency with
+ * no built row cannot occur in a readable revision (the revision validator
+ * refuses unknown `dependsOn` targets); if one ever did, it fail-closes to
+ * `unknown` with no project invented for it.
+ */
+function withBlockerFacts(
+  nodes: readonly NodeSansBlockers[],
+  rows: readonly ResolvedPlanNode[]
+): IssueNodeStatus[] {
+  const statusById = new Map(nodes.map(node => [node.nodeId, node] as const));
+  const dependsOnById = new Map(
+    rows.map(row => [row.node.nodeId, row.node.dependsOn] as const)
+  );
+  return nodes.map(node => ({
+    ...node,
+    blockedBy: (dependsOnById.get(node.nodeId) ?? [])
+      .filter(dep => !isTerminal(statusById.get(dep)?.observation))
+      .map(dep => {
+        const dependency = statusById.get(dep);
+        return {
+          nodeId: dep,
+          projectId: dependency?.projectId ?? '',
+          observation: dependency?.observation ?? ('unknown' as const),
+        };
+      }),
+  }));
 }
 
 /**
@@ -725,7 +785,7 @@ function deriveHealth(phase: IssuePhase, nodes: readonly IssueNodeStatus[]): Iss
 export async function projectIssueStatus(input: ProjectIssueStatusInput): Promise<IssueStatus> {
   const detail = input.detail;
   const problems: IssueStatusProblem[] = [];
-  const nodes: IssueNodeStatus[] = [];
+  const sansBlockers: NodeSansBlockers[] = [];
 
   for (const unsearched of detail.unsearchedRefs) {
     problems.push({
@@ -748,9 +808,12 @@ export async function projectIssueStatus(input: ProjectIssueStatusInput): Promis
 
   if (plan !== null) {
     for (const resolved of plan.readiness.nodes) {
-      nodes.push(withLifecycle(resolved.node, await observeNode(resolved, input, problems)));
+      sansBlockers.push(withLifecycle(resolved.node, await observeNode(resolved, input, problems)));
     }
   }
+  // The dependency facts complete the node statuses before any axis reads
+  // them — one writer (the post-pass), one basis (work-complete).
+  const nodes: IssueNodeStatus[] = withBlockerFacts(sansBlockers, plan?.readiness.nodes ?? []);
 
   // Acceptance content that exists but does not read back is reported as a
   // problem — never as done-from-unreadable-bytes, and never trimmed away

@@ -140,6 +140,18 @@ export interface IssueNodeAttribution {
   readonly evidenceLocator: string | null;
 }
 
+/**
+ * One dependency the work-complete rule still waits on. The nodeId, the
+ * dependency's target project as the revision records it, and its observed
+ * execution state at this read — the facts both the node line and `start`'s
+ * refusals name a dependency wait with.
+ */
+export interface IssueNodeBlocker {
+  readonly nodeId: string;
+  readonly projectId: string;
+  readonly observation: IssueNodeObservation;
+}
+
 /** One plan node, observed. */
 export interface IssueNodeStatus {
   readonly nodeId: string;
@@ -174,8 +186,16 @@ export interface IssueNodeStatus {
    */
   readonly alias: string | null;
   readonly observation: IssueNodeObservation;
-  /** Dependencies that are not yet finalized, in declaration order (from the plan read). */
-  readonly blockedBy: readonly string[];
+  /**
+   * Dependencies whose observed work is not complete, in declaration order —
+   * the WORK-COMPLETE basis `store issue start` gates on, NOT the plan read's
+   * archive-based list: a dependency whose work is terminal stops being listed
+   * here even before its Change is archived, so the read surface explains
+   * exactly what a launch will wait for. The store query's own
+   * `blockedBy`/`readiness` stays archive-based (the acceptance truth
+   * `readyToResolve` feeds on).
+   */
+  readonly blockedBy: readonly IssueNodeBlocker[];
   /** Present when the observation needs explaining: `unknown` reasons, invalid run-state. */
   readonly diagnostic: string | null;
   /** The run-state file the observation was read from, when one was. */

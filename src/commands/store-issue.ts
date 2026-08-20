@@ -44,6 +44,7 @@ import {
 import { listPipelines } from '../core/pipeline-registry/resolver.js';
 import { resolveSessionLaunchContext } from '../core/management-api/session-launch-context.js';
 import {
+  issueBlockerState,
   projectIssueStatus,
   type IssueStatus,
   type IssueStatusProblem,
@@ -337,11 +338,16 @@ function renderRunStateVisibility(status: IssueStatus): string {
  * The per-node line the show command prints: identifier, kind, target
  * project, alias, observation, then whatever explains it — a lifecycle that
  * is not required (with the recorded reason a cancelled/superseded node
- * carries), a dependency that has not finalized, or the diagnostic behind an
- * `unknown`. The project is the fact the revision records — shown, never
- * interpreted into any axis.
+ * carries), a dependency whose work is not complete, or the diagnostic behind
+ * an `unknown`. The project is the fact the revision records — shown, never
+ * interpreted into any axis. Each blocker names its own target project and
+ * observed state on the work-complete basis (the rule `start` enforces), so
+ * the line explains exactly what a launch will wait for.
  */
-function renderStatusNode(node: IssueStatus['nodes'][number]): string {
+function renderStatusNode(
+  node: IssueStatus['nodes'][number],
+  statusById: ReadonlyMap<string, IssueStatus['nodes'][number]>
+): string {
   const head =
     node.alias === null
       ? `${node.nodeId} ${node.kind} ${node.projectId} — ${node.observation}`
@@ -350,7 +356,15 @@ function renderStatusNode(node: IssueStatus['nodes'][number]): string {
   if (node.lifecycle !== null && node.lifecycle !== 'required') {
     parts.push(node.reason === null ? `(${node.lifecycle})` : `(${node.lifecycle}: ${node.reason})`);
   }
-  if (node.blockedBy.length > 0) parts.push(`(blockedBy ${node.blockedBy.join(', ')})`);
+  if (node.blockedBy.length > 0) {
+    const entries = node.blockedBy.map(
+      blocker =>
+        `${blocker.nodeId}@${blocker.projectId}: ${issueBlockerState(
+          statusById.get(blocker.nodeId)
+        )}`
+    );
+    parts.push(`(blockedBy ${entries.join(', ')})`);
+  }
   if (node.diagnostic !== null) parts.push(`(${node.diagnostic})`);
   return `      ${parts.join(' ')}`;
 }
@@ -511,8 +525,11 @@ function renderIssueStatus(status: IssueStatus): void {
   console.log(`    ${renderRunStateVisibility(status)}`);
   if (status.nodes.length > 0) {
     console.log('    nodes:');
+    // The blocker segment reads each dependency's own row for its state label,
+    // so every node line explains its waits without a second copy of the facts.
+    const statusById = new Map(status.nodes.map(node => [node.nodeId, node] as const));
     for (const node of status.nodes) {
-      console.log(renderStatusNode(node));
+      console.log(renderStatusNode(node, statusById));
       for (const line of renderAttributionLines(node)) console.log(line);
     }
   }

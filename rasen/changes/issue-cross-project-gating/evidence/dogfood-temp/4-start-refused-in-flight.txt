@@ -1,0 +1,15 @@
+$ rasen store issue start dogfood-cross --node alpha-work --json --store dogfood-store
+(exit 1)
+
+{
+  "issue": null,
+  "binding": null,
+  "status": [
+    {
+      "severity": "error",
+      "code": "issue_start_node_not_runnable",
+      "message": "Node 'alpha-work' is not runnable: the work of beta-work@beta-site (in-flight) is not complete.",
+      "fix": "Complete the named dependencies’ work (terminal run-state or finalized evidence), then re-run."
+    }
+  ]
+}

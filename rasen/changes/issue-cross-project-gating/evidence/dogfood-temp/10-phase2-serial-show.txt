@@ -1,0 +1,24 @@
+$ rasen store issue show dogfood-phase2 --store dogfood-store
+(exit 0)
+
+Issue dogfood-phase2
+  state: open
+  title: Phase-2-era serial
+  revisions: 0001
+  latest plan: revision 0001
+  plan digest: ae8197711091c9c613e4d490773a3d8742930643f540ecea5acbcf95c8ddd1ac
+  status:
+    phase: ready
+    health: healthy
+    progress: 0/2
+    run-state: C:\Users\Sayo\AppData\Local\Temp\rasen-dogfood-gating-Hu2QdF\alpha-core
+    nodes:
+      p-001 change alpha-core serial-a — not-started
+        evidence: C:\Users\Sayo\AppData\Local\Temp\rasen-dogfood-gating-Hu2QdF\store\rasen\projects\alpha-core\changes\serial-a\evidence
+      p-002 change alpha-core serial-b — not-started (blockedBy p-001@alpha-core: not-started, no local run-state)
+        evidence: C:\Users\Sayo\AppData\Local\Temp\rasen-dogfood-gating-Hu2QdF\store\rasen\projects\alpha-core\changes\serial-b\evidence
+
+  acceptance:
+    conditions: (none published)
+    gate: not eligible — the Issue has no readable acceptance conditions — no acceptance conditions revision exists for it.
+    record: (not accepted)

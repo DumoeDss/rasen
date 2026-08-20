@@ -22,6 +22,7 @@ import { writeRunState } from '../../src/core/pipeline-registry/run-state.js';
 import { ephemeraDir } from '../../src/core/file-placement.js';
 
 const PROJECT = 'app-a';
+const PROJECT_B = 'app-b';
 const LINE = 'main';
 const ISSUE = 'layer-issue';
 
@@ -116,7 +117,7 @@ describe('rasen store issue status surface', () => {
   beforeEach(async () => {
     f = await createStoreWorkspaceFixture({
       prefix: 'rasen-issue-status-cli-',
-      projects: [PROJECT],
+      projects: [PROJECT, PROJECT_B],
       lines: [{ id: LINE, storeRef: 'refs/heads/main', codeRefs: { [PROJECT]: 'refs/heads/main' } }],
     });
     // A standalone project root: its `.rasen/changes/<alias>/ephemera` is the
@@ -170,6 +171,18 @@ describe('rasen store issue status surface', () => {
     expect(showHuman.stdout).toContain('progress: 0/3');
     expect(showHuman.stdout).toContain(`run-state: ${execProject}`);
     expect(showHuman.stdout).toContain(`g-001 change ${PROJECT} child-a — in-flight`);
+    // The blocker segment names each dependency with its target project and
+    // observed state on the work-complete basis — g-001 is the in-flight one
+    // this scenario planted run-state for; g-002 has no local run-state at
+    // all, which the refinement vocabulary distinguishes from a recorded
+    // not-started.
+    expect(showHuman.stdout).toContain(
+      `g-002 change ${PROJECT} child-b — not-started (blockedBy g-001@${PROJECT}: in-flight)`
+    );
+    expect(showHuman.stdout).toContain(
+      `g-003 change ${PROJECT} child-c — not-started ` +
+        `(blockedBy g-001@${PROJECT}: in-flight, g-002@${PROJECT}: not-started, no local run-state)`
+    );
 
     const showJson = parseJson(
       expectOk(await run(['store', 'issue', 'show', ISSUE, '--store', f.storeId, '--json'], execProject))
@@ -181,6 +194,14 @@ describe('rasen store issue status surface', () => {
     expect(showJson.status.nodes).toEqual(listStatus.nodes);
     expect(showJson.status.problems).toEqual(listStatus.problems);
     expect(showJson.status.runStateVisibility).toEqual(listStatus.runStateVisibility);
+    // The structured dependency facts, per node, in the machine form.
+    expect(showJson.status.nodes[1].blockedBy).toEqual([
+      { nodeId: 'g-001', projectId: PROJECT, observation: 'in-flight' },
+    ]);
+    expect(showJson.status.nodes[2].blockedBy).toEqual([
+      { nodeId: 'g-001', projectId: PROJECT, observation: 'in-flight' },
+      { nodeId: 'g-002', projectId: PROJECT, observation: 'not-started' },
+    ]);
     // Six CLI invocations that each grew ~1-2s when list/show began reading
     // acceptance content per Issue (issue-acceptance-close): the budget is
     // raised to keep this scenario whole rather than splitting the parity
@@ -193,6 +214,16 @@ describe('rasen store issue status surface', () => {
     const human = expectOk(await run(['store', 'issue', 'list', '--store', f.storeId], nowhere));
     expect(human.stdout).toContain('No local run-state visible');
     expect(human.stdout).toContain('ready/healthy 0/3');
+
+    const showHuman = expectOk(
+      await run(['store', 'issue', 'show', ISSUE, '--store', f.storeId], nowhere)
+    );
+    // With no execution root at all, every dependency's wait says so in the
+    // visibility vocabulary rather than asserting a recorded not-started.
+    expect(showHuman.stdout).toContain(
+      `g-002 change ${PROJECT} child-b — not-started ` +
+        `(blockedBy g-001@${PROJECT}: not-started, no local run-state)`
+    );
 
     const json = parseJson(
       expectOk(await run(['store', 'issue', 'show', ISSUE, '--store', f.storeId, '--json'], nowhere))
@@ -230,5 +261,87 @@ describe('rasen store issue status surface', () => {
     expect(json.status.problems[0].kind).toBe('invalid-run-state');
     expect(json.status.problems[0].ref).toBe(corruptPath);
     expect(json.status.complete).toBe(false);
+  });
+
+  it('names a cross-project blocker with the member project it waits on', { timeout: 60_000 }, async () => {
+    // The Issue + a two-project plan: downstream in app-a waits on upstream
+    // in app-b — the first fact the read surface must attribute across
+    // member projects.
+    await run(['store', 'issue', 'new', ISSUE, '--store', f.storeId, '--title', 'Cross wait', '--json'], f.storeRoot);
+    const upId = f.seedChange({
+      root: f.storeRoot,
+      projectId: PROJECT_B,
+      targetLineId: LINE,
+      changeId: 'child-up',
+      instanceSeed: 'e5'.repeat(16),
+    }).instanceId;
+    const downId = f.seedChange({
+      root: f.storeRoot,
+      projectId: PROJECT,
+      targetLineId: LINE,
+      changeId: 'child-down',
+      instanceSeed: 'f6'.repeat(16),
+    }).instanceId;
+    f.git(f.storeRoot, ['add', '-A']);
+    f.git(f.storeRoot, ['commit', '-m', 'seed cross children']);
+    const nodesFile = f.beside('nodes.yaml');
+    f.write(
+      nodesFile,
+      [
+        'nodes:',
+        '  - nodeId: g-up',
+        '    kind: change',
+        `    projectId: ${PROJECT_B}`,
+        `    targetLineId: ${LINE}`,
+        `    changeInstanceId: ${JSON.stringify(upId)}`,
+        '    changeAlias: child-up',
+        '    dependsOn: []',
+        '  - nodeId: g-down',
+        '    kind: change',
+        `    projectId: ${PROJECT}`,
+        `    targetLineId: ${LINE}`,
+        `    changeInstanceId: ${JSON.stringify(downId)}`,
+        '    changeAlias: child-down',
+        '    dependsOn: [g-up]',
+        '',
+      ].join('\n')
+    );
+    expectOk(
+      await run(
+        ['store', 'issue', 'plan', ISSUE, '--store', f.storeId, '--from-file', nodesFile, '--json'],
+        f.storeRoot
+      )
+    );
+    f.git(f.storeRoot, ['add', '-A']);
+    f.git(f.storeRoot, ['commit', '-m', 'issue + cross plan']);
+
+    const before = expectOk(
+      await run(['store', 'issue', 'show', ISSUE, '--store', f.storeId], execProject)
+    );
+    expect(before.stdout).toContain(
+      `g-down change ${PROJECT} child-down — not-started ` +
+        `(blockedBy g-up@${PROJECT_B}: not-started, no local run-state)`
+    );
+
+    // The upstream's work begins in ITS execution root: the segment follows
+    // the observation, still naming the member project the wait is on.
+    writeRunState(ephemeraDir(execProject, 'child-up'), {
+      pipeline: 'small-feature',
+      stages: { propose: { status: 'done' }, apply: { status: 'in_progress' } },
+    });
+    const after = expectOk(
+      await run(['store', 'issue', 'show', ISSUE, '--store', f.storeId], execProject)
+    );
+    expect(after.stdout).toContain(
+      `g-down change ${PROJECT} child-down — not-started (blockedBy g-up@${PROJECT_B}: in-flight)`
+    );
+
+    const json = parseJson(
+      expectOk(await run(['store', 'issue', 'show', ISSUE, '--store', f.storeId, '--json'], execProject))
+    );
+    const downstream = json.status.nodes.find((node: { nodeId: string }) => node.nodeId === 'g-down');
+    expect(downstream.blockedBy).toEqual([
+      { nodeId: 'g-up', projectId: PROJECT_B, observation: 'in-flight' },
+    ]);
   });
 });

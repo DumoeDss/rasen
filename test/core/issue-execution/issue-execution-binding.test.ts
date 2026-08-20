@@ -142,7 +142,7 @@ function nodeStatus(
   nodeId: string,
   observation: IssueNodeStatus['observation'],
   extra: Partial<
-    Pick<IssueNodeStatus, 'alias' | 'diagnostic' | 'runStatePath' | 'locatedBy' | 'attribution' | 'blockedBy' | 'lifecycle' | 'reason'>
+    Pick<IssueNodeStatus, 'alias' | 'diagnostic' | 'runStatePath' | 'locatedBy' | 'attribution' | 'blockedBy' | 'lifecycle' | 'reason' | 'projectId' | 'targetLineId'>
   > = {}
 ): IssueNodeStatus {
   const planned = PLAN_NODES.find(node => node.nodeId === nodeId);
@@ -152,6 +152,8 @@ function nodeStatus(
   return {
     nodeId,
     kind: 'change',
+    projectId: extra.projectId ?? planned?.projectId ?? PROJECT,
+    targetLineId: extra.targetLineId ?? planned?.targetLineId ?? LINE,
     lifecycle: extra.lifecycle ?? 'required',
     reason: extra.reason ?? null,
     alias,
@@ -315,7 +317,7 @@ describe('resolveIssueLaunchBinding — frontier and modes', () => {
     if (result.ok) return;
     expect(result.refusal.code).toBe('issue_start_node_not_runnable');
     expect(result.refusal.message).toContain('g-001 is in-flight');
-    expect(result.refusal.message).toContain('g-002 awaits g-001');
+    expect(result.refusal.message).toContain('g-002 awaits g-001@app-a (in-flight)');
   });
 
   it('refuses a --node whose dependencies are not complete, naming them', async () => {
@@ -326,8 +328,12 @@ describe('resolveIssueLaunchBinding — frontier and modes', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.refusal.code).toBe('issue_start_node_not_runnable');
+    // The blockers field stays the identity list; the MESSAGE carries the
+    // enriched naming — project plus observed state, with the no-local-run-state
+    // refinement for a dependency nothing on this machine explains.
     expect(result.refusal.blockers).toEqual(['g-001']);
-    expect(result.refusal.message).toContain('g-001');
+    expect(result.refusal.message).toContain('g-001@app-a (not-started, no local run-state)');
+    expect(result.refusal.message).toContain('not complete');
   });
 
   it('accepts a --node whose dependency is run-terminal but unarchived (observation rule, D3)', async () => {
@@ -357,8 +363,19 @@ describe('resolveIssueLaunchBinding — frontier and modes', () => {
     );
     const status = statusFor([
       nodeStatus('g-001', 'run-terminal'),
-      nodeStatus('g-002', 'not-started', { blockedBy: ['g-001'] }),
-      nodeStatus('g-003', 'not-started', { blockedBy: ['g-001', 'g-002'] }),
+      // The planted `blockedBy` rows are the stale archive-based shape the
+      // g-002 projection no longer produces (a terminal dependency listed):
+      // the pin stays discriminating precisely because binding must ignore
+      // them whatever they say.
+      nodeStatus('g-002', 'not-started', {
+        blockedBy: [{ nodeId: 'g-001', projectId: PROJECT, observation: 'run-terminal' }],
+      }),
+      nodeStatus('g-003', 'not-started', {
+        blockedBy: [
+          { nodeId: 'g-001', projectId: PROJECT, observation: 'run-terminal' },
+          { nodeId: 'g-002', projectId: PROJECT, observation: 'not-started' },
+        ],
+      }),
     ]);
     const result = await resolveIssueLaunchBinding({
       detail,
@@ -397,6 +414,8 @@ describe('resolveIssueLaunchBinding — frontier and modes', () => {
       {
         nodeId: 'i-001',
         kind: 'intent',
+        projectId: PROJECT,
+        targetLineId: LINE,
         lifecycle: null,
         reason: null,
         alias: null,
@@ -779,7 +798,9 @@ describe('resolveIssueLaunchBinding — node lifecycles', () => {
     const result = await resolveIssueLaunchBinding({
       detail: detailFor(nodes),
       status: statusFor([
-        nodeStatus('g-001', 'not-started', { blockedBy: ['g-cut'] }),
+        nodeStatus('g-001', 'not-started', {
+          blockedBy: [{ nodeId: 'g-cut', projectId: PROJECT, observation: 'not-started' }],
+        }),
         nodeStatus('g-cut', 'not-started', {
           lifecycle: 'cancelled',
           reason: 'dropped from the portfolio mid-flight',
@@ -794,8 +815,11 @@ describe('resolveIssueLaunchBinding — node lifecycles', () => {
     expect(result.refusal.message).toContain('g-cut is cancelled');
     expect(result.refusal.message).toContain('dropped from the portfolio mid-flight');
     // The honest defect of a required node awaiting cancelled work is named
-    // too: the plan is defective, not silently treated-as-complete.
-    expect(result.refusal.message).toContain('g-001 awaits g-cut');
+    // too: the plan is defective, not silently treated-as-complete — with the
+    // dependency's project and state, as every blocker name now carries.
+    expect(result.refusal.message).toContain(
+      'g-001 awaits g-cut@app-a (not-started, no local run-state)'
+    );
   });
 
   it('launches an optional node exactly like a required one', async () => {
@@ -822,5 +846,174 @@ describe('resolveIssueLaunchBinding — node lifecycles', () => {
     expect(result.binding.nodeId).toBe('g-opt');
     expect(result.binding.mode).toBe('fresh');
     expect(result.binding.launch?.form).toBe('project-checkout');
+  });
+});
+
+describe('resolveIssueLaunchBinding — cross-project dependency naming (g-002)', () => {
+  const PROJECT_B = 'app-b';
+  /** The two-project edge: downstream in app-a waits on upstream in app-b. */
+  const CROSS_NODES: readonly ExecutionPlanNode[] = [
+    {
+      nodeId: 'g-up',
+      kind: 'change',
+      projectId: PROJECT_B,
+      targetLineId: LINE,
+      changeInstanceId: 'ci:eee',
+      changeAlias: 'child-up',
+      dependsOn: [],
+    },
+    {
+      nodeId: 'g-down',
+      kind: 'change',
+      projectId: PROJECT,
+      targetLineId: LINE,
+      changeInstanceId: 'ci:fff',
+      changeAlias: 'child-down',
+      dependsOn: ['g-up'],
+    },
+  ];
+
+  function crossInput(upstream: IssueNodeStatus): ReturnType<typeof baseInput> {
+    return {
+      detail: detailFor(CROSS_NODES),
+      status: statusFor([
+        upstream,
+        nodeStatus('g-down', 'not-started', { projectId: PROJECT, targetLineId: LINE }),
+      ]),
+      workspaceEntries: [] as readonly WorkspaceIndexEntry[],
+      launchContextFor: LAUNCH_OK,
+    };
+  }
+
+  it('names an in-flight cross-project blocker with its project and observation', async () => {
+    const result = await resolveIssueLaunchBinding({
+      ...crossInput(nodeStatus('g-up', 'in-flight', { projectId: PROJECT_B })),
+      nodeId: 'g-down',
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.code).toBe('issue_start_node_not_runnable');
+    // The refusal names WHICH member project the wait is on and the state its
+    // work is in — the facts the bare-id refusal could not carry.
+    expect(result.refusal.message).toContain('g-up@app-b (in-flight)');
+    expect(result.refusal.blockers).toEqual(['g-up']);
+    // The taxonomy is unchanged: same code, richer naming.
+    expect(result.refusal.message).toContain('is not runnable');
+    expect(result.refusal.message).toContain('not complete');
+  });
+
+  it('releases the downstream when the cross-project dependency is run-terminal but unarchived', async () => {
+    // The cross-project promise as a first-class pin: the gate waits for
+    // WORK, not archiving — the upstream finished its run in the OTHER
+    // member project and nothing archived it, and the downstream launches.
+    const result = await resolveIssueLaunchBinding({
+      ...crossInput(nodeStatus('g-up', 'run-terminal', { projectId: PROJECT_B })),
+      nodeId: 'g-down',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.binding.nodeId).toBe('g-down');
+    expect(result.binding.mode).toBe('fresh');
+    expect(result.binding.projectId).toBe(PROJECT);
+  });
+
+  it('gates on an unknown cross-project dependency and names it with its diagnostic', async () => {
+    const diagnostic = 'reference ci:eee has no committed Store evidence (unresolved)';
+    const result = await resolveIssueLaunchBinding({
+      ...crossInput(
+        nodeStatus('g-up', 'unknown', { projectId: PROJECT_B, diagnostic })
+      ),
+      nodeId: 'g-down',
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    // Fail-closed on unreadable — and NAMED with the project and the
+    // diagnostic, never guessed at.
+    expect(result.refusal.code).toBe('issue_start_node_not_runnable');
+    expect(result.refusal.message).toContain(`g-up@app-b (unknown (${diagnostic}))`);
+  });
+
+  it('names a not-started cross-project dependency that no local run-state explains', async () => {
+    const result = await resolveIssueLaunchBinding({
+      ...crossInput(
+        nodeStatus('g-up', 'not-started', { projectId: PROJECT_B, locatedBy: null })
+      ),
+      nodeId: 'g-down',
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.code).toBe('issue_start_node_not_runnable');
+    // The absence is a visibility fact, distinguished from a recorded
+    // not-started state (which would name a located all-pending run-state).
+    expect(result.refusal.message).toContain(
+      'g-up@app-b (not-started, no local run-state)'
+    );
+    expect(result.refusal.message).not.toContain('g-up@app-b (not-started)');
+  });
+
+  it('carries the same enrichment into the derived-frontier explanation', async () => {
+    const result = await resolveIssueLaunchBinding(
+      crossInput(nodeStatus('g-up', 'in-flight', { projectId: PROJECT_B }))
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.code).toBe('issue_start_node_not_runnable');
+    expect(result.refusal.message).toContain('g-up is in-flight');
+    expect(result.refusal.message).toContain('g-down awaits g-up@app-b (in-flight)');
+  });
+
+  it('names an intent-node dependency with the intent node’s target project', async () => {
+    const nodes: readonly ExecutionPlanNode[] = [
+      {
+        nodeId: 'i-up',
+        kind: 'intent',
+        projectId: PROJECT_B,
+        targetLineId: LINE,
+        summary: 'No Change exists yet',
+        dependsOn: [],
+      },
+      {
+        nodeId: 'g-down',
+        kind: 'change',
+        projectId: PROJECT,
+        targetLineId: LINE,
+        changeInstanceId: 'ci:fff',
+        changeAlias: 'child-down',
+        dependsOn: ['i-up'],
+      },
+    ];
+    const result = await resolveIssueLaunchBinding({
+      detail: detailFor(nodes),
+      status: statusFor([
+        {
+          nodeId: 'i-up',
+          kind: 'intent',
+          projectId: PROJECT_B,
+          targetLineId: LINE,
+          lifecycle: null,
+          reason: null,
+          alias: null,
+          observation: 'not-started',
+          blockedBy: [],
+          diagnostic: null,
+          runStatePath: null,
+          locatedBy: null,
+          attribution: { pipeline: null, sessions: [], evidenceLocator: null },
+        },
+        nodeStatus('g-down', 'not-started', { projectId: PROJECT, targetLineId: LINE }),
+      ]),
+      workspaceEntries: [],
+      launchContextFor: LAUNCH_OK,
+      nodeId: 'g-down',
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    // An intent dependency keeps its existing semantics — no Change exists,
+    // the observation reads not-started, the gate holds — now named with the
+    // intent node's own target project.
+    expect(result.refusal.code).toBe('issue_start_node_not_runnable');
+    expect(result.refusal.message).toContain(
+      'i-up@app-b (not-started, no local run-state)'
+    );
   });
 });

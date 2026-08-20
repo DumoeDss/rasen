@@ -21,6 +21,7 @@ import type {
   ExecutionPlanChangeNode,
   ExecutionPlanNode,
 } from '../store/issues/index.js';
+import { issueBlockerState } from '../issue-status/index.js';
 import type { IssueNodeObservation, IssueNodeStatus } from '../issue-status/index.js';
 import { listPipelines } from '../pipeline-registry/resolver.js';
 import type {
@@ -71,6 +72,24 @@ function isRunnable(view: NodeView, byId: Map<string, NodeView>): boolean {
   return view.node.dependsOn.every(dependency =>
     workComplete(byId.get(dependency)?.status?.observation)
   );
+}
+
+/**
+ * One non-terminal dependency as a refusal names it (issue-cross-project-gating
+ * D1): node id, target project, and observed state, composed from the
+ * projection facts the resolver already holds — the state read through the
+ * same refinement vocabulary the node line uses (`issueBlockerState`), so
+ * "never started here" and "unreadable, here is why" are named, never guessed.
+ * The target project comes from the revision node itself, the fact one hop
+ * before its projection copy. The gate rules are untouched: this names what
+ * they refuse on.
+ */
+function blockerName(dep: string, byId: Map<string, NodeView>): string {
+  const view = byId.get(dep);
+  if (view === undefined) {
+    return `${dep} (${issueBlockerState(undefined)})`;
+  }
+  return `${dep}@${view.node.projectId} (${issueBlockerState(view.status)})`;
 }
 
 function refuse(
@@ -323,9 +342,7 @@ export async function resolveIssueLaunchBinding(
         if (observation === 'not-started') {
           const blockers = view.node.dependsOn
             .filter(dep => !workComplete(byId.get(dep)?.status?.observation))
-            .map(dep => byId.get(dep)?.status?.observation === undefined
-              ? `${dep} (unknown)`
-              : dep);
+            .map(dep => blockerName(dep, byId));
           reasons.push(`${view.node.nodeId} awaits ${blockers.join(', ')}`);
           continue;
         }
@@ -361,14 +378,19 @@ export async function resolveIssueLaunchBinding(
 
   if (mode === 'fresh') {
     // The observation rule names non-terminal dependencies, never the plan
-    // read's archive-based `blockedBy` (design D3).
+    // read's archive-based `blockedBy` (design D3). Since
+    // issue-cross-project-gating, each name carries the dependency's target
+    // project and observed state — the same facts the node line shows, so a
+    // cross-project wait names the member project it waits on.
     const blockers = changeNode.dependsOn.filter(
       dep => !workComplete(byId.get(dep)?.status?.observation)
     );
     if (blockers.length > 0) {
       return refuse(
         'issue_start_node_not_runnable',
-        `Node '${changeNode.nodeId}' is not runnable: the work of ${blockers.join(', ')} is not complete.`,
+        `Node '${changeNode.nodeId}' is not runnable: the work of ${blockers
+          .map(dep => blockerName(dep, byId))
+          .join(', ')} is not complete.`,
         { blockers: [...blockers] }
       );
     }
