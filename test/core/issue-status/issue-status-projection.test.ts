@@ -310,10 +310,15 @@ describe('the issue status projection', () => {
       workDirFor: NO_WORK_DIR,
     });
     expect(status.phase).toBe('planning');
-    expect(status.progress).toEqual({ completed: 0, total: 1 });
+    // issue-node-lifecycle: progress counts required CHANGE nodes only, so an
+    // all-intent plan reports the stated 0/0 (no work is demanded), not a
+    // count over intent nodes. Still an exact-pair pin — the value moved with
+    // the contract, the assertion strength did not.
+    expect(status.progress).toEqual({ completed: 0, total: 0 });
     expect(status.nodes[0].kind).toBe('intent');
     expect(status.nodes[0].alias).toBeNull();
     expect(status.nodes[0].observation).toBe('not-started');
+    expect(status.nodes[0].lifecycle).toBeNull();
   });
 
   it('derives active/healthy 0/3 with one child in-flight from live run-state', async () => {

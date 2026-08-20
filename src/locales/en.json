@@ -1613,6 +1613,9 @@
                 "remote": {
                   "description": "Canonical clone source recorded in store.yaml"
                 },
+                "layout": {
+                  "description": "Explicit layout version request; only 2 is supported (creates the store with the layout-2 declaration and no flat planning tree)"
+                },
                 "json": {
                   "description": "Output as JSON"
                 }
@@ -2051,6 +2054,9 @@
                     },
                     "from-file": {
                       "description": "Path to a YAML file listing the plan's nodes"
+                    },
+                    "from-portfolio": {
+                      "description": "Publish from a parent change's portfolio run-state instead of a YAML node list"
                     },
                     "json": {
                       "description": "Output as JSON"

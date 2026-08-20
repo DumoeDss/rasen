@@ -65,6 +65,10 @@ import {
   resolvedExecutionProjectRoot,
   resolveOpenSpecRoot,
 } from '../core/root-selection.js';
+import {
+  publishPlanFromPortfolio,
+  type IssuePlanPublicationResult,
+} from '../core/issue-publication/index.js';
 import { emitFailure, printJson } from './shared-output.js';
 
 export interface StoreIssueOptions {
@@ -74,6 +78,7 @@ export interface StoreIssueOptions {
   state?: string;
   reason?: string;
   fromFile?: string;
+  fromPortfolio?: string;
   node?: string;
   pipeline?: string;
   note?: string;
@@ -150,11 +155,26 @@ function renderIssueWrite(result: IssueRecordResult): void {
   renderCommitSuggestions(result.suggestedCommits);
 }
 
-function renderPlanWrite(result: ExecutionPlanResult): void {
+function renderPlanWrite(
+  result: ExecutionPlanResult,
+  sourceLine?: string
+): void {
   console.log(`Issue ${result.issueId}: Execution Plan revision ${result.revision.revisionId}`);
   console.log(`  supersedes: ${result.revision.supersedes ?? '(none)'}`);
   console.log(`  nodes: ${result.revision.nodes.length}`);
+  // The same source facts the JSON form carries in its `source` block, on one
+  // human line beside the revision facts (issue-plan-publication D5).
+  if (sourceLine !== undefined) console.log(sourceLine);
   renderCommitSuggestions(result.suggestedCommits);
+}
+
+/**
+ * One human line naming where a portfolio publication came from: the parent,
+ * the located run-state path, and the child count — the same facts the JSON
+ * form's `source` block carries.
+ */
+function portfolioSourceLine(result: IssuePlanPublicationResult): string {
+  return `  source: portfolio '${result.source.parent}' — ${result.source.childCount} children, run-state ${result.source.statePath}`;
 }
 
 function renderAcceptanceWrite(result: AcceptanceConditionsResult): void {
@@ -315,8 +335,9 @@ function renderRunStateVisibility(status: IssueStatus): string {
 
 /**
  * The per-node line the show command prints: identifier, kind, alias,
- * observation, then whatever explains it — a dependency that has not
- * finalized, or the diagnostic behind an `unknown`.
+ * observation, then whatever explains it — a lifecycle that is not required
+ * (with the recorded reason a cancelled/superseded node carries), a
+ * dependency that has not finalized, or the diagnostic behind an `unknown`.
  */
 function renderStatusNode(node: IssueStatus['nodes'][number]): string {
   const head =
@@ -324,6 +345,9 @@ function renderStatusNode(node: IssueStatus['nodes'][number]): string {
       ? `${node.nodeId} ${node.kind} — ${node.observation}`
       : `${node.nodeId} ${node.kind} ${node.alias} — ${node.observation}`;
   const parts = [head];
+  if (node.lifecycle !== null && node.lifecycle !== 'required') {
+    parts.push(node.reason === null ? `(${node.lifecycle})` : `(${node.lifecycle}: ${node.reason})`);
+  }
   if (node.blockedBy.length > 0) parts.push(`(blockedBy ${node.blockedBy.join(', ')})`);
   if (node.diagnostic !== null) parts.push(`(${node.diagnostic})`);
   return `      ${parts.join(' ')}`;
@@ -385,18 +409,53 @@ function renderAcceptanceBlocker(blocker: IssueAcceptanceBlocker): string {
   }
 }
 
-/** One gate evaluation's human line: eligible, or every blocker named together. */
-function renderGateLine(gate: IssueAcceptanceGateEvaluation): string[] {
+/**
+ * The lines one gate evaluation renders beside the acceptance section: the
+ * gate line itself, then the lifecycle accounting — cancelled/superseded
+ * exclusions with their recorded reasons always, and at a zero required total
+ * the statement that no work is demanded with the optional nodes named, so an
+ * empty total never hides what the revision says. The same facts the JSON
+ * form carries under `status.acceptance.gate` and `status.nodes`.
+ */
+function renderGateLine(gate: IssueAcceptanceGateEvaluation, status: IssueStatus): string[] {
+  const exclusions = gate.exclusions.map(
+    exclusion => `      - excluded ${exclusion.nodeId} (${exclusion.lifecycle}): ${exclusion.reason}`
+  );
+  // The blocked branch carries no snapshot, so the zero-required statement
+  // derives from the same status the gate was evaluated over — required
+  // CHANGE nodes, the same scoping the projection applies.
+  const requiredTotal = status.nodes.filter(
+    node => node.kind === 'change' && node.lifecycle === 'required'
+  ).length;
+  const zeroRequired =
+    requiredTotal === 0
+      ? [
+          '      no required nodes — no work is demanded',
+          ...(gate.optionalNodes.length > 0
+            ? [`      optional nodes (named, not counted): ${gate.optionalNodes.join(', ')}`]
+            : []),
+        ]
+      : [];
   if (gate.eligible) {
-    return [`    gate: eligible (would accept conditions revision ${gate.conditionsRevisionId})`];
+    return [
+      `    gate: eligible (would accept conditions revision ${gate.conditionsRevisionId})`,
+      ...zeroRequired,
+      ...exclusions,
+    ];
   }
   if (gate.blockers.length === 0) {
-    return [`    gate: not eligible — ${gate.message}`];
+    return [
+      `    gate: not eligible — ${gate.message}`,
+      ...zeroRequired,
+      ...exclusions,
+    ];
   }
   return [
     '    gate: not eligible',
     `      ${gate.message.split(' — ')[0]}`,
     ...gate.blockers.map(blocker => `      - ${renderAcceptanceBlocker(blocker)}`),
+    ...zeroRequired,
+    ...exclusions,
   ];
 }
 
@@ -431,7 +490,7 @@ function renderAcceptanceSection(status: IssueStatus): void {
       console.log(`      ${condition.id}: ${condition.requirement}${verification}`);
     }
   }
-  for (const line of renderGateLine(gate)) console.log(line);
+  for (const line of renderGateLine(gate, status)) console.log(line);
   if (record !== null) {
     console.log(
       `    record: accepted ${record.acceptedAt} under revision ${record.conditionsRevisionId} (gate ${record.gate.completed}/${record.gate.total} ${record.gate.health})`
@@ -776,17 +835,50 @@ export function registerStoreIssueCommand(store: Command): void {
     .description('')
     .option('--store <id>', '')
     .option('--from-file <path>', '')
+    .option('--from-portfolio <parent>', '')
     .option('--json', '')
     .action(async (issueId: string, options: StoreIssueOptions) => {
       try {
-        if (options.fromFile === undefined) {
+        // A publication takes exactly one source, and the refusal names both:
+        // the two paths answer different questions (a hand-authored node list
+        // vs a compiled portfolio run), and guessing a default would publish
+        // a plan the operator never chose.
+        if (options.fromFile !== undefined && options.fromPortfolio !== undefined) {
           throw new StoreError(
-            'Publishing an Execution Plan revision requires --from-file.',
-            'issue_plan_from_file_required',
-            { fix: 'Add --from-file <path to a YAML file with a nodes: list>.' }
+            'A plan publication takes exactly one source; --from-file and --from-portfolio were both given.',
+            'issue_plan_source_conflict',
+            {
+              fix: 'Choose one: --from-file <path to a YAML file with a nodes: list>, or --from-portfolio <parent change name>.',
+            }
           );
         }
-        const draft = parseYaml(fs.readFileSync(options.fromFile, 'utf8')) as {
+        if (options.fromFile === undefined && options.fromPortfolio === undefined) {
+          throw new StoreError(
+            'A plan publication requires exactly one source; neither --from-file nor --from-portfolio was given.',
+            'issue_plan_source_required',
+            {
+              fix: 'Add --from-file <path to a YAML file with a nodes: list>, or --from-portfolio <parent change name>.',
+            }
+          );
+        }
+        if (options.fromPortfolio !== undefined) {
+          const result = await publishPlanFromPortfolio({
+            ...(options.store === undefined ? {} : { store: options.store }),
+            startPath: process.cwd(),
+            issueId,
+            parent: options.fromPortfolio,
+          });
+          if (options.json) {
+            printJson({
+              ...(planPayload(result) as Record<string, unknown>),
+              source: result.source,
+            });
+          } else {
+            renderPlanWrite(result, portfolioSourceLine(result));
+          }
+          return;
+        }
+        const draft = parseYaml(fs.readFileSync(options.fromFile as string, 'utf8')) as {
           nodes?: readonly ExecutionPlanNodeInput[];
         };
         const result = await StoreIssuesModuleInstance.publishPlan({

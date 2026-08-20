@@ -142,7 +142,7 @@ function nodeStatus(
   nodeId: string,
   observation: IssueNodeStatus['observation'],
   extra: Partial<
-    Pick<IssueNodeStatus, 'alias' | 'diagnostic' | 'runStatePath' | 'locatedBy' | 'attribution' | 'blockedBy'>
+    Pick<IssueNodeStatus, 'alias' | 'diagnostic' | 'runStatePath' | 'locatedBy' | 'attribution' | 'blockedBy' | 'lifecycle' | 'reason'>
   > = {}
 ): IssueNodeStatus {
   const planned = PLAN_NODES.find(node => node.nodeId === nodeId);
@@ -152,6 +152,8 @@ function nodeStatus(
   return {
     nodeId,
     kind: 'change',
+    lifecycle: extra.lifecycle ?? 'required',
+    reason: extra.reason ?? null,
     alias,
     observation,
     blockedBy: extra.blockedBy ?? [],
@@ -395,6 +397,8 @@ describe('resolveIssueLaunchBinding — frontier and modes', () => {
       {
         nodeId: 'i-001',
         kind: 'intent',
+        lifecycle: null,
+        reason: null,
         alias: null,
         observation: 'not-started',
         blockedBy: [],
@@ -665,5 +669,158 @@ describe('resolveIssueLaunchBinding — determinism', () => {
     const first = await resolveIssueLaunchBinding(input);
     const second = await resolveIssueLaunchBinding(input);
     expect(second).toEqual(first);
+  });
+});
+
+describe('resolveIssueLaunchBinding — node lifecycles', () => {
+  /** Two parallel nodes, one wanted and one not, both otherwise runnable. */
+  const LIFECYCLE_NODES: readonly ExecutionPlanNode[] = [
+    {
+      nodeId: 'g-001',
+      kind: 'change',
+      projectId: PROJECT,
+      targetLineId: LINE,
+      changeInstanceId: 'ci:aaa',
+      changeAlias: 'child-a',
+      dependsOn: [],
+    },
+    {
+      nodeId: 'g-cut',
+      kind: 'change',
+      projectId: PROJECT,
+      targetLineId: LINE,
+      changeInstanceId: 'ci:ddd',
+      changeAlias: 'child-cut',
+      lifecycle: 'cancelled',
+      reason: 'dropped from the portfolio mid-flight',
+      dependsOn: [],
+    },
+  ];
+
+  it('refuses a --node on a cancelled node, naming the lifecycle and reason', async () => {
+    const result = await resolveIssueLaunchBinding({
+      detail: detailFor(LIFECYCLE_NODES),
+      status: statusFor([
+        nodeStatus('g-001', 'not-started'),
+        nodeStatus('g-cut', 'not-started', {
+          lifecycle: 'cancelled',
+          reason: 'dropped from the portfolio mid-flight',
+        }),
+      ]),
+      workspaceEntries: [],
+      launchContextFor: LAUNCH_OK,
+      nodeId: 'g-cut',
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.code).toBe('issue_start_node_cancelled');
+    expect(result.refusal.message).toContain('g-cut');
+    expect(result.refusal.message).toContain('cancelled');
+    expect(result.refusal.message).toContain('dropped from the portfolio mid-flight');
+  });
+
+  it('refuses a --node on a superseded node, naming the lifecycle and reason', async () => {
+    const nodes: readonly ExecutionPlanNode[] = LIFECYCLE_NODES.map(node =>
+      node.nodeId === 'g-cut'
+        ? {
+            ...node,
+            lifecycle: 'superseded' as const,
+            reason: 'folded into g-001, which carries the same work',
+          }
+        : node
+    );
+    const result = await resolveIssueLaunchBinding({
+      detail: detailFor(nodes),
+      status: statusFor([
+        nodeStatus('g-001', 'not-started'),
+        nodeStatus('g-cut', 'not-started', {
+          lifecycle: 'superseded',
+          reason: 'folded into g-001, which carries the same work',
+        }),
+      ]),
+      workspaceEntries: [],
+      launchContextFor: LAUNCH_OK,
+      nodeId: 'g-cut',
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.code).toBe('issue_start_node_superseded');
+    expect(result.refusal.message).toContain('superseded');
+    expect(result.refusal.message).toContain('folded into g-001');
+  });
+
+  it('resolves the frontier to the required node alone — a cancelled sibling is never a candidate', async () => {
+    const result = await resolveIssueLaunchBinding({
+      detail: detailFor(LIFECYCLE_NODES),
+      status: statusFor([
+        nodeStatus('g-001', 'not-started'),
+        nodeStatus('g-cut', 'not-started', {
+          lifecycle: 'cancelled',
+          reason: 'dropped from the portfolio mid-flight',
+        }),
+      ]),
+      workspaceEntries: [],
+      launchContextFor: LAUNCH_OK,
+    });
+    // Had both qualified, the several-candidates refusal would have fired;
+    // the frontier names g-001 alone, so this is a single fresh launch.
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.binding.nodeId).toBe('g-001');
+    expect(result.binding.mode).toBe('fresh');
+  });
+
+  it('names a cancelled node as cancelled (with its reason) when nothing is runnable', async () => {
+    const nodes: readonly ExecutionPlanNode[] = LIFECYCLE_NODES.map(node =>
+      node.nodeId === 'g-001'
+        ? { ...node, dependsOn: ['g-cut'] as readonly string[] }
+        : node
+    );
+    const result = await resolveIssueLaunchBinding({
+      detail: detailFor(nodes),
+      status: statusFor([
+        nodeStatus('g-001', 'not-started', { blockedBy: ['g-cut'] }),
+        nodeStatus('g-cut', 'not-started', {
+          lifecycle: 'cancelled',
+          reason: 'dropped from the portfolio mid-flight',
+        }),
+      ]),
+      workspaceEntries: [],
+      launchContextFor: LAUNCH_OK,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.code).toBe('issue_start_node_not_runnable');
+    expect(result.refusal.message).toContain('g-cut is cancelled');
+    expect(result.refusal.message).toContain('dropped from the portfolio mid-flight');
+    // The honest defect of a required node awaiting cancelled work is named
+    // too: the plan is defective, not silently treated-as-complete.
+    expect(result.refusal.message).toContain('g-001 awaits g-cut');
+  });
+
+  it('launches an optional node exactly like a required one', async () => {
+    const nodes: readonly ExecutionPlanNode[] = [
+      {
+        nodeId: 'g-opt',
+        kind: 'change',
+        projectId: PROJECT,
+        targetLineId: LINE,
+        changeInstanceId: 'ci:aaa',
+        changeAlias: 'child-a',
+        lifecycle: 'optional',
+        dependsOn: [],
+      },
+    ];
+    const result = await resolveIssueLaunchBinding({
+      detail: detailFor(nodes),
+      status: statusFor([nodeStatus('g-opt', 'not-started', { lifecycle: 'optional' })]),
+      workspaceEntries: [],
+      launchContextFor: LAUNCH_OK,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.binding.nodeId).toBe('g-opt');
+    expect(result.binding.mode).toBe('fresh');
+    expect(result.binding.launch?.form).toBe('project-checkout');
   });
 });

@@ -1613,6 +1613,9 @@
                 "remote": {
                   "description": "记录在 store.yaml 中的规范克隆源"
                 },
+                "layout": {
+                  "description": "显式请求的布局版本；仅支持 2（创建带 layout-2 声明、无扁平 planning 树的 Store）"
+                },
                 "json": {
                   "description": "输出为 JSON"
                 }
@@ -2051,6 +2054,9 @@
                     },
                     "from-file": {
                       "description": "列出计划节点的 YAML 文件路径"
+                    },
+                    "from-portfolio": {
+                      "description": "不从 YAML 节点列表发布，而是从父 Change 的 portfolio 运行状态发布"
                     },
                     "json": {
                       "description": "以 JSON 输出"

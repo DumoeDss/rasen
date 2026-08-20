@@ -1613,6 +1613,9 @@
                 "remote": {
                   "description": "store.yamlに記録する正式なclone元です"
                 },
+                "layout": {
+                  "description": "明示的なレイアウトバージョン指定です。2 のみサポートします（layout-2 宣言を持ち、フラットなplanningツリーなしのstoreを作成します）"
+                },
                 "json": {
                   "description": "JSONで出力します"
                 }
@@ -2051,6 +2054,9 @@
                     },
                     "from-file": {
                       "description": "計画のノードを列挙したYAMLファイルへのパス"
+                    },
+                    "from-portfolio": {
+                      "description": "YAML ノード一覧の代わりに、親 Change の portfolio run-state から発行します"
                     },
                     "json": {
                       "description": "JSON で出力"

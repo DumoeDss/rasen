@@ -219,6 +219,13 @@ export interface SetupStoreInput {
   allowInsideGitRepository?: boolean;
   /** Canonical clone source written into store.yaml (slice 3.3). */
   remote?: string;
+  /**
+   * Explicit operator request to author the layout-v2 declaration at
+   * creation. The declaration rides the identity mint — the one v2 metadata
+   * writer setup already is — so an existing record is never upgraded by it
+   * (the no-dual-write guard's rule); reruns against a legacy store refuse.
+   */
+  layoutVersion?: 2;
 }
 
 export interface RegisterExistingStoreInput extends StorePathOptions {
@@ -354,6 +361,7 @@ export interface PreparedStoreSetup {
   backend?: StoreGitBackendConfig;
   registry: StoreRegistryState | null;
   remote?: string;
+  layoutVersion?: 2;
 }
 
 interface StoreSetupPlan {
@@ -362,6 +370,7 @@ interface StoreSetupPlan {
   kind: Extract<PathKind, 'missing' | 'directory'>;
   backend?: StoreGitBackendConfig;
   registry: StoreRegistryState | null;
+  layoutVersion?: 2;
 }
 
 async function pathKind(targetPath: string): Promise<PathKind> {
@@ -637,6 +646,24 @@ function remoteRequiresHandEditError(id: string, storeRoot: string): StoreError 
 }
 
 /**
+ * The layout declaration is authored at creation or not by setup at all: a
+ * store that already has metadata is never upgraded by `--layout 2`, because
+ * no command may add the declaration to a record that did not carry it. A
+ * rerun against a store that already declares layout 2 stays a no-op success,
+ * so only the legacy-record shape refuses.
+ */
+function layoutRequiresMigrationError(id: string): StoreError {
+  return new StoreError(
+    `Store '${id}' already has an identity file without a layout declaration; --layout 2 cannot add one to an existing store.`,
+    'store_setup_layout_existing_metadata',
+    {
+      target: 'store.metadata',
+      fix: `Run 'rasen store migrate-layout ${id}' to migrate the existing store, or set up a new store with --layout 2.`,
+    }
+  );
+}
+
+/**
  * Backend config carrying the observed origin. Guarded by an at-root
  * repository check: `git -C` discovers repositories by walking UP the
  * tree, so probing a non-repo store folder nested inside another repo
@@ -655,7 +682,10 @@ async function resolveBackendWithObservedOrigin(
 }
 
 async function prepareSetupPlan(
-  input: Pick<SetupStoreInput, 'id' | 'path' | 'allowInsideGitRepository' | 'remote'>
+  input: Pick<
+    SetupStoreInput,
+    'id' | 'path' | 'allowInsideGitRepository' | 'remote' | 'layoutVersion'
+  >
 ): Promise<StoreSetupPlan> {
   const id = validateStoreId(input.id ?? '');
   if (input.remote !== undefined && input.remote.length === 0) {
@@ -709,6 +739,12 @@ async function prepareSetupPlan(
         // already exists, so --remote cannot reach the committed shape.
         throw remoteRequiresHandEditError(id, storeRoot);
       }
+      if (input.layoutVersion === 2 && metadata.layoutVersion !== 2) {
+        // Same refusal shape as --remote, for the same reason: the request
+        // cannot reach the committed shape without upgrading an existing
+        // record, which the declaration requirement forbids.
+        throw layoutRequiresMigrationError(id);
+      }
     } else {
       const openspecRoot = await inspectOpenSpecRoot(storeRoot);
       const safeFreshDirectory = await isDirectoryEmpty(storeRoot) || await isGitOnlyDirectory(storeRoot);
@@ -741,6 +777,7 @@ async function prepareSetupPlan(
     kind,
     registry,
     ...(backend ? { backend } : {}),
+    ...(input.layoutVersion === 2 ? { layoutVersion: 2 as const } : {}),
   };
 }
 
@@ -757,7 +794,10 @@ export function resolveSetupGitEnabled(
 }
 
 export async function prepareStoreSetup(
-  input: Pick<SetupStoreInput, 'id' | 'path' | 'allowInsideGitRepository' | 'remote'>
+  input: Pick<
+    SetupStoreInput,
+    'id' | 'path' | 'allowInsideGitRepository' | 'remote' | 'layoutVersion'
+  >
 ): Promise<PreparedStoreSetup> {
   const plan = await prepareSetupPlan(input);
 
@@ -768,6 +808,7 @@ export async function prepareStoreSetup(
     registry: plan.registry,
     ...(plan.backend ? { backend: plan.backend } : {}),
     ...(input.remote !== undefined ? { remote: input.remote } : {}),
+    ...(plan.layoutVersion === 2 ? { layoutVersion: 2 } : {}),
   };
 }
 
@@ -781,6 +822,7 @@ export async function setupPreparedStore(
     kind: prepared.rootKind,
     registry: prepared.registry,
     ...(prepared.backend ? { backend: prepared.backend } : {}),
+    ...(prepared.layoutVersion === 2 ? { layoutVersion: 2 } : {}),
   };
   const { id, storeRoot, kind, registry } = plan;
   let { backend } = plan;
@@ -827,6 +869,7 @@ export async function setupPreparedStore(
   try {
     const root = await ensureOpenSpecRoot(storeRoot, {
       anchorEmptyDirectories: !alreadyRegisteredHere,
+      ...(plan.layoutVersion === 2 ? { layoutVersion: 2 } : {}),
     });
     createdFiles.push(...root.createdArtifacts);
     createdPaths = root.createdPaths;
@@ -841,6 +884,11 @@ export async function setupPreparedStore(
       // between prepare and execute must not silently swallow --remote.
       throw remoteRequiresHandEditError(id, storeRoot);
     }
+    if (existingMetadata && plan.layoutVersion === 2 && existingMetadata.layoutVersion !== 2) {
+      // Same re-assertion for --layout 2: the declaration is authored at
+      // creation only, never appended to an existing record.
+      throw layoutRequiresMigrationError(id);
+    }
     if (!existingMetadata) {
       const metadataDir = getStoreMetadataDir(storeRoot);
       const metadataDirMissing = (await pathKind(metadataDir)) === 'missing';
@@ -852,6 +900,7 @@ export async function setupPreparedStore(
         uid: mintedUid,
         id,
         ...(prepared.remote !== undefined ? { remote: prepared.remote } : {}),
+        ...(plan.layoutVersion === 2 ? { layoutVersion: 2 } : {}),
       });
       if (metadataDirMissing) {
         createdPaths.push(createdPath('.rasen-store/', metadataDir, 'directory'));

@@ -1,0 +1,23 @@
+{
+  "store": {
+    "id": "issue-registry",
+    "root": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+    "metadata_path": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store\\.rasen-store\\store.yaml"
+  },
+  "registry": {
+    "path": "C:\\Users\\Sayo\\.rasen\\stores\\registry.yaml",
+    "registered": true,
+    "already_registered": false
+  },
+  "git": {
+    "is_repository": true,
+    "initialized": true,
+    "committed": true
+  },
+  "created_files": [
+    "rasen/",
+    "rasen/config.yaml",
+    ".rasen-store/store.yaml"
+  ],
+  "status": []
+}

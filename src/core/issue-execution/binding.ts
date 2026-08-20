@@ -4,7 +4,11 @@
  * The frontier derives from the projection's OBSERVATIONS, not the plan read's
  * archive-based `blockedBy` (design D3): a dependency whose run-state is
  * terminal but whose Change is not yet archived has completed its WORK, which
- * is what "dependencies' work is complete" means. Launch routes are tried in
+ * is what "dependencies' work is complete" means. Since issue-node-lifecycle,
+ * the frontier also derives from the plan's WANTS: only `required` and
+ * `optional` nodes are candidates, and `--node` naming a `cancelled` or
+ * `superseded` node is refused with its own refusal kind naming the lifecycle
+ * and the recorded reason. Launch routes are tried in
  * a fixed order (design D4): the workspace pair recorded for the node's
  * Change instance, then the member-project checkout through the same
  * session-launch composition a supervised session uses, and neither is a
@@ -47,12 +51,22 @@ function isChange(node: ExecutionPlanNode): node is ExecutionPlanChangeNode {
 }
 
 /**
- * Design D3's runnable test: a change node that has not started and whose
- * every dependency's observed work is complete. `unknown` dependencies are
- * non-terminal — an unreadable dependency is never proof its work completed.
+ * Whether the plan still wants a node's work: `required` (the absent default)
+ * or `optional`. `cancelled`/`superseded` nodes are outside the execution
+ * graph — never frontier candidates, never launchable.
+ */
+function isWanted(node: ExecutionPlanNode): boolean {
+  return isChange(node) && (node.lifecycle === undefined || node.lifecycle === 'required' || node.lifecycle === 'optional');
+}
+
+/**
+ * Design D3's runnable test: a change node the plan wants that has not
+ * started and whose every dependency's observed work is complete. `unknown`
+ * dependencies are non-terminal — an unreadable dependency is never proof its
+ * work completed.
  */
 function isRunnable(view: NodeView, byId: Map<string, NodeView>): boolean {
-  if (!isChange(view.node)) return false;
+  if (!isWanted(view.node)) return false;
   if (view.status?.observation !== 'not-started') return false;
   return view.node.dependsOn.every(dependency =>
     workComplete(byId.get(dependency)?.status?.observation)
@@ -95,6 +109,9 @@ export function refusalFix(refusal: IssueStartRefusal): string | undefined {
       return refusal.blockers.length > 0
         ? 'Complete the named dependencies’ work (terminal run-state or finalized evidence), then re-run.'
         : 'Address the node state named above, then re-run.';
+    case 'issue_start_node_cancelled':
+    case 'issue_start_node_superseded':
+      return 'The plan does not want this node’s work. Start a wanted node, or re-publish a revision whose lifecycle wants it.';
     case 'issue_start_unprepared':
       return refusal.preparation ?? undefined;
     case 'issue_start_pipeline_conflict':
@@ -265,6 +282,18 @@ export async function resolveIssueLaunchBinding(
         `Node '${addressed.nodeId}' is an intent node; a Change must exist for it before it can run.`
       );
     }
+    // A node the plan no longer wants is refused before any launch machinery
+    // runs, naming the lifecycle and the recorded reason: the plan, not the
+    // flag, says whose work may start.
+    if (addressed.lifecycle === 'cancelled' || addressed.lifecycle === 'superseded') {
+      const reason = addressed.reason === undefined ? '' : `: ${addressed.reason}`;
+      return refuse(
+        addressed.lifecycle === 'cancelled'
+          ? 'issue_start_node_cancelled'
+          : 'issue_start_node_superseded',
+        `Node '${addressed.nodeId}' is ${addressed.lifecycle}${reason} — the plan says its work is not wanted; no launch contract is emitted.`
+      );
+    }
   } else {
     const candidates = [...byId.values()].filter(view => isRunnable(view, byId));
     if (candidates.length > 1) {
@@ -282,6 +311,11 @@ export async function resolveIssueLaunchBinding(
       for (const view of byId.values()) {
         if (!isChange(view.node)) {
           reasons.push(`${view.node.nodeId} is an intent node`);
+          continue;
+        }
+        if (view.node.lifecycle === 'cancelled' || view.node.lifecycle === 'superseded') {
+          const reason = view.node.reason === undefined ? '' : ` (${view.node.reason})`;
+          reasons.push(`${view.node.nodeId} is ${view.node.lifecycle}${reason}`);
           continue;
         }
         const observation = view.status?.observation;

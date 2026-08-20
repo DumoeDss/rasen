@@ -125,21 +125,40 @@ export type IssueAcceptanceRefusalCode =
   | 'issue_accept_blocked';
 
 /**
+ * One node excluded from the gate's required total: a `cancelled` or
+ * `superseded` node, with the reason its revision records. Carried beside the
+ * gate — on both the eligible and the blocked evaluation — so a smaller total
+ * is EXPLAINED rather than silently absorbed.
+ */
+export interface IssueAcceptanceGateExclusion {
+  readonly nodeId: string;
+  readonly lifecycle: 'cancelled' | 'superseded';
+  readonly reason: string;
+}
+
+/**
  * One gate evaluation. Eligible names the conditions revision it would accept
  * and carries the portable snapshot an acceptance would freeze; not eligible
  * names EVERY blocker together, or the one structural reason that applies.
+ * Both branches carry the lifecycle accounting beside the gate: the
+ * cancelled/superseded exclusions always, and the optional node ids — named
+ * wherever a render shows them, and never hidden by an empty required total.
  */
 export type IssueAcceptanceGateEvaluation =
   | {
       readonly eligible: true;
       readonly conditionsRevisionId: ExecutionPlanRevisionId;
       readonly snapshot: AcceptanceGateSnapshot;
+      readonly exclusions: readonly IssueAcceptanceGateExclusion[];
+      readonly optionalNodes: readonly string[];
     }
   | {
       readonly eligible: false;
       readonly refusalCode: IssueAcceptanceRefusalCode;
       readonly blockers: readonly IssueAcceptanceBlocker[];
       readonly message: string;
+      readonly exclusions: readonly IssueAcceptanceGateExclusion[];
+      readonly optionalNodes: readonly string[];
     };
 
 // -----------------------------------------------------------------------------

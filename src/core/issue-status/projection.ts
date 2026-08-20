@@ -39,6 +39,7 @@ import {
   type PortfolioState,
 } from '../pipeline-registry/portfolio-state.js';
 import type { IssueDetail, ResolvedPlanNode } from '../store/query/index.js';
+import type { ExecutionPlanNode } from '../store/issues/types.js';
 import { resolveStorePlanningLayoutV2Path } from '../store/planning-layout-v2.js';
 import type { WorkspaceIndexEntry } from '../store/workspace/registry.js';
 // The one runtime edge into the acceptance module: the projection fills the
@@ -68,6 +69,14 @@ interface LocatedStateFile {
   readonly dir: string;
   readonly path: string;
 }
+
+/**
+ * An observed node before the plan's lifecycle is resolved onto it. The
+ * observation branches stay lifecycle-unaware; `withLifecycle` at the one
+ * assembly point adds the fields, so no branch can spell the default
+ * differently or forget it.
+ */
+type ObservedNode = Omit<IssueNodeStatus, 'lifecycle' | 'reason'>;
 
 function locateInChain(
   chain: readonly string[],
@@ -224,7 +233,7 @@ function nodeFromLocated(
   locatedBy: IssueRunStateLocator,
   evidenceLocator: string | null,
   problems: IssueStatusProblem[]
-): IssueNodeStatus | null {
+): ObservedNode | null {
   const nodeId = resolved.node.nodeId;
   if (record === 'portfolio') {
     const read = readPortfolioStateDetailed(at.dir);
@@ -365,7 +374,7 @@ async function observeNode(
   resolved: ResolvedPlanNode,
   input: ProjectIssueStatusInput,
   problems: IssueStatusProblem[]
-): Promise<IssueNodeStatus> {
+): Promise<ObservedNode> {
   const node = resolved.node;
 
   if (node.kind === 'intent') {
@@ -576,26 +585,68 @@ function isTerminal(observation: IssueNodeObservation): boolean {
 }
 
 /**
+ * Whether a change node's lifecycle still wants its work: `required` (the
+ * absent default) or `optional`. `cancelled`/`superseded` are OUTSIDE the
+ * execution graph — their recorded activity or staleness drives no phase and
+ * no health value, though their observations stay on their node lines.
+ */
+function isWanted(node: IssueNodeStatus): boolean {
+  return node.kind === 'change' && (node.lifecycle === 'required' || node.lifecycle === 'optional');
+}
+
+/** Whether a change node's work is demanded: exactly a `required` lifecycle. */
+function isRequired(node: IssueNodeStatus): boolean {
+  return node.kind === 'change' && node.lifecycle === 'required';
+}
+
+/**
+ * The observed node with the plan's lifecycle spelling resolved onto it: an
+ * absent field reads as `required` (change nodes); intent nodes carry no
+ * lifecycle at all (null). One wrapper for every observation branch, so no
+ * branch can forget.
+ */
+function withLifecycle(
+  planNode: ExecutionPlanNode,
+  observed: ObservedNode
+): IssueNodeStatus {
+  if (planNode.kind !== 'change') {
+    return { ...observed, lifecycle: null, reason: null };
+  }
+  return {
+    ...observed,
+    lifecycle: planNode.lifecycle ?? 'required',
+    reason: planNode.reason ?? null,
+  };
+}
+
+/**
  * Phase precedence `done > review > active > ready > planning` (design D5,
- * revised by issue-acceptance-close D4). `done` follows explicit acceptance:
- * the resolved state AND an acceptance record that reads back verified —
- * never an archived count, and never the resolved state alone. A resolved
- * Issue without a verified record (the pre-capability close, a tampered
- * record, or a read that supplied no acceptance facts) is `review`: its work
- * stands complete, its acceptance unproven — and `review` implies
- * `waiting-human`, which is the human who can accept it.
- * `review` requires every node's work complete or finalized AND no intent
- * node left AND a record whose close is not proven (an open Issue, or one
- * resolved without a verified record). `active` covers any begun graph that
- * is not uniformly terminal (including failure and waiting, which are health
- * facts, not phases), and deliberately also an `unknown` node: a located-but-
- * unreadable run-state or a reference that broke after publication is
- * activity-adjacent trouble — the graph reached execution and hit it — so the
- * phase derives from the OBSERVATION, never from the unreadable bytes.
+ * revised by issue-acceptance-close D4, scoped by issue-node-lifecycle D3).
+ * `done` follows explicit acceptance: the resolved state AND an acceptance
+ * record that reads back verified — never an archived count, and never the
+ * resolved state alone. A resolved Issue without a verified record (the
+ * pre-capability close, a tampered record, or a read that supplied no
+ * acceptance facts) is `review`: its work stands complete, its acceptance
+ * unproven — and `review` implies `waiting-human`, which is the human who can
+ * accept it.
+ * `review` requires every REQUIRED change node's work complete or finalized
+ * AND no intent node left AND a record whose close is not proven (an open
+ * Issue, or one resolved without a verified record). An optional node's
+ * incomplete work does not hold review, and a plan with zero required nodes
+ * vacuously satisfies the condition — nothing demanded is unfinished (D6). A
+ * cancelled/superseded node is outside the execution graph: its recorded
+ * activity drives no phase value.
+ * `active` covers any begun graph of WANTED work (`required` + `optional`)
+ * that is not uniformly terminal (including failure and waiting, which are
+ * health facts, not phases), and deliberately also an `unknown` node: a
+ * located-but-unreadable run-state or a reference that broke after
+ * publication is activity-adjacent trouble — the graph reached execution and
+ * hit it — so the phase derives from the OBSERVATION, never from the
+ * unreadable bytes.
  * `planning` keeps meaning "no readable plan" (no revision, an unreadable one,
  * zero nodes, or an all-intent plan), which is derived independently of any
- * node's observation. `ready` needs at least one change node with nothing
- * started.
+ * node's observation. `ready` needs at least one wanted change node with
+ * nothing started.
  */
 function derivePhase(
   detail: IssueDetail,
@@ -611,7 +662,11 @@ function derivePhase(
   if (
     nodes.length > 0 &&
     state === 'open' &&
-    nodes.every(node => node.kind === 'change' && isTerminal(node.observation))
+    // No intent node remains ...
+    nodes.every(node => node.kind === 'change') &&
+    // ... and every required node's work is complete or finalized. Optional
+    // and cancelled/superseded nodes never hold review on incompleteness.
+    nodes.filter(isRequired).every(node => isTerminal(node.observation))
   ) {
     return 'review';
   }
@@ -624,11 +679,9 @@ function derivePhase(
     'run-terminal',
     'unknown',
   ];
-  if (nodes.some(node => ACTIVE_SIGNALS.includes(node.observation))) return 'active';
-  if (
-    nodes.some(node => node.kind === 'change') &&
-    nodes.every(node => node.observation === 'not-started')
-  ) {
+  const wanted = nodes.filter(isWanted);
+  if (wanted.some(node => ACTIVE_SIGNALS.includes(node.observation))) return 'active';
+  if (wanted.length > 0 && wanted.every(node => node.observation === 'not-started')) {
     return 'ready';
   }
   return 'planning';
@@ -637,13 +690,16 @@ function derivePhase(
 /**
  * Health precedence `failed > waiting-human > healthy`, plus `review` implies
  * `waiting-human`: an open Issue in review has, by definition, human-owned
- * work remaining (merge, release, acceptance). Serial dependency ordering is
- * sequencing, not sickness. `blocked` and `stale` are never emitted — no
- * recorded signal supports them today.
+ * work remaining (merge, release, acceptance). Failure and wait signals come
+ * from work the plan still WANTS — `required` and `optional`: a cancelled or
+ * superseded node's recorded escalation is history and drives no health
+ * value. Serial dependency ordering is sequencing, not sickness. `blocked`
+ * and `stale` are never emitted — no recorded signal supports them today.
  */
 function deriveHealth(phase: IssuePhase, nodes: readonly IssueNodeStatus[]): IssueHealth {
-  if (nodes.some(node => node.observation === 'failed')) return 'failed';
-  if (phase === 'review' || nodes.some(node => node.observation === 'waiting-human')) {
+  const wanted = nodes.filter(isWanted);
+  if (wanted.some(node => node.observation === 'failed')) return 'failed';
+  if (phase === 'review' || wanted.some(node => node.observation === 'waiting-human')) {
     return 'waiting-human';
   }
   return 'healthy';
@@ -679,7 +735,7 @@ export async function projectIssueStatus(input: ProjectIssueStatusInput): Promis
 
   if (plan !== null) {
     for (const resolved of plan.readiness.nodes) {
-      nodes.push(await observeNode(resolved, input, problems));
+      nodes.push(withLifecycle(resolved.node, await observeNode(resolved, input, problems)));
     }
   }
 
@@ -745,12 +801,20 @@ export async function projectIssueStatus(input: ProjectIssueStatusInput): Promis
     health,
     progress:
       plan !== null && plan.revision !== null
-        ? {
-            // Finished-but-unarchived counts: progress measures work, not
-            // archiving. Finalizing later does not change the count.
-            completed: nodes.filter(node => isTerminal(node.observation)).length,
-            total: nodes.length,
-          }
+        ? (() => {
+            // Progress counts REQUIRED nodes only, in both parts of the pair:
+            // optional, cancelled, and superseded work is named on its node
+            // line and counted nowhere. A readable revision with no required
+            // nodes reports the stated pair 0/0 — no work is demanded — which
+            // stays distinct from the null an unreadable revision reports.
+            // Finished-but-unarchived still counts: progress measures work,
+            // not archiving.
+            const required = nodes.filter(isRequired);
+            return {
+              completed: required.filter(node => isTerminal(node.observation)).length,
+              total: required.length,
+            };
+          })()
         : null,
     nodes,
     problems,

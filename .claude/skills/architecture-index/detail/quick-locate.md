@@ -26,6 +26,7 @@
 | Issue 节点启动绑定（launch contract / start 子命令） | `src/core/issue-execution/binding.ts`（`resolveIssueLaunchBinding`；CLI 面 `src/commands/store-issue.ts` start） |
 | Issue 验收闸门 / 显式 accept（done 规则） | `src/core/issue-acceptance/gate.ts`（`evaluateIssueAcceptanceGate`）+ `orchestration.ts`（`readIssueAcceptanceFacts`/`acceptIssue`；CLI 面 `src/commands/store-issue.ts` acceptance/accept） |
 | Issue 验收内容 schema（条件修订 / accepted 记录） | `src/core/store/issues/acceptance.ts`（digest/serialize，镜像 plans.ts 纪律）；地址 = planning-layout-v2 的 `acceptance-conditions`/`acceptance-condition`/`issue-accepted-record` 三 kind |
+| Issue 从 portfolio 发布 Execution Plan（`plan --from-portfolio`） | `src/core/issue-publication/orchestration.ts`（`publishPlanFromPortfolio`；定位缝同 `pipeline resume`，child 名字→committed 实例解析在 `resolution.ts`；CLI 面 `src/commands/store-issue.ts` plan） |
 | `rasen store` 命令 | `src/commands/store.ts` |
 | `rasen store issue` 命令（Issue CRUD + 状态面 + 验收面） | `src/commands/store-issue.ts` |
 | **Workflow / Pipeline** | |

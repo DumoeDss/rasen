@@ -20,6 +20,7 @@
  * capability records a real blockage or staleness signal.
  */
 import type { IssueDetail } from '../store/query/index.js';
+import type { ExecutionPlanNodeLifecycle } from '../store/issues/types.js';
 import type { WorkspaceIndexEntry } from '../store/workspace/registry.js';
 import type {
   IssueAcceptanceFacts,
@@ -143,6 +144,17 @@ export interface IssueNodeAttribution {
 export interface IssueNodeStatus {
   readonly nodeId: string;
   readonly kind: 'change' | 'intent';
+  /**
+   * The node's lifecycle as the revision records it, with an absent field
+   * read as `required` — the read view of the plan's spelling. Null exactly
+   * for intent nodes, which carry no lifecycle at all.
+   */
+  readonly lifecycle: ExecutionPlanNodeLifecycle | null;
+  /**
+   * The recorded reason a `cancelled`/`superseded` node carries — shown beside
+   * the gate's exclusion and on the node line. Null when none is recorded.
+   */
+  readonly reason: string | null;
   /**
    * The Change alias the node was keyed by for run-state location: the
    * committed claimant's `changeId`, falling back to the node's recorded

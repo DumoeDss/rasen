@@ -10,6 +10,7 @@ export type {
   IssueAcceptanceConditionsRead,
   IssueAcceptanceFacts,
   IssueAcceptanceGateEvaluation,
+  IssueAcceptanceGateExclusion,
   IssueAcceptanceGateView,
   IssueAcceptanceRecordRead,
   IssueAcceptanceRefusalCode,
