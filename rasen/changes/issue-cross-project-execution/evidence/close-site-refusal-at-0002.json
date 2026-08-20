@@ -1,0 +1,12 @@
+{
+  "issue": null,
+  "binding": null,
+  "status": [
+    {
+      "severity": "error",
+      "code": "issue_start_node_not_runnable",
+      "message": "Node 'document-multi-project-issues' is not runnable: the work of issue-project-grouped-views@e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 (not-started, no local run-state) is not complete.",
+      "fix": "Complete the named dependencies’ work (terminal run-state or finalized evidence), then re-run."
+    }
+  ]
+}

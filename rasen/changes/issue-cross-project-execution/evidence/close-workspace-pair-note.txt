@@ -1,0 +1,78 @@
+# Workspace-pair attempt for the C2 index route — STOPPED at a machinery refusal
+
+Directive: create the pair (store = issue-registry, execution root = the rasen-site
+checkout, change instance = ci_4950d004...) via the store workspace command family,
+so the worktree-side show aggregates the site node's run-state.
+
+## Command attempted (verbatim)
+
+  node bin/rasen.js store workspace plan --existing-change \
+    --store issue-registry \
+    --project 6ca78b98-777f-45bc-8d9b-b84c34e1a531 \
+    --target-line line-0.2 \
+    --change document-multi-project-issues \
+    --execution-worktree "E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-site" \
+    --json
+
+Exit 1, applicable: false. Full output: close-workspace-pair-refusal.json.
+
+## The refusal (verbatim, the single failed precondition)
+
+  execution-root-outside-repository  code: workspace_destination_exists
+  "E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-site is inside
+  the execution repository's own checkout
+  E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/rasen-site. A worktree
+  nested in its repository shows up there as untracked content, so the checkout
+  this capability promises to leave byte-identical would stop being so, and
+  cleanup would have to reach inside it."
+  expected: "a path outside E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/rasen-site"
+
+Meanwhile the SAME plan's sibling precondition is satisfied with the opposite
+blessing:
+
+  execution-is-linked-worktree (satisfied)
+  "E:\...\rasen-site is the project repository's main checkout, which a pair may
+  legitimately use for execution."
+
+i.e. planSide (src/core/store/workspace/plan.ts, execution-is-linked-worktree)
+designs main-checkout reuse for the execution side, while the later unconditional
+containment check (plan.ts, `${side}-root-outside-repository`) vetoes the same
+input because isContainedIn counts equality as inside
+(src/core/store/workspace/identity.ts: relative.length === 0 -> true). Two
+designed preconditions conflict for --execution-worktree <main checkout>;
+applicable stays false and `workspace apply` refuses
+(workspace_plan_not_applicable, apply.ts).
+
+## Why the applicable default shape was NOT applied
+
+Without the destination override the plan IS applicable
+(close-workspace-pair-default-plan.json): it would create a NEW execution
+worktree `rasen-site--document-multi-project-issues` (branch
+change/line-0.2/6ca78b98-.../document-multi-project-issues, forked at the site
+commit 2dc9e31) beside the site repo. That root carries the committed change
+dir but NOT the site node's run-state, which lives untracked in the main
+checkout's .rasen/ — so the aggregated show would still read the site node
+not-started, and making it read terminal would require copying run-state into
+the new root: exactly the second mirror the directive forbids. Applying it would
+also mint real worktrees + branches in both repos for no aggregatable truth.
+Not applied; nothing was written (plan is a read; store tree clean; no
+ps_ed190051... index entry exists).
+
+## Deeper designed surface found (recorded, not forced)
+
+registry.ts documents the machine index as a REBUILDABLE projection that must
+not make hand-assembled pairs unusable, and resolver.ts's publication flow
+comments "a pair the operator assembled by hand is indexed here from what is
+already true on disk" (completeChangeBinding surveys the execution root with no
+outside-repository check). Reaching that path would mean hand-writing the
+planning marker + execution association to route the main checkout past the
+CLI's own applicability refusal — forcing, not the command-family route the
+directive names. Left untouched.
+
+## Resulting honest state (unchanged from close-final-worktree-show.txt / close-site-terminal-show.txt)
+
+- worktree-side show: progress 3/4 (rasen lane 3/3 run-terminal; site node
+  not-started — no local run-state visible from that root)
+- site-repo-side show: site lane 1/1 run-terminal (pipeline: manual, located by
+  execution-root = the site repo)
+No aggregated single-machine view exists through the designed index route.
