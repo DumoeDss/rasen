@@ -335,8 +335,9 @@ function renderRunStateVisibility(status: IssueStatus): string {
 
 /**
  * The per-node line the show command prints: identifier, kind, alias,
- * observation, then whatever explains it — a dependency that has not
- * finalized, or the diagnostic behind an `unknown`.
+ * observation, then whatever explains it — a lifecycle that is not required
+ * (with the recorded reason a cancelled/superseded node carries), a
+ * dependency that has not finalized, or the diagnostic behind an `unknown`.
  */
 function renderStatusNode(node: IssueStatus['nodes'][number]): string {
   const head =
@@ -344,6 +345,9 @@ function renderStatusNode(node: IssueStatus['nodes'][number]): string {
       ? `${node.nodeId} ${node.kind} — ${node.observation}`
       : `${node.nodeId} ${node.kind} ${node.alias} — ${node.observation}`;
   const parts = [head];
+  if (node.lifecycle !== null && node.lifecycle !== 'required') {
+    parts.push(node.reason === null ? `(${node.lifecycle})` : `(${node.lifecycle}: ${node.reason})`);
+  }
   if (node.blockedBy.length > 0) parts.push(`(blockedBy ${node.blockedBy.join(', ')})`);
   if (node.diagnostic !== null) parts.push(`(${node.diagnostic})`);
   return `      ${parts.join(' ')}`;
@@ -405,18 +409,53 @@ function renderAcceptanceBlocker(blocker: IssueAcceptanceBlocker): string {
   }
 }
 
-/** One gate evaluation's human line: eligible, or every blocker named together. */
-function renderGateLine(gate: IssueAcceptanceGateEvaluation): string[] {
+/**
+ * The lines one gate evaluation renders beside the acceptance section: the
+ * gate line itself, then the lifecycle accounting — cancelled/superseded
+ * exclusions with their recorded reasons always, and at a zero required total
+ * the statement that no work is demanded with the optional nodes named, so an
+ * empty total never hides what the revision says. The same facts the JSON
+ * form carries under `status.acceptance.gate` and `status.nodes`.
+ */
+function renderGateLine(gate: IssueAcceptanceGateEvaluation, status: IssueStatus): string[] {
+  const exclusions = gate.exclusions.map(
+    exclusion => `      - excluded ${exclusion.nodeId} (${exclusion.lifecycle}): ${exclusion.reason}`
+  );
+  // The blocked branch carries no snapshot, so the zero-required statement
+  // derives from the same status the gate was evaluated over — required
+  // CHANGE nodes, the same scoping the projection applies.
+  const requiredTotal = status.nodes.filter(
+    node => node.kind === 'change' && node.lifecycle === 'required'
+  ).length;
+  const zeroRequired =
+    requiredTotal === 0
+      ? [
+          '      no required nodes — no work is demanded',
+          ...(gate.optionalNodes.length > 0
+            ? [`      optional nodes (named, not counted): ${gate.optionalNodes.join(', ')}`]
+            : []),
+        ]
+      : [];
   if (gate.eligible) {
-    return [`    gate: eligible (would accept conditions revision ${gate.conditionsRevisionId})`];
+    return [
+      `    gate: eligible (would accept conditions revision ${gate.conditionsRevisionId})`,
+      ...zeroRequired,
+      ...exclusions,
+    ];
   }
   if (gate.blockers.length === 0) {
-    return [`    gate: not eligible — ${gate.message}`];
+    return [
+      `    gate: not eligible — ${gate.message}`,
+      ...zeroRequired,
+      ...exclusions,
+    ];
   }
   return [
     '    gate: not eligible',
     `      ${gate.message.split(' — ')[0]}`,
     ...gate.blockers.map(blocker => `      - ${renderAcceptanceBlocker(blocker)}`),
+    ...zeroRequired,
+    ...exclusions,
   ];
 }
 
@@ -451,7 +490,7 @@ function renderAcceptanceSection(status: IssueStatus): void {
       console.log(`      ${condition.id}: ${condition.requirement}${verification}`);
     }
   }
-  for (const line of renderGateLine(gate)) console.log(line);
+  for (const line of renderGateLine(gate, status)) console.log(line);
   if (record !== null) {
     console.log(
       `    record: accepted ${record.acceptedAt} under revision ${record.conditionsRevisionId} (gate ${record.gate.completed}/${record.gate.total} ${record.gate.health})`

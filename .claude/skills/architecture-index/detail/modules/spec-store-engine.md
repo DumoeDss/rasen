@@ -38,7 +38,7 @@ Spec、Requirement/Scenario、Change/Delta 的 canonical 校验定义。
 
 ## `issue-status/` — Issue 三轴状态投影（读时推导，不持久化）
 
-回答"这个 Issue 现在在哪"：`phase`(`planning|ready|active|review|done`) × `health`(`healthy|blocked|failed|waiting-human|stale`，后两者为保留值) × `progress`(完成必需节点/总数)。每次读取从四个输入现推——最新 Execution Plan 修订、committed Store evidence、机器本地 run-state、Issue 的已记录验收（acceptance 内容，C3 起为第四输入）——不写任何地方（source guard + byte-identical 行为测试双保险）。
+回答"这个 Issue 现在在哪"：`phase`(`planning|ready|active|review|done`) × `health`(`healthy|blocked|failed|waiting-human|stale`，后两者为保留值) × `progress`(完成必需节点/总数)。g-002 起四态 lifecycle 贯穿：progress/评审条件只数 required、active/health 信号来自 wanted(required|optional)、cancelled/superseded 在执行图外（节点行仍带 lifecycle+reason）。每次读取从四个输入现推——最新 Execution Plan 修订、committed Store evidence、机器本地 run-state、Issue 的已记录验收（acceptance 内容，C3 起为第四输入）——不写任何地方（source guard + byte-identical 行为测试双保险）。
 
 - **关键文件**：`projection.ts`（`projectIssueStatus(input)`：per-node run-state 定位 + D4 观察映射 + phase/health/progress 推导 + acceptance 块组装）、`types.ts`（闭词汇表 + `ProjectIssueStatusInput`，显式路径输入零 ambient read）、`index.ts`（barrel）。
 - **定位配方 = `pipeline resume` 原样复用**：`stateFileSearchChain` + `runStatePath`/`portfolioStatePath` + `readRunStateDetailed`/`readPortfolioStateDetailed`（`ephemera → workDir → planning change dir` 三段 sticky-legacy 链）；portfolio-run.json 存在即权威；escalated child/delivery = failed、escalated stage = waiting-human。C2 加宽：当前根链未命中后，逐个匹配的 workspace index 条目以其 execution root 自有链再探（ephemera → 条目 planning 侧 active-change 地址；index 根无 work-dir 腿），节点带 `locatedBy`（execution-root|workspace-index|null）与 attribution（pipeline/sessions/evidenceLocator——sessions 只含 durable 指针，agentId 构造上排除）。
@@ -48,7 +48,7 @@ Spec、Requirement/Scenario、Change/Delta 的 canonical 校验定义。
 
 ## `issue-execution/` — Issue 节点启动绑定（resolve + verify + emit，不 spawn）
 
-回答"这个 Issue 的下一个节点从哪里启动"：从 plan 修订 + 投影 observations 推导 runnable frontier（observation 规则，非 query 的 archive-based `blockedBy`），经固定路由序解析绑定的执行上下文（D4：workspace pair index 条目 → L6 `resolveSessionLaunchContext` 成员 checkout → unprepared 拒绝并给出确切 `store workspace plan --existing-change` 准备命令），输出 launch contract（cwd/attached/pipeline/mode）。读时推导、零写入；refusal 闭集七码，每条拒结名名候选/阻塞/准备命令/L6 诊断。
+回答"这个 Issue 的下一个节点从哪里启动"：从 plan 修订 + 投影 observations 推导 runnable frontier（observation 规则，非 query 的 archive-based `blockedBy`），经固定路由序解析绑定的执行上下文（D4：workspace pair index 条目 → L6 `resolveSessionLaunchContext` 成员 checkout → unprepared 拒绝并给出确切 `store workspace plan --existing-change` 准备命令），输出 launch contract（cwd/attached/pipeline/mode）。读时推导、零写入；refusal 闭集九码（g-002 起 `--node` 命中 cancelled/superseded 节点有独立码并点名 lifecycle+reason，frontier 只含 wanted 节点 required|optional），每条拒结名名候选/阻塞/准备命令/L6 诊断。
 
 - **关键文件**：`binding.ts`（`resolveIssueLaunchBinding` + `refusalFix`）、`types.ts`（`IssueLaunchBinding`/refusal taxonomy/injectable `launchContextFor`/`pipelineKnown`）、`index.ts`（barrel）。
 - **组合而非重建**：import L6 `management-api/session-launch-context.ts`（经可注入 seam，生产默认 `store:<uid>` + `project:<id>`）、`store/workspace/registry.ts` 的 index 读取、`issue-status` 的投影（attribution.pipeline 即 D5 的 recorded pipeline 来源）、`pipeline-registry/resolver.ts` 的 catalog（`--pipeline` 校验）。只 import 不改 `src/core/pipeline-registry/`。
@@ -57,7 +57,7 @@ Spec、Requirement/Scenario、Change/Delta 的 canonical 校验定义。
 
 ## `issue-acceptance/` — Issue 验收闸门与显式 accept/close（C3 交付）
 
-回答"这个 Issue 现在能不能被接受、不接受还差什么"：`evaluateIssueAcceptanceGate(view, facts)` 按 D3 规则求值——每个必需节点 observation ∈ {finalized, run-terminal}（与 execution binding 同一条工作完成规则，非 query 的 archive-based `blockedBy`）、health ≠ failed、读取完备且零 status problem——事实阻塞项**一起点名**（un-terminal 节点带 observation、failed 节点、status problem）；结构化拒绝为独立码（`issue_accept_requires_plan`/`issue_accept_conditions_required`/`issue_accept_already_accepted`/`issue_accept_dropped`）。
+回答"这个 Issue 现在能不能被接受、不接受还差什么"：`evaluateIssueAcceptanceGate(view, facts)` 按 D3 规则求值——每个必需节点 observation ∈ {finalized, run-terminal}（与 execution binding 同一条工作完成规则，非 query 的 archive-based `blockedBy`）、health ≠ failed、读取完备且零 status problem——事实阻塞项**一起点名**（un-terminal 节点带 observation、failed 节点、status problem；g-002 起阻塞环只数 required+intent 节点，cancelled/superseded 以带 reason 的 exclusion 名单列在门旁，快照同 progress 口径、0/0 连贯）；结构化拒绝为独立码（`issue_accept_requires_plan`/`issue_accept_conditions_required`/`issue_accept_already_accepted`/`issue_accept_dropped`）。
 
 - **关键文件**：`types.ts`（闸门契约：`IssueAcceptanceFacts`/`GateView`/闭集 blocker 分类法/`IssueAcceptanceStatusBlock`）、`gate.ts`（纯求值 + `acceptanceRefusalFix`；被 projection import 填 `status.acceptance.gate`——唯一 runtime 边且无回流，零加载环）、`orchestration.ts`（`readIssueAcceptanceFacts`：验收内容的唯一读取者，checkout 工作树 + digest 验证；`acceptIssue`：D6 evaluate-fresh-then-lock——经 issue-status 一条缝读状态 → 求值 → 带快照调 `StoreIssues.accept`）、`index.ts`（barrel）。
 - **拓扑守则**：组合模式（同 C2）；`store/issues` 保持零上向依赖——mutation 只收已求值的可移植快照，锁内零 run-state 读。TOCTOU 边界（求值与加锁之间 run-state 可移动）由记录内快照自标注，不遮掩。

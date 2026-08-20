@@ -86,6 +86,10 @@ export type IssueStartRefusalCode =
   | 'issue_start_frontier_ambiguous'
   /** The addressed (or only possible) node cannot run now, and why. */
   | 'issue_start_node_not_runnable'
+  /** --node names a cancelled node; the plan says its work is not wanted. */
+  | 'issue_start_node_cancelled'
+  /** --node names a superseded node; its reason names what replaced it. */
+  | 'issue_start_node_superseded'
   /** Neither binding exists; the exact workspace preparation is named. */
   | 'issue_start_unprepared'
   /** The launch context could not be uniquely resolved; diagnostic carried. */

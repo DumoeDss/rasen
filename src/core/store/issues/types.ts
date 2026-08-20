@@ -130,6 +130,17 @@ export interface IssueRecordV1 {
 
 export type ExecutionPlanNodeKind = 'change' | 'intent';
 
+/**
+ * The closed lifecycle vocabulary a Change node carries. An ABSENT lifecycle
+ * reads as `required` — the value every revision published before this
+ * vocabulary existed has always meant — and the stored canonical form omits a
+ * `required` lifecycle exactly as it omits an absent `changeAlias`, so those
+ * revisions re-derive their published digests byte-for-byte. `cancelled` and
+ * `superseded` carry a recorded `reason`; intent nodes carry no lifecycle at
+ * all.
+ */
+export type ExecutionPlanNodeLifecycle = 'required' | 'optional' | 'cancelled' | 'superseded';
+
 interface ExecutionPlanNodeBase {
   readonly nodeId: string;
   /** Every node names its project, whether or not its Change exists yet. */
@@ -148,6 +159,10 @@ export interface ExecutionPlanChangeNode extends ExecutionPlanNodeBase {
   readonly kind: 'change';
   readonly changeInstanceId: ChangeInstanceId;
   readonly changeAlias?: string;
+  /** Absent ≡ `required`; see `ExecutionPlanNodeLifecycle`. */
+  readonly lifecycle?: ExecutionPlanNodeLifecycle;
+  /** The recorded reason a `cancelled`/`superseded` node must carry. */
+  readonly reason?: string;
 }
 
 /**
@@ -261,6 +276,10 @@ export interface ExecutionPlanChangeNodeInput {
   readonly targetLineId: string;
   readonly changeInstanceId: string;
   readonly changeAlias?: string;
+  /** Authored lifecycle; validated against the closed vocabulary. */
+  readonly lifecycle?: string;
+  /** Authored reason; required for `cancelled`/`superseded`, portable-checked. */
+  readonly reason?: string;
   readonly dependsOn?: readonly string[];
 }
 

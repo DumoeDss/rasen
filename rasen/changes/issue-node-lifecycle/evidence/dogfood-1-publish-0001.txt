@@ -1,0 +1,261 @@
+# Dogfood receipt 1 — temp store, three committed children, portfolio 0001
+
+Date: 2026-08-20T05:05:15Z  CLI: 0.2.0  worktree: E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code/.claude/worktrees/issue-layer
+Temp root: /tmp/rasen-lc-dogfood.GnSFri
+
+## Store setup (trap list: OS temp; initial branch is master; layoutVersion handwritten)
+{
+  "store": {
+    "id": "issue-lc-dogfood",
+    "root": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\store",
+    "metadata_path": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\store\\.rasen-store\\store.yaml"
+  },
+  "registry": {
+    "path": "C:\\Users\\Sayo\\.rasen\\stores\\registry.yaml",
+    "registered": true,
+    "already_registered": false
+  },
+  "git": {
+    "is_repository": true,
+    "initialized": true,
+    "committed": true
+  },
+  "created_files": [
+    "rasen/",
+    "rasen/specs/",
+    "rasen/changes/",
+    "rasen/changes/archive/",
+    "rasen/config.yaml",
+    "rasen/specs/.gitkeep",
+    "rasen/changes/archive/.gitkeep",
+    ".rasen-store/store.yaml"
+  ],
+  "status": []
+}
+initial branch: master
+after rename:   main
+
+## store.yaml as setup wrote it (trap: layoutVersion must be handwritten)
+version: 2
+uid: f90b079f-9745-4910-8512-ffa6f5fdf81c
+id: issue-lc-dogfood
+--- after the handwritten bump ---
+version: 2
+layoutVersion: 2
+uid: f90b079f-9745-4910-8512-ffa6f5fdf81c
+id: issue-lc-dogfood
+store uid: f90b079f-9745-4910-8512-ffa6f5fdf81c
+
+## Member project + target line (trap: add-project writes BOTH the project config and .rasen-store/ — double-clear at teardown)
+{
+  "project": null,
+  "target": null,
+  "membership": null,
+  "planning_binding": null,
+  "dry_run": false,
+  "status": [
+    {
+      "severity": "error",
+      "code": "store_path_missing",
+      "message": "Store path does not exist: C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\app",
+      "target": "store.root",
+      "fix": "Clone or create the store folder before registering it."
+    }
+  ]
+}
+
+## (first add-project attempt hit the trap: the member project path must exist as a repo; created it, retried)
+{
+  "project": null,
+  "target": null,
+  "membership": null,
+  "planning_binding": null,
+  "dry_run": false,
+  "status": [
+    {
+      "severity": "error",
+      "code": "store_register_root_unhealthy",
+      "message": "Store register requires an existing healthy Rasen root. Missing rasen/ directory.",
+      "target": "openspec.root",
+      "fix": "Run rasen store setup for a new store, or point register at a checkout whose openspec/ files are present."
+    }
+  ]
+}
+
+## (second trap: the member project must be a healthy rasen root — rasen/ scaffolded, committed, retried)
+{
+  "project": null,
+  "target": null,
+  "membership": null,
+  "planning_binding": null,
+  "dry_run": false,
+  "status": [
+    {
+      "severity": "error",
+      "code": "store_layout_mixed_residue",
+      "message": "Store 'issue-lc-dogfood' declares planning layout version 2 but still holds flat planning content with no completed migration receipt, so membership-record cannot write either layout.",
+      "target": "store.layout",
+      "fix": "Run 'rasen store migrate-layout issue-lc-dogfood --status' and resume or roll back the interrupted run."
+    }
+  ]
+}
+
+## (third trap from the g-001 list, made explicit: the flat v1 tree must be gone before layoutVersion 2 is written; removed + committed)
+{
+  "project": {
+    "id": "lc-dogfood-app",
+    "root": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\app",
+    "metadata_created": false,
+    "already_registered": true
+  },
+  "target": {
+    "id": "issue-lc-dogfood",
+    "root": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\store",
+    "config_path": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\store\\rasen\\config.yaml",
+    "reference_added": false,
+    "reference_already_present": true
+  },
+  "membership": {
+    "project_id": "0c3a4b80-c33b-4a7c-a797-b571630367c8",
+    "roles": {
+      "planning": true,
+      "knowledge": true
+    },
+    "project_base_commit": "956cfe7e09caf887e60ef6a78507699b61b5957d",
+    "store_base_commit": "5b6efa25b930c396eaf4f8c1a9e13cf1a51fc1be",
+    "project_writes": [
+      "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\app\\rasen\\config.yaml"
+    ],
+    "store_writes": [
+      "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\store\\.rasen-store\\projects\\0c3a4b80-c33b-4a7c-a797-b571630367c8.yaml"
+    ],
+    "record_written": true,
+    "hint_written": true,
+    "repair_needed": [],
+    "suggested_commits": [
+      {
+        "repo_root": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\store",
+        "command": "git -C C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\store add .rasen-store\\projects\\0c3a4b80-c33b-4a7c-a797-b571630367c8.yaml && git -C C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\store commit -m \"chore: record lc-dogfood-app as a member\"",
+        "purpose": "Store repo: record the membership authority record."
+      },
+      {
+        "repo_root": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\app",
+        "command": "git -C C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\app add rasen\\config.yaml && git -C C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\app commit -m \"chore: record membership of store issue-lc-dogfood\"",
+        "purpose": "Project repo: record the membership locator hint."
+      }
+    ]
+  },
+  "planning_binding": {
+    "requested": true,
+    "changed": true,
+    "refused": false,
+    "already_bound": false,
+    "bound_to": "issue-lc-dogfood",
+    "bound_to_uid": null,
+    "requested_store": "issue-lc-dogfood",
+    "requested_store_uid": "f90b079f-9745-4910-8512-ffa6f5fdf81c",
+    "rebind_command": null
+  },
+  "dry_run": false,
+  "status": [
+    {
+      "severity": "info",
+      "code": "store_already_registered",
+      "message": "Project 'lc-dogfood-app' is already registered at this path.",
+      "target": "store.registry"
+    }
+  ]
+}
+
+## Target line
+{
+  "targetLineId": "line-0.2",
+  "storeId": "issue-lc-dogfood",
+  "storeUid": "f90b079f-9745-4910-8512-ffa6f5fdf81c",
+  "storeRef": "refs/heads/main",
+  "projects": {
+    "0c3a4b80-c33b-4a7c-a797-b571630367c8": {
+      "codeRef": "refs/heads/main"
+    }
+  },
+  "path": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\store\\.rasen-store\\target-lines\\line-0.2.yaml",
+  "suggestedCommits": [
+    {
+      "repoRoot": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\store",
+      "pathspecs": [
+        ".rasen-store/target-lines/line-0.2.yaml"
+      ],
+      "message": "chore(store): record target line line-0.2",
+      "rationale": "The target-line catalog is Git-tracked Store content. Rasen wrote the file and staged nothing.",
+      "command": "git -C C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\store add -- .rasen-store/target-lines/line-0.2.yaml && git -C C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\store commit -m \"chore(store): record target line line-0.2\""
+    }
+  ]
+}
+warning: in the working copy of '.rasen-store/store.yaml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'rasen/config.yaml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.rasen-store/projects/0c3a4b80-c33b-4a7c-a797-b571630367c8.yaml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.rasen-store/target-lines/line-0.2.yaml', LF will be replaced by CRLF the next time Git touches it
+
+## Three committed children with distinct instance identities (identity minted with the shipped planning-identity helpers, keyed by the permanent ids)
+issue-plan-publication ci_b617c64368ab01577a2ada8b03b732bf3365fb5e80ebfc1b222741358f9bfe03
+issue-node-lifecycle ci_ba3eac3d40969ed06063eef13191df5ffc30fc624f8ce5b247ca3f1d0b8a1089
+issue-persistent-baseline ci_36f55155e56869bfa2c208621e9021da3b160da2fbc1a1d4e5c55f1cba717baf
+
+## The portfolio run-state, at the REAL resume placement (execution-root ephemera)
+state: /tmp/rasen-lc-dogfood.GnSFri/app/.rasen/changes/issue-multi-change-execution/ephemera/portfolio-run.json
+
+## The Issue
+Issue issue-lc-dogfood (open)
+  title: Dogfood: node lifecycles through the issue-lc-dogfood store
+  checkout: C:\Users\Sayo\AppData\Local\Temp\rasen-lc-dogfood.GnSFri\store
+
+  Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing.
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-lc-dogfood.GnSFri\store add rasen/issues/issue-lc-dogfood/issue.yaml
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-lc-dogfood.GnSFri\store commit -m "chore(store): open issue issue-lc-dogfood"
+
+## Publish revision 0001 via --from-portfolio (cwd = the member project root)
+Issue issue-lc-dogfood: Execution Plan revision 0001
+  supersedes: (none)
+  nodes: 3
+  source: portfolio 'issue-multi-change-execution' — 3 children, run-state C:\Users\Sayo\AppData\Local\Temp\rasen-lc-dogfood.GnSFri\app\.rasen\changes\issue-multi-change-execution\ephemera\portfolio-run.json
+
+  Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing.
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-lc-dogfood.GnSFri\store add rasen/issues/issue-lc-dogfood/plans/0001.yaml
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-lc-dogfood.GnSFri\store commit -m "chore(store): publish execution plan issue-lc-dogfood/0001"
+
+## Receipt facts
+revision files:
+0001.yaml
+0001 sha256: 01ffd5a8a7f21456ca075ec1d21d15019bbd8783ead91799ace8c4dc54110e2b
+warning: in the working copy of 'rasen/projects/0c3a4b80-c33b-4a7c-a797-b571630367c8/changes/issue-node-lifecycle/.openspec.yaml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'rasen/projects/0c3a4b80-c33b-4a7c-a797-b571630367c8/changes/issue-node-lifecycle/proposal.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'rasen/projects/0c3a4b80-c33b-4a7c-a797-b571630367c8/changes/issue-persistent-baseline/.openspec.yaml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'rasen/projects/0c3a4b80-c33b-4a7c-a797-b571630367c8/changes/issue-persistent-baseline/proposal.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'rasen/issues/issue-lc-dogfood/issue.yaml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'rasen/issues/issue-lc-dogfood/plans/0001.yaml', LF will be replaced by CRLF the next time Git touches it
+
+## show under 0001 (all required: progress 1/3, the first child run-terminal)
+Issue issue-lc-dogfood
+  state: open
+  title: Dogfood: node lifecycles through the issue-lc-dogfood store
+  revisions: 0001
+  latest plan: revision 0001
+  plan digest: 56c233ebe38f14b2b3a8615f7e2b38d5699f3b4f1d939993539fbdd337025593
+  status:
+    phase: active
+    health: healthy
+    progress: 1/3
+    run-state: C:\Users\Sayo\AppData\Local\Temp\rasen-lc-dogfood.GnSFri\app
+    nodes:
+      issue-node-lifecycle change issue-node-lifecycle — not-started (blockedBy issue-plan-publication)
+        evidence: C:\Users\Sayo\AppData\Local\Temp\rasen-lc-dogfood.GnSFri\store\rasen\projects\0c3a4b80-c33b-4a7c-a797-b571630367c8\changes\issue-node-lifecycle\evidence
+      issue-persistent-baseline change issue-persistent-baseline — not-started (blockedBy issue-node-lifecycle)
+        evidence: C:\Users\Sayo\AppData\Local\Temp\rasen-lc-dogfood.GnSFri\store\rasen\projects\0c3a4b80-c33b-4a7c-a797-b571630367c8\changes\issue-persistent-baseline\evidence
+      issue-plan-publication change issue-plan-publication — run-terminal
+        pipeline: small-feature (located by execution-root)
+        evidence: C:\Users\Sayo\AppData\Local\Temp\rasen-lc-dogfood.GnSFri\store\rasen\projects\0c3a4b80-c33b-4a7c-a797-b571630367c8\changes\issue-plan-publication\evidence
+
+  acceptance:
+    conditions: (none published)
+    gate: not eligible — the Issue has no readable acceptance conditions — no acceptance conditions revision exists for it.
+    record: (not accepted)

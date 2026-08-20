@@ -4,7 +4,8 @@
  *
  * A revision is IMMUTABLE once published, so everything that could make one
  * invalid is decided here, before a byte is written: the schema, the two node
- * kinds, the acyclicity of `dependsOn`, duplicate node identifiers, and two
+ * kinds, the closed `lifecycle` vocabulary and its conditional reason, the
+ * acyclicity of `dependsOn`, duplicate node identifiers, and two
  * nodes claiming one Change instance. Reference verification against real Store
  * evidence is the one check this file cannot do, because it needs Git; it lives
  * in `references.ts` and runs before this file's serializer is ever called.
@@ -38,6 +39,7 @@ import { assertPortableIssueText } from './records.js';
 import type {
   ExecutionPlanNode,
   ExecutionPlanNodeInput,
+  ExecutionPlanNodeLifecycle,
   ExecutionPlanRevisionV1,
 } from './types.js';
 
@@ -64,12 +66,28 @@ const NodeBaseShape = {
   dependsOn: z.array(z.string()),
 };
 
+/**
+ * The closed lifecycle vocabulary, named in the refusal it mints: an
+ * out-of-vocabulary value is refused naming itself and the four defined
+ * values, never absorbed into a default.
+ */
+const NODE_LIFECYCLES = ['required', 'optional', 'cancelled', 'superseded'] as const;
+
+const lifecycleField = z
+  .enum(NODE_LIFECYCLES, {
+    error: issue =>
+      `lifecycle must be one of ${NODE_LIFECYCLES.map(value => `'${value}'`).join(' | ')} (received ${JSON.stringify(issue.input)})`,
+  })
+  .optional();
+
 const ChangeNodeSchema = z
   .object({
     ...NodeBaseShape,
     kind: z.literal('change'),
     changeInstanceId: z.string(),
     changeAlias: z.string().min(1).optional(),
+    lifecycle: lifecycleField,
+    reason: z.string().min(1).optional(),
   })
   .strict();
 
@@ -129,6 +147,30 @@ function validateNode(raw: z.output<typeof NodeSchema>, index: number): Executio
         parseChangeId(raw.changeAlias as string, 'changeAlias')
       );
     }
+    // The lifecycle's one conditional: `cancelled`/`superseded` record why the
+    // plan no longer wants the work (portable durable text, refused rather
+    // than trimmed), and no other lifecycle records a reason — a dangling
+    // reason on wanted work is a defect this checker can name, not a fact to
+    // store beside one it does not explain.
+    const lifecycle = raw.lifecycle;
+    if (lifecycle === 'cancelled' || lifecycle === 'superseded') {
+      if (raw.reason === undefined) {
+        throw planError(
+          `nodes[${index}].reason`,
+          `node '${nodeId}' is ${lifecycle}; a ${lifecycle} node requires a recorded reason`
+        );
+      }
+      assertPortableIssueText(
+        raw.reason as string,
+        `nodes[${index}].reason`,
+        'invalid_execution_plan'
+      );
+    } else if (raw.reason !== undefined) {
+      throw planError(
+        `nodes[${index}].reason`,
+        `node '${nodeId}' records a reason without being cancelled or superseded; a reason is recorded only for work the plan no longer wants`
+      );
+    }
     return Object.freeze({
       nodeId,
       kind: 'change' as const,
@@ -136,6 +178,14 @@ function validateNode(raw: z.output<typeof NodeSchema>, index: number): Executio
       targetLineId,
       changeInstanceId,
       ...(raw.changeAlias === undefined ? {} : { changeAlias: raw.changeAlias }),
+      // Canonical omission: an explicit `required` IS `required`, and the
+      // stored canonical form omits it — mirroring `changeAlias` — so a plan
+      // published before this field existed re-derives its exact digest and
+      // two spellings of one plan publish one revision, not two.
+      ...(lifecycle === undefined || lifecycle === 'required'
+        ? {}
+        : { lifecycle: lifecycle as Exclude<ExecutionPlanNodeLifecycle, 'required'> }),
+      ...(raw.reason === undefined ? {} : { reason: raw.reason }),
       dependsOn: Object.freeze(dependsOn),
     });
   }
@@ -295,6 +345,8 @@ export function executionPlanDigestBody(
             targetLineId: node.targetLineId,
             changeInstanceId: node.changeInstanceId,
             ...(node.changeAlias === undefined ? {} : { changeAlias: node.changeAlias }),
+            ...(node.lifecycle === undefined ? {} : { lifecycle: node.lifecycle }),
+            ...(node.reason === undefined ? {} : { reason: node.reason }),
             dependsOn: [...node.dependsOn],
           }
         : {
@@ -411,6 +463,8 @@ export function serializeExecutionPlanRevision(value: ExecutionPlanRevisionV1): 
             targetLineId: node.targetLineId,
             changeInstanceId: node.changeInstanceId,
             ...(node.changeAlias === undefined ? {} : { changeAlias: node.changeAlias }),
+            ...(node.lifecycle === undefined ? {} : { lifecycle: node.lifecycle }),
+            ...(node.reason === undefined ? {} : { reason: node.reason }),
             dependsOn: [...node.dependsOn],
           }
         : {
@@ -454,6 +508,11 @@ function compareCodePoints(left: string, right: string): number {
  * that sends a string gets a typed refusal rather than a dependency per
  * character, and one that sends a number gets a refusal rather than a
  * `TypeError` out of the spread.
+ *
+ * `lifecycle` and `reason` are carried through on BOTH branches. Dropping
+ * them from an intent node's candidate would silently publish away a field
+ * the spec refuses ("an intent node carries no lifecycle at all"); carrying
+ * them lets `IntentNodeSchema`'s `.strict()` refuse the node BY NAME.
  */
 function planNodeCandidate(input: ExecutionPlanNodeInput): unknown {
   const raw = input as unknown as Record<string, unknown>;
@@ -463,6 +522,8 @@ function planNodeCandidate(input: ExecutionPlanNodeInput): unknown {
     projectId: raw.projectId,
     targetLineId: raw.targetLineId,
     dependsOn: raw.dependsOn ?? [],
+    ...(raw.lifecycle === undefined ? {} : { lifecycle: raw.lifecycle }),
+    ...(raw.reason === undefined ? {} : { reason: raw.reason }),
   };
   return raw.kind === 'change'
     ? {
@@ -486,20 +547,29 @@ export interface PlanNodeSchemaProblem {
  * wrong" with its own status code cannot use a throw, because the throw
  * arrives indistinguishable from an internal fault. Both go through
  * `planNodeCandidate` and the one `NodeSchema`, so the two surfaces cannot
- * drift into disagreeing about what a node is.
+ * drift into disagreeing about what a node is. The semantic layer
+ * `validateNode` adds on top — the conditional reason, the portability of its
+ * text — runs here too (reported, never thrown), so the boundary inherits the
+ * whole gate rather than only its schema half.
  */
 export function findPlanNodeSchemaProblems(
   inputs: readonly ExecutionPlanNodeInput[]
 ): readonly PlanNodeSchemaProblem[] {
   const problems: PlanNodeSchemaProblem[] = [];
-  inputs.forEach(input => {
+  inputs.forEach((input, index) => {
+    const nodeIdRaw = (input as unknown as Record<string, unknown>).nodeId;
+    const nodeId = typeof nodeIdRaw === 'string' && nodeIdRaw.length > 0 ? nodeIdRaw : '(unnamed node)';
     const result = NodeSchema.safeParse(planNodeCandidate(input));
-    if (result.success) return;
-    const nodeId = (input as unknown as Record<string, unknown>).nodeId;
-    problems.push({
-      nodeId: typeof nodeId === 'string' && nodeId.length > 0 ? nodeId : '(unnamed node)',
-      problem: formatZodIssues(result.error),
-    });
+    if (!result.success) {
+      problems.push({ nodeId, problem: formatZodIssues(result.error) });
+      return;
+    }
+    try {
+      validateNode(result.data, index);
+    } catch (error) {
+      if (!(error instanceof StorePlanningValidationError)) throw error;
+      problems.push({ nodeId, problem: error.message });
+    }
   });
   return problems;
 }
