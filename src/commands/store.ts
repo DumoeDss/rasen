@@ -66,6 +66,8 @@ interface StoreSetupOptions {
   initGit?: boolean;
   json?: boolean;
   remote?: string;
+  /** `--layout <version>`: explicit layout request; only 2 is accepted. */
+  layout?: string;
 }
 
 interface StoreRegisterOptions {
@@ -607,6 +609,10 @@ async function resolveSetupInput(
     );
   }
 
+  // Value-validated before anything is touched (and before any prompt), so an
+  // unsupported request fails fast naming the one accepted value.
+  const layoutVersion = parseSetupLayoutOption(options.layout);
+
   const resolvedId = id ? validateStoreId(id) : await promptStoreId();
   const promptedPath = options.path === undefined
     ? await promptStorePath(resolvedId)
@@ -616,7 +622,22 @@ async function resolveSetupInput(
     id: resolvedId,
     path: options.path ?? promptedPath,
     ...(options.remote !== undefined ? { remote: options.remote } : {}),
+    ...(layoutVersion !== undefined ? { layoutVersion } : {}),
   };
+}
+
+/** `--layout` accepts exactly the layout version 2; anything else is refused. */
+function parseSetupLayoutOption(value: string | undefined): 2 | undefined {
+  if (value === undefined) return undefined;
+  if (value === '2') return 2;
+  throw new StoreError(
+    `Unsupported store layout version '${value}'; only layout version 2 can be requested.`,
+    'store_setup_layout_invalid',
+    {
+      target: 'store.layout',
+      fix: 'Pass --layout 2, or omit the option to create the store as setup creates it today.',
+    }
+  );
 }
 
 async function prepareSetupInput(
@@ -1438,6 +1459,7 @@ export function registerStoreCommand(program: Command): void {
     .option('--init-git', '')
     .option('--no-init-git', '')
     .option('--remote <url>', '')
+    .option('--layout <version>', '')
     .option('--json', '')
     .action(async (id: string | undefined, options: StoreSetupOptions) => {
       await storeCommand.setup(id, options);

@@ -1613,6 +1613,9 @@
                 "remote": {
                   "description": "记录在 store.yaml 中的规范克隆源"
                 },
+                "layout": {
+                  "description": "显式请求的布局版本；仅支持 2（创建带 layout-2 声明、无扁平 planning 树的 Store）"
+                },
                 "json": {
                   "description": "输出为 JSON"
                 }

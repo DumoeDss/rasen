@@ -348,6 +348,10 @@ const COMMANDS: readonly CommandDefinition[] = [
             name: 'remote',
             takesValue: true,
           },
+          {
+            name: 'layout',
+            takesValue: true,
+          },
           COMMON_FLAGS.json,
         ],
       },

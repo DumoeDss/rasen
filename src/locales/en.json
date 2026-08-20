@@ -1613,6 +1613,9 @@
                 "remote": {
                   "description": "Canonical clone source recorded in store.yaml"
                 },
+                "layout": {
+                  "description": "Explicit layout version request; only 2 is supported (creates the store with the layout-2 declaration and no flat planning tree)"
+                },
                 "json": {
                   "description": "Output as JSON"
                 }
