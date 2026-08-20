@@ -18,6 +18,7 @@ export type {
   IssueNodeStatus,
   IssuePhase,
   IssueProgress,
+  IssueProjectLane,
   IssueRunStateLocator,
   IssueRunStateVisibility,
   IssueStatus,

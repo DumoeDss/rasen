@@ -263,6 +263,147 @@ describe('rasen store issue status surface', () => {
     expect(json.status.complete).toBe(false);
   });
 
+  it('groups node lines into per-project lanes on both read commands, in parity across forms', { timeout: 60_000 }, async () => {
+    // The Issue + a two-project plan: downstream in app-a waits on upstream in
+    // app-b — the shape the grouped read surface must present as two lanes.
+    await run(['store', 'issue', 'new', ISSUE, '--store', f.storeId, '--title', 'Lanes', '--json'], f.storeRoot);
+    const upId = f.seedChange({
+      root: f.storeRoot,
+      projectId: PROJECT_B,
+      targetLineId: LINE,
+      changeId: 'child-up',
+      instanceSeed: 'e5'.repeat(16),
+    }).instanceId;
+    const downId = f.seedChange({
+      root: f.storeRoot,
+      projectId: PROJECT,
+      targetLineId: LINE,
+      changeId: 'child-down',
+      instanceSeed: 'f6'.repeat(16),
+    }).instanceId;
+    f.git(f.storeRoot, ['add', '-A']);
+    f.git(f.storeRoot, ['commit', '-m', 'seed cross children']);
+    // Distinct display aliases in the Store's own project catalogs — the
+    // input fact the lane headers render beside the id.
+    for (const [projectId, alias] of [
+      [PROJECT, 'Core App'],
+      [PROJECT_B, 'Site'],
+    ] as const) {
+      f.write(
+        f.at('.rasen-store', 'projects', `${projectId}.yaml`),
+        [
+          'version: 2',
+          `projectId: ${projectId}`,
+          `id: ${JSON.stringify(alias)}`,
+          'roles:',
+          '  planning: true',
+          '  knowledge: false',
+          'planningBinding:',
+          '  state: bound',
+          '  boundAt: 2026-08-07T00:00:00.000Z',
+          '',
+        ].join('\n')
+      );
+    }
+    f.git(f.storeRoot, ['add', '-A']);
+    f.git(f.storeRoot, ['commit', '-m', 'catalog aliases']);
+    const nodesFile = f.beside('nodes.yaml');
+    f.write(
+      nodesFile,
+      [
+        'nodes:',
+        '  - nodeId: g-up',
+        '    kind: change',
+        `    projectId: ${PROJECT_B}`,
+        `    targetLineId: ${LINE}`,
+        `    changeInstanceId: ${JSON.stringify(upId)}`,
+        '    changeAlias: child-up',
+        '    dependsOn: []',
+        '  - nodeId: g-down',
+        '    kind: change',
+        `    projectId: ${PROJECT}`,
+        `    targetLineId: ${LINE}`,
+        `    changeInstanceId: ${JSON.stringify(downId)}`,
+        '    changeAlias: child-down',
+        '    dependsOn: [g-up]',
+        '',
+      ].join('\n')
+    );
+    expectOk(
+      await run(
+        ['store', 'issue', 'plan', ISSUE, '--store', f.storeId, '--from-file', nodesFile, '--json'],
+        f.storeRoot
+      )
+    );
+    f.git(f.storeRoot, ['add', '-A']);
+    f.git(f.storeRoot, ['commit', '-m', 'issue + cross plan']);
+
+    // `show`: one lane header per project (project-identity code-point order),
+    // that project's node lines under it — each node line exactly the format
+    // it carries outside a lane.
+    const showHuman = expectOk(
+      await run(['store', 'issue', 'show', ISSUE, '--store', f.storeId], execProject)
+    );
+    expect(showHuman.stdout).toContain(`project Core App (${PROJECT}): 0/1`);
+    expect(showHuman.stdout).toContain(`project Site (${PROJECT_B}): 0/1`);
+    expect(showHuman.stdout).toContain(`g-down change ${PROJECT} child-down — not-started`);
+    expect(showHuman.stdout).toContain(`g-up change ${PROJECT_B} child-up — not-started`);
+
+    // `list`: the per-project progress summary beside the Issue-level pair,
+    // lanes in the same order the show headers print.
+    const listHuman = expectOk(await run(['store', 'issue', 'list', '--store', f.storeId], execProject));
+    expect(listHuman.stdout).toContain(
+      `ready/healthy 0/2 [Core App 0/1 · Site 0/1]  Lanes`
+    );
+
+    // `--json` parity: `status.projects` carries the same lane facts beside
+    // the untouched flat `nodes`, identically on both commands.
+    const showJson = parseJson(
+      expectOk(await run(['store', 'issue', 'show', ISSUE, '--store', f.storeId, '--json'], execProject))
+    );
+    const expectedLanes = [
+      { projectId: PROJECT, alias: 'Core App', nodeIds: ['g-down'], progress: { completed: 0, total: 1 } },
+      { projectId: PROJECT_B, alias: 'Site', nodeIds: ['g-up'], progress: { completed: 0, total: 1 } },
+    ];
+    expect(showJson.status.projects).toEqual(expectedLanes);
+    expect(showJson.status.nodes.map((node: { nodeId: string }) => node.nodeId)).toEqual([
+      'g-down',
+      'g-up',
+    ]);
+    const listJson = parseJson(
+      expectOk(await run(['store', 'issue', 'list', '--store', f.storeId, '--json'], execProject))
+    );
+    expect(listJson.issues[0].status.projects).toEqual(showJson.status.projects);
+    expect(listJson.issues[0].status.nodes).toEqual(showJson.status.nodes);
+
+    // Alias fallback: with the catalog display ids gone, the lane names fall
+    // back to the raw project ids — grouping, gating, and progress unchanged.
+    for (const projectId of [PROJECT, PROJECT_B]) {
+      const catalogPath = f.at('.rasen-store', 'projects', `${projectId}.yaml`);
+      const withoutId = fs
+        .readFileSync(catalogPath, 'utf8')
+        .split('\n')
+        .filter(line => !line.startsWith('id:'))
+        .join('\n');
+      fs.writeFileSync(catalogPath, withoutId, 'utf8');
+    }
+    f.git(f.storeRoot, ['add', '-A']);
+    f.git(f.storeRoot, ['commit', '-m', 'drop catalog aliases']);
+    const fallback = expectOk(
+      await run(['store', 'issue', 'show', ISSUE, '--store', f.storeId], execProject)
+    );
+    expect(fallback.stdout).toContain(`project ${PROJECT} (${PROJECT}): 0/1`);
+    expect(fallback.stdout).toContain(`project ${PROJECT_B} (${PROJECT_B}): 0/1`);
+    expect(fallback.stdout).not.toContain('project Core App');
+    const fallbackJson = parseJson(
+      expectOk(await run(['store', 'issue', 'show', ISSUE, '--store', f.storeId, '--json'], execProject))
+    );
+    expect(fallbackJson.status.projects.map((lane: { alias: unknown }) => lane.alias)).toEqual([
+      null,
+      null,
+    ]);
+  });
+
   it('names a cross-project blocker with the member project it waits on', { timeout: 60_000 }, async () => {
     // The Issue + a two-project plan: downstream in app-a waits on upstream
     // in app-b — the first fact the read surface must attribute across

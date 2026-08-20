@@ -29,6 +29,7 @@
 | Issue 验收内容 schema（条件修订 / accepted 记录） | `src/core/store/issues/acceptance.ts`（digest/serialize，镜像 plans.ts 纪律）；地址 = planning-layout-v2 的 `acceptance-conditions`/`acceptance-condition`/`issue-accepted-record` 三 kind |
 | Issue 从 portfolio 发布 Execution Plan（`plan --from-portfolio`） | `src/core/issue-publication/orchestration.ts`（`publishPlanFromPortfolio`；定位缝同 `pipeline resume`，child 名字→committed 实例解析在 `resolution.ts`；CLI 面 `src/commands/store-issue.ts` plan） |
 | Issue plan 节点 target project 门（planning-member gate）+ 读面 per-node 项目 | 门在 `src/core/store/issues/reference-verification.ts`（`verifyExecutionPlanReferences`，双发布源经 `publishPlan` 一处继承；migration replay 冻结集豁免在 `src/core/store/layout-migration/plan.ts`）；读面 = `src/core/issue-status/projection.ts` `withLifecycle` 填 `projectId/targetLineId`，`src/commands/store-issue.ts` show 节点行渲染 |
+| Issue 按成员项目分组读面（per-project lanes / 分组进度） | `src/core/issue-status/projection.ts`（`deriveProjectLanes` 后处理 = `IssueStatus.projects`，`progressOver` 一条完成规则两个作用域；alias 是 CLI 组合输入）+ `src/commands/store-issue.ts`（`resolveStoreWideningContext` 读项目 catalogs 供 alias；show 泳道头 `project <alias|id> (<id>): x/y`；list 段 `[<alias|id> a/b · …]`） |
 | `rasen store` 命令 | `src/commands/store.ts` |
 | `rasen store issue` 命令（Issue CRUD + 状态面 + 验收面） | `src/commands/store-issue.ts` |
 | **Workflow / Pipeline** | |

@@ -58,6 +58,8 @@ import type {
   IssueNodeSession,
   IssueNodeStatus,
   IssuePhase,
+  IssueProgress,
+  IssueProjectLane,
   IssueRunStateLocator,
   IssueStatus,
   IssueStatusProblem,
@@ -605,6 +607,57 @@ function isRequired(node: IssueNodeStatus): boolean {
 }
 
 /**
+ * The progress pair — the ONE rule, parameterized by scope: completed required
+ * nodes over total required nodes of whatever selection it is handed. The
+ * Issue-level pair and every per-project lane pair call this same function
+ * (design D2 of issue-project-grouped-views: a per-project "what's left" that
+ * disagreed with the node lines or the start gate would be a third basis, and
+ * the whole point of the basis unification was that there is one). Optional,
+ * cancelled, and superseded completions count nowhere; intent nodes carry no
+ * lifecycle at all and never do. Finished-but-unarchived still counts:
+ * progress measures work, not archiving.
+ */
+function progressOver(nodes: readonly IssueNodeStatus[]): IssueProgress {
+  const required = nodes.filter(isRequired);
+  return {
+    completed: required.filter(node => isTerminal(node.observation)).length,
+    total: required.length,
+  };
+}
+
+/**
+ * The per-project lanes (design D1): a post-pass over the built node
+ * statuses, one lane per distinct node `projectId`, in project-identity
+ * code-point order, each listing its node ids in the revision's canonical
+ * node order — `nodes` is built in that order, so iteration order is the lane
+ * order. A lane exists only for a project the revision's nodes actually name.
+ * Called only for a readable revision; an unreadable one reports no lanes at
+ * all (never empty ones — the no-progress rule's reasoning, one level down).
+ */
+function deriveProjectLanes(
+  nodes: readonly IssueNodeStatus[],
+  aliases: Readonly<Record<string, string>> | undefined
+): readonly IssueProjectLane[] {
+  const byProject = new Map<string, IssueNodeStatus[]>();
+  for (const node of nodes) {
+    const lane = byProject.get(node.projectId);
+    if (lane === undefined) byProject.set(node.projectId, [node]);
+    else lane.push(node);
+  }
+  return [...byProject.keys()]
+    .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
+    .map(projectId => {
+      const laneNodes = byProject.get(projectId) as readonly IssueNodeStatus[];
+      return {
+        projectId,
+        alias: aliases?.[projectId] ?? null,
+        nodeIds: laneNodes.map(node => node.nodeId),
+        progress: progressOver(laneNodes),
+      };
+    });
+}
+
+/**
  * The observed node with the plan's own spelling resolved onto it: an absent
  * lifecycle field reads as `required` (change nodes) and intent nodes carry no
  * lifecycle at all (null); the node's target project and line are copied from
@@ -877,22 +930,19 @@ export async function projectIssueStatus(input: ProjectIssueStatusInput): Promis
     health,
     progress:
       plan !== null && plan.revision !== null
-        ? (() => {
-            // Progress counts REQUIRED nodes only, in both parts of the pair:
-            // optional, cancelled, and superseded work is named on its node
-            // line and counted nowhere. A readable revision with no required
-            // nodes reports the stated pair 0/0 — no work is demanded — which
-            // stays distinct from the null an unreadable revision reports.
-            // Finished-but-unarchived still counts: progress measures work,
-            // not archiving.
-            const required = nodes.filter(isRequired);
-            return {
-              completed: required.filter(node => isTerminal(node.observation)).length,
-              total: required.length,
-            };
-          })()
+        ? // The Issue-level pair: the one rule over the whole node selection.
+          // A readable revision with no required nodes reports the stated pair
+          // 0/0 — no work is demanded — which stays distinct from the null an
+          // unreadable revision reports.
+          progressOver(nodes)
         : null,
     nodes,
+    // Lanes derive only from a readable revision, after the axes did — they
+    // drive nothing, so their absence can never change an axis value.
+    projects:
+      plan !== null && plan.revision !== null
+        ? deriveProjectLanes(nodes, input.projectAliases)
+        : [],
     problems,
     runStateVisibility:
       input.executionRoot === undefined

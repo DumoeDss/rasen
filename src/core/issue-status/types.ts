@@ -160,8 +160,9 @@ export interface IssueNodeStatus {
    * The node's target project — the project the revision records as the target
    * of the node's work, copied from the plan node itself. Every node carries
    * it, so there is no absent case and no defaulting. It is a DISPLAY fact:
-   * the projection derives no phase, health, or progress value from it
-   * (grouping and per-project views are a later capability's delivery).
+   * the projection derives no phase, health, or progress value from it — the
+   * per-project grouping it feeds is `IssueStatus.projects` (the
+   * issue-project-grouped-views delivery), which likewise drives no axis.
    */
   readonly projectId: string;
   /** The target line the same revision node records. Display fact, as above. */
@@ -207,6 +208,30 @@ export interface IssueNodeStatus {
 }
 
 /**
+ * One member project's lane: the grouping view over a readable revision's
+ * flat node list. The lane carries node IDS, never node copies — `nodes`
+ * stays the single node truth and a lane is a grouping over it (consumers
+ * find rows by `nodeId`, never by position). `progress` is the SAME pair the
+ * Issue's own progress computes, scoped to the lane's required Change nodes —
+ * one completion rule, two scopes — so per-project "what's left" can never
+ * disagree with the node lines or the start gate. Lanes drive no axis.
+ */
+export interface IssueProjectLane {
+  /** The project's identity — always the id, never the alias. */
+  readonly projectId: string;
+  /**
+   * The display alias the caller supplied as input (the Store's own catalog
+   * display name). Null when none resolves; the raw id is the fallback, never
+   * a guess — grouping, gating, and progress key on the id regardless.
+   */
+  readonly alias: string | null;
+  /** The lane's node ids, in the revision's canonical node order. */
+  readonly nodeIds: readonly string[];
+  /** Completed required Change nodes over total required Change nodes of the lane. */
+  readonly progress: IssueProgress;
+}
+
+/**
  * Whether this read could see machine-local run-state at all, and where. An
  * Issue is Store content and readable from anywhere; its run-state is not —
  * so the answer labels the execution root it consulted, and says so plainly
@@ -227,6 +252,13 @@ export interface IssueStatus {
    */
   readonly progress: IssueProgress | null;
   readonly nodes: readonly IssueNodeStatus[];
+  /**
+   * One lane per distinct target project the readable revision's nodes name,
+   * in project-identity code-point order. Empty when there is no readable
+   * revision — the same absence `progress: null` reports (empty lanes would
+   * read "no projects", a different claim than "no readable revision").
+   */
+  readonly projects: readonly IssueProjectLane[];
   readonly problems: readonly IssueStatusProblem[];
   readonly runStateVisibility: IssueRunStateVisibility;
   /**
@@ -277,6 +309,13 @@ export interface ProjectIssueStatusInput {
    * `changeInstanceId`; first hit wins.
    */
   readonly workspaceEntries?: readonly WorkspaceIndexEntry[];
+  /**
+   * Display aliases for member projects, keyed by project id — resolved by the
+   * CLI from the Store's own project catalogs (the catalog display `id`), the
+   * same display-only composition shape as the machine-local locators above.
+   * A project with no entry here carries a null alias; identity stays the id.
+   */
+  readonly projectAliases?: Readonly<Record<string, string>>;
   /**
    * Resolves the legacy machine-home work directory for one alias. Defaults to
    * `resolveChangeWorkDir(executionRoot, alias, { ensure: false })` — the same
