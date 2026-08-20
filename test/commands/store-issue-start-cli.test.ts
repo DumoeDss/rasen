@@ -184,7 +184,9 @@ describe('rasen store issue start', () => {
     f.cleanup();
   });
 
-  it('emits the frontier launch contract from a workspace index entry, in parity across forms', async () => {
+  // spawn-heavy: 27933ms solo (phase-1 review) / >30000ms under 2026-08-20 ambient load
+  // (C2-parity budget class — solo-measured, the established convention)
+  it('emits the frontier launch contract from a workspace index entry, in parity across forms', { timeout: 60000 }, async () => {
     await createSerialIssue();
     writeIndexEntry('child-a', instanceIds[0], execRoot);
 
