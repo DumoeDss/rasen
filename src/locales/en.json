@@ -2052,6 +2052,9 @@
                     "from-file": {
                       "description": "Path to a YAML file listing the plan's nodes"
                     },
+                    "from-portfolio": {
+                      "description": "Publish from a parent change's portfolio run-state instead of a YAML node list"
+                    },
                     "json": {
                       "description": "Output as JSON"
                     }

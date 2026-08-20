@@ -665,6 +665,10 @@ const COMMANDS: readonly CommandDefinition[] = [
             flags: [
               COMMON_FLAGS.store,
               { name: 'from-file', takesValue: true },
+              // The second publication source: a parent change name whose
+              // portfolio run-state compiles into the next revision.
+              // Mutually exclusive with from-file; the CLI refuses both-or-neither.
+              { name: 'from-portfolio', takesValue: true },
               COMMON_FLAGS.json,
             ],
           },

@@ -64,6 +64,15 @@ Spec、Requirement/Scenario、Change/Delta 的 canonical 校验定义。
 - **CLI 缝**：`src/commands/store-issue.ts` 的 `acceptance`（`--from-file` 发布条件修订）与 `accept`（`--note`）子命令；show 的 acceptance 节（条件 + 闸门行 + 记录）。
 - **连接**：被 `src/commands/store-issue.ts` 与 `src/core/issue-status/projection.ts`（反向仅 gate.js）消费。
 
+## `issue-publication/` — portfolio → Execution Plan 发布通道（Phase 2 g-001）
+
+回答"怎么把 auto-decompose 的真实 portfolio 结构变成 Issue 的 Execution Plan 修订"：`publishPlanFromPortfolio`（`rasen store issue plan <id> --from-portfolio <parent>`）按 `pipeline resume` 的同一放置链（ephemera → workDir → change dir，probe-only 不铸造 work dir）定位 `portfolio-run.json`，strict 读（invalid ≠ absent）+ `state.parent` 一致性 + 非空 children，编译为节点输入（nodeId/changeAlias = child id、dependsOn 原样、零 status/pipeline/delivery 字段），每个 child 按**名字**解析成 committed 实例后交给 `StoreIssues.publishPlan`（序数/摘要/图检查/锁/commit 建议全继承，无平行实现）。通道唯一写物 = 修订文件；run-state 逐字节不动。
+
+- **关键文件**：`types.ts`（输入 + 新 refusal 码闭集 `issue_plan_portfolio_*`/`issue_plan_source_*` + `source` 块）、`compiler.ts`（纯编译）、`resolution.ts`（名字→实例：`gatherChildEvidence` 复用 `gatherReferenceEvidence`；复用 `issue_reference_*` 族拒绝——unresolved/uncommitted/ambiguous/foreign-store + `store_query_ref_unreadable` 只在缺席型结论上改判）、`orchestration.ts`（定位缝 + 拒绝 + 发布）、`index.ts`（barrel）。
+- **archived 算证据**：archived 条目的目录名是 `<date>-<change>`（或 v2 `<date>-<change>--<instanceShort>`），用 `archive-engine.ts` 的 `archiveDatePrefixedNameMatches`（只对 archived 条目启用；active 目录长得像日期前缀不算）——子项完成后重发布仍可解析是本片核心 dogfood。
+- **边界**：只 import 不改 `src/core/pipeline-registry/`（冻结）；`store/issues` 五 mutation 词汇不动（新码不进 `StoreIssueErrorCode`）。CLI 缝在 `src/commands/store-issue.ts` 的 `plan` 子命令（`--from-file` XOR `--from-portfolio`，双给/双缺各拒绝且点名两源）。
+- **连接**：被 `src/commands/store-issue.ts` 消费；g-003 全环 dogfood（真实 portfolio 重发布）依赖本通道。
+
 ## `change-metadata/` — 每 change 元数据（`change.yaml`）
 
 - **唯一实质文件**：`schema.ts`（Zod + TS）。`ChangeMetadata = {schema, created?, goal?, affected_areas?, initiative?}`，`InitiativeLink = {store, id}`（跨 store 引用）。

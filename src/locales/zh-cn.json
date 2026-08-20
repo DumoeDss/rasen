@@ -2052,6 +2052,9 @@
                     "from-file": {
                       "description": "列出计划节点的 YAML 文件路径"
                     },
+                    "from-portfolio": {
+                      "description": "不从 YAML 节点列表发布，而是从父 Change 的 portfolio 运行状态发布"
+                    },
                     "json": {
                       "description": "以 JSON 输出"
                     }

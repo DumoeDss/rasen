@@ -2052,6 +2052,9 @@
                     "from-file": {
                       "description": "計画のノードを列挙したYAMLファイルへのパス"
                     },
+                    "from-portfolio": {
+                      "description": "YAML ノード一覧の代わりに、親 Change の portfolio run-state から発行します"
+                    },
                     "json": {
                       "description": "JSON で出力"
                     }

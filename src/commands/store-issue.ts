@@ -65,6 +65,10 @@ import {
   resolvedExecutionProjectRoot,
   resolveOpenSpecRoot,
 } from '../core/root-selection.js';
+import {
+  publishPlanFromPortfolio,
+  type IssuePlanPublicationResult,
+} from '../core/issue-publication/index.js';
 import { emitFailure, printJson } from './shared-output.js';
 
 export interface StoreIssueOptions {
@@ -74,6 +78,7 @@ export interface StoreIssueOptions {
   state?: string;
   reason?: string;
   fromFile?: string;
+  fromPortfolio?: string;
   node?: string;
   pipeline?: string;
   note?: string;
@@ -150,11 +155,26 @@ function renderIssueWrite(result: IssueRecordResult): void {
   renderCommitSuggestions(result.suggestedCommits);
 }
 
-function renderPlanWrite(result: ExecutionPlanResult): void {
+function renderPlanWrite(
+  result: ExecutionPlanResult,
+  sourceLine?: string
+): void {
   console.log(`Issue ${result.issueId}: Execution Plan revision ${result.revision.revisionId}`);
   console.log(`  supersedes: ${result.revision.supersedes ?? '(none)'}`);
   console.log(`  nodes: ${result.revision.nodes.length}`);
+  // The same source facts the JSON form carries in its `source` block, on one
+  // human line beside the revision facts (issue-plan-publication D5).
+  if (sourceLine !== undefined) console.log(sourceLine);
   renderCommitSuggestions(result.suggestedCommits);
+}
+
+/**
+ * One human line naming where a portfolio publication came from: the parent,
+ * the located run-state path, and the child count — the same facts the JSON
+ * form's `source` block carries.
+ */
+function portfolioSourceLine(result: IssuePlanPublicationResult): string {
+  return `  source: portfolio '${result.source.parent}' — ${result.source.childCount} children, run-state ${result.source.statePath}`;
 }
 
 function renderAcceptanceWrite(result: AcceptanceConditionsResult): void {
@@ -776,17 +796,50 @@ export function registerStoreIssueCommand(store: Command): void {
     .description('')
     .option('--store <id>', '')
     .option('--from-file <path>', '')
+    .option('--from-portfolio <parent>', '')
     .option('--json', '')
     .action(async (issueId: string, options: StoreIssueOptions) => {
       try {
-        if (options.fromFile === undefined) {
+        // A publication takes exactly one source, and the refusal names both:
+        // the two paths answer different questions (a hand-authored node list
+        // vs a compiled portfolio run), and guessing a default would publish
+        // a plan the operator never chose.
+        if (options.fromFile !== undefined && options.fromPortfolio !== undefined) {
           throw new StoreError(
-            'Publishing an Execution Plan revision requires --from-file.',
-            'issue_plan_from_file_required',
-            { fix: 'Add --from-file <path to a YAML file with a nodes: list>.' }
+            'A plan publication takes exactly one source; --from-file and --from-portfolio were both given.',
+            'issue_plan_source_conflict',
+            {
+              fix: 'Choose one: --from-file <path to a YAML file with a nodes: list>, or --from-portfolio <parent change name>.',
+            }
           );
         }
-        const draft = parseYaml(fs.readFileSync(options.fromFile, 'utf8')) as {
+        if (options.fromFile === undefined && options.fromPortfolio === undefined) {
+          throw new StoreError(
+            'A plan publication requires exactly one source; neither --from-file nor --from-portfolio was given.',
+            'issue_plan_source_required',
+            {
+              fix: 'Add --from-file <path to a YAML file with a nodes: list>, or --from-portfolio <parent change name>.',
+            }
+          );
+        }
+        if (options.fromPortfolio !== undefined) {
+          const result = await publishPlanFromPortfolio({
+            ...(options.store === undefined ? {} : { store: options.store }),
+            startPath: process.cwd(),
+            issueId,
+            parent: options.fromPortfolio,
+          });
+          if (options.json) {
+            printJson({
+              ...(planPayload(result) as Record<string, unknown>),
+              source: result.source,
+            });
+          } else {
+            renderPlanWrite(result, portfolioSourceLine(result));
+          }
+          return;
+        }
+        const draft = parseYaml(fs.readFileSync(options.fromFile as string, 'utf8')) as {
           nodes?: readonly ExecutionPlanNodeInput[];
         };
         const result = await StoreIssuesModuleInstance.publishPlan({
