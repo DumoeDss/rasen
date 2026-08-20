@@ -76,7 +76,10 @@ interface LocatedStateFile {
  * assembly point adds the fields, so no branch can spell the default
  * differently or forget it.
  */
-type ObservedNode = Omit<IssueNodeStatus, 'lifecycle' | 'reason'>;
+type ObservedNode = Omit<
+  IssueNodeStatus,
+  'lifecycle' | 'reason' | 'projectId' | 'targetLineId'
+>;
 
 function locateInChain(
   chain: readonly string[],
@@ -600,20 +603,30 @@ function isRequired(node: IssueNodeStatus): boolean {
 }
 
 /**
- * The observed node with the plan's lifecycle spelling resolved onto it: an
- * absent field reads as `required` (change nodes); intent nodes carry no
- * lifecycle at all (null). One wrapper for every observation branch, so no
- * branch can forget.
+ * The observed node with the plan's own spelling resolved onto it: an absent
+ * lifecycle field reads as `required` (change nodes) and intent nodes carry no
+ * lifecycle at all (null); the node's target project and line are copied from
+ * the revision node verbatim — the one projection-seam widening, so every
+ * observation branch reports the project and none can forget or default it.
+ * One wrapper for every observation branch.
  */
 function withLifecycle(
   planNode: ExecutionPlanNode,
   observed: ObservedNode
 ): IssueNodeStatus {
   if (planNode.kind !== 'change') {
-    return { ...observed, lifecycle: null, reason: null };
+    return {
+      ...observed,
+      projectId: planNode.projectId,
+      targetLineId: planNode.targetLineId,
+      lifecycle: null,
+      reason: null,
+    };
   }
   return {
     ...observed,
+    projectId: planNode.projectId,
+    targetLineId: planNode.targetLineId,
     lifecycle: planNode.lifecycle ?? 'required',
     reason: planNode.reason ?? null,
   };

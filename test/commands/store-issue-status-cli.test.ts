@@ -169,7 +169,7 @@ describe('rasen store issue status surface', () => {
     expect(showHuman.stdout).toContain('health: healthy');
     expect(showHuman.stdout).toContain('progress: 0/3');
     expect(showHuman.stdout).toContain(`run-state: ${execProject}`);
-    expect(showHuman.stdout).toContain('g-001 change child-a — in-flight');
+    expect(showHuman.stdout).toContain(`g-001 change ${PROJECT} child-a — in-flight`);
 
     const showJson = parseJson(
       expectOk(await run(['store', 'issue', 'show', ISSUE, '--store', f.storeId, '--json'], execProject))

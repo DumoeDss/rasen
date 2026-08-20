@@ -145,6 +145,16 @@ export interface IssueNodeStatus {
   readonly nodeId: string;
   readonly kind: 'change' | 'intent';
   /**
+   * The node's target project — the project the revision records as the target
+   * of the node's work, copied from the plan node itself. Every node carries
+   * it, so there is no absent case and no defaulting. It is a DISPLAY fact:
+   * the projection derives no phase, health, or progress value from it
+   * (grouping and per-project views are a later capability's delivery).
+   */
+  readonly projectId: string;
+  /** The target line the same revision node records. Display fact, as above. */
+  readonly targetLineId: string;
+  /**
    * The node's lifecycle as the revision records it, with an absent field
    * read as `required` — the read view of the plan's spelling. Null exactly
    * for intent nodes, which carry no lifecycle at all.

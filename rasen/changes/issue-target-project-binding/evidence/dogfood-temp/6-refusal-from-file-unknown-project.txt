@@ -1,0 +1,7 @@
+$ rasen store issue plan dogfood-refusals --from-file <unknown-project nodes> --store dogfood-store
+(exit 1)
+
+
+--- stderr ---
+Error: Node 'unknown-target' names project 'ghost-project', which Store 'dogfood-store' has no project catalog for. (expected: one of alpha-core, beta-site, docs-only; actual: ghost-project)
+Fix: Add the project to the Store with 'rasen store add-project', or correct the node's project.

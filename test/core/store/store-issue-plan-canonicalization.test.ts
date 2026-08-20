@@ -30,6 +30,7 @@ import {
   executionPlanDigest,
   findPlanNodeSchemaProblems,
   normalizePlanNodes,
+  serializeExecutionPlanRevision,
 } from '../../../src/core/store/issues/plans.js';
 import type { ExecutionPlanNodeInput } from '../../../src/core/store/issues/types.js';
 import {
@@ -116,6 +117,81 @@ describe('plan node canonicalization (round-1 MAJOR-1)', () => {
     // therefore mint a different digest for this plan.
     expect(normalizePlanNodes([intent('a-2'), intent('a-10')]).map(node => node.nodeId))
       .toEqual(['a-10', 'a-2']);
+  });
+
+  it('serializes the same node inputs to the same bytes as before the target-project change', () => {
+    // `issue-target-project-binding` added NO schema field: the target project
+    // IS the pre-existing `projectId`. This pins the serialization LANDING
+    // SITE byte-for-byte — the exact YAML, not round-trip equality — so any
+    // future field, reorder, or spelling change on this path (including a
+    // well-meaning `targetProject:` addition) breaks this literal rather than
+    // moving silently through every relational assertion around it. The
+    // sibling literal-digest tests above cover the canonical body; this one
+    // covers the stored file bytes.
+    const nodes = normalizePlanNodes([
+      {
+        nodeId: 'g-001',
+        kind: 'change' as const,
+        projectId: 'app-a',
+        targetLineId: 'main',
+        changeInstanceId: `ci_${'ab'.repeat(32)}`,
+        changeAlias: 'child-a',
+        dependsOn: [],
+      },
+      {
+        nodeId: 'i-002',
+        kind: 'intent' as const,
+        projectId: 'app-b',
+        targetLineId: 'main',
+        summary: 'work for app-b',
+        dependsOn: ['g-001'],
+      },
+    ]);
+    const draft = {
+      version: 1 as const,
+      issueId: parseIssueId('iss-pinned'),
+      revisionId: parseExecutionPlanRevisionId('0001'),
+      supersedes: null,
+      createdAt: '2026-08-07T00:00:00.000Z',
+      nodes,
+    };
+    const serialized = serializeExecutionPlanRevision({
+      ...draft,
+      contentSha256: executionPlanDigest(draft),
+    });
+
+    expect(serialized).toBe(
+      [
+        'version: 1',
+        'issueId: iss-pinned',
+        'revisionId: "0001"',
+        'supersedes: null',
+        'createdAt: 2026-08-07T00:00:00.000Z',
+        // Pinned from real output: the digest of exactly these bytes' body.
+        'contentSha256: 7382cf194f05cf4b10dd993b8f5a8008feb72ba244398c4045e698e346c53d9f',
+        'nodes:',
+        '  - nodeId: g-001',
+        '    kind: change',
+        '    projectId: app-a',
+        '    targetLineId: main',
+        `    changeInstanceId: ci_${'ab'.repeat(32)}`,
+        '    changeAlias: child-a',
+        '    dependsOn: []',
+        '  - nodeId: i-002',
+        '    kind: intent',
+        '    projectId: app-b',
+        '    targetLineId: main',
+        '    summary: work for app-b',
+        '    dependsOn:',
+        '      - g-001',
+        '',
+      ].join('\n')
+    );
+    // The digest itself, pinned independently of the file bytes: two anchors,
+    // each covering what the other cannot.
+    expect(executionPlanDigest(draft)).toBe(
+      '7382cf194f05cf4b10dd993b8f5a8008feb72ba244398c4045e698e346c53d9f'
+    );
   });
 });
 

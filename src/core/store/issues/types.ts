@@ -64,6 +64,16 @@ export type StoreIssueErrorCode =
   | 'issue_reference_ambiguous'
   /** The reference's declared scope disagrees with committed identity. */
   | 'issue_reference_scope_conflict'
+  /**
+   * The node's target project is a member the Store records as NOT planning
+   * here (`roles.planning: false`). Distinct from the catalog-absence branch of
+   * `issue_reference_scope_conflict` for the same reason
+   * `issue_reference_uncommitted` is distinct from `issue_reference_unresolved`:
+   * the two say different true things — "no such member" and "member, but it
+   * does not plan here" have different repairs — and a refusal that named the
+   * wrong one would lie about what was checked.
+   */
+  | 'issue_reference_target_not_planning_member'
   /** The referenced instance belongs to another Store. */
   | 'issue_reference_foreign_store'
   | 'execution_plan_revision_exists'

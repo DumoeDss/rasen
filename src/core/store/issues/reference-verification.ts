@@ -6,6 +6,11 @@
  * plan. Both paths resolve canonical Change instances through the same
  * committed-ref and local-worktree evidence reader and therefore cannot drift
  * on ambiguity, unreadable refs, foreign Stores, or scope conflicts.
+ *
+ * The same one verifier is where a node's TARGET PROJECT becomes authoritative:
+ * every publication source meets the planning-member gate here, and each caller
+ * supplies the roster from its own authority (the checkout's membership
+ * records for publication, the frozen member set for a migration replay).
  */
 import { RefReader, type StoreRefTarget } from '../query/refs.js';
 import {
@@ -16,8 +21,24 @@ import type { StoreQueryDependencies } from '../query/dependencies.js';
 import { issueRefusal } from './diagnostics.js';
 import type { ExecutionPlanNode } from './types.js';
 
+/**
+ * One member project as the publication gate needs it: identity plus the
+ * roster's own role statement. Both role facts travel because the refusal must
+ * name the project's recorded roles as they are recorded, not half of them.
+ */
+export interface IssueReferenceProjectEntry {
+  readonly projectId: string;
+  readonly roles: Readonly<{ planning: boolean; knowledge: boolean }>;
+}
+
 export interface IssueReferenceCatalogs {
-  readonly projectIds: readonly string[];
+  /**
+   * Every project the Store holds a membership record for. `projectIds` as a
+   * separate input is gone: the list derives from these entries, so the
+   * catalog-presence check and the planning-role check read ONE roster and
+   * cannot drift into disagreeing about who is a member.
+   */
+  readonly projects: readonly IssueReferenceProjectEntry[];
   readonly targetLines: readonly StoreRefTarget[];
 }
 
@@ -34,13 +55,17 @@ export async function verifyExecutionPlanReferences(
   dependencies: StoreQueryDependencies,
   input: VerifyExecutionPlanReferencesInput
 ): Promise<void> {
-  const declaredProjects = new Set(input.catalogs.projectIds);
+  const projectEntries = new Map(
+    input.catalogs.projects.map(entry => [entry.projectId, entry])
+  );
+  const declaredProjects = new Set(projectEntries.keys());
   const declaredLines = new Set(
     input.catalogs.targetLines.map(entry => entry.targetLineId)
   );
 
   for (const node of input.nodes) {
-    if (!declaredProjects.has(node.projectId)) {
+    const member = projectEntries.get(node.projectId);
+    if (member === undefined) {
       throw issueRefusal(
         'issue_reference_scope_conflict',
         `Node '${node.nodeId}' names project '${node.projectId}', which Store '${input.storeId}' has no project catalog for.`,
@@ -49,6 +74,30 @@ export async function verifyExecutionPlanReferences(
           actual: node.projectId,
           target: node.nodeId,
           fix: `Add the project to the Store with 'rasen store add-project', or correct the node's project.`,
+        }
+      );
+    }
+    // The target project must PLAN here. Catalog presence alone accepts a
+    // knowledge-only member as silently as a planning one, which was correct
+    // while every node shared one project and is vacuous now that targets span
+    // projects: eligibility to be targeted is exactly what `roles.planning`
+    // states. The gate confers eligibility; it never chooses — which member a
+    // node names stays the plan author's decision. Both node kinds pass it:
+    // for an intent node the roster is the only scope fact there is.
+    if (!member.roles.planning) {
+      const planningMembers = input.catalogs.projects
+        .filter(entry => entry.roles.planning)
+        .map(entry => entry.projectId)
+        .sort()
+        .join(', ');
+      throw issueRefusal(
+        'issue_reference_target_not_planning_member',
+        `Node '${node.nodeId}' targets project '${node.projectId}', which Store '${input.storeId}' records with planning: false (roles: planning=${member.roles.planning}, knowledge=${member.roles.knowledge}); a plan target must be a project that plans in this Store. Planning members: ${planningMembers || '(none)'}.`,
+        {
+          expected: `a project with roles.planning: true (planning members: ${planningMembers || '(none)'})`,
+          actual: `${node.projectId} (roles: planning=${member.roles.planning}, knowledge=${member.roles.knowledge})`,
+          target: node.nodeId,
+          fix: `Target a project that plans in this Store, or widen the project's membership with 'rasen store add-project' (re-adding OR-widens roles per the membership mutation's compose semantics).`,
         }
       );
     }

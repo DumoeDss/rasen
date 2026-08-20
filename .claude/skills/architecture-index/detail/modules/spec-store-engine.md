@@ -73,6 +73,13 @@ Spec、Requirement/Scenario、Change/Delta 的 canonical 校验定义。
 - **边界**：只 import 不改 `src/core/pipeline-registry/`（冻结）；`store/issues` 五 mutation 词汇不动（新码不进 `StoreIssueErrorCode`）。CLI 缝在 `src/commands/store-issue.ts` 的 `plan` 子命令（`--from-file` XOR `--from-portfolio`，双给/双缺各拒绝且点名两源）。
 - **连接**：被 `src/commands/store-issue.ts` 消费；g-003 全环 dogfood（真实 portfolio 重发布）依赖本通道。
 
+## `store/issues/` 的 target-project 门（Phase 3 g-001 `issue-target-project-binding`）
+
+- 节点的 target project **就是既有必填 `projectId`**——无新 schema 字段，修订字节/digest/序列化零变化（golden：序列化字节 + digest 双字面量钉在 `store-issue-plan-canonicalization`）。
+- **发布门**在 `reference-verification.ts` 的 `verifyExecutionPlanReferences`（`--from-file`/`--from-portfolio` 双源经 `publishPlan` 一处继承）：目标须为 `roles.planning: true` 的成员，否则新码 `issue_reference_target_not_planning_member`（与 no-record 的 `issue_reference_scope_conflict` 分码：两条件修复不同；点名节点/项目/roles/planning members/`rasen store add-project` 修复）；change 与 intent 节点同规。门只赋 eligibility，永不替作者选目标。
+- `IssueReferenceCatalogs.projects: {projectId, roles}[]`（原 `projectIds` 由它派生）。两个 caller 各按自身权威供 roster：`module.ts` `verifyReferences` 传 `listProjectEntries` 解析的 roles；`layout-migration/plan.ts` 传冻结 member 集（一律 planning-eligible——grandfathered replay 不被角色漂移卡死，回归测试在 `layout-migration-plan-gates`）。
+- **读路径永不复查 membership**：Phase-2-era 修订（含 knowledge-only 目标）照读、digest 照验（降级套件 `issue-status-target-project-degradation`；持久 store 只读实证 evidence/dogfood-persistent-*）。读面唯一加宽缝 = `IssueNodeStatus.projectId/targetLineId`（`withLifecycle` 单点填充，无 absent case）；show 节点行 `<nodeId> <kind> <projectId> <alias> — <obs>`，`--json` 结构性携带；`list` 不动（g-003 分组/swimlane 从 `IssueNodeStatus` 取数）。
+
 ## `change-metadata/` — 每 change 元数据（`change.yaml`）
 
 - **唯一实质文件**：`schema.ts`（Zod + TS）。`ChangeMetadata = {schema, created?, goal?, affected_areas?, initiative?}`，`InitiativeLink = {store, id}`（跨 store 引用）。

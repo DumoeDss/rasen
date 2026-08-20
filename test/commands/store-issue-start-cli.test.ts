@@ -422,7 +422,7 @@ describe('rasen store issue start', () => {
     const human = expectOk(
       await run(['store', 'issue', 'show', ISSUE, '--store', f.storeId], nowhere)
     );
-    expect(human.stdout).toContain('g-001 change child-a — in-flight');
+    expect(human.stdout).toContain(`g-001 change ${PROJECT} child-a — in-flight`);
     expect(human.stdout).toContain('pipeline: small-feature (located by workspace-index)');
     expect(human.stdout).toContain('session propose (claude planner): sessionId=sess-9 transcript=agent-sess-9.jsonl');
     // The evidence directory of the Change's store-side planning address.

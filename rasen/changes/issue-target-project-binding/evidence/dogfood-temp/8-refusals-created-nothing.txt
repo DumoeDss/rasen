@@ -1,0 +1,18 @@
+$ rasen store issue show dogfood-refusals --store dogfood-store
+(exit 0)
+
+Issue dogfood-refusals
+  state: open
+  title: Dogfood dogfood-refusals
+  revisions: (none)
+  status:
+    phase: planning
+    health: healthy
+    progress: -/-
+    run-state: C:\Users\Sayo\AppData\Local\Temp\rasen-dogfood-target-vsWJKt\alpha-core
+
+  acceptance:
+    conditions: (none published)
+    gate: not eligible — the Issue has no readable Execution Plan revision with nodes to accept against.
+      no required nodes — no work is demanded
+    record: (not accepted)

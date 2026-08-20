@@ -184,10 +184,10 @@ describe('rasen store issue lifecycle surface', () => {
       await run(['store', 'issue', 'show', ISSUE, '--store', f.storeId], execProject)
     );
     // Node lines name the lifecycle, and the cancelled node its reason.
-    expect(showHuman.stdout).toContain('g-opt change child-opt — not-started (optional)');
-    expect(showHuman.stdout).toContain(`g-cut change child-cut — not-started (cancelled: ${CANCELLED_REASON})`);
+    expect(showHuman.stdout).toContain(`g-opt change ${PROJECT} child-opt — not-started (optional)`);
+    expect(showHuman.stdout).toContain(`g-cut change ${PROJECT} child-cut — not-started (cancelled: ${CANCELLED_REASON})`);
     // Required nodes carry no lifecycle annotation.
-    expect(showHuman.stdout).toContain('g-001 change child-a — run-terminal');
+    expect(showHuman.stdout).toContain(`g-001 change ${PROJECT} child-a — run-terminal`);
     // The gate is eligible over the required node alone, the exclusion named
     // beside it with the recorded reason.
     expect(showHuman.stdout).toContain('gate: eligible');

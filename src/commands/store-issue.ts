@@ -334,16 +334,18 @@ function renderRunStateVisibility(status: IssueStatus): string {
 }
 
 /**
- * The per-node line the show command prints: identifier, kind, alias,
- * observation, then whatever explains it — a lifecycle that is not required
- * (with the recorded reason a cancelled/superseded node carries), a
- * dependency that has not finalized, or the diagnostic behind an `unknown`.
+ * The per-node line the show command prints: identifier, kind, target
+ * project, alias, observation, then whatever explains it — a lifecycle that
+ * is not required (with the recorded reason a cancelled/superseded node
+ * carries), a dependency that has not finalized, or the diagnostic behind an
+ * `unknown`. The project is the fact the revision records — shown, never
+ * interpreted into any axis.
  */
 function renderStatusNode(node: IssueStatus['nodes'][number]): string {
   const head =
     node.alias === null
-      ? `${node.nodeId} ${node.kind} — ${node.observation}`
-      : `${node.nodeId} ${node.kind} ${node.alias} — ${node.observation}`;
+      ? `${node.nodeId} ${node.kind} ${node.projectId} — ${node.observation}`
+      : `${node.nodeId} ${node.kind} ${node.projectId} ${node.alias} — ${node.observation}`;
   const parts = [head];
   if (node.lifecycle !== null && node.lifecycle !== 'required') {
     parts.push(node.reason === null ? `(${node.lifecycle})` : `(${node.lifecycle}: ${node.reason})`);
