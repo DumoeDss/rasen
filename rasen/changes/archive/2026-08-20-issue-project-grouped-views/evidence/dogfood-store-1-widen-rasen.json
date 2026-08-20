@@ -1,0 +1,58 @@
+{
+  "project": {
+    "id": "issue-layer",
+    "root": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer",
+    "metadata_created": true,
+    "already_registered": true
+  },
+  "target": {
+    "id": "issue-registry",
+    "root": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+    "config_path": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store\\rasen\\config.yaml",
+    "reference_added": true,
+    "reference_already_present": false
+  },
+  "membership": {
+    "project_id": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+    "roles": {
+      "planning": false,
+      "knowledge": true
+    },
+    "project_base_commit": "0ae54a562f6cdc025d8dbad3f3d6738304c460dc",
+    "store_base_commit": "98bd2706ccb586260d6d7f7bbc1a3a421feb1809",
+    "project_writes": [
+      "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\rasen\\config.yaml"
+    ],
+    "store_writes": [
+      "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store\\.rasen-store\\projects\\e2ee72ed-04a1-4395-86aa-7e77d2b83ec7.yaml"
+    ],
+    "record_written": true,
+    "hint_written": true,
+    "repair_needed": [],
+    "suggested_commits": [
+      {
+        "repo_root": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+        "command": "git -C E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store add .rasen-store\\projects\\e2ee72ed-04a1-4395-86aa-7e77d2b83ec7.yaml && git -C E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store commit -m \"chore: record issue-layer as a member\"",
+        "purpose": "Store repo: record the membership authority record."
+      },
+      {
+        "repo_root": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer",
+        "command": "git -C E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer add rasen\\config.yaml && git -C E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer commit -m \"chore: record membership of store issue-registry\"",
+        "purpose": "Project repo: record the membership locator hint."
+      }
+    ]
+  },
+  "planning_binding": {
+    "requested": false,
+    "changed": false,
+    "refused": false,
+    "already_bound": false,
+    "bound_to": null,
+    "bound_to_uid": null,
+    "requested_store": "issue-registry",
+    "requested_store_uid": "f76edc31-229a-42bc-a5c7-848021eeb2da",
+    "rebind_command": null
+  },
+  "dry_run": false,
+  "status": []
+}

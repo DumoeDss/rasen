@@ -1,0 +1,79 @@
+{
+  "change": "issue-cross-project-gating",
+  "archivedAt": "2026-08-20T13:12:21.782Z",
+  "codeCommit": "8a1a2d3166cb14d52b87c07290d14d1327757500",
+  "planningBranch": "feat/issue-phase3",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/dogfood-persistent-human.txt",
+      "sha256": "e5e1413f3cec7e7e01f7afaea86b0bbfd28b562a55aa4adc6751dc52332a56ca"
+    },
+    {
+      "path": "evidence/dogfood-persistent-json.json",
+      "sha256": "4f0cbc447972c6fe27cdebf610c3bdea5c3bf694172b99a818d75e9a3e365ab5"
+    },
+    {
+      "path": "evidence/dogfood-persistent-summary.md",
+      "sha256": "e26a579742388b5e6e7608aa0c75fc8a80812f9f0b969e14b9cb0086a55f7fc2"
+    },
+    {
+      "path": "evidence/dogfood-temp/0-create-dogfood-cross.txt",
+      "sha256": "9be60a08f633ceef259941b83099681800c0851a721c2bb02112f1507bed5481"
+    },
+    {
+      "path": "evidence/dogfood-temp/1-plan-cross-project.txt",
+      "sha256": "ebd70e585281c2357359a0f2fc003c21b34f5b7c26e59afe9d7efbc9ba198604"
+    },
+    {
+      "path": "evidence/dogfood-temp/10-phase2-serial-show.txt",
+      "sha256": "e45392749d131f3c29d2ab9f639e322469e425420f905c78a161e40c40a713b0"
+    },
+    {
+      "path": "evidence/dogfood-temp/2-start-refused-no-local-run-state.txt",
+      "sha256": "fa472bd3a1ae4414f25449ba5a1099913683741e90ce8581735b92a466a46d2a"
+    },
+    {
+      "path": "evidence/dogfood-temp/3-show-while-unobserved.txt",
+      "sha256": "f6e280d92570a9d6af5565b61f71e6b9494fd68332d1dbdac5ee98d68e648d96"
+    },
+    {
+      "path": "evidence/dogfood-temp/4-start-refused-in-flight.txt",
+      "sha256": "3efd80dbff90aa7d4fdc1a921e13e9194d52a43208037ec28d7b2c0f4997b73a"
+    },
+    {
+      "path": "evidence/dogfood-temp/5-show-cross-blocker-in-flight.txt",
+      "sha256": "4598466a1719b8b9b2c66e860b012bf8dc48da4ce5b03d7fc6a7990b52d6ad72"
+    },
+    {
+      "path": "evidence/dogfood-temp/6-start-released-on-work.txt",
+      "sha256": "d54d954d663171de7bc04d646fb49e756ea7ec3634b2675813be365f5fa325e4"
+    },
+    {
+      "path": "evidence/dogfood-temp/7-show-after-release.txt",
+      "sha256": "745eee04914af0b1deed871f8d854bc883831313264424cbe21d5638de30d285"
+    },
+    {
+      "path": "evidence/dogfood-temp/8-phase2-serial-create.txt",
+      "sha256": "b6dcbeb7852e6bad9833c11a58c1e8336f4a0e9774cbc976bcbf6659d725efa5"
+    },
+    {
+      "path": "evidence/dogfood-temp/9-phase2-serial-plan.txt",
+      "sha256": "ff47c965eae11ad0b43f5e42ed0133fde3a7387c4db526ce01de339e453736a4"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "39fff45770cc105b0c84219e3d0d0bc85753016a8fae76d4fcb63cea898aa63b"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "66a661885eb5c0b954a983eb4f5053cf0077183d89a093f3b62ca99852565655"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [],
+  "missing": [
+    "verification-report"
+  ]
+}

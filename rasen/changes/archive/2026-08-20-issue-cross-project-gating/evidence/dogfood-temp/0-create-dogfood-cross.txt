@@ -1,0 +1,10 @@
+$ rasen store issue new dogfood-cross --title Cross-project wait --store dogfood-store
+(exit 0)
+
+Issue dogfood-cross (open)
+  title: Cross-project wait
+  checkout: C:\Users\Sayo\AppData\Local\Temp\rasen-dogfood-gating-Hu2QdF\store
+
+  Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing.
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-dogfood-gating-Hu2QdF\store add rasen/issues/dogfood-cross/issue.yaml
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-dogfood-gating-Hu2QdF\store commit -m "chore(store): open issue dogfood-cross"

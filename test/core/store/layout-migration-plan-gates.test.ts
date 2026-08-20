@@ -21,6 +21,7 @@ import {
   parseTargetLineId,
   verifyChangeInstanceId,
 } from '../../../src/core/index.js';
+import { parseExecutionPlanRevision } from '../../../src/core/store/issues/plans.js';
 import {
   migrationItemDiagnosticCode,
   migrationItemStateLabel,
@@ -425,6 +426,70 @@ describe('store layout v2 migration — destinations, gates, and minted identity
     ]);
     // Retained design docs are never in the retirement set.
     expect(plan.retirementSet).not.toContain('rasen/design-docs');
+  });
+
+  it('replays a store-issue plan for a knowledge-only member — the frozen member set stays eligible', async () => {
+    // `issue-target-project-binding` tightened PUBLICATION: a node's target
+    // must be a planning member. The migration replay states its own
+    // eligibility set — the frozen member set, which is by construction the
+    // projects whose planning content is migrating in — so a grandfathered
+    // plan authored while the member's roles were (or still are)
+    // knowledge-only must not newly refuse. `f.member` WITHOUT an adoption
+    // records exactly that roster shape (`planning: false, knowledge: true`),
+    // and the explicit mapping resolves the change's ownership; if the replay
+    // inherited the checkout-role gate instead of its frozen set, this plan
+    // would throw `migration_plan_input_invalid` naming the refusal.
+    await f.member('elftia');
+    f.writeChange('legacy-work');
+    f.writeChange('knowledge-only-coordinator');
+    f.writePlanInput(
+      'rasen/migration-inputs/knowledge-only-plan.yaml',
+      [
+        'nodes:',
+        '  - nodeId: legacy-node',
+        '    kind: change',
+        '    projectId: elftia',
+        `    targetLineId: ${LINE}`,
+        '    sourceChange: legacy-work',
+        '    dependsOn: []',
+        '  - nodeId: future-work',
+        '    kind: intent',
+        '    projectId: elftia',
+        `    targetLineId: ${LINE}`,
+        '    summary: Work declared before the member widened to planning',
+        '    dependsOn: [legacy-node]',
+        '',
+      ].join('\n')
+    );
+    f.write(
+      MAPPING,
+      targetLineMappingV2(LINE, ['elftia'], [
+        'changes:',
+        '  legacy-work:',
+        '    kind: project-change',
+        '    project: elftia',
+        '  knowledge-only-coordinator:',
+        '    kind: store-issue',
+        '    issueId: knowledge-only-coordinator',
+        '    title: Grandfathered coordination',
+        '    plan: rasen/migration-inputs/knowledge-only-plan.yaml',
+      ])
+    );
+    f.commitAll();
+
+    const plan = await f.migration().plan(f.input({ mappingPath: MAPPING }));
+
+    expect(plan.applicable).toBe(true);
+    const coordinator = plan.items.find(item => item.name === 'knowledge-only-coordinator')!;
+    expect(coordinator.materialization?.kind).toBe('generated-tree');
+    if (coordinator.materialization?.kind !== 'generated-tree') throw new Error('unreachable');
+    const revisionFile = coordinator.materialization.files.find(
+      file => file.role === 'execution-plan'
+    )!;
+    const revision = parseExecutionPlanRevision(revisionFile.content, { verifyDigest: true });
+    // Both node kinds carried through, targeting the knowledge-only member —
+    // the replay is exactly as permissive as the day the plan was authored.
+    expect(revision.nodes.map(node => node.projectId)).toEqual(['elftia', 'elftia']);
   });
 
   it('stores the plan in the machine root, never inside either Git repository', async () => {

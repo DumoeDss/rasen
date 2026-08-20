@@ -630,7 +630,9 @@ export class StoreIssuesModule implements StoreIssues {
    * committed identity names the node's project and target line. An `intent`
    * node is verified against the project and target-line catalogs only, and
    * needs no Change to exist — which is what makes a plan draftable before the
-   * work is created.
+   * work is created. A node of either kind must TARGET a project the roster
+   * records with `roles.planning: true`: the planning-member gate rides this
+   * same call, so every publication source meets it in one place.
    *
    * A Store ref that cannot be read stops the search from concluding "not
    * found": an unreadable ref is reported as unsearched and the publication
@@ -655,9 +657,20 @@ export class StoreIssuesModule implements StoreIssues {
         storeUid: scope.storeUid,
         nodes,
         catalogs: {
-          projectIds: projects
+          // The roster as the checkout's membership records state it, roles and
+          // all: the catalog-presence check and the planning-member gate below
+          // both read this one list, and both CLI publication sources
+          // (`--from-file` here, `--from-portfolio` through this same
+          // `publishPlan`) inherit the gate through this single call.
+          projects: projects
             .filter(entry => entry.catalog !== null)
-            .map(entry => entry.projectId),
+            .map(entry => ({
+              projectId: entry.projectId,
+              roles: {
+                planning: (entry.catalog as NonNullable<typeof entry.catalog>).roles.planning,
+                knowledge: (entry.catalog as NonNullable<typeof entry.catalog>).roles.knowledge,
+              },
+            })),
           targetLines: targetLines
             .filter(entry => entry.catalog !== null)
             .map(entry => ({

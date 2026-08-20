@@ -320,8 +320,22 @@ describe('rasen store issue start', () => {
     const refusal = json.status.find(
       (entry: { code: string }) => entry.code === 'issue_start_node_not_runnable'
     );
-    expect(refusal.message).toContain('g-001');
+    // The refusal names the dependency's project and observed state — the
+    // same facts the node line carries, with the no-local-run-state
+    // refinement for a dependency nothing on this machine explains.
+    expect(refusal.message).toContain(`g-001@${PROJECT} (not-started, no local run-state)`);
     expect(refusal.message).toContain('not complete');
+    // The human form carries the same facts in its message (stderr).
+    const human = await run(
+      ['store', 'issue', 'start', ISSUE, '--store', f.storeId, '--node', 'g-002'],
+      nowhere
+    );
+    expect(
+      human.exitCode,
+      `${human.command}\nstdout:\n${human.stdout}\nstderr:\n${human.stderr}`
+    ).toBe(1);
+    expect(human.stderr).toContain(`g-001@${PROJECT} (not-started, no local run-state)`);
+    expect(human.stderr).toContain('not complete');
   });
 
   it('reports an in-flight node as already running with its recorded pipeline', async () => {
@@ -422,7 +436,7 @@ describe('rasen store issue start', () => {
     const human = expectOk(
       await run(['store', 'issue', 'show', ISSUE, '--store', f.storeId], nowhere)
     );
-    expect(human.stdout).toContain('g-001 change child-a — in-flight');
+    expect(human.stdout).toContain(`g-001 change ${PROJECT} child-a — in-flight`);
     expect(human.stdout).toContain('pipeline: small-feature (located by workspace-index)');
     expect(human.stdout).toContain('session propose (claude planner): sessionId=sess-9 transcript=agent-sess-9.jsonl');
     // The evidence directory of the Change's store-side planning address.

@@ -29,6 +29,7 @@ import {
 } from '../core/store/issues/index.js';
 import {
   StoreAggregateQuery,
+  listProjectEntries,
   nodeStoreQueryFileSystem,
   productionStoreQueryDependencies,
   resolveQueryStore,
@@ -44,6 +45,7 @@ import {
 import { listPipelines } from '../core/pipeline-registry/resolver.js';
 import { resolveSessionLaunchContext } from '../core/management-api/session-launch-context.js';
 import {
+  issueBlockerState,
   projectIssueStatus,
   type IssueStatus,
   type IssueStatusProblem,
@@ -252,6 +254,7 @@ function statusInputFor(
     changesDir?: string;
     storeRoot?: string;
     workspaceEntries?: readonly WorkspaceIndexEntry[];
+    projectAliases?: Readonly<Record<string, string>>;
     acceptance?: Awaited<ReturnType<typeof readIssueAcceptanceFacts>>;
   }
 ): ProjectIssueStatusInput {
@@ -261,6 +264,7 @@ function statusInputFor(
     ...(context.changesDir === undefined ? {} : { changesDir: context.changesDir }),
     ...(context.storeRoot === undefined ? {} : { storeRoot: context.storeRoot }),
     ...(context.workspaceEntries === undefined ? {} : { workspaceEntries: context.workspaceEntries }),
+    ...(context.projectAliases === undefined ? {} : { projectAliases: context.projectAliases }),
     ...(context.acceptance === undefined ? {} : { acceptance: context.acceptance }),
   };
 }
@@ -268,9 +272,12 @@ function statusInputFor(
 /**
  * The Store-scoped widening inputs, gathered ONCE per command: the resolved
  * Store's registered root (the store-side active-change address for evidence
- * locators) and the machine workspace index entries filtered to that Store's
+ * locators), the machine workspace index entries filtered to that Store's
  * uid — exactly the storeUid-first filter `gatherReferenceEvidence` applies,
- * so an index entry from another Store can never masquerade as this one's.
+ * so an index entry from another Store can never masquerade as this one's —
+ * and the display aliases read from the Store's own project catalogs (the
+ * catalog display `id` when one resolves; display-only composition, never a
+ * guess — grouping, gating, and progress key on the project id regardless).
  * Returns an empty widening when no `--store` was given; the Store-scoped
  * query itself refuses that case before any of this matters.
  */
@@ -281,17 +288,30 @@ async function resolveStoreWideningContext(
   storeUid?: string;
   storeRoot?: string;
   workspaceEntries?: readonly WorkspaceIndexEntry[];
+  projectAliases?: Readonly<Record<string, string>>;
 }> {
   if (store === undefined) return {};
   const resolved = await resolveQueryStore({ fs: nodeStoreQueryFileSystem }, { store });
   const workspaceEntries = (
     await listAllWorkspaceIndexEntries(productionStoreQueryDependencies.coordination())
   ).filter(entry => entry.storeUid === resolved.storeUid);
+  // An invalid catalog (the entry carries a diagnostic) contributes no alias;
+  // the lane falls back to the raw id, which never guesses.
+  const projectAliases: Record<string, string> = {};
+  for (const entry of await listProjectEntries(
+    { fs: nodeStoreQueryFileSystem },
+    resolved.registeredRoot
+  )) {
+    if (entry.catalog !== null && entry.catalog.id !== undefined) {
+      projectAliases[entry.projectId] = entry.catalog.id;
+    }
+  }
   return {
     storeId: resolved.storeId,
     storeUid: resolved.storeUid,
     storeRoot: resolved.registeredRoot,
     workspaceEntries,
+    projectAliases,
   };
 }
 
@@ -327,6 +347,16 @@ function renderProgress(status: IssueStatus): string {
   return status.progress === null ? '-/-' : `${status.progress.completed}/${status.progress.total}`;
 }
 
+/**
+ * The name a lane header (and the list's per-project summary) addresses a
+ * project by: the supplied display alias, falling back to the raw project id
+ * — never a guess. The id rides beside the name on the show header, so the
+ * identity is always visible even when the alias does resolve.
+ */
+function laneDisplayName(lane: IssueStatus['projects'][number]): string {
+  return lane.alias ?? lane.projectId;
+}
+
 function renderRunStateVisibility(status: IssueStatus): string {
   return status.runStateVisibility.kind === 'execution-root'
     ? `run-state: ${status.runStateVisibility.executionRoot}`
@@ -334,21 +364,36 @@ function renderRunStateVisibility(status: IssueStatus): string {
 }
 
 /**
- * The per-node line the show command prints: identifier, kind, alias,
- * observation, then whatever explains it — a lifecycle that is not required
- * (with the recorded reason a cancelled/superseded node carries), a
- * dependency that has not finalized, or the diagnostic behind an `unknown`.
+ * The per-node line the show command prints: identifier, kind, target
+ * project, alias, observation, then whatever explains it — a lifecycle that
+ * is not required (with the recorded reason a cancelled/superseded node
+ * carries), a dependency whose work is not complete, or the diagnostic behind
+ * an `unknown`. The project is the fact the revision records — shown, never
+ * interpreted into any axis. Each blocker names its own target project and
+ * observed state on the work-complete basis (the rule `start` enforces), so
+ * the line explains exactly what a launch will wait for.
  */
-function renderStatusNode(node: IssueStatus['nodes'][number]): string {
+function renderStatusNode(
+  node: IssueStatus['nodes'][number],
+  statusById: ReadonlyMap<string, IssueStatus['nodes'][number]>
+): string {
   const head =
     node.alias === null
-      ? `${node.nodeId} ${node.kind} — ${node.observation}`
-      : `${node.nodeId} ${node.kind} ${node.alias} — ${node.observation}`;
+      ? `${node.nodeId} ${node.kind} ${node.projectId} — ${node.observation}`
+      : `${node.nodeId} ${node.kind} ${node.projectId} ${node.alias} — ${node.observation}`;
   const parts = [head];
   if (node.lifecycle !== null && node.lifecycle !== 'required') {
     parts.push(node.reason === null ? `(${node.lifecycle})` : `(${node.lifecycle}: ${node.reason})`);
   }
-  if (node.blockedBy.length > 0) parts.push(`(blockedBy ${node.blockedBy.join(', ')})`);
+  if (node.blockedBy.length > 0) {
+    const entries = node.blockedBy.map(
+      blocker =>
+        `${blocker.nodeId}@${blocker.projectId}: ${issueBlockerState(
+          statusById.get(blocker.nodeId)
+        )}`
+    );
+    parts.push(`(blockedBy ${entries.join(', ')})`);
+  }
   if (node.diagnostic !== null) parts.push(`(${node.diagnostic})`);
   return `      ${parts.join(' ')}`;
 }
@@ -509,9 +554,31 @@ function renderIssueStatus(status: IssueStatus): void {
   console.log(`    ${renderRunStateVisibility(status)}`);
   if (status.nodes.length > 0) {
     console.log('    nodes:');
-    for (const node of status.nodes) {
-      console.log(renderStatusNode(node));
+    // The blocker segment reads each dependency's own row for its state label,
+    // so every node line explains its waits without a second copy of the facts.
+    const statusById = new Map(status.nodes.map(node => [node.nodeId, node] as const));
+    const renderNodeLines = (node: IssueStatus['nodes'][number]): void => {
+      console.log(renderStatusNode(node, statusById));
       for (const line of renderAttributionLines(node)) console.log(line);
+    };
+    if (status.projects.length > 0) {
+      // One lane header per member project, that project's node lines under
+      // it — the node lines themselves are unchanged; the lane groups them,
+      // and the flat `nodes` array stays the truth the lane ids point into.
+      for (const lane of status.projects) {
+        console.log(
+          `      project ${laneDisplayName(lane)} (${lane.projectId}): ` +
+            `${lane.progress.completed}/${lane.progress.total}`
+        );
+        for (const nodeId of lane.nodeIds) {
+          const node = statusById.get(nodeId);
+          if (node !== undefined) renderNodeLines(node);
+        }
+      }
+    } else {
+      // No lanes (an unreadable revision): whatever rows did build print
+      // flat, exactly as before lanes existed.
+      for (const node of status.nodes) renderNodeLines(node);
     }
   }
   renderStatusProblems(status.problems);
@@ -525,8 +592,22 @@ function renderIssueList(page: IssueSummaryPage, statuses: readonly IssueStatus[
     const state = summary.record?.state ?? (summary.divergence ? '(divergent)' : '(unknown)');
     const title = summary.record?.title ?? '';
     const status = statuses[index];
+    // The per-project progress summary beside the Issue-level pair, lanes in
+    // the same order the show headers print — omitted entirely when no lanes
+    // derive (the same absence the Issue-level pair reports as `-/-`).
+    const laneSegment =
+      status !== undefined && status.projects.length > 0
+        ? ` [${status.projects
+            .map(
+              lane =>
+                `${laneDisplayName(lane)} ${lane.progress.completed}/${lane.progress.total}`
+            )
+            .join(' · ')}]`
+        : '';
     const statusSegment =
-      status === undefined ? '' : `  ${status.phase}/${status.health} ${renderProgress(status)}`;
+      status === undefined
+        ? ''
+        : `  ${status.phase}/${status.health} ${renderProgress(status)}${laneSegment}`;
     console.log(`${summary.issueId}  [${state}]${statusSegment}  ${title}`);
     // The reason there is no record, on the item's own line. `(unknown)` names
     // the fact and hides the cause; the machine form carries the cause, so the

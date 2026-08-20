@@ -1,0 +1,24 @@
+$ rasen store issue show dogfood-portfolio --store dogfood-store
+(exit 0)
+
+Issue dogfood-portfolio
+  state: open
+  title: Dogfood dogfood-portfolio
+  revisions: 0001
+  latest plan: revision 0001
+  plan digest: d69bee3651df98c6613fee97d5449e5fa4d7a9f27b88a4930714b5e3339cbcf3
+  status:
+    phase: ready
+    health: healthy
+    progress: 0/2
+    run-state: C:\Users\Sayo\AppData\Local\Temp\rasen-dogfood-target-vsWJKt\alpha-core
+    nodes:
+      alpha-child change alpha-core alpha-child — not-started
+        evidence: C:\Users\Sayo\AppData\Local\Temp\rasen-dogfood-target-vsWJKt\store\rasen\projects\alpha-core\changes\alpha-child\evidence
+      beta-child change beta-site beta-child — not-started (blockedBy alpha-child)
+        evidence: C:\Users\Sayo\AppData\Local\Temp\rasen-dogfood-target-vsWJKt\store\rasen\projects\beta-site\changes\beta-child\evidence
+
+  acceptance:
+    conditions: (none published)
+    gate: not eligible — the Issue has no readable acceptance conditions — no acceptance conditions revision exists for it.
+    record: (not accepted)

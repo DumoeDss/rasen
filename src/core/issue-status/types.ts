@@ -140,10 +140,33 @@ export interface IssueNodeAttribution {
   readonly evidenceLocator: string | null;
 }
 
+/**
+ * One dependency the work-complete rule still waits on. The nodeId, the
+ * dependency's target project as the revision records it, and its observed
+ * execution state at this read — the facts both the node line and `start`'s
+ * refusals name a dependency wait with.
+ */
+export interface IssueNodeBlocker {
+  readonly nodeId: string;
+  readonly projectId: string;
+  readonly observation: IssueNodeObservation;
+}
+
 /** One plan node, observed. */
 export interface IssueNodeStatus {
   readonly nodeId: string;
   readonly kind: 'change' | 'intent';
+  /**
+   * The node's target project — the project the revision records as the target
+   * of the node's work, copied from the plan node itself. Every node carries
+   * it, so there is no absent case and no defaulting. It is a DISPLAY fact:
+   * the projection derives no phase, health, or progress value from it — the
+   * per-project grouping it feeds is `IssueStatus.projects` (the
+   * issue-project-grouped-views delivery), which likewise drives no axis.
+   */
+  readonly projectId: string;
+  /** The target line the same revision node records. Display fact, as above. */
+  readonly targetLineId: string;
   /**
    * The node's lifecycle as the revision records it, with an absent field
    * read as `required` — the read view of the plan's spelling. Null exactly
@@ -164,8 +187,16 @@ export interface IssueNodeStatus {
    */
   readonly alias: string | null;
   readonly observation: IssueNodeObservation;
-  /** Dependencies that are not yet finalized, in declaration order (from the plan read). */
-  readonly blockedBy: readonly string[];
+  /**
+   * Dependencies whose observed work is not complete, in declaration order —
+   * the WORK-COMPLETE basis `store issue start` gates on, NOT the plan read's
+   * archive-based list: a dependency whose work is terminal stops being listed
+   * here even before its Change is archived, so the read surface explains
+   * exactly what a launch will wait for. The store query's own
+   * `blockedBy`/`readiness` stays archive-based (the acceptance truth
+   * `readyToResolve` feeds on).
+   */
+  readonly blockedBy: readonly IssueNodeBlocker[];
   /** Present when the observation needs explaining: `unknown` reasons, invalid run-state. */
   readonly diagnostic: string | null;
   /** The run-state file the observation was read from, when one was. */
@@ -174,6 +205,30 @@ export interface IssueNodeStatus {
   readonly locatedBy: IssueRunStateLocator | null;
   /** The attribution facts for this node (always present; facts are null/empty when unrecorded). */
   readonly attribution: IssueNodeAttribution;
+}
+
+/**
+ * One member project's lane: the grouping view over a readable revision's
+ * flat node list. The lane carries node IDS, never node copies — `nodes`
+ * stays the single node truth and a lane is a grouping over it (consumers
+ * find rows by `nodeId`, never by position). `progress` is the SAME pair the
+ * Issue's own progress computes, scoped to the lane's required Change nodes —
+ * one completion rule, two scopes — so per-project "what's left" can never
+ * disagree with the node lines or the start gate. Lanes drive no axis.
+ */
+export interface IssueProjectLane {
+  /** The project's identity — always the id, never the alias. */
+  readonly projectId: string;
+  /**
+   * The display alias the caller supplied as input (the Store's own catalog
+   * display name). Null when none resolves; the raw id is the fallback, never
+   * a guess — grouping, gating, and progress key on the id regardless.
+   */
+  readonly alias: string | null;
+  /** The lane's node ids, in the revision's canonical node order. */
+  readonly nodeIds: readonly string[];
+  /** Completed required Change nodes over total required Change nodes of the lane. */
+  readonly progress: IssueProgress;
 }
 
 /**
@@ -197,6 +252,13 @@ export interface IssueStatus {
    */
   readonly progress: IssueProgress | null;
   readonly nodes: readonly IssueNodeStatus[];
+  /**
+   * One lane per distinct target project the readable revision's nodes name,
+   * in project-identity code-point order. Empty when there is no readable
+   * revision — the same absence `progress: null` reports (empty lanes would
+   * read "no projects", a different claim than "no readable revision").
+   */
+  readonly projects: readonly IssueProjectLane[];
   readonly problems: readonly IssueStatusProblem[];
   readonly runStateVisibility: IssueRunStateVisibility;
   /**
@@ -247,6 +309,13 @@ export interface ProjectIssueStatusInput {
    * `changeInstanceId`; first hit wins.
    */
   readonly workspaceEntries?: readonly WorkspaceIndexEntry[];
+  /**
+   * Display aliases for member projects, keyed by project id — resolved by the
+   * CLI from the Store's own project catalogs (the catalog display `id`), the
+   * same display-only composition shape as the machine-local locators above.
+   * A project with no entry here carries a null alias; identity stays the id.
+   */
+  readonly projectAliases?: Readonly<Record<string, string>>;
   /**
    * Resolves the legacy machine-home work directory for one alias. Defaults to
    * `resolveChangeWorkDir(executionRoot, alias, { ensure: false })` — the same
