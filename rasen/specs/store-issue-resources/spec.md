@@ -2,6 +2,7 @@
 
 ## Purpose
 Add the Store Issue as a first-class, repo-blind planning resource for work that spans projects: a minimal record carrying intent and state, immutable Execution Plan revisions that verify their referenced Change instances against committed Store evidence, and a single serializer-and-lock so one truth owns every mutation.
+
 ## Requirements
 ### Requirement: A Store Issue is a repo-blind statement of intent
 
@@ -110,6 +111,12 @@ the checker can name.
 - **WHEN** two plans differ only in node ordering or in equivalent spellings of the same values
 - **THEN** they normalize to the same canonical plan
 
+#### Scenario: An explicit required node and an absent lifecycle are one plan
+
+- **WHEN** two plans differ only in one spelling a node's lifecycle as `required` and the other omitting it
+- **THEN** they normalize to the same canonical plan
+- **AND** the stored canonical form omits a `required` lifecycle, so its digest matches the form published before the field existed
+
 #### Scenario: A duplicate node is refused
 
 - **WHEN** a plan carries two nodes with the same identifier
@@ -183,3 +190,54 @@ a state the product does not define SHALL be refused rather than stored.
 - **WHEN** a state outside the defined vocabulary is set on an Issue
 - **THEN** the request is refused, naming the states that are defined
 - **AND** the Issue's state is unchanged
+
+### Requirement: Plan nodes carry a closed lifecycle vocabulary
+
+A plan's Change nodes SHALL carry a lifecycle drawn from exactly four values — `required`,
+`optional`, `cancelled`, `superseded` — where an absent lifecycle SHALL read as `required`, so
+every revision published before this vocabulary existed reads back with all its nodes required
+and its digest unchanged. A node marked `cancelled` or `superseded` SHALL carry a recorded
+reason, and that reason SHALL satisfy the same portable-durable-text contract Issue records
+enforce, refused at the schema rather than trimmed. A reason SHALL be recorded only for
+`cancelled` and `superseded` nodes — a reason authored on wanted work (`required` or
+`optional`) is refused rather than stored, because a reason explains only work the plan no
+longer wants. A lifecycle value outside the four SHALL be
+refused naming the defined values, and an intent node SHALL carry no lifecycle at all. A
+lifecycle change SHALL be expressed only as a new revision: the next revision says what the
+current one no longer does, and the earlier revision's bytes never change.
+
+#### Scenario: An absent lifecycle reads as required
+
+- **WHEN** a revision published before this vocabulary existed is read back
+- **THEN** every Change node in it reads as `required`
+- **AND** the revision's stored digest still verifies against its bytes
+
+#### Scenario: A cancelled node without a reason is refused
+
+- **WHEN** a plan node is authored with lifecycle `cancelled` and no reason
+- **THEN** publication is refused, naming the node and that a cancelled node requires a recorded reason
+- **AND** nothing is written
+
+#### Scenario: A superseded node without a reason is refused
+
+- **WHEN** a plan node is authored with lifecycle `superseded` and no reason
+- **THEN** publication is refused, naming the node and that a superseded node requires a recorded reason
+- **AND** nothing is written
+
+#### Scenario: A reason that is not portable durable text is refused
+
+- **WHEN** a cancelled or superseded node's reason carries a machine filesystem path or embedded credential
+- **THEN** publication is refused at the schema rather than trimmed
+- **AND** nothing is written
+
+#### Scenario: An undefined lifecycle value is refused
+
+- **WHEN** a plan node carries a lifecycle outside the four defined values
+- **THEN** publication is refused, naming the value and the four that are defined
+- **AND** the Issue's state is unchanged
+
+#### Scenario: A lifecycle change is a new revision, never a rewrite
+
+- **WHEN** a plan is re-published with one node's lifecycle changed from `required` to `cancelled`
+- **THEN** the new revision exists at the next ordinal and names that node `cancelled` with its reason
+- **AND** the earlier revision's bytes, including that node's previous lifecycle, are unchanged

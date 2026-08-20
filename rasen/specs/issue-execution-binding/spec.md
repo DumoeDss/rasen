@@ -19,10 +19,13 @@ derived at read time and persisted nowhere.
 the execution context it is bound to, and SHALL emit the launch contract — the Issue, the node,
 the Change instance and alias, the member project and target line, the working directory to
 launch from, the attached Store planning root, and the pipeline to run when one is known. The
-next-to-execute node SHALL be the node the operator names with `--node`, or the single node that
-has not started and whose dependencies' work is complete; when several nodes qualify the command
+next-to-execute node SHALL be the node the operator names with `--node`, or the single node of
+the lifecycles the plan still wants — `required` or `optional` — that has not started and whose
+dependencies' work is complete; when several nodes qualify the command
 SHALL refuse naming every candidate rather than choose one, and when none qualifies it SHALL
-refuse naming why. An Issue with no readable published plan SHALL be refused toward planning.
+refuse naming why. A node the operator names whose lifecycle is `cancelled` or `superseded`
+SHALL be refused, naming that lifecycle and the node's recorded reason, because the plan says
+its work is not wanted. An Issue with no readable published plan SHALL be refused toward planning.
 The command resolves and verifies the binding; launching the pipeline itself remains an action
 for the operator or agent session that receives the contract, executed from the emitted working
 directory.
@@ -47,6 +50,24 @@ directory.
 
 - **WHEN** `rasen store issue start` runs for an Issue with no readable published plan
 - **THEN** the command refuses, naming the planning phase and the publish action that precedes execution
+
+#### Scenario: A cancelled node is refused at start
+
+- **WHEN** `--node` names a node whose lifecycle is `cancelled`
+- **THEN** the command refuses, naming the node, its cancelled lifecycle, and its recorded reason
+- **AND** no launch contract is emitted
+
+#### Scenario: A superseded node is refused at start
+
+- **WHEN** `--node` names a node whose lifecycle is `superseded`
+- **THEN** the command refuses, naming the node, its superseded lifecycle, and its recorded reason
+- **AND** no launch contract is emitted
+
+#### Scenario: The runnable frontier never names a cancelled node
+
+- **WHEN** an Issue's plan has one not-started `required` node and one not-started `cancelled` node, both otherwise runnable
+- **THEN** the frontier resolves to the required node alone
+- **AND** a several-candidates refusal, had both qualified, would not name the cancelled node
 
 ### Requirement: The launch context composes the member-project binding
 
