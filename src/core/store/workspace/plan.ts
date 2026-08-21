@@ -583,14 +583,29 @@ export async function buildWorkspacePlan(
     ['planning', planningSide.plan.root, input.context.store.registeredRoot],
     ['execution', executionSide.plan.root, codeRepositoryRoot],
   ] as const) {
-    const inside = isContainedIn(repositoryRoot, root, flavor);
+    // Equality with the repository root is not nesting. On the execution side
+    // it is the designed main-checkout reuse the side planner blessed
+    // (`facts.linked === false`, the same finding `execution-is-linked-worktree`
+    // keys on), so that one case is exempt from the veto and reported as the
+    // blessing instead. The veto's rationale — untracked content inside the
+    // checkout, cleanup having to reach inside it — holds only for a path
+    // STRICTLY inside, which is what still fires it. The planning side keeps
+    // the equality veto: the Store integration checkout is categorically
+    // refused as a planning worktree, and this check doubles that guard.
+    const blessedMainCheckout =
+      side === 'execution' &&
+      executionSide.facts.linked === false &&
+      samePath(root, repositoryRoot, flavor);
+    const inside = isContainedIn(repositoryRoot, root, flavor) && !blessedMainCheckout;
     preconditions.push(
       precondition(
         `${side}-root-outside-repository`,
         !inside,
-        inside
-          ? `${root} is inside the ${side} repository's own checkout ${repositoryRoot}. A worktree nested in its repository shows up there as untracked content, so the checkout this capability promises to leave byte-identical would stop being so, and cleanup would have to reach inside it.`
-          : `${root} is outside the ${side} repository's checkout ${repositoryRoot}.`,
+        blessedMainCheckout
+          ? `${root} is the execution repository's main checkout, which a pair may legitimately use for execution.`
+          : inside
+            ? `${root} is inside the ${side} repository's own checkout ${repositoryRoot}. A worktree nested in its repository shows up there as untracked content, so the checkout this capability promises to leave byte-identical would stop being so, and cleanup would have to reach inside it.`
+            : `${root} is outside the ${side} repository's checkout ${repositoryRoot}.`,
         inside
           ? {
               expected: `a path outside ${repositoryRoot}`,

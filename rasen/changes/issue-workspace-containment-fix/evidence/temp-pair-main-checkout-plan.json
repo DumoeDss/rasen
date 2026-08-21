@@ -1,0 +1,137 @@
+{
+  "planId": "f608435c65e75d0f4ee7331ae013a519ab761d1a801cd570d76c49adbe0bd011",
+  "intent": "new-change",
+  "applicable": true,
+  "changeId": "containment-demo",
+  "scope": {
+    "storeUid": "889f8967-a4c0-4e35-b057-98b14ec9343b",
+    "storeId": "temp-containment",
+    "storeRoot": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\store",
+    "projectId": "b91319d7-f842-4bf8-acc8-86e7acd8baf0",
+    "targetLineId": "line-0.2",
+    "planningScopeId": "ps_cdcc1e23d1ca6a2850f96515491f6823788292ca986bac1d83ca225608b6f871"
+  },
+  "targetLine": {
+    "targetLineId": "line-0.2",
+    "storeRef": "refs/heads/main",
+    "storeRefOid": "0ec4598edb9d601667206a88223173e79f3d6b48",
+    "codeRef": "refs/heads/main",
+    "codeRefOid": "98188e4ed5a4039512da7ccce08522981443d2fe"
+  },
+  "planning": {
+    "side": "planning",
+    "root": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\store--containment-demo",
+    "repositoryRoot": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\store",
+    "disposition": "create",
+    "ref": "refs/heads/change/line-0.2/b91319d7-f842-4bf8-acc8-86e7acd8baf0/containment-demo",
+    "fromOid": "0ec4598edb9d601667206a88223173e79f3d6b48",
+    "createsBranch": true
+  },
+  "execution": {
+    "side": "execution",
+    "root": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\project",
+    "repositoryRoot": "C:/Users/Sayo/AppData/Local/Temp/rasen-contain-4f4L/project",
+    "disposition": "reuse",
+    "ref": "refs/heads/main",
+    "fromOid": "98188e4ed5a4039512da7ccce08522981443d2fe",
+    "createsBranch": false,
+    "worktreeInstanceId": "wt_64da7590cddfad035c592286fc92cb580519e6712356228ac696e1442bb1bbe1",
+    "headOid": "98188e4ed5a4039512da7ccce08522981443d2fe"
+  },
+  "actions": [
+    {
+      "kind": "create-planning-worktree",
+      "destination": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\store--containment-demo",
+      "repositoryRoot": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\store",
+      "fromOid": "0ec4598edb9d601667206a88223173e79f3d6b48",
+      "ref": "refs/heads/change/line-0.2/b91319d7-f842-4bf8-acc8-86e7acd8baf0/containment-demo",
+      "createsBranch": true,
+      "alreadySatisfied": false
+    },
+    {
+      "kind": "reuse-execution-worktree",
+      "destination": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\project",
+      "repositoryRoot": "C:/Users/Sayo/AppData/Local/Temp/rasen-contain-4f4L/project",
+      "fromOid": "98188e4ed5a4039512da7ccce08522981443d2fe",
+      "ref": "refs/heads/main",
+      "createsBranch": false,
+      "alreadySatisfied": true
+    },
+    {
+      "kind": "write-planning-marker",
+      "destination": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\store--containment-demo\\.rasen\\planning-line.json",
+      "digest": "0562237ced75281e131bc86d5d4523e551c3a74a4d477594e0ad237c777bd9e3",
+      "alreadySatisfied": false
+    },
+    {
+      "kind": "write-execution-association",
+      "destination": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\project\\.rasen\\planning-binding.json",
+      "digest": "611cddd41381e77ec5bac67bc718e42d810da0091a38ea8b8f9ef59f53f32ffd",
+      "alreadySatisfied": false
+    },
+    {
+      "kind": "record-index-entry",
+      "destination": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\data\\rasen\\planning-workspaces\\index\\ps_cdcc1e23d1ca6a2850f96515491f6823788292ca986bac1d83ca225608b6f871.json",
+      "alreadySatisfied": false
+    }
+  ],
+  "preconditions": [
+    {
+      "id": "planning-destination-available",
+      "satisfied": true,
+      "detail": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\store--containment-demo does not exist yet, so the worktree is created there."
+    },
+    {
+      "id": "execution-ref-matches",
+      "satisfied": true,
+      "detail": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\project is on refs/heads/main, which is the ref the pair records."
+    },
+    {
+      "id": "execution-is-linked-worktree",
+      "satisfied": true,
+      "detail": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\project is the project repository's main checkout, which a pair may legitimately use for execution."
+    },
+    {
+      "id": "planning-marker-contained",
+      "satisfied": true,
+      "detail": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\store--containment-demo\\.rasen\\planning-line.json is inside the planned planning worktree root C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\store--containment-demo."
+    },
+    {
+      "id": "execution-marker-contained",
+      "satisfied": true,
+      "detail": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\project\\.rasen\\planning-binding.json is inside the planned execution worktree root C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\project."
+    },
+    {
+      "id": "planning-root-outside-repository",
+      "satisfied": true,
+      "detail": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\store--containment-demo is outside the planning repository's checkout C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\store."
+    },
+    {
+      "id": "execution-root-outside-repository",
+      "satisfied": true,
+      "detail": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\project is the execution repository's main checkout, which a pair may legitimately use for execution."
+    },
+    {
+      "id": "pair-roots-disjoint",
+      "satisfied": true,
+      "detail": "The planned planning and execution roots are distinct, and neither contains the other."
+    },
+    {
+      "id": "change-not-already-created",
+      "satisfied": true,
+      "detail": "Change 'containment-demo' does not exist yet; creating it in the prepared planning worktree completes the binding."
+    }
+  ],
+  "blockers": [],
+  "token": {
+    "planId": "f608435c65e75d0f4ee7331ae013a519ab761d1a801cd570d76c49adbe0bd011",
+    "storeUid": "889f8967-a4c0-4e35-b057-98b14ec9343b",
+    "projectId": "b91319d7-f842-4bf8-acc8-86e7acd8baf0",
+    "targetLineId": "line-0.2",
+    "changeId": "containment-demo",
+    "storeRefOid": "0ec4598edb9d601667206a88223173e79f3d6b48",
+    "codeRefOid": "98188e4ed5a4039512da7ccce08522981443d2fe",
+    "executionHeadOid": "98188e4ed5a4039512da7ccce08522981443d2fe",
+    "indexFingerprint": "6c97fb011ab75b577059bb13fc87c6d6751c586fa89c75aea0ff9e9e78f30146"
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "planId": "f608435c65e75d0f4ee7331ae013a519ab761d1a801cd570d76c49adbe0bd011",
+  "scope": {
+    "storeUid": "889f8967-a4c0-4e35-b057-98b14ec9343b",
+    "storeId": "temp-containment",
+    "storeRoot": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\store",
+    "projectId": "b91319d7-f842-4bf8-acc8-86e7acd8baf0",
+    "targetLineId": "line-0.2",
+    "planningScopeId": "ps_cdcc1e23d1ca6a2850f96515491f6823788292ca986bac1d83ca225608b6f871"
+  },
+  "targetLine": {
+    "targetLineId": "line-0.2",
+    "storeRef": "refs/heads/main",
+    "storeRefOid": "0ec4598edb9d601667206a88223173e79f3d6b48",
+    "codeRef": "refs/heads/main",
+    "codeRefOid": "98188e4ed5a4039512da7ccce08522981443d2fe"
+  },
+  "changeId": "containment-demo",
+  "bindingState": "prepared",
+  "planning": {
+    "side": "planning",
+    "root": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\store--containment-demo",
+    "repositoryRoot": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\store",
+    "exists": true,
+    "linked": true,
+    "worktreeInstanceId": "wt_7acdd90b8eeb21c469c526864813cb6b21f20a45958822c54d0f81d6ac0cb44c",
+    "repositoryIdentity": "c:\\users\\sayo\\appdata\\local\\temp\\rasen-contain-4f4l\\store\\.git",
+    "ref": "refs/heads/change/line-0.2/b91319d7-f842-4bf8-acc8-86e7acd8baf0/containment-demo",
+    "headOid": "0ec4598edb9d601667206a88223173e79f3d6b48"
+  },
+  "execution": {
+    "side": "execution",
+    "root": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\project",
+    "repositoryRoot": "C:/Users/Sayo/AppData/Local/Temp/rasen-contain-4f4L/project",
+    "exists": true,
+    "linked": false,
+    "worktreeInstanceId": "wt_64da7590cddfad035c592286fc92cb580519e6712356228ac696e1442bb1bbe1",
+    "repositoryIdentity": "c:\\users\\sayo\\appdata\\local\\temp\\rasen-contain-4f4l\\project\\.git",
+    "ref": "refs/heads/main",
+    "headOid": "98188e4ed5a4039512da7ccce08522981443d2fe"
+  },
+  "created": [
+    "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\store--containment-demo"
+  ],
+  "reused": [
+    "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\project"
+  ],
+  "suggestedCommits": []
+}

@@ -1,0 +1,26 @@
+## pre-apply main-checkout state
+HEAD=98188e4ed5a4039512da7ccce08522981443d2fe
+REF=refs/heads/main
+STATUS:
+?? .rasen-store/
+WORKTREES=1
+## post-apply main-checkout state
+HEAD=98188e4ed5a4039512da7ccce08522981443d2fe
+REF=refs/heads/main
+STATUS:
+?? .rasen-store/
+?? .rasen/
+WORKTREES=1
+ASSOCIATION=present
+ASSOCIATION_BYTES:
+{
+  "version": 1,
+  "storeUid": "889f8967-a4c0-4e35-b057-98b14ec9343b",
+  "storeId": "temp-containment",
+  "projectId": "b91319d7-f842-4bf8-acc8-86e7acd8baf0",
+  "targetLineId": "line-0.2",
+  "planningWorktree": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\store--containment-demo",
+  "executionRoot": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-contain-4f4L\\project"
+}
+
+PLANNING_MARKER=present
