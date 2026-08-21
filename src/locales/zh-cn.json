@@ -2058,6 +2058,9 @@
                     "from-portfolio": {
                       "description": "不从 YAML 节点列表发布，而是从父 Change 的 portfolio 运行状态发布"
                     },
+                    "from-decomposition": {
+                      "description": "不从 YAML 节点列表发布，而是从机器提出的分解文档发布"
+                    },
                     "json": {
                       "description": "以 JSON 输出"
                     }

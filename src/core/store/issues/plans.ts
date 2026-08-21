@@ -5,10 +5,14 @@
  * A revision is IMMUTABLE once published, so everything that could make one
  * invalid is decided here, before a byte is written: the schema, the two node
  * kinds, the closed `lifecycle` vocabulary and its conditional reason, the
+ * optional decomposition-guidance fields and their portable text, the
  * acyclicity of `dependsOn`, duplicate node identifiers, and two
- * nodes claiming one Change instance. Reference verification against real Store
- * evidence is the one check this file cannot do, because it needs Git; it lives
- * in `references.ts` and runs before this file's serializer is ever called.
+ * nodes claiming one Change instance. Two checks this file cannot do alone:
+ * reference verification against real Store evidence (it needs Git; it lives
+ * in `references.ts` and runs before this file's serializer is ever called),
+ * and whether a node's `suggestedPipeline` names a pipeline the registry
+ * resolves (pure here as `assertPlanNodeSuggestions` over an injected
+ * membership test; the mutation supplies the test its caller composed).
  *
  * `contentSha256` covers the canonical serialization of every other field. A
  * digest cannot cover itself, and stating which bytes it covers is the whole
@@ -80,6 +84,20 @@ const lifecycleField = z
   })
   .optional();
 
+/**
+ * The decomposition-guidance fields, on BOTH node kinds (a manual revision may
+ * suggest a pipeline for an existing Change node too). `suggestedPipeline` is
+ * non-empty here; whether it names a pipeline the registry RESOLVES is a
+ * publication-time check over an injected membership test (`assertPlanNodeSuggestions`)
+ * — this file is pure and owns no registry view. `rationale` and `uncertainty`
+ * additionally pass the portable-text contract in `validateNode`.
+ */
+const suggestionShape = {
+  suggestedPipeline: z.string().min(1).optional(),
+  rationale: z.string().min(1).optional(),
+  uncertainty: z.string().min(1).optional(),
+};
+
 const ChangeNodeSchema = z
   .object({
     ...NodeBaseShape,
@@ -88,6 +106,7 @@ const ChangeNodeSchema = z
     changeAlias: z.string().min(1).optional(),
     lifecycle: lifecycleField,
     reason: z.string().min(1).optional(),
+    ...suggestionShape,
   })
   .strict();
 
@@ -96,6 +115,7 @@ const IntentNodeSchema = z
     ...NodeBaseShape,
     kind: z.literal('intent'),
     summary: z.string().min(1).max(500),
+    ...suggestionShape,
   })
   .strict();
 
@@ -118,6 +138,34 @@ const RevisionSchema = z
 /** A node identifier is a path-free canonical kebab id, like a Change alias. */
 function validateNodeId(value: string, index: number): string {
   return rethrow(`nodes[${index}].nodeId`, () => parseChangeId(value, 'nodeId'));
+}
+
+/**
+ * The decomposition-guidance fields, validated and canonically spread — the
+ * `lifecycle` precedent applied once for both kinds. `rationale` and
+ * `uncertainty` are durable Store content, so they satisfy the same portable
+ * durable text contract a node `reason` does: refused at the schema, never
+ * trimmed. Absent fields are omitted so every revision published before they
+ * existed re-derives its digest byte-for-byte, and an authored absence never
+ * reads back as an empty string.
+ */
+function planSuggestionFields(
+  raw: { suggestedPipeline?: string; rationale?: string; uncertainty?: string },
+  index: number
+):
+  | Pick<ExecutionPlanNode, 'suggestedPipeline' | 'rationale' | 'uncertainty'>
+  | Record<string, never> {
+  if (raw.rationale !== undefined) {
+    assertPortableIssueText(raw.rationale, `nodes[${index}].rationale`, 'invalid_execution_plan');
+  }
+  if (raw.uncertainty !== undefined) {
+    assertPortableIssueText(raw.uncertainty, `nodes[${index}].uncertainty`, 'invalid_execution_plan');
+  }
+  return {
+    ...(raw.suggestedPipeline === undefined ? {} : { suggestedPipeline: raw.suggestedPipeline }),
+    ...(raw.rationale === undefined ? {} : { rationale: raw.rationale }),
+    ...(raw.uncertainty === undefined ? {} : { uncertainty: raw.uncertainty }),
+  };
 }
 
 function validateNode(raw: z.output<typeof NodeSchema>, index: number): ExecutionPlanNode {
@@ -186,6 +234,7 @@ function validateNode(raw: z.output<typeof NodeSchema>, index: number): Executio
         ? {}
         : { lifecycle: lifecycle as Exclude<ExecutionPlanNodeLifecycle, 'required'> }),
       ...(raw.reason === undefined ? {} : { reason: raw.reason }),
+      ...planSuggestionFields(raw, index),
       dependsOn: Object.freeze(dependsOn),
     });
   }
@@ -196,6 +245,7 @@ function validateNode(raw: z.output<typeof NodeSchema>, index: number): Executio
     projectId,
     targetLineId,
     summary: raw.summary,
+    ...planSuggestionFields(raw, index),
     dependsOn: Object.freeze(dependsOn),
   });
 }
@@ -347,6 +397,11 @@ export function executionPlanDigestBody(
             ...(node.changeAlias === undefined ? {} : { changeAlias: node.changeAlias }),
             ...(node.lifecycle === undefined ? {} : { lifecycle: node.lifecycle }),
             ...(node.reason === undefined ? {} : { reason: node.reason }),
+            ...(node.suggestedPipeline === undefined
+              ? {}
+              : { suggestedPipeline: node.suggestedPipeline }),
+            ...(node.rationale === undefined ? {} : { rationale: node.rationale }),
+            ...(node.uncertainty === undefined ? {} : { uncertainty: node.uncertainty }),
             dependsOn: [...node.dependsOn],
           }
         : {
@@ -355,6 +410,11 @@ export function executionPlanDigestBody(
             projectId: node.projectId,
             targetLineId: node.targetLineId,
             summary: node.summary,
+            ...(node.suggestedPipeline === undefined
+              ? {}
+              : { suggestedPipeline: node.suggestedPipeline }),
+            ...(node.rationale === undefined ? {} : { rationale: node.rationale }),
+            ...(node.uncertainty === undefined ? {} : { uncertainty: node.uncertainty }),
             dependsOn: [...node.dependsOn],
           }
     ),
@@ -465,6 +525,11 @@ export function serializeExecutionPlanRevision(value: ExecutionPlanRevisionV1): 
             ...(node.changeAlias === undefined ? {} : { changeAlias: node.changeAlias }),
             ...(node.lifecycle === undefined ? {} : { lifecycle: node.lifecycle }),
             ...(node.reason === undefined ? {} : { reason: node.reason }),
+            ...(node.suggestedPipeline === undefined
+              ? {}
+              : { suggestedPipeline: node.suggestedPipeline }),
+            ...(node.rationale === undefined ? {} : { rationale: node.rationale }),
+            ...(node.uncertainty === undefined ? {} : { uncertainty: node.uncertainty }),
             dependsOn: [...node.dependsOn],
           }
         : {
@@ -473,6 +538,11 @@ export function serializeExecutionPlanRevision(value: ExecutionPlanRevisionV1): 
             projectId: node.projectId,
             targetLineId: node.targetLineId,
             summary: node.summary,
+            ...(node.suggestedPipeline === undefined
+              ? {}
+              : { suggestedPipeline: node.suggestedPipeline }),
+            ...(node.rationale === undefined ? {} : { rationale: node.rationale }),
+            ...(node.uncertainty === undefined ? {} : { uncertainty: node.uncertainty }),
             dependsOn: [...node.dependsOn],
           }
     ),
@@ -524,6 +594,13 @@ function planNodeCandidate(input: ExecutionPlanNodeInput): unknown {
     dependsOn: raw.dependsOn ?? [],
     ...(raw.lifecycle === undefined ? {} : { lifecycle: raw.lifecycle }),
     ...(raw.reason === undefined ? {} : { reason: raw.reason }),
+    // Carried through on BOTH branches for the same reason `lifecycle` is:
+    // both schemas accept these fields, and an unrecognized EXTRA field still
+    // meets `.strict()` by name because the candidate only forwards fields
+    // the input actually declared.
+    ...(raw.suggestedPipeline === undefined ? {} : { suggestedPipeline: raw.suggestedPipeline }),
+    ...(raw.rationale === undefined ? {} : { rationale: raw.rationale }),
+    ...(raw.uncertainty === undefined ? {} : { uncertainty: raw.uncertainty }),
   };
   return raw.kind === 'change'
     ? {
@@ -628,4 +705,35 @@ export function normalizePlanNodes(
     .map((input, index) => validateNode(parsePlanNode(input, index), index))
     .map(canonicalizeDependsOn)
     .sort((left, right) => compareCodePoints(left.nodeId, right.nodeId));
+}
+
+/**
+ * The publication-time registry check for node suggestions — the SAME seam
+ * `store issue start --pipeline` validates through, taken as an injected
+ * membership test because this module owns no registry view of its own. A
+ * suggestion naming no known pipeline is refused naming the node and the
+ * pipeline; a suggestion with NO supplied test is refused too, because a
+ * suggestion that cannot be checked is not a fact the revision may record.
+ * Whether the named pipeline itself carries a decompose stage is the LAUNCH
+ * path's existing guard, deliberately not re-checked here.
+ */
+export function assertPlanNodeSuggestions(
+  nodes: readonly ExecutionPlanNode[],
+  pipelineKnown: ((name: string) => boolean) | undefined
+): void {
+  nodes.forEach((node, index) => {
+    if (node.suggestedPipeline === undefined) return;
+    if (pipelineKnown === undefined) {
+      throw planError(
+        `nodes[${index}].suggestedPipeline`,
+        `node '${node.nodeId}' records suggestedPipeline '${node.suggestedPipeline}', but this publication was given no pipeline registry to resolve it against; a suggestion that cannot be checked is refused, not stored`
+      );
+    }
+    if (!pipelineKnown(node.suggestedPipeline)) {
+      throw planError(
+        `nodes[${index}].suggestedPipeline`,
+        `node '${node.nodeId}' records suggestedPipeline '${node.suggestedPipeline}', which the pipeline registry does not resolve; publication refuses a suggestion naming no known pipeline`
+      );
+    }
+  });
 }

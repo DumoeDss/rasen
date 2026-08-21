@@ -179,6 +179,24 @@ export interface IssueNodeStatus {
    */
   readonly reason: string | null;
   /**
+   * The pipeline the revision's node suggests running for this work, copied
+   * from the plan node verbatim. A DISPLAY fact exactly like the target
+   * project: the projection derives no phase, health, or progress value from
+   * it — it is what a reviewer reads, not a value the projection interprets.
+   * Null when the node records no suggestion.
+   */
+  readonly suggestedPipeline: string | null;
+  /**
+   * The decomposition rationale the node records — why the work exists as
+   * this node. Display fact, as above. Null when none is recorded.
+   */
+  readonly rationale: string | null;
+  /**
+   * The decomposition uncertainty the node records — what the decomposer was
+   * unsure about. Display fact, as above. Null when none is recorded.
+   */
+  readonly uncertainty: string | null;
+  /**
    * The Change alias the node was keyed by for run-state location: the
    * committed claimant's `changeId`, falling back to the node's recorded
    * `changeAlias`. A reference the query did not resolve reports only the

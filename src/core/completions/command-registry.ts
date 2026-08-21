@@ -673,6 +673,10 @@ const COMMANDS: readonly CommandDefinition[] = [
               // portfolio run-state compiles into the next revision.
               // Mutually exclusive with from-file; the CLI refuses both-or-neither.
               { name: 'from-portfolio', takesValue: true },
+              // The third publication source: a machine-proposed decomposition
+              // document compiled into the next revision. Mutually exclusive
+              // with the other two; the CLI refuses any two-or-none together.
+              { name: 'from-decomposition', takesValue: true },
               COMMON_FLAGS.json,
             ],
           },

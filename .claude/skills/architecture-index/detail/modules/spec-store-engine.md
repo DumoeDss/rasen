@@ -66,21 +66,23 @@ Spec、Requirement/Scenario、Change/Delta 的 canonical 校验定义。
 - **CLI 缝**：`src/commands/store-issue.ts` 的 `acceptance`（`--from-file` 发布条件修订）与 `accept`（`--note`）子命令；show 的 acceptance 节（条件 + 闸门行 + 记录）。
 - **连接**：被 `src/commands/store-issue.ts` 与 `src/core/issue-status/projection.ts`（反向仅 gate.js）消费。
 
-## `issue-publication/` — portfolio → Execution Plan 发布通道（Phase 2 g-001）
+## `issue-publication/` — portfolio/decomposition → Execution Plan 发布通道（Phase 2 g-001；Phase 4 g-002 增分解源）
 
 回答"怎么把 auto-decompose 的真实 portfolio 结构变成 Issue 的 Execution Plan 修订"：`publishPlanFromPortfolio`（`rasen store issue plan <id> --from-portfolio <parent>`）按 `pipeline resume` 的同一放置链（ephemera → workDir → change dir，probe-only 不铸造 work dir）定位 `portfolio-run.json`，strict 读（invalid ≠ absent）+ `state.parent` 一致性 + 非空 children，编译为节点输入（nodeId/changeAlias = child id、dependsOn 原样、零 status/pipeline/delivery 字段），每个 child 按**名字**解析成 committed 实例后交给 `StoreIssues.publishPlan`（序数/摘要/图检查/锁/commit 建议全继承，无平行实现）。通道唯一写物 = 修订文件；run-state 逐字节不动。
 
-- **关键文件**：`types.ts`（输入 + 新 refusal 码闭集 `issue_plan_portfolio_*`/`issue_plan_source_*` + `source` 块）、`compiler.ts`（纯编译）、`resolution.ts`（名字→实例：`gatherChildEvidence` 复用 `gatherReferenceEvidence`；复用 `issue_reference_*` 族拒绝——unresolved/uncommitted/ambiguous/foreign-store + `store_query_ref_unreadable` 只在缺席型结论上改判）、`orchestration.ts`（定位缝 + 拒绝 + 发布）、`index.ts`（barrel）。
+Phase 4（g-002）增**第三发布源** `--from-decomposition <path>`（`publishPlanFromDecomposition`）：分解文档 = 纯 YAML `nodes:` 列表，每节点 `kind: intent`（change-kind 拒收并指向 `--from-portfolio`）+ `suggestedPipeline` + `rationale`/`uncertainty` 至少其一（缺字段点名节点+字段拒绝）；authored `lifecycle: required|optional` 在文档层接受（absent 读 required，不前传入 intent 节点——plan schema 禁 intent 带 lifecycle，文档逐字节不动即提案记录）；文档路径 caller 自给（dogfood 放 evidence/），unreadable ≠ absent。节点三字段（`suggestedPipeline`/`rationale`/`uncertainty`）在 `store/issues/plans.ts` schema：可选、canonical absent 即省略（旧修订 digest 字节不变）、`rationale`/`uncertainty` 过 `assertPortableIssueText`、发布期注册表校验 `assertPlanNodeSuggestions`（validator 经 `PublishExecutionPlanInput.pipelineKnown` 注入——CLI 对全部三源组合 `listPipelines(projectRoot)` 的 root-aware 缝，同 `store issue start --pipeline`）。
+
+- **关键文件**：`types.ts`（输入 + refusal 码闭集 `issue_plan_portfolio_*`/`issue_plan_decomposition_*`/`issue_plan_source_*` + `source` 判别联合块）、`compiler.ts`（portfolio 纯编译）、`decomposition.ts`（分解文档纯读取 + intent 节点输入编译）、`resolution.ts`（名字→实例：`gatherChildEvidence` 复用 `gatherReferenceEvidence`；复用 `issue_reference_*` 族拒绝——unresolved/uncommitted/ambiguous/foreign-store + `store_query_ref_unreadable` 只在缺席型结论上改判）、`orchestration.ts`（两通道：定位缝 + 拒绝 + 发布）、`index.ts`（barrel）。
 - **archived 算证据**：archived 条目的目录名是 `<date>-<change>`（或 v2 `<date>-<change>--<instanceShort>`），用 `archive-engine.ts` 的 `archiveDatePrefixedNameMatches`（只对 archived 条目启用；active 目录长得像日期前缀不算）——子项完成后重发布仍可解析是本片核心 dogfood。
-- **边界**：只 import 不改 `src/core/pipeline-registry/`（冻结）；`store/issues` 五 mutation 词汇不动（新码不进 `StoreIssueErrorCode`）。CLI 缝在 `src/commands/store-issue.ts` 的 `plan` 子命令（`--from-file` XOR `--from-portfolio`，双给/双缺各拒绝且点名两源）。
-- **连接**：被 `src/commands/store-issue.ts` 消费；g-003 全环 dogfood（真实 portfolio 重发布）依赖本通道。
+- **边界**：只 import 不改 `src/core/pipeline-registry` 的冻结面（g-002 起唯一解冻点 = `execution-plan-internal.ts` 的 decompose-bearing v1 裁决改名，见 workflow-pipeline 域）；`store/issues` mutation 词汇不动（新码不进 `StoreIssueErrorCode`）。CLI 缝在 `src/commands/store-issue.ts` 的 `plan` 子命令（三源恰取其一：`--from-file`/`--from-portfolio`/`--from-decomposition`，任两同给或全缺拒绝并点名三源）。
+- **连接**：被 `src/commands/store-issue.ts` 消费；g-003 全环 dogfood（真实 portfolio 重发布）依赖本通道；Phase 4 dogfood（Issue #3 decompose→review-ready）走分解源。
 
 ## `store/issues/` 的 target-project 门（Phase 3 g-001 `issue-target-project-binding`）
 
 - 节点的 target project **就是既有必填 `projectId`**——无新 schema 字段，修订字节/digest/序列化零变化（golden：序列化字节 + digest 双字面量钉在 `store-issue-plan-canonicalization`）。
 - **发布门**在 `reference-verification.ts` 的 `verifyExecutionPlanReferences`（`--from-file`/`--from-portfolio` 双源经 `publishPlan` 一处继承）：目标须为 `roles.planning: true` 的成员，否则新码 `issue_reference_target_not_planning_member`（与 no-record 的 `issue_reference_scope_conflict` 分码：两条件修复不同；点名节点/项目/roles/planning members/`rasen store add-project` 修复）；change 与 intent 节点同规。门只赋 eligibility，永不替作者选目标。
 - `IssueReferenceCatalogs.projects: {projectId, roles}[]`（原 `projectIds` 由它派生）。两个 caller 各按自身权威供 roster：`module.ts` `verifyReferences` 传 `listProjectEntries` 解析的 roles；`layout-migration/plan.ts` 传冻结 member 集（一律 planning-eligible——grandfathered replay 不被角色漂移卡死，回归测试在 `layout-migration-plan-gates`）。
-- **读路径永不复查 membership**：Phase-2-era 修订（含 knowledge-only 目标）照读、digest 照验（降级套件 `issue-status-target-project-degradation`；持久 store 只读实证 evidence/dogfood-persistent-*）。读面唯一加宽缝 = `IssueNodeStatus.projectId/targetLineId`（`withLifecycle` 单点填充，无 absent case）；show 节点行 `<nodeId> <kind> <projectId> <alias> — <obs>`，`--json` 结构性携带；g-003 起 list 也带分组段（见上 lanes 条）。issue-cross-project-gating 起 show 节点行的依赖段渲染 `(blockedBy y@<project>: <state>[, …])`（work-complete 基准 + `issueBlockerState` 细化），`--json` 携带结构数组。
+- **读路径永不复查 membership**：Phase-2-era 修订（含 knowledge-only 目标）照读、digest 照验（降级套件 `issue-status-target-project-degradation`；持久 store 只读实证 evidence/dogfood-persistent-*）。读面加宽缝 = `IssueNodeStatus.projectId/targetLineId` + Phase 4 起 `suggestedPipeline/rationale/uncertainty`（`withLifecycle` 单点填充，absent 读 null，驱动零轴值——同 target project 的"事实只读"规则）；show 节点行 `<nodeId> <kind> <projectId> <alias> — <obs>` + `(suggest: …)`/`(rationale: …)`/`(uncertainty: …)` 段（仅有值时），`--json` 结构性携带；g-003 起 list 也带分组段（见上 lanes 条）。issue-cross-project-gating 起 show 节点行的依赖段渲染 `(blockedBy y@<project>: <state>[, …])`（work-complete 基准 + `issueBlockerState` 细化），`--json` 携带结构数组。
 
 ## `change-metadata/` — 每 change 元数据（`change.yaml`）
 

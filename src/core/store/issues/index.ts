@@ -28,6 +28,7 @@ export {
   validateIssueRecordLocation,
 } from './records.js';
 export {
+  assertPlanNodeSuggestions,
   checkExecutionPlanGraph,
   executionPlanDigest,
   normalizePlanNodes,

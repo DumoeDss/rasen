@@ -68,6 +68,7 @@ import {
   resolveOpenSpecRoot,
 } from '../core/root-selection.js';
 import {
+  publishPlanFromDecomposition,
   publishPlanFromPortfolio,
   type IssuePlanPublicationResult,
 } from '../core/issue-publication/index.js';
@@ -81,6 +82,7 @@ export interface StoreIssueOptions {
   reason?: string;
   fromFile?: string;
   fromPortfolio?: string;
+  fromDecomposition?: string;
   node?: string;
   pipeline?: string;
   note?: string;
@@ -176,7 +178,20 @@ function renderPlanWrite(
  * form's `source` block carries.
  */
 function portfolioSourceLine(result: IssuePlanPublicationResult): string {
-  return `  source: portfolio '${result.source.parent}' — ${result.source.childCount} children, run-state ${result.source.statePath}`;
+  const source = result.source;
+  if (source.kind !== 'portfolio') return `  source: ${source.kind}`;
+  return `  source: portfolio '${source.parent}' — ${source.childCount} children, run-state ${source.statePath}`;
+}
+
+/**
+ * One human line naming where a decomposition publication came from: the
+ * document path, the node count — the same facts the JSON form's `source`
+ * block carries.
+ */
+function decompositionSourceLine(result: IssuePlanPublicationResult): string {
+  const source = result.source;
+  if (source.kind !== 'decomposition') return `  source: ${source.kind}`;
+  return `  source: decomposition — ${source.nodeCount} intent nodes, document ${source.documentPath}`;
 }
 
 function renderAcceptanceWrite(result: AcceptanceConditionsResult): void {
@@ -367,11 +382,13 @@ function renderRunStateVisibility(status: IssueStatus): string {
  * The per-node line the show command prints: identifier, kind, target
  * project, alias, observation, then whatever explains it — a lifecycle that
  * is not required (with the recorded reason a cancelled/superseded node
- * carries), a dependency whose work is not complete, or the diagnostic behind
- * an `unknown`. The project is the fact the revision records — shown, never
- * interpreted into any axis. Each blocker names its own target project and
- * observed state on the work-complete basis (the rule `start` enforces), so
- * the line explains exactly what a launch will wait for.
+ * carries), a recorded execution suggestion with its decomposition
+ * rationale/uncertainty, a dependency whose work is not complete, or the
+ * diagnostic behind an `unknown`. The project, suggestion, and rationale are
+ * facts the revision records — shown, never interpreted into any axis. Each
+ * blocker names its own target project and observed state on the
+ * work-complete basis (the rule `start` enforces), so the line explains
+ * exactly what a launch will wait for.
  */
 function renderStatusNode(
   node: IssueStatus['nodes'][number],
@@ -385,6 +402,12 @@ function renderStatusNode(
   if (node.lifecycle !== null && node.lifecycle !== 'required') {
     parts.push(node.reason === null ? `(${node.lifecycle})` : `(${node.lifecycle}: ${node.reason})`);
   }
+  // The recorded decomposition guidance, when the revision carries it: the
+  // suggestion and the reasoning/uncertainty behind it — facts a reviewer
+  // reads, shown only when present, interpreted into no axis.
+  if (node.suggestedPipeline !== null) parts.push(`(suggest: ${node.suggestedPipeline})`);
+  if (node.rationale !== null) parts.push(`(rationale: ${node.rationale})`);
+  if (node.uncertainty !== null) parts.push(`(uncertainty: ${node.uncertainty})`);
   if (node.blockedBy.length > 0) {
     const entries = node.blockedBy.map(
       blocker =>
@@ -917,31 +940,45 @@ export function registerStoreIssueCommand(store: Command): void {
     .option('--store <id>', '')
     .option('--from-file <path>', '')
     .option('--from-portfolio <parent>', '')
+    .option('--from-decomposition <path>', '')
     .option('--json', '')
     .action(async (issueId: string, options: StoreIssueOptions) => {
       try {
-        // A publication takes exactly one source, and the refusal names both:
-        // the two paths answer different questions (a hand-authored node list
-        // vs a compiled portfolio run), and guessing a default would publish
-        // a plan the operator never chose.
-        if (options.fromFile !== undefined && options.fromPortfolio !== undefined) {
+        // A publication takes exactly one of its three sources, and the
+        // refusal names them: the three answer different questions (a
+        // hand-authored node list, a compiled portfolio run, a
+        // machine-proposed decomposition), and guessing a default would
+        // publish a plan the operator never chose.
+        const sources = [
+          ['--from-file', options.fromFile],
+          ['--from-portfolio', options.fromPortfolio],
+          ['--from-decomposition', options.fromDecomposition],
+        ] as const;
+        const given = sources.filter(([, value]) => value !== undefined).map(([flag]) => flag);
+        const chooseOne =
+          'Choose one: --from-file <path to a YAML file with a nodes: list>, --from-portfolio <parent change name>, or --from-decomposition <path to a decomposition document>.';
+        if (given.length > 1) {
+          const together = given.length === 2 ? 'were both given' : 'were all given';
           throw new StoreError(
-            'A plan publication takes exactly one source; --from-file and --from-portfolio were both given.',
+            `A plan publication takes exactly one source; ${given.join(' and ')} ${together}.`,
             'issue_plan_source_conflict',
-            {
-              fix: 'Choose one: --from-file <path to a YAML file with a nodes: list>, or --from-portfolio <parent change name>.',
-            }
+            { fix: chooseOne }
           );
         }
-        if (options.fromFile === undefined && options.fromPortfolio === undefined) {
+        if (given.length === 0) {
           throw new StoreError(
-            'A plan publication requires exactly one source; neither --from-file nor --from-portfolio was given.',
+            'A plan publication requires exactly one source; none of --from-file, --from-portfolio, or --from-decomposition was given.',
             'issue_plan_source_required',
-            {
-              fix: 'Add --from-file <path to a YAML file with a nodes: list>, or --from-portfolio <parent change name>.',
-            }
+            { fix: chooseOne }
           );
         }
+        // The suggestion registry seam, composed ONCE for every source — the
+        // same root-aware membership test `store issue start --pipeline`
+        // validates through (pipelines visible from the root this command
+        // runs in, project-local layers included).
+        const context = await resolveProjectionContext();
+        const pipelineKnown = (name: string): boolean =>
+          listPipelines(context.projectRoot).includes(name.replace(/\.ya?ml$/, ''));
         if (options.fromPortfolio !== undefined) {
           const result = await publishPlanFromPortfolio({
             ...(options.store === undefined ? {} : { store: options.store }),
@@ -959,6 +996,24 @@ export function registerStoreIssueCommand(store: Command): void {
           }
           return;
         }
+        if (options.fromDecomposition !== undefined) {
+          const result = await publishPlanFromDecomposition({
+            ...(options.store === undefined ? {} : { store: options.store }),
+            startPath: process.cwd(),
+            issueId,
+            documentPath: options.fromDecomposition,
+            pipelineKnown,
+          });
+          if (options.json) {
+            printJson({
+              ...(planPayload(result) as Record<string, unknown>),
+              source: result.source,
+            });
+          } else {
+            renderPlanWrite(result, decompositionSourceLine(result));
+          }
+          return;
+        }
         const draft = parseYaml(fs.readFileSync(options.fromFile as string, 'utf8')) as {
           nodes?: readonly ExecutionPlanNodeInput[];
         };
@@ -967,6 +1022,7 @@ export function registerStoreIssueCommand(store: Command): void {
           startPath: process.cwd(),
           issueId,
           nodes: draft.nodes ?? [],
+          pipelineKnown,
         });
         if (options.json) printJson(planPayload(result));
         else renderPlanWrite(result);

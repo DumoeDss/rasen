@@ -83,7 +83,14 @@ interface LocatedStateFile {
  */
 type ObservedNode = Omit<
   IssueNodeStatus,
-  'lifecycle' | 'reason' | 'projectId' | 'targetLineId' | 'blockedBy'
+  | 'lifecycle'
+  | 'reason'
+  | 'projectId'
+  | 'targetLineId'
+  | 'suggestedPipeline'
+  | 'rationale'
+  | 'uncertainty'
+  | 'blockedBy'
 >;
 
 /** The assembled node before the dependency-facts post-pass completes it. */
@@ -670,6 +677,14 @@ function withLifecycle(
   planNode: ExecutionPlanNode,
   observed: ObservedNode
 ): NodeSansBlockers {
+  // The decomposition-guidance facts ride the same one-widening wrapper as the
+  // project and lifecycle: copied verbatim from the revision node on every
+  // branch, read by no axis (they are facts to read, like the target project).
+  const suggestion = {
+    suggestedPipeline: planNode.suggestedPipeline ?? null,
+    rationale: planNode.rationale ?? null,
+    uncertainty: planNode.uncertainty ?? null,
+  };
   if (planNode.kind !== 'change') {
     return {
       ...observed,
@@ -677,6 +692,7 @@ function withLifecycle(
       targetLineId: planNode.targetLineId,
       lifecycle: null,
       reason: null,
+      ...suggestion,
     };
   }
   return {
@@ -685,6 +701,7 @@ function withLifecycle(
     targetLineId: planNode.targetLineId,
     lifecycle: planNode.lifecycle ?? 'required',
     reason: planNode.reason ?? null,
+    ...suggestion,
   };
 }
 

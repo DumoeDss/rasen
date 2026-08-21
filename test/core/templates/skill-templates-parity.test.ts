@@ -69,7 +69,7 @@ const EXPECTED_FUNCTION_HASHES: Record<string, string> = {
   getShipCommandSkillTemplate: '7ec6b452535ddf81ec9d0c5eb4640d5ac611a5e209bf04be93efc67824de87b0',
   getRetainCommandSkillTemplate: 'd2a6d17f9f79e33a6210069b3178774a28da774032f2a105fb3b827a95522705',
   getRetroCommandSkillTemplate: '64725c0d0c2d5ee285de0186c62e9bb9cfc6b2ddc95eabd408e089ff1d00c6db',
-  getAutoCommandSkillTemplate: '68d20571af1625d533079062ed0659ccf13d580fd1ae40b6caac9307fe624960',
+  getAutoCommandSkillTemplate: 'c404544cb74b70060dfd60161213a4338f51eb3b9fb985e8cfc8c2009af0c4bb',
   getReviewCycleSkillTemplate: '927da23dbf290f35c8ea145fefd364362c23a3c3bd3298f8655691bd0d9f33f8',
   getHandoffSkillTemplate: '531cea204f5d8627a0f9fe25d46cda29b9a1457a4ad1f4354217e9a170660580',
   getGoalPlanSkillTemplate: 'e5f9ed5944dfed8b8815c73bc3d242f41e5af7a5d3111643ac54f498a572f17f',
@@ -112,7 +112,7 @@ const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
   'rasen-ship': '4e016bdfee3d00f66e264d7ebed153e39b5d624abca813866621f6bc14d6b5eb',
   'rasen-retain': '1a2943cb9809e820f5db9bfa2c8b44e4e7fb540e20540abc39d664692efddfdc',
   'rasen-retro': 'af377d3849b0cbd34d1362044cc1be6f440a4fb93a3c1001dd5d64e7a58da008',
-  'rasen-auto': '8d862fad9f28994d7475b86d69471e76146fbf1d429c55e32c28c21425c0eaad',
+  'rasen-auto': '26af0d76a5325937c13f023200ea5d21ccee948bcfc4e131b1370537e7b3aa19',
   'rasen-review-cycle': '78e622efb9f7145d609689c6616536a81b94250157a230a49175e6a3c89fa4b1',
   'rasen-handoff': '8394a841e91e5b62de574af103cbc2c3225f30b81bd538221719b18b5c77c24f',
   'rasen-goal-plan': '2bc4026408389837e84ac743df8b28199155426f0e0e72e5abf2fd056cad703e',
@@ -375,5 +375,27 @@ describe('skill templates split parity', () => {
     // Fresh auto must request the execution-preflight view instead of
     // dispatching a merely structural pipeline show result.
     expect(content).toContain('rasen pipeline show <name> --for-execution --json');
+  });
+
+  // The Issue-dispatch branch (issue-autodecompose-graph task 5.1): a Store
+  // Issue target decomposes into a document, publishes the revision, reports
+  // review-ready, and STOPS — and the generated skill must state the
+  // distinction from the change-level decompose fan-out so the two behaviors
+  // cannot read as one.
+  it('teaches the Issue-dispatch decompose-and-stop branch in the generated rasen-auto skill', () => {
+    const autoSkill = getSkillTemplates().find(({ dirName }) => dirName === 'rasen-auto');
+    expect(autoSkill, 'rasen-auto skill template').toBeDefined();
+    const content = generateSkillContent(autoSkill!.template, 'PARITY-BASELINE');
+
+    expect(content).toContain(
+      'rasen store issue plan <issue-id> --from-decomposition <path>'
+    );
+    expect(content).toContain('REVIEW-READY');
+    expect(content).toContain('Issue dispatch');
+    // The stop-short semantics: no fan-out, no worktrees, no node starts
+    // before the human confirms.
+    expect(content).toMatch(/do NOT fan out child changes, do NOT create child worktrees, do NOT start any node/i);
+    // The explicit distinction from the change-level decompose stage.
+    expect(content).toContain('deliberately distinct from the change-level decompose stage');
   });
 });

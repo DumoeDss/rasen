@@ -2058,6 +2058,9 @@
                     "from-portfolio": {
                       "description": "YAML ノード一覧の代わりに、親 Change の portfolio run-state から発行します"
                     },
+                    "from-decomposition": {
+                      "description": "YAML ノード一覧の代わりに、機械提案された分解ドキュメントから発行します"
+                    },
                     "json": {
                       "description": "JSON で出力"
                     }

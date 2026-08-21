@@ -157,6 +157,28 @@ interface ExecutionPlanNodeBase {
   readonly projectId: ProjectId;
   readonly targetLineId: TargetLineId;
   readonly dependsOn: readonly string[];
+  /**
+   * The pipeline the plan proposes to run for this node. A name the pipeline
+   * registry resolves at PUBLICATION (validated through the same registry seam
+   * `store issue start --pipeline` uses — the store module takes the
+   * membership test as an injected input because it owns no working-directory
+   * root to resolve pipelines from). Absent fields are omitted from the
+   * canonical form exactly as an absent `lifecycle` is, so revisions published
+   * before this field existed re-derive their digests byte-for-byte.
+   */
+  readonly suggestedPipeline?: string;
+  /**
+   * Why the work exists as this node — the decomposition reasoning that
+   * produced it. Portable durable text, refused at the schema rather than
+   * trimmed; canonically omitted when absent.
+   */
+  readonly rationale?: string;
+  /**
+   * What the decomposer was unsure about when it proposed this node. Portable
+   * durable text, refused at the schema rather than trimmed; canonically
+   * omitted when absent.
+   */
+  readonly uncertainty?: string;
 }
 
 /**
@@ -291,6 +313,10 @@ export interface ExecutionPlanChangeNodeInput {
   /** Authored reason; required for `cancelled`/`superseded`, portable-checked. */
   readonly reason?: string;
   readonly dependsOn?: readonly string[];
+  /** Optional suggestion/rationale/uncertainty; see `ExecutionPlanNodeBase`. */
+  readonly suggestedPipeline?: string;
+  readonly rationale?: string;
+  readonly uncertainty?: string;
 }
 
 export interface ExecutionPlanIntentNodeInput {
@@ -300,6 +326,10 @@ export interface ExecutionPlanIntentNodeInput {
   readonly targetLineId: string;
   readonly summary: string;
   readonly dependsOn?: readonly string[];
+  /** Optional suggestion/rationale/uncertainty; see `ExecutionPlanNodeBase`. */
+  readonly suggestedPipeline?: string;
+  readonly rationale?: string;
+  readonly uncertainty?: string;
 }
 
 export type ExecutionPlanNodeInput =
@@ -331,8 +361,24 @@ export interface SetIssueStateInput extends StoreIssueSelector {
   readonly reason?: string;
 }
 
+/**
+ * Whether a pipeline name is known to the pipeline registry — the SAME seam
+ * `store issue start --pipeline` validates through (the CLI composes the
+ * root-aware variant over the working directory's resolved root). Structural
+ * duplicate of issue-execution's `IssuePipelineKnown`, declared locally so the
+ * store module takes no upward dependency on the composition layer above it.
+ */
+export type IssuePlanPipelineKnown = (name: string) => boolean;
+
 export interface PublishExecutionPlanInput extends StoreIssueSelector {
   readonly nodes: readonly ExecutionPlanNodeInput[];
+  /**
+   * Registry membership test for node `suggestedPipeline` values. When a node
+   * carries a suggestion and no test was supplied, publication refuses rather
+   * than storing a suggestion it could not check; the CLI injects the
+   * root-aware variant on every source path.
+   */
+  readonly pipelineKnown?: IssuePlanPipelineKnown;
 }
 
 export interface PublishAcceptanceConditionsInput extends StoreIssueSelector {

@@ -1,0 +1,57 @@
+{
+  "issueId": "issue-autodecompose-uplift",
+  "revision": {
+    "version": 1,
+    "issueId": "issue-autodecompose-uplift",
+    "revisionId": "0002",
+    "supersedes": "0001",
+    "createdAt": "2026-08-21T08:12:29.350Z",
+    "nodes": [
+      {
+        "nodeId": "issue-autodecompose-graph",
+        "kind": "intent",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "summary": "Land the decomposition-graph child (truthful boundary verdict, the from-decomposition channel, node guidance fields, the playbook stop-short branch)",
+        "suggestedPipeline": "small-feature",
+        "rationale": "the carrier exists from Phase 1-3; this child connects the decomposer's output to it and resolves the auto-decompose fail-close by the uplift, so every later revision rides a truthful boundary",
+        "dependsOn": []
+      },
+      {
+        "nodeId": "issue-autodecompose-review-flow",
+        "kind": "intent",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "summary": "Human review, revision, and confirm-to-start flow over decomposition revisions",
+        "suggestedPipeline": "small-feature",
+        "uncertainty": "whether store issue start should adopt a node's recorded suggestedPipeline as the launch contract's pipeline when no --pipeline is given is still this child's planner question",
+        "dependsOn": [
+          "issue-autodecompose-graph"
+        ]
+      }
+    ],
+    "contentSha256": "abf832d7583731413db1ed2b1312b42c936d497fc9168b7de9951b61d497b952"
+  },
+  "storeId": "issue-registry",
+  "storeUid": "f76edc31-229a-42bc-a5c7-848021eeb2da",
+  "checkoutRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+  "checkoutRef": "refs/heads/main",
+  "written": [
+    "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store\\rasen\\issues\\issue-autodecompose-uplift\\plans\\0002.yaml"
+  ],
+  "suggestedCommits": [
+    {
+      "repoRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+      "pathspecs": [
+        "rasen/issues/issue-autodecompose-uplift/plans/0002.yaml"
+      ],
+      "message": "chore(store): publish execution plan issue-autodecompose-uplift/0002",
+      "rationale": "Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing."
+    }
+  ],
+  "source": {
+    "kind": "decomposition",
+    "documentPath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\rasen\\changes\\issue-autodecompose-graph\\evidence\\issue-3-decomposition.yaml",
+    "nodeCount": 2
+  }
+}

@@ -70,6 +70,8 @@ Choose the pipeline in this order:
 
 DISPLAY the chosen pipeline and let the user change it before proceeding, whichever branch produced it.
 
+**A Store Issue target routes to the Issue-dispatch branch, not a fan-out.** If the task addresses a Store Issue (a filed \`rasen/issues/<issue-id>\` record, e.g. the user names an Issue and its \`--store\`) rather than a change-level task, do NOT select a change pipeline and fan out: follow the playbook's **Step G — Issue dispatch** — decompose into the document shape (intent nodes, target projects, edges, lifecycle, suggested pipeline, rationale/uncertainty), publish the revision with \`rasen store issue plan <issue-id> --from-decomposition <path>\`, report it review-ready (ordinal + node count), and STOP before any execution. The change-level decompose stage's LEAD-self-audit fan-out (section 2's first-step rule and the playbook's Step G items) does not apply to an Issue dispatch — the revision is the review surface, so publishing it and stopping IS the review point.
+
 Built-in pipelines (see \`rasen pipeline list --json\`):
 - **full-feature** — office-hours -> propose -> apply -> parallel expert reviews -> review-loop -> ship -> retain -> archive
 - **small-feature** — propose -> apply -> verify -> review-loop -> ship -> archive  _(default)_

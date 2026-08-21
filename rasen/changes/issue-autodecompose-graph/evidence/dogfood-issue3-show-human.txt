@@ -1,0 +1,21 @@
+Issue issue-autodecompose-uplift
+  state: open
+  title: Issue layer Phase 4: auto-decompose uplift (reviewable decomposition dispatch)
+  revisions: 0001, 0002
+  latest plan: revision 0002
+  plan digest: abf832d7583731413db1ed2b1312b42c936d497fc9168b7de9951b61d497b952
+  status:
+    phase: planning
+    health: healthy
+    progress: 0/0
+    run-state: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer
+    nodes:
+      project rasen (e2ee72ed-04a1-4395-86aa-7e77d2b83ec7): 0/0
+      issue-autodecompose-graph intent e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 — not-started (suggest: small-feature) (rationale: the carrier exists from Phase 1-3; this child connects the decomposer's output to it and resolves the auto-decompose fail-close by the uplift, so every later revision rides a truthful boundary)
+      issue-autodecompose-review-flow intent e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 — not-started (suggest: small-feature) (uncertainty: whether store issue start should adopt a node's recorded suggestedPipeline as the launch contract's pipeline when no --pipeline is given is still this child's planner question) (blockedBy issue-autodecompose-graph@e2ee72ed-04a1-4395-86aa-7e77d2b83ec7: not-started, no local run-state)
+
+  acceptance:
+    conditions: (none published)
+    gate: not eligible — the Issue has no readable acceptance conditions — no acceptance conditions revision exists for it.
+      no required nodes — no work is demanded
+    record: (not accepted)

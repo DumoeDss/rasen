@@ -2058,6 +2058,9 @@
                     "from-portfolio": {
                       "description": "Publish from a parent change's portfolio run-state instead of a YAML node list"
                     },
+                    "from-decomposition": {
+                      "description": "Publish from a machine-proposed decomposition document instead of a YAML node list"
+                    },
                     "json": {
                       "description": "Output as JSON"
                     }

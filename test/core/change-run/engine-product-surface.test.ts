@@ -131,10 +131,12 @@ describe('ECP-5 section 6: `pipeline show` reports a truthful support reason', (
   }, 120_000);
 
   it('still fails closed when a pipeline\'s capability bindings cannot resolve', async () => {
-    // `auto-decompose` has a decompose stage with no leaf capability, so
-    // discovery cannot resolve a binding set. The honest answer is the same
-    // unavailable verdict as before — never a partial binding set reported as
-    // supported.
+    // `auto-decompose` has a decompose stage — a Dispatch-domain construct
+    // the reconciler engine does not execute — so the honest fail-closed
+    // verdict is the unsupported-semantics reason (the 0.3.0 boundary
+    // crossing; its `issue-dispatch-0.3.0` successor label is unchanged),
+    // never a partial binding set reported as supported and never a
+    // resolvable-sounding profile-availability reason.
     const result = await runCLI(
       ['pipeline', 'show', 'auto-decompose', '--json'],
       { cwd: testDir, env, timeoutMs: 60_000 }
@@ -143,7 +145,7 @@ describe('ECP-5 section 6: `pipeline show` reports a truthful support reason', (
     const payload = JSON.parse(result.stdout.trim());
     expect(payload.reconcilerSupport.supported).toBe(false);
     expect(payload.reconcilerSupport.reason).toBe(
-      'execution_profile_unavailable'
+      'unsupported_pipeline_semantics'
     );
   }, 120_000);
 
@@ -270,6 +272,66 @@ describe('ECP-5 section 6: support analysis is independent of binding order', ()
     const { prepared: def } = prepared();
     const emptyCatalog = createCapabilityCatalogSnapshot([]);
     expect(resolveDiscoveryReconcilerSupportProfile(def, emptyCatalog)).toBeNull();
+    expect(
+      analyzeReconcilerSupport(def, null).reconcilerSupport.reason
+    ).toBe('execution_profile_unavailable');
+  });
+
+  it('reports a decompose-bearing v1 definition as unsupported semantics BEFORE the null-profile short-circuit', () => {
+    // The auto-decompose shape (first stage kind: decompose, a review-loop
+    // behind it that makes the definition require v2 lowering) analyzed with
+    // an EXPLICITLY null profile: the truthful boundary verdict must win over
+    // the profile-availability reason, proving the check's ordering — this is
+    // the 0.3.0 Dispatch-boundary crossing (issue-autodecompose-graph D2),
+    // and the fail-closed launch outcome is unchanged (legacy stays listed).
+    const catalog = createCapabilityCatalogSnapshot([
+      descriptor('rasen-propose', `sha256:${'a'.repeat(64)}`),
+      descriptor('rasen-review-cycle', `sha256:${'b'.repeat(64)}`),
+    ]);
+    const result = EcpDefinitionModule.prepare(
+      {
+        version: 1,
+        name: 'decompose-bearing',
+        description: 'v1 with a decompose first stage and a review loop',
+        stages: [
+          {
+            id: 'decompose',
+            kind: 'decompose' as const,
+            role: 'planner',
+            requires: [],
+            gate: false,
+            childPipeline: 'small-feature',
+            condition: 'needs-decomposition',
+          },
+          {
+            id: 'propose',
+            skill: 'rasen-propose',
+            role: 'planner',
+            requires: ['decompose'],
+            gate: true,
+          },
+          {
+            id: 'review-loop',
+            skill: 'rasen-review-cycle',
+            role: 'fixer',
+            requires: ['propose'],
+            loop: { kind: 'review-cycle' as const, maxRounds: 3 },
+          },
+        ],
+      },
+      catalog
+    );
+    if (!result.ok) throw result.error;
+    const support = analyzeReconcilerSupport(result.value, null);
+    expect(support.reconcilerSupport).toMatchObject({
+      supported: false,
+      reason: 'unsupported_pipeline_semantics',
+    });
+    expect(support.availableEngines).toContain('legacy');
+    // And a decompose-free v1 definition with the SAME null profile still
+    // reports the profile reason — `execution_profile_unavailable` stays
+    // reachable for genuinely unresolvable bindings.
+    const { prepared: def } = prepared();
     expect(
       analyzeReconcilerSupport(def, null).reconcilerSupport.reason
     ).toBe('execution_profile_unavailable');
