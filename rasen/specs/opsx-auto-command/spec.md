@@ -270,6 +270,16 @@ an Issue dispatch's revision is the review surface, so publishing it and stoppin
 point. Target projects in a decomposition document are the decomposer's proposals, gated at
 publication by the planning-member rule; the system SHALL NOT auto-route work to a project.
 
+After the human confirms — running `rasen store issue confirm` over the reviewed revision, with
+whatever new revisions their review authored through the existing publication channels — the
+LEAD SHALL continue the dispatch by driving confirmed nodes through their launch contracts: for
+each launchable node the confirm step reported, run `rasen store issue start --node <id>` and
+execute the emitted contract's pipeline from its working directory, honoring the dependency
+frontier so a downstream node waits for completed work. The LEAD SHALL treat the operator's
+confirm as the green light and the revision as the scope — no node outside the confirmed
+revision's wanted work is started, and a revision published after confirmation SHALL be
+confirmed in turn before its new work starts.
+
 #### Scenario: The LEAD publishes the decomposition and stops
 
 - **WHEN** `/rasen-auto` addresses a Store Issue and the LEAD has produced a decomposition document
@@ -281,6 +291,12 @@ publication by the planning-member rule; the system SHALL NOT auto-route work to
 - **WHEN** a decomposition has been published as a revision
 - **THEN** no child change, child worktree, or pipeline run has been created for it
 - **AND** the Issue's phase reads `planning`, because the revision names only intent nodes
+
+#### Scenario: The LEAD continues after the human confirms
+
+- **WHEN** the operator has run `rasen store issue confirm` over the reviewed revision
+- **THEN** the LEAD may drive each launchable node the confirm step reported through its `store issue start` launch contract
+- **AND** nodes whose dependencies' work is not complete are not started, and no node outside the confirmed revision's wanted work is started
 
 #### Scenario: The change-level decompose stage keeps its behavior
 

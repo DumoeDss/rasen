@@ -272,7 +272,7 @@ header per member project the revision names — each header carrying the
 project's identity, its display alias when one is known, and the lane's
 progress pair — and `list` SHALL carry a compact per-project progress summary
 beside the Issue-level pair, the same lane facts in the same order. A node whose lifecycle is not
-`required` SHALL have that lifecycle named on its node line, and a `cancelled` or `superseded`
+`required` SHALL have that lifecycle named on its node line, whatever the node's kind, and a `cancelled` or `superseded`
 node SHALL have its recorded reason shown with it. A node's target project
 SHALL be shown as the fact the revision records — the project the plan's
 author targeted — and SHALL drive no phase, health, or progress value: a
@@ -285,12 +285,18 @@ surface explains exactly what a launch will wait for: each dependency whose
 observed work is not complete SHALL be named on the downstream node's line
 with its node identifier, its target project, and its observed state, and a
 dependency whose observed work is complete SHALL NOT be named as a blocker
-even before its Change is archived. The `--json` form of both commands
+even before its Change is archived. When the Issue's latest readable revision supersedes another
+revision, `show` SHALL report the node-level delta between them — nodes added, nodes removed,
+nodes retargeted to another project, dependency edges added or removed, lifecycle changes, and
+suggestion changes — derived on read from the two revisions alone, persisted nowhere, so a
+reviewer sees what a revision changed (a merge, a split, a retarget) without diffing files. The
+delta SHALL drive no phase, health, or progress value. A latest revision that supersedes nothing
+SHALL report no delta section. The `--json` form of both commands
 SHALL carry every fact the human form carries, including the per-project
 lanes with their progress pairs, per-node target
 project, per-node dependency facts, per-node lifecycle, per-node suggestion, rationale, and
 uncertainty, observations and status
-problems.
+problems, and the revision delta.
 
 #### Scenario: The list carries the status column
 
@@ -339,6 +345,18 @@ problems.
 - **THEN** its phase, health, and progress are the values the same evidence derived before
 - **AND** the suggestion is reported on the node line, not interpreted into any axis
 
+#### Scenario: Show reports what the latest revision changed
+
+- **WHEN** an Issue whose latest readable revision supersedes a predecessor that carried three nodes — one removed, one retargeted, one re-edged, and one new node added — is shown
+- **THEN** the delta report names the removed node, the retargeted node with both projects, the dependency change, and the added node
+- **AND** the `--json` form carries the same delta facts, and the Issue's phase, health, and progress equal the values derived without the delta report
+
+#### Scenario: A first revision reports no delta
+
+- **WHEN** an Issue whose latest revision supersedes nothing is shown
+- **THEN** no delta section is reported
+- **AND** nothing about the node lines changes
+
 #### Scenario: Cross-project blockers name the project they wait on
 
 - **WHEN** an Issue's plan carries a node whose dependency targets another member project and that dependency's work is not complete
@@ -363,10 +381,16 @@ problems.
 - **THEN** the show command names `optional` on the one node's line
 - **AND** names `cancelled` and the recorded reason on the other's
 
+#### Scenario: An intent node's optional lifecycle is named on its line
+
+- **WHEN** an Issue's plan carries an intent node whose lifecycle is `optional`
+- **THEN** the show command names `optional` on that intent node's line exactly as a Change node's
+- **AND** the optional intent node is counted in no progress pair, in neither part
+
 #### Scenario: Both forms agree
 
 - **WHEN** the same Issue is listed and shown in human form and in `--json` form
-- **THEN** the phase, health, progress, per-project lanes with their progress pairs, per-node target projects, per-node dependency facts, per-node lifecycles, per-node suggestions, rationale, and uncertainty, per-node observations, and status problems are the same facts in both forms
+- **THEN** the phase, health, progress, per-project lanes with their progress pairs, per-node target projects, per-node dependency facts, per-node lifecycles, per-node suggestions, rationale, and uncertainty, per-node observations, status problems, and the revision delta are the same facts in both forms
 
 ### Requirement: Per-project lanes are derived on the work-complete rule
 
