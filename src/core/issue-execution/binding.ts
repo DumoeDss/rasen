@@ -1,10 +1,15 @@
 /**
  * `issue-execution-binding` — resolving an Issue node's launch binding.
  *
- * The frontier derives from the projection's OBSERVATIONS, not the plan read's
- * archive-based `blockedBy` (design D3): a dependency whose run-state is
- * terminal but whose Change is not yet archived has completed its WORK, which
- * is what "dependencies' work is complete" means. Since issue-node-lifecycle,
+ * The frontier IS the ready set (issue-ready-set-scheduling D2): the shared
+ * `deriveIssueReadySet` derivation over the projection — wanted ∧ not-started ∧
+ * every dependency's observed work complete on the work-complete basis — so
+ * the start gate, the confirm composition, and the `ready` read verb cannot
+ * disagree about what may run now. The projection's dependency facts, never
+ * the plan read's archive-based `blockedBy` (design D3), carry the gate: a
+ * dependency whose run-state is terminal but whose Change is not yet archived
+ * has completed its WORK, which is what "dependencies' work is complete"
+ * means. Since issue-node-lifecycle,
  * the frontier also derives from the plan's WANTS: only `required` and
  * `optional` nodes are candidates, and `--node` naming a `cancelled` or
  * `superseded` node is refused with its own refusal kind naming the lifecycle
@@ -21,7 +26,7 @@ import type {
   ExecutionPlanChangeNode,
   ExecutionPlanNode,
 } from '../store/issues/index.js';
-import { issueBlockerState } from '../issue-status/index.js';
+import { deriveIssueReadySet, issueBlockerState } from '../issue-status/index.js';
 import type { IssueNodeObservation, IssueNodeStatus } from '../issue-status/index.js';
 import { listPipelines } from '../pipeline-registry/resolver.js';
 import type {
@@ -59,20 +64,6 @@ function isChange(node: ExecutionPlanNode): node is ExecutionPlanChangeNode {
  */
 function isWanted(node: ExecutionPlanNode): boolean {
   return isChange(node) && (node.lifecycle === undefined || node.lifecycle === 'required' || node.lifecycle === 'optional');
-}
-
-/**
- * Design D3's runnable test: a change node the plan wants that has not
- * started and whose every dependency's observed work is complete. `unknown`
- * dependencies are non-terminal — an unreadable dependency is never proof its
- * work completed.
- */
-function isRunnable(view: NodeView, byId: Map<string, NodeView>): boolean {
-  if (!isWanted(view.node)) return false;
-  if (view.status?.observation !== 'not-started') return false;
-  return view.node.dependsOn.every(dependency =>
-    workComplete(byId.get(dependency)?.status?.observation)
-  );
 }
 
 /**
@@ -315,7 +306,19 @@ export async function resolveIssueLaunchBinding(
       );
     }
   } else {
-    const candidates = [...byId.values()].filter(view => isRunnable(view, byId));
+    // The frontier IS the ready set (issue-ready-set-scheduling D2): one
+    // derivation — `deriveIssueReadySet` over the projection — feeds this
+    // gate, the confirm composition, and the `ready` read verb, so the three
+    // surfaces cannot drift about what may run now. Membership is exactly the
+    // old `isRunnable` clause over projection-consistent facts: wanted,
+    // not-started, every dependency's observed work complete — `unknown`
+    // dependencies stay non-terminal, so an unreadable dependency is never
+    // proof its work completed.
+    const ready = deriveIssueReadySet(input.status);
+    const memberIds = new Set(
+      ready === null ? [] : ready.members.map(member => member.nodeId)
+    );
+    const candidates = [...byId.values()].filter(view => memberIds.has(view.node.nodeId));
     if (candidates.length > 1) {
       const named = candidates.map(view => view.node.nodeId).sort().join(', ');
       return refuse(

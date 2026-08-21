@@ -2124,6 +2124,17 @@
                       "description": "Output as JSON"
                     }
                   }
+                },
+                "ready": {
+                  "description": "Report the deterministic ready set for the Issue's latest published revision: every runnable Change node plus every non-member with its exit reason, the run-state visibility label, and the status problems. Read-only and latest-revision only; the scheduler schedules the latest",
+                  "options": {
+                    "store": {
+                      "description": "Store holding the Issue"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
                 }
               }
             },

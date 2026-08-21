@@ -98,7 +98,7 @@ function detailFor(
 function nodeStatus(
   nodeId: string,
   observation: IssueNodeStatus['observation'],
-  extra: Partial<Pick<IssueNodeStatus, 'kind' | 'projectId' | 'lifecycle'>> = {}
+  extra: Partial<Pick<IssueNodeStatus, 'kind' | 'projectId' | 'lifecycle' | 'blockedBy'>> = {}
 ): IssueNodeStatus {
   return {
     nodeId,
@@ -112,7 +112,7 @@ function nodeStatus(
     uncertainty: null,
     alias: null,
     observation,
-    blockedBy: [],
+    blockedBy: extra.blockedBy ?? [],
     diagnostic: null,
     runStatePath: null,
     locatedBy: null,
@@ -242,7 +242,11 @@ describe('composeIssueConfirm', () => {
       detail: detailFor(nodes),
       status: statusFor([
         nodeStatus('g-001', 'in-flight'),
-        nodeStatus('g-002', 'not-started'),
+        // The dependency facts in the shape the projection derives — the
+        // in-flight dependency is listed, so g-002 sits outside the ready set.
+        nodeStatus('g-002', 'not-started', {
+          blockedBy: [{ nodeId: 'g-001', projectId: PROJECT, observation: 'in-flight' }],
+        }),
       ]),
       workspaceEntries: [],
       launchContextFor: LAUNCH_OK,

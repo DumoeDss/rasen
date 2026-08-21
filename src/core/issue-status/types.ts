@@ -80,6 +80,13 @@ export type IssueStatusProblemKind =
   | 'ambiguous-reference'
   /** A located run-state file exists but cannot be parsed. */
   | 'invalid-run-state'
+  /**
+   * A change node's archive record exists in v2 shape but fails validation —
+   * damaged bytes (tampering or engine bug; archive accounting is
+   * content-addressed). The node reports `unknown`, never a guessed outcome:
+   * damaged bytes never release a dependency gate.
+   */
+  | 'invalid-archive-record'
   /** Acceptance content exists but does not read back (tampered or invalid). */
   | 'unreadable-acceptance'
   /** Store refs this read could not search — never evidence of absence. */
@@ -262,6 +269,103 @@ export interface IssueProjectLane {
 export type IssueRunStateVisibility =
   | { readonly kind: 'execution-root'; readonly executionRoot: string }
   | { readonly kind: 'none' };
+
+// -----------------------------------------------------------------------------
+// The ready set (issue-ready-set-scheduling D1/D5)
+// -----------------------------------------------------------------------------
+
+/**
+ * One member of the ready set: a Change node the plan still wants whose
+ * observed execution is `not-started` and whose every dependency's observed
+ * work is complete — the exact set `store issue start` gates on and `confirm`
+ * composes for. Carried with the facts a launch decision reads: identity,
+ * target, alias, suggestion, lifecycle.
+ */
+export interface IssueReadyMember {
+  readonly nodeId: string;
+  readonly projectId: string;
+  readonly targetLineId: string;
+  /** The Change alias the projection keyed the node's run-state by. */
+  readonly alias: string | null;
+  /** The pipeline the revision suggests for this work; null when none recorded. */
+  readonly suggestedPipeline: string | null;
+  /** The member's lifecycle — `required` or `optional`; both are wanted work. */
+  readonly lifecycle: ExecutionPlanNodeLifecycle;
+}
+
+/**
+ * One blocker a blocked exit names: the dependency's node identifier, target
+ * project, and observed state in the SAME refinement vocabulary the node line
+ * renders (`issueBlockerState`) — "never started here" and "unreadable, here
+ * is why" are named, never guessed.
+ */
+export interface IssueReadyBlocker {
+  readonly nodeId: string;
+  readonly projectId: string;
+  readonly state: string;
+}
+
+/**
+ * Why one node of the revision is NOT in the ready set — the closed exit-reason
+ * vocabulary, each value derived from the node's own projection facts. No node
+ * is silently dropped, and no reason names a state the projection did not
+ * observe.
+ */
+export type IssueReadyExit =
+  /** A `cancelled` node, with its recorded reason (null when none recorded). */
+  | { readonly kind: 'cancelled'; readonly reason: string | null }
+  /** A `superseded` node, with its recorded reason. */
+  | { readonly kind: 'superseded'; readonly reason: string | null }
+  /**
+   * An intent node — no Change exists to run; pending Change creation, named
+   * with its target project and target line.
+   */
+  | {
+      readonly kind: 'pending-change-creation';
+      readonly projectId: string;
+      readonly targetLineId: string;
+    }
+  /**
+   * A wanted node whose observation is `in-flight`, `advanced`, or
+   * `waiting-human` — running; the observation is the reason, never its
+   * dependency facts.
+   */
+  | { readonly kind: 'running'; readonly observation: 'in-flight' | 'advanced' | 'waiting-human' }
+  /** A `failed` node. */
+  | { readonly kind: 'failed' }
+  /**
+   * A node whose work is complete — `finalized` or `run-terminal`. `basis`
+   * carries the node's diagnostic when one explains the completion (a legacy
+   * archive record basis); null when none.
+   */
+  | { readonly kind: 'complete'; readonly basis: string | null }
+  /**
+   * A `not-started` node whose dependencies' observed work is not all
+   * complete, naming each non-terminal dependency (cross-project blockers
+   * included, with their projects).
+   */
+  | { readonly kind: 'blocked'; readonly blockers: readonly IssueReadyBlocker[] }
+  /** An `unknown` node with its diagnostic — never a ready-set member. */
+  | { readonly kind: 'unknown'; readonly diagnostic: string | null };
+
+/** One non-member node paired with its exit reason. */
+export interface IssueReadyExitEntry {
+  readonly nodeId: string;
+  readonly reason: IssueReadyExit;
+}
+
+/**
+ * The deterministic ready set of one Issue's latest readable revision: the
+ * members plus every non-member with its exit reason. Derived on read from the
+ * status projection's own node facts alone, persisted nowhere — reading the
+ * same Issue over unchanged evidence yields the same set. Null when the
+ * revision did not read back: "no readable plan" and "nothing runnable" are
+ * different truths, and an empty set would read as the second.
+ */
+export interface IssueReadySet {
+  readonly members: readonly IssueReadyMember[];
+  readonly exits: readonly IssueReadyExitEntry[];
+}
 
 // -----------------------------------------------------------------------------
 // The revision delta (review-flow D5)

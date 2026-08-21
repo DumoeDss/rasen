@@ -9,6 +9,7 @@
  * and the store aggregate query.
  */
 export { deriveRevisionDelta, issueBlockerState, projectIssueStatus } from './projection.js';
+export { deriveIssueReadySet } from './ready-set.js';
 export type {
   IssueHealth,
   IssueNodeAttribution,
@@ -19,6 +20,11 @@ export type {
   IssuePhase,
   IssueProgress,
   IssueProjectLane,
+  IssueReadyBlocker,
+  IssueReadyExit,
+  IssueReadyExitEntry,
+  IssueReadyMember,
+  IssueReadySet,
   IssueRevisionDelta,
   IssueRevisionEdgeChange,
   IssueRevisionLifecycleChange,

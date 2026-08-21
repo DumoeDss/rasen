@@ -7,8 +7,12 @@
  * the same plan read already resolved, and composes — for every node the plan
  * still wants whose dependencies' work is complete — the SAME launch contract
  * `store issue start --node <id>` would emit for it, suggestion included in
- * the pipeline resolution. Intent nodes are reported as pending Change
- * creation, because confirm composes contracts and mints nothing.
+ * the pipeline resolution. Since issue-ready-set-scheduling (D2), the
+ * launchable partition of that scope derives from the shared
+ * `deriveIssueReadySet` derivation, so confirm's fresh-launch scope IS the
+ * ready set the `ready` verb and start's frontier report. Intent nodes are
+ * reported as pending Change creation, because confirm composes contracts and
+ * mints nothing.
  *
  * Nothing here writes: there is no persisted confirmation record and no start
  * gate — the five declared Issue mutations stay five, and the plan-to-execution
@@ -17,6 +21,7 @@
  * alternatives record why) until deterministic replanning needs one.
  */
 import type { ExecutionPlanChangeNode, ExecutionPlanNode } from '../store/issues/index.js';
+import { deriveIssueReadySet } from '../issue-status/index.js';
 import { resolveIssueLaunchBinding } from './binding.js';
 import type {
   ComposeIssueConfirmInput,
@@ -122,6 +127,19 @@ export async function composeIssueConfirm(
     return observation === 'finalized' || observation === 'run-terminal';
   };
 
+  // The launchable scope derives from the shared ready set
+  // (issue-ready-set-scheduling D2): a not-started wanted node is a member
+  // exactly when its dependencies' observed work is complete, so the same one
+  // derivation feeds the `ready` read verb, start's frontier, and this
+  // composition. Begun nodes (running, complete, or unknown) keep their
+  // per-node resolution below exactly as before — confirm composes their
+  // resume-oriented and report-only contracts through the same
+  // `resolveIssueLaunchBinding` a `start --node` would apply.
+  const ready = deriveIssueReadySet(input.status);
+  const memberIds = new Set(
+    ready === null ? [] : ready.members.map(member => member.nodeId)
+  );
+
   const contracts: IssueLaunchBinding[] = [];
   const pendingChanges: IssueConfirmPendingChange[] = [];
   const waiting: IssueConfirmWaitingNode[] = [];
@@ -140,8 +158,13 @@ export async function composeIssueConfirm(
       continue;
     }
     if (!isWanted(node)) continue; // cancelled/superseded: outside the confirmed scope
-    const blocked = node.dependsOn.filter(dependency => !workComplete(dependency));
-    if (blocked.length > 0) {
+    if (
+      observationsById.get(node.nodeId)?.observation === 'not-started' &&
+      !memberIds.has(node.nodeId)
+    ) {
+      // A not-started wanted node outside the ready set is waiting on
+      // dependency work; the reason names each blocker exactly as before.
+      const blocked = node.dependsOn.filter(dependency => !workComplete(dependency));
       waiting.push({
         nodeId: node.nodeId,
         reason: `awaits ${blocked

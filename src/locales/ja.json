@@ -2124,6 +2124,17 @@
                       "description": "JSON で出力"
                     }
                   }
+                },
+                "ready": {
+                  "description": "Issue の最新公開リビジョンの決定的な実行可能セットを報告します。実行可能な Change ノードごとに、非メンバーの退出理由・実行状態の可視ラベル・状態問題を併記します。読み取り専用で最新リビジョンのみ。スケジューラが扱うのは最新です",
+                  "options": {
+                    "store": {
+                      "description": "Issueを保持するストア"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
                 }
               }
             },

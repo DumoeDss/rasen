@@ -2124,6 +2124,17 @@
                       "description": "以 JSON 输出"
                     }
                   }
+                },
+                "ready": {
+                  "description": "报告该 Issue 最新已发布修订的确定性就绪集：每个可运行的 Change 节点，以及每个非成员节点及其退出理由，附运行状态可见性标签与状态问题。只读且仅针对最新修订——调度器调度的是最新修订",
+                  "options": {
+                    "store": {
+                      "description": "持有该 Issue 的仓库"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
                 }
               }
             },

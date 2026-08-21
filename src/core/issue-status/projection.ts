@@ -449,14 +449,58 @@ async function observeNode(
   // Committed evidence before machine-local run-state (design D4): an archived
   // Change with a committed outcome is finalized regardless of what any
   // machine-local run-state says, which is why this holds even from a
-  // directory that resolves no execution root.
-  if (resolved.resolution.archived && resolved.resolution.outcome !== null) {
+  // directory that resolves no execution root. Since
+  // issue-ready-set-scheduling D3/D4, the finalized branch reads the archive
+  // record's BASIS, not just the outcome column:
+  //
+  //   - `invalid` — v2-shaped bytes that failed validation are damaged
+  //     evidence, never a legacy truth: the node reports `unknown` with an
+  //     `invalid-archive-record` problem naming the file and the reason, and
+  //     no gate the node holds may open on unreadable bytes.
+  //   - `legacy` — an archived entry with no v2 outcome record where none was
+  //     ever written is committed evidence the work story CLOSED. Reading it
+  //     complete invents no outcome value (the four-outcome model's
+  //     no-inference stance governs the OUTCOME column, not the archive
+  //     fact), so the node finalizes with the basis named in its diagnostic —
+  //     work delivered before v2 records existed stops reading fresh forever.
+  //   - `v2` — the outcome-bearing record, exactly as before.
+  //
+  // A resolution that predates the basis field (absent) keeps the pre-ruling
+  // behavior: finalized only on a committed outcome, the run-state path
+  // otherwise.
+  if (resolved.resolution.archived && resolved.resolution.outcomeBasis === 'invalid') {
+    const reason =
+      resolved.resolution.outcomeBasisReason ?? 'the record failed v2 validation';
+    problems.push({
+      kind: 'invalid-archive-record',
+      node: node.nodeId,
+      ref: resolved.resolution.outcomeBasisPath ?? null,
+      reason,
+    });
+    return {
+      nodeId: node.nodeId,
+      kind: 'change',
+      alias: aliasFor(resolved),
+      observation: 'unknown',
+      diagnostic: `archive record does not validate: ${reason}`,
+      runStatePath: null,
+      locatedBy: null,
+      attribution: { pipeline: null, sessions: NO_SESSIONS, evidenceLocator: null },
+    };
+  }
+  if (
+    resolved.resolution.archived &&
+    (resolved.resolution.outcome !== null || resolved.resolution.outcomeBasis === 'legacy')
+  ) {
     return {
       nodeId: node.nodeId,
       kind: 'change',
       alias: aliasFor(resolved),
       observation: 'finalized',
-      diagnostic: null,
+      diagnostic:
+        resolved.resolution.outcome === null && resolved.resolution.outcomeBasis === 'legacy'
+          ? 'finalized on a legacy archive record (no v2 outcome was ever recorded)'
+          : null,
       runStatePath: null,
       locatedBy: null,
       attribution: {
@@ -1001,7 +1045,8 @@ export async function projectIssueStatus(input: ProjectIssueStatusInput): Promis
       problem =>
         problem.kind !== 'invalid-run-state' &&
         problem.kind !== 'unreadable-plan' &&
-        problem.kind !== 'unreadable-acceptance'
+        problem.kind !== 'unreadable-acceptance' &&
+        problem.kind !== 'invalid-archive-record'
     );
 
   // The acceptance block (design D2): the facts as read, the gate evaluated

@@ -1,5 +1,5 @@
 /**
- * `rasen store issue new|list|show|state|plan|start|confirm|acceptance|accept`
+ * `rasen store issue new|list|show|state|plan|start|confirm|ready|acceptance|accept`
  * — the CLI for the Store-level Issue Module (`StoreIssues`) and the
  * Issue-facing slice of the aggregate query
  * (`StoreAggregateQuery.{listIssues,showIssue}`).
@@ -47,8 +47,12 @@ import {
 import { listPipelines } from '../core/pipeline-registry/resolver.js';
 import { resolveSessionLaunchContext } from '../core/management-api/session-launch-context.js';
 import {
+  deriveIssueReadySet,
   issueBlockerState,
   projectIssueStatus,
+  type IssueReadyExit,
+  type IssueReadyMember,
+  type IssueReadySet,
   type IssueStatus,
   type IssueStatusProblem,
   type ProjectIssueStatusInput,
@@ -891,6 +895,71 @@ function renderConfirmReport(report: IssueConfirmReport): void {
   console.log('  wrote nothing — confirm composes; starting a node remains a per-node act.');
 }
 
+// -----------------------------------------------------------------------------
+// The ready answer (`ready`)
+// -----------------------------------------------------------------------------
+
+/** One ready member's human line — the same facts the node line carries. */
+function renderReadyMember(member: IssueReadyMember): string {
+  const head =
+    member.alias === null
+      ? `${member.nodeId} change ${member.projectId}`
+      : `${member.nodeId} change ${member.projectId} ${member.alias}`;
+  const parts = [head];
+  if (member.lifecycle !== 'required') parts.push(`(${member.lifecycle})`);
+  if (member.suggestedPipeline !== null) parts.push(`(suggest: ${member.suggestedPipeline})`);
+  return `    ${parts.join(' ')}`;
+}
+
+/** One exit reason's human text — the closed vocabulary is total, so is this. */
+function renderReadyExit(reason: IssueReadyExit): string {
+  switch (reason.kind) {
+    case 'cancelled':
+      return reason.reason === null ? 'cancelled' : `cancelled (${reason.reason})`;
+    case 'superseded':
+      return reason.reason === null ? 'superseded' : `superseded (${reason.reason})`;
+    case 'pending-change-creation':
+      return `pending Change creation (${reason.projectId}/${reason.targetLineId})`;
+    case 'running':
+      return `running (${reason.observation})`;
+    case 'failed':
+      return 'failed';
+    case 'complete':
+      return reason.basis === null ? 'complete' : `complete — ${reason.basis}`;
+    case 'blocked':
+      return `blocked (${reason.blockers
+        .map(blocker => `${blocker.nodeId}@${blocker.projectId}: ${blocker.state}`)
+        .join(', ')})`;
+    case 'unknown':
+      return `unknown (${reason.diagnostic ?? 'its reference or run-state could not be read'})`;
+  }
+}
+
+/**
+ * The ready answer in human form: the members, every non-member with its exit
+ * reason, the run-state visibility label, and the status problems — the same
+ * facts the `--json` form carries under `ready`. Reading writes nothing, and
+ * the answer says so: a node's start remains a per-node act.
+ */
+function renderReadyAnswer(
+  issueId: string,
+  revisionId: string,
+  ready: IssueReadySet,
+  status: IssueStatus
+): void {
+  console.log(`Issue ${issueId} — ready set (revision ${revisionId})`);
+  console.log(`  ready: ${ready.members.length}`);
+  for (const member of ready.members) console.log(renderReadyMember(member));
+  console.log(`  not ready: ${ready.exits.length}`);
+  for (const exit of ready.exits) {
+    console.log(`    ${exit.nodeId}: ${renderReadyExit(exit.reason)}`);
+  }
+  console.log(`  ${renderRunStateVisibility(status)}`);
+  renderStatusProblems(status.problems);
+  console.log('');
+  console.log('  wrote nothing — ready derives; starting a node remains a per-node act.');
+}
+
 export function registerStoreIssueCommand(store: Command): void {
   const issue = store.command('issue').description('');
 
@@ -1343,6 +1412,59 @@ export function registerStoreIssueCommand(store: Command): void {
         }
       } catch (error) {
         emitFailure(options.json, { issue: null, report: null }, error, 'store_issue_confirm_failed');
+      }
+    });
+
+  issue
+    .command('ready <issue-id>')
+    .description('')
+    .option('--store <id>', '')
+    .option('--json', '')
+    .action(async (issueId: string, options: StoreIssueOptions) => {
+      try {
+        // Read-only, latest revision only: the scheduler schedules the latest,
+        // and addressing an older ordinal is the show and confirm surfaces'
+        // concern — hence no --revision here at all.
+        const detail = await StoreAggregateQuery.showIssue({
+          ...(options.store === undefined ? {} : { store: options.store }),
+          startPath: process.cwd(),
+          issueId,
+        });
+        const context = await resolveProjectionContext();
+        const widening = await resolveStoreWideningContext(options.store);
+        const status = await projectIssueStatus(
+          statusInputFor(detail, { ...context, ...widening })
+        );
+        const ready = deriveIssueReadySet(status);
+        if (ready === null) {
+          // The same refusal shape start/confirm share: no readable revision
+          // is a planning truth, not an execution one — "no readable plan" and
+          // "nothing runnable" are different answers.
+          throw new StoreError(
+            `Issue ${issueId} has no readable published Execution Plan revision; `
+              + 'the planning phase and its publish action precede scheduling.',
+            'issue_ready_requires_plan',
+            {
+              fix:
+                'Publish an Execution Plan revision first: '
+                + '`rasen store issue plan <issue-id> --store <store> --from-file <nodes.yaml>` (or --from-decomposition / --from-portfolio).',
+            }
+          );
+        }
+        const revisionId = detail.plan?.revisionId ?? null;
+        if (options.json) {
+          printJson({
+            issueId,
+            revisionId,
+            ready,
+            runStateVisibility: status.runStateVisibility,
+            problems: status.problems,
+          });
+          return;
+        }
+        renderReadyAnswer(issueId, revisionId ?? '(none)', ready, status);
+      } catch (error) {
+        emitFailure(options.json, { ready: null }, error, 'store_issue_ready_failed');
       }
     });
 }

@@ -407,6 +407,13 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
    * is marked as legacy. Nothing is inferred, defaulted, or upgraded: inventing
    * `landed` to fill a column is exactly the lie the four-outcome model exists
    * to prevent, and child 5 keeps such entries byte-identical on purpose.
+   *
+   * The record BASIS (issue-ready-set-scheduling D4) is recorded beside the
+   * display facts, machine-facing: the two pre-v2 shapes (no record, or a
+   * non-schemaVersion-2 document) are `legacy`; bytes that exist in v2 shape
+   * but do not parse or validate are `invalid` — damaged evidence, never a
+   * legacy truth. `legacyRecord`'s display semantics are unchanged: it stays
+   * collapsed over all four null-outcome branches exactly as before.
    */
   private async readArchiveEntry(
     context: QueryContext,
@@ -429,20 +436,44 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
       projectId: candidate.projectId,
       targetLineId: candidate.targetLineId,
       entryName,
+      outcomeBasisPath: blobPath,
       foundAtRef: candidate.foundAtRef,
     };
     const nameDate = ARCHIVE_DATE_PATTERN.exec(entryName)?.[1] ?? null;
     if (text === null) {
-      return { ...base, archiveDate: nameDate, outcome: null, legacyRecord: true };
+      return {
+        ...base,
+        archiveDate: nameDate,
+        outcome: null,
+        legacyRecord: true,
+        outcomeBasis: 'legacy',
+        outcomeBasisReason: null,
+      };
     }
     let raw: unknown;
     try {
       raw = JSON.parse(text) as unknown;
-    } catch {
-      return { ...base, archiveDate: nameDate, outcome: null, legacyRecord: true };
+    } catch (error) {
+      return {
+        ...base,
+        archiveDate: nameDate,
+        outcome: null,
+        legacyRecord: true,
+        outcomeBasis: 'invalid',
+        outcomeBasisReason: `archive.json is not valid JSON: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      };
     }
     if ((raw as { schemaVersion?: unknown } | null)?.schemaVersion !== 2) {
-      return { ...base, archiveDate: nameDate, outcome: null, legacyRecord: true };
+      return {
+        ...base,
+        archiveDate: nameDate,
+        outcome: null,
+        legacyRecord: true,
+        outcomeBasis: 'legacy',
+        outcomeBasisReason: null,
+      };
     }
     try {
       const record = validateArchiveV2(raw);
@@ -451,9 +482,20 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
         archiveDate: record.archivedAt.slice(0, 10),
         outcome: record.outcome,
         legacyRecord: false,
+        outcomeBasis: 'v2',
+        outcomeBasisReason: null,
       };
-    } catch {
-      return { ...base, archiveDate: nameDate, outcome: null, legacyRecord: true };
+    } catch (error) {
+      return {
+        ...base,
+        archiveDate: nameDate,
+        outcome: null,
+        legacyRecord: true,
+        outcomeBasis: 'invalid',
+        outcomeBasisReason: `schemaVersion-2 record failed validation: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      };
     }
   }
 
@@ -660,6 +702,17 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
             localLocator: resolved.localLocator,
             outcome: archive?.outcome ?? null,
             archived: found?.archived ?? false,
+            // The record basis rides beside the outcome facts (additive,
+            // machine-facing): the projection's finalized ruling reads it, the
+            // query's own readiness stays archive-outcome based exactly as
+            // before — the two-bases-by-design split.
+            ...(archive === null
+              ? {}
+              : {
+                  outcomeBasis: archive.outcomeBasis,
+                  outcomeBasisReason: archive.outcomeBasisReason,
+                  outcomeBasisPath: archive.outcomeBasisPath,
+                }),
           },
           readiness: conflict
             ? 'unknown'

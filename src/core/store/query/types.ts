@@ -191,6 +191,17 @@ export interface AggregateChangeEntry {
   readonly localLocator: InertLocalLocator | null;
 }
 
+/**
+ * Which branch an archive entry's record read under — the machine-facing
+ * enrichment `legacyRecord`'s display boolean cannot carry (it stays collapsed
+ * for display on purpose). `legacy` covers the two shapes that predate v2
+ * outcome records (no record at all, or a record that is not a
+ * schemaVersion-2 document); `invalid` is a record that EXISTS in v2 shape —
+ * or would have to be JSON to be anything — but does not validate or parse:
+ * damaged bytes, never a legacy truth.
+ */
+export type ArchiveOutcomeBasis = 'v2' | 'legacy' | 'invalid';
+
 export interface AggregateArchiveEntry {
   readonly changeId: string;
   readonly changeInstanceId: string | null;
@@ -205,6 +216,23 @@ export interface AggregateArchiveEntry {
    */
   readonly outcome: FinalizationOutcomeName | null;
   readonly legacyRecord: boolean;
+  /**
+   * Which branch the entry's record read under (issue-ready-set-scheduling
+   * D4). Display semantics of `legacyRecord` are untouched; this is the
+   * scheduling consumer's basis fact.
+   */
+  readonly outcomeBasis: ArchiveOutcomeBasis;
+  /**
+   * Why an `invalid` basis failed — the parse or validation error. Null on
+   * every other basis.
+   */
+  readonly outcomeBasisReason: string | null;
+  /**
+   * The archive record's Store-relative blob path, carried for every branch
+   * (including the record-absent one, where it names the path nothing was
+   * found at). Machine-facing; the aggregate display never reads it.
+   */
+  readonly outcomeBasisPath: string;
   readonly foundAtRef: string;
 }
 
@@ -298,6 +326,18 @@ export interface PlanNodeResolution {
   readonly localLocator: InertLocalLocator | null;
   readonly outcome: FinalizationOutcomeName | null;
   readonly archived: boolean;
+  /**
+   * Which basis the archived Change's record read under, threaded from
+   * `readArchiveEntry` (issue-ready-set-scheduling D4). Absent when no archive
+   * record was consulted — the query populates it for every archived
+   * resolution; the optionality keeps hand-built rows (tests, degraded reads)
+   * valid without guessing a basis.
+   */
+  readonly outcomeBasis?: ArchiveOutcomeBasis;
+  /** The `invalid` basis's parse/validation failure. Absent/null elsewhere. */
+  readonly outcomeBasisReason?: string | null;
+  /** The archive record's Store-relative blob path, when one was consulted. */
+  readonly outcomeBasisPath?: string | null;
 }
 
 export type PlanNodeReadiness =

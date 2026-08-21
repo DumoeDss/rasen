@@ -233,13 +233,27 @@ const LAUNCH_NOT_MEMBER: IssueLaunchContextFor = async () => ({
 
 const KNOWN_PIPELINES = (name: string): boolean => name === 'small-feature' || name === 'bug-fix';
 
-/** The standard input: three not-started nodes, frontier = g-001. */
+/**
+ * The standard input: three not-started nodes, frontier = g-001. The status
+ * rows carry dependency facts in the shape the projection's post-pass
+ * derives — every dependency whose observed work is not complete is listed —
+ * because the frontier consumes exactly those facts (the ready-set
+ * derivation's membership rule). Since issue-ready-set-scheduling the
+ * hand-built rows honor the same invariant the real projection guarantees.
+ */
 function baseInput() {
   const detail = detailFor(PLAN_NODES);
   const status = statusFor([
     nodeStatus('g-001', 'not-started'),
-    nodeStatus('g-002', 'not-started'),
-    nodeStatus('g-003', 'not-started'),
+    nodeStatus('g-002', 'not-started', {
+      blockedBy: [{ nodeId: 'g-001', projectId: PROJECT, observation: 'not-started' }],
+    }),
+    nodeStatus('g-003', 'not-started', {
+      blockedBy: [
+        { nodeId: 'g-001', projectId: PROJECT, observation: 'not-started' },
+        { nodeId: 'g-002', projectId: PROJECT, observation: 'not-started' },
+      ],
+    }),
   ]);
   return {
     detail,
@@ -309,8 +323,15 @@ describe('resolveIssueLaunchBinding — frontier and modes', () => {
     const input = baseInput();
     input.status = statusFor([
       nodeStatus('g-001', 'in-flight'),
-      nodeStatus('g-002', 'not-started'),
-      nodeStatus('g-003', 'not-started'),
+      nodeStatus('g-002', 'not-started', {
+        blockedBy: [{ nodeId: 'g-001', projectId: PROJECT, observation: 'in-flight' }],
+      }),
+      nodeStatus('g-003', 'not-started', {
+        blockedBy: [
+          { nodeId: 'g-001', projectId: PROJECT, observation: 'in-flight' },
+          { nodeId: 'g-002', projectId: PROJECT, observation: 'not-started' },
+        ],
+      }),
     ]);
     const result = await resolveIssueLaunchBinding(input);
     expect(result.ok).toBe(false);
@@ -361,20 +382,21 @@ describe('resolveIssueLaunchBinding — frontier and modes', () => {
     const detail = detailFor(PLAN_NODES, nodeId =>
       nodeId === 'g-002' ? ['g-001'] : nodeId === 'g-003' ? ['g-001', 'g-002'] : []
     );
+    // The status rows carry the CURRENT projection shape — a terminal
+    // dependency is not listed in `blockedBy`, because the post-pass filters
+    // complete work out. (Before issue-ready-set-scheduling this fixture
+    // planted deliberately stale rows to pin that binding ignored the
+    // dependency-facts array entirely; since then the frontier CONSUMES those
+    // facts — the ready-set membership — so the rows must be the shape the
+    // projection actually derives. The pin's discriminating half is unchanged:
+    // the plan read's ARCHIVE-based `blockedBy` above still names g-001, and
+    // keying the gate on it fails exactly this test with the no-runnable-nodes
+    // refusal.)
     const status = statusFor([
       nodeStatus('g-001', 'run-terminal'),
-      // The planted `blockedBy` rows are the stale archive-based shape the
-      // g-002 projection no longer produces (a terminal dependency listed):
-      // the pin stays discriminating precisely because binding must ignore
-      // them whatever they say.
-      nodeStatus('g-002', 'not-started', {
-        blockedBy: [{ nodeId: 'g-001', projectId: PROJECT, observation: 'run-terminal' }],
-      }),
+      nodeStatus('g-002', 'not-started'),
       nodeStatus('g-003', 'not-started', {
-        blockedBy: [
-          { nodeId: 'g-001', projectId: PROJECT, observation: 'run-terminal' },
-          { nodeId: 'g-002', projectId: PROJECT, observation: 'not-started' },
-        ],
+        blockedBy: [{ nodeId: 'g-002', projectId: PROJECT, observation: 'not-started' }],
       }),
     ]);
     const result = await resolveIssueLaunchBinding({
@@ -629,8 +651,15 @@ describe('resolveIssueLaunchBinding — pipeline resolution (D5)', () => {
         runStatePath: 'C:\\exec\\.rasen\\changes\\child-a\\ephemera\\auto-run.json',
         attribution: { pipeline: 'small-feature', sessions: [], evidenceLocator: null },
       }),
-      nodeStatus('g-002', 'not-started'),
-      nodeStatus('g-003', 'not-started'),
+      nodeStatus('g-002', 'not-started', {
+        blockedBy: [{ nodeId: 'g-001', projectId: PROJECT, observation: 'not-started' }],
+      }),
+      nodeStatus('g-003', 'not-started', {
+        blockedBy: [
+          { nodeId: 'g-001', projectId: PROJECT, observation: 'not-started' },
+          { nodeId: 'g-002', projectId: PROJECT, observation: 'not-started' },
+        ],
+      }),
     ]);
     const result = await resolveIssueLaunchBinding(input);
     expect(result.ok).toBe(true);
@@ -874,11 +903,25 @@ describe('resolveIssueLaunchBinding — cross-project dependency naming (g-002)'
   ];
 
   function crossInput(upstream: IssueNodeStatus): ReturnType<typeof baseInput> {
+    // The dependency facts in the shape the projection derives: the upstream
+    // is listed exactly while its observed work is not complete.
+    const upstreamTerminal =
+      upstream.observation === 'finalized' || upstream.observation === 'run-terminal';
     return {
       detail: detailFor(CROSS_NODES),
       status: statusFor([
         upstream,
-        nodeStatus('g-down', 'not-started', { projectId: PROJECT, targetLineId: LINE }),
+        nodeStatus('g-down', 'not-started', {
+          projectId: PROJECT,
+          targetLineId: LINE,
+          ...(upstreamTerminal
+            ? {}
+            : {
+                blockedBy: [
+                  { nodeId: 'g-up', projectId: PROJECT_B, observation: upstream.observation },
+                ],
+              }),
+        }),
       ]),
       workspaceEntries: [] as readonly WorkspaceIndexEntry[],
       launchContextFor: LAUNCH_OK,

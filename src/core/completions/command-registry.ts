@@ -732,6 +732,15 @@ const COMMANDS: readonly CommandDefinition[] = [
               COMMON_FLAGS.json,
             ],
           },
+          {
+            // The deterministic scheduling read: the ready set of the LATEST
+            // published revision plus every non-member with its exit reason.
+            // Read-only; no --revision — the scheduler schedules the latest.
+            name: 'ready',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-id' }],
+            flags: [COMMON_FLAGS.store, COMMON_FLAGS.json],
+          },
         ],
       },
       {
