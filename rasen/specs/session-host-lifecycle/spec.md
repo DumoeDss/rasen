@@ -2,6 +2,7 @@
 
 ## Purpose
 Defines the lifecycle, concurrency, recovery, retirement, and ownership guarantees for reusable multi-turn Claude session hosts managed by the existing session supervisor.
+
 ## Requirements
 ### Requirement: A reusable session host is created as a live multi-turn process
 The session supervisor SHALL create a reusable host by starting Claude in streaming-input and streaming-output mode in the trusted working directory, delivering one bootstrap message, capturing the Claude session identity, and returning the bootstrap result with the host ready for another turn. The host SHALL retain its stdin/stdout process connection while idle and SHALL use a stable supervisor-lifetime host reference even if its process is later replaced.
@@ -529,15 +530,19 @@ The portfolio SHALL retain durable acceptance evidence for one exact canonical R
 - **THEN** a permitted foreground owner applies the same exact-run, durable fence, recovery, result, and shutdown rules, while timeout, ambiguity, or a live recorded owner remains fail closed and only true absence reduces cache residency
 
 ### Requirement: Acceptance matches the reconciler support boundary
-The session execution acceptance suite SHALL exercise real reconciler-admitted actions from `bug-fix`, `small-feature`, `full-feature`, `goal-loop-measure`, `goal-loop-evaluate`, and `goal-loop-research`. It SHALL retain `auto-decompose` as an expected fail-closed pipeline whose production execution-profile preparation prevents session dispatch.
+
+The session execution acceptance suite SHALL exercise real reconciler-admitted actions from `bug-fix`, `small-feature`, `full-feature`, `goal-loop-measure`, `goal-loop-evaluate`, and `goal-loop-research`. It SHALL retain `auto-decompose` as an expected fail-closed pipeline whose production execution-profile preparation prevents session dispatch, under the truthful verdict that its decompose stage is a Dispatch-domain construct the reconciler does not execute.
 
 #### Scenario: Every supported built-in reaches the session executor
+
 - **WHEN** each of the six named supported pipelines produces an admitted action
 - **THEN** the executor accepts that action only with its exact Run, action, session, workspace, and execution binding and records a successful supported-pipeline case
 
 #### Scenario: Auto-decompose remains fail closed through production preparation
+
 - **WHEN** `auto-decompose` traverses the production registry, profile preparation, and reconciler-support path
-- **THEN** it returns `execution_profile_unavailable` before a reusable session is created or messaged, without relying on an injected null profile, and the result is recorded as expected behavior rather than a regression
+- **THEN** it fails closed before a reusable session is created or messaged, reporting the unsupported-semantics verdict for its decompose stage rather than an execution-profile unavailability, without relying on an injected null profile
+- **AND** the result is recorded as expected behavior rather than a regression
 
 ### Requirement: Real cadence and retention evidence uses physical elapsed time
 Final cache-retention acceptance SHALL run only after repository-local implementation, non-author clean review, task/spec/local-delivery/archive state, and every parent-selected repository mutation are complete. It SHALL use the production scheduler and real elapsed time against the frozen exact tracked delivery tree. It SHALL include an approximately 50-minute eligible touch, an independent no-touch cache-hit control at 55 minutes, an independent no-touch cache-miss control at 65 minutes, and a real configured deadline action. Fake-clock evidence MAY support deterministic local coverage but SHALL NOT by itself close this requirement.

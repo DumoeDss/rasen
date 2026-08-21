@@ -673,6 +673,10 @@ const COMMANDS: readonly CommandDefinition[] = [
               // portfolio run-state compiles into the next revision.
               // Mutually exclusive with from-file; the CLI refuses both-or-neither.
               { name: 'from-portfolio', takesValue: true },
+              // The third publication source: a machine-proposed decomposition
+              // document compiled into the next revision. Mutually exclusive
+              // with the other two; the CLI refuses any two-or-none together.
+              { name: 'from-decomposition', takesValue: true },
               COMMON_FLAGS.json,
             ],
           },
@@ -711,6 +715,20 @@ const COMMANDS: readonly CommandDefinition[] = [
               COMMON_FLAGS.store,
               { name: 'node', takesValue: true },
               { name: 'pipeline', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            // The Issue dispatch's confirm step: composes the verified
+            // launch-contract set and pending-Change report for one revision
+            // and writes nothing — starting a confirmed node stays a
+            // per-node act.
+            name: 'confirm',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-id' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'revision', takesValue: true },
               COMMON_FLAGS.json,
             ],
           },

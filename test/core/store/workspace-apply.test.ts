@@ -639,4 +639,33 @@ describe('applying a workspace plan', () => {
     expect(await f.dependencies.git.dirtyEntries(f.projectRoot(PROJECT))).toEqual([]);
     expect(await f.dependencies.git.untrackedFiles(f.storeRoot)).toEqual([]);
   });
+
+  it('writes only the association document into a reused main-checkout execution root', async () => {
+    // The blessed shape end to end: the project's main checkout AS the
+    // execution root. Apply reuses it untouched — no worktree created there,
+    // no ref or HEAD moved, no tracked file modified — and the only new path
+    // inside it is the execution association document, this Module's own run
+    // state under `.rasen/`, which the pair's design has always promised for
+    // this shape.
+    f.git(f.projectRoot(PROJECT), ['switch', '--quiet', '--create', 'temp-branch']);
+    const main = f.projectRoot(PROJECT);
+    const headBefore = f.git(main, ['rev-parse', 'HEAD']).trim();
+    const built = await f.workspace().plan(input({ executionWorktree: main }));
+    expect(built.applicable, JSON.stringify(built.blockers)).toBe(true);
+
+    const result = await f.workspace().apply(built.token!);
+
+    expect(result.created).toEqual([planningWorktree]);
+    expect(result.reused).toEqual([main]);
+    expect(f.git(main, ['rev-parse', 'HEAD']).trim()).toBe(headBefore);
+    expect(f.git(main, ['symbolic-ref', '--quiet', 'HEAD']).trim()).toBe('refs/heads/temp-branch');
+    // The main checkout gained exactly one untracked path: the association.
+    expect(await f.dependencies.git.untrackedFiles(main)).toEqual([
+      '.rasen/planning-binding.json',
+    ]);
+    expect(await f.dependencies.git.dirtyEntries(main)).toEqual([]);
+    expect(fs.existsSync(path.join(main, '.rasen', 'planning-binding.json'))).toBe(true);
+    // ...and the project repository still knows only its own main checkout.
+    expect(f.git(main, ['worktree', 'list', '--porcelain']).split('worktree ').length - 1).toBe(1);
+  });
 });

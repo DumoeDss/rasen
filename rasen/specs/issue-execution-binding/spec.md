@@ -18,7 +18,13 @@ derived at read time and persisted nowhere.
 `rasen store issue start` SHALL resolve, for one Issue, the plan node that is next to execute and
 the execution context it is bound to, and SHALL emit the launch contract — the Issue, the node,
 the Change instance and alias, the member project and target line, the working directory to
-launch from, the attached Store planning root, and the pipeline to run when one is known. The
+launch from, the attached Store planning root, and the pipeline to run when one is known. For a
+fresh node the pipeline SHALL be known in this order: an explicit `--pipeline` first, then the
+pipeline the node's run-state records, then the pipeline the plan revision records as the node's
+suggestion — a suggestion is a proposal the operator's explicit choice overrides without
+refusal, and the contract SHALL name which source supplied the pipeline. For a node already
+running, the recorded pipeline SHALL lead exactly as before, and an explicit `--pipeline` that
+disagrees with it SHALL still be refused. The
 next-to-execute node SHALL be the node the operator names with `--node`, or the single node of
 the lifecycles the plan still wants — `required` or `optional` — that has not started and whose
 dependencies' work is complete; when several nodes qualify the command
@@ -41,9 +47,21 @@ directory.
 - **WHEN** an Issue's plan has one not-started node whose dependencies' work is complete, and `rasen store issue start` runs for that Issue
 - **THEN** the command emits the node's launch contract naming the Change, the member project, the working directory to launch from, and the attached Store planning root
 
+#### Scenario: A fresh node's recorded suggestion supplies the pipeline
+
+- **WHEN** a fresh node's revision records `suggestedPipeline: small-feature` and `store issue start` runs for it with no `--pipeline`
+- **THEN** the emitted contract's pipeline is `small-feature`, named as coming from the plan's suggestion
+- **AND** an explicit `--pipeline` on the same invocation overrides the suggestion without refusal, named as the operator's choice
+
+#### Scenario: A running node's recorded pipeline still leads
+
+- **WHEN** `store issue start --node` addresses a node whose run-state records a pipeline and no `--pipeline` is given
+- **THEN** the contract's pipeline is the recorded one, whichever value the revision's suggestion carries
+- **AND** an explicit `--pipeline` disagreeing with the recorded value is refused exactly as before
+
 #### Scenario: Several runnable nodes are named, not chosen among
 
-- **WHEN** an Issue's plan has two not-started nodes whose dependencies' work is complete
+- **WHEN** an Issue's plan has two not-started nodes whose dependencies' work are complete
 - **THEN** the command refuses, naming every runnable node
 - **AND** names the `--node` selection the operator must make
 
@@ -209,3 +227,31 @@ attribution.
 
 - **WHEN** `rasen store issue start` resolves the same Issue twice with no change to its plan, evidence, or index
 - **THEN** both invocations emit the same launch contract
+
+### Requirement: Confirming a plan composes the launch contract set
+
+`rasen store issue confirm <issue-id> [--revision <id>]` SHALL be the Issue dispatch's confirm step: it SHALL resolve the named revision, or the latest readable revision when none is named, refusing an Issue with no readable revision toward planning exactly as start does. It SHALL verify every Change node's instance against committed Store evidence and compose, for every node the plan still wants whose dependencies' work is complete and whose Change is bound, the same launch contract `store issue start` would emit for it — working directory, project, line, and pipeline under the same resolution order, suggestion included. Every intent node the revision still carries SHALL be reported as pending Change creation, named with its target project, target line, and suggestion, because confirm composes contracts and mints nothing. The command SHALL write nothing — the Issue record, every revision, every run-state file, and the workspace index are byte-identical before and after — and SHALL refuse, naming the defect, a revision whose Change reference does not resolve or whose revision cannot be read. Confirm is a read: the five declared Issue mutations stay five, and starting a confirmed node remains the operator's per-node act.
+
+#### Scenario: Confirm reports the launchable set and the pending work
+
+- **WHEN** an Issue's latest revision carries one launchable Change node and one intent node and `rasen store issue confirm` runs
+- **THEN** the report carries the Change node's launch contract and names the intent node as pending Change creation with its target project, line, and suggestion
+- **AND** the human and `--json` forms carry the same facts
+
+#### Scenario: Confirm refuses an unresolvable reference
+
+- **WHEN** the resolved revision names a Change instance no committed Store evidence resolves
+- **THEN** confirm refuses, naming the node and the missing evidence
+- **AND** no contract set is reported as launchable
+
+#### Scenario: Confirm refuses a named revision that does not read back with the readable range
+
+- **WHEN** `--revision` names a revision that does not read back on an Issue that has published revisions
+- **THEN** confirm refuses with its own refusal, naming the requested revision id and the Issue's readable revision range with its latest
+- **AND** the refusal's advice points at reading the ordinals, never at publishing a new revision
+
+#### Scenario: Confirm writes nothing
+
+- **WHEN** `rasen store issue confirm` runs to completion
+- **THEN** the Issue record, every plan revision, every run-state file, and the workspace index are byte-identical before and after
+- **AND** no Change, worktree, or run is created

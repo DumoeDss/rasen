@@ -141,13 +141,16 @@ export interface IssueRecordV1 {
 export type ExecutionPlanNodeKind = 'change' | 'intent';
 
 /**
- * The closed lifecycle vocabulary a Change node carries. An ABSENT lifecycle
- * reads as `required` — the value every revision published before this
- * vocabulary existed has always meant — and the stored canonical form omits a
- * `required` lifecycle exactly as it omits an absent `changeAlias`, so those
- * revisions re-derive their published digests byte-for-byte. `cancelled` and
- * `superseded` carry a recorded `reason`; intent nodes carry no lifecycle at
- * all.
+ * The closed lifecycle vocabulary a node carries, scoped by kind: a Change node
+ * admits all four values; an intent node admits `required` and `optional` only
+ * (see `ExecutionPlanIntentNode`). An ABSENT lifecycle reads as `required` —
+ * the value every revision published before this vocabulary existed has always
+ * meant — and the stored canonical form omits a `required` lifecycle exactly as
+ * it omits an absent `changeAlias`, so those revisions re-derive their
+ * published digests byte-for-byte. `cancelled` and `superseded` carry a
+ * recorded `reason`, and stay Change-node-only: they explain work that EXISTED
+ * and is no longer wanted, while unwanted intent work — work no Change ever
+ * backed — is expressed by omitting the node from the next revision.
  */
 export type ExecutionPlanNodeLifecycle = 'required' | 'optional' | 'cancelled' | 'superseded';
 
@@ -157,6 +160,28 @@ interface ExecutionPlanNodeBase {
   readonly projectId: ProjectId;
   readonly targetLineId: TargetLineId;
   readonly dependsOn: readonly string[];
+  /**
+   * The pipeline the plan proposes to run for this node. A name the pipeline
+   * registry resolves at PUBLICATION (validated through the same registry seam
+   * `store issue start --pipeline` uses — the store module takes the
+   * membership test as an injected input because it owns no working-directory
+   * root to resolve pipelines from). Absent fields are omitted from the
+   * canonical form exactly as an absent `lifecycle` is, so revisions published
+   * before this field existed re-derive their digests byte-for-byte.
+   */
+  readonly suggestedPipeline?: string;
+  /**
+   * Why the work exists as this node — the decomposition reasoning that
+   * produced it. Portable durable text, refused at the schema rather than
+   * trimmed; canonically omitted when absent.
+   */
+  readonly rationale?: string;
+  /**
+   * What the decomposer was unsure about when it proposed this node. Portable
+   * durable text, refused at the schema rather than trimmed; canonically
+   * omitted when absent.
+   */
+  readonly uncertainty?: string;
 }
 
 /**
@@ -180,10 +205,21 @@ export interface ExecutionPlanChangeNode extends ExecutionPlanNodeBase {
  * Not a weaker `change` node with a missing field: ownership is explicit from
  * the first draft, which is what keeps "exactly one owner" true across the
  * whole lifecycle rather than only at the end.
+ *
+ * An intent node carries the required/optional half of the lifecycle
+ * vocabulary: the decomposition's proposal lives ON the node the review
+ * surface shows, not in a sidecar document. `cancelled`/`superseded` are
+ * refused here — unwanted intent work is expressed by omitting the node from
+ * the next revision, because there is no existed work for those values to
+ * explain. An absent lifecycle reads `required` and is canonically omitted,
+ * so intent revisions published before this field existed re-derive their
+ * digests byte-for-byte.
  */
 export interface ExecutionPlanIntentNode extends ExecutionPlanNodeBase {
   readonly kind: 'intent';
   readonly summary: string;
+  /** Absent ≡ `required`; only `optional` is ever stored. */
+  readonly lifecycle?: 'optional';
 }
 
 export type ExecutionPlanNode = ExecutionPlanChangeNode | ExecutionPlanIntentNode;
@@ -291,6 +327,10 @@ export interface ExecutionPlanChangeNodeInput {
   /** Authored reason; required for `cancelled`/`superseded`, portable-checked. */
   readonly reason?: string;
   readonly dependsOn?: readonly string[];
+  /** Optional suggestion/rationale/uncertainty; see `ExecutionPlanNodeBase`. */
+  readonly suggestedPipeline?: string;
+  readonly rationale?: string;
+  readonly uncertainty?: string;
 }
 
 export interface ExecutionPlanIntentNodeInput {
@@ -300,6 +340,12 @@ export interface ExecutionPlanIntentNodeInput {
   readonly targetLineId: string;
   readonly summary: string;
   readonly dependsOn?: readonly string[];
+  /** Authored lifecycle; `required`|`optional` only, validated semantically. */
+  readonly lifecycle?: string;
+  /** Optional suggestion/rationale/uncertainty; see `ExecutionPlanNodeBase`. */
+  readonly suggestedPipeline?: string;
+  readonly rationale?: string;
+  readonly uncertainty?: string;
 }
 
 export type ExecutionPlanNodeInput =
@@ -331,8 +377,24 @@ export interface SetIssueStateInput extends StoreIssueSelector {
   readonly reason?: string;
 }
 
+/**
+ * Whether a pipeline name is known to the pipeline registry — the SAME seam
+ * `store issue start --pipeline` validates through (the CLI composes the
+ * root-aware variant over the working directory's resolved root). Structural
+ * duplicate of issue-execution's `IssuePipelineKnown`, declared locally so the
+ * store module takes no upward dependency on the composition layer above it.
+ */
+export type IssuePlanPipelineKnown = (name: string) => boolean;
+
 export interface PublishExecutionPlanInput extends StoreIssueSelector {
   readonly nodes: readonly ExecutionPlanNodeInput[];
+  /**
+   * Registry membership test for node `suggestedPipeline` values. When a node
+   * carries a suggestion and no test was supplied, publication refuses rather
+   * than storing a suggestion it could not check; the CLI injects the
+   * root-aware variant on every source path.
+   */
+  readonly pipelineKnown?: IssuePlanPipelineKnown;
 }
 
 export interface PublishAcceptanceConditionsInput extends StoreIssueSelector {

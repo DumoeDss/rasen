@@ -56,11 +56,24 @@ export interface IssueLaunchBinding {
    */
   readonly launch: IssueLaunchContext | null;
   /**
-   * The pipeline to run: `--pipeline` when supplied (validated), else the
-   * pipeline recorded in the addressed node's located run-state, else null —
-   * the contract then says the pipeline is chosen at launch.
+   * The pipeline to run: for a fresh node, `--pipeline` when supplied
+   * (validated), else the pipeline recorded in the addressed node's located
+   * run-state, else the pipeline the plan revision records as the node's
+   * suggestion — a suggestion is a proposal the operator's explicit choice
+   * overrides without refusal. For an already-running node the recorded
+   * pipeline leads exactly as before. Null in `already-complete` mode or when
+   * none of the three sources supplies one — the contract then says the
+   * pipeline is chosen at launch.
    */
   readonly pipeline: string | null;
+  /**
+   * Which source supplied `pipeline`: the operator's `--pipeline` (`operator`),
+   * the located run-state's recording (`run-state`), or the plan revision's
+   * suggestion (`suggestion`). Null exactly when `pipeline` is null — a
+   * contract that names a pipeline names where it came from, so a suggestion
+   * the operator overrode stays visible as the operator's deliberate choice.
+   */
+  readonly pipelineSource: 'operator' | 'run-state' | 'suggestion' | null;
   readonly mode: IssueLaunchMode;
   /** The run-state file the addressed node's observation was read from. */
   readonly runStatePath: string | null;
@@ -168,3 +181,94 @@ export interface ResolveIssueLaunchBindingInput {
 export type ResolveIssueLaunchBindingResult =
   | { ok: true; binding: IssueLaunchBinding }
   | { ok: false; refusal: IssueStartRefusal };
+
+// -----------------------------------------------------------------------------
+// The confirm composition (issue-autodecompose-review-flow D6)
+// -----------------------------------------------------------------------------
+
+/** One intent node the confirmed revision still carries, as confirm reports it. */
+export interface IssueConfirmPendingChange {
+  readonly nodeId: string;
+  readonly projectId: string;
+  readonly targetLineId: string;
+  readonly summary: string;
+  /** The node's recorded suggestion, when the revision carries one. */
+  readonly suggestedPipeline: string | null;
+  /** The node's lifecycle as the revision records it (absent reads required). */
+  readonly lifecycle: 'required' | 'optional';
+}
+
+/** A wanted change node that is not launchable now, as confirm reports it. */
+export interface IssueConfirmWaitingNode {
+  readonly nodeId: string;
+  /** Why it waits, named with the same blocker facts a start refusal uses. */
+  readonly reason: string;
+}
+
+/** A wanted change node whose deps complete but whose launch context failed. */
+export interface IssueConfirmUnpreparedNode {
+  readonly nodeId: string;
+  readonly reason: string;
+  /** The exact `rasen store workspace plan --existing-change …` line, when the failure was the unprepared state. */
+  readonly preparation: string | null;
+}
+
+/**
+ * The confirm report: the verified launch-contract set plus the pending work,
+ * composed from one revision and WRITTEN NOWHERE. Starting a confirmed node
+ * remains the operator's per-node act.
+ */
+export interface IssueConfirmReport {
+  readonly issueId: string;
+  readonly revisionId: string;
+  /**
+   * The launch contracts `store issue start --node <id>` would emit now, for
+   * every wanted change node whose dependencies' work is complete — fresh
+   * launches, resume-oriented contracts for already-running nodes, and the
+   * report-only rows for already-complete ones.
+   */
+  readonly contracts: readonly IssueLaunchBinding[];
+  /** Intent nodes the revision still carries — pending Change creation. */
+  readonly pendingChanges: readonly IssueConfirmPendingChange[];
+  /** Wanted change nodes awaiting dependency work, each with its reason. */
+  readonly waiting: readonly IssueConfirmWaitingNode[];
+  /** Wanted change nodes whose launch context did not resolve, with why. */
+  readonly unprepared: readonly IssueConfirmUnpreparedNode[];
+}
+
+/** The closed refusal taxonomy for the confirm composition. */
+export type IssueConfirmRefusalCode =
+  /** No readable revision to compose from; planning precedes confirmation. */
+  | 'issue_confirm_requires_plan'
+  /**
+   * A NAMED revision that did not read back on an Issue that HAS published
+   * revisions — a distinct truth from having nothing to confirm: the operator
+   * misaddressed an ordinal, and the advice is to read the range, not to
+   * publish (review round-1 Minor-1).
+   */
+  | 'issue_confirm_revision_unreadable'
+  /** A change node's instance did not verify against committed Store evidence. */
+  | 'issue_confirm_reference_unresolved';
+
+export interface IssueConfirmRefusal {
+  readonly code: IssueConfirmRefusalCode;
+  readonly message: string;
+}
+
+export interface ComposeIssueConfirmInput {
+  readonly detail: IssueDetail;
+  /** The projection over the same detail — carries the per-node observations. */
+  readonly status: IssueStatus;
+  readonly workspaceEntries: readonly WorkspaceIndexEntry[];
+  readonly launchContextFor: IssueLaunchContextFor;
+  /**
+   * The revision the operator NAMED (`--revision`), when one was named. It is
+   * what lets a null plan read as "that ordinal does not exist" rather than
+   * "the Issue has no plan" on an Issue that has published revisions.
+   */
+  readonly requestedRevisionId?: string;
+}
+
+export type ComposeIssueConfirmResult =
+  | { ok: true; report: IssueConfirmReport }
+  | { ok: false; refusal: IssueConfirmRefusal };

@@ -1,7 +1,8 @@
 /**
- * `rasen store issue new|list|show|state|plan|start|acceptance|accept` — the
- * CLI for the Store-level Issue Module (`StoreIssues`) and the Issue-facing
- * slice of the aggregate query (`StoreAggregateQuery.{listIssues,showIssue}`).
+ * `rasen store issue new|list|show|state|plan|start|confirm|acceptance|accept`
+ * — the CLI for the Store-level Issue Module (`StoreIssues`) and the
+ * Issue-facing slice of the aggregate query
+ * (`StoreAggregateQuery.{listIssues,showIssue}`).
  *
  * An Issue is Store-level cross-project intent, so every subcommand takes
  * only `--store`: never `--project`, never `--target-line`. Issue content is
@@ -37,6 +38,7 @@ import {
   type IssueDetail,
   type IssueSummary,
   type IssueSummaryPage,
+  type ResolvedExecutionPlan,
 } from '../core/store/query/index.js';
 import {
   listAllWorkspaceIndexEntries,
@@ -52,8 +54,10 @@ import {
   type ProjectIssueStatusInput,
 } from '../core/issue-status/index.js';
 import {
+  composeIssueConfirm,
   refusalFix,
   resolveIssueLaunchBinding,
+  type IssueConfirmReport,
   type IssueLaunchBinding,
   type IssueStartRefusal,
 } from '../core/issue-execution/index.js';
@@ -68,6 +72,7 @@ import {
   resolveOpenSpecRoot,
 } from '../core/root-selection.js';
 import {
+  publishPlanFromDecomposition,
   publishPlanFromPortfolio,
   type IssuePlanPublicationResult,
 } from '../core/issue-publication/index.js';
@@ -81,8 +86,10 @@ export interface StoreIssueOptions {
   reason?: string;
   fromFile?: string;
   fromPortfolio?: string;
+  fromDecomposition?: string;
   node?: string;
   pipeline?: string;
+  revision?: string;
   note?: string;
   json?: boolean;
 }
@@ -176,7 +183,20 @@ function renderPlanWrite(
  * form's `source` block carries.
  */
 function portfolioSourceLine(result: IssuePlanPublicationResult): string {
-  return `  source: portfolio '${result.source.parent}' — ${result.source.childCount} children, run-state ${result.source.statePath}`;
+  const source = result.source;
+  if (source.kind !== 'portfolio') return `  source: ${source.kind}`;
+  return `  source: portfolio '${source.parent}' — ${source.childCount} children, run-state ${source.statePath}`;
+}
+
+/**
+ * One human line naming where a decomposition publication came from: the
+ * document path, the node count — the same facts the JSON form's `source`
+ * block carries.
+ */
+function decompositionSourceLine(result: IssuePlanPublicationResult): string {
+  const source = result.source;
+  if (source.kind !== 'decomposition') return `  source: ${source.kind}`;
+  return `  source: decomposition — ${source.nodeCount} intent nodes, document ${source.documentPath}`;
 }
 
 function renderAcceptanceWrite(result: AcceptanceConditionsResult): void {
@@ -256,6 +276,7 @@ function statusInputFor(
     workspaceEntries?: readonly WorkspaceIndexEntry[];
     projectAliases?: Readonly<Record<string, string>>;
     acceptance?: Awaited<ReturnType<typeof readIssueAcceptanceFacts>>;
+    predecessorPlan?: ResolvedExecutionPlan | null;
   }
 ): ProjectIssueStatusInput {
   return {
@@ -266,7 +287,29 @@ function statusInputFor(
     ...(context.workspaceEntries === undefined ? {} : { workspaceEntries: context.workspaceEntries }),
     ...(context.projectAliases === undefined ? {} : { projectAliases: context.projectAliases }),
     ...(context.acceptance === undefined ? {} : { acceptance: context.acceptance }),
+    ...(context.predecessorPlan === undefined ? {} : { predecessorPlan: context.predecessorPlan }),
   };
+}
+
+/**
+ * The predecessor revision the latest revision's `supersedes` names, when the
+ * plan carries one — resolved with the SAME query the latest revision read
+ * through, so the revision delta derives from two digest-verified reads. A
+ * first revision (or an unreadable predecessor) contributes null, which the
+ * projection reads as "no delta section".
+ */
+async function resolvePredecessorPlan(
+  scope: { store?: string; startPath: string },
+  issueId: string,
+  supersedes: string | null
+): Promise<ResolvedExecutionPlan | null> {
+  if (supersedes === null) return null;
+  return StoreAggregateQuery.resolveExecutionPlan({
+    ...(scope.store === undefined ? {} : { store: scope.store }),
+    startPath: scope.startPath,
+    issueId,
+    revisionId: supersedes,
+  });
 }
 
 /**
@@ -367,11 +410,13 @@ function renderRunStateVisibility(status: IssueStatus): string {
  * The per-node line the show command prints: identifier, kind, target
  * project, alias, observation, then whatever explains it — a lifecycle that
  * is not required (with the recorded reason a cancelled/superseded node
- * carries), a dependency whose work is not complete, or the diagnostic behind
- * an `unknown`. The project is the fact the revision records — shown, never
- * interpreted into any axis. Each blocker names its own target project and
- * observed state on the work-complete basis (the rule `start` enforces), so
- * the line explains exactly what a launch will wait for.
+ * carries), a recorded execution suggestion with its decomposition
+ * rationale/uncertainty, a dependency whose work is not complete, or the
+ * diagnostic behind an `unknown`. The project, suggestion, and rationale are
+ * facts the revision records — shown, never interpreted into any axis. Each
+ * blocker names its own target project and observed state on the
+ * work-complete basis (the rule `start` enforces), so the line explains
+ * exactly what a launch will wait for.
  */
 function renderStatusNode(
   node: IssueStatus['nodes'][number],
@@ -382,9 +427,15 @@ function renderStatusNode(
       ? `${node.nodeId} ${node.kind} ${node.projectId} — ${node.observation}`
       : `${node.nodeId} ${node.kind} ${node.projectId} ${node.alias} — ${node.observation}`;
   const parts = [head];
-  if (node.lifecycle !== null && node.lifecycle !== 'required') {
+  if (node.lifecycle !== 'required') {
     parts.push(node.reason === null ? `(${node.lifecycle})` : `(${node.lifecycle}: ${node.reason})`);
   }
+  // The recorded decomposition guidance, when the revision carries it: the
+  // suggestion and the reasoning/uncertainty behind it — facts a reviewer
+  // reads, shown only when present, interpreted into no axis.
+  if (node.suggestedPipeline !== null) parts.push(`(suggest: ${node.suggestedPipeline})`);
+  if (node.rationale !== null) parts.push(`(rationale: ${node.rationale})`);
+  if (node.uncertainty !== null) parts.push(`(uncertainty: ${node.uncertainty})`);
   if (node.blockedBy.length > 0) {
     const entries = node.blockedBy.map(
       blocker =>
@@ -435,6 +486,44 @@ function renderStatusProblems(problems: readonly IssueStatusProblem[]): void {
     const at = problem.ref === null ? '' : ` ${problem.ref}`;
     const node = problem.node === null ? '' : ` ${problem.node}`;
     console.log(`  ${problem.kind}${node}${at}: ${problem.reason}`);
+  }
+}
+
+/**
+ * The revision-delta section of `show`: what the latest revision changed
+ * against its predecessor — added and removed nodes, retargets, edge
+ * changes, lifecycle changes, suggestion changes — the same facts the JSON
+ * form carries under `status.delta`. Omitted entirely when there is no delta
+ * (a first revision, or a predecessor that did not read back).
+ */
+function renderRevisionDelta(delta: IssueStatus['delta']): void {
+  if (delta === null) return;
+  console.log('');
+  console.log(`  revision delta: ${delta.revisionId} over ${delta.supersedes}`);
+  for (const nodeId of delta.added) {
+    console.log(`    + ${nodeId}`);
+  }
+  for (const nodeId of delta.removed) {
+    console.log(`    - ${nodeId}`);
+  }
+  for (const retarget of delta.retargeted) {
+    console.log(
+      `    -> ${retarget.nodeId} (${retarget.fromProjectId}/${retarget.fromTargetLineId} -> ${retarget.toProjectId}/${retarget.toTargetLineId})`
+    );
+  }
+  for (const edge of delta.edgeChanges) {
+    const added = edge.addedDependencies.map(dep => `+${dep}`).join(' ');
+    const removed = edge.removedDependencies.map(dep => `-${dep}`).join(' ');
+    const parts = [added, removed].filter(part => part.length > 0).join(' ');
+    console.log(`    ~ edges ${edge.nodeId} (${parts})`);
+  }
+  for (const change of delta.lifecycleChanges) {
+    console.log(`    ~ lifecycle ${change.nodeId} (${change.from} -> ${change.to})`);
+  }
+  for (const change of delta.suggestionChanges) {
+    const from = change.from ?? '(none)';
+    const to = change.to ?? '(none)';
+    console.log(`    ~ suggestion ${change.nodeId} (${from} -> ${to})`);
   }
 }
 
@@ -582,6 +671,7 @@ function renderIssueStatus(status: IssueStatus): void {
     }
   }
   renderStatusProblems(status.problems);
+  renderRevisionDelta(status.delta);
 }
 
 function renderIssueList(page: IssueSummaryPage, statuses: readonly IssueStatus[] = []): void {
@@ -736,7 +826,18 @@ function renderLaunchBinding(binding: IssueLaunchBinding): void {
   } else if (binding.launchDiagnostic !== undefined) {
     console.log(`  no launch contract: ${binding.launchDiagnostic}`);
   }
-  console.log(`  pipeline: ${binding.pipeline ?? '(chosen at launch)'}`);
+  // A contract that names a pipeline names where it came from — the operator's
+  // flag, the run-state's recording, or the plan revision's suggestion — so a
+  // suggestion the operator overrode reads as their deliberate choice.
+  const pipelineSource =
+    binding.pipeline === null || binding.pipelineSource === null
+      ? ''
+      : binding.pipelineSource === 'operator'
+        ? ' (the operator’s choice)'
+        : binding.pipelineSource === 'run-state'
+          ? ' (recorded in run-state)'
+          : ' (from the plan’s suggestion)';
+  console.log(`  pipeline: ${binding.pipeline ?? '(chosen at launch)'}${pipelineSource}`);
   if (binding.runStatePath !== null) {
     const located = binding.locatedBy === null ? '' : ` (located by ${binding.locatedBy})`;
     console.log(`  run-state: ${binding.runStatePath}${located}`);
@@ -747,6 +848,47 @@ function renderLaunchBinding(binding: IssueLaunchBinding): void {
 function refusalError(refusal: IssueStartRefusal): StoreError {
   const fix = refusalFix(refusal);
   return new StoreError(refusal.message, refusal.code, fix === undefined ? {} : { fix });
+}
+
+/**
+ * The confirm report in human form: the launchable contract set, the pending
+ * Change creation, the nodes waiting on dependency work, and any unprepared
+ * binding with its preparation — the same facts the JSON form carries under
+ * `report`. Both forms close with the same statement: confirm composes and
+ * writes nothing; starting a node remains the operator's per-node act.
+ */
+function renderConfirmReport(report: IssueConfirmReport): void {
+  console.log(`Issue ${report.issueId} — confirm report (revision ${report.revisionId})`);
+  console.log(`  launchable: ${report.contracts.length}`);
+  for (const binding of report.contracts) {
+    console.log('');
+    renderLaunchBinding(binding);
+  }
+  console.log('');
+  console.log(`  pending Change creation: ${report.pendingChanges.length}`);
+  for (const pending of report.pendingChanges) {
+    const lifecycle = pending.lifecycle === 'required' ? '' : ` (${pending.lifecycle})`;
+    const suggestion = pending.suggestedPipeline === null ? '' : ` — suggest: ${pending.suggestedPipeline}`;
+    console.log(`    ${pending.nodeId}${lifecycle}: ${pending.projectId}/${pending.targetLineId}${suggestion}`);
+    console.log(`      ${pending.summary}`);
+  }
+  if (report.waiting.length > 0) {
+    console.log(`  waiting on dependency work: ${report.waiting.length}`);
+    for (const waiting of report.waiting) {
+      console.log(`    ${waiting.nodeId}: ${waiting.reason}`);
+    }
+  }
+  if (report.unprepared.length > 0) {
+    console.log(`  unprepared (no launch binding yet): ${report.unprepared.length}`);
+    for (const unprepared of report.unprepared) {
+      console.log(`    ${unprepared.nodeId}: ${unprepared.reason}`);
+      if (unprepared.preparation !== null) {
+        console.log(`      prepare: ${unprepared.preparation}`);
+      }
+    }
+  }
+  console.log('');
+  console.log('  wrote nothing — confirm composes; starting a node remains a per-node act.');
 }
 
 export function registerStoreIssueCommand(store: Command): void {
@@ -862,6 +1004,17 @@ export function registerStoreIssueCommand(store: Command): void {
               startPath: process.cwd(),
               issueId,
             }),
+            // The predecessor the latest revision supersedes, for the revision
+            // delta — resolved only when there is one; a first revision
+            // contributes nothing and reports no delta section.
+            predecessorPlan: await resolvePredecessorPlan(
+              {
+                ...(options.store === undefined ? {} : { store: options.store }),
+                startPath: process.cwd(),
+              },
+              issueId,
+              detail.plan?.revision?.supersedes ?? null
+            ),
           })
         );
         if (options.json) {
@@ -917,31 +1070,45 @@ export function registerStoreIssueCommand(store: Command): void {
     .option('--store <id>', '')
     .option('--from-file <path>', '')
     .option('--from-portfolio <parent>', '')
+    .option('--from-decomposition <path>', '')
     .option('--json', '')
     .action(async (issueId: string, options: StoreIssueOptions) => {
       try {
-        // A publication takes exactly one source, and the refusal names both:
-        // the two paths answer different questions (a hand-authored node list
-        // vs a compiled portfolio run), and guessing a default would publish
-        // a plan the operator never chose.
-        if (options.fromFile !== undefined && options.fromPortfolio !== undefined) {
+        // A publication takes exactly one of its three sources, and the
+        // refusal names them: the three answer different questions (a
+        // hand-authored node list, a compiled portfolio run, a
+        // machine-proposed decomposition), and guessing a default would
+        // publish a plan the operator never chose.
+        const sources = [
+          ['--from-file', options.fromFile],
+          ['--from-portfolio', options.fromPortfolio],
+          ['--from-decomposition', options.fromDecomposition],
+        ] as const;
+        const given = sources.filter(([, value]) => value !== undefined).map(([flag]) => flag);
+        const chooseOne =
+          'Choose one: --from-file <path to a YAML file with a nodes: list>, --from-portfolio <parent change name>, or --from-decomposition <path to a decomposition document>.';
+        if (given.length > 1) {
+          const together = given.length === 2 ? 'were both given' : 'were all given';
           throw new StoreError(
-            'A plan publication takes exactly one source; --from-file and --from-portfolio were both given.',
+            `A plan publication takes exactly one source; ${given.join(' and ')} ${together}.`,
             'issue_plan_source_conflict',
-            {
-              fix: 'Choose one: --from-file <path to a YAML file with a nodes: list>, or --from-portfolio <parent change name>.',
-            }
+            { fix: chooseOne }
           );
         }
-        if (options.fromFile === undefined && options.fromPortfolio === undefined) {
+        if (given.length === 0) {
           throw new StoreError(
-            'A plan publication requires exactly one source; neither --from-file nor --from-portfolio was given.',
+            'A plan publication requires exactly one source; none of --from-file, --from-portfolio, or --from-decomposition was given.',
             'issue_plan_source_required',
-            {
-              fix: 'Add --from-file <path to a YAML file with a nodes: list>, or --from-portfolio <parent change name>.',
-            }
+            { fix: chooseOne }
           );
         }
+        // The suggestion registry seam, composed ONCE for every source — the
+        // same root-aware membership test `store issue start --pipeline`
+        // validates through (pipelines visible from the root this command
+        // runs in, project-local layers included).
+        const context = await resolveProjectionContext();
+        const pipelineKnown = (name: string): boolean =>
+          listPipelines(context.projectRoot).includes(name.replace(/\.ya?ml$/, ''));
         if (options.fromPortfolio !== undefined) {
           const result = await publishPlanFromPortfolio({
             ...(options.store === undefined ? {} : { store: options.store }),
@@ -959,6 +1126,24 @@ export function registerStoreIssueCommand(store: Command): void {
           }
           return;
         }
+        if (options.fromDecomposition !== undefined) {
+          const result = await publishPlanFromDecomposition({
+            ...(options.store === undefined ? {} : { store: options.store }),
+            startPath: process.cwd(),
+            issueId,
+            documentPath: options.fromDecomposition,
+            pipelineKnown,
+          });
+          if (options.json) {
+            printJson({
+              ...(planPayload(result) as Record<string, unknown>),
+              source: result.source,
+            });
+          } else {
+            renderPlanWrite(result, decompositionSourceLine(result));
+          }
+          return;
+        }
         const draft = parseYaml(fs.readFileSync(options.fromFile as string, 'utf8')) as {
           nodes?: readonly ExecutionPlanNodeInput[];
         };
@@ -967,6 +1152,7 @@ export function registerStoreIssueCommand(store: Command): void {
           startPath: process.cwd(),
           issueId,
           nodes: draft.nodes ?? [],
+          pipelineKnown,
         });
         if (options.json) printJson(planPayload(result));
         else renderPlanWrite(result);
@@ -1087,6 +1273,76 @@ export function registerStoreIssueCommand(store: Command): void {
         else renderLaunchBinding(result.binding);
       } catch (error) {
         emitFailure(options.json, { issue: null, binding: null }, error, 'store_issue_start_failed');
+      }
+    });
+
+  issue
+    .command('confirm <issue-id>')
+    .description('')
+    .option('--store <id>', '')
+    .option('--revision <id>', '')
+    .option('--json', '')
+    .action(async (issueId: string, options: StoreIssueOptions) => {
+      try {
+        // The revision confirm composes from: the named one, or the latest
+        // readable one. `--revision` re-resolves through the same query and
+        // replaces the detail's plan, so both paths feed one composition.
+        const summaryDetail = await StoreAggregateQuery.showIssue({
+          ...(options.store === undefined ? {} : { store: options.store }),
+          startPath: process.cwd(),
+          issueId,
+        });
+        const detail: IssueDetail =
+          options.revision === undefined
+            ? summaryDetail
+            : {
+                ...summaryDetail,
+                plan: await StoreAggregateQuery.resolveExecutionPlan({
+                  ...(options.store === undefined ? {} : { store: options.store }),
+                  startPath: process.cwd(),
+                  issueId,
+                  revisionId: options.revision,
+                }),
+              };
+        const context = await resolveProjectionContext();
+        const widening = await resolveStoreWideningContext(options.store);
+        const status = await projectIssueStatus(
+          statusInputFor(detail, { ...context, ...widening })
+        );
+        const launchContextFor = (projectId: string) =>
+          resolveSessionLaunchContext({
+            ...(widening.storeUid === undefined ? {} : { space: `store:${widening.storeUid}` }),
+            execution: `project:${projectId}`,
+            launchProject: null,
+          });
+        const result = await composeIssueConfirm({
+          detail,
+          status,
+          workspaceEntries: widening.workspaceEntries ?? [],
+          launchContextFor,
+          ...(options.revision === undefined ? {} : { requestedRevisionId: options.revision }),
+        });
+        if (!result.ok) {
+          const fix =
+            result.refusal.code === 'issue_confirm_requires_plan'
+              ? 'Publish an Execution Plan revision first: '
+                + '`rasen store issue plan <issue-id> --store <store> --from-file <nodes.yaml>` (or --from-decomposition / --from-portfolio).'
+              : result.refusal.code === 'issue_confirm_revision_unreadable'
+                ? `Read the Issue's revision ordinals first: \`rasen store issue show ${issueId} --store <store>\`, or omit --revision to confirm the latest.`
+                : null;
+          throw new StoreError(
+            result.refusal.message,
+            result.refusal.code,
+            fix === null ? {} : { fix }
+          );
+        }
+        if (options.json) {
+          printJson({ issueId, revisionId: result.report.revisionId, report: result.report });
+        } else {
+          renderConfirmReport(result.report);
+        }
+      } catch (error) {
+        emitFailure(options.json, { issue: null, report: null }, error, 'store_issue_confirm_failed');
       }
     });
 }

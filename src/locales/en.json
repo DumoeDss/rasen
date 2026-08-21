@@ -2058,6 +2058,9 @@
                     "from-portfolio": {
                       "description": "Publish from a parent change's portfolio run-state instead of a YAML node list"
                     },
+                    "from-decomposition": {
+                      "description": "Publish from a machine-proposed decomposition document instead of a YAML node list"
+                    },
                     "json": {
                       "description": "Output as JSON"
                     }
@@ -2102,6 +2105,20 @@
                     },
                     "pipeline": {
                       "description": "Pipeline to record in the launch contract, validated against the pipeline registry"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "confirm": {
+                  "description": "Compose the confirm report for one revision (default the latest readable): the verified launch-contract set and the pending-Change report. Confirm composes and writes nothing; starting a node remains a per-node act",
+                  "options": {
+                    "store": {
+                      "description": "Store holding the Issue"
+                    },
+                    "revision": {
+                      "description": "Revision to confirm; omit to confirm the latest readable revision"
                     },
                     "json": {
                       "description": "Output as JSON"

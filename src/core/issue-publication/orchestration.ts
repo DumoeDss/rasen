@@ -26,6 +26,7 @@
  *     authority and the absent-refusal lists every location searched.
  */
 import * as path from 'node:path';
+import { readFile } from 'node:fs/promises';
 
 import { StoreError } from '../store/errors.js';
 import {
@@ -34,6 +35,7 @@ import {
   type StoreIssueDependencies,
   type StoreIssues,
 } from '../store/issues/index.js';
+import { parseDecompositionDocument } from './decomposition.js';
 import {
   PORTFOLIO_STATE_FILENAME,
   readPortfolioStateDetailed,
@@ -49,13 +51,20 @@ import {
 } from '../root-selection.js';
 import { compilePortfolioChildren, planNodeForChild } from './compiler.js';
 import { gatherChildEvidence, resolveChildByName, childNameRefusal } from './resolution.js';
-import type { IssuePlanPublicationResult, PublishPlanFromPortfolioInput } from './types.js';
+import type {
+  IssuePlanPublicationResult,
+  PublishPlanFromDecompositionInput,
+  PublishPlanFromPortfolioInput,
+} from './types.js';
 
 export interface PublishPlanFromPortfolioOptions {
   /** Injectable for tests; the production mutation Module by default. */
   readonly issues?: StoreIssues;
   readonly dependencies?: StoreIssueDependencies;
 }
+
+/** The same injection surface, for the decomposition channel. */
+export type PublishPlanFromDecompositionOptions = PublishPlanFromPortfolioOptions;
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -210,6 +219,71 @@ export async function publishPlanFromPortfolio(
       parent: input.parent,
       statePath: location.path,
       childCount: children.length,
+    },
+  };
+}
+
+/**
+ * Publishes the next Execution Plan revision for an Issue from a
+ * decomposition document (design D3/D6).
+ *
+ * Refusal codes: `issue_plan_decomposition_unreadable` (the named document
+ * does not read back — never treated as absent), `issue_plan_decomposition_invalid`,
+ * `issue_plan_decomposition_change_node`, `issue_plan_decomposition_field_missing`
+ * (from the pure reader), and — from `publishPlan` — the whole existing
+ * discipline: schema and graph, the planning-member target gate, the registry
+ * check on every suggestion, ordinal allocation. Every refusal lands with
+ * nothing durable: the only write in this function is the one `publishPlan`
+ * performs after every check has passed, and the DOCUMENT itself is read-only
+ * input whose bytes publication leaves identical (pinned by test).
+ */
+export async function publishPlanFromDecomposition(
+  input: PublishPlanFromDecompositionInput,
+  options: PublishPlanFromDecompositionOptions = {}
+): Promise<IssuePlanPublicationResult> {
+  const issues = options.issues ?? StoreIssuesModuleInstance;
+
+  // 1. Read the named document. Unreadable is not absent: the operator named
+  //    a file, so a file that does not read back is a fact to report, never a
+  //    silent skip. (A vanished file, a directory, and a permission error all
+  //    land here.)
+  let content: string;
+  try {
+    content = await readFile(input.documentPath, 'utf8');
+  } catch (error) {
+    throw new StoreError(
+      `The decomposition document at ${input.documentPath} does not read back: ${
+        error instanceof Error ? error.message : String(error)
+      }.`,
+      'issue_plan_decomposition_unreadable',
+      {
+        target: input.documentPath,
+        fix: 'Point --from-decomposition at a readable YAML file; a document that exists but cannot be read is reported, never treated as absent.',
+      }
+    );
+  }
+
+  // 2. The pure reader: strict shape, intent-only, suggestion-complete.
+  const nodes = parseDecompositionDocument(content, input.documentPath);
+
+  // 3. Publish through the existing mutation — normalization, graph checks,
+  //    the planning-member target gate, the suggestion's registry check,
+  //    ordinal/digest/supersedes chaining, the issue lock, and the commit
+  //    suggestion are all inherited (design D3: no parallel implementation).
+  const result = await issues.publishPlan({
+    ...(input.store === undefined ? {} : { store: input.store }),
+    startPath: input.startPath,
+    ...(input.globalDataDir === undefined ? {} : { globalDataDir: input.globalDataDir }),
+    issueId: input.issueId,
+    nodes,
+    ...(input.pipelineKnown === undefined ? {} : { pipelineKnown: input.pipelineKnown }),
+  });
+  return {
+    ...result,
+    source: {
+      kind: 'decomposition' as const,
+      documentPath: path.resolve(input.documentPath),
+      nodeCount: nodes.length,
     },
   };
 }

@@ -424,13 +424,58 @@ describe('workspace plan construction', () => {
 
   it('permits the project main checkout as the execution side', async () => {
     // A pair may legitimately execute in the code repository's main checkout;
-    // only the Store integration checkout is categorically unauthorized.
+    // only the Store integration checkout is categorically unauthorized. The
+    // WHOLE plan has to agree: the sibling precondition blessed this exact
+    // input from the start, and the containment veto used to contradict it.
+    // The old test asserted only the blessing — which is how two contradictory
+    // preconditions shipped green — so this one asserts the full applicable
+    // face, not one satisfied fact.
     f.git(f.projectRoot(PROJECT), ['switch', '--quiet', '--create', 'temp-branch']);
     const plan = await f.workspace().plan(
       input({ executionWorktree: f.projectRoot(PROJECT) })
     );
     const linked = plan.preconditions.find((entry) => entry.id === 'execution-is-linked-worktree');
     expect(linked?.satisfied).toBe(true);
+    expect(plan.applicable).toBe(true);
+    expect(plan.blockers).toEqual([]);
+    expect(plan.token).toBeDefined();
+    expect(plan.execution.disposition).toBe('reuse');
+    const containment = plan.preconditions.find(
+      (entry) => entry.id === 'execution-root-outside-repository'
+    );
+    expect(containment?.satisfied).toBe(true);
+    expect(containment?.detail).toBe(
+      `${f.projectRoot(PROJECT)} is the execution repository's main checkout, which a pair may legitimately use for execution.`
+    );
+  });
+
+  it('keeps the blessing for an aliased spelling of the main checkout', async () => {
+    // The exemption keys on samePath — resolved and case-folded per the plan's
+    // flavor — never on literal string equality, because the repository root
+    // it compares against is what `git worktree list` prints, which can differ
+    // from the operator's spelling in drive-letter case or trailing
+    // separators. The alias is assembled with separators rather than
+    // `path.join`, which would normalize it away before the code under test
+    // ever saw it; the case flip only exists on Windows.
+    f.git(f.projectRoot(PROJECT), ['switch', '--quiet', '--create', 'temp-branch']);
+    const direct = f.projectRoot(PROJECT);
+    const alias =
+      process.platform === 'win32' && /^[A-Za-z]:/.test(direct)
+        ? `${direct[0] === direct[0].toUpperCase() ? direct[0].toLowerCase() : direct[0].toUpperCase()}${direct.slice(1)}${path.sep}`
+        : `${direct}${path.sep}.${path.sep}`;
+    expect(alias).not.toBe(direct);
+
+    const plan = await f.workspace().plan(input({ executionWorktree: alias }));
+
+    expect(plan.applicable).toBe(true);
+    expect(plan.blockers).toEqual([]);
+    const containment = plan.preconditions.find(
+      (entry) => entry.id === 'execution-root-outside-repository'
+    );
+    expect(containment?.satisfied).toBe(true);
+    expect(containment?.detail).toContain(
+      'main checkout, which a pair may legitimately use for execution.'
+    );
   });
 
   it('leaves a dirty reused worktree alone, because preparation does not touch it', async () => {

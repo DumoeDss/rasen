@@ -1,0 +1,7 @@
+Issue issue-autodecompose-uplift: Execution Plan revision 0003
+  supersedes: 0002
+  nodes: 2
+
+  Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing.
+    git -C E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-issue-store add rasen/issues/issue-autodecompose-uplift/plans/0003.yaml
+    git -C E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-issue-store commit -m "chore(store): publish execution plan issue-autodecompose-uplift/0003"

@@ -36,6 +36,7 @@ import { issueError, issueRefusal } from './diagnostics.js';
 import { issueLockKey, withIssueLock } from './locks.js';
 import { verifyExecutionPlanReferences } from './reference-verification.js';
 import {
+  assertPlanNodeSuggestions,
   executionPlanDigest,
   normalizePlanNodes,
   serializeExecutionPlanRevision,
@@ -223,6 +224,12 @@ export class StoreIssuesModule implements StoreIssues {
       // Schema and graph first: they are pure, they need no Git, and refusing
       // here means an unverifiable reference never costs a ref read.
       const nodes = normalizePlanNodes(input.nodes);
+      // The one other pure pre-write gate: a node's suggestion must name a
+      // pipeline the registry resolves, checked through the injected membership
+      // test (the CLI composes the same root-aware seam `store issue start
+      // --pipeline` validates through — this module has no working-directory
+      // root of its own to resolve pipelines from).
+      assertPlanNodeSuggestions(nodes, input.pipelineKnown);
       await this.verifyReferences(scope, nodes, input.globalDataDir);
 
       const { previous, next } = await this.allocateOrdinal(addresses.plans);

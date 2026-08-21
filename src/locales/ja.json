@@ -2058,6 +2058,9 @@
                     "from-portfolio": {
                       "description": "YAML ノード一覧の代わりに、親 Change の portfolio run-state から発行します"
                     },
+                    "from-decomposition": {
+                      "description": "YAML ノード一覧の代わりに、機械提案された分解ドキュメントから発行します"
+                    },
                     "json": {
                       "description": "JSON で出力"
                     }
@@ -2102,6 +2105,20 @@
                     },
                     "pipeline": {
                       "description": "起動契約に記録するパイプライン。パイプラインレジストリに対して検証されます"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "confirm": {
+                  "description": "指定したリビジョン（省略時は最新の読み取り可能なリビジョン）の確認レポートを構成します。検証済みの起動契約一式と未作成の Change を報告します。confirm は構成のみで何も書き込まず、起動はノードごとの操作のままです",
+                  "options": {
+                    "store": {
+                      "description": "Issueを保持するストア"
+                    },
+                    "revision": {
+                      "description": "確認するリビジョン。省略時は最新の読み取り可能なリビジョン"
                     },
                     "json": {
                       "description": "JSON で出力"

@@ -5,10 +5,14 @@
  * A revision is IMMUTABLE once published, so everything that could make one
  * invalid is decided here, before a byte is written: the schema, the two node
  * kinds, the closed `lifecycle` vocabulary and its conditional reason, the
+ * optional decomposition-guidance fields and their portable text, the
  * acyclicity of `dependsOn`, duplicate node identifiers, and two
- * nodes claiming one Change instance. Reference verification against real Store
- * evidence is the one check this file cannot do, because it needs Git; it lives
- * in `references.ts` and runs before this file's serializer is ever called.
+ * nodes claiming one Change instance. Two checks this file cannot do alone:
+ * reference verification against real Store evidence (it needs Git; it lives
+ * in `references.ts` and runs before this file's serializer is ever called),
+ * and whether a node's `suggestedPipeline` names a pipeline the registry
+ * resolves (pure here as `assertPlanNodeSuggestions` over an injected
+ * membership test; the mutation supplies the test its caller composed).
  *
  * `contentSha256` covers the canonical serialization of every other field. A
  * digest cannot cover itself, and stating which bytes it covers is the whole
@@ -80,6 +84,20 @@ const lifecycleField = z
   })
   .optional();
 
+/**
+ * The decomposition-guidance fields, on BOTH node kinds (a manual revision may
+ * suggest a pipeline for an existing Change node too). `suggestedPipeline` is
+ * non-empty here; whether it names a pipeline the registry RESOLVES is a
+ * publication-time check over an injected membership test (`assertPlanNodeSuggestions`)
+ * — this file is pure and owns no registry view. `rationale` and `uncertainty`
+ * additionally pass the portable-text contract in `validateNode`.
+ */
+const suggestionShape = {
+  suggestedPipeline: z.string().min(1).optional(),
+  rationale: z.string().min(1).optional(),
+  uncertainty: z.string().min(1).optional(),
+};
+
 const ChangeNodeSchema = z
   .object({
     ...NodeBaseShape,
@@ -88,6 +106,7 @@ const ChangeNodeSchema = z
     changeAlias: z.string().min(1).optional(),
     lifecycle: lifecycleField,
     reason: z.string().min(1).optional(),
+    ...suggestionShape,
   })
   .strict();
 
@@ -96,6 +115,12 @@ const IntentNodeSchema = z
     ...NodeBaseShape,
     kind: z.literal('intent'),
     summary: z.string().min(1).max(500),
+    // A plain string here deliberately: the semantic check in `validateNode`
+    // refuses out-of-vocabulary values NAMING THE NODE and the two values
+    // defined for the intent kind (and directing cancelled/superseded to
+    // omission-from-next-revision), which a bare enum error cannot do.
+    lifecycle: z.string().optional(),
+    ...suggestionShape,
   })
   .strict();
 
@@ -118,6 +143,34 @@ const RevisionSchema = z
 /** A node identifier is a path-free canonical kebab id, like a Change alias. */
 function validateNodeId(value: string, index: number): string {
   return rethrow(`nodes[${index}].nodeId`, () => parseChangeId(value, 'nodeId'));
+}
+
+/**
+ * The decomposition-guidance fields, validated and canonically spread — the
+ * `lifecycle` precedent applied once for both kinds. `rationale` and
+ * `uncertainty` are durable Store content, so they satisfy the same portable
+ * durable text contract a node `reason` does: refused at the schema, never
+ * trimmed. Absent fields are omitted so every revision published before they
+ * existed re-derives its digest byte-for-byte, and an authored absence never
+ * reads back as an empty string.
+ */
+function planSuggestionFields(
+  raw: { suggestedPipeline?: string; rationale?: string; uncertainty?: string },
+  index: number
+):
+  | Pick<ExecutionPlanNode, 'suggestedPipeline' | 'rationale' | 'uncertainty'>
+  | Record<string, never> {
+  if (raw.rationale !== undefined) {
+    assertPortableIssueText(raw.rationale, `nodes[${index}].rationale`, 'invalid_execution_plan');
+  }
+  if (raw.uncertainty !== undefined) {
+    assertPortableIssueText(raw.uncertainty, `nodes[${index}].uncertainty`, 'invalid_execution_plan');
+  }
+  return {
+    ...(raw.suggestedPipeline === undefined ? {} : { suggestedPipeline: raw.suggestedPipeline }),
+    ...(raw.rationale === undefined ? {} : { rationale: raw.rationale }),
+    ...(raw.uncertainty === undefined ? {} : { uncertainty: raw.uncertainty }),
+  };
 }
 
 function validateNode(raw: z.output<typeof NodeSchema>, index: number): ExecutionPlanNode {
@@ -186,8 +239,31 @@ function validateNode(raw: z.output<typeof NodeSchema>, index: number): Executio
         ? {}
         : { lifecycle: lifecycle as Exclude<ExecutionPlanNodeLifecycle, 'required'> }),
       ...(raw.reason === undefined ? {} : { reason: raw.reason }),
+      ...planSuggestionFields(raw, index),
       dependsOn: Object.freeze(dependsOn),
     });
+  }
+  // The intent lifecycle's two-value vocabulary, refused semantically so the
+  // refusal can name the node. `cancelled`/`superseded` are Change-node-only:
+  // they explain work that existed, while unwanted intent work — work no
+  // Change ever backed — is expressed by omitting the node from the next
+  // revision, and the refusal says exactly that.
+  const intentLifecycle = raw.lifecycle;
+  if (
+    intentLifecycle !== undefined &&
+    intentLifecycle !== 'required' &&
+    intentLifecycle !== 'optional'
+  ) {
+    if (intentLifecycle === 'cancelled' || intentLifecycle === 'superseded') {
+      throw planError(
+        `nodes[${index}].lifecycle`,
+        `node '${nodeId}' is an intent node carrying lifecycle '${intentLifecycle}'; ${intentLifecycle} explains work that existed and stays Change-node-only — unwanted intent work is expressed by omitting the node from the next revision`
+      );
+    }
+    throw planError(
+      `nodes[${index}].lifecycle`,
+      `node '${nodeId}' carries lifecycle '${intentLifecycle}', which the intent node kind does not define; the values defined for an intent node are 'required' | 'optional'`
+    );
   }
   assertPortableIssueText(raw.summary, `nodes[${index}].summary`, 'invalid_execution_plan');
   return Object.freeze({
@@ -196,6 +272,13 @@ function validateNode(raw: z.output<typeof NodeSchema>, index: number): Executio
     projectId,
     targetLineId,
     summary: raw.summary,
+    // Canonical omission, mirroring the change node: an explicit `required` IS
+    // `required`, and the stored form omits it so two spellings of one plan
+    // publish one revision and pre-vocabulary revisions keep their digests.
+    ...(intentLifecycle === undefined || intentLifecycle === 'required'
+      ? {}
+      : { lifecycle: intentLifecycle as 'optional' }),
+    ...planSuggestionFields(raw, index),
     dependsOn: Object.freeze(dependsOn),
   });
 }
@@ -347,6 +430,11 @@ export function executionPlanDigestBody(
             ...(node.changeAlias === undefined ? {} : { changeAlias: node.changeAlias }),
             ...(node.lifecycle === undefined ? {} : { lifecycle: node.lifecycle }),
             ...(node.reason === undefined ? {} : { reason: node.reason }),
+            ...(node.suggestedPipeline === undefined
+              ? {}
+              : { suggestedPipeline: node.suggestedPipeline }),
+            ...(node.rationale === undefined ? {} : { rationale: node.rationale }),
+            ...(node.uncertainty === undefined ? {} : { uncertainty: node.uncertainty }),
             dependsOn: [...node.dependsOn],
           }
         : {
@@ -355,6 +443,12 @@ export function executionPlanDigestBody(
             projectId: node.projectId,
             targetLineId: node.targetLineId,
             summary: node.summary,
+            ...(node.lifecycle === undefined ? {} : { lifecycle: node.lifecycle }),
+            ...(node.suggestedPipeline === undefined
+              ? {}
+              : { suggestedPipeline: node.suggestedPipeline }),
+            ...(node.rationale === undefined ? {} : { rationale: node.rationale }),
+            ...(node.uncertainty === undefined ? {} : { uncertainty: node.uncertainty }),
             dependsOn: [...node.dependsOn],
           }
     ),
@@ -465,6 +559,11 @@ export function serializeExecutionPlanRevision(value: ExecutionPlanRevisionV1): 
             ...(node.changeAlias === undefined ? {} : { changeAlias: node.changeAlias }),
             ...(node.lifecycle === undefined ? {} : { lifecycle: node.lifecycle }),
             ...(node.reason === undefined ? {} : { reason: node.reason }),
+            ...(node.suggestedPipeline === undefined
+              ? {}
+              : { suggestedPipeline: node.suggestedPipeline }),
+            ...(node.rationale === undefined ? {} : { rationale: node.rationale }),
+            ...(node.uncertainty === undefined ? {} : { uncertainty: node.uncertainty }),
             dependsOn: [...node.dependsOn],
           }
         : {
@@ -473,6 +572,12 @@ export function serializeExecutionPlanRevision(value: ExecutionPlanRevisionV1): 
             projectId: node.projectId,
             targetLineId: node.targetLineId,
             summary: node.summary,
+            ...(node.lifecycle === undefined ? {} : { lifecycle: node.lifecycle }),
+            ...(node.suggestedPipeline === undefined
+              ? {}
+              : { suggestedPipeline: node.suggestedPipeline }),
+            ...(node.rationale === undefined ? {} : { rationale: node.rationale }),
+            ...(node.uncertainty === undefined ? {} : { uncertainty: node.uncertainty }),
             dependsOn: [...node.dependsOn],
           }
     ),
@@ -511,8 +616,15 @@ function compareCodePoints(left: string, right: string): number {
  *
  * `lifecycle` and `reason` are carried through on BOTH branches. Dropping
  * them from an intent node's candidate would silently publish away a field
- * the spec refuses ("an intent node carries no lifecycle at all"); carrying
- * them lets `IntentNodeSchema`'s `.strict()` refuse the node BY NAME.
+ * the schema refuses — `reason` on an intent node still meets
+ * `IntentNodeSchema`'s `.strict()` and is refused BY NAME — and carrying
+ * `lifecycle` is now required, because the intent schema admits it.
+ *
+ * What the candidate cannot do is refuse a field it does not know: an
+ * UNRECOGNIZED authored key never reaches the candidate at all and would
+ * vanish before `.strict()` sees it. `planNodeUnknownFields` below closes that
+ * seam — the authored-input boundary now meets the same refusal-by-name rule
+ * the stored-record boundary always had.
  */
 function planNodeCandidate(input: ExecutionPlanNodeInput): unknown {
   const raw = input as unknown as Record<string, unknown>;
@@ -524,6 +636,13 @@ function planNodeCandidate(input: ExecutionPlanNodeInput): unknown {
     dependsOn: raw.dependsOn ?? [],
     ...(raw.lifecycle === undefined ? {} : { lifecycle: raw.lifecycle }),
     ...(raw.reason === undefined ? {} : { reason: raw.reason }),
+    // Carried through on BOTH branches for the same reason `lifecycle` is:
+    // both schemas accept these fields, and an unrecognized EXTRA field still
+    // meets `.strict()` by name because the candidate only forwards fields
+    // the input actually declared.
+    ...(raw.suggestedPipeline === undefined ? {} : { suggestedPipeline: raw.suggestedPipeline }),
+    ...(raw.rationale === undefined ? {} : { rationale: raw.rationale }),
+    ...(raw.uncertainty === undefined ? {} : { uncertainty: raw.uncertainty }),
   };
   return raw.kind === 'change'
     ? {
@@ -532,6 +651,67 @@ function planNodeCandidate(input: ExecutionPlanNodeInput): unknown {
         ...(raw.changeAlias === undefined ? {} : { changeAlias: raw.changeAlias }),
       }
     : { ...base, summary: raw.summary };
+}
+
+/** The fields each node kind's schema declares — the authored-field baseline. */
+const COMMON_AUTHORED_NODE_FIELDS: ReadonlySet<string> = new Set([
+  'nodeId',
+  'kind',
+  'projectId',
+  'targetLineId',
+  'dependsOn',
+  'lifecycle',
+  'reason',
+  'suggestedPipeline',
+  'rationale',
+  'uncertainty',
+]);
+const CHANGE_AUTHORED_NODE_FIELDS: ReadonlySet<string> = new Set([
+  ...COMMON_AUTHORED_NODE_FIELDS,
+  'changeInstanceId',
+  'changeAlias',
+]);
+const INTENT_AUTHORED_NODE_FIELDS: ReadonlySet<string> = new Set([
+  ...COMMON_AUTHORED_NODE_FIELDS,
+  'summary',
+]);
+
+/**
+ * Authored keys outside the known field set for the node's kind, in a stable
+ * (code-point) order. An UNDEFINED kind is not this check's question: the
+ * schema's discriminator refuses it by name, and nothing it carried can be
+ * published, so the check yields nothing there and lets the discriminator
+ * speak.
+ */
+function planNodeUnknownFields(input: ExecutionPlanNodeInput): readonly string[] {
+  const raw = input as unknown as Record<string, unknown>;
+  const known =
+    raw.kind === 'change'
+      ? CHANGE_AUTHORED_NODE_FIELDS
+      : raw.kind === 'intent'
+        ? INTENT_AUTHORED_NODE_FIELDS
+        : null;
+  if (known === null) return [];
+  return Object.keys(raw)
+    .filter(key => !known.has(key))
+    .sort(compareCodePoints);
+}
+
+function unknownNodeFieldsMessage(
+  nodeId: string,
+  kind: unknown,
+  fields: readonly string[]
+): string {
+  const kindName = kind === 'change' || kind === 'intent' ? String(kind) : 'node';
+  return `node '${nodeId}' carries field(s) the ${kindName} node schema does not define: ${fields
+    .map(field => `'${field}'`)
+    .join(', ')}; authored input is refused naming the field rather than published with it silently dropped`;
+}
+
+/** The authored node id as the refusals name it, with the honest fallback. */
+function authoredNodeId(input: ExecutionPlanNodeInput): string {
+  const raw = (input as unknown as Record<string, unknown>).nodeId;
+  return typeof raw === 'string' && raw.length > 0 ? raw : '(unnamed node)';
 }
 
 export interface PlanNodeSchemaProblem {
@@ -557,8 +737,18 @@ export function findPlanNodeSchemaProblems(
 ): readonly PlanNodeSchemaProblem[] {
   const problems: PlanNodeSchemaProblem[] = [];
   inputs.forEach((input, index) => {
-    const nodeIdRaw = (input as unknown as Record<string, unknown>).nodeId;
-    const nodeId = typeof nodeIdRaw === 'string' && nodeIdRaw.length > 0 ? nodeIdRaw : '(unnamed node)';
+    const nodeId = authoredNodeId(input);
+    // The extra-keys refusal runs on the REPORTING path exactly as on the
+    // throwing one: a misspelled key is refused by name here too, never
+    // silently dropped from a published plan.
+    const unknown = planNodeUnknownFields(input);
+    if (unknown.length > 0) {
+      problems.push({
+        nodeId,
+        problem: unknownNodeFieldsMessage(nodeId, (input as unknown as Record<string, unknown>).kind, unknown),
+      });
+      return;
+    }
     const result = NodeSchema.safeParse(planNodeCandidate(input));
     if (!result.success) {
       problems.push({ nodeId, problem: formatZodIssues(result.error) });
@@ -579,6 +769,17 @@ function parsePlanNode(
   input: ExecutionPlanNodeInput,
   index: number
 ): z.output<typeof NodeSchema> {
+  // The extra-keys check runs BEFORE the candidate: an authored key the
+  // candidate does not forward would otherwise never meet `.strict()` and
+  // would vanish silently — the exact asymmetry with the stored-record
+  // boundary this refusal closes.
+  const unknown = planNodeUnknownFields(input);
+  if (unknown.length > 0) {
+    throw planError(
+      `nodes[${index}]`,
+      unknownNodeFieldsMessage(authoredNodeId(input), (input as unknown as Record<string, unknown>).kind, unknown)
+    );
+  }
   const result = NodeSchema.safeParse(planNodeCandidate(input));
   if (!result.success) {
     throw planError(`nodes[${index}]`, formatZodIssues(result.error), result.error);
@@ -628,4 +829,35 @@ export function normalizePlanNodes(
     .map((input, index) => validateNode(parsePlanNode(input, index), index))
     .map(canonicalizeDependsOn)
     .sort((left, right) => compareCodePoints(left.nodeId, right.nodeId));
+}
+
+/**
+ * The publication-time registry check for node suggestions — the SAME seam
+ * `store issue start --pipeline` validates through, taken as an injected
+ * membership test because this module owns no registry view of its own. A
+ * suggestion naming no known pipeline is refused naming the node and the
+ * pipeline; a suggestion with NO supplied test is refused too, because a
+ * suggestion that cannot be checked is not a fact the revision may record.
+ * Whether the named pipeline itself carries a decompose stage is the LAUNCH
+ * path's existing guard, deliberately not re-checked here.
+ */
+export function assertPlanNodeSuggestions(
+  nodes: readonly ExecutionPlanNode[],
+  pipelineKnown: ((name: string) => boolean) | undefined
+): void {
+  nodes.forEach((node, index) => {
+    if (node.suggestedPipeline === undefined) return;
+    if (pipelineKnown === undefined) {
+      throw planError(
+        `nodes[${index}].suggestedPipeline`,
+        `node '${node.nodeId}' records suggestedPipeline '${node.suggestedPipeline}', but this publication was given no pipeline registry to resolve it against; a suggestion that cannot be checked is refused, not stored`
+      );
+    }
+    if (!pipelineKnown(node.suggestedPipeline)) {
+      throw planError(
+        `nodes[${index}].suggestedPipeline`,
+        `node '${node.nodeId}' records suggestedPipeline '${node.suggestedPipeline}', which the pipeline registry does not resolve; publication refuses a suggestion naming no known pipeline`
+      );
+    }
+  });
 }

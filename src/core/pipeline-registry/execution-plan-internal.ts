@@ -778,6 +778,15 @@ function hasUnsupportedSemantics(pipeline: PipelineYaml): boolean {
   );
 }
 
+/**
+ * Whether a v1 definition carries a `kind: decompose` stage — the
+ * Dispatch-domain construct whose engine verdict is the semantics boundary,
+ * not a profile availability (see the `requiresV2` branch above).
+ */
+function hasDecomposeStage(pipeline: PipelineYaml): boolean {
+  return pipeline.stages.some((stage) => stage.kind === 'decompose');
+}
+
 function hasExactBugFixShape(pipeline: PipelineYaml): boolean {
   if (
     pipeline.name !== 'bug-fix' ||
@@ -962,6 +971,27 @@ export function analyzeReconcilerSupport(
   // is created rather than dying mid-Run at admission with
   // `No capability/policy binding`.
   if (requiresV2) {
+    // The 0.3.0 Dispatch-boundary crossing (issue-autodecompose-graph D2): a
+    // v1 definition carrying a `kind: decompose` stage reports its TRUE
+    // boundary FIRST — the decompose stage is a Dispatch-domain construct the
+    // reconciler engine does not execute as an engine node. Checking before
+    // the null-profile short-circuit means the reason no longer depends on
+    // WHERE binding happens to throw: `normalizeV1` maps a decompose stage to
+    // a synthetic `pipeline:<child>` capability no catalog carries, discovery
+    // yields a null profile, and the old first-reached answer —
+    // `execution_profile_unavailable` — read as a resolvable-sounding profile
+    // problem for a construct the engine will never dispatch. The fail-closed
+    // LAUNCH outcome is unchanged (below `availableEngines` still names
+    // legacy, `pipeline start`'s reconciler-only door still refuses); only
+    // the stated reason becomes truthful. `task-loop` (v1, no decompose
+    // stage) and the six v2 built-ins never reach this branch, and
+    // `execution_profile_unavailable` remains reachable below for genuinely
+    // unresolvable bindings. The flat path needs no change: its
+    // `hasUnsupportedSemantics` check already reports the same reason for a
+    // non-standard stage kind.
+    if (hasDecomposeStage(pipeline)) {
+      return unsupported('unsupported_pipeline_semantics');
+    }
     if (profile === null) {
       return unsupported('execution_profile_unavailable');
     }

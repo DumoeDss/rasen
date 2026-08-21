@@ -25,6 +25,7 @@ import { issueBlockerState } from '../issue-status/index.js';
 import type { IssueNodeObservation, IssueNodeStatus } from '../issue-status/index.js';
 import { listPipelines } from '../pipeline-registry/resolver.js';
 import type {
+  IssueLaunchBinding,
   IssueLaunchContext,
   IssuePipelineKnown,
   IssueStartRefusal,
@@ -434,12 +435,34 @@ export async function resolveIssueLaunchBinding(
     }
   }
 
-  const pipeline =
-    mode === 'already-complete'
-      ? null
-      : mode === 'already-running'
-        ? (recorded ?? input.pipeline ?? null)
-        : (input.pipeline ?? recorded ?? null);
+  // The pipeline chain, named by source. Fresh: `--pipeline` over the
+  // run-state recording over the plan revision's suggestion (design D2 of
+  // issue-autodecompose-review-flow) — a flag beating a suggestion does NOT
+  // refuse, because manual selection is the fence; already-running: the
+  // recorded pipeline leads exactly as before (an explicit disagreement was
+  // already refused above); already-complete: no pipeline at all.
+  let pipeline: string | null = null;
+  let pipelineSource: IssueLaunchBinding['pipelineSource'] = null;
+  if (mode === 'already-running') {
+    if (recorded !== null) {
+      pipeline = recorded;
+      pipelineSource = 'run-state';
+    } else if (input.pipeline !== undefined) {
+      pipeline = input.pipeline;
+      pipelineSource = 'operator';
+    }
+  } else if (mode === 'fresh') {
+    if (input.pipeline !== undefined) {
+      pipeline = input.pipeline;
+      pipelineSource = 'operator';
+    } else if (recorded !== null) {
+      pipeline = recorded;
+      pipelineSource = 'run-state';
+    } else if (changeNode.suggestedPipeline !== undefined) {
+      pipeline = changeNode.suggestedPipeline;
+      pipelineSource = 'suggestion';
+    }
+  }
 
   return {
     ok: true,
@@ -452,6 +475,7 @@ export async function resolveIssueLaunchBinding(
       targetLineId: changeNode.targetLineId,
       launch,
       pipeline,
+      pipelineSource,
       mode,
       runStatePath: status?.runStatePath ?? null,
       locatedBy: status?.locatedBy ?? null,

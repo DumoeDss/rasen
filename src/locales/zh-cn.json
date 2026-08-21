@@ -2058,6 +2058,9 @@
                     "from-portfolio": {
                       "description": "不从 YAML 节点列表发布，而是从父 Change 的 portfolio 运行状态发布"
                     },
+                    "from-decomposition": {
+                      "description": "不从 YAML 节点列表发布，而是从机器提出的分解文档发布"
+                    },
                     "json": {
                       "description": "以 JSON 输出"
                     }
@@ -2102,6 +2105,20 @@
                     },
                     "pipeline": {
                       "description": "记录进启动契约的流水线，会对照流水线注册表校验"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                },
+                "confirm": {
+                  "description": "为指定修订（缺省为最新可读修订）组装确认报告：已验证的启动契约集合与待创建的 Change。confirm 只组装、不写入任何内容；启动仍是逐节点的操作",
+                  "options": {
+                    "store": {
+                      "description": "持有该 Issue 的仓库"
+                    },
+                    "revision": {
+                      "description": "要确认的修订；省略时确认最新可读修订"
                     },
                     "json": {
                       "description": "以 JSON 输出"
