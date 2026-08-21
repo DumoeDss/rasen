@@ -24,7 +24,9 @@
 | Store 生命周期（setup/register/clone） | `src/core/store/operations.ts` |
 | Issue 三轴状态投影（phase/health/progress） | `src/core/issue-status/projection.ts`（`projectIssueStatus`；CLI 面 `src/commands/store-issue.ts` list/show） |
 | Issue 节点依赖阻塞显示（结构 blockedBy + 状态标签词汇） | `src/core/issue-status/projection.ts`（`withBlockerFacts` 后处理 = work-complete 基准唯一写者；`issueBlockerState` = 共享状态标签；CLI 面 `src/commands/store-issue.ts` show 节点行 `(blockedBy y@proj: state)` 段） |
-| Issue 节点启动绑定（launch contract / start 子命令） | `src/core/issue-execution/binding.ts`（`resolveIssueLaunchBinding`；CLI 面 `src/commands/store-issue.ts` start；拒收/awaits 的逐 blocker `<id>@<project> (<state>)` 命名复用 `issueBlockerState`） |
+| Issue 节点启动绑定（launch contract / start 子命令） | `src/core/issue-execution/binding.ts`（`resolveIssueLaunchBinding`；CLI 面 `src/commands/store-issue.ts` start；拒收/awaits 的逐 blocker `<id>@<project> (<state>)` 命名复用 `issueBlockerState`；g-003 起 fresh 链 = `--pipeline` > run-state > `suggestedPipeline`，契约 `pipelineSource` 命名来源） |
+| Issue 确认报告（confirm 子命令 / launch contract 集 + pending Change） | `src/core/issue-execution/confirm.ts`（`composeIssueConfirm`：读-组装-报告，写零字节；CLI 面 `src/commands/store-issue.ts` confirm `--revision`；completions/locale 三文件同步） |
+| Issue show 的修订 delta（最新修订 vs supersedes 前任） | `src/core/issue-status/projection.ts`（`deriveRevisionDelta` 纯函数 → `IssueStatus.delta`；前置修订经 `ProjectIssueStatusInput.predecessorPlan` 显式输入，CLI 用 `resolveExecutionPlan({revisionId: supersedes})` 取；驱动零轴） |
 | Issue 验收闸门 / 显式 accept（done 规则） | `src/core/issue-acceptance/gate.ts`（`evaluateIssueAcceptanceGate`）+ `orchestration.ts`（`readIssueAcceptanceFacts`/`acceptIssue`；CLI 面 `src/commands/store-issue.ts` acceptance/accept） |
 | Issue 验收内容 schema（条件修订 / accepted 记录） | `src/core/store/issues/acceptance.ts`（digest/serialize，镜像 plans.ts 纪律）；地址 = planning-layout-v2 的 `acceptance-conditions`/`acceptance-condition`/`issue-accepted-record` 三 kind |
 | Issue 从 portfolio 发布 Execution Plan（`plan --from-portfolio`） | `src/core/issue-publication/orchestration.ts`（`publishPlanFromPortfolio`；定位缝同 `pipeline resume`，child 名字→committed 实例解析在 `resolution.ts`；CLI 面 `src/commands/store-issue.ts` plan） |

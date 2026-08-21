@@ -68,7 +68,7 @@ describe('rasen store issue status surface', () => {
     return runCLI([...args], { cwd, env: f.env });
   }
 
-  async function createStoreIssue() {
+  async function createStoreIssue(): Promise<readonly string[]> {
     await run(['store', 'issue', 'new', ISSUE, '--store', f.storeId, '--title', 'Issue layer', '--json'], f.storeRoot);
     const ids = [
       seedAndCommit('child-a', 'a1'.repeat(16)),
@@ -112,6 +112,7 @@ describe('rasen store issue status surface', () => {
     );
     f.git(f.storeRoot, ['add', '-A']);
     f.git(f.storeRoot, ['commit', '-m', 'issue + plan']);
+    return ids;
   }
 
   beforeEach(async () => {
@@ -484,5 +485,81 @@ describe('rasen store issue status surface', () => {
     expect(downstream.blockedBy).toEqual([
       { nodeId: 'g-up', projectId: PROJECT_B, observation: 'in-flight' },
     ]);
+  });
+
+  // The revision delta (review-flow task 4.1): a reviewed revision's
+  // what-changed view, on BOTH forms of `show` — the human section and the
+  // `status.delta` object — with the axes exactly what they were without it.
+  // spawn-heavy: 10 CLI invocations (issue + 3 seeds + 2 plans + 4 shows);
+  // the C2-parity budget class — solo-measured, the established convention.
+  it('reports the revision delta of a superseding revision in both forms', { timeout: 120000 }, async () => {
+    const ids = await createStoreIssue();
+
+    // A first revision reports no delta section at all.
+    const first = expectOk(
+      await run(['store', 'issue', 'show', ISSUE, '--store', f.storeId], nowhere)
+    );
+    expect(first.stdout).not.toContain('revision delta');
+    const firstJson = parseJson(
+      expectOk(await run(['store', 'issue', 'show', ISSUE, '--store', f.storeId, '--json'], nowhere))
+    );
+    expect(firstJson.status.delta).toBeNull();
+
+    // The review's revision: g-003 dropped (omission is intent-of-cancellation
+    // for unwanted work), g-002 re-edged off g-001 onto nothing.
+    const revisedFile = f.beside('nodes-2.yaml');
+    f.write(
+      revisedFile,
+      [
+        'nodes:',
+        '  - nodeId: g-001',
+        '    kind: change',
+        `    projectId: ${PROJECT}`,
+        `    targetLineId: ${LINE}`,
+        `    changeInstanceId: ${JSON.stringify(ids[0])}`,
+        '    changeAlias: child-a',
+        '    dependsOn: []',
+        '  - nodeId: g-002',
+        '    kind: change',
+        `    projectId: ${PROJECT}`,
+        `    targetLineId: ${LINE}`,
+        `    changeInstanceId: ${JSON.stringify(ids[1])}`,
+        '    changeAlias: child-b',
+        '    dependsOn: []',
+        '',
+      ].join('\n')
+    );
+    expectOk(
+      await run(
+        ['store', 'issue', 'plan', ISSUE, '--store', f.storeId, '--from-file', revisedFile, '--json'],
+        f.storeRoot
+      )
+    );
+    f.git(f.storeRoot, ['add', '-A']);
+    f.git(f.storeRoot, ['commit', '-m', 'revised plan']);
+
+    const human = expectOk(
+      await run(['store', 'issue', 'show', ISSUE, '--store', f.storeId], nowhere)
+    );
+    expect(human.stdout).toContain('revision delta: 0002 over 0001');
+    expect(human.stdout).toContain('- g-003');
+    expect(human.stdout).toContain('~ edges g-002 (-g-001)');
+
+    const json = parseJson(
+      expectOk(await run(['store', 'issue', 'show', ISSUE, '--store', f.storeId, '--json'], nowhere))
+    );
+    expect(json.status.delta).toEqual({
+      revisionId: '0002',
+      supersedes: '0001',
+      added: [],
+      removed: ['g-003'],
+      retargeted: [],
+      edgeChanges: [{ nodeId: 'g-002', addedDependencies: [], removedDependencies: ['g-001'] }],
+      lifecycleChanges: [],
+      suggestionChanges: [],
+    });
+    // The delta drives no axis: the same axes the first revision's show
+    // derived, now over the two-node revision.
+    expect(json.status.progress).toEqual({ completed: 0, total: 2 });
   });
 });

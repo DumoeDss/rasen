@@ -69,7 +69,7 @@ const EXPECTED_FUNCTION_HASHES: Record<string, string> = {
   getShipCommandSkillTemplate: '7ec6b452535ddf81ec9d0c5eb4640d5ac611a5e209bf04be93efc67824de87b0',
   getRetainCommandSkillTemplate: 'd2a6d17f9f79e33a6210069b3178774a28da774032f2a105fb3b827a95522705',
   getRetroCommandSkillTemplate: '64725c0d0c2d5ee285de0186c62e9bb9cfc6b2ddc95eabd408e089ff1d00c6db',
-  getAutoCommandSkillTemplate: 'c404544cb74b70060dfd60161213a4338f51eb3b9fb985e8cfc8c2009af0c4bb',
+  getAutoCommandSkillTemplate: '7f88caf3ea3e308e157a31a4ebc130acec1bf1c3e431a4f4b6c4b102f4f08c8b',
   getReviewCycleSkillTemplate: '927da23dbf290f35c8ea145fefd364362c23a3c3bd3298f8655691bd0d9f33f8',
   getHandoffSkillTemplate: '531cea204f5d8627a0f9fe25d46cda29b9a1457a4ad1f4354217e9a170660580',
   getGoalPlanSkillTemplate: 'e5f9ed5944dfed8b8815c73bc3d242f41e5af7a5d3111643ac54f498a572f17f',
@@ -112,7 +112,7 @@ const EXPECTED_GENERATED_SKILL_CONTENT_HASHES: Record<string, string> = {
   'rasen-ship': '4e016bdfee3d00f66e264d7ebed153e39b5d624abca813866621f6bc14d6b5eb',
   'rasen-retain': '1a2943cb9809e820f5db9bfa2c8b44e4e7fb540e20540abc39d664692efddfdc',
   'rasen-retro': 'af377d3849b0cbd34d1362044cc1be6f440a4fb93a3c1001dd5d64e7a58da008',
-  'rasen-auto': '26af0d76a5325937c13f023200ea5d21ccee948bcfc4e131b1370537e7b3aa19',
+  'rasen-auto': 'fa397fea91813abae0971cfb437ddc1fc1c3a6626b13380bda5f3184d59873f2',
   'rasen-review-cycle': '78e622efb9f7145d609689c6616536a81b94250157a230a49175e6a3c89fa4b1',
   'rasen-handoff': '8394a841e91e5b62de574af103cbc2c3225f30b81bd538221719b18b5c77c24f',
   'rasen-goal-plan': '2bc4026408389837e84ac743df8b28199155426f0e0e72e5abf2fd056cad703e',
@@ -397,5 +397,29 @@ describe('skill templates split parity', () => {
     expect(content).toMatch(/do NOT fan out child changes, do NOT create child worktrees, do NOT start any node/i);
     // The explicit distinction from the change-level decompose stage.
     expect(content).toContain('deliberately distinct from the change-level decompose stage');
+  });
+
+  // The post-confirmation continuation (issue-autodecompose-review-flow task
+  // 5.1): the dispatch continues ONLY through the human's confirm — the LEAD
+  // drives confirmed nodes through their launch contracts, frontier-gated and
+  // scoped to the confirmed revision. Unpinned, a regression that dropped the
+  // continuation (or loosened it into a pre-confirm fan-out) would pass.
+  it('teaches the post-confirmation continuation in the generated rasen-auto skill', () => {
+    const autoSkill = getSkillTemplates().find(({ dirName }) => dirName === 'rasen-auto');
+    expect(autoSkill, 'rasen-auto skill template').toBeDefined();
+    const content = generateSkillContent(autoSkill!.template, 'PARITY-BASELINE');
+
+    expect(content).toContain('rasen store issue confirm <issue-id>');
+    expect(content).toContain('rasen store issue start <issue-id> --node <id>');
+    // The scope fence: the confirmed revision bounds what may start, and a
+    // later revision needs its own confirmation.
+    expect(content).toContain('no node outside the confirmed revision');
+    expect(content).toContain('confirmed in turn before its new work starts');
+    // The nodeId-continuity convention for merge/split revisions, stated where
+    // the revision vocabulary is taught.
+    expect(content).toContain('a merged node may keep one constituent');
+    // The durable-record amendment: the revision — not the document — carries
+    // the required/optional proposal.
+    expect(content).toContain('the REVISION, not the document, is the durable record');
   });
 });

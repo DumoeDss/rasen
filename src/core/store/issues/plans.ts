@@ -115,6 +115,11 @@ const IntentNodeSchema = z
     ...NodeBaseShape,
     kind: z.literal('intent'),
     summary: z.string().min(1).max(500),
+    // A plain string here deliberately: the semantic check in `validateNode`
+    // refuses out-of-vocabulary values NAMING THE NODE and the two values
+    // defined for the intent kind (and directing cancelled/superseded to
+    // omission-from-next-revision), which a bare enum error cannot do.
+    lifecycle: z.string().optional(),
     ...suggestionShape,
   })
   .strict();
@@ -238,6 +243,28 @@ function validateNode(raw: z.output<typeof NodeSchema>, index: number): Executio
       dependsOn: Object.freeze(dependsOn),
     });
   }
+  // The intent lifecycle's two-value vocabulary, refused semantically so the
+  // refusal can name the node. `cancelled`/`superseded` are Change-node-only:
+  // they explain work that existed, while unwanted intent work — work no
+  // Change ever backed — is expressed by omitting the node from the next
+  // revision, and the refusal says exactly that.
+  const intentLifecycle = raw.lifecycle;
+  if (
+    intentLifecycle !== undefined &&
+    intentLifecycle !== 'required' &&
+    intentLifecycle !== 'optional'
+  ) {
+    if (intentLifecycle === 'cancelled' || intentLifecycle === 'superseded') {
+      throw planError(
+        `nodes[${index}].lifecycle`,
+        `node '${nodeId}' is an intent node carrying lifecycle '${intentLifecycle}'; ${intentLifecycle} explains work that existed and stays Change-node-only — unwanted intent work is expressed by omitting the node from the next revision`
+      );
+    }
+    throw planError(
+      `nodes[${index}].lifecycle`,
+      `node '${nodeId}' carries lifecycle '${intentLifecycle}', which the intent node kind does not define; the values defined for an intent node are 'required' | 'optional'`
+    );
+  }
   assertPortableIssueText(raw.summary, `nodes[${index}].summary`, 'invalid_execution_plan');
   return Object.freeze({
     nodeId,
@@ -245,6 +272,12 @@ function validateNode(raw: z.output<typeof NodeSchema>, index: number): Executio
     projectId,
     targetLineId,
     summary: raw.summary,
+    // Canonical omission, mirroring the change node: an explicit `required` IS
+    // `required`, and the stored form omits it so two spellings of one plan
+    // publish one revision and pre-vocabulary revisions keep their digests.
+    ...(intentLifecycle === undefined || intentLifecycle === 'required'
+      ? {}
+      : { lifecycle: intentLifecycle as 'optional' }),
     ...planSuggestionFields(raw, index),
     dependsOn: Object.freeze(dependsOn),
   });
@@ -410,6 +443,7 @@ export function executionPlanDigestBody(
             projectId: node.projectId,
             targetLineId: node.targetLineId,
             summary: node.summary,
+            ...(node.lifecycle === undefined ? {} : { lifecycle: node.lifecycle }),
             ...(node.suggestedPipeline === undefined
               ? {}
               : { suggestedPipeline: node.suggestedPipeline }),
@@ -538,6 +572,7 @@ export function serializeExecutionPlanRevision(value: ExecutionPlanRevisionV1): 
             projectId: node.projectId,
             targetLineId: node.targetLineId,
             summary: node.summary,
+            ...(node.lifecycle === undefined ? {} : { lifecycle: node.lifecycle }),
             ...(node.suggestedPipeline === undefined
               ? {}
               : { suggestedPipeline: node.suggestedPipeline }),
@@ -581,8 +616,15 @@ function compareCodePoints(left: string, right: string): number {
  *
  * `lifecycle` and `reason` are carried through on BOTH branches. Dropping
  * them from an intent node's candidate would silently publish away a field
- * the spec refuses ("an intent node carries no lifecycle at all"); carrying
- * them lets `IntentNodeSchema`'s `.strict()` refuse the node BY NAME.
+ * the schema refuses — `reason` on an intent node still meets
+ * `IntentNodeSchema`'s `.strict()` and is refused BY NAME — and carrying
+ * `lifecycle` is now required, because the intent schema admits it.
+ *
+ * What the candidate cannot do is refuse a field it does not know: an
+ * UNRECOGNIZED authored key never reaches the candidate at all and would
+ * vanish before `.strict()` sees it. `planNodeUnknownFields` below closes that
+ * seam — the authored-input boundary now meets the same refusal-by-name rule
+ * the stored-record boundary always had.
  */
 function planNodeCandidate(input: ExecutionPlanNodeInput): unknown {
   const raw = input as unknown as Record<string, unknown>;
@@ -611,6 +653,67 @@ function planNodeCandidate(input: ExecutionPlanNodeInput): unknown {
     : { ...base, summary: raw.summary };
 }
 
+/** The fields each node kind's schema declares — the authored-field baseline. */
+const COMMON_AUTHORED_NODE_FIELDS: ReadonlySet<string> = new Set([
+  'nodeId',
+  'kind',
+  'projectId',
+  'targetLineId',
+  'dependsOn',
+  'lifecycle',
+  'reason',
+  'suggestedPipeline',
+  'rationale',
+  'uncertainty',
+]);
+const CHANGE_AUTHORED_NODE_FIELDS: ReadonlySet<string> = new Set([
+  ...COMMON_AUTHORED_NODE_FIELDS,
+  'changeInstanceId',
+  'changeAlias',
+]);
+const INTENT_AUTHORED_NODE_FIELDS: ReadonlySet<string> = new Set([
+  ...COMMON_AUTHORED_NODE_FIELDS,
+  'summary',
+]);
+
+/**
+ * Authored keys outside the known field set for the node's kind, in a stable
+ * (code-point) order. An UNDEFINED kind is not this check's question: the
+ * schema's discriminator refuses it by name, and nothing it carried can be
+ * published, so the check yields nothing there and lets the discriminator
+ * speak.
+ */
+function planNodeUnknownFields(input: ExecutionPlanNodeInput): readonly string[] {
+  const raw = input as unknown as Record<string, unknown>;
+  const known =
+    raw.kind === 'change'
+      ? CHANGE_AUTHORED_NODE_FIELDS
+      : raw.kind === 'intent'
+        ? INTENT_AUTHORED_NODE_FIELDS
+        : null;
+  if (known === null) return [];
+  return Object.keys(raw)
+    .filter(key => !known.has(key))
+    .sort(compareCodePoints);
+}
+
+function unknownNodeFieldsMessage(
+  nodeId: string,
+  kind: unknown,
+  fields: readonly string[]
+): string {
+  const kindName = kind === 'change' || kind === 'intent' ? String(kind) : 'node';
+  return `node '${nodeId}' carries field(s) the ${kindName} node schema does not define: ${fields
+    .map(field => `'${field}'`)
+    .join(', ')}; authored input is refused naming the field rather than published with it silently dropped`;
+}
+
+/** The authored node id as the refusals name it, with the honest fallback. */
+function authoredNodeId(input: ExecutionPlanNodeInput): string {
+  const raw = (input as unknown as Record<string, unknown>).nodeId;
+  return typeof raw === 'string' && raw.length > 0 ? raw : '(unnamed node)';
+}
+
 export interface PlanNodeSchemaProblem {
   readonly nodeId: string;
   readonly problem: string;
@@ -634,8 +737,18 @@ export function findPlanNodeSchemaProblems(
 ): readonly PlanNodeSchemaProblem[] {
   const problems: PlanNodeSchemaProblem[] = [];
   inputs.forEach((input, index) => {
-    const nodeIdRaw = (input as unknown as Record<string, unknown>).nodeId;
-    const nodeId = typeof nodeIdRaw === 'string' && nodeIdRaw.length > 0 ? nodeIdRaw : '(unnamed node)';
+    const nodeId = authoredNodeId(input);
+    // The extra-keys refusal runs on the REPORTING path exactly as on the
+    // throwing one: a misspelled key is refused by name here too, never
+    // silently dropped from a published plan.
+    const unknown = planNodeUnknownFields(input);
+    if (unknown.length > 0) {
+      problems.push({
+        nodeId,
+        problem: unknownNodeFieldsMessage(nodeId, (input as unknown as Record<string, unknown>).kind, unknown),
+      });
+      return;
+    }
     const result = NodeSchema.safeParse(planNodeCandidate(input));
     if (!result.success) {
       problems.push({ nodeId, problem: formatZodIssues(result.error) });
@@ -656,6 +769,17 @@ function parsePlanNode(
   input: ExecutionPlanNodeInput,
   index: number
 ): z.output<typeof NodeSchema> {
+  // The extra-keys check runs BEFORE the candidate: an authored key the
+  // candidate does not forward would otherwise never meet `.strict()` and
+  // would vanish silently — the exact asymmetry with the stored-record
+  // boundary this refusal closes.
+  const unknown = planNodeUnknownFields(input);
+  if (unknown.length > 0) {
+    throw planError(
+      `nodes[${index}]`,
+      unknownNodeFieldsMessage(authoredNodeId(input), (input as unknown as Record<string, unknown>).kind, unknown)
+    );
+  }
   const result = NodeSchema.safeParse(planNodeCandidate(input));
   if (!result.success) {
     throw planError(`nodes[${index}]`, formatZodIssues(result.error), result.error);

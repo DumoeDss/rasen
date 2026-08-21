@@ -2110,6 +2110,20 @@
                       "description": "Output as JSON"
                     }
                   }
+                },
+                "confirm": {
+                  "description": "Compose the confirm report for one revision (default the latest readable): the verified launch-contract set and the pending-Change report. Confirm composes and writes nothing; starting a node remains a per-node act",
+                  "options": {
+                    "store": {
+                      "description": "Store holding the Issue"
+                    },
+                    "revision": {
+                      "description": "Revision to confirm; omit to confirm the latest readable revision"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
                 }
               }
             },

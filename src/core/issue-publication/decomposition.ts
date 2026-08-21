@@ -14,11 +14,11 @@
  *     `rationale`/`uncertainty` — an unsuggested or unexplained proposal is
  *     not a reviewable one;
  *   - a node MAY carry `lifecycle: required | 'optional'` (absent reads
- *     `required`). The authored lifecycle is the DOCUMENT's proposal record —
- *     the published intent node carries none, because the plan schema (and the
- *     spec behind it) holds that an intent node carries no lifecycle at all;
- *     the document stays byte-identical after publication, so the proposal it
- *     records is what the confirm flow (g-003) revises and applies.
+ *     `required`). The authored lifecycle is compiled ONTO the published
+ *     intent node: the REVISION, not the document, is the durable record of
+ *     the required/optional proposal, so the review surface, the revision
+ *     delta, and every later consumer read one record instead of reconciling
+ *     two. The document stays byte-identical as authored input.
  *
  * Everything else — normalization, duplicate/cycle/dangling-dependency
  * refusal, the planning-member target gate, the registry check on the
@@ -155,9 +155,11 @@ export function parseDecompositionDocument(
       targetLineId: node.targetLineId,
       summary: node.summary,
       ...(node.dependsOn === undefined ? {} : { dependsOn: node.dependsOn }),
-      // The authored `lifecycle` deliberately does NOT forward: the plan
-      // schema holds that an intent node carries no lifecycle at all. The
-      // document's own bytes remain the durable record of the proposal.
+      // The authored `lifecycle` compiles ONTO the intent node: the revision —
+      // not the document — is the durable record of the required/optional
+      // proposal. An explicit `required` forwards too and canonicalizes to
+      // omission downstream, exactly as a change node's does.
+      ...(node.lifecycle === undefined ? {} : { lifecycle: node.lifecycle }),
       suggestedPipeline: node.suggestedPipeline,
       ...(present(node.rationale) ? { rationale: node.rationale } : {}),
       ...(present(node.uncertainty) ? { uncertainty: node.uncertainty } : {}),

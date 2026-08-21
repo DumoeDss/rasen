@@ -416,7 +416,7 @@ describe('resolveIssueLaunchBinding — frontier and modes', () => {
         kind: 'intent',
         projectId: PROJECT,
         targetLineId: LINE,
-        lifecycle: null,
+        lifecycle: 'required',
         reason: null,
         alias: null,
         observation: 'not-started',
@@ -990,7 +990,7 @@ describe('resolveIssueLaunchBinding — cross-project dependency naming (g-002)'
           kind: 'intent',
           projectId: PROJECT_B,
           targetLineId: LINE,
-          lifecycle: null,
+          lifecycle: 'required',
           reason: null,
           alias: null,
           observation: 'not-started',
@@ -1015,5 +1015,112 @@ describe('resolveIssueLaunchBinding — cross-project dependency naming (g-002)'
     expect(result.refusal.message).toContain(
       'i-up@app-b (not-started, no local run-state)'
     );
+  });
+});
+
+describe('resolveIssueLaunchBinding — the suggestion-aware fresh chain (review-flow D2)', () => {
+  /** One fresh node whose revision records a suggestion. */
+  const SUGGESTED_NODE: readonly ExecutionPlanNode[] = [
+    {
+      nodeId: 'g-001',
+      kind: 'change',
+      projectId: PROJECT,
+      targetLineId: LINE,
+      changeInstanceId: 'ci:aaa',
+      changeAlias: 'child-a',
+      dependsOn: [],
+      suggestedPipeline: 'small-feature',
+    },
+  ];
+
+  function suggestedInput() {
+    return {
+      detail: detailFor(SUGGESTED_NODE),
+      status: statusFor([nodeStatus('g-001', 'not-started')]),
+      workspaceEntries: [] as readonly WorkspaceIndexEntry[],
+      launchContextFor: LAUNCH_OK,
+    };
+  }
+
+  it("supplies the pipeline from the plan's suggestion for a fresh node, naming the source", async () => {
+    const result = await resolveIssueLaunchBinding(suggestedInput());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.binding.mode).toBe('fresh');
+    expect(result.binding.pipeline).toBe('small-feature');
+    expect(result.binding.pipelineSource).toBe('suggestion');
+  });
+
+  it('an explicit --pipeline overrides the suggestion WITHOUT refusal, named as the operator choice', async () => {
+    const result = await resolveIssueLaunchBinding({
+      ...suggestedInput(),
+      pipeline: 'bug-fix',
+      pipelineKnown: KNOWN_PIPELINES,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.binding.pipeline).toBe('bug-fix');
+    expect(result.binding.pipelineSource).toBe('operator');
+  });
+
+  it('the run-state recording outranks the suggestion for a fresh node', async () => {
+    // A located run-state whose observation is still not-started but whose
+    // record names a pipeline: the recording wins over the suggestion, and
+    // the contract names the run-state as the source.
+    const input = suggestedInput();
+    input.status = statusFor([
+      nodeStatus('g-001', 'not-started', {
+        runStatePath: 'C:\\exec\\.rasen\\changes\\child-a\\ephemera\\auto-run.json',
+        attribution: { pipeline: 'bug-fix', sessions: [], evidenceLocator: null },
+      }),
+    ]);
+    const result = await resolveIssueLaunchBinding(input);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.binding.pipeline).toBe('bug-fix');
+    expect(result.binding.pipelineSource).toBe('run-state');
+  });
+
+  it('a fresh node with no flag, recording, or suggestion carries no pipeline and no source', async () => {
+    const result = await resolveIssueLaunchBinding(baseInput());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.binding.pipeline).toBeNull();
+    expect(result.binding.pipelineSource).toBeNull();
+  });
+
+  it('a running node keeps the recorded pipeline over a disagreeing suggestion, and refuses a disagreeing flag', async () => {
+    const nodes: readonly ExecutionPlanNode[] = SUGGESTED_NODE.map(node => ({
+      ...node,
+      // The revision's suggestion disagrees with what is already running —
+      // the recording still leads, byte-unchanged behavior.
+      suggestedPipeline: 'bug-fix' as const,
+    }));
+    const running = {
+      detail: detailFor(nodes),
+      status: statusFor([
+        nodeStatus('g-001', 'in-flight', {
+          attribution: { pipeline: 'small-feature', sessions: [], evidenceLocator: null },
+        }),
+      ]),
+      workspaceEntries: [] as readonly WorkspaceIndexEntry[],
+      launchContextFor: LAUNCH_OK,
+    };
+    const recorded = await resolveIssueLaunchBinding({ ...running, nodeId: 'g-001' });
+    expect(recorded.ok).toBe(true);
+    if (!recorded.ok) return;
+    expect(recorded.binding.mode).toBe('already-running');
+    expect(recorded.binding.pipeline).toBe('small-feature');
+    expect(recorded.binding.pipelineSource).toBe('run-state');
+
+    const refused = await resolveIssueLaunchBinding({
+      ...running,
+      nodeId: 'g-001',
+      pipeline: 'bug-fix',
+      pipelineKnown: KNOWN_PIPELINES,
+    });
+    expect(refused.ok).toBe(false);
+    if (refused.ok) return;
+    expect(refused.refusal.code).toBe('issue_start_pipeline_conflict');
   });
 });

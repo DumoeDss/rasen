@@ -718,6 +718,20 @@ const COMMANDS: readonly CommandDefinition[] = [
               COMMON_FLAGS.json,
             ],
           },
+          {
+            // The Issue dispatch's confirm step: composes the verified
+            // launch-contract set and pending-Change report for one revision
+            // and writes nothing — starting a confirmed node stays a
+            // per-node act.
+            name: 'confirm',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-id' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'revision', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
         ],
       },
       {

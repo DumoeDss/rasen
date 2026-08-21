@@ -325,7 +325,10 @@ describe('the issue status projection', () => {
     expect(status.nodes[0].kind).toBe('intent');
     expect(status.nodes[0].alias).toBeNull();
     expect(status.nodes[0].observation).toBe('not-started');
-    expect(status.nodes[0].lifecycle).toBeNull();
+    // review-flow D1: an intent node's absent lifecycle reads `required` on
+    // the same one-seam wrapper a Change node's does — the read view of the
+    // vocabulary intent nodes now share.
+    expect(status.nodes[0].lifecycle).toBe('required');
   });
 
   it('derives active/healthy 0/3 with one child in-flight from live run-state', async () => {

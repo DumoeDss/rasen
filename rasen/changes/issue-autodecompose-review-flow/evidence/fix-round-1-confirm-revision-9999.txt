@@ -1,0 +1,2 @@
+Error: Revision '9999' of Issue issue-autodecompose-uplift could not be read back for confirmation; its published revisions run 0001–0003 (latest 0003). Name a readable revision (the show command lists the ordinals) or omit --revision to confirm the latest.
+Fix: Read the Issue's revision ordinals first: `rasen store issue show issue-autodecompose-uplift --store <store>`, or omit --revision to confirm the latest.

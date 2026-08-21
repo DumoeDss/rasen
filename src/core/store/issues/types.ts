@@ -141,13 +141,16 @@ export interface IssueRecordV1 {
 export type ExecutionPlanNodeKind = 'change' | 'intent';
 
 /**
- * The closed lifecycle vocabulary a Change node carries. An ABSENT lifecycle
- * reads as `required` — the value every revision published before this
- * vocabulary existed has always meant — and the stored canonical form omits a
- * `required` lifecycle exactly as it omits an absent `changeAlias`, so those
- * revisions re-derive their published digests byte-for-byte. `cancelled` and
- * `superseded` carry a recorded `reason`; intent nodes carry no lifecycle at
- * all.
+ * The closed lifecycle vocabulary a node carries, scoped by kind: a Change node
+ * admits all four values; an intent node admits `required` and `optional` only
+ * (see `ExecutionPlanIntentNode`). An ABSENT lifecycle reads as `required` —
+ * the value every revision published before this vocabulary existed has always
+ * meant — and the stored canonical form omits a `required` lifecycle exactly as
+ * it omits an absent `changeAlias`, so those revisions re-derive their
+ * published digests byte-for-byte. `cancelled` and `superseded` carry a
+ * recorded `reason`, and stay Change-node-only: they explain work that EXISTED
+ * and is no longer wanted, while unwanted intent work — work no Change ever
+ * backed — is expressed by omitting the node from the next revision.
  */
 export type ExecutionPlanNodeLifecycle = 'required' | 'optional' | 'cancelled' | 'superseded';
 
@@ -202,10 +205,21 @@ export interface ExecutionPlanChangeNode extends ExecutionPlanNodeBase {
  * Not a weaker `change` node with a missing field: ownership is explicit from
  * the first draft, which is what keeps "exactly one owner" true across the
  * whole lifecycle rather than only at the end.
+ *
+ * An intent node carries the required/optional half of the lifecycle
+ * vocabulary: the decomposition's proposal lives ON the node the review
+ * surface shows, not in a sidecar document. `cancelled`/`superseded` are
+ * refused here — unwanted intent work is expressed by omitting the node from
+ * the next revision, because there is no existed work for those values to
+ * explain. An absent lifecycle reads `required` and is canonically omitted,
+ * so intent revisions published before this field existed re-derive their
+ * digests byte-for-byte.
  */
 export interface ExecutionPlanIntentNode extends ExecutionPlanNodeBase {
   readonly kind: 'intent';
   readonly summary: string;
+  /** Absent ≡ `required`; only `optional` is ever stored. */
+  readonly lifecycle?: 'optional';
 }
 
 export type ExecutionPlanNode = ExecutionPlanChangeNode | ExecutionPlanIntentNode;
@@ -326,6 +340,8 @@ export interface ExecutionPlanIntentNodeInput {
   readonly targetLineId: string;
   readonly summary: string;
   readonly dependsOn?: readonly string[];
+  /** Authored lifecycle; `required`|`optional` only, validated semantically. */
+  readonly lifecycle?: string;
   /** Optional suggestion/rationale/uncertainty; see `ExecutionPlanNodeBase`. */
   readonly suggestedPipeline?: string;
   readonly rationale?: string;

@@ -19,7 +19,7 @@
  * signal supports it, so `blocked` and `stale` stay reserved until a future
  * capability records a real blockage or staleness signal.
  */
-import type { IssueDetail } from '../store/query/index.js';
+import type { IssueDetail, ResolvedExecutionPlan } from '../store/query/index.js';
 import type { ExecutionPlanNodeLifecycle } from '../store/issues/types.js';
 import type { WorkspaceIndexEntry } from '../store/workspace/registry.js';
 import type {
@@ -169,10 +169,13 @@ export interface IssueNodeStatus {
   readonly targetLineId: string;
   /**
    * The node's lifecycle as the revision records it, with an absent field
-   * read as `required` — the read view of the plan's spelling. Null exactly
-   * for intent nodes, which carry no lifecycle at all.
+   * read as `required` — the read view of the plan's spelling, for BOTH node
+   * kinds: an intent node carries `required`/`optional` exactly as a Change
+   * node does, and a non-`required` value is named on its node line the same
+   * way. Never null — since intent nodes admitted the vocabulary, every node
+   * of a readable revision reads a lifecycle.
    */
-  readonly lifecycle: ExecutionPlanNodeLifecycle | null;
+  readonly lifecycle: ExecutionPlanNodeLifecycle;
   /**
    * The recorded reason a `cancelled`/`superseded` node carries — shown beside
    * the gate's exclusion and on the node line. Null when none is recorded.
@@ -260,6 +263,61 @@ export type IssueRunStateVisibility =
   | { readonly kind: 'execution-root'; readonly executionRoot: string }
   | { readonly kind: 'none' };
 
+// -----------------------------------------------------------------------------
+// The revision delta (review-flow D5)
+// -----------------------------------------------------------------------------
+
+/** One node the latest revision retargeted, with both revisions' target facts. */
+export interface IssueRevisionRetarget {
+  readonly nodeId: string;
+  readonly fromProjectId: string;
+  readonly toProjectId: string;
+  readonly fromTargetLineId: string;
+  readonly toTargetLineId: string;
+}
+
+/** One node whose dependency edges changed between the two revisions. */
+export interface IssueRevisionEdgeChange {
+  readonly nodeId: string;
+  readonly addedDependencies: readonly string[];
+  readonly removedDependencies: readonly string[];
+}
+
+/** One node whose lifecycle changed, with both readings (absent reads required). */
+export interface IssueRevisionLifecycleChange {
+  readonly nodeId: string;
+  readonly from: ExecutionPlanNodeLifecycle;
+  readonly to: ExecutionPlanNodeLifecycle;
+}
+
+/** One node whose recorded suggestion changed (null = none recorded). */
+export interface IssueRevisionSuggestionChange {
+  readonly nodeId: string;
+  readonly from: string | null;
+  readonly to: string | null;
+}
+
+/**
+ * The node-level delta of the latest readable revision against its
+ * `supersedes` predecessor — DERIVED ON READ from the two revisions alone and
+ * persisted nowhere, so a reviewer sees what a revision changed (a merge, a
+ * split, a retarget) without diffing files. The delta drives no phase, health,
+ * or progress value: it is a fact of the read surface, exactly like a node's
+ * target project. Node-by-node over stable nodeIds — the nodeId-continuity
+ * convention (a merged node may keep a constituent's id; a split mints new
+ * ids) is what makes the delta read as the change it is.
+ */
+export interface IssueRevisionDelta {
+  readonly revisionId: string;
+  readonly supersedes: string;
+  readonly added: readonly string[];
+  readonly removed: readonly string[];
+  readonly retargeted: readonly IssueRevisionRetarget[];
+  readonly edgeChanges: readonly IssueRevisionEdgeChange[];
+  readonly lifecycleChanges: readonly IssueRevisionLifecycleChange[];
+  readonly suggestionChanges: readonly IssueRevisionSuggestionChange[];
+}
+
 /** The tri-axis answer, plus everything that explains it. */
 export interface IssueStatus {
   readonly phase: IssuePhase;
@@ -270,6 +328,15 @@ export interface IssueStatus {
    */
   readonly progress: IssueProgress | null;
   readonly nodes: readonly IssueNodeStatus[];
+  /**
+   * The node-level delta of the latest readable revision against its
+   * `supersedes` predecessor — added/removed/retargeted/re-edged nodes,
+   * lifecycle changes, suggestion changes — derived on read, persisted
+   * nowhere, driving no axis. Null when the latest revision supersedes
+   * nothing (a first revision reports no delta section) or when the caller
+   * supplied no readable predecessor for a superseding revision.
+   */
+  readonly delta: IssueRevisionDelta | null;
   /**
    * One lane per distinct target project the readable revision's nodes name,
    * in project-identity code-point order. Empty when there is no readable
@@ -350,4 +417,12 @@ export interface ProjectIssueStatusInput {
    * out of reach without one.
    */
   readonly acceptance?: IssueAcceptanceFacts;
+  /**
+   * The predecessor revision the latest revision's `supersedes` names, as one
+   * read resolved it — the fifth input (review-flow D5), consumed ONLY by the
+   * revision delta: when it carries a readable revision, the delta derives
+   * node-by-node from the two revisions alone. Omitted or unreadable means no
+   * delta section; no axis ever reads it, so its absence changes nothing else.
+   */
+  readonly predecessorPlan?: ResolvedExecutionPlan | null;
 }

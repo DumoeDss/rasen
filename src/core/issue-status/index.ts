@@ -8,7 +8,7 @@
  * nowhere. Imports — never modifies — the pipeline-registry run-state readers
  * and the store aggregate query.
  */
-export { issueBlockerState, projectIssueStatus } from './projection.js';
+export { deriveRevisionDelta, issueBlockerState, projectIssueStatus } from './projection.js';
 export type {
   IssueHealth,
   IssueNodeAttribution,
@@ -19,6 +19,11 @@ export type {
   IssuePhase,
   IssueProgress,
   IssueProjectLane,
+  IssueRevisionDelta,
+  IssueRevisionEdgeChange,
+  IssueRevisionLifecycleChange,
+  IssueRevisionRetarget,
+  IssueRevisionSuggestionChange,
   IssueRunStateLocator,
   IssueRunStateVisibility,
   IssueStatus,

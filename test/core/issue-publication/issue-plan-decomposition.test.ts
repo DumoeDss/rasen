@@ -63,7 +63,7 @@ function decompositionYaml(): string {
 }
 
 describe('parseDecompositionDocument (pure reader)', () => {
-  it('compiles intent nodes with suggestions and rationale, dropping the authored lifecycle', () => {
+  it('compiles intent nodes with suggestions and rationale, carrying the authored lifecycle onto the node', () => {
     const nodes = parseDecompositionDocument(decompositionYaml(), 'doc.yaml');
     expect(nodes).toHaveLength(3);
     expect(nodes.every(node => node.kind === 'intent')).toBe(true);
@@ -73,9 +73,12 @@ describe('parseDecompositionDocument (pure reader)', () => {
       rationale: 'the surface must exist before any consumer can build on it',
     });
     expect(nodes[1]?.uncertainty).toContain('compat shim');
-    // The authored `lifecycle: optional` is the document's proposal record —
-    // the compiled intent input carries none (the plan schema refuses one).
-    expect('lifecycle' in (nodes[2] as object)).toBe(false);
+    // The authored `lifecycle: optional` compiles ONTO the intent node
+    // (review-flow D1): the revision — not the document — is the durable
+    // record of the required/optional proposal. A silent node carries no
+    // lifecycle key at all (absent reads required downstream).
+    expect(nodes[2]).toMatchObject({ nodeId: 'widget-docs', lifecycle: 'optional' });
+    expect('lifecycle' in (nodes[0] as object)).toBe(false);
   });
 
   it('refuses a change-kind node toward the portfolio source, naming the node', () => {

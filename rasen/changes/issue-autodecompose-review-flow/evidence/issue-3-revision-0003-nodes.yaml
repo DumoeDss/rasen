@@ -1,0 +1,30 @@
+# Revision 0003 of Issue #3 (issue-autodecompose-uplift) — the review half of
+# the dispatch dogfood: review -> revise -> confirm. Authored by the g-003
+# implementer leg (2026-08-21) through --from-file, superseding revision 0002
+# (the decomposer's proposal). The landed g-002 child is promoted from intent
+# to Change against its committed Store instance; the review-flow intent node
+# is lifecycle-marked required explicitly (LEAD decision: semantic honesty
+# over receipt visibility — canonical omission stores `required` identically,
+# so the marking is a fact of the authored review act, not of the stored
+# bytes); its dependency edge on the graph child is dropped because that work
+# shipped and archived; and 0002's recorded uncertainty is replaced by the
+# rationale naming the adopted answer.
+nodes:
+  - nodeId: issue-autodecompose-graph
+    kind: change
+    projectId: e2ee72ed-04a1-4395-86aa-7e77d2b83ec7
+    targetLineId: line-0.2
+    changeInstanceId: ci_96db06e16c62383fc2c4218874cb00e6e2a93a9b3c5415206bb8c568d267ab42
+    changeAlias: issue-autodecompose-graph
+    dependsOn: []
+    suggestedPipeline: small-feature
+    rationale: promoted from intent to Change now that the child's committed Store instance exists (seeded archived evidence, repo archive 15b60a63); its work shipped and archived, so no dependent waits on it
+  - nodeId: issue-autodecompose-review-flow
+    kind: intent
+    projectId: e2ee72ed-04a1-4395-86aa-7e77d2b83ec7
+    targetLineId: line-0.2
+    summary: Human review, revision, and confirm-to-start flow over decomposition revisions
+    lifecycle: required
+    dependsOn: []
+    suggestedPipeline: small-feature
+    rationale: 0002's uncertainty is decided — a fresh node's launch contract adopts the node's recorded suggestedPipeline when no --pipeline is given, resolved as flag over run-state recording over suggestion, with the contract naming which source supplied the pipeline

@@ -39,7 +39,10 @@ import {
   type PortfolioState,
 } from '../pipeline-registry/portfolio-state.js';
 import type { IssueDetail, ResolvedPlanNode } from '../store/query/index.js';
-import type { ExecutionPlanNode } from '../store/issues/types.js';
+import type {
+  ExecutionPlanNode,
+  ExecutionPlanRevisionV1,
+} from '../store/issues/types.js';
 import { resolveStorePlanningLayoutV2Path } from '../store/planning-layout-v2.js';
 import type { WorkspaceIndexEntry } from '../store/workspace/registry.js';
 // The one runtime edge into the acceptance module: the projection fills the
@@ -60,6 +63,11 @@ import type {
   IssuePhase,
   IssueProgress,
   IssueProjectLane,
+  IssueRevisionDelta,
+  IssueRevisionEdgeChange,
+  IssueRevisionLifecycleChange,
+  IssueRevisionRetarget,
+  IssueRevisionSuggestionChange,
   IssueRunStateLocator,
   IssueStatus,
   IssueStatusProblem,
@@ -620,8 +628,11 @@ function isRequired(node: IssueNodeStatus): boolean {
  * (design D2 of issue-project-grouped-views: a per-project "what's left" that
  * disagreed with the node lines or the start gate would be a third basis, and
  * the whole point of the basis unification was that there is one). Optional,
- * cancelled, and superseded completions count nowhere; intent nodes carry no
- * lifecycle at all and never do. Finished-but-unarchived still counts:
+ * cancelled, and superseded completions count nowhere, and neither do intent
+ * nodes: `isRequired`'s change-kind conjunct is what excludes them — intent
+ * nodes DO carry `required`|`optional` since issue-autodecompose-review-flow
+ * (absent reads `required`), while `cancelled`/`superseded` stay
+ * Change-node-only. Finished-but-unarchived still counts:
  * progress measures work, not archiving.
  */
 function progressOver(nodes: readonly IssueNodeStatus[]): IssueProgress {
@@ -665,10 +676,83 @@ function deriveProjectLanes(
 }
 
 /**
+ * The node-level delta of one revision against the predecessor it supersedes
+ * (review-flow D5): added and removed nodes, retargets, dependency-edge
+ * changes, lifecycle changes, and suggestion changes — derived on read from
+ * the two revisions alone, persisted nowhere, driving no axis. Node-by-node
+ * over stable nodeIds, so the nodeId-continuity convention (a merged node may
+ * keep a constituent's id; a split mints new ids and re-edges dependents) is
+ * what makes a structural revision read as the change it is rather than as a
+ * wholesale rewrite.
+ */
+export function deriveRevisionDelta(
+  revision: ExecutionPlanRevisionV1,
+  predecessor: ExecutionPlanRevisionV1
+): IssueRevisionDelta {
+  const current = new Map(revision.nodes.map(node => [node.nodeId, node] as const));
+  const before = new Map(predecessor.nodes.map(node => [node.nodeId, node] as const));
+
+  const codePointOrder = (left: string, right: string) =>
+    left < right ? -1 : left > right ? 1 : 0;
+  const added = [...current.keys()].filter(id => !before.has(id)).sort(codePointOrder);
+  const removed = [...before.keys()].filter(id => !current.has(id)).sort(codePointOrder);
+
+  const retargeted: IssueRevisionRetarget[] = [];
+  const edgeChanges: IssueRevisionEdgeChange[] = [];
+  const lifecycleChanges: IssueRevisionLifecycleChange[] = [];
+  const suggestionChanges: IssueRevisionSuggestionChange[] = [];
+  for (const nodeId of [...current.keys()].filter(id => before.has(id)).sort(codePointOrder)) {
+    const now = current.get(nodeId) as ExecutionPlanNode;
+    const then = before.get(nodeId) as ExecutionPlanNode;
+    if (now.projectId !== then.projectId || now.targetLineId !== then.targetLineId) {
+      retargeted.push({
+        nodeId,
+        fromProjectId: then.projectId,
+        toProjectId: now.projectId,
+        fromTargetLineId: then.targetLineId,
+        toTargetLineId: now.targetLineId,
+      });
+    }
+    const addedDependencies = now.dependsOn.filter(dep => !then.dependsOn.includes(dep));
+    const removedDependencies = then.dependsOn.filter(dep => !now.dependsOn.includes(dep));
+    if (addedDependencies.length > 0 || removedDependencies.length > 0) {
+      edgeChanges.push({
+        nodeId,
+        addedDependencies: [...addedDependencies].sort(codePointOrder),
+        removedDependencies: [...removedDependencies].sort(codePointOrder),
+      });
+    }
+    const fromLifecycle = then.lifecycle ?? 'required';
+    const toLifecycle = now.lifecycle ?? 'required';
+    if (fromLifecycle !== toLifecycle) {
+      lifecycleChanges.push({ nodeId, from: fromLifecycle, to: toLifecycle });
+    }
+    const fromSuggestion = then.suggestedPipeline ?? null;
+    const toSuggestion = now.suggestedPipeline ?? null;
+    if (fromSuggestion !== toSuggestion) {
+      suggestionChanges.push({ nodeId, from: fromSuggestion, to: toSuggestion });
+    }
+  }
+
+  return {
+    revisionId: revision.revisionId,
+    supersedes: predecessor.revisionId,
+    added,
+    removed,
+    retargeted,
+    edgeChanges,
+    lifecycleChanges,
+    suggestionChanges,
+  };
+}
+
+/**
  * The observed node with the plan's own spelling resolved onto it: an absent
- * lifecycle field reads as `required` (change nodes) and intent nodes carry no
- * lifecycle at all (null); the node's target project and line are copied from
- * the revision node verbatim — the one projection-seam widening, so every
+ * lifecycle field reads as `required`, on BOTH node kinds — an intent node
+ * carries `required`/`optional` exactly as a Change node does, so the review
+ * surface names the required/optional proposal the revision records whatever
+ * the node's kind. The node's target project and line are copied from the
+ * revision node verbatim — the one projection-seam widening, so every
  * observation branch reports the project and none can forget or default it.
  * One wrapper for every observation branch. The dependency facts are still
  * absent; `withBlockerFacts` below is their sole writer.
@@ -690,7 +774,7 @@ function withLifecycle(
       ...observed,
       projectId: planNode.projectId,
       targetLineId: planNode.targetLineId,
-      lifecycle: null,
+      lifecycle: planNode.lifecycle ?? 'required',
       reason: null,
       ...suggestion,
     };
@@ -942,6 +1026,24 @@ export async function projectIssueStatus(input: ProjectIssueStatusInput): Promis
           record: acceptance.acceptedRecord.record,
         };
 
+  // The revision delta derives ONLY from the two revisions, after every axis
+  // was decided — it drives nothing, so its presence or absence can never
+  // change an axis value. A first revision (supersedes null) reports no delta
+  // section at all, exactly as one whose predecessor was not supplied or did
+  // not read back.
+  let delta: IssueRevisionDelta | null = null;
+  if (
+    plan !== null &&
+    plan.revision !== null &&
+    plan.revision.supersedes !== null &&
+    input.predecessorPlan?.revision != null &&
+    // The predecessor must BE the one the revision names — a caller supplying
+    // any other revision derives no delta rather than a misleading one.
+    input.predecessorPlan.revision.revisionId === plan.revision.supersedes
+  ) {
+    delta = deriveRevisionDelta(plan.revision, input.predecessorPlan.revision);
+  }
+
   return {
     phase,
     health,
@@ -954,6 +1056,7 @@ export async function projectIssueStatus(input: ProjectIssueStatusInput): Promis
           progressOver(nodes)
         : null,
     nodes,
+    delta,
     // Lanes derive only from a readable revision, after the axes did — they
     // drive nothing, so their absence can never change an axis value.
     projects:
