@@ -1,0 +1,4953 @@
+{
+  "schemaVersion": 2,
+  "transactionId": "da9e6c81-757a-4dcc-8d10-ae3332160ea9",
+  "planHash": "d95f438e270234862629243cf94780f5ee392aeb41900536438b3b537795b705",
+  "change": "issue-workspace-containment-fix",
+  "phase": "complete",
+  "activePath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\rasen\\changes\\issue-workspace-containment-fix",
+  "stagePath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\rasen\\changes\\archive\\.rasen-archive-stage-da9e6c81-757a-4dcc-8d10-ae3332160ea9",
+  "finalPath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\rasen\\changes\\archive\\2026-08-21-issue-workspace-containment-fix",
+  "ephemeraDisposed": [
+    "auto-run.json"
+  ],
+  "phaseFingerprints": {
+    "payload-copied": {
+      "state": "verified",
+      "scope": "stage",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "950ed13c0d1ec429ee30969a9a5a87a5d22abaa557cb9b9740a4c0afda78ae1f",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "727fc3b35bb3eb09ccede6d08cbc829ea0044b031816d47842ec2573bff99290"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9499",
+            "sha256": "b63d1a2da7066a20115674f97f53c8723b7a4441862b755b5d889c1d8d5e0fb9"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8775",
+            "sha256": "8b1424bd39e140e34fd1aa9c0d3b5c87d204cfa2ba3c2b50ac789b50ea49b136"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4442",
+            "sha256": "0a81f1793d65594becdff9ccc628a81da92785b0020c497395e43efd1e52be4a"
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "736",
+            "sha256": "892baec898cea8827b47af0f5f41782e0d99de7666efa1cb0eb45e0a35b56f72"
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "executable": false,
+            "size": "2163",
+            "sha256": "c8904797136e9da6fff8364034110cff3b835c89da956dc9732a03c060987ced"
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "executable": false,
+            "size": "6428",
+            "sha256": "5025c41bf1ecc1f9c27b9710490bf6eed51675f04641f3262658b3e821bfbd48"
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "executable": false,
+            "size": "7785",
+            "sha256": "711d579e9568222d79d843517a9dfbf5bbeaf57e1da40c98db8c5948ed4d91ea"
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4369",
+            "sha256": "868a85107b62b1faa3bd67b8a13d4b55ea5c747db7375f03f55ce5a1d2b2d7e9"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4621",
+            "sha256": "8da939717ed9b6d16e9d4b9d7775a21e2413c93f111afd9cd3c3829882841e60"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4694",
+            "sha256": "250decdc8de727b29a1f11d0822c7f32367710cea212004997b91466c05908a0"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4143",
+            "sha256": "5043942cb966d8d013608d2e149af1d7ffef7de0fe317077ea09ee03e8cfee6b"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "2814749776956795",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "d90408dc19917e05416655a667b0889141ee35e92d18b2b2d5602ec229e0342b",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324846824826",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1787249189058345100",
+              "ctimeNs": "1787249189068342000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899916693042",
+              "mode": "33206",
+              "size": "9499",
+              "mtimeNs": "1787249806527038600",
+              "ctimeNs": "1787249806529286800"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "21955048188843891",
+              "mode": "33206",
+              "size": "8775",
+              "mtimeNs": "1787293993684719200",
+              "ctimeNs": "1787293993691440000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9288674234751200",
+              "mode": "33206",
+              "size": "4442",
+              "mtimeNs": "1787294211037194600",
+              "ctimeNs": "1787294211037194600"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589151815",
+              "mode": "33206",
+              "size": "736",
+              "mtimeNs": "1787251081489097500",
+              "ctimeNs": "1787251081489097500"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1407374893407737",
+              "mode": "33206",
+              "size": "2163",
+              "mtimeNs": "1787251067104659000",
+              "ctimeNs": "1787251067104659000"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749776957003",
+              "mode": "33206",
+              "size": "6428",
+              "mtimeNs": "1787251004308545800",
+              "ctimeNs": "1787251004308545800"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324846825215",
+              "mode": "33206",
+              "size": "7785",
+              "mtimeNs": "1787251051930360400",
+              "ctimeNs": "1787251051930360400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224753671506",
+              "mode": "33206",
+              "size": "4369",
+              "mtimeNs": "1787286009752471800",
+              "ctimeNs": "1787286009754899500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "6755399450872052",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2533274800246307",
+              "mode": "33206",
+              "size": "4621",
+              "mtimeNs": "1787249668901582300",
+              "ctimeNs": "1787249668904014300"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1407374893403690",
+              "mode": "33206",
+              "size": "4694",
+              "mtimeNs": "1787249767468639600",
+              "ctimeNs": "1787249767475397500"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1407374893403689",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224753667624",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "8162774327278303",
+              "mode": "33206",
+              "size": "4143",
+              "mtimeNs": "1787291102705228600",
+              "ctimeNs": "1787291102705228600"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "950ed13c0d1ec429ee30969a9a5a87a5d22abaa557cb9b9740a4c0afda78ae1f",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "727fc3b35bb3eb09ccede6d08cbc829ea0044b031816d47842ec2573bff99290"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9499",
+            "sha256": "b63d1a2da7066a20115674f97f53c8723b7a4441862b755b5d889c1d8d5e0fb9"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8775",
+            "sha256": "8b1424bd39e140e34fd1aa9c0d3b5c87d204cfa2ba3c2b50ac789b50ea49b136"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4442",
+            "sha256": "0a81f1793d65594becdff9ccc628a81da92785b0020c497395e43efd1e52be4a"
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "736",
+            "sha256": "892baec898cea8827b47af0f5f41782e0d99de7666efa1cb0eb45e0a35b56f72"
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "executable": false,
+            "size": "2163",
+            "sha256": "c8904797136e9da6fff8364034110cff3b835c89da956dc9732a03c060987ced"
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "executable": false,
+            "size": "6428",
+            "sha256": "5025c41bf1ecc1f9c27b9710490bf6eed51675f04641f3262658b3e821bfbd48"
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "executable": false,
+            "size": "7785",
+            "sha256": "711d579e9568222d79d843517a9dfbf5bbeaf57e1da40c98db8c5948ed4d91ea"
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4369",
+            "sha256": "868a85107b62b1faa3bd67b8a13d4b55ea5c747db7375f03f55ce5a1d2b2d7e9"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4621",
+            "sha256": "8da939717ed9b6d16e9d4b9d7775a21e2413c93f111afd9cd3c3829882841e60"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4694",
+            "sha256": "250decdc8de727b29a1f11d0822c7f32367710cea212004997b91466c05908a0"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4143",
+            "sha256": "5043942cb966d8d013608d2e149af1d7ffef7de0fe317077ea09ee03e8cfee6b"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "20547673309862130",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "43a3ca2797d60f59979f84356dcf9c7efc959566b20113e14f65e72c618f2e93",
+        "authorityEntries": [
+          {
+            "path": ".rasen-archive-stage-owner.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755575",
+              "mode": "33206",
+              "size": "380",
+              "mtimeNs": "1787294317042950300",
+              "ctimeNs": "1787294317042950300"
+            }
+          },
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18014398519466232",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1787249189058345100",
+              "ctimeNs": "1787249189068342000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18295873496176890",
+              "mode": "33206",
+              "size": "9499",
+              "mtimeNs": "1787249806527038600",
+              "ctimeNs": "1787249806529286800"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18577348472887548",
+              "mode": "33206",
+              "size": "8775",
+              "mtimeNs": "1787293993684719200",
+              "ctimeNs": "1787293993691440000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755581",
+              "mode": "33206",
+              "size": "4442",
+              "mtimeNs": "1787294211037194600",
+              "ctimeNs": "1787294211037194600"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334270",
+              "mode": "33206",
+              "size": "736",
+              "mtimeNs": "1787251081489097500",
+              "ctimeNs": "1787251081489097500"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755583",
+              "mode": "33206",
+              "size": "2163",
+              "mtimeNs": "1787251067104659000",
+              "ctimeNs": "1787251067104659000"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334272",
+              "mode": "33206",
+              "size": "6428",
+              "mtimeNs": "1787251004308545800",
+              "ctimeNs": "1787251004308545800"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334273",
+              "mode": "33206",
+              "size": "7785",
+              "mtimeNs": "1787251051930360400",
+              "ctimeNs": "1787251051930360400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044930",
+              "mode": "33206",
+              "size": "4369",
+              "mtimeNs": "1787286009752471800",
+              "ctimeNs": "1787286009754899500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755579",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044931",
+              "mode": "33206",
+              "size": "4621",
+              "mtimeNs": "1787249668901582300",
+              "ctimeNs": "1787249668904014300"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334278",
+              "mode": "33206",
+              "size": "4694",
+              "mtimeNs": "1787249767468639600",
+              "ctimeNs": "1787249767475397500"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044933",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755588",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334279",
+              "mode": "33206",
+              "size": "4143",
+              "mtimeNs": "1787291102705228600",
+              "ctimeNs": "1787291102705228600"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "950ed13c0d1ec429ee30969a9a5a87a5d22abaa557cb9b9740a4c0afda78ae1f",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "727fc3b35bb3eb09ccede6d08cbc829ea0044b031816d47842ec2573bff99290"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9499",
+            "sha256": "b63d1a2da7066a20115674f97f53c8723b7a4441862b755b5d889c1d8d5e0fb9"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8775",
+            "sha256": "8b1424bd39e140e34fd1aa9c0d3b5c87d204cfa2ba3c2b50ac789b50ea49b136"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4442",
+            "sha256": "0a81f1793d65594becdff9ccc628a81da92785b0020c497395e43efd1e52be4a"
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "736",
+            "sha256": "892baec898cea8827b47af0f5f41782e0d99de7666efa1cb0eb45e0a35b56f72"
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "executable": false,
+            "size": "2163",
+            "sha256": "c8904797136e9da6fff8364034110cff3b835c89da956dc9732a03c060987ced"
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "executable": false,
+            "size": "6428",
+            "sha256": "5025c41bf1ecc1f9c27b9710490bf6eed51675f04641f3262658b3e821bfbd48"
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "executable": false,
+            "size": "7785",
+            "sha256": "711d579e9568222d79d843517a9dfbf5bbeaf57e1da40c98db8c5948ed4d91ea"
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4369",
+            "sha256": "868a85107b62b1faa3bd67b8a13d4b55ea5c747db7375f03f55ce5a1d2b2d7e9"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4621",
+            "sha256": "8da939717ed9b6d16e9d4b9d7775a21e2413c93f111afd9cd3c3829882841e60"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4694",
+            "sha256": "250decdc8de727b29a1f11d0822c7f32367710cea212004997b91466c05908a0"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4143",
+            "sha256": "5043942cb966d8d013608d2e149af1d7ffef7de0fe317077ea09ee03e8cfee6b"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "20547673309862130",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "43a3ca2797d60f59979f84356dcf9c7efc959566b20113e14f65e72c618f2e93",
+        "authorityEntries": [
+          {
+            "path": ".rasen-archive-stage-owner.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755575",
+              "mode": "33206",
+              "size": "380",
+              "mtimeNs": "1787294317042950300",
+              "ctimeNs": "1787294317042950300"
+            }
+          },
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18014398519466232",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1787249189058345100",
+              "ctimeNs": "1787249189068342000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18295873496176890",
+              "mode": "33206",
+              "size": "9499",
+              "mtimeNs": "1787249806527038600",
+              "ctimeNs": "1787249806529286800"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18577348472887548",
+              "mode": "33206",
+              "size": "8775",
+              "mtimeNs": "1787293993684719200",
+              "ctimeNs": "1787293993691440000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755581",
+              "mode": "33206",
+              "size": "4442",
+              "mtimeNs": "1787294211037194600",
+              "ctimeNs": "1787294211037194600"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334270",
+              "mode": "33206",
+              "size": "736",
+              "mtimeNs": "1787251081489097500",
+              "ctimeNs": "1787251081489097500"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755583",
+              "mode": "33206",
+              "size": "2163",
+              "mtimeNs": "1787251067104659000",
+              "ctimeNs": "1787251067104659000"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334272",
+              "mode": "33206",
+              "size": "6428",
+              "mtimeNs": "1787251004308545800",
+              "ctimeNs": "1787251004308545800"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334273",
+              "mode": "33206",
+              "size": "7785",
+              "mtimeNs": "1787251051930360400",
+              "ctimeNs": "1787251051930360400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044930",
+              "mode": "33206",
+              "size": "4369",
+              "mtimeNs": "1787286009752471800",
+              "ctimeNs": "1787286009754899500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755579",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044931",
+              "mode": "33206",
+              "size": "4621",
+              "mtimeNs": "1787249668901582300",
+              "ctimeNs": "1787249668904014300"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334278",
+              "mode": "33206",
+              "size": "4694",
+              "mtimeNs": "1787249767468639600",
+              "ctimeNs": "1787249767475397500"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044933",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755588",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334279",
+              "mode": "33206",
+              "size": "4143",
+              "mtimeNs": "1787291102705228600",
+              "ctimeNs": "1787291102705228600"
+            }
+          }
+        ]
+      }
+    },
+    "handoff-finalized": {
+      "state": "verified",
+      "scope": "stage",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "950ed13c0d1ec429ee30969a9a5a87a5d22abaa557cb9b9740a4c0afda78ae1f",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "727fc3b35bb3eb09ccede6d08cbc829ea0044b031816d47842ec2573bff99290"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9499",
+            "sha256": "b63d1a2da7066a20115674f97f53c8723b7a4441862b755b5d889c1d8d5e0fb9"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8775",
+            "sha256": "8b1424bd39e140e34fd1aa9c0d3b5c87d204cfa2ba3c2b50ac789b50ea49b136"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4442",
+            "sha256": "0a81f1793d65594becdff9ccc628a81da92785b0020c497395e43efd1e52be4a"
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "736",
+            "sha256": "892baec898cea8827b47af0f5f41782e0d99de7666efa1cb0eb45e0a35b56f72"
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "executable": false,
+            "size": "2163",
+            "sha256": "c8904797136e9da6fff8364034110cff3b835c89da956dc9732a03c060987ced"
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "executable": false,
+            "size": "6428",
+            "sha256": "5025c41bf1ecc1f9c27b9710490bf6eed51675f04641f3262658b3e821bfbd48"
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "executable": false,
+            "size": "7785",
+            "sha256": "711d579e9568222d79d843517a9dfbf5bbeaf57e1da40c98db8c5948ed4d91ea"
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4369",
+            "sha256": "868a85107b62b1faa3bd67b8a13d4b55ea5c747db7375f03f55ce5a1d2b2d7e9"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4621",
+            "sha256": "8da939717ed9b6d16e9d4b9d7775a21e2413c93f111afd9cd3c3829882841e60"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4694",
+            "sha256": "250decdc8de727b29a1f11d0822c7f32367710cea212004997b91466c05908a0"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4143",
+            "sha256": "5043942cb966d8d013608d2e149af1d7ffef7de0fe317077ea09ee03e8cfee6b"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "20547673309862130",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "43a3ca2797d60f59979f84356dcf9c7efc959566b20113e14f65e72c618f2e93",
+        "authorityEntries": [
+          {
+            "path": ".rasen-archive-stage-owner.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755575",
+              "mode": "33206",
+              "size": "380",
+              "mtimeNs": "1787294317042950300",
+              "ctimeNs": "1787294317042950300"
+            }
+          },
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18014398519466232",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1787249189058345100",
+              "ctimeNs": "1787249189068342000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18295873496176890",
+              "mode": "33206",
+              "size": "9499",
+              "mtimeNs": "1787249806527038600",
+              "ctimeNs": "1787249806529286800"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18577348472887548",
+              "mode": "33206",
+              "size": "8775",
+              "mtimeNs": "1787293993684719200",
+              "ctimeNs": "1787293993691440000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755581",
+              "mode": "33206",
+              "size": "4442",
+              "mtimeNs": "1787294211037194600",
+              "ctimeNs": "1787294211037194600"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334270",
+              "mode": "33206",
+              "size": "736",
+              "mtimeNs": "1787251081489097500",
+              "ctimeNs": "1787251081489097500"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755583",
+              "mode": "33206",
+              "size": "2163",
+              "mtimeNs": "1787251067104659000",
+              "ctimeNs": "1787251067104659000"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334272",
+              "mode": "33206",
+              "size": "6428",
+              "mtimeNs": "1787251004308545800",
+              "ctimeNs": "1787251004308545800"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334273",
+              "mode": "33206",
+              "size": "7785",
+              "mtimeNs": "1787251051930360400",
+              "ctimeNs": "1787251051930360400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044930",
+              "mode": "33206",
+              "size": "4369",
+              "mtimeNs": "1787286009752471800",
+              "ctimeNs": "1787286009754899500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755579",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044931",
+              "mode": "33206",
+              "size": "4621",
+              "mtimeNs": "1787249668901582300",
+              "ctimeNs": "1787249668904014300"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334278",
+              "mode": "33206",
+              "size": "4694",
+              "mtimeNs": "1787249767468639600",
+              "ctimeNs": "1787249767475397500"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044933",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755588",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334279",
+              "mode": "33206",
+              "size": "4143",
+              "mtimeNs": "1787291102705228600",
+              "ctimeNs": "1787291102705228600"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "950ed13c0d1ec429ee30969a9a5a87a5d22abaa557cb9b9740a4c0afda78ae1f",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "727fc3b35bb3eb09ccede6d08cbc829ea0044b031816d47842ec2573bff99290"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9499",
+            "sha256": "b63d1a2da7066a20115674f97f53c8723b7a4441862b755b5d889c1d8d5e0fb9"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8775",
+            "sha256": "8b1424bd39e140e34fd1aa9c0d3b5c87d204cfa2ba3c2b50ac789b50ea49b136"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4442",
+            "sha256": "0a81f1793d65594becdff9ccc628a81da92785b0020c497395e43efd1e52be4a"
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "736",
+            "sha256": "892baec898cea8827b47af0f5f41782e0d99de7666efa1cb0eb45e0a35b56f72"
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "executable": false,
+            "size": "2163",
+            "sha256": "c8904797136e9da6fff8364034110cff3b835c89da956dc9732a03c060987ced"
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "executable": false,
+            "size": "6428",
+            "sha256": "5025c41bf1ecc1f9c27b9710490bf6eed51675f04641f3262658b3e821bfbd48"
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "executable": false,
+            "size": "7785",
+            "sha256": "711d579e9568222d79d843517a9dfbf5bbeaf57e1da40c98db8c5948ed4d91ea"
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4369",
+            "sha256": "868a85107b62b1faa3bd67b8a13d4b55ea5c747db7375f03f55ce5a1d2b2d7e9"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4621",
+            "sha256": "8da939717ed9b6d16e9d4b9d7775a21e2413c93f111afd9cd3c3829882841e60"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4694",
+            "sha256": "250decdc8de727b29a1f11d0822c7f32367710cea212004997b91466c05908a0"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4143",
+            "sha256": "5043942cb966d8d013608d2e149af1d7ffef7de0fe317077ea09ee03e8cfee6b"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "20547673309862130",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "43a3ca2797d60f59979f84356dcf9c7efc959566b20113e14f65e72c618f2e93",
+        "authorityEntries": [
+          {
+            "path": ".rasen-archive-stage-owner.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755575",
+              "mode": "33206",
+              "size": "380",
+              "mtimeNs": "1787294317042950300",
+              "ctimeNs": "1787294317042950300"
+            }
+          },
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18014398519466232",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1787249189058345100",
+              "ctimeNs": "1787249189068342000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18295873496176890",
+              "mode": "33206",
+              "size": "9499",
+              "mtimeNs": "1787249806527038600",
+              "ctimeNs": "1787249806529286800"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18577348472887548",
+              "mode": "33206",
+              "size": "8775",
+              "mtimeNs": "1787293993684719200",
+              "ctimeNs": "1787293993691440000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755581",
+              "mode": "33206",
+              "size": "4442",
+              "mtimeNs": "1787294211037194600",
+              "ctimeNs": "1787294211037194600"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334270",
+              "mode": "33206",
+              "size": "736",
+              "mtimeNs": "1787251081489097500",
+              "ctimeNs": "1787251081489097500"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755583",
+              "mode": "33206",
+              "size": "2163",
+              "mtimeNs": "1787251067104659000",
+              "ctimeNs": "1787251067104659000"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334272",
+              "mode": "33206",
+              "size": "6428",
+              "mtimeNs": "1787251004308545800",
+              "ctimeNs": "1787251004308545800"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334273",
+              "mode": "33206",
+              "size": "7785",
+              "mtimeNs": "1787251051930360400",
+              "ctimeNs": "1787251051930360400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044930",
+              "mode": "33206",
+              "size": "4369",
+              "mtimeNs": "1787286009752471800",
+              "ctimeNs": "1787286009754899500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755579",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044931",
+              "mode": "33206",
+              "size": "4621",
+              "mtimeNs": "1787249668901582300",
+              "ctimeNs": "1787249668904014300"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334278",
+              "mode": "33206",
+              "size": "4694",
+              "mtimeNs": "1787249767468639600",
+              "ctimeNs": "1787249767475397500"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044933",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755588",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334279",
+              "mode": "33206",
+              "size": "4143",
+              "mtimeNs": "1787291102705228600",
+              "ctimeNs": "1787291102705228600"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "950ed13c0d1ec429ee30969a9a5a87a5d22abaa557cb9b9740a4c0afda78ae1f",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "727fc3b35bb3eb09ccede6d08cbc829ea0044b031816d47842ec2573bff99290"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9499",
+            "sha256": "b63d1a2da7066a20115674f97f53c8723b7a4441862b755b5d889c1d8d5e0fb9"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8775",
+            "sha256": "8b1424bd39e140e34fd1aa9c0d3b5c87d204cfa2ba3c2b50ac789b50ea49b136"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4442",
+            "sha256": "0a81f1793d65594becdff9ccc628a81da92785b0020c497395e43efd1e52be4a"
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "736",
+            "sha256": "892baec898cea8827b47af0f5f41782e0d99de7666efa1cb0eb45e0a35b56f72"
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "executable": false,
+            "size": "2163",
+            "sha256": "c8904797136e9da6fff8364034110cff3b835c89da956dc9732a03c060987ced"
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "executable": false,
+            "size": "6428",
+            "sha256": "5025c41bf1ecc1f9c27b9710490bf6eed51675f04641f3262658b3e821bfbd48"
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "executable": false,
+            "size": "7785",
+            "sha256": "711d579e9568222d79d843517a9dfbf5bbeaf57e1da40c98db8c5948ed4d91ea"
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4369",
+            "sha256": "868a85107b62b1faa3bd67b8a13d4b55ea5c747db7375f03f55ce5a1d2b2d7e9"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4621",
+            "sha256": "8da939717ed9b6d16e9d4b9d7775a21e2413c93f111afd9cd3c3829882841e60"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4694",
+            "sha256": "250decdc8de727b29a1f11d0822c7f32367710cea212004997b91466c05908a0"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4143",
+            "sha256": "5043942cb966d8d013608d2e149af1d7ffef7de0fe317077ea09ee03e8cfee6b"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "20547673309862130",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "43a3ca2797d60f59979f84356dcf9c7efc959566b20113e14f65e72c618f2e93",
+        "authorityEntries": [
+          {
+            "path": ".rasen-archive-stage-owner.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755575",
+              "mode": "33206",
+              "size": "380",
+              "mtimeNs": "1787294317042950300",
+              "ctimeNs": "1787294317042950300"
+            }
+          },
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18014398519466232",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1787249189058345100",
+              "ctimeNs": "1787249189068342000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18295873496176890",
+              "mode": "33206",
+              "size": "9499",
+              "mtimeNs": "1787249806527038600",
+              "ctimeNs": "1787249806529286800"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18577348472887548",
+              "mode": "33206",
+              "size": "8775",
+              "mtimeNs": "1787293993684719200",
+              "ctimeNs": "1787293993691440000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755581",
+              "mode": "33206",
+              "size": "4442",
+              "mtimeNs": "1787294211037194600",
+              "ctimeNs": "1787294211037194600"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334270",
+              "mode": "33206",
+              "size": "736",
+              "mtimeNs": "1787251081489097500",
+              "ctimeNs": "1787251081489097500"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755583",
+              "mode": "33206",
+              "size": "2163",
+              "mtimeNs": "1787251067104659000",
+              "ctimeNs": "1787251067104659000"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334272",
+              "mode": "33206",
+              "size": "6428",
+              "mtimeNs": "1787251004308545800",
+              "ctimeNs": "1787251004308545800"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334273",
+              "mode": "33206",
+              "size": "7785",
+              "mtimeNs": "1787251051930360400",
+              "ctimeNs": "1787251051930360400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044930",
+              "mode": "33206",
+              "size": "4369",
+              "mtimeNs": "1787286009752471800",
+              "ctimeNs": "1787286009754899500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755579",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044931",
+              "mode": "33206",
+              "size": "4621",
+              "mtimeNs": "1787249668901582300",
+              "ctimeNs": "1787249668904014300"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334278",
+              "mode": "33206",
+              "size": "4694",
+              "mtimeNs": "1787249767468639600",
+              "ctimeNs": "1787249767475397500"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044933",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755588",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334279",
+              "mode": "33206",
+              "size": "4143",
+              "mtimeNs": "1787291102705228600",
+              "ctimeNs": "1787291102705228600"
+            }
+          }
+        ]
+      }
+    },
+    "evidence-finalized": {
+      "state": "verified",
+      "scope": "stage",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "950ed13c0d1ec429ee30969a9a5a87a5d22abaa557cb9b9740a4c0afda78ae1f",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "727fc3b35bb3eb09ccede6d08cbc829ea0044b031816d47842ec2573bff99290"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9499",
+            "sha256": "b63d1a2da7066a20115674f97f53c8723b7a4441862b755b5d889c1d8d5e0fb9"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8775",
+            "sha256": "8b1424bd39e140e34fd1aa9c0d3b5c87d204cfa2ba3c2b50ac789b50ea49b136"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4442",
+            "sha256": "0a81f1793d65594becdff9ccc628a81da92785b0020c497395e43efd1e52be4a"
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "736",
+            "sha256": "892baec898cea8827b47af0f5f41782e0d99de7666efa1cb0eb45e0a35b56f72"
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "executable": false,
+            "size": "2163",
+            "sha256": "c8904797136e9da6fff8364034110cff3b835c89da956dc9732a03c060987ced"
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "executable": false,
+            "size": "6428",
+            "sha256": "5025c41bf1ecc1f9c27b9710490bf6eed51675f04641f3262658b3e821bfbd48"
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "executable": false,
+            "size": "7785",
+            "sha256": "711d579e9568222d79d843517a9dfbf5bbeaf57e1da40c98db8c5948ed4d91ea"
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4369",
+            "sha256": "868a85107b62b1faa3bd67b8a13d4b55ea5c747db7375f03f55ce5a1d2b2d7e9"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4621",
+            "sha256": "8da939717ed9b6d16e9d4b9d7775a21e2413c93f111afd9cd3c3829882841e60"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4694",
+            "sha256": "250decdc8de727b29a1f11d0822c7f32367710cea212004997b91466c05908a0"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4143",
+            "sha256": "5043942cb966d8d013608d2e149af1d7ffef7de0fe317077ea09ee03e8cfee6b"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "20547673309862130",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "43a3ca2797d60f59979f84356dcf9c7efc959566b20113e14f65e72c618f2e93",
+        "authorityEntries": [
+          {
+            "path": ".rasen-archive-stage-owner.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755575",
+              "mode": "33206",
+              "size": "380",
+              "mtimeNs": "1787294317042950300",
+              "ctimeNs": "1787294317042950300"
+            }
+          },
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18014398519466232",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1787249189058345100",
+              "ctimeNs": "1787249189068342000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18295873496176890",
+              "mode": "33206",
+              "size": "9499",
+              "mtimeNs": "1787249806527038600",
+              "ctimeNs": "1787249806529286800"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18577348472887548",
+              "mode": "33206",
+              "size": "8775",
+              "mtimeNs": "1787293993684719200",
+              "ctimeNs": "1787293993691440000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755581",
+              "mode": "33206",
+              "size": "4442",
+              "mtimeNs": "1787294211037194600",
+              "ctimeNs": "1787294211037194600"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334270",
+              "mode": "33206",
+              "size": "736",
+              "mtimeNs": "1787251081489097500",
+              "ctimeNs": "1787251081489097500"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755583",
+              "mode": "33206",
+              "size": "2163",
+              "mtimeNs": "1787251067104659000",
+              "ctimeNs": "1787251067104659000"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334272",
+              "mode": "33206",
+              "size": "6428",
+              "mtimeNs": "1787251004308545800",
+              "ctimeNs": "1787251004308545800"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334273",
+              "mode": "33206",
+              "size": "7785",
+              "mtimeNs": "1787251051930360400",
+              "ctimeNs": "1787251051930360400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044930",
+              "mode": "33206",
+              "size": "4369",
+              "mtimeNs": "1787286009752471800",
+              "ctimeNs": "1787286009754899500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755579",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044931",
+              "mode": "33206",
+              "size": "4621",
+              "mtimeNs": "1787249668901582300",
+              "ctimeNs": "1787249668904014300"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334278",
+              "mode": "33206",
+              "size": "4694",
+              "mtimeNs": "1787249767468639600",
+              "ctimeNs": "1787249767475397500"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044933",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755588",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334279",
+              "mode": "33206",
+              "size": "4143",
+              "mtimeNs": "1787291102705228600",
+              "ctimeNs": "1787291102705228600"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "ab445ed342cbe99c0c3265f91ba71d578a3eb6ea49ef0a2b69be3ffed9806b63",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "1f36ba9e9e05113a2d93ef38914e7093dc551a348a0cc9ec73b93cb7c081dc0f"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9499",
+            "sha256": "b63d1a2da7066a20115674f97f53c8723b7a4441862b755b5d889c1d8d5e0fb9"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8775",
+            "sha256": "8b1424bd39e140e34fd1aa9c0d3b5c87d204cfa2ba3c2b50ac789b50ea49b136"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4793",
+            "sha256": "386171c15f97b5d9cb5dd3b39825ee711c82930536f86c7736b970065c42bd8e"
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "736",
+            "sha256": "892baec898cea8827b47af0f5f41782e0d99de7666efa1cb0eb45e0a35b56f72"
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "executable": false,
+            "size": "2163",
+            "sha256": "c8904797136e9da6fff8364034110cff3b835c89da956dc9732a03c060987ced"
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "executable": false,
+            "size": "6428",
+            "sha256": "5025c41bf1ecc1f9c27b9710490bf6eed51675f04641f3262658b3e821bfbd48"
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "executable": false,
+            "size": "7785",
+            "sha256": "711d579e9568222d79d843517a9dfbf5bbeaf57e1da40c98db8c5948ed4d91ea"
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4369",
+            "sha256": "868a85107b62b1faa3bd67b8a13d4b55ea5c747db7375f03f55ce5a1d2b2d7e9"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4621",
+            "sha256": "8da939717ed9b6d16e9d4b9d7775a21e2413c93f111afd9cd3c3829882841e60"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4694",
+            "sha256": "250decdc8de727b29a1f11d0822c7f32367710cea212004997b91466c05908a0"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4143",
+            "sha256": "5043942cb966d8d013608d2e149af1d7ffef7de0fe317077ea09ee03e8cfee6b"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "20547673309862130",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "3cdb1cb006f1061e0f05aa716ac561994b6b9d1131e1e751a29fb584654f6583",
+        "authorityEntries": [
+          {
+            "path": ".rasen-archive-stage-owner.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755575",
+              "mode": "33206",
+              "size": "380",
+              "mtimeNs": "1787294317042950300",
+              "ctimeNs": "1787294317042950300"
+            }
+          },
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18014398519466232",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1787294318136453400",
+              "ctimeNs": "1787294318136453400"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18295873496176890",
+              "mode": "33206",
+              "size": "9499",
+              "mtimeNs": "1787249806527038600",
+              "ctimeNs": "1787249806529286800"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18577348472887548",
+              "mode": "33206",
+              "size": "8775",
+              "mtimeNs": "1787293993684719200",
+              "ctimeNs": "1787293993691440000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755581",
+              "mode": "33206",
+              "size": "4793",
+              "mtimeNs": "1787294318127055400",
+              "ctimeNs": "1787294318127055400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334270",
+              "mode": "33206",
+              "size": "736",
+              "mtimeNs": "1787251081489097500",
+              "ctimeNs": "1787251081489097500"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755583",
+              "mode": "33206",
+              "size": "2163",
+              "mtimeNs": "1787251067104659000",
+              "ctimeNs": "1787251067104659000"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334272",
+              "mode": "33206",
+              "size": "6428",
+              "mtimeNs": "1787251004308545800",
+              "ctimeNs": "1787251004308545800"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334273",
+              "mode": "33206",
+              "size": "7785",
+              "mtimeNs": "1787251051930360400",
+              "ctimeNs": "1787251051930360400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044930",
+              "mode": "33206",
+              "size": "4369",
+              "mtimeNs": "1787286009752471800",
+              "ctimeNs": "1787286009754899500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755579",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044931",
+              "mode": "33206",
+              "size": "4621",
+              "mtimeNs": "1787249668901582300",
+              "ctimeNs": "1787249668904014300"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334278",
+              "mode": "33206",
+              "size": "4694",
+              "mtimeNs": "1787249767468639600",
+              "ctimeNs": "1787249767475397500"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044933",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755588",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334279",
+              "mode": "33206",
+              "size": "4143",
+              "mtimeNs": "1787291102705228600",
+              "ctimeNs": "1787291102705228600"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "ab445ed342cbe99c0c3265f91ba71d578a3eb6ea49ef0a2b69be3ffed9806b63",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "1f36ba9e9e05113a2d93ef38914e7093dc551a348a0cc9ec73b93cb7c081dc0f"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9499",
+            "sha256": "b63d1a2da7066a20115674f97f53c8723b7a4441862b755b5d889c1d8d5e0fb9"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8775",
+            "sha256": "8b1424bd39e140e34fd1aa9c0d3b5c87d204cfa2ba3c2b50ac789b50ea49b136"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4793",
+            "sha256": "386171c15f97b5d9cb5dd3b39825ee711c82930536f86c7736b970065c42bd8e"
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "736",
+            "sha256": "892baec898cea8827b47af0f5f41782e0d99de7666efa1cb0eb45e0a35b56f72"
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "executable": false,
+            "size": "2163",
+            "sha256": "c8904797136e9da6fff8364034110cff3b835c89da956dc9732a03c060987ced"
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "executable": false,
+            "size": "6428",
+            "sha256": "5025c41bf1ecc1f9c27b9710490bf6eed51675f04641f3262658b3e821bfbd48"
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "executable": false,
+            "size": "7785",
+            "sha256": "711d579e9568222d79d843517a9dfbf5bbeaf57e1da40c98db8c5948ed4d91ea"
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4369",
+            "sha256": "868a85107b62b1faa3bd67b8a13d4b55ea5c747db7375f03f55ce5a1d2b2d7e9"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4621",
+            "sha256": "8da939717ed9b6d16e9d4b9d7775a21e2413c93f111afd9cd3c3829882841e60"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4694",
+            "sha256": "250decdc8de727b29a1f11d0822c7f32367710cea212004997b91466c05908a0"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4143",
+            "sha256": "5043942cb966d8d013608d2e149af1d7ffef7de0fe317077ea09ee03e8cfee6b"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "20547673309862130",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "3cdb1cb006f1061e0f05aa716ac561994b6b9d1131e1e751a29fb584654f6583",
+        "authorityEntries": [
+          {
+            "path": ".rasen-archive-stage-owner.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755575",
+              "mode": "33206",
+              "size": "380",
+              "mtimeNs": "1787294317042950300",
+              "ctimeNs": "1787294317042950300"
+            }
+          },
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18014398519466232",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1787294318136453400",
+              "ctimeNs": "1787294318136453400"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18295873496176890",
+              "mode": "33206",
+              "size": "9499",
+              "mtimeNs": "1787249806527038600",
+              "ctimeNs": "1787249806529286800"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18577348472887548",
+              "mode": "33206",
+              "size": "8775",
+              "mtimeNs": "1787293993684719200",
+              "ctimeNs": "1787293993691440000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755581",
+              "mode": "33206",
+              "size": "4793",
+              "mtimeNs": "1787294318127055400",
+              "ctimeNs": "1787294318127055400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334270",
+              "mode": "33206",
+              "size": "736",
+              "mtimeNs": "1787251081489097500",
+              "ctimeNs": "1787251081489097500"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755583",
+              "mode": "33206",
+              "size": "2163",
+              "mtimeNs": "1787251067104659000",
+              "ctimeNs": "1787251067104659000"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334272",
+              "mode": "33206",
+              "size": "6428",
+              "mtimeNs": "1787251004308545800",
+              "ctimeNs": "1787251004308545800"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334273",
+              "mode": "33206",
+              "size": "7785",
+              "mtimeNs": "1787251051930360400",
+              "ctimeNs": "1787251051930360400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044930",
+              "mode": "33206",
+              "size": "4369",
+              "mtimeNs": "1787286009752471800",
+              "ctimeNs": "1787286009754899500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755579",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044931",
+              "mode": "33206",
+              "size": "4621",
+              "mtimeNs": "1787249668901582300",
+              "ctimeNs": "1787249668904014300"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334278",
+              "mode": "33206",
+              "size": "4694",
+              "mtimeNs": "1787249767468639600",
+              "ctimeNs": "1787249767475397500"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044933",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755588",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334279",
+              "mode": "33206",
+              "size": "4143",
+              "mtimeNs": "1787291102705228600",
+              "ctimeNs": "1787291102705228600"
+            }
+          }
+        ]
+      }
+    },
+    "final-reserved": {
+      "state": "verified",
+      "scope": "final",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "ab445ed342cbe99c0c3265f91ba71d578a3eb6ea49ef0a2b69be3ffed9806b63",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "1f36ba9e9e05113a2d93ef38914e7093dc551a348a0cc9ec73b93cb7c081dc0f"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9499",
+            "sha256": "b63d1a2da7066a20115674f97f53c8723b7a4441862b755b5d889c1d8d5e0fb9"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8775",
+            "sha256": "8b1424bd39e140e34fd1aa9c0d3b5c87d204cfa2ba3c2b50ac789b50ea49b136"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4793",
+            "sha256": "386171c15f97b5d9cb5dd3b39825ee711c82930536f86c7736b970065c42bd8e"
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "736",
+            "sha256": "892baec898cea8827b47af0f5f41782e0d99de7666efa1cb0eb45e0a35b56f72"
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "executable": false,
+            "size": "2163",
+            "sha256": "c8904797136e9da6fff8364034110cff3b835c89da956dc9732a03c060987ced"
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "executable": false,
+            "size": "6428",
+            "sha256": "5025c41bf1ecc1f9c27b9710490bf6eed51675f04641f3262658b3e821bfbd48"
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "executable": false,
+            "size": "7785",
+            "sha256": "711d579e9568222d79d843517a9dfbf5bbeaf57e1da40c98db8c5948ed4d91ea"
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4369",
+            "sha256": "868a85107b62b1faa3bd67b8a13d4b55ea5c747db7375f03f55ce5a1d2b2d7e9"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4621",
+            "sha256": "8da939717ed9b6d16e9d4b9d7775a21e2413c93f111afd9cd3c3829882841e60"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4694",
+            "sha256": "250decdc8de727b29a1f11d0822c7f32367710cea212004997b91466c05908a0"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4143",
+            "sha256": "5043942cb966d8d013608d2e149af1d7ffef7de0fe317077ea09ee03e8cfee6b"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "20547673309862130",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "3cdb1cb006f1061e0f05aa716ac561994b6b9d1131e1e751a29fb584654f6583",
+        "authorityEntries": [
+          {
+            "path": ".rasen-archive-stage-owner.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755575",
+              "mode": "33206",
+              "size": "380",
+              "mtimeNs": "1787294317042950300",
+              "ctimeNs": "1787294317042950300"
+            }
+          },
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18014398519466232",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1787294318136453400",
+              "ctimeNs": "1787294318136453400"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18295873496176890",
+              "mode": "33206",
+              "size": "9499",
+              "mtimeNs": "1787249806527038600",
+              "ctimeNs": "1787249806529286800"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18577348472887548",
+              "mode": "33206",
+              "size": "8775",
+              "mtimeNs": "1787293993684719200",
+              "ctimeNs": "1787293993691440000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755581",
+              "mode": "33206",
+              "size": "4793",
+              "mtimeNs": "1787294318127055400",
+              "ctimeNs": "1787294318127055400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334270",
+              "mode": "33206",
+              "size": "736",
+              "mtimeNs": "1787251081489097500",
+              "ctimeNs": "1787251081489097500"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755583",
+              "mode": "33206",
+              "size": "2163",
+              "mtimeNs": "1787251067104659000",
+              "ctimeNs": "1787251067104659000"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334272",
+              "mode": "33206",
+              "size": "6428",
+              "mtimeNs": "1787251004308545800",
+              "ctimeNs": "1787251004308545800"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334273",
+              "mode": "33206",
+              "size": "7785",
+              "mtimeNs": "1787251051930360400",
+              "ctimeNs": "1787251051930360400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044930",
+              "mode": "33206",
+              "size": "4369",
+              "mtimeNs": "1787286009752471800",
+              "ctimeNs": "1787286009754899500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755579",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044931",
+              "mode": "33206",
+              "size": "4621",
+              "mtimeNs": "1787249668901582300",
+              "ctimeNs": "1787249668904014300"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334278",
+              "mode": "33206",
+              "size": "4694",
+              "mtimeNs": "1787249767468639600",
+              "ctimeNs": "1787249767475397500"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17451448566044933",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17732923542755588",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "17169973589334279",
+              "mode": "33206",
+              "size": "4143",
+              "mtimeNs": "1787291102705228600",
+              "ctimeNs": "1787291102705228600"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "ab445ed342cbe99c0c3265f91ba71d578a3eb6ea49ef0a2b69be3ffed9806b63",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "1f36ba9e9e05113a2d93ef38914e7093dc551a348a0cc9ec73b93cb7c081dc0f"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9499",
+            "sha256": "b63d1a2da7066a20115674f97f53c8723b7a4441862b755b5d889c1d8d5e0fb9"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8775",
+            "sha256": "8b1424bd39e140e34fd1aa9c0d3b5c87d204cfa2ba3c2b50ac789b50ea49b136"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4793",
+            "sha256": "386171c15f97b5d9cb5dd3b39825ee711c82930536f86c7736b970065c42bd8e"
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "736",
+            "sha256": "892baec898cea8827b47af0f5f41782e0d99de7666efa1cb0eb45e0a35b56f72"
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "executable": false,
+            "size": "2163",
+            "sha256": "c8904797136e9da6fff8364034110cff3b835c89da956dc9732a03c060987ced"
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "executable": false,
+            "size": "6428",
+            "sha256": "5025c41bf1ecc1f9c27b9710490bf6eed51675f04641f3262658b3e821bfbd48"
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "executable": false,
+            "size": "7785",
+            "sha256": "711d579e9568222d79d843517a9dfbf5bbeaf57e1da40c98db8c5948ed4d91ea"
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4369",
+            "sha256": "868a85107b62b1faa3bd67b8a13d4b55ea5c747db7375f03f55ce5a1d2b2d7e9"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4621",
+            "sha256": "8da939717ed9b6d16e9d4b9d7775a21e2413c93f111afd9cd3c3829882841e60"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4694",
+            "sha256": "250decdc8de727b29a1f11d0822c7f32367710cea212004997b91466c05908a0"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4143",
+            "sha256": "5043942cb966d8d013608d2e149af1d7ffef7de0fe317077ea09ee03e8cfee6b"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "19421773403019528",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "ed59f6ddc41da72808d264de43161c0d484ba0384d71718af83425f7243eaa37",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23643898053679371",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1787294318136453400",
+              "ctimeNs": "1787294318136453400"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "24206848007100684",
+              "mode": "33206",
+              "size": "9499",
+              "mtimeNs": "1787249806527038600",
+              "ctimeNs": "1787249806529286800"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "21392098239994126",
+              "mode": "33206",
+              "size": "8775",
+              "mtimeNs": "1787293993684719200",
+              "ctimeNs": "1787293993691440000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20547673309862159",
+              "mode": "33206",
+              "size": "4793",
+              "mtimeNs": "1787294318127055400",
+              "ctimeNs": "1787294318127055400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "22236523170126096",
+              "mode": "33206",
+              "size": "736",
+              "mtimeNs": "1787251081489097500",
+              "ctimeNs": "1787251081489097500"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20829148286572817",
+              "mode": "33206",
+              "size": "2163",
+              "mtimeNs": "1787251067104659000",
+              "ctimeNs": "1787251067104659000"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20547673309862162",
+              "mode": "33206",
+              "size": "6428",
+              "mtimeNs": "1787251004308545800",
+              "ctimeNs": "1787251004308545800"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20547673309862163",
+              "mode": "33206",
+              "size": "7785",
+              "mtimeNs": "1787251051930360400",
+              "ctimeNs": "1787251051930360400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20266198333151508",
+              "mode": "33206",
+              "size": "4369",
+              "mtimeNs": "1787286009752471800",
+              "ctimeNs": "1787286009754899500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20829148286572813",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20829148286572821",
+              "mode": "33206",
+              "size": "4621",
+              "mtimeNs": "1787249668901582300",
+              "ctimeNs": "1787249668904014300"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23643898053679384",
+              "mode": "33206",
+              "size": "4694",
+              "mtimeNs": "1787249767468639600",
+              "ctimeNs": "1787249767475397500"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20829148286572823",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23643898053679382",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "19703248379730201",
+              "mode": "33206",
+              "size": "4143",
+              "mtimeNs": "1787291102705228600",
+              "ctimeNs": "1787291102705228600"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "ab445ed342cbe99c0c3265f91ba71d578a3eb6ea49ef0a2b69be3ffed9806b63",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "1f36ba9e9e05113a2d93ef38914e7093dc551a348a0cc9ec73b93cb7c081dc0f"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9499",
+            "sha256": "b63d1a2da7066a20115674f97f53c8723b7a4441862b755b5d889c1d8d5e0fb9"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8775",
+            "sha256": "8b1424bd39e140e34fd1aa9c0d3b5c87d204cfa2ba3c2b50ac789b50ea49b136"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4793",
+            "sha256": "386171c15f97b5d9cb5dd3b39825ee711c82930536f86c7736b970065c42bd8e"
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "736",
+            "sha256": "892baec898cea8827b47af0f5f41782e0d99de7666efa1cb0eb45e0a35b56f72"
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "executable": false,
+            "size": "2163",
+            "sha256": "c8904797136e9da6fff8364034110cff3b835c89da956dc9732a03c060987ced"
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "executable": false,
+            "size": "6428",
+            "sha256": "5025c41bf1ecc1f9c27b9710490bf6eed51675f04641f3262658b3e821bfbd48"
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "executable": false,
+            "size": "7785",
+            "sha256": "711d579e9568222d79d843517a9dfbf5bbeaf57e1da40c98db8c5948ed4d91ea"
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4369",
+            "sha256": "868a85107b62b1faa3bd67b8a13d4b55ea5c747db7375f03f55ce5a1d2b2d7e9"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4621",
+            "sha256": "8da939717ed9b6d16e9d4b9d7775a21e2413c93f111afd9cd3c3829882841e60"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4694",
+            "sha256": "250decdc8de727b29a1f11d0822c7f32367710cea212004997b91466c05908a0"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4143",
+            "sha256": "5043942cb966d8d013608d2e149af1d7ffef7de0fe317077ea09ee03e8cfee6b"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "19421773403019528",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "ed59f6ddc41da72808d264de43161c0d484ba0384d71718af83425f7243eaa37",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23643898053679371",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1787294318136453400",
+              "ctimeNs": "1787294318136453400"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "24206848007100684",
+              "mode": "33206",
+              "size": "9499",
+              "mtimeNs": "1787249806527038600",
+              "ctimeNs": "1787249806529286800"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "21392098239994126",
+              "mode": "33206",
+              "size": "8775",
+              "mtimeNs": "1787293993684719200",
+              "ctimeNs": "1787293993691440000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20547673309862159",
+              "mode": "33206",
+              "size": "4793",
+              "mtimeNs": "1787294318127055400",
+              "ctimeNs": "1787294318127055400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "22236523170126096",
+              "mode": "33206",
+              "size": "736",
+              "mtimeNs": "1787251081489097500",
+              "ctimeNs": "1787251081489097500"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20829148286572817",
+              "mode": "33206",
+              "size": "2163",
+              "mtimeNs": "1787251067104659000",
+              "ctimeNs": "1787251067104659000"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20547673309862162",
+              "mode": "33206",
+              "size": "6428",
+              "mtimeNs": "1787251004308545800",
+              "ctimeNs": "1787251004308545800"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20547673309862163",
+              "mode": "33206",
+              "size": "7785",
+              "mtimeNs": "1787251051930360400",
+              "ctimeNs": "1787251051930360400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20266198333151508",
+              "mode": "33206",
+              "size": "4369",
+              "mtimeNs": "1787286009752471800",
+              "ctimeNs": "1787286009754899500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20829148286572813",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20829148286572821",
+              "mode": "33206",
+              "size": "4621",
+              "mtimeNs": "1787249668901582300",
+              "ctimeNs": "1787249668904014300"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23643898053679384",
+              "mode": "33206",
+              "size": "4694",
+              "mtimeNs": "1787249767468639600",
+              "ctimeNs": "1787249767475397500"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20829148286572823",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23643898053679382",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "19703248379730201",
+              "mode": "33206",
+              "size": "4143",
+              "mtimeNs": "1787291102705228600",
+              "ctimeNs": "1787291102705228600"
+            }
+          }
+        ]
+      }
+    },
+    "accounting-finalized": {
+      "state": "verified",
+      "scope": "final",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "ab445ed342cbe99c0c3265f91ba71d578a3eb6ea49ef0a2b69be3ffed9806b63",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "1f36ba9e9e05113a2d93ef38914e7093dc551a348a0cc9ec73b93cb7c081dc0f"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9499",
+            "sha256": "b63d1a2da7066a20115674f97f53c8723b7a4441862b755b5d889c1d8d5e0fb9"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8775",
+            "sha256": "8b1424bd39e140e34fd1aa9c0d3b5c87d204cfa2ba3c2b50ac789b50ea49b136"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4793",
+            "sha256": "386171c15f97b5d9cb5dd3b39825ee711c82930536f86c7736b970065c42bd8e"
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "736",
+            "sha256": "892baec898cea8827b47af0f5f41782e0d99de7666efa1cb0eb45e0a35b56f72"
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "executable": false,
+            "size": "2163",
+            "sha256": "c8904797136e9da6fff8364034110cff3b835c89da956dc9732a03c060987ced"
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "executable": false,
+            "size": "6428",
+            "sha256": "5025c41bf1ecc1f9c27b9710490bf6eed51675f04641f3262658b3e821bfbd48"
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "executable": false,
+            "size": "7785",
+            "sha256": "711d579e9568222d79d843517a9dfbf5bbeaf57e1da40c98db8c5948ed4d91ea"
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4369",
+            "sha256": "868a85107b62b1faa3bd67b8a13d4b55ea5c747db7375f03f55ce5a1d2b2d7e9"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4621",
+            "sha256": "8da939717ed9b6d16e9d4b9d7775a21e2413c93f111afd9cd3c3829882841e60"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4694",
+            "sha256": "250decdc8de727b29a1f11d0822c7f32367710cea212004997b91466c05908a0"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4143",
+            "sha256": "5043942cb966d8d013608d2e149af1d7ffef7de0fe317077ea09ee03e8cfee6b"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "19421773403019528",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "ed59f6ddc41da72808d264de43161c0d484ba0384d71718af83425f7243eaa37",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23643898053679371",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1787294318136453400",
+              "ctimeNs": "1787294318136453400"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "24206848007100684",
+              "mode": "33206",
+              "size": "9499",
+              "mtimeNs": "1787249806527038600",
+              "ctimeNs": "1787249806529286800"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "21392098239994126",
+              "mode": "33206",
+              "size": "8775",
+              "mtimeNs": "1787293993684719200",
+              "ctimeNs": "1787293993691440000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20547673309862159",
+              "mode": "33206",
+              "size": "4793",
+              "mtimeNs": "1787294318127055400",
+              "ctimeNs": "1787294318127055400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "22236523170126096",
+              "mode": "33206",
+              "size": "736",
+              "mtimeNs": "1787251081489097500",
+              "ctimeNs": "1787251081489097500"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20829148286572817",
+              "mode": "33206",
+              "size": "2163",
+              "mtimeNs": "1787251067104659000",
+              "ctimeNs": "1787251067104659000"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20547673309862162",
+              "mode": "33206",
+              "size": "6428",
+              "mtimeNs": "1787251004308545800",
+              "ctimeNs": "1787251004308545800"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20547673309862163",
+              "mode": "33206",
+              "size": "7785",
+              "mtimeNs": "1787251051930360400",
+              "ctimeNs": "1787251051930360400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20266198333151508",
+              "mode": "33206",
+              "size": "4369",
+              "mtimeNs": "1787286009752471800",
+              "ctimeNs": "1787286009754899500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20829148286572813",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20829148286572821",
+              "mode": "33206",
+              "size": "4621",
+              "mtimeNs": "1787249668901582300",
+              "ctimeNs": "1787249668904014300"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23643898053679384",
+              "mode": "33206",
+              "size": "4694",
+              "mtimeNs": "1787249767468639600",
+              "ctimeNs": "1787249767475397500"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20829148286572823",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23643898053679382",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "19703248379730201",
+              "mode": "33206",
+              "size": "4143",
+              "mtimeNs": "1787291102705228600",
+              "ctimeNs": "1787291102705228600"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "799c95edcc0444f4f36b2fbf2886c83e79cc904125856f292226a4ee8ad05470",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "1f36ba9e9e05113a2d93ef38914e7093dc551a348a0cc9ec73b93cb7c081dc0f"
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "executable": false,
+            "size": "1410",
+            "sha256": "2fe57d3cc17c104ca80971ed48ce8e7b0b1bc14389254b45f91714dc45ea93a5"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9499",
+            "sha256": "b63d1a2da7066a20115674f97f53c8723b7a4441862b755b5d889c1d8d5e0fb9"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8775",
+            "sha256": "8b1424bd39e140e34fd1aa9c0d3b5c87d204cfa2ba3c2b50ac789b50ea49b136"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4793",
+            "sha256": "386171c15f97b5d9cb5dd3b39825ee711c82930536f86c7736b970065c42bd8e"
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "736",
+            "sha256": "892baec898cea8827b47af0f5f41782e0d99de7666efa1cb0eb45e0a35b56f72"
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "executable": false,
+            "size": "2163",
+            "sha256": "c8904797136e9da6fff8364034110cff3b835c89da956dc9732a03c060987ced"
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "executable": false,
+            "size": "6428",
+            "sha256": "5025c41bf1ecc1f9c27b9710490bf6eed51675f04641f3262658b3e821bfbd48"
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "executable": false,
+            "size": "7785",
+            "sha256": "711d579e9568222d79d843517a9dfbf5bbeaf57e1da40c98db8c5948ed4d91ea"
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4369",
+            "sha256": "868a85107b62b1faa3bd67b8a13d4b55ea5c747db7375f03f55ce5a1d2b2d7e9"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4621",
+            "sha256": "8da939717ed9b6d16e9d4b9d7775a21e2413c93f111afd9cd3c3829882841e60"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4694",
+            "sha256": "250decdc8de727b29a1f11d0822c7f32367710cea212004997b91466c05908a0"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4143",
+            "sha256": "5043942cb966d8d013608d2e149af1d7ffef7de0fe317077ea09ee03e8cfee6b"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "19421773403019528",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "731a04aa87607ee707b3f91adf4d4c109a07d72a40ef7e69095fd4d43a6c2dab",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23643898053679371",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1787294318136453400",
+              "ctimeNs": "1787294318136453400"
+            }
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "6473924474178429",
+              "mode": "33206",
+              "size": "1410",
+              "mtimeNs": "1787294325490956800",
+              "ctimeNs": "1787294325764251800"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "24206848007100684",
+              "mode": "33206",
+              "size": "9499",
+              "mtimeNs": "1787249806527038600",
+              "ctimeNs": "1787249806529286800"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "21392098239994126",
+              "mode": "33206",
+              "size": "8775",
+              "mtimeNs": "1787293993684719200",
+              "ctimeNs": "1787293993691440000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20547673309862159",
+              "mode": "33206",
+              "size": "4793",
+              "mtimeNs": "1787294318127055400",
+              "ctimeNs": "1787294318127055400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "22236523170126096",
+              "mode": "33206",
+              "size": "736",
+              "mtimeNs": "1787251081489097500",
+              "ctimeNs": "1787251081489097500"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20829148286572817",
+              "mode": "33206",
+              "size": "2163",
+              "mtimeNs": "1787251067104659000",
+              "ctimeNs": "1787251067104659000"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20547673309862162",
+              "mode": "33206",
+              "size": "6428",
+              "mtimeNs": "1787251004308545800",
+              "ctimeNs": "1787251004308545800"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20547673309862163",
+              "mode": "33206",
+              "size": "7785",
+              "mtimeNs": "1787251051930360400",
+              "ctimeNs": "1787251051930360400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20266198333151508",
+              "mode": "33206",
+              "size": "4369",
+              "mtimeNs": "1787286009752471800",
+              "ctimeNs": "1787286009754899500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20829148286572813",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20829148286572821",
+              "mode": "33206",
+              "size": "4621",
+              "mtimeNs": "1787249668901582300",
+              "ctimeNs": "1787249668904014300"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23643898053679384",
+              "mode": "33206",
+              "size": "4694",
+              "mtimeNs": "1787249767468639600",
+              "ctimeNs": "1787249767475397500"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20829148286572823",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23643898053679382",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "19703248379730201",
+              "mode": "33206",
+              "size": "4143",
+              "mtimeNs": "1787291102705228600",
+              "ctimeNs": "1787291102705228600"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "799c95edcc0444f4f36b2fbf2886c83e79cc904125856f292226a4ee8ad05470",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "1f36ba9e9e05113a2d93ef38914e7093dc551a348a0cc9ec73b93cb7c081dc0f"
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "executable": false,
+            "size": "1410",
+            "sha256": "2fe57d3cc17c104ca80971ed48ce8e7b0b1bc14389254b45f91714dc45ea93a5"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "9499",
+            "sha256": "b63d1a2da7066a20115674f97f53c8723b7a4441862b755b5d889c1d8d5e0fb9"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8775",
+            "sha256": "8b1424bd39e140e34fd1aa9c0d3b5c87d204cfa2ba3c2b50ac789b50ea49b136"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4793",
+            "sha256": "386171c15f97b5d9cb5dd3b39825ee711c82930536f86c7736b970065c42bd8e"
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "736",
+            "sha256": "892baec898cea8827b47af0f5f41782e0d99de7666efa1cb0eb45e0a35b56f72"
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "executable": false,
+            "size": "2163",
+            "sha256": "c8904797136e9da6fff8364034110cff3b835c89da956dc9732a03c060987ced"
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "executable": false,
+            "size": "6428",
+            "sha256": "5025c41bf1ecc1f9c27b9710490bf6eed51675f04641f3262658b3e821bfbd48"
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "executable": false,
+            "size": "7785",
+            "sha256": "711d579e9568222d79d843517a9dfbf5bbeaf57e1da40c98db8c5948ed4d91ea"
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4369",
+            "sha256": "868a85107b62b1faa3bd67b8a13d4b55ea5c747db7375f03f55ce5a1d2b2d7e9"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4621",
+            "sha256": "8da939717ed9b6d16e9d4b9d7775a21e2413c93f111afd9cd3c3829882841e60"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4694",
+            "sha256": "250decdc8de727b29a1f11d0822c7f32367710cea212004997b91466c05908a0"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4143",
+            "sha256": "5043942cb966d8d013608d2e149af1d7ffef7de0fe317077ea09ee03e8cfee6b"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "19421773403019528",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "731a04aa87607ee707b3f91adf4d4c109a07d72a40ef7e69095fd4d43a6c2dab",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23643898053679371",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1787294318136453400",
+              "ctimeNs": "1787294318136453400"
+            }
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "6473924474178429",
+              "mode": "33206",
+              "size": "1410",
+              "mtimeNs": "1787294325490956800",
+              "ctimeNs": "1787294325764251800"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "24206848007100684",
+              "mode": "33206",
+              "size": "9499",
+              "mtimeNs": "1787249806527038600",
+              "ctimeNs": "1787249806529286800"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "21392098239994126",
+              "mode": "33206",
+              "size": "8775",
+              "mtimeNs": "1787293993684719200",
+              "ctimeNs": "1787293993691440000"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20547673309862159",
+              "mode": "33206",
+              "size": "4793",
+              "mtimeNs": "1787294318127055400",
+              "ctimeNs": "1787294318127055400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "22236523170126096",
+              "mode": "33206",
+              "size": "736",
+              "mtimeNs": "1787251081489097500",
+              "ctimeNs": "1787251081489097500"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-apply.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20829148286572817",
+              "mode": "33206",
+              "size": "2163",
+              "mtimeNs": "1787251067104659000",
+              "ctimeNs": "1787251067104659000"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-main-checkout-plan.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20547673309862162",
+              "mode": "33206",
+              "size": "6428",
+              "mtimeNs": "1787251004308545800",
+              "ctimeNs": "1787251004308545800"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-nested-refusal.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20547673309862163",
+              "mode": "33206",
+              "size": "7785",
+              "mtimeNs": "1787251051930360400",
+              "ctimeNs": "1787251051930360400"
+            }
+          },
+          {
+            "path": "evidence/temp-pair-note.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20266198333151508",
+              "mode": "33206",
+              "size": "4369",
+              "mtimeNs": "1787286009752471800",
+              "ctimeNs": "1787286009754899500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20829148286572813",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20829148286572821",
+              "mode": "33206",
+              "size": "4621",
+              "mtimeNs": "1787249668901582300",
+              "ctimeNs": "1787249668904014300"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23643898053679384",
+              "mode": "33206",
+              "size": "4694",
+              "mtimeNs": "1787249767468639600",
+              "ctimeNs": "1787249767475397500"
+            }
+          },
+          {
+            "path": "specs/store-planning-worktree-bindings",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "20829148286572823",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "23643898053679382",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "19703248379730201",
+              "mode": "33206",
+              "size": "4143",
+              "mtimeNs": "1787291102705228600",
+              "ctimeNs": "1787291102705228600"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "finalReservation": {
+    "state": "owned",
+    "identity": {
+      "dev": "3122291782",
+      "ino": "19421773403019528",
+      "mode": "16822",
+      "size": "0",
+      "mtimeNs": "0",
+      "ctimeNs": "0"
+    },
+    "entries": [
+      {
+        "path": ".openspec.yaml",
+        "kind": "file",
+        "expected": {
+          "path": ".openspec.yaml",
+          "kind": "file",
+          "executable": false,
+          "size": "134",
+          "sha256": "1f36ba9e9e05113a2d93ef38914e7093dc551a348a0cc9ec73b93cb7c081dc0f"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "23643898053679371",
+          "mode": "33206",
+          "size": "134",
+          "mtimeNs": "1787294318136453400",
+          "ctimeNs": "1787294318136453400"
+        }
+      },
+      {
+        "path": ".rasen-archive-owner.json",
+        "kind": "file",
+        "state": "copied",
+        "expected": {
+          "path": ".rasen-archive-owner.json",
+          "kind": "file",
+          "executable": false,
+          "size": "367",
+          "sha256": "3af506551eeb24e666351e73e2b44f896423953e9a32e47851f772e4aad2051d"
+        },
+        "identity": {
+          "dev": "3122291782",
+          "ino": "21110623263283465",
+          "mode": "33206",
+          "size": "367",
+          "mtimeNs": "1787294318937420100",
+          "ctimeNs": "1787294318937420100"
+        }
+      },
+      {
+        "path": "design.md",
+        "kind": "file",
+        "expected": {
+          "path": "design.md",
+          "kind": "file",
+          "executable": false,
+          "size": "9499",
+          "sha256": "b63d1a2da7066a20115674f97f53c8723b7a4441862b755b5d889c1d8d5e0fb9"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "24206848007100684",
+          "mode": "33206",
+          "size": "9499",
+          "mtimeNs": "1787249806527038600",
+          "ctimeNs": "1787249806529286800"
+        }
+      },
+      {
+        "path": "evidence",
+        "kind": "directory",
+        "expected": {
+          "path": "evidence",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "20829148286572813",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "evidence/review-report.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/review-report.md",
+          "kind": "file",
+          "executable": false,
+          "size": "8775",
+          "sha256": "8b1424bd39e140e34fd1aa9c0d3b5c87d204cfa2ba3c2b50ac789b50ea49b136"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "21392098239994126",
+          "mode": "33206",
+          "size": "8775",
+          "mtimeNs": "1787293993684719200",
+          "ctimeNs": "1787293993691440000"
+        }
+      },
+      {
+        "path": "evidence/ship-log.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/ship-log.md",
+          "kind": "file",
+          "executable": false,
+          "size": "4793",
+          "sha256": "386171c15f97b5d9cb5dd3b39825ee711c82930536f86c7736b970065c42bd8e"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "20547673309862159",
+          "mode": "33206",
+          "size": "4793",
+          "mtimeNs": "1787294318127055400",
+          "ctimeNs": "1787294318127055400"
+        }
+      },
+      {
+        "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+          "kind": "file",
+          "executable": false,
+          "size": "736",
+          "sha256": "892baec898cea8827b47af0f5f41782e0d99de7666efa1cb0eb45e0a35b56f72"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "22236523170126096",
+          "mode": "33206",
+          "size": "736",
+          "mtimeNs": "1787251081489097500",
+          "ctimeNs": "1787251081489097500"
+        }
+      },
+      {
+        "path": "evidence/temp-pair-apply.json",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/temp-pair-apply.json",
+          "kind": "file",
+          "executable": false,
+          "size": "2163",
+          "sha256": "c8904797136e9da6fff8364034110cff3b835c89da956dc9732a03c060987ced"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "20829148286572817",
+          "mode": "33206",
+          "size": "2163",
+          "mtimeNs": "1787251067104659000",
+          "ctimeNs": "1787251067104659000"
+        }
+      },
+      {
+        "path": "evidence/temp-pair-main-checkout-plan.json",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/temp-pair-main-checkout-plan.json",
+          "kind": "file",
+          "executable": false,
+          "size": "6428",
+          "sha256": "5025c41bf1ecc1f9c27b9710490bf6eed51675f04641f3262658b3e821bfbd48"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "20547673309862162",
+          "mode": "33206",
+          "size": "6428",
+          "mtimeNs": "1787251004308545800",
+          "ctimeNs": "1787251004308545800"
+        }
+      },
+      {
+        "path": "evidence/temp-pair-nested-refusal.json",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/temp-pair-nested-refusal.json",
+          "kind": "file",
+          "executable": false,
+          "size": "7785",
+          "sha256": "711d579e9568222d79d843517a9dfbf5bbeaf57e1da40c98db8c5948ed4d91ea"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "20547673309862163",
+          "mode": "33206",
+          "size": "7785",
+          "mtimeNs": "1787251051930360400",
+          "ctimeNs": "1787251051930360400"
+        }
+      },
+      {
+        "path": "evidence/temp-pair-note.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/temp-pair-note.md",
+          "kind": "file",
+          "executable": false,
+          "size": "4369",
+          "sha256": "868a85107b62b1faa3bd67b8a13d4b55ea5c747db7375f03f55ce5a1d2b2d7e9"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "20266198333151508",
+          "mode": "33206",
+          "size": "4369",
+          "mtimeNs": "1787286009752471800",
+          "ctimeNs": "1787286009754899500"
+        }
+      },
+      {
+        "path": "proposal.md",
+        "kind": "file",
+        "expected": {
+          "path": "proposal.md",
+          "kind": "file",
+          "executable": false,
+          "size": "4621",
+          "sha256": "8da939717ed9b6d16e9d4b9d7775a21e2413c93f111afd9cd3c3829882841e60"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "20829148286572821",
+          "mode": "33206",
+          "size": "4621",
+          "mtimeNs": "1787249668901582300",
+          "ctimeNs": "1787249668904014300"
+        }
+      },
+      {
+        "path": "specs",
+        "kind": "directory",
+        "expected": {
+          "path": "specs",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "23643898053679382",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "specs/store-planning-worktree-bindings",
+        "kind": "directory",
+        "expected": {
+          "path": "specs/store-planning-worktree-bindings",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "20829148286572823",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "specs/store-planning-worktree-bindings/spec.md",
+        "kind": "file",
+        "expected": {
+          "path": "specs/store-planning-worktree-bindings/spec.md",
+          "kind": "file",
+          "executable": false,
+          "size": "4694",
+          "sha256": "250decdc8de727b29a1f11d0822c7f32367710cea212004997b91466c05908a0"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "23643898053679384",
+          "mode": "33206",
+          "size": "4694",
+          "mtimeNs": "1787249767468639600",
+          "ctimeNs": "1787249767475397500"
+        }
+      },
+      {
+        "path": "tasks.md",
+        "kind": "file",
+        "expected": {
+          "path": "tasks.md",
+          "kind": "file",
+          "executable": false,
+          "size": "4143",
+          "sha256": "5043942cb966d8d013608d2e149af1d7ffef7de0fe317077ea09ee03e8cfee6b"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "19703248379730201",
+          "mode": "33206",
+          "size": "4143",
+          "mtimeNs": "1787291102705228600",
+          "ctimeNs": "1787291102705228600"
+        }
+      }
+    ]
+  },
+  "specProgress": [
+    {
+      "actionId": "ba3698aa3b7a0e8e4b412e8f7636b393cc8eca04f3a12475421e564a66311de3",
+      "action": "update",
+      "target": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\rasen\\specs\\store-planning-worktree-bindings\\spec.md",
+      "backupOrQuarantine": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\rasen\\specs\\store-planning-worktree-bindings\\.rasen-archive-spec-da9e6c81-757a-4dcc-8d10-ae3332160ea9-ba3698aa3b7a\\original",
+      "temporary": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\rasen\\specs\\store-planning-worktree-bindings\\.rasen-archive-spec-da9e6c81-757a-4dcc-8d10-ae3332160ea9-ba3698aa3b7a\\result.tmp",
+      "state": "complete",
+      "claimIdentity": {
+        "dev": "3122291782",
+        "ino": "18577348472887560",
+        "mode": "16822",
+        "size": "0",
+        "mtimeNs": "0",
+        "ctimeNs": "0"
+      },
+      "temporaryIdentity": {
+        "dev": "3122291782",
+        "ino": "19140298426308857",
+        "mode": "33206",
+        "size": "21461",
+        "mtimeNs": "1787294318378260100",
+        "ctimeNs": "1787294318378260100"
+      },
+      "publishedIdentity": {
+        "dev": "3122291782",
+        "ino": "19140298426308857",
+        "mode": "33206",
+        "size": "21461",
+        "mtimeNs": "1787294318378260100",
+        "ctimeNs": "1787294318566916700"
+      }
+    }
+  ],
+  "cleanerProgress": [
+    {
+      "path": "auto-run.json",
+      "state": "deleted"
+    }
+  ],
+  "sourceProgress": {
+    "state": "removed",
+    "quarantine": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\rasen\\changes\\.rasen-archive-source-da9e6c81-757a-4dcc-8d10-ae3332160ea9\\issue-workspace-containment-fix",
+    "claimIdentity": {
+      "dev": "3122291782",
+      "ino": "27866022704339210",
+      "mode": "16822",
+      "size": "0",
+      "mtimeNs": "0",
+      "ctimeNs": "0"
+    }
+  },
+  "updatedAt": "2026-08-21T06:38:46.746Z"
+}
