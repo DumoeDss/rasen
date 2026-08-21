@@ -2,6 +2,7 @@
 
 ## Purpose
 Define the data-driven pipeline registry — pipeline definitions, dual-root extensible resolution (project / user / package), the `rasen pipeline` CLI surface, pipeline validation, and the built-in pipelines.
+
 ## Requirements
 ### Requirement: Data-Driven Pipeline Definitions
 
@@ -58,6 +59,12 @@ supported versions. The Pipeline content version SHALL remain distinct from a
 
 - **WHEN** a user reads the Pipeline and Canvas authoring documentation
 - **THEN** it states that Canvas views and edits definitions, current loop declarations are interpreted by the LEAD orchestration playbook, and Canvas is not a programmatic Pipeline runner
+
+#### Scenario: A decompose-bearing v1 definition reports its dispatch boundary
+
+- **WHEN** engine-support analysis runs on a v1 definition that contains a `kind: decompose` stage
+- **THEN** it reports the definition unsupported on the reconciler engine with the semantics reason — the decompose stage is a Dispatch-domain construct the reconciler does not execute as an engine node — rather than reporting an execution profile as unavailable
+- **AND** the definition remains a readable compatibility input whose entry pipeline keeps its recorded successor boundary, with the fail-closed launch outcome unchanged
 
 ### Requirement: Pipeline save subcommand installs a definition into the user layer
 
