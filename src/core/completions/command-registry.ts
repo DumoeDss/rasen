@@ -761,6 +761,19 @@ const COMMANDS: readonly CommandDefinition[] = [
         name: 'projects',
         flags: [COMMON_FLAGS.store, COMMON_FLAGS.json],
       },
+      {
+        // The cross-Issue attention scan: what across the Store's Issues
+        // needs a human right now — five kinds in fail-first order, every
+        // scanned Issue visible in the summary. A Store-scoped fleet read
+        // (hence a sibling of `issue`, not one of its per-Issue verbs);
+        // read-only; `--issue` narrows and refuses an unknown id.
+        name: 'attention',
+        flags: [
+          COMMON_FLAGS.store,
+          { name: 'issue', takesValue: true },
+          COMMON_FLAGS.json,
+        ],
+      },
     ],
   },
   {

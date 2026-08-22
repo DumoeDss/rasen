@@ -2171,6 +2171,20 @@
                   "description": "Output as JSON"
                 }
               }
+            },
+            "attention": {
+              "description": "Scan every Issue of the store for what needs a human right now: failures, nodes blocked behind trouble, parked stages, review-phase acceptances, and status problems — fail-first, with every scanned Issue visible in the summary. Read-only",
+              "options": {
+                "store": {
+                  "description": "Store to scan"
+                },
+                "issue": {
+                  "description": "Narrow the scan to one Issue id; an unknown id is refused"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
             }
           }
         },

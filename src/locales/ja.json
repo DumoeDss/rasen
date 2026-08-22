@@ -2171,6 +2171,20 @@
                   "description": "JSON で出力"
                 }
               }
+            },
+            "attention": {
+              "description": "ストアの全 Issue を走査し、今すぐ人間に必要なもの(失敗・トラブル後ろのブロック・駐留ステージ・レビュー段階の受け入れ・ステータス問題)を失敗優先で報告します。走査した Issue はすべて要約に可視のまま。読み取り専用",
+              "options": {
+                "store": {
+                  "description": "走査するストア"
+                },
+                "issue": {
+                  "description": "走査を 1 つの Issue id に絞る。未知の id は拒否されます"
+                },
+                "json": {
+                  "description": "JSON で出力"
+                }
+              }
             }
           }
         },

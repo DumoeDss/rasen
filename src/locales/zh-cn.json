@@ -2171,6 +2171,20 @@
                   "description": "以 JSON 输出"
                 }
               }
+            },
+            "attention": {
+              "description": "扫描仓库的全部 Issue,报告现在需要人处理的事项(失败、受阻于故障的节点、等待人工的阶段、评审阶段的验收、状态问题)——失败优先,所有被扫描的 Issue 在摘要中保持可见。只读",
+              "options": {
+                "store": {
+                  "description": "要扫描的仓库"
+                },
+                "issue": {
+                  "description": "将扫描收窄到一个 Issue id;未知 id 会被拒绝"
+                },
+                "json": {
+                  "description": "以 JSON 输出"
+                }
+              }
             }
           }
         },

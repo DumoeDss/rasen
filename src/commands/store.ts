@@ -36,13 +36,30 @@ import {
 import { findRepoPlanningRootSync } from '../core/planning-home.js';
 import { isInteractive } from '../utils/interactive.js';
 import { WORKSPACE_DIR_NAME } from '../core/config.js';
+import { StoreAggregateQuery } from '../core/store/query/index.js';
+import {
+  deriveIssueAttention,
+  ISSUE_ATTENTION_KIND_ORDER,
+  issueAttentionKindRank,
+  projectIssueStatus,
+  type IssueAttentionItem,
+  type IssueAttentionKind,
+  type IssueRunStateVisibility,
+} from '../core/issue-status/index.js';
+import { readIssueAcceptanceFacts } from '../core/issue-acceptance/index.js';
 import { runAdopt, runEject } from './store-migration.js';
 import {
   runStoreMigrateLayout,
   type StoreMigrateLayoutOptions,
 } from './store-migrate-layout.js';
 import { registerStoreAggregateCommands } from './store-aggregate.js';
-import { registerStoreIssueCommand } from './store-issue.js';
+import {
+  registerStoreIssueCommand,
+  resolvePredecessorPlan,
+  resolveProjectionContext,
+  resolveStoreWideningContext,
+  statusInputFor,
+} from './store-issue.js';
 import { registerStoreTargetLineCommand } from './store-target-line.js';
 import { registerWorkspaceCommand } from './workspace.js';
 import {
@@ -535,8 +552,115 @@ function toDoctorOutput(result: StoreDoctorResult): StoreDoctorOutput {
 }
 
 
+// -----------------------------------------------------------------------------
+// The attention scan (`store attention`) — issue-needs-attention D3
+// -----------------------------------------------------------------------------
 
+interface StoreAttentionOptions {
+  store?: string;
+  issue?: string;
+  json?: boolean;
+}
 
+/** One scanned Issue's roll facts — what keeps "honestly unlisted" visible. */
+interface AttentionScanEntry {
+  readonly issueId: string;
+  readonly phase: string;
+  readonly health: string;
+  readonly itemCount: number;
+  readonly runStateVisibility: IssueRunStateVisibility;
+}
+
+/** Per-kind counts over all five kinds, zeros included — the summary, never a replacement. */
+function attentionCounts(items: readonly IssueAttentionItem[]): Record<IssueAttentionKind, number> {
+  const counts = Object.fromEntries(
+    ISSUE_ATTENTION_KIND_ORDER.map(kind => [kind, 0])
+  ) as Record<IssueAttentionKind, number>;
+  for (const item of items) counts[item.kind] += 1;
+  return counts;
+}
+
+/** One attention item's human line — the item's own context carries the axes. */
+function renderAttentionItem(item: IssueAttentionItem): string {
+  const context = `[${item.issueId} ${item.phase}/${item.health}]`;
+  const who = item.nodeId === null ? '' : item.alias === null ? ` ${item.nodeId}` : ` ${item.nodeId} ${item.alias}`;
+  switch (item.kind) {
+    case 'failure':
+      return `    ${context}${who} failed${item.diagnostic === null ? '' : ` — ${item.diagnostic}`}`;
+    case 'blocked-behind':
+      return `    ${context}${who} blocked behind ${item.blockers
+        .map(blocker => `${blocker.nodeId}@${blocker.projectId}: ${blocker.state}`)
+        .join(', ')}`;
+    case 'waiting-human':
+      return `    ${context}${who} waiting for a human`;
+    case 'acceptance-awaiting': {
+      const gate =
+        item.gate === null
+          ? 'gate not evaluated on this read — no acceptance facts supplied'
+          : item.gate.eligible
+            ? `gate holds, conditions revision ${item.gate.conditionsRevisionId}`
+            : `gate does not hold — ${item.gate.message}`;
+      return `    ${context} acceptance is the human's next act (${gate})`;
+    }
+    case 'problem': {
+      const node = item.problem.node === null ? '' : ` ${item.problem.node}`;
+      const at = item.problem.ref === null ? '' : ` ${item.problem.ref}`;
+      return `    ${context} problem ${item.problem.kind}${node}${at}: ${item.problem.reason}`;
+    }
+  }
+}
+
+/** The visibility label each per-Issue read already renders, one line per distinct value. */
+function attentionVisibilityLines(entries: readonly AttentionScanEntry[]): string[] {
+  const labels = new Set(
+    entries.map(entry =>
+      entry.runStateVisibility.kind === 'execution-root'
+        ? entry.runStateVisibility.executionRoot
+        : 'none visible from this directory'
+    )
+  );
+  return [...labels].sort().map(label => `  run-state: ${label}`);
+}
+
+/**
+ * The attention answer in human form: the scan summary first (every Issue
+ * scanned with its phase, health, and item count — scanned-and-healthy work is
+ * visible, honestly unlisted), then the items grouped fail-first with every
+ * item listed in full, and an explicit empty state when nothing needs
+ * attention. Reading writes nothing, and the answer says so.
+ */
+function renderAttentionAnswer(
+  narrowed: boolean,
+  narrowedIssueId: string | null,
+  scanned: readonly AttentionScanEntry[],
+  items: readonly IssueAttentionItem[]
+): void {
+  const scope = narrowed ? `narrowed to ${narrowedIssueId} — ` : '';
+  console.log(`Store attention scan — ${scope}${scanned.length} Issue(s) scanned`);
+  console.log('  scanned:');
+  for (const entry of scanned) {
+    console.log(`    ${entry.issueId}: ${entry.phase}/${entry.health} — ${entry.itemCount} item(s)`);
+  }
+  for (const line of attentionVisibilityLines(scanned)) console.log(line);
+  if (items.length === 0) {
+    console.log(`  none need attention — ${scanned.length} Issue(s) scanned, zero items`);
+  } else {
+    console.log(`  attention: ${items.length} item(s)`);
+    for (const kind of ISSUE_ATTENTION_KIND_ORDER) {
+      const group = items.filter(item => item.kind === kind);
+      if (group.length === 0) continue;
+      console.log(`  ${kind} (${group.length})`);
+      for (const item of group) console.log(renderAttentionItem(item));
+    }
+  }
+  console.log('');
+  console.log('  wrote nothing — attention derives; acting on an item remains a human act.');
+}
+
+/** Code-point comparator for the stable cross-Issue (issueId, nodeId) order. */
+function codePointOrder(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
 
 function formatPathForHuman(targetPath: string): string {
   const home = os.homedir();
@@ -1608,6 +1732,119 @@ export function registerStoreCommand(program: Command): void {
     .option('--json', '')
     .action(async (id: string | undefined, options: StoreDoctorOptions) => {
       await storeCommand.doctor(id, options);
+    });
+
+  // The cross-Issue attention scan (issue-needs-attention D3): a Store-scoped
+  // FLEET read, hence a sibling of `issue` on the store tree, not one of its
+  // per-Issue subcommands. Read-only: the scan composes each Issue through the
+  // exact CLI status composition `show` performs (same detail, same inputs,
+  // same projection), so attention and show cannot disagree about an Issue's
+  // facts.
+  store
+    .command('attention')
+    .description('')
+    .option('--store <id>', '')
+    .option('--issue <issue-id>', '')
+    .option('--json', '')
+    .action(async (options: StoreAttentionOptions) => {
+      const emptyAnswer = () => ({
+        narrowed: options.issue !== undefined,
+        issueId: options.issue ?? null,
+        scannedCount: 0,
+        scanned: [] as AttentionScanEntry[],
+        items: [] as IssueAttentionItem[],
+        counts: attentionCounts([]),
+        total: 0,
+      });
+      try {
+        const scope = {
+          ...(options.store === undefined ? {} : { store: options.store }),
+          startPath: process.cwd(),
+        };
+        const page = await StoreAggregateQuery.listIssues(scope);
+        const selected =
+          options.issue === undefined
+            ? page.issues
+            : page.issues.filter(summary => summary.issueId === options.issue);
+        // An unknown `--issue` is refused, never read as an empty store: the
+        // empty state is a claim about scanned Issues, and it must stay true.
+        if (options.issue !== undefined && selected.length === 0) {
+          throw new StoreError(
+            `Issue '${options.issue}' is not known to this Store; an unknown id is refused rather than read as an empty scan.`,
+            'issue_attention_unknown_issue',
+            {
+              fix:
+                `Run 'rasen store issue list${
+                  options.store === undefined ? '' : ` --store ${options.store}`
+                }' to read the Store's Issue ids.`,
+            }
+          );
+        }
+        // Gathered ONCE for the whole scan, exactly as show gathers them for
+        // its one Issue: the working directory's projection context and the
+        // Store-scoped widening inputs.
+        const context = await resolveProjectionContext();
+        const widening = await resolveStoreWideningContext(options.store);
+        const scanned: AttentionScanEntry[] = [];
+        const items: IssueAttentionItem[] = [];
+        for (const summary of selected) {
+          const detail = await StoreAggregateQuery.showIssue({
+            ...scope,
+            issueId: summary.issueId,
+          });
+          const status = await projectIssueStatus(
+            statusInputFor(detail, {
+              ...context,
+              ...widening,
+              acceptance: await readIssueAcceptanceFacts({
+                ...scope,
+                issueId: summary.issueId,
+              }),
+              predecessorPlan: await resolvePredecessorPlan(
+                scope,
+                summary.issueId,
+                detail.plan?.revision?.supersedes ?? null
+              ),
+            })
+          );
+          const derived = deriveIssueAttention(summary.issueId, status);
+          scanned.push({
+            issueId: summary.issueId,
+            phase: status.phase,
+            health: status.health,
+            itemCount: derived.length,
+            runStateVisibility: status.runStateVisibility,
+          });
+          items.push(...derived);
+        }
+        // The fleet answer's order: fail-first kind rank, then the stable
+        // (issueId, nodeId) order — the same key the per-Issue derivation
+        // already sorted each Issue's items by, composed across Issues.
+        items.sort(
+          (left, right) =>
+            issueAttentionKindRank(left.kind) - issueAttentionKindRank(right.kind) ||
+            codePointOrder(left.issueId, right.issueId) ||
+            codePointOrder(left.nodeId ?? '', right.nodeId ?? '')
+        );
+        const answer = {
+          narrowed: options.issue !== undefined,
+          issueId: options.issue ?? null,
+          scannedCount: scanned.length,
+          scanned,
+          items,
+          counts: attentionCounts(items),
+          total: items.length,
+          unsearchedRefs: page.unsearchedRefs,
+          complete: page.complete,
+        };
+        if (options.json) {
+          printJson(answer);
+          return;
+        }
+        renderAttentionAnswer(answer.narrowed, answer.issueId, scanned, items);
+      } catch (error) {
+        emitFailure(options.json, emptyAnswer(), error, 'store_attention_failed');
+      }
     });
 
   registerStoreTargetLineCommand(store);

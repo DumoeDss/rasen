@@ -24,6 +24,7 @@ import type { ExecutionPlanNodeLifecycle } from '../store/issues/types.js';
 import type { WorkspaceIndexEntry } from '../store/workspace/registry.js';
 import type {
   IssueAcceptanceFacts,
+  IssueAcceptanceGateEvaluation,
   IssueAcceptanceStatusBlock,
 } from '../issue-acceptance/types.js';
 
@@ -366,6 +367,75 @@ export interface IssueReadySet {
   readonly members: readonly IssueReadyMember[];
   readonly exits: readonly IssueReadyExitEntry[];
 }
+
+// -----------------------------------------------------------------------------
+// The attention items (issue-needs-attention D1/D2)
+// -----------------------------------------------------------------------------
+
+/**
+ * The one closed vocabulary of things a human must act on, drawn from the
+ * status projection's own facts alone. `failure` is a wanted node observing
+ * `failed`; `blocked-behind` is the blast radius of trouble — a wanted
+ * not-started node whose DIRECT dependency observes failed, waiting-human, or
+ * unknown (one hop; each further hop lists itself); `waiting-human` is a wanted
+ * node parked for a human; `acceptance-awaiting` is a review-phase Issue (the
+ * acceptance is by definition the human's act); `problem` is every standing
+ * status problem. Ordinary progress — in-flight, advanced, terminal, ready
+ * nodes, serial waits — is deliberately NO kind at all: scheduling is not
+ * sickness, exactly as the health axis already rules.
+ */
+export type IssueAttentionKind =
+  | 'failure'
+  | 'blocked-behind'
+  | 'waiting-human'
+  | 'acceptance-awaiting'
+  | 'problem';
+
+/**
+ * One dependency a `blocked-behind` item names: the node identifier, its target
+ * project, and its observed state in the same refinement vocabulary the node
+ * line renders (`issueBlockerState`) — "never started here" and "unreadable,
+ * here is why" are named, never guessed.
+ */
+export interface IssueAttentionBlocker {
+  readonly nodeId: string;
+  readonly projectId: string;
+  readonly state: string;
+}
+
+/**
+ * One thing a human must act on. Every item carries its Issue's identifier,
+ * its Issue's phase AND health beside the fact (the tri-axis separation
+ * consumed verbatim — a failure among running siblings reads `active`+`failed`
+ * with no way to misread it as busy-but-fine), and the node it names where it
+ * names one.
+ */
+export type IssueAttentionItem = {
+  readonly issueId: string;
+  readonly phase: IssuePhase;
+  readonly health: IssueHealth;
+  /**
+   * The node the item names; null when the item is Issue-level
+   * (`acceptance-awaiting`, an Issue-level problem).
+   */
+  readonly nodeId: string | null;
+  /** The Change alias the named node was keyed by; null when none or unnamed. */
+  readonly alias: string | null;
+} & (
+  | { readonly kind: 'failure'; readonly diagnostic: string | null }
+  | { readonly kind: 'blocked-behind'; readonly blockers: readonly IssueAttentionBlocker[] }
+  | { readonly kind: 'waiting-human' }
+  | {
+      readonly kind: 'acceptance-awaiting';
+      /**
+       * The gate evaluation the projection carried, when acceptance facts were
+       * supplied — eligible or its named blockers. Null when they were not
+       * (the item still fires: review is derivable from the status alone).
+       */
+      readonly gate: IssueAcceptanceGateEvaluation | null;
+    }
+  | { readonly kind: 'problem'; readonly problem: IssueStatusProblem }
+);
 
 // -----------------------------------------------------------------------------
 // The revision delta (review-flow D5)

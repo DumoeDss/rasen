@@ -258,8 +258,12 @@ function renderProblems(problems: readonly AggregateProblem[]): void {
  * readable from anywhere, so a directory that resolves no project execution
  * root degrades to a visibility-`none` answer — committed evidence still
  * derives; never a failure of the store-scoped command.
+ *
+ * Exported for the store-level `attention` scan (issue-needs-attention D3):
+ * the scan composes each Issue through the SAME inputs `show` does, so
+ * attention and show cannot disagree about an Issue's facts.
  */
-async function resolveProjectionContext(): Promise<{
+export async function resolveProjectionContext(): Promise<{
   executionRoot?: string;
   changesDir?: string;
   projectRoot?: string;
@@ -276,7 +280,7 @@ async function resolveProjectionContext(): Promise<{
   }
 }
 
-function statusInputFor(
+export function statusInputFor(
   detail: IssueDetail,
   context: {
     executionRoot?: string;
@@ -307,7 +311,7 @@ function statusInputFor(
  * first revision (or an unreadable predecessor) contributes null, which the
  * projection reads as "no delta section".
  */
-async function resolvePredecessorPlan(
+export async function resolvePredecessorPlan(
   scope: { store?: string; startPath: string },
   issueId: string,
   supersedes: string | null
@@ -333,7 +337,7 @@ async function resolvePredecessorPlan(
  * Returns an empty widening when no `--store` was given; the Store-scoped
  * query itself refuses that case before any of this matters.
  */
-async function resolveStoreWideningContext(
+export async function resolveStoreWideningContext(
   store: string | undefined
 ): Promise<{
   storeId?: string;
