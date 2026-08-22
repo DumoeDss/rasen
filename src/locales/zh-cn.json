@@ -2124,6 +2124,17 @@
                       "description": "以 JSON 输出"
                     }
                   }
+                },
+                "ready": {
+                  "description": "报告该 Issue 最新已发布修订的确定性就绪集：每个可运行的 Change 节点，以及每个非成员节点及其退出理由，附运行状态可见性标签与状态问题。只读且仅针对最新修订——调度器调度的是最新修订",
+                  "options": {
+                    "store": {
+                      "description": "持有该 Issue 的仓库"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
                 }
               }
             },
@@ -2155,6 +2166,20 @@
               "options": {
                 "store": {
                   "description": "要列出项目的仓库"
+                },
+                "json": {
+                  "description": "以 JSON 输出"
+                }
+              }
+            },
+            "attention": {
+              "description": "扫描仓库的全部 Issue,报告现在需要人处理的事项(失败、受阻于故障的节点、等待人工的阶段、评审阶段的验收、状态问题)——失败优先,所有被扫描的 Issue 在摘要中保持可见。只读",
+              "options": {
+                "store": {
+                  "description": "要扫描的仓库"
+                },
+                "issue": {
+                  "description": "将扫描收窄到一个 Issue id;未知 id 会被拒绝"
                 },
                 "json": {
                   "description": "以 JSON 输出"

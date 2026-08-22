@@ -183,16 +183,24 @@ is history and SHALL drive no health value.
 
 Progress SHALL report completed required nodes over the total required nodes of the Issue's
 latest readable plan revision, where the required nodes are the Change nodes whose lifecycle is
-`required`. A node counts as complete when the Store's committed evidence
-finalizes its Change or when its Change's recorded run-state is terminal with every stage done
-or skipped and any portfolio delivery recorded done. Work that is finished but not yet
-finalized still counts, because progress measures work completed, not archiving. A node whose
-lifecycle is `optional`, `cancelled`, or `superseded` SHALL be counted in neither part of the
-pair — its completion, when recorded, is visible on its node line and counted nowhere. An Issue
-whose latest revision exists but cannot be read SHALL report no progress value rather than a zero
-that would read as "nothing required", and a readable revision that names no required nodes
-SHALL report zero completed over zero total, saying that no work is demanded rather than that
-no value could be derived.
+`required`. A node counts as complete when the Store's committed evidence finalizes its Change
+or when its Change's recorded run-state is terminal with every stage done or skipped and any
+portfolio delivery recorded done. The Store's committed evidence finalizes a Change in two
+record bases, and the basis is a fact the read reports: an archived Change with a committed
+v2 outcome record, and an archived Change whose archive entry carries a legacy record basis —
+no v2 outcome record where none was ever written — whose work SHALL count complete with the
+legacy basis named on its facts, because the archive fact is itself committed evidence that
+the Change's work story closed, and reading it invents no outcome value. An archive record
+that exists in v2 shape but fails validation SHALL NOT finalize its Change: the node reports
+`unknown` with a status problem naming the file and the reason, and no phase, health, or
+progress value SHALL be fabricated from the unreadable record — damaged bytes never release a
+dependency gate. Work that is finished but not yet finalized still counts, because progress
+measures work completed, not archiving. A node whose lifecycle is `optional`, `cancelled`, or
+`superseded` SHALL be counted in neither part of the pair — its completion, when recorded, is
+visible on its node line and counted nowhere. An Issue whose latest revision exists but cannot
+be read SHALL report no progress value rather than a zero that would read as "nothing
+required", and a readable revision that names no required nodes SHALL report zero completed
+over zero total, saying that no work is demanded rather than that no value could be derived.
 
 #### Scenario: One of three children complete
 
@@ -221,6 +229,18 @@ no value could be derived.
 - **WHEN** an Issue's latest revision exists but fails its digest or parse
 - **THEN** no progress pair is reported
 - **AND** the reason is reported with the status
+
+#### Scenario: An archived legacy record counts its work complete
+
+- **WHEN** a required node's Change is archived and its archive entry carries a legacy record basis with no v2 outcome record
+- **THEN** the node counts toward completed progress on the archive fact alone, with no run-state located
+- **AND** the node's facts name the legacy basis rather than presenting a v2 outcome or a run-terminal observation
+
+#### Scenario: A corrupt v2 archive record is reported, not guessed
+
+- **WHEN** a node's Change is archived and its archive record is in v2 shape but fails validation
+- **THEN** the node is reported unknown with a status problem naming the file and the reason
+- **AND** no completion, phase value, or dependency release is derived from the unreadable record
 
 ### Requirement: Run-state visibility is located and labelled
 
@@ -442,3 +462,78 @@ and a lane SHALL exist only for a project the revision's nodes actually name.
 - **WHEN** the same revision is read with lane derivation in place
 - **THEN** its phase, health, and progress equal the values derived before lanes existed
 - **AND** a lane's progress pair influences no Issue-level value it did not already determine
+
+### Requirement: Publishing a revision preserves other nodes' observations
+
+Publishing a new Execution Plan revision SHALL NOT change any node's observed execution state
+except through real execution or committed Store evidence: a node whose Change instance the
+new revision redeclares under the same project, line, and recorded alias SHALL read the same
+observation it read under the previous revision, fact for fact — nodes the revision adds,
+dependency edges it adds or removes, and lifecycle changes it declares on other nodes leave
+the untouched node's observation identical. A node whose lifecycle the revision changes to
+`cancelled` or `superseded` keeps its recorded observation on its node line — outside the
+execution graph, still observed — and a node whose dependency edges changed keeps its
+observation while its dependency facts follow the new declaration. Publishing is not
+execution: only run-state writes and committed Store evidence move an observation, so the
+operator may replan freely knowing observed history is never disturbed by the replan itself.
+
+#### Scenario: Adding a node leaves its siblings' observations identical
+
+- **WHEN** an Issue's revision N reads one node terminal and one not-started, and revision N+1 adds a third node
+- **THEN** the N+1 read reports the first node's terminal observation and the second's not-started fact-for-fact identical to the N read
+- **AND** the added node reads not-started, carrying no observation of its siblings
+
+#### Scenario: A superseded node keeps its observation on its line
+
+- **WHEN** revision N reads a node `required` with terminal run-state and revision N+1 marks that node `superseded` with a recorded reason
+- **THEN** the N+1 read still reports the node's terminal observation on its node line, beside the superseded lifecycle and its reason
+- **AND** the Issue's phase, health, and progress derive from the other nodes alone, exactly as the lifecycle vocabulary already provides
+
+#### Scenario: An edge change moves dependency facts, not observations
+
+- **WHEN** revision N+1 adds a dependency edge from an unchanged node to a non-terminal node
+- **THEN** the unchanged node's own observation is identical to its N reading
+- **AND** its dependency facts name the new dependency while that dependency's work is not complete
+
+#### Scenario: Replanning does not write execution state
+
+- **WHEN** a new revision is published for an Issue whose nodes have recorded run-state
+- **THEN** every run-state file, the Issue record, and every prior revision are byte-identical before and after the publication
+- **AND** only a later real run or committed Store evidence can change any observation
+
+### Requirement: A retargeted node starts a new observation lineage
+
+A Change node whose target project or target line changes between revisions SHALL carry a new
+Change instance — publication refuses a node that declares a project or line its Change
+instance is not committed under — and the new revision's observation of that node SHALL
+derive from the new instance alone: the node reads not-started unless the new instance
+carries its own run-state or committed archive evidence, and no observation recorded against
+the prior revision's instance is inherited by the retargeted node. The prior lineage's facts
+SHALL remain readable where they live: the prior revision, immutable and digest-verified, and
+the revision delta naming the retarget with both revisions' target facts. An intent node
+carries no observation lineage — its observation is `not-started` by construction, whatever
+its target.
+
+#### Scenario: A retarget keeping the old instance is refused at publication
+
+- **WHEN** a revision is authored redeclaring a node under a new project while naming the Change instance committed under the old project
+- **THEN** publication is refused under the reference scope conflict, naming the node, the declared project and line, and the committed ones
+- **AND** no revision is created, so no observation lineage can blur
+
+#### Scenario: A retargeted node reads fresh while the prior revision keeps its history
+
+- **WHEN** revision N reads a node terminal under project A, and revision N+1 redeclares that node under project B naming a new Change instance with no run-state and no archive evidence
+- **THEN** the N+1 read reports the node not-started
+- **AND** the revision delta names the retarget with both projects, and revision N still reads the node's terminal observation under project A
+
+#### Scenario: A retargeted instance with its own evidence reads that evidence
+
+- **WHEN** revision N+1 redeclares a node under project B naming a Change instance that already carries terminal run-state
+- **THEN** the N+1 read reports the node's terminal observation from that instance's own evidence
+- **AND** the observation is attributed to the new instance's run-state location, never to the prior lineage's
+
+#### Scenario: An intent node's retarget carries no lineage
+
+- **WHEN** revision N+1 retargets an intent node to another member project
+- **THEN** the node's observation remains not-started by construction
+- **AND** the revision delta names the retarget with both projects exactly as a Change node's

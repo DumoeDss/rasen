@@ -1,0 +1,25 @@
+Issue issue-cross-project-replanning
+  state: open
+  title: Issue layer Phase 5: cross-project replanning (ready set, history preservation, needs-attention)
+  revisions: 0001, 0002
+  latest plan: revision 0002
+  plan digest: 37e0a09b0e16547b27ea7c285e5c40aabaec70ac0783c63230622a257dd93d33
+  status:
+    phase: active
+    health: healthy
+    progress: 2/3
+    run-state: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer
+    nodes:
+      project rasen (e2ee72ed-04a1-4395-86aa-7e77d2b83ec7): 2/3
+      issue-needs-attention change e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 issue-needs-attention — in-flight (suggest: small-feature) (rationale: the finale, bound to its active seeded instance and honestly in flight in the repo worktree executing it (this very change's apply stage); it becomes the Issue's last un-terminal node until it ships)
+        pipeline: small-feature (located by execution-root)
+        evidence: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer\rasen\changes\issue-needs-attention\evidence
+      issue-ready-set-scheduling change e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 2026-08-21-issue-ready-set-scheduling — finalized (suggest: small-feature) (rationale: promoted from intent to Change against its seeded archived Store instance; the work shipped as repo ship 3f065496 and the node reads terminal on the committed archive evidence, so no dependent waits) (finalized on a legacy archive record (no v2 outcome was ever recorded))
+      issue-revision-history-preservation change e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 2026-08-22-issue-revision-history-preservation — finalized (suggest: small-feature) (rationale: promoted from intent to Change against its seeded archived Store instance; the work shipped as repo ship c0ace35e and the node reads terminal on the committed archive evidence) (finalized on a legacy archive record (no v2 outcome was ever recorded))
+
+  revision delta: 0002 over 0001
+
+  acceptance:
+    conditions: (none published)
+    gate: not eligible — the Issue has no readable acceptance conditions — no acceptance conditions revision exists for it.
+    record: (not accepted)

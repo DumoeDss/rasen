@@ -1,0 +1,49 @@
+# Decomposition of Issue #4 (issue-cross-project-replanning) — Issue layer
+# Phase 5, authored 2026-08-22 by the issue-needs-attention implementer leg
+# through the P4 path (design D5): `store issue plan --from-decomposition`
+# publishes revision 0001 from this document; a reviewable revision 0002 then
+# binds the shipped children's seeded Store instances. Serial chain, all
+# targets on line-0.2 of the rasen planning member.
+nodes:
+  - nodeId: issue-ready-set-scheduling
+    kind: intent
+    projectId: e2ee72ed-04a1-4395-86aa-7e77d2b83ec7
+    targetLineId: line-0.2
+    summary: Deterministic ready-set scheduling over the status projection (one
+      derivation shared by the ready verb, start's frontier, and confirm), with
+      the archived-legacy archive-record basis ruling
+    suggestedPipeline: small-feature
+    rationale: the ready set is the scheduling view the replanning loop needs
+      before anything can run or be replanned; every ingredient (work-complete
+      blocker facts, four-state lifecycle, cross-project gate) already existed
+      and needed one shared derivation, not a second basis
+    dependsOn: []
+  - nodeId: issue-revision-history-preservation
+    kind: intent
+    projectId: e2ee72ed-04a1-4395-86aa-7e77d2b83ec7
+    targetLineId: line-0.2
+    summary: Replanning preserves history — superseded/cancelled exit the ready
+      set with recorded reasons, the acceptance gate excludes them symmetrically,
+      and the accepted record carries its exclusions durably
+    suggestedPipeline: small-feature
+    rationale: a replan that rewrites its own history cannot be reviewed; this
+      child pins continuity (new nodes never inherit old observations), the
+      retarget rule, and the durable exclusion record the close summary reads
+    dependsOn:
+      - issue-ready-set-scheduling
+  - nodeId: issue-needs-attention
+    kind: intent
+    projectId: e2ee72ed-04a1-4395-86aa-7e77d2b83ec7
+    targetLineId: line-0.2
+    summary: The needs-attention aggregation entry — the cross-Issue scan that
+      answers what needs a human right now, with the unmasked-failure guarantee
+      and the honesty of absence — plus this Issue's own dogfood walking the
+      whole layer end to end
+    suggestedPipeline: small-feature
+    rationale: the Phase 5 exit criteria name this surface directly; it composes
+      the health separation, named blockers, exit reasons, and gate evaluation
+      the first two children landed, and it is the honest in-flight node of
+      this very Issue while it ships
+    dependsOn:
+      - issue-ready-set-scheduling
+      - issue-revision-history-preservation

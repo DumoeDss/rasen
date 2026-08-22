@@ -147,12 +147,16 @@ describe('root-inclusive CLI structure', () => {
       // `changes` and `projects` from store-issue-resources. The last two are
       // deliberately top-level siblings rather than a `store aggregate` group.
       // `workspace` lives here and not at the root precisely because the
-      // top-level `workspace` noun-command stays retired.
+      // top-level `workspace` noun-command stays retired. `attention` is the
+      // cross-Issue fleet read (issue-needs-attention): a sibling of `issue`
+      // for the same reason `changes`/`projects` are — Store-scoped, not
+      // per-Issue.
       'target-line',
       'workspace',
       'issue',
       'changes',
       'projects',
+      'attention',
     ]);
     expect(command('store', 'list')?.aliases).toEqual(['ls']);
     expect(command('workset', 'list')?.aliases).toEqual(['ls']);

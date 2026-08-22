@@ -479,6 +479,16 @@ export class StoreIssuesModule implements StoreIssues {
         }
       }
 
+      // The gate's exclusions ride the record verbatim — already the
+      // evaluation's portable shape, no translation layer — and an empty
+      // accounting writes the ABSENT form: the canonical record omits the
+      // field when no exclusion stood, byte-identical to the pre-field shape.
+      // The serializer validates every exclusion (node id, closed lifecycle,
+      // portable reason) before any byte lands, same as the note.
+      const exclusions =
+        input.exclusions === undefined || input.exclusions.length === 0
+          ? undefined
+          : input.exclusions;
       const draft: Omit<IssueAcceptedRecordV1, 'contentSha256'> = {
         version: 1,
         issueId,
@@ -486,6 +496,7 @@ export class StoreIssuesModule implements StoreIssues {
         conditionsRevisionId: conditions.revisionId,
         conditionsSha256: conditions.contentSha256,
         gate: input.gate,
+        ...(exclusions === undefined ? {} : { exclusions }),
         note,
       };
       const record: IssueAcceptedRecordV1 = {

@@ -250,6 +250,10 @@ export async function acceptIssue(
     conditionsRevisionId: gate.conditionsRevisionId,
     conditionsSha256: revision.contentSha256,
     gate: gate.snapshot,
+    // The evaluation's lifecycle accounting rides the record verbatim, so
+    // the total it freezes is explained by the record itself. An empty
+    // accounting is passed as such — the mutation writes the absent form.
+    exclusions: gate.exclusions,
     ...(input.note === undefined ? {} : { note: input.note }),
   });
 }

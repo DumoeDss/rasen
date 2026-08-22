@@ -2124,6 +2124,17 @@
                       "description": "Output as JSON"
                     }
                   }
+                },
+                "ready": {
+                  "description": "Report the deterministic ready set for the Issue's latest published revision: every runnable Change node plus every non-member with its exit reason, the run-state visibility label, and the status problems. Read-only and latest-revision only; the scheduler schedules the latest",
+                  "options": {
+                    "store": {
+                      "description": "Store holding the Issue"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
                 }
               }
             },
@@ -2155,6 +2166,20 @@
               "options": {
                 "store": {
                   "description": "Store to list projects from"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "attention": {
+              "description": "Scan every Issue of the store for what needs a human right now: failures, nodes blocked behind trouble, parked stages, review-phase acceptances, and status problems — fail-first, with every scanned Issue visible in the summary. Read-only",
+              "options": {
+                "store": {
+                  "description": "Store to scan"
+                },
+                "issue": {
+                  "description": "Narrow the scan to one Issue id; an unknown id is refused"
                 },
                 "json": {
                   "description": "Output as JSON"

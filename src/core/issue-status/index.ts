@@ -9,7 +9,16 @@
  * and the store aggregate query.
  */
 export { deriveRevisionDelta, issueBlockerState, projectIssueStatus } from './projection.js';
+export { deriveIssueReadySet } from './ready-set.js';
+export {
+  deriveIssueAttention,
+  ISSUE_ATTENTION_KIND_ORDER,
+  issueAttentionKindRank,
+} from './attention.js';
 export type {
+  IssueAttentionBlocker,
+  IssueAttentionItem,
+  IssueAttentionKind,
   IssueHealth,
   IssueNodeAttribution,
   IssueNodeBlocker,
@@ -19,6 +28,11 @@ export type {
   IssuePhase,
   IssueProgress,
   IssueProjectLane,
+  IssueReadyBlocker,
+  IssueReadyExit,
+  IssueReadyExitEntry,
+  IssueReadyMember,
+  IssueReadySet,
   IssueRevisionDelta,
   IssueRevisionEdgeChange,
   IssueRevisionLifecycleChange,

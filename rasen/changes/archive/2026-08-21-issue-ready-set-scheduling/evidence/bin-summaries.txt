@@ -1,0 +1,17 @@
+# Store-family binned run — captured summaries (implementer, 2026-08-22)
+
+## bin-00 (21 files, exit 0)
+ Test Files  21 passed (21)
+      Tests  440 passed (440)
+
+## bin-01 (21 files, exit 0)
+ Test Files  21 passed (21)
+      Tests  327 passed | 1 skipped (328)
+
+## bin-02 (21 files, exit 0)
+ Test Files  21 passed (21)
+      Tests  446 passed | 1 skipped (447)
+
+## bin-03 (20 files, exit 0)
+ Test Files  20 passed (20)
+      Tests  293 passed (293)

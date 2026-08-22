@@ -298,11 +298,26 @@ export interface AcceptanceGateSnapshot {
 }
 
 /**
+ * One node the gate's required total excluded at acceptance: a `cancelled` or
+ * `superseded` node with the reason its revision records. Structurally the
+ * evaluation's own exclusion shape, restated at the Store level for the same
+ * reason `AcceptanceGateSnapshot` is: `store/issues` takes no upward import.
+ */
+export interface AcceptanceRecordExclusion {
+  readonly nodeId: string;
+  readonly lifecycle: 'cancelled' | 'superseded';
+  readonly reason: string;
+}
+
+/**
  * `rasen/issues/<issueId>/accepted.yaml` — ONE record per Issue, never
  * rewritten. It freezes WHAT was accepted (the conditions revision id and that
  * revision's digest, so a later revision cannot change what the record says
- * was accepted), the gate snapshot at acceptance, an optional note, and its
- * own content digest.
+ * was accepted), the gate snapshot at acceptance with the lifecycle
+ * accounting that explains its total (every exclusion that stood, each with
+ * its node, lifecycle, and recorded reason), an optional note, and its own
+ * content digest — so the record explains its own arithmetic rather than
+ * deferring it to a later read's evaluation.
  */
 export interface IssueAcceptedRecordV1 {
   readonly version: 1;
@@ -311,6 +326,14 @@ export interface IssueAcceptedRecordV1 {
   readonly conditionsRevisionId: ExecutionPlanRevisionId;
   readonly conditionsSha256: Sha256Digest;
   readonly gate: AcceptanceGateSnapshot;
+  /**
+   * The gate's exclusions at acceptance, verbatim from the evaluation. Omitted
+   * from the stored canonical form and the digest body when no exclusion stood
+   * — the plan-node suggestion-field discipline — so an acceptance over a plan
+   * with no exclusions writes the bytes the field's absence defined, and a
+   * record accepted before the field existed reads back unchanged.
+   */
+  readonly exclusions?: readonly AcceptanceRecordExclusion[];
   readonly note: string | null;
   readonly contentSha256: Sha256Digest;
 }
@@ -411,6 +434,12 @@ export interface AcceptIssueInput extends StoreIssueSelector {
   readonly conditionsRevisionId: string;
   readonly conditionsSha256: Sha256Digest;
   readonly gate: AcceptanceGateSnapshot;
+  /**
+   * The gate evaluation's exclusions, verbatim. An empty array writes the
+   * absent form — the record's canonical shape omits the field when no
+   * exclusion stood.
+   */
+  readonly exclusions?: readonly AcceptanceRecordExclusion[];
   readonly note?: string;
 }
 

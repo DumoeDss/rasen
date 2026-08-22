@@ -30,7 +30,7 @@ import {
 import { StoreQueryModuleImpl } from '../../../src/core/store/query/index.js';
 import { writeRunState } from '../../../src/core/pipeline-registry/run-state.js';
 import { ephemeraDir } from '../../../src/core/file-placement.js';
-import { projectIssueStatus } from '../../../src/core/issue-status/index.js';
+import { projectIssueStatus, deriveIssueReadySet, deriveIssueAttention } from '../../../src/core/issue-status/index.js';
 import { readIssueAcceptanceFacts } from '../../../src/core/issue-acceptance/index.js';
 
 const REPO_ROOT = path.resolve(
@@ -85,6 +85,19 @@ describe('The issue-status Module has no write surface', () => {
 
   it('has sources to check', () => {
     expect(files.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('covers the ready-set derivation module (issue-ready-set-scheduling)', () => {
+    // The derivation is a projection post-pass, so it inherits every scan
+    // above only if it is actually IN the walked set — this row pins its
+    // presence so a rename cannot quietly drop it out of the guard.
+    expect(files.map(file => path.basename(file))).toContain('ready-set.ts');
+  });
+
+  it('covers the attention derivation module (issue-needs-attention)', () => {
+    // Same reasoning as the ready-set row: the attention post-pass inherits
+    // the write-surface scans only by being in the walked set.
+    expect(files.map(file => path.basename(file))).toContain('attention.ts');
   });
 
   it('calls no filesystem write function', () => {
@@ -266,6 +279,20 @@ describe('A status projection mutates nothing on disk', () => {
     expect(status.nodes[0].observation).toBe('in-flight');
     expect(status.acceptance?.conditions.revision?.revisionId).toBe('0001');
     expect(status.acceptance?.gate.eligible).toBe(false);
+
+    // The ready-set derivation ran over the SAME read — an answer was
+    // derived, so the byte checks below cover the scheduling surface too
+    // (the CLI path's write-nothing receipt lives in the ready CLI suite).
+    const ready = deriveIssueReadySet(status);
+    expect(ready).not.toBeNull();
+    expect(ready?.members).toEqual([]);
+    expect(ready?.exits.map(exit => exit.nodeId)).toEqual(['g-001']);
+
+    // The attention derivation ran over the same read too (the attention
+    // CLI suite carries the CLI path's own write-nothing receipt): the
+    // in-flight node contributes nothing — honestly unlisted, not unread.
+    const attention = deriveIssueAttention(ISSUE, status);
+    expect(attention).toEqual([]);
 
     const twinDetail = await new StoreQueryModuleImpl().showIssue({
       ...scope,

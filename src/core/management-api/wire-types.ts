@@ -1504,6 +1504,12 @@ export interface WirePlanNodeResolution {
   localLocator: WireInertLocalLocator | null;
   outcome: WireFinalizationOutcome | null;
   archived: boolean;
+  /** Which archive-record basis the outcome read under (machine-facing, additive). */
+  outcomeBasis?: 'v2' | 'legacy' | 'invalid';
+  /** The `invalid` basis's parse/validation failure. */
+  outcomeBasisReason?: string | null;
+  /** The archive record's Store-relative blob path, when one was consulted. */
+  outcomeBasisPath?: string | null;
 }
 export type WirePlanNodeReadiness =
   | 'not-started'
@@ -1561,6 +1567,12 @@ export interface WireAggregateArchiveEntry {
   /** Null for a relocated legacy record. Never inferred, defaulted, or upgraded. */
   outcome: WireFinalizationOutcome | null;
   legacyRecord: boolean;
+  /** Which archive-record basis the entry read under (machine-facing, additive). */
+  outcomeBasis: 'v2' | 'legacy' | 'invalid';
+  /** The `invalid` basis's parse/validation failure. Null on every other basis. */
+  outcomeBasisReason: string | null;
+  /** The archive record's Store-relative blob path. */
+  outcomeBasisPath: string;
   foundAtRef: string;
 }
 export interface WireAggregateChangeEntry {
