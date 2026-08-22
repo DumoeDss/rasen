@@ -1,0 +1,1 @@
+Change 'issue-revision-history-preservation' is valid

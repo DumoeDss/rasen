@@ -220,6 +220,11 @@ function renderAcceptWrite(result: AcceptIssueResult): void {
   console.log(
     `  gate: ${result.record.gate.completed}/${result.record.gate.total} ${result.record.gate.health}, 0 problems standing`
   );
+  // The record's own arithmetic: every exclusion it froze, beside the total
+  // it explains — the same facts the JSON form's `record` carries.
+  for (const exclusion of result.record.exclusions ?? []) {
+    console.log(`  excluded ${exclusion.nodeId} (${exclusion.lifecycle}): ${exclusion.reason}`);
+  }
   if (result.record.note !== null) console.log(`  note: ${result.record.note}`);
   renderCommitSuggestions(result.suggestedCommits);
 }
@@ -633,6 +638,14 @@ function renderAcceptanceSection(status: IssueStatus): void {
     console.log(
       `    record: accepted ${record.acceptedAt} under revision ${record.conditionsRevisionId} (gate ${record.gate.completed}/${record.gate.total} ${record.gate.health})`
     );
+    // The exclusions the record froze, beside the gate snapshot whose total
+    // they explain — the same rows the gate line renders for a live
+    // evaluation, carried here from the durable record itself.
+    for (const exclusion of record.exclusions ?? []) {
+      console.log(
+        `      excluded ${exclusion.nodeId} (${exclusion.lifecycle}): ${exclusion.reason}`
+      );
+    }
     if (record.note !== null) console.log(`      note: ${record.note}`);
   } else {
     console.log('    record: (not accepted)');

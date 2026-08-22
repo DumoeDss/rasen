@@ -10,7 +10,10 @@
  *   - the acceptance RECORD is one-per-Issue close evidence. It freezes WHAT
  *     was accepted (the conditions revision id and that revision's digest), the
  *     gate snapshot it was accepted under (counts, health, zero problems —
- *     portable facts only, D7), an optional note, and its own content digest.
+ *     portable facts only, D7), the gate's lifecycle accounting (every
+ *     cancelled/superseded exclusion that stood, each with its node, lifecycle,
+ *     and recorded reason — omitted from the canonical form when none stood),
+ *     an optional note, and its own content digest.
  *
  * Every text field passes `assertPortableIssueText`: both artifacts become
  * committed Store content, so a machine path or an embedded credential is
@@ -41,6 +44,7 @@ import type {
   AcceptanceConditionInput,
   AcceptanceConditionsRevisionV1,
   AcceptanceGateSnapshot,
+  AcceptanceRecordExclusion,
   IssueAcceptedRecordV1,
 } from './types.js';
 
@@ -114,6 +118,14 @@ const GateSnapshotSchema = z
   })
   .strict();
 
+const RecordExclusionSchema = z
+  .object({
+    nodeId: z.string(),
+    lifecycle: z.enum(['cancelled', 'superseded']),
+    reason: z.string().min(1).max(4000),
+  })
+  .strict();
+
 const AcceptedRecordSchema = z
   .object({
     version: z.literal(1),
@@ -124,10 +136,30 @@ const AcceptedRecordSchema = z
     conditionsRevisionId: z.string(),
     conditionsSha256: z.string(),
     gate: GateSnapshotSchema,
+    // Optional since issue-revision-history-preservation: absent when no
+    // exclusion stood, admitted so pre-field records parse unchanged. An
+    // unrecognized field is still refused (the schema stays strict).
+    exclusions: z.array(RecordExclusionSchema).optional(),
     note: z.string().max(4000).nullable(),
     contentSha256: z.string(),
   })
   .strict();
+
+/** One exclusion, validated field by field, portable text included. */
+function validateRecordExclusion(
+  raw: z.output<typeof RecordExclusionSchema>,
+  index: number
+): AcceptanceRecordExclusion {
+  const nodeId = recordRethrow(`exclusions[${index}].nodeId`, () =>
+    parseChangeId(raw.nodeId, 'nodeId')
+  );
+  assertPortableIssueText(
+    raw.reason,
+    `exclusions[${index}].reason`,
+    'invalid_acceptance_record'
+  );
+  return Object.freeze({ nodeId, lifecycle: raw.lifecycle, reason: raw.reason });
+}
 
 /** One condition, validated field by field, portable text included. */
 function validateCondition(raw: z.output<typeof ConditionSchema>, index: number): AcceptanceCondition {
@@ -169,10 +201,17 @@ export function acceptanceConditionsDigest(
     .digest('hex') as Sha256Digest;
 }
 
-/** The canonical body an acceptance record's digest covers: every field except the digest. */
+/**
+ * The canonical body an acceptance record's digest covers: every field except
+ * the digest. The exclusions field rides the plan-node suggestion-field
+ * discipline: ABSENT from the body when no exclusion stood (or the array is
+ * empty), so an acceptance over a plan with no exclusions digests — and
+ * serializes — the exact bytes the field's absence defined before it existed.
+ */
 export function acceptedRecordDigestBody(
   record: Omit<IssueAcceptedRecordV1, 'contentSha256'>
 ): unknown {
+  const exclusions = record.exclusions ?? [];
   return {
     version: record.version,
     issueId: record.issueId,
@@ -185,6 +224,15 @@ export function acceptedRecordDigestBody(
       health: record.gate.health,
       problemsStanding: record.gate.problemsStanding,
     },
+    ...(exclusions.length === 0
+      ? {}
+      : {
+          exclusions: exclusions.map(exclusion => ({
+            nodeId: exclusion.nodeId,
+            lifecycle: exclusion.lifecycle,
+            reason: exclusion.reason,
+          })),
+        }),
     note: record.note,
   };
 }
@@ -326,6 +374,30 @@ export function validateAcceptedRecord(
   if (result.data.note !== null) {
     assertPortableIssueText(result.data.note, 'note', 'invalid_acceptance_record');
   }
+  // The exclusions become durable Store content like every other text the
+  // record carries: validated per exclusion (node id, closed lifecycle,
+  // portable reason), duplicate nodes refused — one node, one exclusion row.
+  // An empty array reads back as the absence it is: the canonical form omits
+  // the field when no exclusion stood, so the parsed record carries one
+  // shape for "no exclusions" however the bytes spelled it.
+  const exclusions =
+    result.data.exclusions === undefined
+      ? undefined
+      : result.data.exclusions.map((exclusion, index) => validateRecordExclusion(exclusion, index));
+  if (exclusions !== undefined) {
+    const seen = new Set<string>();
+    for (const exclusion of exclusions) {
+      if (seen.has(exclusion.nodeId)) {
+        throw recordError(
+          'exclusions',
+          `exclusion node '${exclusion.nodeId}' is declared more than once`
+        );
+      }
+      seen.add(exclusion.nodeId);
+    }
+  }
+  const canonicalExclusions =
+    exclusions === undefined || exclusions.length === 0 ? undefined : Object.freeze(exclusions);
 
   const record: IssueAcceptedRecordV1 = Object.freeze({
     version: 1 as const,
@@ -339,6 +411,7 @@ export function validateAcceptedRecord(
       health: result.data.gate.health as IssueAcceptedRecordV1['gate']['health'],
       problemsStanding: result.data.gate.problemsStanding,
     }),
+    ...(canonicalExclusions === undefined ? {} : { exclusions: canonicalExclusions }),
     note: result.data.note,
     contentSha256,
   });
@@ -396,6 +469,17 @@ export function serializeAcceptedRecord(value: IssueAcceptedRecordV1): string {
       health: record.gate.health,
       problemsStanding: record.gate.problemsStanding,
     },
+    // Absent when no exclusion stood — the canonical form this serializer
+    // mints and the digest body cover identically.
+    ...(record.exclusions === undefined
+      ? {}
+      : {
+          exclusions: record.exclusions.map(exclusion => ({
+            nodeId: exclusion.nodeId,
+            lifecycle: exclusion.lifecycle,
+            reason: exclusion.reason,
+          })),
+        }),
     note: record.note,
     contentSha256: record.contentSha256,
   });
