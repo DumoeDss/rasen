@@ -1,0 +1,51 @@
+Issue issue-cross-project-replanning
+  state: resolved
+  title: Issue layer Phase 5: cross-project replanning (ready set, history preservation, needs-attention)
+  revisions: 0001, 0002
+  latest plan: revision 0002
+  plan digest: 37e0a09b0e16547b27ea7c285e5c40aabaec70ac0783c63230622a257dd93d33
+  status:
+    phase: done
+    health: healthy
+    progress: 3/3
+    run-state: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer
+    nodes:
+      project rasen (e2ee72ed-04a1-4395-86aa-7e77d2b83ec7): 3/3
+      issue-needs-attention change e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 issue-needs-attention — run-terminal (suggest: small-feature) (rationale: the finale, bound to its active seeded instance and honestly in flight in the repo worktree executing it (this very change's apply stage); it becomes the Issue's last un-terminal node until it ships)
+        pipeline: small-feature (located by execution-root)
+        evidence: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-issue-store\rasen\projects\e2ee72ed-04a1-4395-86aa-7e77d2b83ec7\changes\issue-needs-attention\evidence
+      issue-ready-set-scheduling change e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 2026-08-21-issue-ready-set-scheduling — finalized (suggest: small-feature) (rationale: promoted from intent to Change against its seeded archived Store instance; the work shipped as repo ship 3f065496 and the node reads terminal on the committed archive evidence, so no dependent waits) (finalized on a legacy archive record (no v2 outcome was ever recorded))
+      issue-revision-history-preservation change e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 2026-08-22-issue-revision-history-preservation — finalized (suggest: small-feature) (rationale: promoted from intent to Change against its seeded archived Store instance; the work shipped as repo ship c0ace35e and the node reads terminal on the committed archive evidence) (finalized on a legacy archive record (no v2 outcome was ever recorded))
+
+  revision delta: 0002 over 0001
+
+  acceptance:
+    conditions: revision 0001 (4 condition(s))
+      attention-aggregation-entry-ships: The needs-attention aggregation entry ships — the attention derivation with its closed five-kind vocabulary, the honest absence discipline, and the store-level read verb, with the unmasked-failure guarantee pinned by an integration receipt (verification: repo ship of issue-needs-attention with test/commands/store-attention-cli.test.ts and test/core/issue-status/issue-attention.test.ts green, plus the receipts under this change's evidence/)
+      children-terminal-and-finale-honest: The Issue's plan carries the two shipped children reading terminal on their seeded Store evidence and the finale reading honestly in flight until it ships, with every stage receipted through the new aggregation verb (verification: evidence receipts issue-4-receipt-1..4 (authoring scan, confirm, in-flight scan, show) and the store-side commits seeding the children and publishing revisions 0001/0002)
+      exit-criteria-evidenced-from-one-place: Roadmap Phase 5 section 8's three receipts — replanning-preserves-history, failure-not-masked, and the aggregation entry — read from this change's evidence directory as one set (verification: evidence/p5-exit-criteria.md citing g-002's shipped pins (not recreated), the unmasking integration test, and the dogfood receipts)
+      suites-green: The focused suites covering the change are green — attention units, the attention CLI, the issue-status family, completions, and the locale catalog — with the full failure list adjudicated, not assumed (verification: evidence/focused-summaries.txt and the binned full-suite run per the store-family recipe)
+    gate: not eligible — the Issue already carries an acceptance record; an acceptance is never rewritten.
+    record: accepted 2026-08-22T12:08:55.201Z under revision 0001 (gate 3/3 waiting-human)
+      note: Phase 5 cross-project replanning verified: shared ready-set, history preservation, attention aggregation live (PR #174, Issue #4 loop)
+
+  delivery evidence:
+    issue-needs-attention issue-needs-attention@rasen — run-terminal — not-archived
+      delivery evidence will exist when the Change archives
+    issue-ready-set-scheduling 2026-08-21-issue-ready-set-scheduling@rasen — finalized — record (legacy)
+      archived: 2026-08-21T23:21:10.521Z
+      code commit: 3f06549614ad5e738cd9a3ed33c5f17be552df24
+      planning branch: feat/issue-phase5
+      outcome: (none recorded on this legacy record basis)
+      evidence: 8 file(s)
+      ship-log: evidence/ship-log.md (sha256 e56f447fd711)
+      missing: verification-report
+    issue-revision-history-preservation 2026-08-22-issue-revision-history-preservation@rasen — finalized — record (legacy)
+      archived: 2026-08-22T07:58:14.055Z
+      code commit: c0ace35e6d500706e36c0483c9f79ef7908d5434
+      planning branch: feat/issue-phase5
+      outcome: (none recorded on this legacy record basis)
+      evidence: 8 file(s)
+      ship-log: evidence/ship-log.md (sha256 af864e89f1ad)
+      missing: verification-report
+    counts: 2 record, 0 no-record, 1 not-archived, 0 unreadable, 0 unattributed

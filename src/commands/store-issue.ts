@@ -10,6 +10,7 @@
  * suggestion and stages, commits, fetches, and pushes nothing.
  */
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 import { Command } from 'commander';
 import { parse as parseYaml } from 'yaml';
@@ -47,9 +48,12 @@ import {
 import { listPipelines } from '../core/pipeline-registry/resolver.js';
 import { resolveSessionLaunchContext } from '../core/management-api/session-launch-context.js';
 import {
+  deriveIssueDeliveryEvidence,
   deriveIssueReadySet,
   issueBlockerState,
   projectIssueStatus,
+  type IssueDeliveryEvidence,
+  type IssueNodeDelivery,
   type IssueReadyExit,
   type IssueReadyMember,
   type IssueReadySet,
@@ -656,6 +660,123 @@ function renderAcceptanceSection(status: IssueStatus): void {
   }
 }
 
+/**
+ * The ship-log inventory fact (design D3): the evidence entry whose path names
+ * the ship-log, exactly as the record froze it — path and digest, presence or
+ * absence named. The document's prose is never parsed into facts; no
+ * structured pull-request fact exists in either record shape, so none is
+ * presented (the inventory entry is where delivery prose lives).
+ */
+function shipLogFact(
+  evidence: readonly { path: string; sha256: string }[] | null
+): { path: string; sha256: string } | null {
+  if (evidence === null) return null;
+  return evidence.find(entry => path.basename(entry.path) === 'ship-log.md') ?? null;
+}
+
+/** The delivery facts under one `record` row — each absence named, never filled. */
+function renderDeliveryFacts(delivery: Extract<IssueNodeDelivery, { state: 'record' }>): string[] {
+  const lines: string[] = [];
+  lines.push(`      archived: ${delivery.archivedAt ?? '(none recorded)'}`);
+  lines.push(`      code commit: ${delivery.codeCommit ?? '(none recorded on this record)'}`);
+  lines.push(`      planning branch: ${delivery.planningBranch ?? '(none recorded on this record)'}`);
+  // The legacy basis predates v2 outcome records: the absence is the record's
+  // own statement, never filled with an invented outcome.
+  lines.push(
+    delivery.outcome === null
+      ? `      outcome: (none recorded on this ${delivery.basis} record basis)`
+      : `      outcome: ${delivery.outcome} (${delivery.basis})`
+  );
+  const shipLog = shipLogFact(delivery.evidence);
+  if (delivery.evidence === null) {
+    lines.push('      evidence: (no readable inventory on this record)');
+    lines.push('      ship-log: none in inventory');
+  } else {
+    lines.push(`      evidence: ${delivery.evidence.length} file(s)`);
+    lines.push(
+      shipLog === null
+        ? '      ship-log: none in inventory'
+        : `      ship-log: ${shipLog.path} (sha256 ${shipLog.sha256.slice(0, 12)})`
+    );
+  }
+  lines.push(
+    delivery.missing === null
+      ? '      missing: (no readable list on this record)'
+      : `      missing: ${delivery.missing.length === 0 ? '(none)' : delivery.missing.join(', ')}`
+  );
+  return lines;
+}
+
+/**
+ * The named-absence rows (design D2): each state renders as the named state it
+ * is — a not-yet-archived Change is expected progress, an absent record names
+ * the record's own absence, damaged bytes defer to the standing problem, and
+ * an unattributed reference defers to the reference problem already reported.
+ */
+function renderDeliveryAbsence(delivery: Exclude<IssueNodeDelivery, { state: 'record' }>): string[] {
+  switch (delivery.state) {
+    case 'no-record':
+      return [
+        '      record: none — the archive entry carries no archive record to read',
+        ...(delivery.blobPath === null
+          ? []
+          : [
+              `      expected at: ${delivery.blobPath}` +
+                `${delivery.foundAtRef === null ? '' : ` (on ${delivery.foundAtRef})`}`,
+            ]),
+      ];
+    case 'not-archived':
+      return ['      delivery evidence will exist when the Change archives'];
+    case 'unreadable':
+      return [
+        '      no facts from damaged bytes — the standing invalid-archive-record problem names the file and the reason',
+      ];
+    case 'unattributed':
+      return [
+        '      no Change instance to read delivery facts from — the reference problem already reported is the answer',
+      ];
+  }
+}
+
+/**
+ * The delivery-evidence section of `show` (design D5): one row per change node
+ * — identity, observation, named delivery state — with the record facts under
+ * each `record` row, closing with the counts line. The same facts the JSON
+ * form carries under `delivery` and `status.nodes[].delivery`; `list` carries
+ * none of them. Rendered only when a rollup exists: an Issue with no readable
+ * revision reports no section, exactly as it reports no progress pair.
+ */
+function renderDeliverySection(
+  delivery: IssueDeliveryEvidence,
+  projectAliases: Readonly<Record<string, string>> | undefined
+): void {
+  console.log('');
+  console.log('  delivery evidence:');
+  for (const entry of delivery.entries) {
+    const displayName = projectAliases?.[entry.projectId] ?? entry.projectId;
+    const who = entry.alias === null ? '(no alias)' : entry.alias;
+    const state =
+      entry.delivery === null
+        ? '(none)'
+        : entry.delivery.state === 'record'
+          ? `record (${entry.delivery.basis})`
+          : entry.delivery.state;
+    console.log(`    ${entry.nodeId} ${who}@${displayName} — ${entry.observation} — ${state}`);
+    if (entry.delivery === null) continue;
+    const lines =
+      entry.delivery.state === 'record'
+        ? renderDeliveryFacts(entry.delivery)
+        : renderDeliveryAbsence(entry.delivery);
+    for (const line of lines) console.log(line);
+  }
+  const { counts } = delivery;
+  console.log(
+    `    counts: ${counts.record} record, ${counts['no-record']} no-record, ` +
+      `${counts['not-archived']} not-archived, ${counts.unreadable} unreadable, ` +
+      `${counts.unattributed} unattributed`
+  );
+}
+
 function renderIssueStatus(status: IssueStatus): void {
   console.log('  status:');
   console.log(`    phase: ${status.phase}`);
@@ -760,7 +881,12 @@ function renderIssueList(page: IssueSummaryPage, statuses: readonly IssueStatus[
   renderProblems(page.problems);
 }
 
-function renderIssueDetail(detail: IssueDetail, status?: IssueStatus): void {
+function renderIssueDetail(
+  detail: IssueDetail,
+  status?: IssueStatus,
+  delivery?: IssueDeliveryEvidence | null,
+  projectAliases?: Readonly<Record<string, string>>
+): void {
   const summary = detail.issue;
   console.log(`Issue ${summary.issueId}`);
   if (summary.record) {
@@ -804,6 +930,12 @@ function renderIssueDetail(detail: IssueDetail, status?: IssueStatus): void {
     // The acceptance section sits beside the status block: conditions, the
     // gate, and the record — visible before the gate is crossed (D8).
     renderAcceptanceSection(status);
+    // The delivery evidence sits beside both (design D5): what each Change
+    // actually delivered, from the same read. No rollup (no readable
+    // revision) renders no section — the same null the progress pair reports.
+    if (delivery !== undefined && delivery !== null) {
+      renderDeliverySection(delivery, projectAliases);
+    }
   }
   if (detail.unsearchedRefs.length > 0) {
     console.log('');
@@ -1081,10 +1213,11 @@ export function registerStoreIssueCommand(store: Command): void {
           startPath: process.cwd(),
           issueId,
         });
+        const widening = await resolveStoreWideningContext(options.store);
         const status = await projectIssueStatus(
           statusInputFor(detail, {
             ...(await resolveProjectionContext()),
-            ...(await resolveStoreWideningContext(options.store)),
+            ...widening,
             acceptance: await readIssueAcceptanceFacts({
               ...(options.store === undefined ? {} : { store: options.store }),
               startPath: process.cwd(),
@@ -1103,18 +1236,22 @@ export function registerStoreIssueCommand(store: Command): void {
             ),
           })
         );
+        // The delivery rollup derives from the SAME status the section beside
+        // it renders — one projection read, one rollup, no second truth.
+        const delivery = deriveIssueDeliveryEvidence(detail.plan?.revisionId ?? null, status);
         if (options.json) {
           printJson({
             issue: detail.issue,
             plan: detail.plan,
             status,
+            delivery,
             complete: detail.complete,
             unsearchedRefs: detail.unsearchedRefs,
             problems: detail.problems,
           });
           return;
         }
-        renderIssueDetail(detail, status);
+        renderIssueDetail(detail, status, delivery, widening.projectAliases);
       } catch (error) {
         emitFailure(options.json, { issue: null }, error, 'store_issue_show_failed');
       }

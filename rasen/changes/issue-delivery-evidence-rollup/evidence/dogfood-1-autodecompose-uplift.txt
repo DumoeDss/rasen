@@ -1,0 +1,46 @@
+Issue issue-autodecompose-uplift
+  state: resolved
+  title: Issue layer Phase 4: auto-decompose uplift (reviewable decomposition dispatch)
+  revisions: 0001, 0002, 0003, 0004
+  latest plan: revision 0004
+  plan digest: 693b77aec5ab9538f896d12c6308571ef90e5140142a382acdd4dfbd97d47ac0
+  status:
+    phase: done
+    health: healthy
+    progress: 2/2
+    run-state: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer
+    nodes:
+      project rasen (e2ee72ed-04a1-4395-86aa-7e77d2b83ec7): 2/2
+      issue-autodecompose-graph change e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 2026-08-21-issue-autodecompose-graph — finalized (suggest: small-feature) (rationale: promoted from intent to Change now that the child's committed Store instance exists (seeded archived evidence, repo archive 15b60a63); its work shipped and archived, so no dependent waits on it) (finalized on a legacy archive record (no v2 outcome was ever recorded))
+      issue-autodecompose-review-flow change e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 2026-08-21-issue-autodecompose-review-flow — finalized (suggest: small-feature) (rationale: promoted from intent to Change at portfolio close — the child shipped (80194e98) and archived (d78f3be1) via merged PR #173; seeded Store evidence carries its identity) (finalized on a legacy archive record (no v2 outcome was ever recorded))
+
+  revision delta: 0004 over 0003
+
+  acceptance:
+    conditions: revision 0001 (4 condition(s))
+      boundary-crossed-truthfully: The auto-decompose fail-close resolved as a truthful verdict, not faked support: registry diff exactly the sanctioned one-file guard (verified byte-identical by reviewer), boundary issue-dispatch-0.3.0 unchanged.
+      confirm-flow-real: The confirm verb composed real launch contracts from both roots (byte-reproduced by the reviewer), wrote nothing, and refuses honestly (distinct unreadable-revision refusal live on 9999).
+      reviewable-graph-proven: Decomposition output lands as a reviewable target-project-bound execution plan revision with suggestion fields, proven live on Issue #3 (0001-0004 lineage, ordinal add-never-rewrite, one-edge delta).
+      three-children-delivered: All three Phase-4 children shipped and archived on dev/0.2.0 via merged PR #173 (CI green after two budget fixes): containment fix, decompose graph, review flow.
+    gate: not eligible — the Issue already carries an acceptance record; an acceptance is never rewritten.
+    record: accepted 2026-08-21T20:51:33.888Z under revision 0001 (gate 2/2 waiting-human)
+      note: Phase 4 auto-decompose uplift verified: truthful boundary crossing, reviewable graphs, real confirm flow (PR #173)
+
+  delivery evidence:
+    issue-autodecompose-graph 2026-08-21-issue-autodecompose-graph@rasen — finalized — record (legacy)
+      archived: 2026-08-21T12:13:49.958Z
+      code commit: 6b00f24da260b510d43ff0ceeef03aa7c895bc35
+      planning branch: feat/issue-phase4
+      outcome: (none recorded on this legacy record basis)
+      evidence: 14 file(s)
+      ship-log: evidence/ship-log.md (sha256 1ce4520ac956)
+      missing: verification-report
+    issue-autodecompose-review-flow 2026-08-21-issue-autodecompose-review-flow@rasen — finalized — record (legacy)
+      archived: 2026-08-21T18:32:13.922Z
+      code commit: 80194e98a6408a0177aba1df24f3c86bfb37a340
+      planning branch: feat/issue-phase4
+      outcome: (none recorded on this legacy record basis)
+      evidence: 14 file(s)
+      ship-log: evidence/ship-log.md (sha256 0bfc2d10e078)
+      missing: verification-report
+    counts: 2 record, 0 no-record, 0 not-archived, 0 unreadable, 0 unattributed

@@ -57,6 +57,7 @@ import type {
 import type {
   IssueHealth,
   IssueNodeAttribution,
+  IssueNodeDelivery,
   IssueNodeObservation,
   IssueNodeSession,
   IssueNodeStatus,
@@ -98,6 +99,7 @@ type ObservedNode = Omit<
   | 'suggestedPipeline'
   | 'rationale'
   | 'uncertainty'
+  | 'delivery'
   | 'blockedBy'
 >;
 
@@ -791,6 +793,33 @@ export function deriveRevisionDelta(
 }
 
 /**
+ * One change node's delivery evidence, derived from the RESOLUTION alone (the
+ * attribution pattern): the five named states of design D2, never an
+ * interpretation of the observation branches — the delivery facts ride
+ * whichever branch observed the node. `null` for intent nodes by construction.
+ * No axis reads the result (pinned by the delivery suite's no-drift check).
+ */
+function deliveryFor(resolved: ResolvedPlanNode): IssueNodeDelivery | null {
+  if (resolved.node.kind !== 'change') return null;
+  const resolution = resolved.resolution;
+  if (resolution.status !== 'resolved') return { state: 'unattributed' };
+  if (!resolution.archived) return { state: 'not-archived' };
+  if (resolution.delivery != null) {
+    return { state: 'record', ...resolution.delivery };
+  }
+  // No record facts were derived. The invalid basis is damaged bytes — the
+  // standing `invalid-archive-record` problem stays authoritative; every other
+  // basis (legacy, or a degraded row that consulted no record at all) is the
+  // pre-record entry whose record itself is absent.
+  if (resolution.outcomeBasis === 'invalid') return { state: 'unreadable' };
+  return {
+    state: 'no-record',
+    foundAtRef: resolution.claimants[0]?.foundAtRef ?? null,
+    blobPath: resolution.outcomeBasisPath ?? null,
+  };
+}
+
+/**
  * The observed node with the plan's own spelling resolved onto it: an absent
  * lifecycle field reads as `required`, on BOTH node kinds — an intent node
  * carries `required`/`optional` exactly as a Change node does, so the review
@@ -799,12 +828,15 @@ export function deriveRevisionDelta(
  * revision node verbatim — the one projection-seam widening, so every
  * observation branch reports the project and none can forget or default it.
  * One wrapper for every observation branch. The dependency facts are still
- * absent; `withBlockerFacts` below is their sole writer.
+ * absent; `withBlockerFacts` below is their sole writer. The delivery evidence
+ * rides the same widening, derived from the resolution beside the plan's own
+ * spelling so no branch can spell it differently either.
  */
 function withLifecycle(
-  planNode: ExecutionPlanNode,
+  resolved: ResolvedPlanNode,
   observed: ObservedNode
 ): NodeSansBlockers {
+  const planNode = resolved.node;
   // The decomposition-guidance facts ride the same one-widening wrapper as the
   // project and lifecycle: copied verbatim from the revision node on every
   // branch, read by no axis (they are facts to read, like the target project).
@@ -813,6 +845,7 @@ function withLifecycle(
     rationale: planNode.rationale ?? null,
     uncertainty: planNode.uncertainty ?? null,
   };
+  const delivery = deliveryFor(resolved);
   if (planNode.kind !== 'change') {
     return {
       ...observed,
@@ -821,6 +854,7 @@ function withLifecycle(
       lifecycle: planNode.lifecycle ?? 'required',
       reason: null,
       ...suggestion,
+      delivery,
     };
   }
   return {
@@ -830,6 +864,7 @@ function withLifecycle(
     lifecycle: planNode.lifecycle ?? 'required',
     reason: planNode.reason ?? null,
     ...suggestion,
+    delivery,
   };
 }
 
@@ -1006,7 +1041,7 @@ export async function projectIssueStatus(input: ProjectIssueStatusInput): Promis
 
   if (plan !== null) {
     for (const resolved of plan.readiness.nodes) {
-      sansBlockers.push(withLifecycle(resolved.node, await observeNode(resolved, input, problems)));
+      sansBlockers.push(withLifecycle(resolved, await observeNode(resolved, input, problems)));
     }
   }
   // The dependency facts complete the node statuses before any axis reads

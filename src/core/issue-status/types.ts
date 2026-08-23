@@ -20,6 +20,10 @@
  * capability records a real blockage or staleness signal.
  */
 import type { IssueDetail, ResolvedExecutionPlan } from '../store/query/index.js';
+import type {
+  ArchiveDeliveryEvidenceEntry,
+  FinalizationOutcomeName,
+} from '../store/query/index.js';
 import type { ExecutionPlanNodeLifecycle } from '../store/issues/types.js';
 import type { WorkspaceIndexEntry } from '../store/workspace/registry.js';
 import type {
@@ -160,6 +164,104 @@ export interface IssueNodeBlocker {
   readonly observation: IssueNodeObservation;
 }
 
+// -----------------------------------------------------------------------------
+// The per-node delivery evidence (issue-delivery-evidence-rollup D2)
+// -----------------------------------------------------------------------------
+
+/**
+ * One change node's delivery evidence: a closed vocabulary of five named
+ * states, copied from the node's resolution in one widening wrapper and read
+ * by NO axis (a display fact, exactly like the attribution facts). `null` for
+ * intent nodes — nothing was delivered by construction.
+ *
+ * The four absences are four different truths a reviewer acts on differently,
+ * which is why they are named states and not one empty shape: `no-record` (an
+ * archived entry whose record never existed — wait for it or investigate the
+ * relocation), `not-archived` (a Change instance whose evidence will exist
+ * when it archives), `unreadable` (damaged bytes — the standing
+ * `invalid-archive-record` problem is the authoritative naming), and
+ * `unattributed` (the reference problem already reported is the answer).
+ */
+export type IssueNodeDelivery =
+  /**
+   * An archived Change whose ledger or v2 record was read. Every fact is the
+   * record's own spelling; `outcome` is null exactly on the legacy basis,
+   * which predates v2 outcome records.
+   */
+  | {
+      readonly state: 'record';
+      readonly basis: 'v2' | 'legacy';
+      readonly archivedAt: string | null;
+      /** The commit that shipped the work; null is the record's own absence. */
+      readonly codeCommit: string | null;
+      /** The planning-branch fact in the record's spelling (v2: a full ref). */
+      readonly planningBranch: string | null;
+      readonly outcome: FinalizationOutcomeName | null;
+      /** The frozen evidence inventory; null when the record carries none readable. */
+      readonly evidence: readonly ArchiveDeliveryEvidenceEntry[] | null;
+      /** The recorded missing-evidence names; null when none readable. */
+      readonly missing: readonly string[] | null;
+      readonly entryName: string;
+      readonly foundAtRef: string;
+      readonly blobPath: string;
+    }
+  /**
+   * An archived entry that carries no archive record at all (the pre-record
+   * relocation shape). The absence of the record itself is the named fact.
+   */
+  | {
+      readonly state: 'no-record';
+      readonly foundAtRef: string | null;
+      readonly blobPath: string | null;
+    }
+  /** A resolved Change instance that is not archived: evidence will exist when it archives. */
+  | { readonly state: 'not-archived' }
+  /**
+   * An archive record in v2 shape that failed validation: the standing
+   * `invalid-archive-record` problem stays authoritative and no fact is
+   * derived from the damaged bytes.
+   */
+  | { readonly state: 'unreadable' }
+  /** An unresolved or ambiguous reference: no instance exists to read facts from. */
+  | { readonly state: 'unattributed' };
+
+/**
+ * One Issue-level delivery rollup entry: a change node's identity and observed
+ * execution state beside its delivery evidence, in the revision's canonical
+ * node order. Intent nodes contribute no entry — nothing was delivered.
+ */
+export interface IssueDeliveryEntry {
+  readonly nodeId: string;
+  readonly alias: string | null;
+  readonly projectId: string;
+  readonly lifecycle: ExecutionPlanNodeLifecycle;
+  readonly observation: IssueNodeObservation;
+  readonly delivery: IssueNodeDelivery | null;
+}
+
+/** Honest counts over the five named states — counts summarize, entries stay listed. */
+export interface IssueDeliveryCounts {
+  readonly record: number;
+  readonly 'no-record': number;
+  readonly 'not-archived': number;
+  readonly unreadable: number;
+  readonly unattributed: number;
+}
+
+/**
+ * The Issue-level delivery evidence rollup (design D4): one entry per change
+ * node of the readable revision in canonical node order, plus counts over the
+ * named states. Derived as a pure post-pass over the status projection's own
+ * facts and persisted nowhere. Null when the revision did not read back:
+ * "no readable plan" and "no delivery evidence" are different truths, and an
+ * empty rollup would read as the second.
+ */
+export interface IssueDeliveryEvidence {
+  readonly revisionId: string;
+  readonly entries: readonly IssueDeliveryEntry[];
+  readonly counts: IssueDeliveryCounts;
+}
+
 /** One plan node, observed. */
 export interface IssueNodeStatus {
   readonly nodeId: string;
@@ -234,6 +336,13 @@ export interface IssueNodeStatus {
   readonly locatedBy: IssueRunStateLocator | null;
   /** The attribution facts for this node (always present; facts are null/empty when unrecorded). */
   readonly attribution: IssueNodeAttribution;
+  /**
+   * The node's delivery evidence (issue-delivery-evidence-rollup): one of the
+   * five named states for every change node, `null` for intent nodes. Copied
+   * from the resolution in the one widening wrapper beside the attribution
+   * facts; read by no axis — a display fact only.
+   */
+  readonly delivery: IssueNodeDelivery | null;
 }
 
 /**

@@ -202,6 +202,54 @@ export interface AggregateChangeEntry {
  */
 export type ArchiveOutcomeBasis = 'v2' | 'legacy' | 'invalid';
 
+/** One frozen evidence-inventory entry: its Store-relative path and digest. */
+export interface ArchiveDeliveryEvidenceEntry {
+  readonly path: string;
+  readonly sha256: string;
+}
+
+/**
+ * The delivery facts one archived entry's record yielded — the `record` state
+ * of the issue-delivery-evidence vocabulary. Present only when the record
+ * PARSED (a v1 ledger or a validated v2 record): bytes that are absent or
+ * damaged derive no delivery facts at all, so `delivery: null` names the
+ * `no-record` and `unreadable` branches the basis (`outcomeBasis`) already
+ * distinguishes. Every fact is the record's own spelling, mapped per basis and
+ * never normalized: a v1 ledger is read defensively (it has no schema — an
+ * absent or wrongly typed field reads as its named absence `null`, never
+ * repaired), and a v2 record contributes its validated fields. `outcome` is
+ * null exactly on the legacy basis, which predates v2 outcome records — the
+ * absence is the record's own statement, never filled.
+ */
+export interface IssueArchiveDelivery {
+  /** Which parsed record shape the facts came from. */
+  readonly basis: 'v2' | 'legacy';
+  readonly archivedAt: string | null;
+  /**
+   * The code commit that shipped the work: a v1 ledger's `codeCommit`, or a
+   * v2 record's `codeMerge.commit`. Null is the record's own absence — a
+   * non-git root's ledger, or a v2 record with no code merge — never inferred.
+   */
+  readonly codeCommit: string | null;
+  /**
+   * The planning-branch fact in the record's own spelling: a v1 ledger's
+   * `planningBranch`, or a v2 record's full `planning.sourceRef`.
+   */
+  readonly planningBranch: string | null;
+  readonly outcome: FinalizationOutcomeName | null;
+  /**
+   * The evidence inventory the record froze, each entry its store-relative
+   * path and recorded digest. Null when the record carries no readable
+   * inventory; an empty array is a frozen empty inventory — different truths.
+   */
+  readonly evidence: readonly ArchiveDeliveryEvidenceEntry[] | null;
+  /** The missing-evidence names the record recorded; null when none readable. */
+  readonly missing: readonly string[] | null;
+  readonly entryName: string;
+  readonly foundAtRef: string;
+  readonly blobPath: string;
+}
+
 export interface AggregateArchiveEntry {
   readonly changeId: string;
   readonly changeInstanceId: string | null;
@@ -234,6 +282,13 @@ export interface AggregateArchiveEntry {
    */
   readonly outcomeBasisPath: string;
   readonly foundAtRef: string;
+  /**
+   * The delivery facts of the parsed record (issue-delivery-evidence-rollup).
+   * Null when the record was absent (`text === null`) or its bytes did not
+   * parse/validate — damaged bytes never yield delivery facts. Threads onto
+   * `PlanNodeResolution` exactly as `outcomeBasis` does.
+   */
+  readonly delivery: IssueArchiveDelivery | null;
 }
 
 export interface ChangeGroup {
@@ -338,6 +393,13 @@ export interface PlanNodeResolution {
   readonly outcomeBasisReason?: string | null;
   /** The archive record's Store-relative blob path, when one was consulted. */
   readonly outcomeBasisPath?: string | null;
+  /**
+   * The delivery facts of the consulted archive record (additive, the
+   * `outcomeBasis` pattern): the parsed record's facts, or null when the
+   * record was absent or damaged — the basis distinguishes which. Absent when
+   * no archive record was consulted (the node is not archived).
+   */
+  readonly delivery?: IssueArchiveDelivery | null;
 }
 
 export type PlanNodeReadiness =

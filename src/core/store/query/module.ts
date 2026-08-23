@@ -64,6 +64,7 @@ import type {
   ExecutionPlanSelector,
   FinalizationOutcomeName,
   GroupedChanges,
+  IssueArchiveDelivery,
   IssueDetail,
   IssueQuery,
   IssueReadiness,
@@ -89,6 +90,43 @@ const ARCHIVE_ENTRY_PATTERN = /^\d{4}-\d{2}-\d{2}-(.+?)(?:--[0-9a-f]{6,64})?$/u;
 /** The Change alias an archive entry name carries, or the name when it carries none. */
 function aliasFromArchiveEntryName(entryName: string): string {
   return ARCHIVE_ENTRY_PATTERN.exec(entryName)?.[1] ?? entryName;
+}
+
+/**
+ * A v1 ledger scalar, read defensively: the ledger shape has no schema (it is
+ * the v1 writer's output), so a field that is absent or not a string reads as
+ * its named absence `null` — never repaired, never defaulted. The legacy basis
+ * already says "unvalidated"; this keeps the delivery facts equally honest.
+ */
+function ledgerString(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
+/**
+ * A v1 ledger string array, read defensively: `null` when the field is absent
+ * or not an array (no inventory was recorded — a different truth than the
+ * empty array a present field froze); only string members contribute facts.
+ */
+function ledgerStrings(value: unknown): readonly string[] | null {
+  if (!Array.isArray(value)) return null;
+  return value.filter((entry): entry is string => typeof entry === 'string');
+}
+
+/**
+ * A v1 ledger evidence inventory, read defensively under the same rule as
+ * `ledgerStrings`: `null` for an absent or non-array field, and only entries
+ * of the `{ path, sha256 }` string shape contribute facts.
+ */
+function ledgerEvidence(value: unknown): IssueArchiveDelivery['evidence'] {
+  if (!Array.isArray(value)) return null;
+  const entries = value.filter(
+    (entry): entry is { path: string; sha256: string } =>
+      typeof entry === 'object' &&
+      entry !== null &&
+      typeof (entry as { path?: unknown }).path === 'string' &&
+      typeof (entry as { sha256?: unknown }).sha256 === 'string'
+  );
+  return entries.map(entry => ({ path: entry.path, sha256: entry.sha256 }));
 }
 
 interface QueryContext {
@@ -414,6 +452,11 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
    * but do not parse or validate are `invalid` — damaged evidence, never a
    * legacy truth. `legacyRecord`'s display semantics are unchanged: it stays
    * collapsed over all four null-outcome branches exactly as before.
+   *
+   * The DELIVERY block (issue-delivery-evidence-rollup D2) rides the same one
+   * read: the parsed record's delivery facts (a v1 ledger defensively, a
+   * validated v2 record mapped verbatim), or `null` when the record was absent
+   * or damaged — no second blob read, no fact the record does not carry.
    */
   private async readArchiveEntry(
     context: QueryContext,
@@ -448,6 +491,11 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
         legacyRecord: true,
         outcomeBasis: 'legacy',
         outcomeBasisReason: null,
+        // The entry carries no archive record at all: no delivery facts exist
+        // to extract, and null names exactly that (the projection's
+        // `no-record` state; the `legacy` basis is what distinguishes it from
+        // damaged bytes).
+        delivery: null,
       };
     }
     let raw: unknown;
@@ -463,9 +511,11 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
         outcomeBasisReason: `archive.json is not valid JSON: ${
           error instanceof Error ? error.message : String(error)
         }`,
+        delivery: null,
       };
     }
     if ((raw as { schemaVersion?: unknown } | null)?.schemaVersion !== 2) {
+      const ledger = (raw ?? {}) as Record<string, unknown>;
       return {
         ...base,
         archiveDate: nameDate,
@@ -473,6 +523,23 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
         legacyRecord: true,
         outcomeBasis: 'legacy',
         outcomeBasisReason: null,
+        // The v1 ledger's delivery facts, each field its own spelling read
+        // defensively: absent or wrongly typed reads as the named absence
+        // `null`, never repaired. The outcome is null by construction — the
+        // legacy basis predates v2 outcome records, and the absence is the
+        // record's own statement.
+        delivery: {
+          basis: 'legacy',
+          archivedAt: ledgerString(ledger.archivedAt),
+          codeCommit: ledgerString(ledger.codeCommit),
+          planningBranch: ledgerString(ledger.planningBranch),
+          outcome: null,
+          evidence: ledgerEvidence(ledger.evidence),
+          missing: ledgerStrings(ledger.missing),
+          entryName,
+          foundAtRef: candidate.foundAtRef,
+          blobPath,
+        },
       };
     }
     try {
@@ -484,6 +551,25 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
         legacyRecord: false,
         outcomeBasis: 'v2',
         outcomeBasisReason: null,
+        // The validated v2 record's delivery facts, mapped per the
+        // issue-delivery-evidence contract: `codeMerge.commit` (null is the
+        // record's own no-merge absence), the full `planning.sourceRef`, the
+        // outcome, and the frozen inventory — each verbatim.
+        delivery: {
+          basis: 'v2',
+          archivedAt: record.archivedAt,
+          codeCommit: record.codeMerge === null ? null : record.codeMerge.commit,
+          planningBranch: record.planning.sourceRef,
+          outcome: record.outcome,
+          evidence: record.evidence.map(entry => ({
+            path: entry.path,
+            sha256: entry.sha256,
+          })),
+          missing: [...record.missing],
+          entryName,
+          foundAtRef: candidate.foundAtRef,
+          blobPath,
+        },
       };
     } catch (error) {
       return {
@@ -495,6 +581,9 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
         outcomeBasisReason: `schemaVersion-2 record failed validation: ${
           error instanceof Error ? error.message : String(error)
         }`,
+        // Damaged bytes derive no delivery facts — the standing
+        // `invalid-archive-record` problem stays authoritative.
+        delivery: null,
       };
     }
   }
@@ -705,13 +794,16 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
             // The record basis rides beside the outcome facts (additive,
             // machine-facing): the projection's finalized ruling reads it, the
             // query's own readiness stays archive-outcome based exactly as
-            // before — the two-bases-by-design split.
+            // before — the two-bases-by-design split. The delivery block
+            // threads the same way: present whenever a record was consulted,
+            // null when its bytes were absent or damaged.
             ...(archive === null
               ? {}
               : {
                   outcomeBasis: archive.outcomeBasis,
                   outcomeBasisReason: archive.outcomeBasisReason,
                   outcomeBasisPath: archive.outcomeBasisPath,
+                  delivery: archive.delivery,
                 }),
           },
           readiness: conflict
