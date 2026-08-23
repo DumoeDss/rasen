@@ -16,6 +16,7 @@ export {
   issueAttentionKindRank,
 } from './attention.js';
 export { deriveIssueDeliveryEvidence } from './delivery.js';
+export { deriveIssueReview } from './review.js';
 export type {
   IssueAttentionBlocker,
   IssueAttentionItem,
@@ -38,6 +39,9 @@ export type {
   IssueReadyExitEntry,
   IssueReadyMember,
   IssueReadySet,
+  IssueReview,
+  IssueReviewDetermination,
+  IssueReviewThread,
   IssueRevisionDelta,
   IssueRevisionEdgeChange,
   IssueRevisionLifecycleChange,

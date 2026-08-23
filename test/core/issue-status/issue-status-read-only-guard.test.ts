@@ -30,7 +30,7 @@ import {
 import { StoreQueryModuleImpl } from '../../../src/core/store/query/index.js';
 import { writeRunState } from '../../../src/core/pipeline-registry/run-state.js';
 import { ephemeraDir } from '../../../src/core/file-placement.js';
-import { projectIssueStatus, deriveIssueReadySet, deriveIssueAttention, deriveIssueDeliveryEvidence } from '../../../src/core/issue-status/index.js';
+import { projectIssueStatus, deriveIssueReadySet, deriveIssueAttention, deriveIssueDeliveryEvidence, deriveIssueReview } from '../../../src/core/issue-status/index.js';
 import { readIssueAcceptanceFacts } from '../../../src/core/issue-acceptance/index.js';
 
 const REPO_ROOT = path.resolve(
@@ -104,6 +104,13 @@ describe('The issue-status Module has no write surface', () => {
     // Same reasoning again: the delivery post-pass inherits the write-surface
     // scans only by being in the walked set.
     expect(files.map(file => path.basename(file))).toContain('delivery.ts');
+  });
+
+  it('covers the review derivation module (issue-unified-review-gate)', () => {
+    // Same reasoning once more: the review post-pass — a composition over the
+    // delivery rollup and the attention items — inherits the write-surface
+    // scans only by being in the walked set.
+    expect(files.map(file => path.basename(file))).toContain('review.ts');
   });
 
   it('calls no filesystem write function', () => {
@@ -311,6 +318,14 @@ describe('A status projection mutates nothing on disk', () => {
       unreadable: 0,
       unattributed: 0,
     });
+
+    // The review view derived over the same read too, composing that rollup
+    // and the attention items: an answer always present, the un-terminal node
+    // riding the gate's own blockers (its own CLI suite pins show's
+    // write-nothing bytes over a temp store).
+    const review = deriveIssueReview(ISSUE, '0001', status);
+    expect(review.determination).toEqual({ kind: 'not-ready', blockerCount: 1 });
+    expect(review.threads).toEqual([]);
 
     const twinDetail = await new StoreQueryModuleImpl().showIssue({
       ...scope,

@@ -547,6 +547,134 @@ export type IssueAttentionItem = {
 );
 
 // -----------------------------------------------------------------------------
+// The unified review view (issue-unified-review-gate D1–D3)
+// -----------------------------------------------------------------------------
+
+/**
+ * The Issue-level review-readiness conclusion — a closed vocabulary of seven
+ * values MAPPED one-to-one from the acceptance gate's own evaluation over the
+ * same status, never re-derived: the gate is the ONE blocking basis, and two
+ * evaluations of one rule is the two-truths failure (the review view and
+ * `store issue accept` could disagree about eligibility). The mapping is total
+ * over the gate's closed refusal union, so the compiler pins exhaustiveness.
+ *
+ * Every value names its own semantics — `no-plan` says no readable plan exists
+ * to review, `dropped` names abandonment rather than unreadiness — and the
+ * `acceptance-unknown` value is attention's "the item still fires" precedent:
+ * a read that supplied no acceptance facts is a named condition of THAT read,
+ * not the absence of a review view.
+ */
+export type IssueReviewDetermination =
+  /** The gate holds; `conditionsRevisionId` is the revision it would accept. */
+  | { readonly kind: 'review-ready'; readonly conditionsRevisionId: string }
+  /**
+   * A verified acceptance record stands; the review concluded. Carries the
+   * record's acceptance date and conditions revision — null when the record
+   * exists but does not verify (the standing `unreadable-acceptance` problem
+   * is the answer; the gate's never-rewritable ruling still maps here).
+   */
+  | {
+      readonly kind: 'accepted';
+      readonly acceptedAt: string | null;
+      readonly conditionsRevisionId: string | null;
+    }
+  /**
+   * The gate names fact blockers. Only the count rides here — the blockers
+   * themselves stay in `status.acceptance.gate.blockers`, which the acceptance
+   * section of the same read already listed; a copy would be a second basis.
+   */
+  | { readonly kind: 'not-ready'; readonly blockerCount: number }
+  /** No readable acceptance conditions; `message` is the gate's own. */
+  | { readonly kind: 'conditions-missing'; readonly message: string }
+  /** No readable plan revision with nodes to review at all. */
+  | { readonly kind: 'no-plan' }
+  /** The Issue is dropped — abandoned, not unready. */
+  | { readonly kind: 'dropped' }
+  /** This read supplied no acceptance facts; `reason` names the omission. */
+  | { readonly kind: 'acceptance-unknown'; readonly reason: string };
+
+/**
+ * One fact the gate deliberately excludes but a reviewer must see — a named
+ * kind carrying the node it names. Threads NEVER block: a review-ready Issue
+ * with every thread kind standing still reads `review-ready` (pinned), because
+ * `not-archived` is expected progress, a recorded missing-evidence name is a
+ * recorded fact, and an optional node's incompleteness is the gate's own
+ * required-scope decision restated, not a second ruling.
+ */
+export type IssueReviewThread =
+  /** An attention `failure` item, mapped: a wanted node observing failed. */
+  | {
+      readonly kind: 'failure';
+      readonly nodeId: string;
+      readonly alias: string | null;
+      readonly diagnostic: string | null;
+    }
+  /** An attention `blocked-behind` item, mapped with its named blockers. */
+  | {
+      readonly kind: 'blocked-behind';
+      readonly nodeId: string;
+      readonly alias: string | null;
+      readonly blockers: readonly IssueAttentionBlocker[];
+    }
+  /** An attention `waiting-human` item, mapped: a wanted node parked for a human. */
+  | { readonly kind: 'waiting-human'; readonly nodeId: string; readonly alias: string | null }
+  /**
+   * A wanted optional node whose observation is not terminal, named with that
+   * observation. A failed or human-parked optional node ALSO carries its
+   * attention thread — two threads naming one node is the honest overlap: one
+   * names progress, one names trouble.
+   */
+  | {
+      readonly kind: 'optional-open';
+      readonly nodeId: string;
+      readonly observation: IssueNodeObservation;
+    }
+  /**
+   * A node whose observed work is terminal while its Change instance is not
+   * archived — expected progress, named as awaiting the archive, never damage.
+   */
+  | {
+      readonly kind: 'archive-pending';
+      readonly nodeId: string;
+      readonly observation: IssueNodeObservation;
+    }
+  /** An archived entry that carries no archive record at all — the hole named. */
+  | { readonly kind: 'record-absent'; readonly nodeId: string }
+  /**
+   * The missing-evidence names an archived record froze — one thread per node,
+   * carrying the recorded names. `null` missing lists no thread: no readable
+   * list is no recorded name.
+   */
+  | {
+      readonly kind: 'evidence-missing';
+      readonly nodeId: string;
+      readonly names: readonly string[];
+    };
+
+/**
+ * The Issue-level review view (design D3): the gate-mapped determination, the
+ * open-threads inventory, and a verification summary BY REFERENCE — the
+ * required-work pair and the delivery rollup's counts, never copies of the
+ * entries or blockers those facts live beside in the same payload. Derived as
+ * a pure post-pass over the same status one read derived (composing the
+ * delivery rollup and the attention items over that status), persisted
+ * nowhere, and never null: every Issue has a review answer, including one
+ * with no readable plan (its determination says so).
+ */
+export interface IssueReview {
+  readonly issueId: string;
+  readonly revisionId: string | null;
+  readonly determination: IssueReviewDetermination;
+  readonly threads: readonly IssueReviewThread[];
+  readonly verification: {
+    /** `status.progress` by reference; null is the no-readable-revision truth. */
+    readonly progress: IssueProgress | null;
+    /** The delivery rollup's counts; null when no rollup derived (no readable revision). */
+    readonly delivery: IssueDeliveryCounts | null;
+  };
+}
+
+// -----------------------------------------------------------------------------
 // The revision delta (review-flow D5)
 // -----------------------------------------------------------------------------
 

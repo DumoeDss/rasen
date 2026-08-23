@@ -50,6 +50,7 @@ import { resolveSessionLaunchContext } from '../core/management-api/session-laun
 import {
   deriveIssueDeliveryEvidence,
   deriveIssueReadySet,
+  deriveIssueReview,
   issueBlockerState,
   projectIssueStatus,
   type IssueDeliveryEvidence,
@@ -57,6 +58,8 @@ import {
   type IssueReadyExit,
   type IssueReadyMember,
   type IssueReadySet,
+  type IssueReview,
+  type IssueReviewThread,
   type IssueStatus,
   type IssueStatusProblem,
   type ProjectIssueStatusInput,
@@ -777,6 +780,80 @@ function renderDeliverySection(
   );
 }
 
+/** The determination line — the value plus exactly the facts it carries (D4). */
+function renderDetermination(review: IssueReview): string {
+  const d = review.determination;
+  switch (d.kind) {
+    case 'review-ready':
+      return `    determination: review-ready (would accept conditions revision ${d.conditionsRevisionId})`;
+    case 'accepted':
+      // Null facts name the present-but-unverifiable record: the standing
+      // unreadable-acceptance problem the acceptance section above printed is
+      // the answer, never a filled date.
+      return d.acceptedAt === null || d.conditionsRevisionId === null
+        ? '    determination: accepted (record present but does not verify — the standing unreadable-acceptance problem is the answer)'
+        : `    determination: accepted (record ${d.acceptedAt} under revision ${d.conditionsRevisionId})`;
+    case 'not-ready':
+      return `    determination: not-ready (${d.blockerCount} blocker(s) named above)`;
+    case 'conditions-missing':
+      return `    determination: conditions-missing (${d.message})`;
+    case 'no-plan':
+      return '    determination: no-plan (no readable plan exists to review)';
+    case 'dropped':
+      return '    determination: dropped (abandoned, not acceptable)';
+    case 'acceptance-unknown':
+      return `    determination: acceptance-unknown (${d.reason})`;
+  }
+}
+
+/** One thread's own line — the kind, the node it names, and its named fact. */
+function renderReviewThread(thread: IssueReviewThread): string {
+  switch (thread.kind) {
+    case 'failure':
+      return `      failure ${thread.nodeId}${thread.diagnostic === null ? ' (failed)' : ` (failed — ${thread.diagnostic})`}`;
+    case 'blocked-behind':
+      return `      blocked-behind ${thread.nodeId} (behind ${thread.blockers
+        .map(blocker => `${blocker.nodeId}@${blocker.projectId}: ${blocker.state}`)
+        .join(', ')})`;
+    case 'waiting-human':
+      return `      waiting-human ${thread.nodeId} (waiting for a human)`;
+    case 'optional-open':
+      return `      optional-open ${thread.nodeId} (${thread.observation})`;
+    case 'archive-pending':
+      return `      archive-pending ${thread.nodeId} (${thread.observation} — evidence will exist when the Change archives)`;
+    case 'record-absent':
+      return `      record-absent ${thread.nodeId} (the archive entry carries no archive record to read)`;
+    case 'evidence-missing':
+      return `      evidence-missing ${thread.nodeId}: ${thread.names.join(', ')}`;
+  }
+}
+
+/**
+ * The concluding review section of `show` (design D4): the determination with
+ * the facts it names, every open thread on its own line beside the count that
+ * summarizes them, the verification summary by reference to the facts the
+ * same read already reported, and the closing statement. The same facts the
+ * JSON form carries under `review`; `list` carries none of them.
+ */
+function renderReviewSection(review: IssueReview): void {
+  console.log('');
+  console.log('  review:');
+  console.log(renderDetermination(review));
+  console.log(`    threads: ${review.threads.length === 0 ? '(none)' : review.threads.length}`);
+  for (const thread of review.threads) console.log(renderReviewThread(thread));
+  const progress =
+    review.verification.progress === null
+      ? '-/-'
+      : `${review.verification.progress.completed}/${review.verification.progress.total}`;
+  const delivery = review.verification.delivery;
+  const deliverySegment =
+    delivery === null
+      ? '(no readable revision)'
+      : `${delivery.record} record / ${delivery['no-record']} no-record / ${delivery['not-archived']} not-archived / ${delivery.unreadable} unreadable / ${delivery.unattributed} unattributed`;
+  console.log(`    verification: required ${progress}, delivery ${deliverySegment}`);
+  console.log("    review derives; accepting remains the operator's act.");
+}
+
 function renderIssueStatus(status: IssueStatus): void {
   console.log('  status:');
   console.log(`    phase: ${status.phase}`);
@@ -885,6 +962,7 @@ function renderIssueDetail(
   detail: IssueDetail,
   status?: IssueStatus,
   delivery?: IssueDeliveryEvidence | null,
+  review?: IssueReview,
   projectAliases?: Readonly<Record<string, string>>
 ): void {
   const summary = detail.issue;
@@ -935,6 +1013,14 @@ function renderIssueDetail(
     // revision) renders no section — the same null the progress pair reports.
     if (delivery !== undefined && delivery !== null) {
       renderDeliverySection(delivery, projectAliases);
+    }
+    // The review view concludes the read (issue-unified-review-gate D4): the
+    // gate-mapped determination, the open threads, the summary — rendered
+    // after the delivery evidence because the conclusion concludes. Unlike
+    // the delivery section it renders even without a readable revision (a
+    // no-plan Issue still has a review answer).
+    if (review !== undefined) {
+      renderReviewSection(review);
     }
   }
   if (detail.unsearchedRefs.length > 0) {
@@ -1237,21 +1323,26 @@ export function registerStoreIssueCommand(store: Command): void {
           })
         );
         // The delivery rollup derives from the SAME status the section beside
-        // it renders — one projection read, one rollup, no second truth.
-        const delivery = deriveIssueDeliveryEvidence(detail.plan?.revisionId ?? null, status);
+        // it renders — one projection read, one rollup, no second truth. The
+        // review view derives at the same call site, composing that rollup and
+        // the attention items over the same status.
+        const revisionId = detail.plan?.revisionId ?? null;
+        const delivery = deriveIssueDeliveryEvidence(revisionId, status);
+        const review = deriveIssueReview(issueId, revisionId, status);
         if (options.json) {
           printJson({
             issue: detail.issue,
             plan: detail.plan,
             status,
             delivery,
+            review,
             complete: detail.complete,
             unsearchedRefs: detail.unsearchedRefs,
             problems: detail.problems,
           });
           return;
         }
-        renderIssueDetail(detail, status, delivery, widening.projectAliases);
+        renderIssueDetail(detail, status, delivery, review, widening.projectAliases);
       } catch (error) {
         emitFailure(options.json, { issue: null }, error, 'store_issue_show_failed');
       }
