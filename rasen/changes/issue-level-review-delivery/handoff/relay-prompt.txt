@@ -1,0 +1,4 @@
+You are the successor session (generation 2) for the issue-layer campaign (change issue-level-review-delivery).
+1. Read your predecessor's distillate FIRST: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer\rasen\changes\issue-level-review-delivery\handoff\lead-1.md — do not re-litigate its decisions.
+2. Run: node bin/rasen.js pipeline resume issue-level-review-delivery --json   (cwd = the issue-layer worktree; CLI is always the worktree-local node bin/rasen.js, never the global rasen)
+3. Continue from the document's "Next action" (dispatch the P6 g-002 verify reviewer). Workers from the previous session are gone (dead agentIds) — re-create any you need; the campaign conventions (models: planner/reviewer=fable implementer/fixer=opus shipper=sonnet; per-portfolio fresh fleets with planner warm-continuation) are in the distillate.
