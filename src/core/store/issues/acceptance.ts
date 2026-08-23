@@ -11,8 +11,9 @@
  *     was accepted (the conditions revision id and that revision's digest), the
  *     gate snapshot it was accepted under (counts, health, zero problems —
  *     portable facts only, D7), the gate's lifecycle accounting (every
- *     cancelled/superseded exclusion that stood, each with its node, lifecycle,
- *     and recorded reason — omitted from the canonical form when none stood),
+ *     cancelled/superseded/deferred exclusion that stood, each with its node,
+ *     lifecycle, and recorded reason — omitted from the canonical form when
+ *     none stood),
  *     an optional note, and its own content digest.
  *
  * Every text field passes `assertPortableIssueText`: both artifacts become
@@ -121,7 +122,7 @@ const GateSnapshotSchema = z
 const RecordExclusionSchema = z
   .object({
     nodeId: z.string(),
-    lifecycle: z.enum(['cancelled', 'superseded']),
+    lifecycle: z.enum(['cancelled', 'superseded', 'deferred']),
     reason: z.string().min(1).max(4000),
   })
   .strict();

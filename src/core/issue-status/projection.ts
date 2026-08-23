@@ -654,9 +654,11 @@ function isTerminal(observation: IssueNodeObservation | undefined): boolean {
 
 /**
  * Whether a change node's lifecycle still wants its work: `required` (the
- * absent default) or `optional`. `cancelled`/`superseded` are OUTSIDE the
- * execution graph — their recorded activity or staleness drives no phase and
- * no health value, though their observations stay on their node lines.
+ * absent default) or `optional`. `cancelled`/`superseded`/`deferred` are
+ * OUTSIDE the execution graph — their recorded activity or staleness drives no
+ * phase and no health value, though their observations stay on their node
+ * lines. The check is POSITIVE, so `deferred` fell out of every axis when the
+ * vocabulary widened, with no branch added here.
  */
 function isWanted(node: IssueNodeStatus): boolean {
   return node.kind === 'change' && (node.lifecycle === 'required' || node.lifecycle === 'optional');

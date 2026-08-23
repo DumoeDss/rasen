@@ -46,7 +46,11 @@ function isChange(node: ExecutionPlanNode): node is ExecutionPlanChangeNode {
   return node.kind === 'change';
 }
 
-/** Whether the plan still wants a node's work (lifecycles, absent = required). */
+/**
+ * Whether the plan still wants a node's work (lifecycles, absent = required).
+ * Positive by construction: `cancelled`, `superseded`, and `deferred` nodes are
+ * outside the confirmed scope with no branch of their own.
+ */
 function isWanted(node: ExecutionPlanNode): boolean {
   return (
     isChange(node) &&
@@ -157,7 +161,7 @@ export async function composeIssueConfirm(
       });
       continue;
     }
-    if (!isWanted(node)) continue; // cancelled/superseded: outside the confirmed scope
+    if (!isWanted(node)) continue; // cancelled/superseded/deferred: outside the confirmed scope
     if (
       observationsById.get(node.nodeId)?.observation === 'not-started' &&
       !memberIds.has(node.nodeId)

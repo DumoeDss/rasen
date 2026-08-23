@@ -32,8 +32,10 @@ import type {
 
 /**
  * Whether a change node's lifecycle still wants its work: `required` or
- * `optional`. `cancelled`/`superseded` are outside the execution graph, and
- * intent nodes have no work to run.
+ * `optional`. `cancelled`/`superseded`/`deferred` are outside the execution
+ * graph — abandoned, replaced, or postponed — and intent nodes have no work to
+ * run. The check is POSITIVE, so a lifecycle value added to the vocabulary
+ * falls out of membership rather than into it.
  */
 function isWanted(node: IssueNodeStatus): boolean {
   return node.kind === 'change' && (node.lifecycle === 'required' || node.lifecycle === 'optional');
@@ -41,8 +43,8 @@ function isWanted(node: IssueNodeStatus): boolean {
 
 /**
  * The exit reason of one non-member node, from the node's own projection
- * facts. The lifecycle reads first (a cancelled/superseded node is outside the
- * graph whatever its recorded observation), then the kind, then the
+ * facts. The lifecycle reads first (a cancelled/superseded/deferred node is
+ * outside the graph whatever its recorded observation), then the kind, then the
  * observation — a running node's observation is its reason, never its
  * dependency facts; a complete node's diagnostic names its completion basis
  * when one explains it (a legacy archive record).
@@ -53,6 +55,7 @@ function exitReasonFor(node: IssueNodeStatus, statusById: ReadonlyMap<string, Is
   }
   if (node.lifecycle === 'cancelled') return { kind: 'cancelled', reason: node.reason };
   if (node.lifecycle === 'superseded') return { kind: 'superseded', reason: node.reason };
+  if (node.lifecycle === 'deferred') return { kind: 'deferred', reason: node.reason };
   switch (node.observation) {
     case 'unknown':
       return { kind: 'unknown', diagnostic: node.diagnostic };

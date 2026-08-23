@@ -72,10 +72,10 @@ const NodeBaseShape = {
 
 /**
  * The closed lifecycle vocabulary, named in the refusal it mints: an
- * out-of-vocabulary value is refused naming itself and the four defined
+ * out-of-vocabulary value is refused naming itself and the five defined
  * values, never absorbed into a default.
  */
-const NODE_LIFECYCLES = ['required', 'optional', 'cancelled', 'superseded'] as const;
+const NODE_LIFECYCLES = ['required', 'optional', 'cancelled', 'superseded', 'deferred'] as const;
 
 const lifecycleField = z
   .enum(NODE_LIFECYCLES, {
@@ -118,7 +118,8 @@ const IntentNodeSchema = z
     // A plain string here deliberately: the semantic check in `validateNode`
     // refuses out-of-vocabulary values NAMING THE NODE and the two values
     // defined for the intent kind (and directing cancelled/superseded to
-    // omission-from-next-revision), which a bare enum error cannot do.
+    // omission-from-next-revision, deferred to staying optional), which a bare
+    // enum error cannot do.
     lifecycle: z.string().optional(),
     ...suggestionShape,
   })
@@ -200,13 +201,17 @@ function validateNode(raw: z.output<typeof NodeSchema>, index: number): Executio
         parseChangeId(raw.changeAlias as string, 'changeAlias')
       );
     }
-    // The lifecycle's one conditional: `cancelled`/`superseded` record why the
-    // plan no longer wants the work (portable durable text, refused rather
-    // than trimmed), and no other lifecycle records a reason — a dangling
-    // reason on wanted work is a defect this checker can name, not a fact to
-    // store beside one it does not explain.
+    // The lifecycle's one conditional: `cancelled`/`superseded`/`deferred`
+    // record why the plan does not demand the work toward Done — abandoned,
+    // replaced, or postponed (portable durable text, refused rather than
+    // trimmed) — and no other lifecycle records a reason; a dangling reason on
+    // wanted work is a defect this checker can name, not a fact to store
+    // beside one it does not explain. `deferred` work is still intended, so
+    // the refusal below says "does not demand toward Done" rather than "no
+    // longer wants": the older phrasing would be false the moment a deferral
+    // exists.
     const lifecycle = raw.lifecycle;
-    if (lifecycle === 'cancelled' || lifecycle === 'superseded') {
+    if (lifecycle === 'cancelled' || lifecycle === 'superseded' || lifecycle === 'deferred') {
       if (raw.reason === undefined) {
         throw planError(
           `nodes[${index}].reason`,
@@ -221,7 +226,7 @@ function validateNode(raw: z.output<typeof NodeSchema>, index: number): Executio
     } else if (raw.reason !== undefined) {
       throw planError(
         `nodes[${index}].reason`,
-        `node '${nodeId}' records a reason without being cancelled or superseded; a reason is recorded only for work the plan no longer wants`
+        `node '${nodeId}' records a reason without being cancelled, superseded, or deferred; a reason is recorded only for work the plan does not demand toward Done`
       );
     }
     return Object.freeze({
@@ -244,16 +249,23 @@ function validateNode(raw: z.output<typeof NodeSchema>, index: number): Executio
     });
   }
   // The intent lifecycle's two-value vocabulary, refused semantically so the
-  // refusal can name the node. `cancelled`/`superseded` are Change-node-only:
-  // they explain work that existed, while unwanted intent work — work no
-  // Change ever backed — is expressed by omitting the node from the next
-  // revision, and the refusal says exactly that.
+  // refusal can name the node. `cancelled`/`superseded`/`deferred` are
+  // Change-node-only: they explain work that existed as a Change, while intent
+  // work — work no Change ever backed — is postponed by keeping it `optional`
+  // and expressed as unwanted by omitting the node from the next revision, and
+  // each refusal says exactly which spelling its value's intent case takes.
   const intentLifecycle = raw.lifecycle;
   if (
     intentLifecycle !== undefined &&
     intentLifecycle !== 'required' &&
     intentLifecycle !== 'optional'
   ) {
+    if (intentLifecycle === 'deferred') {
+      throw planError(
+        `nodes[${index}].lifecycle`,
+        `node '${nodeId}' is an intent node carrying lifecycle 'deferred'; deferred explains work that existed as a Change and stays Change-node-only — intent work is postponed by keeping it 'optional' or by omitting the node from the next revision`
+      );
+    }
     if (intentLifecycle === 'cancelled' || intentLifecycle === 'superseded') {
       throw planError(
         `nodes[${index}].lifecycle`,

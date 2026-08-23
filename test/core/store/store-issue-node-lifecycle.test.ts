@@ -160,13 +160,15 @@ describe('plan-node lifecycle schema (issue-node-lifecycle D1/D2)', () => {
     expect((credentialReason as Error).message).toContain('credentials');
   });
 
-  it('refuses an out-of-vocabulary lifecycle, naming the value and the four defined', () => {
+  it('refuses an out-of-vocabulary lifecycle, naming the value and every defined one', () => {
     const thrown = normalizeThrowing([
       changeNode({ nodeId: 'g-002', lifecycle: 'dropped' }),
     ]);
     expect(thrown).toBeInstanceOf(StorePlanningValidationError);
     expect((thrown as Error).message).toContain('dropped');
-    for (const value of ['required', 'optional', 'cancelled', 'superseded']) {
+    // Widened by issue-deferral-record: `deferred` joined the closed
+    // vocabulary, so the refusal names five values, not four.
+    for (const value of ['required', 'optional', 'cancelled', 'superseded', 'deferred']) {
       expect((thrown as Error).message).toContain(value);
     }
 
@@ -201,13 +203,17 @@ describe('plan-node lifecycle schema (issue-node-lifecycle D1/D2)', () => {
     expect((withReason as Error).message).toContain('reason');
   });
 
-  it('refuses a reason on wanted work — it explains only work the plan no longer wants', () => {
+  it('refuses a reason on wanted work — it explains only work the plan does not demand', () => {
     const thrown = normalizeThrowing([
       changeNode({ nodeId: 'g-001', reason: 'nice to have' }),
     ]);
     expect(thrown).toBeInstanceOf(StorePlanningValidationError);
     expect((thrown as StorePlanningValidationError).field).toBe('nodes[0].reason');
-    expect((thrown as Error).message).toContain('cancelled or superseded');
+    // Reworded by issue-deferral-record: the reason-bearing family gained
+    // `deferred`, whose work IS still wanted, so the refusal says the plan
+    // does not DEMAND the work toward Done rather than no longer wants it.
+    expect((thrown as Error).message).toContain('cancelled, superseded, or deferred');
+    expect((thrown as Error).message).toContain('does not demand toward Done');
   });
 
   it('carries a cancelled node with its reason through normalize, serialize, and read-back', () => {

@@ -429,8 +429,8 @@ function renderRunStateVisibility(status: IssueStatus): string {
 /**
  * The per-node line the show command prints: identifier, kind, target
  * project, alias, observation, then whatever explains it — a lifecycle that
- * is not required (with the recorded reason a cancelled/superseded node
- * carries), a recorded execution suggestion with its decomposition
+ * is not required (with the recorded reason a cancelled/superseded/deferred
+ * node carries), a recorded execution suggestion with its decomposition
  * rationale/uncertainty, a dependency whose work is not complete, or the
  * diagnostic behind an `unknown`. The project, suggestion, and rationale are
  * facts the revision records — shown, never interpreted into any axis. Each
@@ -565,8 +565,9 @@ function renderAcceptanceBlocker(blocker: IssueAcceptanceBlocker): string {
 
 /**
  * The lines one gate evaluation renders beside the acceptance section: the
- * gate line itself, then the lifecycle accounting — cancelled/superseded
- * exclusions with their recorded reasons always, and at a zero required total
+ * gate line itself, then the lifecycle accounting —
+ * cancelled/superseded/deferred exclusions with their recorded reasons
+ * always, and at a zero required total
  * the statement that no work is demanded with the optional nodes named, so an
  * empty total never hides what the revision says. The same facts the JSON
  * form carries under `status.acceptance.gate` and `status.nodes`.
@@ -1153,6 +1154,8 @@ function renderReadyExit(reason: IssueReadyExit): string {
       return reason.reason === null ? 'cancelled' : `cancelled (${reason.reason})`;
     case 'superseded':
       return reason.reason === null ? 'superseded' : `superseded (${reason.reason})`;
+    case 'deferred':
+      return reason.reason === null ? 'deferred' : `deferred (${reason.reason})`;
     case 'pending-change-creation':
       return `pending Change creation (${reason.projectId}/${reason.targetLineId})`;
     case 'running':

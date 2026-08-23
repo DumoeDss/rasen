@@ -332,6 +332,52 @@ describe('composeIssueConfirm', () => {
     expect(named).toEqual(['g-live']);
   });
 
+  it('never reports a deferred node in any category either', async () => {
+    const nodes: readonly ExecutionPlanNode[] = [
+      {
+        nodeId: 'g-live',
+        kind: 'change',
+        projectId: PROJECT,
+        targetLineId: LINE,
+        changeInstanceId: 'ci:aaa',
+        changeAlias: 'child-a',
+        dependsOn: [],
+      },
+      {
+        nodeId: 'g-def',
+        kind: 'change',
+        projectId: PROJECT,
+        targetLineId: LINE,
+        changeInstanceId: 'ci:eee',
+        changeAlias: 'child-def',
+        lifecycle: 'deferred',
+        reason: 'postponed beyond this Issue to the next milestone',
+        dependsOn: [],
+      },
+    ];
+    const result = await composeIssueConfirm({
+      detail: detailFor(nodes),
+      status: statusFor([
+        nodeStatus('g-live', 'not-started'),
+        nodeStatus('g-def', 'not-started', { lifecycle: 'deferred' }),
+      ]),
+      workspaceEntries: [],
+      launchContextFor: LAUNCH_OK,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The confirmed scope is the WANTED scope: postponed work is outside it
+    // exactly as abandoned and replaced work are, through the same positive
+    // check and with no branch of its own.
+    const named = [
+      ...result.report.contracts.map(binding => binding.nodeId),
+      ...result.report.pendingChanges.map(pending => pending.nodeId),
+      ...result.report.waiting.map(waiting => waiting.nodeId),
+      ...result.report.unprepared.map(entry => entry.nodeId),
+    ];
+    expect(named).toEqual(['g-live']);
+  });
+
   it('refuses an Issue with no readable revision toward planning', async () => {
     const detail = detailFor([]);
     const result = await composeIssueConfirm({

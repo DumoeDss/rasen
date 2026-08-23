@@ -1,0 +1,326 @@
+{
+  "issue": {
+    "issueId": "defer-dogfood",
+    "record": {
+      "version": 1,
+      "id": "defer-dogfood",
+      "title": "Deferral dogfood",
+      "state": "open",
+      "reason": null,
+      "createdAt": "2026-08-23T11:51:09.203Z"
+    },
+    "diagnostic": null,
+    "divergence": null,
+    "revisionIds": [
+      "0001",
+      "0002"
+    ],
+    "latestRevisionId": "0002",
+    "refs": [
+      "refs/heads/main"
+    ],
+    "uncommitted": false
+  },
+  "plan": {
+    "issueId": "defer-dogfood",
+    "revisionId": "0002",
+    "revision": {
+      "version": 1,
+      "issueId": "defer-dogfood",
+      "revisionId": "0002",
+      "supersedes": "0001",
+      "createdAt": "2026-08-23T11:51:22.711Z",
+      "contentSha256": "81034802e048593eeaf19d34cbd9e1cd4ac8213a7cecc6d3269ed9d2f4bd7f84",
+      "nodes": [
+        {
+          "nodeId": "g-001",
+          "kind": "change",
+          "projectId": "app-a",
+          "targetLineId": "main",
+          "changeInstanceId": "ci_303c2eac5531228018fd48e169a9dcb236105995b8958156579ff67eda2d6157",
+          "changeAlias": "child-a",
+          "dependsOn": []
+        },
+        {
+          "nodeId": "g-opt",
+          "kind": "change",
+          "projectId": "app-a",
+          "targetLineId": "main",
+          "changeInstanceId": "ci_238a839acc254413a54c469e72f4b3fde08ef3bb8955b16251113470432eaa19",
+          "changeAlias": "child-opt",
+          "lifecycle": "deferred",
+          "reason": "postponed beyond this Issue to the next milestone",
+          "dependsOn": []
+        }
+      ]
+    },
+    "diagnostic": null,
+    "readiness": {
+      "nodes": [
+        {
+          "node": {
+            "nodeId": "g-001",
+            "kind": "change",
+            "projectId": "app-a",
+            "targetLineId": "main",
+            "changeInstanceId": "ci_303c2eac5531228018fd48e169a9dcb236105995b8958156579ff67eda2d6157",
+            "changeAlias": "child-a",
+            "dependsOn": []
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "child-a",
+                "projectId": "app-a",
+                "targetLineId": "main",
+                "foundAtRef": "refs/heads/main",
+                "archived": false
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": false
+          },
+          "readiness": "in-progress",
+          "blockedBy": []
+        },
+        {
+          "node": {
+            "nodeId": "g-opt",
+            "kind": "change",
+            "projectId": "app-a",
+            "targetLineId": "main",
+            "changeInstanceId": "ci_238a839acc254413a54c469e72f4b3fde08ef3bb8955b16251113470432eaa19",
+            "changeAlias": "child-opt",
+            "lifecycle": "deferred",
+            "reason": "postponed beyond this Issue to the next milestone",
+            "dependsOn": []
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "child-opt",
+                "projectId": "app-a",
+                "targetLineId": "main",
+                "foundAtRef": "refs/heads/main",
+                "archived": false
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": false
+          },
+          "readiness": "in-progress",
+          "blockedBy": []
+        }
+      ],
+      "readyToResolve": false
+    },
+    "unsearchedRefs": [],
+    "problems": [],
+    "complete": true
+  },
+  "status": {
+    "phase": "ready",
+    "health": "healthy",
+    "progress": {
+      "completed": 0,
+      "total": 1
+    },
+    "nodes": [
+      {
+        "nodeId": "g-001",
+        "kind": "change",
+        "alias": "child-a",
+        "observation": "not-started",
+        "diagnostic": null,
+        "runStatePath": null,
+        "locatedBy": null,
+        "attribution": {
+          "pipeline": null,
+          "sessions": [],
+          "evidenceLocator": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-defer-dogfood-3ovilM\\store-integration\\rasen\\projects\\app-a\\changes\\child-a\\evidence"
+        },
+        "projectId": "app-a",
+        "targetLineId": "main",
+        "lifecycle": "required",
+        "reason": null,
+        "suggestedPipeline": null,
+        "rationale": null,
+        "uncertainty": null,
+        "delivery": {
+          "state": "not-archived"
+        },
+        "blockedBy": []
+      },
+      {
+        "nodeId": "g-opt",
+        "kind": "change",
+        "alias": "child-opt",
+        "observation": "not-started",
+        "diagnostic": null,
+        "runStatePath": null,
+        "locatedBy": null,
+        "attribution": {
+          "pipeline": null,
+          "sessions": [],
+          "evidenceLocator": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-defer-dogfood-3ovilM\\store-integration\\rasen\\projects\\app-a\\changes\\child-opt\\evidence"
+        },
+        "projectId": "app-a",
+        "targetLineId": "main",
+        "lifecycle": "deferred",
+        "reason": "postponed beyond this Issue to the next milestone",
+        "suggestedPipeline": null,
+        "rationale": null,
+        "uncertainty": null,
+        "delivery": {
+          "state": "not-archived"
+        },
+        "blockedBy": []
+      }
+    ],
+    "delta": {
+      "revisionId": "0002",
+      "supersedes": "0001",
+      "added": [],
+      "removed": [],
+      "retargeted": [],
+      "edgeChanges": [],
+      "lifecycleChanges": [
+        {
+          "nodeId": "g-opt",
+          "from": "optional",
+          "to": "deferred"
+        }
+      ],
+      "suggestionChanges": []
+    },
+    "projects": [
+      {
+        "projectId": "app-a",
+        "alias": "app-a",
+        "nodeIds": [
+          "g-001",
+          "g-opt"
+        ],
+        "progress": {
+          "completed": 0,
+          "total": 1
+        }
+      }
+    ],
+    "problems": [],
+    "runStateVisibility": {
+      "kind": "execution-root",
+      "executionRoot": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-defer-dogfood-3ovilM\\exec-project"
+    },
+    "complete": true,
+    "acceptance": {
+      "conditions": {
+        "revision": {
+          "version": 1,
+          "issueId": "defer-dogfood",
+          "revisionId": "0001",
+          "supersedes": null,
+          "createdAt": "2026-08-23T11:51:15.787Z",
+          "contentSha256": "f3d337b9c0e16a3ed54a344c176e52ee1b431977ce15368a9fce9a56a0c77736",
+          "conditions": [
+            {
+              "id": "cond-1",
+              "requirement": "The deferral is recorded"
+            }
+          ]
+        },
+        "revisionId": "0001",
+        "diagnostic": null,
+        "path": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-defer-dogfood-3ovilM\\store-integration\\rasen\\issues\\defer-dogfood\\acceptance\\0001.yaml"
+      },
+      "gate": {
+        "eligible": false,
+        "refusalCode": "issue_accept_blocked",
+        "blockers": [
+          {
+            "kind": "un-terminal-node",
+            "nodeId": "g-001",
+            "observation": "not-started"
+          }
+        ],
+        "message": "not accepted yet — node g-001 is not-started (work not complete or finalized).",
+        "exclusions": [
+          {
+            "nodeId": "g-opt",
+            "lifecycle": "deferred",
+            "reason": "postponed beyond this Issue to the next milestone"
+          }
+        ],
+        "optionalNodes": []
+      },
+      "record": null
+    }
+  },
+  "delivery": {
+    "revisionId": "0002",
+    "entries": [
+      {
+        "nodeId": "g-001",
+        "alias": "child-a",
+        "projectId": "app-a",
+        "lifecycle": "required",
+        "observation": "not-started",
+        "delivery": {
+          "state": "not-archived"
+        }
+      },
+      {
+        "nodeId": "g-opt",
+        "alias": "child-opt",
+        "projectId": "app-a",
+        "lifecycle": "deferred",
+        "observation": "not-started",
+        "delivery": {
+          "state": "not-archived"
+        }
+      }
+    ],
+    "counts": {
+      "record": 0,
+      "no-record": 0,
+      "not-archived": 2,
+      "unreadable": 0,
+      "unattributed": 0
+    }
+  },
+  "review": {
+    "issueId": "defer-dogfood",
+    "revisionId": "0002",
+    "determination": {
+      "kind": "not-ready",
+      "blockerCount": 1
+    },
+    "threads": [],
+    "verification": {
+      "progress": {
+        "completed": 0,
+        "total": 1
+      },
+      "delivery": {
+        "record": 0,
+        "no-record": 0,
+        "not-archived": 2,
+        "unreadable": 0,
+        "unattributed": 0
+      }
+    }
+  },
+  "complete": true,
+  "unsearchedRefs": [],
+  "problems": []
+}

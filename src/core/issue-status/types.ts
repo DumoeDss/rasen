@@ -287,8 +287,9 @@ export interface IssueNodeStatus {
    */
   readonly lifecycle: ExecutionPlanNodeLifecycle;
   /**
-   * The recorded reason a `cancelled`/`superseded` node carries — shown beside
-   * the gate's exclusion and on the node line. Null when none is recorded.
+   * The recorded reason a `cancelled`/`superseded`/`deferred` node carries —
+   * shown beside the gate's exclusion, on the node line, and as the deferred
+   * node's ready exit. Null when none is recorded.
    */
   readonly reason: string | null;
   /**
@@ -426,6 +427,14 @@ export type IssueReadyExit =
   | { readonly kind: 'cancelled'; readonly reason: string | null }
   /** A `superseded` node, with its recorded reason. */
   | { readonly kind: 'superseded'; readonly reason: string | null }
+  /**
+   * A `deferred` node, with its recorded reason: postponed work is outside the
+   * set whatever its observation, exactly as abandoned or replaced work is.
+   * Its own kind because the fall-through would lie — a not-started deferred
+   * node with no incomplete dependency would otherwise read `blocked` with an
+   * empty blocker list.
+   */
+  | { readonly kind: 'deferred'; readonly reason: string | null }
   /**
    * An intent node — no Change exists to run; pending Change creation, named
    * with its target project and target line.

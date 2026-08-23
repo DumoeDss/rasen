@@ -25,9 +25,13 @@
  *
  * Since issue-node-lifecycle, the blocker loops are required-scoped: an
  * optional node never contributes an un-terminal blocker, and every
- * cancelled/superseded node rides beside the gate as a named exclusion with
- * its recorded reason — on both the eligible and the blocked evaluation — so
- * a smaller required total is explained rather than silently absorbed.
+ * cancelled/superseded/deferred node rides beside the gate as a named
+ * exclusion with its recorded reason — on both the eligible and the blocked
+ * evaluation — so a smaller required total is explained rather than silently
+ * absorbed. A deferral never holds Done: since issue-deferral-record a
+ * `deferred` node joins that not-demanded family, blocking neither on its
+ * incompleteness nor on its recorded failure, and its exclusion names the
+ * postponement rather than an abandonment.
  *
  * This file is imported BY the projection (for the `status.acceptance` block)
  * and must stay free of any runtime import back into `issue-status`, so the
@@ -50,8 +54,8 @@ function isTerminal(observation: string): boolean {
 /**
  * The gate's lifecycle accounting, derived once from the view (design D3):
  * un-terminal blockers name required (and intent) nodes only; optional nodes
- * never block on terminality; cancelled/superseded nodes leave the required
- * total as named exclusions with their recorded reasons.
+ * never block on terminality; cancelled/superseded/deferred nodes leave the
+ * required total as named exclusions with their recorded reasons.
  */
 function lifecycleAccounting(
   nodes: readonly IssueNodeStatus[]
@@ -65,7 +69,11 @@ function lifecycleAccounting(
   const required: IssueNodeStatus[] = [];
   for (const node of nodes) {
     if (node.kind !== 'change') continue; // intent nodes keep their occupant role below
-    if (node.lifecycle === 'cancelled' || node.lifecycle === 'superseded') {
+    if (
+      node.lifecycle === 'cancelled' ||
+      node.lifecycle === 'superseded' ||
+      node.lifecycle === 'deferred'
+    ) {
       exclusions.push({ nodeId: node.nodeId, lifecycle: node.lifecycle, reason: node.reason ?? '' });
       continue;
     }
@@ -156,10 +164,10 @@ export function evaluateIssueAcceptanceGate(
   }
 
   // The fact blockers, all together (design D3): un-terminal REQUIRED nodes
-  // (optional nodes never block on completion; cancelled/superseded nodes are
-  // excluded and named beside the gate instead), the failures behind a failed
-  // health (wanted work only — a cancelled node's escalation is history), and
-  // every open status problem.
+  // (optional nodes never block on completion; cancelled/superseded/deferred
+  // nodes are excluded and named beside the gate instead), the failures behind
+  // a failed health (wanted work only — a cancelled or deferred node's
+  // escalation is history), and every open status problem.
   const blockers: IssueAcceptanceBlocker[] = [];
   for (const node of view.nodes) {
     if (node.kind === 'change' && node.lifecycle !== 'required') continue;
@@ -173,7 +181,12 @@ export function evaluateIssueAcceptanceGate(
   }
   if (view.health === 'failed') {
     for (const node of view.nodes) {
-      if (node.kind === 'change' && (node.lifecycle === 'cancelled' || node.lifecycle === 'superseded')) {
+      if (
+        node.kind === 'change' &&
+        (node.lifecycle === 'cancelled' ||
+          node.lifecycle === 'superseded' ||
+          node.lifecycle === 'deferred')
+      ) {
         continue;
       }
       if (node.observation === 'failed') {
