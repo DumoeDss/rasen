@@ -54,6 +54,11 @@ import type {
   ResolvedExecutionPlan,
 } from '../store/query/types.js';
 import type { IssueRecordResult, ExecutionPlanResult } from '../store/issues/types.js';
+import type {
+  IssueProjectionDetailPayload,
+  IssueProjectionListPayload,
+  StoreAttentionPayload,
+} from '../issue-read/index.js';
 
 /** A registered project, or the server's launch project. Mirrors config-api's `ProjectRef`. */
 export interface ProjectRef {
@@ -1438,6 +1443,25 @@ export type StoreIssueReferencesResponse = IssueSummaryPage;
 
 /** `GET /api/v1/stores/execution-plan` response. */
 export type StoreExecutionPlanResponse = ResolvedExecutionPlan;
+
+/**
+ * The three Issue PROJECTION reads (`issue-read-surface` design D2), aliased
+ * to the core composition's own payload types under the same
+ * unwrapped-passthrough rule as every response above: the wire body IS the
+ * body `store issue list|show --json` and `store attention --json` print,
+ * because both callers compose it through the same functions. Review has no
+ * path of its own — it is a named key of the single-Issue read, derived from
+ * the same status on the same read.
+ */
+
+/** `GET /api/v1/stores/issue-projections` response. */
+export type StoreIssueProjectionsResponse = IssueProjectionListPayload;
+
+/** `GET /api/v1/stores/issue-projection` response. */
+export type StoreIssueProjectionResponse = IssueProjectionDetailPayload;
+
+/** `GET /api/v1/stores/issue-attention` response. */
+export type StoreIssueAttentionResponse = StoreAttentionPayload;
 
 /** `POST /api/v1/stores/issues` and `POST /api/v1/stores/issue-state` response — both write one Issue record. */
 export type StoreIssueRecordResponse = IssueRecordResult;

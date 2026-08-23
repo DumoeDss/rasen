@@ -52,6 +52,17 @@ Spec、Requirement/Scenario、Change/Delta 的 canonical 校验定义。
 - **边界**：只 import 不改 `src/core/pipeline-registry/`（冻结）与 `src/core/store/query/`（store-pure 契约不含 run-state——这就是它独立成顶层模块的原因）。CLI 缝在 `src/commands/store-issue.ts`：best-effort 解析 execution root（失败降级 visibility-none），list 行加 `phase/health n/m [<alias|id> a/b · …]`（per-project 摘要段，无 lanes 时整体省略），show 加 status 块 + 每项目泳道头（`project <alias|id> (<id>): x/y`，其下节点行格式不变）+ 每节点 attribution 行 + acceptance 节，两命令 `--json` 增生 `status` 对象（含 `status.projects` lanes 与 `status.acceptance`）；index 条目每命令收集一次（`listAllWorkspaceIndexEntries` 按 store uid 过滤）；alias 由 `resolveStoreWideningContext` 读 Store 项目 catalogs（`listProjectEntries` → catalog display `id`）作投影输入；list/show 每命令额外经 `readIssueAcceptanceFacts` 读一次验收内容。
 - **连接**：被 `src/commands/store-issue.ts` 与 `src/core/issue-acceptance/orchestration.ts` 消费（一条状态缝）。
 
+## `issue-read/` — Issue 读面组合（CLI 与 daemon 的同一条组装，Phase 7 g-001 起）
+
+一句话：**Issue 的三条读（list / show / attention）只有一份组装代码**，CLI 与 management API 调同一个函数，所以两面 parity 是构造出来的，不是两条路径互相追平出来的。
+
+- **为什么单独成模块**：`issue-status/` 按章程 I/O-free（纯派生 + 一个成文的 run-state 探针），而这里要读 Store（`listIssues`/`showIssue`/`resolveExecutionPlan` + 验收内容 + workspace index + 项目 catalogs）——`issue-execution/confirm.ts` 的 read-compose-report 先例。
+- **关键文件**：`composition.ts`（三个 compose 函数 + 具名 payload 类型 + 下沉自 CLI 的缝 `statusInputFor`/`resolveStoreWideningContext`/`resolvePredecessorPlan`/`detailForList`/`attentionCounts`）、`run-context.ts`（`resolveRunStateContext(startPath)`）、`index.ts`（barrel）。
+- **payload 键序是承载语义的**：`printJson` 按插入序序列化，所以三个 compose 函数按 CLI 历来打印的字面量顺序建对象。既有 store-issue / store-attention CLI 套件即这次抽取的字节守卫。
+- **谁注入什么**：`query` 是参数（CLI 传 `StoreAggregateQuery`，daemon 传 `createStoreQueryByUid()` 的 uid 严格实例）；`runState` 是参数（CLI 传 `resolveRunStateContext(process.cwd())`，daemon 传 `resolveRunStateContext(context.launchProjectRoot)`）。解不出执行根 = `runStateVisibility:'none'` + 仅 committed evidence，**诚实降级且必须被呈现方披露**（永不伪造 live 事实）。
+- **拒收 vs 不可读是两条互不转换的通道**：attention 的未知 `--issue`/`issueId` 抛 `issue_attention_unknown_issue`（空扫描是关于"扫过哪些 Issue"的断言，必须为真）；而计划读不回 / 引用未检索 / 记录分叉是 **200 载荷内**的 `problems`/`complete:false`/`unsearchedRefs`。
+- **连接**：`src/commands/store-issue.ts`（list/show）、`src/commands/store.ts`（attention）、`src/core/management-api/stores.ts`（三条投影 handler）。CLI 侧只剩 renderer 与 `resolveProjectionContext()` 这个 cwd 薄包装；attention 的失败哨兵（省略 `unsearchedRefs`/`complete`）仍属命令而非扫描。
+
 ## `issue-execution/` — Issue 节点启动绑定（resolve + verify + emit，不 spawn）
 
 回答"这个 Issue 的下一个节点从哪里启动"：从 plan 修订 + 投影 observations 推导 runnable frontier（observation 规则，非 query 的 archive-based `blockedBy`），经固定路由序解析绑定的执行上下文（D4：workspace pair index 条目 → L6 `resolveSessionLaunchContext` 成员 checkout → unprepared 拒绝并给出确切 `store workspace plan --existing-change` 准备命令），输出 launch contract（cwd/attached/pipeline/mode）。读时推导、零写入；refusal 闭集九码（g-002 起 `--node` 命中 cancelled/superseded 节点有独立码并点名 lifecycle+reason，frontier 只含 wanted 节点 required|optional），每条拒结名名候选/阻塞/准备命令/L6 诊断。issue-cross-project-gating 起阻塞命名跨项目化：`--node` fresh-launch 拒收与 frontier "awaits" 理由逐 blocker 渲染 `<id>@<project> (<state>)`（经共享 `issueBlockerState`——`not-started, no local run-state` 与 `unknown (<diag>)` 两项诚实细化），gate 规则本身零改动。**Phase 5 g-001 起三面共一谓词**：frontier 候选 = `deriveIssueReadySet`（issue-status）members——旧私有 `isRunnable` 已删，start frontier / confirm launchable / `ready` 读面同一推导，等价测试双向钉死（`issue-ready-set-equivalence.test.ts`）；confirm 的 begun 节点（running/complete/unknown）仍走逐节点 `resolveIssueLaunchBinding`（resume/report 契约不变）。

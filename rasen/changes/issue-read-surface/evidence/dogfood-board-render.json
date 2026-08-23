@@ -1,0 +1,56 @@
+{
+  "capturedAt": "2026-08-23T17:30:12.051Z",
+  "store": "issue-registry",
+  "cardCount": 5,
+  "laneCounts": {
+    "planning": 0,
+    "ready": 0,
+    "active": 0,
+    "review": 0,
+    "done": 5
+  },
+  "attentionLineCount": 0,
+  "runStateDisclosure": "Run-state visible at: E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer",
+  "cards": [
+    {
+      "issueId": "issue-autodecompose-uplift",
+      "phase": "done",
+      "health": "healthy",
+      "title": "Issue layer Phase 4: auto-decompose uplift (reviewable decomposition dispatch)",
+      "progress": "2/2"
+    },
+    {
+      "issueId": "issue-cross-project-execution",
+      "phase": "done",
+      "health": "healthy",
+      "title": "Issue layer Phase 3: one Issue across member projects",
+      "progress": "4/4"
+    },
+    {
+      "issueId": "issue-cross-project-replanning",
+      "phase": "done",
+      "health": "healthy",
+      "title": "Issue layer Phase 5: cross-project replanning (ready set, history preservation, needs-attention)",
+      "progress": "3/3"
+    },
+    {
+      "issueId": "issue-level-review-delivery",
+      "phase": "done",
+      "health": "healthy",
+      "title": "Issue layer Phase 6: unified review & delivery close (evidence rollup, review gate, deferral record)",
+      "progress": "3/3"
+    },
+    {
+      "issueId": "issue-multi-change-execution",
+      "phase": "done",
+      "health": "healthy",
+      "title": "Issue layer Phase 2: single Issue, single project, multi-Change execution",
+      "progress": "3/3"
+    }
+  ],
+  "chips": [
+    "All",
+    "rasen-site",
+    "rasen"
+  ]
+}

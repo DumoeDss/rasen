@@ -33,6 +33,18 @@ vi.mock('../src/components/TaskDetailPage.js', async () => {
 vi.mock('../src/components/SpacesPage.js', () => ({
   SpacesPage: () => <div data-testid="spaces-page">spaces</div>,
 }));
+vi.mock('../src/components/IssueBoardPage.js', () => ({
+  IssueBoardPage: () => <div data-testid="issue-board-page">issues</div>,
+}));
+vi.mock('../src/components/IssueDetailPage.js', async () => {
+  const { useRoute } = await import('preact-iso');
+  return {
+    IssueDetailPage: () => {
+      const { params } = useRoute();
+      return <div data-testid="issue-detail-page">{params.issueId}</div>;
+    },
+  };
+});
 vi.mock('../src/components/AuditPage.js', () => ({
   AuditPage: () => <div data-testid="audit-page">audit</div>,
 }));
@@ -206,6 +218,49 @@ describe('App routing', () => {
     await mountAt(container, '/p/proj_x/task/my-change');
     expect(container.querySelector('[data-testid="task-detail-page"]')).not.toBeNull();
     expect(container.textContent).toContain('my-change');
+  });
+
+  it('renders the Issue Board at a store space issues route', async () => {
+    await mountAt(container, '/s/store_y/issues');
+    expect(container.querySelector('[data-testid="issue-board-page"]')).not.toBeNull();
+  });
+
+  it('lands a deep link straight on the Issue Detail, carrying the issue id', async () => {
+    await mountAt(container, '/s/store_y/issues/my-issue');
+    expect(container.querySelector('[data-testid="issue-detail-page"]')).not.toBeNull();
+    expect(container.textContent).toContain('my-issue');
+    // The Board was never mounted: the deep link is reachable on its own.
+    expect(container.querySelector('[data-testid="issue-board-page"]')).toBeNull();
+  });
+
+  it('offers the Issues nav entry in a store space, marks it current there, and stands Board down', async () => {
+    await mountAt(container, '/s/store_y/issues');
+    const issuesLink = container.querySelector('nav a[href="/s/store_y/issues"]');
+    expect(issuesLink).not.toBeNull();
+    expect(issuesLink!.getAttribute('aria-current')).toBe('page');
+    // `spaceSection` reports `board` for an unknown section, so the Board link
+    // must not also claim to be the current page.
+    expect(
+      container.querySelector('nav a[href="/s/store_y/board"]')!.getAttribute('aria-current')
+    ).toBeNull();
+  });
+
+  it('offers no Issues section in a project space — Issues live in Stores', async () => {
+    await mountAt(container, '/p/proj_x/board');
+    expect(container.querySelector('[data-testid="nav-issues"]')).toBeNull();
+    expect(container.querySelector('nav a[href="/p/proj_x/issues"]')).toBeNull();
+    // The store-space nav DOES offer it, so the absence above is the space
+    // type's doing rather than the entry being missing everywhere. Mounted into
+    // its own container: `LocationProvider` reads the location once at mount,
+    // so re-rendering into the same node would keep the first route.
+    const storeContainer = document.createElement('div');
+    document.body.appendChild(storeContainer);
+    try {
+      await mountAt(storeContainer, '/s/store_y/board');
+      expect(storeContainer.querySelector('[data-testid="nav-issues"]')).not.toBeNull();
+    } finally {
+      document.body.removeChild(storeContainer);
+    }
   });
 
   it('renders the space-agnostic Spaces page at /spaces (no space prefix)', async () => {

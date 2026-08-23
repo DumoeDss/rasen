@@ -10,6 +10,7 @@ import type * as http from 'node:http';
 import * as path from 'node:path';
 
 import type { ConfigApiContext } from '../config-api/router.js';
+import { ISSUE_STATES } from '../store/issues/index.js';
 import {
   resolveProjectPlanningSpaceFromRoot,
   resolveSpaceSelector,
@@ -34,11 +35,15 @@ import {
   handleStoreIssue,
   handleStoreIssueReferences,
   handleStoreExecutionPlan,
+  handleStoreIssueProjections,
+  handleStoreIssueProjection,
+  handleStoreIssueAttention,
   handleStoreIssueCreate,
   handleStoreIssueSetState,
   handleStorePublishPlan,
   type StoreChangesFilter,
 } from './stores.js';
+import { resolveRunStateContext } from '../issue-read/index.js';
 import { handleRuns, handleRunDetail } from './runs.js';
 import { handleRunControl, createProductionRunControlSpawner, type RunControlSpawner } from './run-control.js';
 import { handleTaskDetail } from './task-detail.js';
@@ -350,6 +355,9 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/stores/issue-state',
   '/api/v1/stores/issue-references',
   '/api/v1/stores/execution-plan',
+  '/api/v1/stores/issue-projections',
+  '/api/v1/stores/issue-projection',
+  '/api/v1/stores/issue-attention',
 ]);
 
 const SESSION_ID_PATH_PREFIX = '/api/v1/sessions/';
@@ -1639,6 +1647,81 @@ export function createManagementRouter(
         space.space,
         url.searchParams.get('issueId') ?? undefined,
         url.searchParams.get('revisionId') ?? undefined
+      );
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    // The Issue projection reads (`issue-read-surface` design D2). Each is a
+    // passthrough of one core composition — the same one the command line
+    // prints — and each re-derives from Store evidence on every request: the
+    // run-state context is resolved per request rather than cached, so a
+    // mutation between two identical GETs is reflected with no invalidation
+    // step, because there is nothing to invalidate.
+    if (pathname === '/api/v1/stores/issue-projections') {
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const stateParam = url.searchParams.get('state');
+      if (stateParam !== null && !(ISSUE_STATES as readonly string[]).includes(stateParam)) {
+        sendError(
+          res,
+          400,
+          'issue_state_undefined',
+          `'${stateParam}' is not a defined Issue state.`,
+          `Filter with state=${ISSUE_STATES.join('|')}, or omit state.`
+        );
+        return;
+      }
+      const state = stateParam === null ? undefined : stateParam as (typeof ISSUE_STATES)[number];
+      const result = await handleStoreIssueProjections(
+        space.space,
+        await resolveRunStateContext(context.launchProjectRoot ?? undefined),
+        state
+      );
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/issue-projection') {
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const result = await handleStoreIssueProjection(
+        space.space,
+        await resolveRunStateContext(context.launchProjectRoot ?? undefined),
+        url.searchParams.get('issueId') ?? undefined
+      );
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/issue-attention') {
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const result = await handleStoreIssueAttention(
+        space.space,
+        await resolveRunStateContext(context.launchProjectRoot ?? undefined),
+        url.searchParams.get('issueId') ?? undefined
       );
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);

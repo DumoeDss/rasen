@@ -6,6 +6,8 @@ import { ConfigPage } from './components/ConfigPage.js';
 import { BoardPage } from './components/BoardPage.js';
 import { SpaceBootstrap } from './components/SpaceBootstrap.js';
 import { ArchivePage } from './components/ArchivePage.js';
+import { IssueBoardPage } from './components/IssueBoardPage.js';
+import { IssueDetailPage } from './components/IssueDetailPage.js';
 import { TaskDetailPage } from './components/TaskDetailPage.js';
 import { SpacesPage } from './components/SpacesPage.js';
 import { WorkflowsPage } from './components/WorkflowsPage.js';
@@ -83,6 +85,11 @@ export function App() {
           <Route path="/s/:storeId/pipelines" component={PipelinesPage} />
           <Route path="/p/:projectId/pipelines/:name" component={PipelineCanvasPage} />
           <Route path="/s/:storeId/pipelines/:name" component={PipelineCanvasPage} />
+          {/* The Issue read surface (issue-board-ui spec) is STORE-ONLY: an
+              Issue is Store-level cross-project intent, so there is no `/p/`
+              pair — a project space offers no Issues section at all. */}
+          <Route path="/s/:storeId/issues" component={IssueBoardPage} />
+          <Route path="/s/:storeId/issues/:issueId" component={IssueDetailPage} />
           <Route path="/p/:projectId/archive" component={ArchivePage} />
           <Route path="/s/:storeId/archive" component={ArchivePage} />
           <Route path="/p/:projectId/task/:changeName" component={TaskDetailPage} />

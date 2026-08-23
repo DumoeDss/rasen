@@ -2505,3 +2505,453 @@ export interface StoreExecutionPlanPublishRequest {
   issueId?: string;
   nodes?: StoreExecutionPlanNodeInput[];
 }
+
+// ---- Issue projections (issue-read-surface) ----
+// Source of truth: the payload types `src/core/issue-read/composition.ts`
+// exports and `src/core/management-api/wire-types.ts` aliases as the three
+// projection responses. Same hand-maintained-mirror discipline as the section
+// above: copied field-for-field, `readonly` dropped, closed vocabularies
+// copied whole so the UI can map them to labels exhaustively.
+//
+// These are DERIVED reads. Nothing in this file is a place to compute one: the
+// Issue surface renders payload fields and maps closed vocabularies to labels,
+// and derives no phase, health, progress, or determination of its own.
+
+/** Where the work stands. Lane placement IS this value, verbatim. */
+export type StoreIssuePhase = 'planning' | 'ready' | 'active' | 'review' | 'done';
+
+/** Whether anything needs a human. `blocked`/`stale` ship reserved. */
+export type StoreIssueHealth = 'healthy' | 'blocked' | 'failed' | 'waiting-human' | 'stale';
+
+/** What one plan node's execution looks like right now. */
+export type StoreIssueNodeObservation =
+  | 'finalized'
+  | 'run-terminal'
+  | 'in-flight'
+  | 'failed'
+  | 'waiting-human'
+  | 'advanced'
+  | 'not-started'
+  | 'unknown';
+
+/** The lifecycle a plan revision records for a node (absent reads `required`). */
+export type StoreIssueNodeLifecycle =
+  | 'required'
+  | 'optional'
+  | 'cancelled'
+  | 'superseded'
+  | 'deferred';
+
+/** Completed required nodes over total required nodes. */
+export interface StoreIssueProgress {
+  completed: number;
+  total: number;
+}
+
+/** Why a fact the projection could not derive is reported rather than guessed. */
+export type StoreIssueStatusProblemKind =
+  | 'unreadable-plan'
+  | 'unresolved-reference'
+  | 'ambiguous-reference'
+  | 'invalid-run-state'
+  | 'invalid-archive-record'
+  | 'unreadable-acceptance'
+  | 'unsearched-refs';
+
+export interface StoreIssueStatusProblem {
+  kind: StoreIssueStatusProblemKind;
+  node: string | null;
+  ref: string | null;
+  reason: string;
+}
+
+/** Which locator found a node's run-state; null when nothing was located. */
+export type StoreIssueRunStateLocator = 'execution-root' | 'workspace-index';
+
+/** Whether this read could see machine-local run-state at all, and where. */
+export type StoreIssueRunStateVisibility =
+  | { kind: 'execution-root'; executionRoot: string }
+  | { kind: 'none' };
+
+/** One durable session pointer a located run-state's stage records. */
+export interface StoreIssueNodeSession {
+  stageId: string;
+  role: string | null;
+  runtime: string | null;
+  sessionId?: string;
+  threadId?: string;
+  transcript?: string;
+}
+
+/** The facts that join a node's execution back to the Issue. */
+export interface StoreIssueNodeAttribution {
+  pipeline: string | null;
+  sessions: StoreIssueNodeSession[];
+  evidenceLocator: string | null;
+}
+
+/** One dependency the work-complete rule still waits on. */
+export interface StoreIssueNodeBlocker {
+  nodeId: string;
+  projectId: string;
+  observation: StoreIssueNodeObservation;
+}
+
+/** One frozen evidence inventory entry of an archive record. */
+export interface StoreIssueArchiveEvidenceEntry {
+  path: string;
+  sha256: string;
+}
+
+/**
+ * One change node's delivery evidence: five named states, four of which are
+ * four DIFFERENT absences a reviewer acts on differently. Null for intent
+ * nodes — nothing was delivered by construction.
+ */
+export type StoreIssueNodeDelivery =
+  | {
+      state: 'record';
+      basis: 'v2' | 'legacy';
+      archivedAt: string | null;
+      codeCommit: string | null;
+      planningBranch: string | null;
+      outcome: string | null;
+      evidence: StoreIssueArchiveEvidenceEntry[] | null;
+      missing: string[] | null;
+      entryName: string;
+      foundAtRef: string;
+      blobPath: string;
+    }
+  | { state: 'no-record'; foundAtRef: string | null; blobPath: string | null }
+  | { state: 'not-archived' }
+  | { state: 'unreadable' }
+  | { state: 'unattributed' };
+
+/** One Issue-level delivery rollup entry, in the revision's canonical node order. */
+export interface StoreIssueDeliveryEntry {
+  nodeId: string;
+  alias: string | null;
+  projectId: string;
+  lifecycle: StoreIssueNodeLifecycle;
+  observation: StoreIssueNodeObservation;
+  delivery: StoreIssueNodeDelivery | null;
+}
+
+/** Honest counts over the five named states — counts summarize, entries stay listed. */
+export interface StoreIssueDeliveryCounts {
+  record: number;
+  'no-record': number;
+  'not-archived': number;
+  unreadable: number;
+  unattributed: number;
+}
+
+/** Null when the revision did not read back: "no plan" and "no evidence" differ. */
+export interface StoreIssueDeliveryEvidence {
+  revisionId: string;
+  entries: StoreIssueDeliveryEntry[];
+  counts: StoreIssueDeliveryCounts;
+}
+
+/** One plan node, observed. */
+export interface StoreIssueNodeStatus {
+  nodeId: string;
+  kind: 'change' | 'intent';
+  projectId: string;
+  targetLineId: string;
+  lifecycle: StoreIssueNodeLifecycle;
+  reason: string | null;
+  suggestedPipeline: string | null;
+  rationale: string | null;
+  uncertainty: string | null;
+  alias: string | null;
+  observation: StoreIssueNodeObservation;
+  blockedBy: StoreIssueNodeBlocker[];
+  diagnostic: string | null;
+  runStatePath: string | null;
+  locatedBy: StoreIssueRunStateLocator | null;
+  attribution: StoreIssueNodeAttribution;
+  delivery: StoreIssueNodeDelivery | null;
+}
+
+/** One member project's lane: node IDS, never node copies, plus the lane's own progress. */
+export interface StoreIssueProjectLane {
+  projectId: string;
+  alias: string | null;
+  nodeIds: string[];
+  progress: StoreIssueProgress;
+}
+
+// -- The revision delta -------------------------------------------------------
+
+export interface StoreIssueRevisionRetarget {
+  nodeId: string;
+  fromProjectId: string;
+  toProjectId: string;
+  fromTargetLineId: string;
+  toTargetLineId: string;
+}
+
+export interface StoreIssueRevisionEdgeChange {
+  nodeId: string;
+  addedDependencies: string[];
+  removedDependencies: string[];
+}
+
+export interface StoreIssueRevisionLifecycleChange {
+  nodeId: string;
+  from: StoreIssueNodeLifecycle;
+  to: StoreIssueNodeLifecycle;
+}
+
+export interface StoreIssueRevisionSuggestionChange {
+  nodeId: string;
+  from: string | null;
+  to: string | null;
+}
+
+/** What a revision changed against its predecessor. Null when there is none. */
+export interface StoreIssueRevisionDelta {
+  revisionId: string;
+  supersedes: string;
+  added: string[];
+  removed: string[];
+  retargeted: StoreIssueRevisionRetarget[];
+  edgeChanges: StoreIssueRevisionEdgeChange[];
+  lifecycleChanges: StoreIssueRevisionLifecycleChange[];
+  suggestionChanges: StoreIssueRevisionSuggestionChange[];
+}
+
+// -- Acceptance ---------------------------------------------------------------
+
+export interface StoreIssueAcceptanceCondition {
+  id: string;
+  requirement: string;
+  verification?: string;
+}
+
+export interface StoreIssueAcceptanceConditionsRevision {
+  version: 1;
+  issueId: string;
+  revisionId: string;
+  supersedes: string | null;
+  createdAt: string;
+  contentSha256: string;
+  conditions: StoreIssueAcceptanceCondition[];
+}
+
+/** The latest acceptance-conditions revision read back, or why it could not be. */
+export interface StoreIssueAcceptanceConditionsRead {
+  revision: StoreIssueAcceptanceConditionsRevision | null;
+  revisionId: string | null;
+  diagnostic: string | null;
+  path: string | null;
+}
+
+/** The gate facts an acceptance freezes — portable facts only. */
+export interface StoreIssueAcceptanceGateSnapshot {
+  completed: number;
+  total: number;
+  health: string;
+  problemsStanding: number;
+}
+
+/** One node the gate's required total excluded, with the reason its revision records. */
+export interface StoreIssueAcceptanceGateExclusion {
+  nodeId: string;
+  lifecycle: 'cancelled' | 'superseded' | 'deferred';
+  reason: string;
+}
+
+/** The closed blocker taxonomy — every blocker is named together, never first-only. */
+export type StoreIssueAcceptanceBlocker =
+  | { kind: 'un-terminal-node'; nodeId: string; observation: StoreIssueNodeObservation }
+  | { kind: 'failing-node'; nodeId: string }
+  | {
+      kind: 'status-problem';
+      problemKind: StoreIssueStatusProblemKind;
+      node: string | null;
+      ref: string | null;
+      reason: string;
+    }
+  | { kind: 'incomplete-read'; reason: string };
+
+export type StoreIssueAcceptanceRefusalCode =
+  | 'issue_accept_requires_plan'
+  | 'issue_accept_conditions_required'
+  | 'issue_accept_already_accepted'
+  | 'issue_accept_dropped'
+  | 'issue_accept_blocked';
+
+/** One gate evaluation: eligible with its snapshot, or every blocker named. */
+export type StoreIssueAcceptanceGateEvaluation =
+  | {
+      eligible: true;
+      conditionsRevisionId: string;
+      snapshot: StoreIssueAcceptanceGateSnapshot;
+      exclusions: StoreIssueAcceptanceGateExclusion[];
+      optionalNodes: string[];
+    }
+  | {
+      eligible: false;
+      refusalCode: StoreIssueAcceptanceRefusalCode;
+      blockers: StoreIssueAcceptanceBlocker[];
+      message: string;
+      exclusions: StoreIssueAcceptanceGateExclusion[];
+      optionalNodes: string[];
+    };
+
+export interface StoreIssueAcceptanceRecordExclusion {
+  nodeId: string;
+  lifecycle: 'cancelled' | 'superseded' | 'deferred';
+  reason: string;
+}
+
+/** `rasen/issues/<issueId>/accepted.yaml` — ONE record per Issue, never rewritten. */
+export interface StoreIssueAcceptedRecord {
+  version: 1;
+  issueId: string;
+  acceptedAt: string;
+  conditionsRevisionId: string;
+  conditionsSha256: string;
+  gate: StoreIssueAcceptanceGateSnapshot;
+  exclusions?: StoreIssueAcceptanceRecordExclusion[];
+  note: string | null;
+  contentSha256: string;
+}
+
+/** Null when the read supplied no acceptance facts — a named condition of THAT read. */
+export interface StoreIssueAcceptanceStatusBlock {
+  conditions: StoreIssueAcceptanceConditionsRead;
+  gate: StoreIssueAcceptanceGateEvaluation;
+  record: StoreIssueAcceptedRecord | null;
+}
+
+// -- The status --------------------------------------------------------------
+
+/** The tri-axis answer, plus everything that explains it. */
+export interface StoreIssueStatus {
+  phase: StoreIssuePhase;
+  health: StoreIssueHealth;
+  /** Null when there is no latest readable revision to count over. */
+  progress: StoreIssueProgress | null;
+  nodes: StoreIssueNodeStatus[];
+  delta: StoreIssueRevisionDelta | null;
+  projects: StoreIssueProjectLane[];
+  problems: StoreIssueStatusProblem[];
+  runStateVisibility: StoreIssueRunStateVisibility;
+  complete: boolean;
+  acceptance: StoreIssueAcceptanceStatusBlock | null;
+}
+
+// -- Attention ---------------------------------------------------------------
+
+/** Ordinary progress is deliberately NO kind at all: scheduling is not sickness. */
+export type StoreIssueAttentionKind =
+  | 'failure'
+  | 'blocked-behind'
+  | 'waiting-human'
+  | 'acceptance-awaiting'
+  | 'problem';
+
+export interface StoreIssueAttentionBlocker {
+  nodeId: string;
+  projectId: string;
+  state: string;
+}
+
+/** One thing a human must act on, carrying its Issue's phase AND health beside the fact. */
+export type StoreIssueAttentionItem = {
+  issueId: string;
+  phase: StoreIssuePhase;
+  health: StoreIssueHealth;
+  nodeId: string | null;
+  alias: string | null;
+} & (
+  | { kind: 'failure'; diagnostic: string | null }
+  | { kind: 'blocked-behind'; blockers: StoreIssueAttentionBlocker[] }
+  | { kind: 'waiting-human' }
+  | { kind: 'acceptance-awaiting'; gate: StoreIssueAcceptanceGateEvaluation | null }
+  | { kind: 'problem'; problem: StoreIssueStatusProblem }
+);
+
+/** One scanned Issue's roll facts — what keeps "honestly unlisted" visible. */
+export interface StoreIssueAttentionScanEntry {
+  issueId: string;
+  phase: StoreIssuePhase;
+  health: StoreIssueHealth;
+  itemCount: number;
+  runStateVisibility: StoreIssueRunStateVisibility;
+}
+
+// -- Review ------------------------------------------------------------------
+
+/** Seven values MAPPED one-to-one from the acceptance gate, never re-derived. */
+export type StoreIssueReviewDetermination =
+  | { kind: 'review-ready'; conditionsRevisionId: string }
+  | { kind: 'accepted'; acceptedAt: string | null; conditionsRevisionId: string | null }
+  | { kind: 'not-ready'; blockerCount: number }
+  | { kind: 'conditions-missing'; message: string }
+  | { kind: 'no-plan' }
+  | { kind: 'dropped' }
+  | { kind: 'acceptance-unknown'; reason: string };
+
+/** One fact the gate excludes but a reviewer must see. Threads NEVER block. */
+export type StoreIssueReviewThread =
+  | { kind: 'failure'; nodeId: string; alias: string | null; diagnostic: string | null }
+  | {
+      kind: 'blocked-behind';
+      nodeId: string;
+      alias: string | null;
+      blockers: StoreIssueAttentionBlocker[];
+    }
+  | { kind: 'waiting-human'; nodeId: string; alias: string | null }
+  | { kind: 'optional-open'; nodeId: string; observation: StoreIssueNodeObservation }
+  | { kind: 'archive-pending'; nodeId: string; observation: StoreIssueNodeObservation }
+  | { kind: 'record-absent'; nodeId: string }
+  | { kind: 'evidence-missing'; nodeId: string; names: string[] };
+
+/** The verification summary is BY REFERENCE — never copies of the facts it points at. */
+export interface StoreIssueReview {
+  issueId: string;
+  revisionId: string | null;
+  determination: StoreIssueReviewDetermination;
+  threads: StoreIssueReviewThread[];
+  verification: {
+    progress: StoreIssueProgress | null;
+    delivery: StoreIssueDeliveryCounts | null;
+  };
+}
+
+// -- The three projection responses -------------------------------------------
+
+/** One Issue of the list read: its summary with the status projected over it. */
+export type StoreIssueProjectionEntry = StoreIssueSummary & { status: StoreIssueStatus };
+
+/** `GET /api/v1/stores/issue-projections` response. */
+export interface StoreIssueProjectionsResponse extends StoreAggregateCompleteness {
+  issues: StoreIssueProjectionEntry[];
+}
+
+/** `GET /api/v1/stores/issue-projection` response — status, delivery, and review together. */
+export interface StoreIssueProjectionResponse extends StoreAggregateCompleteness {
+  issue: StoreIssueSummary;
+  plan: StoreExecutionPlanResponse | null;
+  status: StoreIssueStatus;
+  /** Null exactly when no readable revision derived a rollup. */
+  delivery: StoreIssueDeliveryEvidence | null;
+  review: StoreIssueReview;
+}
+
+/** `GET /api/v1/stores/issue-attention` response. */
+export interface StoreIssueAttentionResponse {
+  narrowed: boolean;
+  issueId: string | null;
+  scannedCount: number;
+  scanned: StoreIssueAttentionScanEntry[];
+  items: StoreIssueAttentionItem[];
+  counts: Record<StoreIssueAttentionKind, number>;
+  total: number;
+  unsearchedRefs: { targetLineId: string; storeRef: string; reason: string }[];
+  complete: boolean;
+}

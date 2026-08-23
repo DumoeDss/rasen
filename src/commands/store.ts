@@ -38,28 +38,22 @@ import { isInteractive } from '../utils/interactive.js';
 import { WORKSPACE_DIR_NAME } from '../core/config.js';
 import { StoreAggregateQuery } from '../core/store/query/index.js';
 import {
-  deriveIssueAttention,
   ISSUE_ATTENTION_KIND_ORDER,
-  issueAttentionKindRank,
-  projectIssueStatus,
   type IssueAttentionItem,
-  type IssueAttentionKind,
-  type IssueRunStateVisibility,
 } from '../core/issue-status/index.js';
-import { readIssueAcceptanceFacts } from '../core/issue-acceptance/index.js';
+import {
+  attentionCounts,
+  composeStoreAttention,
+  resolveRunStateContext,
+  type StoreAttentionScanEntry,
+} from '../core/issue-read/index.js';
 import { runAdopt, runEject } from './store-migration.js';
 import {
   runStoreMigrateLayout,
   type StoreMigrateLayoutOptions,
 } from './store-migrate-layout.js';
 import { registerStoreAggregateCommands } from './store-aggregate.js';
-import {
-  registerStoreIssueCommand,
-  resolvePredecessorPlan,
-  resolveProjectionContext,
-  resolveStoreWideningContext,
-  statusInputFor,
-} from './store-issue.js';
+import { registerStoreIssueCommand } from './store-issue.js';
 import { registerStoreTargetLineCommand } from './store-target-line.js';
 import { registerWorkspaceCommand } from './workspace.js';
 import {
@@ -562,24 +556,6 @@ interface StoreAttentionOptions {
   json?: boolean;
 }
 
-/** One scanned Issue's roll facts — what keeps "honestly unlisted" visible. */
-interface AttentionScanEntry {
-  readonly issueId: string;
-  readonly phase: string;
-  readonly health: string;
-  readonly itemCount: number;
-  readonly runStateVisibility: IssueRunStateVisibility;
-}
-
-/** Per-kind counts over all five kinds, zeros included — the summary, never a replacement. */
-function attentionCounts(items: readonly IssueAttentionItem[]): Record<IssueAttentionKind, number> {
-  const counts = Object.fromEntries(
-    ISSUE_ATTENTION_KIND_ORDER.map(kind => [kind, 0])
-  ) as Record<IssueAttentionKind, number>;
-  for (const item of items) counts[item.kind] += 1;
-  return counts;
-}
-
 /** One attention item's human line — the item's own context carries the axes. */
 function renderAttentionItem(item: IssueAttentionItem): string {
   const context = `[${item.issueId} ${item.phase}/${item.health}]`;
@@ -611,7 +587,7 @@ function renderAttentionItem(item: IssueAttentionItem): string {
 }
 
 /** The visibility label each per-Issue read already renders, one line per distinct value. */
-function attentionVisibilityLines(entries: readonly AttentionScanEntry[]): string[] {
+function attentionVisibilityLines(entries: readonly StoreAttentionScanEntry[]): string[] {
   const labels = new Set(
     entries.map(entry =>
       entry.runStateVisibility.kind === 'execution-root'
@@ -632,7 +608,7 @@ function attentionVisibilityLines(entries: readonly AttentionScanEntry[]): strin
 function renderAttentionAnswer(
   narrowed: boolean,
   narrowedIssueId: string | null,
-  scanned: readonly AttentionScanEntry[],
+  scanned: readonly StoreAttentionScanEntry[],
   items: readonly IssueAttentionItem[]
 ): void {
   const scope = narrowed ? `narrowed to ${narrowedIssueId} — ` : '';
@@ -655,11 +631,6 @@ function renderAttentionAnswer(
   }
   console.log('');
   console.log('  wrote nothing — attention derives; acting on an item remains a human act.');
-}
-
-/** Code-point comparator for the stable cross-Issue (issueId, nodeId) order. */
-function codePointOrder(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function formatPathForHuman(targetPath: string): string {
@@ -1751,97 +1722,33 @@ export function registerStoreCommand(program: Command): void {
         narrowed: options.issue !== undefined,
         issueId: options.issue ?? null,
         scannedCount: 0,
-        scanned: [] as AttentionScanEntry[],
+        scanned: [] as StoreAttentionScanEntry[],
         items: [] as IssueAttentionItem[],
         counts: attentionCounts([]),
         total: 0,
       });
       try {
-        const scope = {
-          ...(options.store === undefined ? {} : { store: options.store }),
-          startPath: process.cwd(),
-        };
-        const page = await StoreAggregateQuery.listIssues(scope);
-        const selected =
-          options.issue === undefined
-            ? page.issues
-            : page.issues.filter(summary => summary.issueId === options.issue);
-        // An unknown `--issue` is refused, never read as an empty store: the
-        // empty state is a claim about scanned Issues, and it must stay true.
-        if (options.issue !== undefined && selected.length === 0) {
-          throw new StoreError(
-            `Issue '${options.issue}' is not known to this Store; an unknown id is refused rather than read as an empty scan.`,
-            'issue_attention_unknown_issue',
-            {
-              fix:
-                `Run 'rasen store issue list${
-                  options.store === undefined ? '' : ` --store ${options.store}`
-                }' to read the Store's Issue ids.`,
-            }
-          );
-        }
-        // Gathered ONCE for the whole scan, exactly as show gathers them for
-        // its one Issue: the working directory's projection context and the
-        // Store-scoped widening inputs.
-        const context = await resolveProjectionContext();
-        const widening = await resolveStoreWideningContext(options.store);
-        const scanned: AttentionScanEntry[] = [];
-        const items: IssueAttentionItem[] = [];
-        for (const summary of selected) {
-          const detail = await StoreAggregateQuery.showIssue({
-            ...scope,
-            issueId: summary.issueId,
-          });
-          const status = await projectIssueStatus(
-            statusInputFor(detail, {
-              ...context,
-              ...widening,
-              acceptance: await readIssueAcceptanceFacts({
-                ...scope,
-                issueId: summary.issueId,
-              }),
-              predecessorPlan: await resolvePredecessorPlan(
-                scope,
-                summary.issueId,
-                detail.plan?.revision?.supersedes ?? null
-              ),
-            })
-          );
-          const derived = deriveIssueAttention(summary.issueId, status);
-          scanned.push({
-            issueId: summary.issueId,
-            phase: status.phase,
-            health: status.health,
-            itemCount: derived.length,
-            runStateVisibility: status.runStateVisibility,
-          });
-          items.push(...derived);
-        }
-        // The fleet answer's order: fail-first kind rank, then the stable
-        // (issueId, nodeId) order — the same key the per-Issue derivation
-        // already sorted each Issue's items by, composed across Issues.
-        items.sort(
-          (left, right) =>
-            issueAttentionKindRank(left.kind) - issueAttentionKindRank(right.kind) ||
-            codePointOrder(left.issueId, right.issueId) ||
-            codePointOrder(left.nodeId ?? '', right.nodeId ?? '')
+        // The fleet composition (issue-read-surface design D1): the scan loop
+        // - the ordered per-Issue inputs, the unknown-narrowing refusal, and
+        // the fail-first cross-Issue ordering - lives in `core/issue-read`,
+        // where the daemon's attention path calls the same function, so the
+        // two surfaces cannot assemble a scan differently. The failure
+        // sentinel above stays here: it is this command's shape for a refused
+        // answer, not a fact about the scan.
+        const answer = await composeStoreAttention(
+          StoreAggregateQuery,
+          {
+            ...(options.store === undefined ? {} : { store: options.store }),
+            startPath: process.cwd(),
+          },
+          await resolveRunStateContext(process.cwd()),
+          options.issue
         );
-        const answer = {
-          narrowed: options.issue !== undefined,
-          issueId: options.issue ?? null,
-          scannedCount: scanned.length,
-          scanned,
-          items,
-          counts: attentionCounts(items),
-          total: items.length,
-          unsearchedRefs: page.unsearchedRefs,
-          complete: page.complete,
-        };
         if (options.json) {
           printJson(answer);
           return;
         }
-        renderAttentionAnswer(answer.narrowed, answer.issueId, scanned, items);
+        renderAttentionAnswer(answer.narrowed, answer.issueId, answer.scanned, answer.items);
       } catch (error) {
         emitFailure(options.json, emptyAnswer(), error, 'store_attention_failed');
       }

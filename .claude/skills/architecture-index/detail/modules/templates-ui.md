@@ -36,6 +36,6 @@
 
 - **关键文件**：`main.tsx`（DOM bootstrap）、`app.tsx`（`preact-iso` Router 路由壳，懒加载重 pipeline canvas）、`theme/runtime.ts`（**浏览器侧主题运行时**：`ThemeManifest` token → CSS custom properties on `document.documentElement`，自适应 light/dark，`activateTheme()`/`subscribeTheme()`/`initializeTheme()`）、`theme/manifest.ts`（自包含浏览器侧 schema/校验副本）、`api/client.ts`（同源 config API HTTP 客户端）、`canvas/PipelineCanvasPage.tsx`（`@xyflow/react` + `dagre` 的 pipeline DAG 编辑器）。
 - **子目录**：`canvas/`（7 文件，pipeline 图编辑：`StageNode`/`PalettePanel`/`StagePanel`/`IssuesDrawer`/`DeclarationsPanel`/`EngineSupportPanel`/`V2NodePanel`/dagre `layout.ts`）、`components/`（~30 页面/widget）、`config/`、`i18n/`（6 文件）、`store/`（5 文件，Zustand）、`api/`。
-- **App 路由**：Board / Config / Pipelines / Archive / Audit / Spaces / Workflows / Profiles / TaskDetail + 懒加载 PipelineCanvas。
+- **App 路由**：Board / Config / Pipelines / Archive / Audit / Spaces / Workflows / Profiles / TaskDetail / IssueBoard / IssueDetail（后两者 store 空间专属 `/s/:storeId/issues[/:issueId]`，只读投影呈现，闭词汇→label 查表在 `components/issue-vocabulary.ts`，不派生任何轴）+ 懒加载 PipelineCanvas。
 - **技术栈**：Preact + `preact-iso`、Vite、Vitest、`@xyflow/react`+dagre、Zustand。
 - **连接**：`rasen ui` 服务其 build `dist/` 到随机端口 + token 认证 same-origin API。dev 下 `vite.config.ts` 代理 `/api/*` 到 `rasen ui --no-open`。主题流：`theme-library`（服务端校验+盘持久化）→ config API → `api/client.ts` → `theme/runtime.ts`（CSS 变量应用）。

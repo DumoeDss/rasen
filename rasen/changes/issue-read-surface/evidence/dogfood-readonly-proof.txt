@@ -1,0 +1,40 @@
+issue-read-surface — dogfood read-only proof (task 6.1 / 6.2)
+Store: issue-registry (uid f76edc31-229a-42bc-a5c7-848021eeb2da)
+Root:  E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-issue-store
+Date:  2026-08-24
+
+The Store was opened for READS ONLY. Both sides of every capture below:
+
+  before  git status --porcelain -> (empty)
+          git rev-parse HEAD     -> f295abce308297dd09eb34a81287c614a8c489c5
+  after   git status --porcelain -> (empty)
+          git rev-parse HEAD     -> f295abce308297dd09eb34a81287c614a8c489c5
+
+Captured in between (see dogfood-cli-http-parity.json for the full receipt):
+
+  - 12 CLI <-> HTTP pairs, ALL byte-identical after re-serializing the wire
+    body as `JSON.stringify(body, null, 2)` (the exact form `printJson` emits):
+      1  GET /api/v1/stores/issue-projections        vs  store issue list --json
+      5  GET /api/v1/stores/issue-projection         vs  store issue show <id> --json
+      1  GET /api/v1/stores/issue-attention          vs  store attention --json
+      5  GET /api/v1/stores/issue-attention&issueId  vs  store attention --issue <id> --json
+  - the refusal channel over the wire: an unknown narrowing id returns
+    404 { error: { code: "issue_attention_unknown_issue" } } rather than an
+    empty scan (see the `refusal` block of the receipt).
+  - the Board render over the real payloads (dogfood-board-render.{json,html}):
+    5 cards, all 5 in the Done lane, 0 attention lines, run-state disclosed as
+    resolved, member chips "All | rasen-site | rasen".
+
+Human-render check for the one deviation from the design's letter (the show
+command now reads the project display names back out of `status.projects`
+instead of re-reading the Store's catalogs, because the lane alias IS that
+value and the composition returns the payload):
+
+  $ rasen store issue show issue-autodecompose-uplift --store issue-registry
+    delivery evidence:
+      issue-autodecompose-graph 2026-08-21-issue-autodecompose-graph@rasen — finalized — record (legacy)
+
+  `@rasen` is the Store catalog alias for project e2ee72ed-04a1-4395-86aa-7e77d2b83ec7,
+  so the aliased path renders exactly as before the extraction. (The CI fixtures
+  carry no catalog alias, so they only pin the raw-id fallback — this is the
+  witness for the other branch.)
