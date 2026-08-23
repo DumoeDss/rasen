@@ -47,12 +47,16 @@ when every required node of the latest readable plan has completed or finalized 
 observation rule execution binding uses), the Issue's health is not `failed`, and no status
 problem stands between the reader and the facts. A node whose lifecycle is `optional` SHALL
 never contribute an un-terminal blocker — its incomplete work is not demanded; a node whose
-lifecycle is `cancelled` or `superseded` SHALL be excluded from the required total, and the
-gate report SHALL show that exclusion beside the gate with the node's recorded reason, so a
-smaller total is explained rather than silently absorbed. `rasen store issue show` SHALL report
-the gate — eligible, or every blocker named: each un-terminal required node with its observed
-execution state, each node behind a failed health, and each open status problem — alongside the
-latest conditions revision, in both human and `--json` forms.
+lifecycle is `cancelled`, `superseded`, or `deferred` SHALL be excluded from the required
+total, and the gate report SHALL show that exclusion beside the gate with the node's recorded
+reason, so a smaller total is explained rather than silently absorbed. A deferral never holds
+Done: a `deferred` node SHALL NOT block the gate on its incompleteness or its recorded
+failure, and its exclusion — named with the `deferred` lifecycle and the recorded reason — is
+the record that distinguishes postponed work from abandoned or replaced work. `rasen store
+issue show` SHALL report the gate — eligible, or every blocker named: each un-terminal
+required node with its observed execution state, each node behind a failed health, and each
+open status problem — alongside the latest conditions revision, in both human and `--json`
+forms.
 
 #### Scenario: The gate names what is not accepted yet
 
@@ -94,6 +98,18 @@ latest conditions revision, in both human and `--json` forms.
 - **WHEN** an Issue's latest readable revision names Change nodes whose lifecycles are all `optional`, `cancelled`, or `superseded`
 - **THEN** the gate reports eligible with zero required nodes, saying that no work is demanded
 - **AND** the exclusions and optional nodes are named beside the gate rather than hidden by the empty total
+
+#### Scenario: A deferred node is excluded and does not hold the gate
+
+- **WHEN** an Issue's latest revision marks one incomplete node `deferred` with a recorded reason and every required node's work is complete
+- **THEN** the gate reports eligible over the required nodes alone
+- **AND** the gate report shows the deferred node's exclusion with the `deferred` lifecycle and its recorded reason beside the gate
+
+#### Scenario: A deferred node's recorded failure is not a gate blocker
+
+- **WHEN** a node marked `deferred` carries run-state recording a failure escalation while every required node's work is complete and no other failure stands
+- **THEN** the gate reports eligible, naming no failing-node blocker for the deferred node
+- **AND** the deferred node's observation stays reported on its node line
 
 ### Requirement: Accepting an Issue closes it explicitly and refuses honestly
 
@@ -144,16 +160,16 @@ The acceptance record SHALL be one record per Issue, written at the Issue's own 
 rewritten, and SHALL carry: when the acceptance happened, the conditions revision it accepted
 with that revision's digest, the gate snapshot at acceptance — completed and total required
 nodes, the health value, and that no status problem stood — the gate's lifecycle accounting —
-every `cancelled` or `superseded` exclusion that stood at acceptance, each with its node,
-lifecycle, and recorded reason — an optional note, and a digest over its own canonical content
-that a read verifies, so the total the record freezes is explained by the record itself rather
-than only by a later read's evaluation. The exclusions field SHALL be omitted from the stored
-canonical form when no exclusion stood, so an acceptance over a plan with no exclusions writes
-the bytes that field's absence defines, and a record accepted before the field existed SHALL
-read back unchanged with its digest verifying. A record whose stored digest does not match its
-content SHALL be refused on read and reported, and the Issue SHALL not present as done from
-unreadable bytes. A read surface that presents the record SHALL present the exclusions it
-carries, in both human and `--json` forms.
+every `cancelled`, `superseded`, or `deferred` exclusion that stood at acceptance, each with
+its node, lifecycle, and recorded reason — an optional note, and a digest over its own
+canonical content that a read verifies, so the total the record freezes is explained by the
+record itself rather than only by a later read's evaluation. The exclusions field SHALL be
+omitted from the stored canonical form when no exclusion stood, so an acceptance over a plan
+with no exclusions writes the bytes that field's absence defines, and a record accepted before
+the field existed SHALL read back unchanged with its digest verifying. A record whose stored
+digest does not match its content SHALL be refused on read and reported, and the Issue SHALL
+not present as done from unreadable bytes. A read surface that presents the record SHALL
+present the exclusions it carries, in both human and `--json` forms.
 
 #### Scenario: The record freezes what was accepted
 
@@ -169,7 +185,7 @@ carries, in both human and `--json` forms.
 
 #### Scenario: A record with no exclusions writes the absent form
 
-- **WHEN** an Issue whose plan carries no cancelled or superseded nodes is accepted
+- **WHEN** an Issue whose plan carries no cancelled, superseded, or deferred nodes is accepted
 - **THEN** the record's stored bytes omit the exclusions field
 - **AND** those bytes are identical to the shape the field's absence defined before it existed
 
@@ -184,6 +200,12 @@ carries, in both human and `--json` forms.
 - **WHEN** a stored acceptance record's content is altered without updating its digest
 - **THEN** reading it is refused with the mismatch reported as a status problem
 - **AND** the Issue does not present as done from the unreadable record
+
+#### Scenario: A deferral that stood at acceptance is frozen in the record
+
+- **WHEN** an Issue whose latest revision marks one node `deferred` with a recorded reason is accepted over its required nodes
+- **THEN** the acceptance record carries that exclusion with the node, the `deferred` lifecycle, and the recorded reason beside the gate snapshot
+- **AND** a read of the record presents the deferral in both human and `--json` forms, so the postponement needs no later read to explain it
 
 ### Requirement: Done follows explicit acceptance
 

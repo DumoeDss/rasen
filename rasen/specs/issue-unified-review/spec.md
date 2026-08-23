@@ -121,6 +121,11 @@ as the recorded facts they are; and the attention-derived `failure`, `blocked-be
 attention `acceptance-awaiting` item SHALL NOT become a thread — it is the review-ready
 determination's own conclusion — and an attention `problem` item SHALL NOT become a thread
 — standing problems are gate blockers the `not-ready` determination already carries.
+A `deferred` node SHALL NOT be an `optional-open` thread and SHALL have no thread kind of
+its own: the deferral removed the node from the `optional` lifecycle, and the recorded
+deferral is already presented in full by the gate's exclusion account in the acceptance
+section — a deferral thread would present the same fact twice, and the determination never
+needs a second blocking basis to account for postponed work.
 Threads SHALL order stably, the attention kinds in their fail-first order and the remaining
 kinds in a stable (kind, node) order, and a count SHALL summarize them without replacing
 them: every thread stays listed in full.
@@ -160,6 +165,15 @@ them: every thread stays listed in full.
 - **THEN** the attention-derived threads precede the others, each group in its stable
   order, and the same evidence derives the identical ordering twice
 - **AND** every thread remains listed in full beside any count that summarizes them
+
+#### Scenario: A deferral dissolves the optional-open thread without a second basis
+
+- **WHEN** a revision defers a previously optional non-terminal node with a recorded reason
+  and the Issue's required nodes are all terminal
+- **THEN** no `optional-open` thread names that node and no thread kind presents the
+  deferral, whose record stands in the acceptance section's exclusion account
+- **AND** the determination reads `review-ready` exactly as the gate maps it, with no new
+  blocking basis introduced by the deferral
 
 ### Requirement: The show surface concludes with the review view
 
