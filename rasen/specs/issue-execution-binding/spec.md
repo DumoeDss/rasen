@@ -35,9 +35,11 @@ does, and the gate releases on completed work — terminal run-state or finalize
 never on archiving. A refusal that names blockers SHALL name each one's node identifier, its
 target project, and its current observed state, and SHALL distinguish a dependency no local
 run-state explains from one observed not-started, and a dependency whose reference or run-state
-could not be read (`unknown`, with its diagnostic) from either. A node the operator names whose lifecycle is `cancelled` or `superseded`
-SHALL be refused, naming that lifecycle and the node's recorded reason, because the plan says
-its work is not wanted. An Issue with no readable published plan SHALL be refused toward planning.
+could not be read (`unknown`, with its diagnostic) from either. A node the operator names whose
+lifecycle is `cancelled`, `superseded`, or `deferred` SHALL be refused, naming that lifecycle
+and the node's recorded reason, because the plan says its work is not demanded now — a deferred
+node's refusal points at re-publishing a revision whose lifecycle wants the work, never at a
+side door around the plan. An Issue with no readable published plan SHALL be refused toward planning.
 The command resolves and verifies the binding; launching the pipeline itself remains an action
 for the operator or agent session that receives the contract, executed from the emitted working
 directory.
@@ -116,6 +118,12 @@ directory.
 - **WHEN** an Issue's plan has one not-started `required` node and one not-started `cancelled` node, both otherwise runnable
 - **THEN** the frontier resolves to the required node alone
 - **AND** a several-candidates refusal, had both qualified, would not name the cancelled node
+
+#### Scenario: A deferred node is refused at start
+
+- **WHEN** `--node` names a node whose lifecycle is `deferred`
+- **THEN** the command refuses with its own refusal code, naming the node, its deferred lifecycle, and its recorded reason
+- **AND** no launch contract is emitted, and the frontier never names the deferred node as a candidate
 
 ### Requirement: The launch context composes the member-project binding
 

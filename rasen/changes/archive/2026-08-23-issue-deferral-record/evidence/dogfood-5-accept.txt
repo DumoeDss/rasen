@@ -1,0 +1,72 @@
+$ rasen store issue accept defer-dogfood
+Issue defer-dogfood accepted (resolved)
+  conditions: revision 0001 (f3d337b9c0e16a3ed54a344c176e52ee1b431977ce15368a9fce9a56a0c77736)
+  gate: 1/1 waiting-human, 0 problems standing
+  excluded g-opt (deferred): postponed beyond this Issue to the next milestone
+
+  Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing.
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-defer-dogfood-3ovilM\store-integration add rasen/issues/defer-dogfood/accepted.yaml rasen/issues/defer-dogfood/issue.yaml
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-defer-dogfood-3ovilM\store-integration commit -m "chore(store): accept issue defer-dogfood"
+
+$ cat rasen/issues/defer-dogfood/accepted.yaml
+version: 1
+issueId: defer-dogfood
+acceptedAt: 2026-08-23T11:51:45.486Z
+conditionsRevisionId: "0001"
+conditionsSha256: f3d337b9c0e16a3ed54a344c176e52ee1b431977ce15368a9fce9a56a0c77736
+gate:
+  completed: 1
+  total: 1
+  health: waiting-human
+  problemsStanding: 0
+exclusions:
+  - nodeId: g-opt
+    lifecycle: deferred
+    reason: postponed beyond this Issue to the next milestone
+note: null
+contentSha256: ec7a11abfd26b03c2530402b62ab33465dac0b018075fa925c60b60859f8368d
+
+$ rasen store issue show defer-dogfood   # after the acceptance
+Issue defer-dogfood
+  state: resolved
+  title: Deferral dogfood
+  revisions: 0001, 0002
+  latest plan: revision 0002
+  plan digest: 81034802e048593eeaf19d34cbd9e1cd4ac8213a7cecc6d3269ed9d2f4bd7f84
+  status:
+    phase: done
+    health: healthy
+    progress: 1/1
+    run-state: C:\Users\Sayo\AppData\Local\Temp\rasen-defer-dogfood-3ovilM\exec-project
+    nodes:
+      project app-a (app-a): 1/1
+      g-001 change app-a child-a — run-terminal
+        pipeline: small-feature (located by execution-root)
+        evidence: C:\Users\Sayo\AppData\Local\Temp\rasen-defer-dogfood-3ovilM\store-integration\rasen\projects\app-a\changes\child-a\evidence
+      g-opt change app-a child-opt — not-started (deferred: postponed beyond this Issue to the next milestone)
+        evidence: C:\Users\Sayo\AppData\Local\Temp\rasen-defer-dogfood-3ovilM\store-integration\rasen\projects\app-a\changes\child-opt\evidence
+
+  revision delta: 0002 over 0001
+    ~ lifecycle g-opt (optional -> deferred)
+
+  acceptance:
+    conditions: revision 0001 (1 condition(s))
+      cond-1: The deferral is recorded
+    gate: not eligible — the Issue already carries an acceptance record; an acceptance is never rewritten.
+      - excluded g-opt (deferred): postponed beyond this Issue to the next milestone
+    record: accepted 2026-08-23T11:51:45.486Z under revision 0001 (gate 1/1 waiting-human)
+      excluded g-opt (deferred): postponed beyond this Issue to the next milestone
+
+  delivery evidence:
+    g-001 child-a@app-a — run-terminal — not-archived
+      delivery evidence will exist when the Change archives
+    g-opt child-opt@app-a — not-started — not-archived
+      delivery evidence will exist when the Change archives
+    counts: 0 record, 0 no-record, 2 not-archived, 0 unreadable, 0 unattributed
+
+  review:
+    determination: accepted (record 2026-08-23T11:51:45.486Z under revision 0001)
+    threads: 1
+      archive-pending g-001 (run-terminal — evidence will exist when the Change archives)
+    verification: required 1/1, delivery 0 record / 0 no-record / 2 not-archived / 0 unreadable / 0 unattributed
+    review derives; accepting remains the operator's act.

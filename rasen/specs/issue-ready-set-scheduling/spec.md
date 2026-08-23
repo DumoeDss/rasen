@@ -53,7 +53,9 @@ plan" and "nothing runnable" are different truths.
 
 Every node of the revision the ready set does not contain SHALL be reported with a reason
 drawn from one closed vocabulary derived from the node's own projection facts: a `cancelled`
-node with its recorded reason; a `superseded` node with its recorded reason; an intent node as
+node with its recorded reason; a `superseded` node with its recorded reason; a `deferred`
+node with its recorded reason — postponed work is outside the set whatever its recorded
+observation, exactly as abandoned or replaced work is; an intent node as
 pending Change creation with its target project and target line; a node whose observation is
 `in-flight`, `advanced`, or `waiting-human` as running with that observation named; a `failed`
 node as failed; a node whose work is complete — `finalized` or `run-terminal` — as complete; a
@@ -98,6 +100,18 @@ projection did not observe.
 - **WHEN** a wanted not-started node's observation is `unknown` with a diagnostic
 - **THEN** the node is reported outside the set as unknown with its diagnostic
 - **AND** no ready-set membership is derived from unreadable facts
+
+#### Scenario: A deferred node exits with its reason visible
+
+- **WHEN** the revision carries a not-started `deferred` node with a recorded reason and no incomplete dependencies
+- **THEN** the ready answer names that node outside the set as deferred with its recorded reason
+- **AND** the node is never a member and is not reported as blocked, running, or any state the projection did not observe
+
+#### Scenario: A node behind a deferred dependency stays blocked with the dependency named
+
+- **WHEN** a wanted not-started node depends on a `deferred` node whose work is not complete
+- **THEN** the downstream node is reported outside the set as blocked, naming the deferred dependency with its node identifier, target project, and observed state
+- **AND** the deferral does not silently release the downstream node — re-edging or deferring the dependent is the next revision's explicit act
 
 ### Requirement: The ready answer surfaces on a read verb
 

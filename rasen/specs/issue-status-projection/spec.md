@@ -72,10 +72,10 @@ does not read back verified, whatever its nodes' state (the operator has declare
 so the graph no longer scopes the phase and only the unproven acceptance remains); and `done`
 only for an Issue whose state is resolved AND whose acceptance record reads back verified.
 Archived Changes alone SHALL NOT make an Issue `done`, and the resolved state alone SHALL NOT
-make an Issue `done`. A node marked `cancelled` or `superseded` SHALL be outside the execution
-graph: its recorded activity or staleness SHALL drive no phase value, though its observation is
-still reported on its node line, and an `optional` node's incomplete work SHALL NOT keep an
-Issue out of `review`.
+make an Issue `done`. A node marked `cancelled`, `superseded`, or `deferred` SHALL be outside
+the execution graph: its recorded activity or staleness SHALL drive no phase value, though its
+observation is still reported on its node line, and an `optional` node's incomplete work SHALL
+NOT keep an Issue out of `review`.
 
 #### Scenario: No plan means planning
 
@@ -127,6 +127,12 @@ Issue out of `review`.
 - **THEN** its phase is `planning`, not `ready`, because no wanted Change node exists
 - **AND** the cancelled node's observation is still reported on its node line
 
+#### Scenario: A deferred node's recorded activity drives no phase
+
+- **WHEN** every required Change node of an Issue's plan is complete or finalized and one node marked `deferred` carries recorded run-state that is still in flight
+- **THEN** the Issue's phase is `review`, derived from the wanted nodes alone
+- **AND** the deferred node's observation is still reported on its node line
+
 ### Requirement: Health reports only what a recorded signal supports
 
 The health value SHALL be derived from recorded signals: `failed` when a Change's run-state
@@ -137,8 +143,8 @@ human-owned; `healthy` otherwise. A health value SHALL be presented only when a 
 supports it, so the `blocked` and `stale` values remain reserved until a capability records a
 real blockage or staleness signal, and ordinary dependency ordering among not-yet-started nodes
 SHALL be reported as `healthy`. Failure and wait signals SHALL come from work the plan still
-wants — `required` and `optional` nodes: a `cancelled` or `superseded` node's recorded escalation
-is history and SHALL drive no health value.
+wants — `required` and `optional` nodes: a `cancelled`, `superseded`, or `deferred` node's
+recorded escalation is history and SHALL drive no health value.
 
 #### Scenario: A parked stage is waiting for a human, not a new phase
 
@@ -179,6 +185,12 @@ is history and SHALL drive no health value.
 - **THEN** its health is one of `healthy`, `failed`, or `waiting-human`
 - **AND** `blocked` and `stale` are presented only by a future capability that records such signals
 
+#### Scenario: A deferred node's recorded failure is history, not health
+
+- **WHEN** a node marked `deferred` carries run-state recording a failure escalation and no wanted node's run-state records one
+- **THEN** the Issue's health derives from its wanted nodes alone
+- **AND** the deferred node's observation is still reported on its node line
+
 ### Requirement: Progress counts required nodes whose work is complete
 
 Progress SHALL report completed required nodes over the total required nodes of the Issue's
@@ -195,12 +207,13 @@ that exists in v2 shape but fails validation SHALL NOT finalize its Change: the 
 `unknown` with a status problem naming the file and the reason, and no phase, health, or
 progress value SHALL be fabricated from the unreadable record — damaged bytes never release a
 dependency gate. Work that is finished but not yet finalized still counts, because progress
-measures work completed, not archiving. A node whose lifecycle is `optional`, `cancelled`, or
-`superseded` SHALL be counted in neither part of the pair — its completion, when recorded, is
-visible on its node line and counted nowhere. An Issue whose latest revision exists but cannot
-be read SHALL report no progress value rather than a zero that would read as "nothing
-required", and a readable revision that names no required nodes SHALL report zero completed
-over zero total, saying that no work is demanded rather than that no value could be derived.
+measures work completed, not archiving. A node whose lifecycle is `optional`, `cancelled`,
+`superseded`, or `deferred` SHALL be counted in neither part of the pair — its completion,
+when recorded, is visible on its node line and counted nowhere. An Issue whose latest revision
+exists but cannot be read SHALL report no progress value rather than a zero that would read as
+"nothing required", and a readable revision that names no required nodes SHALL report zero
+completed over zero total, saying that no work is demanded rather than that no value could be
+derived.
 
 #### Scenario: One of three children complete
 
@@ -241,6 +254,12 @@ over zero total, saying that no work is demanded rather than that no value could
 - **WHEN** a node's Change is archived and its archive record is in v2 shape but fails validation
 - **THEN** the node is reported unknown with a status problem naming the file and the reason
 - **AND** no completion, phase value, or dependency release is derived from the unreadable record
+
+#### Scenario: A deferred node's completion is not counted
+
+- **WHEN** an Issue's plan has two required nodes and one `deferred` node whose work is complete
+- **THEN** progress reports over a total of two
+- **AND** the deferred node's completion is reported on its node line and counted in neither part of the pair
 
 ### Requirement: Run-state visibility is located and labelled
 
@@ -292,7 +311,7 @@ header per member project the revision names — each header carrying the
 project's identity, its display alias when one is known, and the lane's
 progress pair — and `list` SHALL carry a compact per-project progress summary
 beside the Issue-level pair, the same lane facts in the same order. A node whose lifecycle is not
-`required` SHALL have that lifecycle named on its node line, whatever the node's kind, and a `cancelled` or `superseded`
+`required` SHALL have that lifecycle named on its node line, whatever the node's kind, and a `cancelled`, `superseded`, or `deferred`
 node SHALL have its recorded reason shown with it. A node's target project
 SHALL be shown as the fact the revision records — the project the plan's
 author targeted — and SHALL drive no phase, health, or progress value: a
@@ -411,6 +430,12 @@ problems, and the revision delta.
 
 - **WHEN** the same Issue is listed and shown in human form and in `--json` form
 - **THEN** the phase, health, progress, per-project lanes with their progress pairs, per-node target projects, per-node dependency facts, per-node lifecycles, per-node suggestions, rationale, and uncertainty, per-node observations, status problems, and the revision delta are the same facts in both forms
+
+#### Scenario: A deferred node's line names the deferral and its reason
+
+- **WHEN** an Issue's plan carries one `deferred` node with a recorded reason and the Issue is shown
+- **THEN** the show command names `deferred` and the recorded reason on that node's line
+- **AND** the `--json` form carries the same lifecycle and reason facts for the node
 
 ### Requirement: Per-project lanes are derived on the work-complete rule
 

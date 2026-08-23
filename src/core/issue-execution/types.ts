@@ -103,6 +103,13 @@ export type IssueStartRefusalCode =
   | 'issue_start_node_cancelled'
   /** --node names a superseded node; its reason names what replaced it. */
   | 'issue_start_node_superseded'
+  /**
+   * --node names a deferred node; the plan postponed its work beyond this
+   * Issue. Its own code rather than a shared lifecycle refusal: postponed is
+   * not abandoned, and the refusal points at re-publishing a revision whose
+   * lifecycle wants the work, never at a side door around the plan.
+   */
+  | 'issue_start_node_deferred'
   /** Neither binding exists; the exact workspace preparation is named. */
   | 'issue_start_unprepared'
   /** The launch context could not be uniquely resolved; diagnostic carried. */

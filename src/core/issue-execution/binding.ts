@@ -11,9 +11,9 @@
  * has completed its WORK, which is what "dependencies' work is complete"
  * means. Since issue-node-lifecycle,
  * the frontier also derives from the plan's WANTS: only `required` and
- * `optional` nodes are candidates, and `--node` naming a `cancelled` or
- * `superseded` node is refused with its own refusal kind naming the lifecycle
- * and the recorded reason. Launch routes are tried in
+ * `optional` nodes are candidates, and `--node` naming a `cancelled`,
+ * `superseded`, or `deferred` node is refused with its own refusal kind
+ * naming the lifecycle and the recorded reason. Launch routes are tried in
  * a fixed order (design D4): the workspace pair recorded for the node's
  * Change instance, then the member-project checkout through the same
  * session-launch composition a supervised session uses, and neither is a
@@ -59,8 +59,8 @@ function isChange(node: ExecutionPlanNode): node is ExecutionPlanChangeNode {
 
 /**
  * Whether the plan still wants a node's work: `required` (the absent default)
- * or `optional`. `cancelled`/`superseded` nodes are outside the execution
- * graph — never frontier candidates, never launchable.
+ * or `optional`. `cancelled`/`superseded`/`deferred` nodes are outside the
+ * execution graph — never frontier candidates, never launchable.
  */
 function isWanted(node: ExecutionPlanNode): boolean {
   return isChange(node) && (node.lifecycle === undefined || node.lifecycle === 'required' || node.lifecycle === 'optional');
@@ -122,7 +122,12 @@ export function refusalFix(refusal: IssueStartRefusal): string | undefined {
         : 'Address the node state named above, then re-run.';
     case 'issue_start_node_cancelled':
     case 'issue_start_node_superseded':
-      return 'The plan does not want this node’s work. Start a wanted node, or re-publish a revision whose lifecycle wants it.';
+    case 'issue_start_node_deferred':
+      // One fix for the three not-demanded lifecycles, phrased so it stays true
+      // of a deferral: postponed work IS still wanted eventually, so the fix
+      // says the plan does not demand it NOW and points at the only door —
+      // the next revision.
+      return 'The plan does not demand this node’s work now. Start a wanted node, or re-publish a revision whose lifecycle wants it.';
     case 'issue_start_unprepared':
       return refusal.preparation ?? undefined;
     case 'issue_start_pipeline_conflict':
@@ -293,16 +298,30 @@ export async function resolveIssueLaunchBinding(
         `Node '${addressed.nodeId}' is an intent node; a Change must exist for it before it can run.`
       );
     }
-    // A node the plan no longer wants is refused before any launch machinery
-    // runs, naming the lifecycle and the recorded reason: the plan, not the
-    // flag, says whose work may start.
-    if (addressed.lifecycle === 'cancelled' || addressed.lifecycle === 'superseded') {
+    // A node the plan does not demand toward Done is refused before any launch
+    // machinery runs, naming the lifecycle and the recorded reason: the plan,
+    // not the flag, says whose work may start. A deferral gets its own code and
+    // its own stance — postponed beyond this Issue, not abandoned — because a
+    // fall-through here would have emitted a real launch contract.
+    if (
+      addressed.lifecycle === 'cancelled' ||
+      addressed.lifecycle === 'superseded' ||
+      addressed.lifecycle === 'deferred'
+    ) {
       const reason = addressed.reason === undefined ? '' : `: ${addressed.reason}`;
-      return refuse(
+      const code =
         addressed.lifecycle === 'cancelled'
           ? 'issue_start_node_cancelled'
-          : 'issue_start_node_superseded',
-        `Node '${addressed.nodeId}' is ${addressed.lifecycle}${reason} — the plan says its work is not wanted; no launch contract is emitted.`
+          : addressed.lifecycle === 'superseded'
+            ? 'issue_start_node_superseded'
+            : 'issue_start_node_deferred';
+      const stance =
+        addressed.lifecycle === 'deferred'
+          ? 'the plan says its work is postponed beyond this Issue'
+          : 'the plan says its work is not wanted';
+      return refuse(
+        code,
+        `Node '${addressed.nodeId}' is ${addressed.lifecycle}${reason} — ${stance}; no launch contract is emitted.`
       );
     }
   } else {
@@ -336,7 +355,11 @@ export async function resolveIssueLaunchBinding(
           reasons.push(`${view.node.nodeId} is an intent node`);
           continue;
         }
-        if (view.node.lifecycle === 'cancelled' || view.node.lifecycle === 'superseded') {
+        if (
+          view.node.lifecycle === 'cancelled' ||
+          view.node.lifecycle === 'superseded' ||
+          view.node.lifecycle === 'deferred'
+        ) {
           const reason = view.node.reason === undefined ? '' : ` (${view.node.reason})`;
           reasons.push(`${view.node.nodeId} is ${view.node.lifecycle}${reason}`);
           continue;

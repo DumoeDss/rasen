@@ -10,6 +10,7 @@
  * suggestion and stages, commits, fetches, and pushes nothing.
  */
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 import { Command } from 'commander';
 import { parse as parseYaml } from 'yaml';
@@ -47,12 +48,18 @@ import {
 import { listPipelines } from '../core/pipeline-registry/resolver.js';
 import { resolveSessionLaunchContext } from '../core/management-api/session-launch-context.js';
 import {
+  deriveIssueDeliveryEvidence,
   deriveIssueReadySet,
+  deriveIssueReview,
   issueBlockerState,
   projectIssueStatus,
+  type IssueDeliveryEvidence,
+  type IssueNodeDelivery,
   type IssueReadyExit,
   type IssueReadyMember,
   type IssueReadySet,
+  type IssueReview,
+  type IssueReviewThread,
   type IssueStatus,
   type IssueStatusProblem,
   type ProjectIssueStatusInput,
@@ -422,8 +429,8 @@ function renderRunStateVisibility(status: IssueStatus): string {
 /**
  * The per-node line the show command prints: identifier, kind, target
  * project, alias, observation, then whatever explains it — a lifecycle that
- * is not required (with the recorded reason a cancelled/superseded node
- * carries), a recorded execution suggestion with its decomposition
+ * is not required (with the recorded reason a cancelled/superseded/deferred
+ * node carries), a recorded execution suggestion with its decomposition
  * rationale/uncertainty, a dependency whose work is not complete, or the
  * diagnostic behind an `unknown`. The project, suggestion, and rationale are
  * facts the revision records — shown, never interpreted into any axis. Each
@@ -558,8 +565,9 @@ function renderAcceptanceBlocker(blocker: IssueAcceptanceBlocker): string {
 
 /**
  * The lines one gate evaluation renders beside the acceptance section: the
- * gate line itself, then the lifecycle accounting — cancelled/superseded
- * exclusions with their recorded reasons always, and at a zero required total
+ * gate line itself, then the lifecycle accounting —
+ * cancelled/superseded/deferred exclusions with their recorded reasons
+ * always, and at a zero required total
  * the statement that no work is demanded with the optional nodes named, so an
  * empty total never hides what the revision says. The same facts the JSON
  * form carries under `status.acceptance.gate` and `status.nodes`.
@@ -654,6 +662,197 @@ function renderAcceptanceSection(status: IssueStatus): void {
   } else {
     console.log('    record: (not accepted)');
   }
+}
+
+/**
+ * The ship-log inventory fact (design D3): the evidence entry whose path names
+ * the ship-log, exactly as the record froze it — path and digest, presence or
+ * absence named. The document's prose is never parsed into facts; no
+ * structured pull-request fact exists in either record shape, so none is
+ * presented (the inventory entry is where delivery prose lives).
+ */
+function shipLogFact(
+  evidence: readonly { path: string; sha256: string }[] | null
+): { path: string; sha256: string } | null {
+  if (evidence === null) return null;
+  return evidence.find(entry => path.basename(entry.path) === 'ship-log.md') ?? null;
+}
+
+/** The delivery facts under one `record` row — each absence named, never filled. */
+function renderDeliveryFacts(delivery: Extract<IssueNodeDelivery, { state: 'record' }>): string[] {
+  const lines: string[] = [];
+  lines.push(`      archived: ${delivery.archivedAt ?? '(none recorded)'}`);
+  lines.push(`      code commit: ${delivery.codeCommit ?? '(none recorded on this record)'}`);
+  lines.push(`      planning branch: ${delivery.planningBranch ?? '(none recorded on this record)'}`);
+  // The legacy basis predates v2 outcome records: the absence is the record's
+  // own statement, never filled with an invented outcome.
+  lines.push(
+    delivery.outcome === null
+      ? `      outcome: (none recorded on this ${delivery.basis} record basis)`
+      : `      outcome: ${delivery.outcome} (${delivery.basis})`
+  );
+  const shipLog = shipLogFact(delivery.evidence);
+  if (delivery.evidence === null) {
+    lines.push('      evidence: (no readable inventory on this record)');
+    lines.push('      ship-log: none in inventory');
+  } else {
+    lines.push(`      evidence: ${delivery.evidence.length} file(s)`);
+    lines.push(
+      shipLog === null
+        ? '      ship-log: none in inventory'
+        : `      ship-log: ${shipLog.path} (sha256 ${shipLog.sha256.slice(0, 12)})`
+    );
+  }
+  lines.push(
+    delivery.missing === null
+      ? '      missing: (no readable list on this record)'
+      : `      missing: ${delivery.missing.length === 0 ? '(none)' : delivery.missing.join(', ')}`
+  );
+  return lines;
+}
+
+/**
+ * The named-absence rows (design D2): each state renders as the named state it
+ * is — a not-yet-archived Change is expected progress, an absent record names
+ * the record's own absence, damaged bytes defer to the standing problem, and
+ * an unattributed reference defers to the reference problem already reported.
+ */
+function renderDeliveryAbsence(delivery: Exclude<IssueNodeDelivery, { state: 'record' }>): string[] {
+  switch (delivery.state) {
+    case 'no-record':
+      return [
+        '      record: none — the archive entry carries no archive record to read',
+        ...(delivery.blobPath === null
+          ? []
+          : [
+              `      expected at: ${delivery.blobPath}` +
+                `${delivery.foundAtRef === null ? '' : ` (on ${delivery.foundAtRef})`}`,
+            ]),
+      ];
+    case 'not-archived':
+      return ['      delivery evidence will exist when the Change archives'];
+    case 'unreadable':
+      return [
+        '      no facts from damaged bytes — the standing invalid-archive-record problem names the file and the reason',
+      ];
+    case 'unattributed':
+      return [
+        '      no Change instance to read delivery facts from — the reference problem already reported is the answer',
+      ];
+  }
+}
+
+/**
+ * The delivery-evidence section of `show` (design D5): one row per change node
+ * — identity, observation, named delivery state — with the record facts under
+ * each `record` row, closing with the counts line. The same facts the JSON
+ * form carries under `delivery` and `status.nodes[].delivery`; `list` carries
+ * none of them. Rendered only when a rollup exists: an Issue with no readable
+ * revision reports no section, exactly as it reports no progress pair.
+ */
+function renderDeliverySection(
+  delivery: IssueDeliveryEvidence,
+  projectAliases: Readonly<Record<string, string>> | undefined
+): void {
+  console.log('');
+  console.log('  delivery evidence:');
+  for (const entry of delivery.entries) {
+    const displayName = projectAliases?.[entry.projectId] ?? entry.projectId;
+    const who = entry.alias === null ? '(no alias)' : entry.alias;
+    const state =
+      entry.delivery === null
+        ? '(none)'
+        : entry.delivery.state === 'record'
+          ? `record (${entry.delivery.basis})`
+          : entry.delivery.state;
+    console.log(`    ${entry.nodeId} ${who}@${displayName} — ${entry.observation} — ${state}`);
+    if (entry.delivery === null) continue;
+    const lines =
+      entry.delivery.state === 'record'
+        ? renderDeliveryFacts(entry.delivery)
+        : renderDeliveryAbsence(entry.delivery);
+    for (const line of lines) console.log(line);
+  }
+  const { counts } = delivery;
+  console.log(
+    `    counts: ${counts.record} record, ${counts['no-record']} no-record, ` +
+      `${counts['not-archived']} not-archived, ${counts.unreadable} unreadable, ` +
+      `${counts.unattributed} unattributed`
+  );
+}
+
+/** The determination line — the value plus exactly the facts it carries (D4). */
+function renderDetermination(review: IssueReview): string {
+  const d = review.determination;
+  switch (d.kind) {
+    case 'review-ready':
+      return `    determination: review-ready (would accept conditions revision ${d.conditionsRevisionId})`;
+    case 'accepted':
+      // Null facts name the present-but-unverifiable record: the standing
+      // unreadable-acceptance problem the acceptance section above printed is
+      // the answer, never a filled date.
+      return d.acceptedAt === null || d.conditionsRevisionId === null
+        ? '    determination: accepted (record present but does not verify — the standing unreadable-acceptance problem is the answer)'
+        : `    determination: accepted (record ${d.acceptedAt} under revision ${d.conditionsRevisionId})`;
+    case 'not-ready':
+      return `    determination: not-ready (${d.blockerCount} blocker(s) named above)`;
+    case 'conditions-missing':
+      return `    determination: conditions-missing (${d.message})`;
+    case 'no-plan':
+      return '    determination: no-plan (no readable plan exists to review)';
+    case 'dropped':
+      return '    determination: dropped (abandoned, not acceptable)';
+    case 'acceptance-unknown':
+      return `    determination: acceptance-unknown (${d.reason})`;
+  }
+}
+
+/** One thread's own line — the kind, the node it names, and its named fact. */
+function renderReviewThread(thread: IssueReviewThread): string {
+  switch (thread.kind) {
+    case 'failure':
+      return `      failure ${thread.nodeId}${thread.diagnostic === null ? ' (failed)' : ` (failed — ${thread.diagnostic})`}`;
+    case 'blocked-behind':
+      return `      blocked-behind ${thread.nodeId} (behind ${thread.blockers
+        .map(blocker => `${blocker.nodeId}@${blocker.projectId}: ${blocker.state}`)
+        .join(', ')})`;
+    case 'waiting-human':
+      return `      waiting-human ${thread.nodeId} (waiting for a human)`;
+    case 'optional-open':
+      return `      optional-open ${thread.nodeId} (${thread.observation})`;
+    case 'archive-pending':
+      return `      archive-pending ${thread.nodeId} (${thread.observation} — evidence will exist when the Change archives)`;
+    case 'record-absent':
+      return `      record-absent ${thread.nodeId} (the archive entry carries no archive record to read)`;
+    case 'evidence-missing':
+      return `      evidence-missing ${thread.nodeId}: ${thread.names.join(', ')}`;
+  }
+}
+
+/**
+ * The concluding review section of `show` (design D4): the determination with
+ * the facts it names, every open thread on its own line beside the count that
+ * summarizes them, the verification summary by reference to the facts the
+ * same read already reported, and the closing statement. The same facts the
+ * JSON form carries under `review`; `list` carries none of them.
+ */
+function renderReviewSection(review: IssueReview): void {
+  console.log('');
+  console.log('  review:');
+  console.log(renderDetermination(review));
+  console.log(`    threads: ${review.threads.length === 0 ? '(none)' : review.threads.length}`);
+  for (const thread of review.threads) console.log(renderReviewThread(thread));
+  const progress =
+    review.verification.progress === null
+      ? '-/-'
+      : `${review.verification.progress.completed}/${review.verification.progress.total}`;
+  const delivery = review.verification.delivery;
+  const deliverySegment =
+    delivery === null
+      ? '(no readable revision)'
+      : `${delivery.record} record / ${delivery['no-record']} no-record / ${delivery['not-archived']} not-archived / ${delivery.unreadable} unreadable / ${delivery.unattributed} unattributed`;
+  console.log(`    verification: required ${progress}, delivery ${deliverySegment}`);
+  console.log("    review derives; accepting remains the operator's act.");
 }
 
 function renderIssueStatus(status: IssueStatus): void {
@@ -760,7 +959,13 @@ function renderIssueList(page: IssueSummaryPage, statuses: readonly IssueStatus[
   renderProblems(page.problems);
 }
 
-function renderIssueDetail(detail: IssueDetail, status?: IssueStatus): void {
+function renderIssueDetail(
+  detail: IssueDetail,
+  status?: IssueStatus,
+  delivery?: IssueDeliveryEvidence | null,
+  review?: IssueReview,
+  projectAliases?: Readonly<Record<string, string>>
+): void {
   const summary = detail.issue;
   console.log(`Issue ${summary.issueId}`);
   if (summary.record) {
@@ -804,6 +1009,20 @@ function renderIssueDetail(detail: IssueDetail, status?: IssueStatus): void {
     // The acceptance section sits beside the status block: conditions, the
     // gate, and the record — visible before the gate is crossed (D8).
     renderAcceptanceSection(status);
+    // The delivery evidence sits beside both (design D5): what each Change
+    // actually delivered, from the same read. No rollup (no readable
+    // revision) renders no section — the same null the progress pair reports.
+    if (delivery !== undefined && delivery !== null) {
+      renderDeliverySection(delivery, projectAliases);
+    }
+    // The review view concludes the read (issue-unified-review-gate D4): the
+    // gate-mapped determination, the open threads, the summary — rendered
+    // after the delivery evidence because the conclusion concludes. Unlike
+    // the delivery section it renders even without a readable revision (a
+    // no-plan Issue still has a review answer).
+    if (review !== undefined) {
+      renderReviewSection(review);
+    }
   }
   if (detail.unsearchedRefs.length > 0) {
     console.log('');
@@ -935,6 +1154,8 @@ function renderReadyExit(reason: IssueReadyExit): string {
       return reason.reason === null ? 'cancelled' : `cancelled (${reason.reason})`;
     case 'superseded':
       return reason.reason === null ? 'superseded' : `superseded (${reason.reason})`;
+    case 'deferred':
+      return reason.reason === null ? 'deferred' : `deferred (${reason.reason})`;
     case 'pending-change-creation':
       return `pending Change creation (${reason.projectId}/${reason.targetLineId})`;
     case 'running':
@@ -1081,10 +1302,11 @@ export function registerStoreIssueCommand(store: Command): void {
           startPath: process.cwd(),
           issueId,
         });
+        const widening = await resolveStoreWideningContext(options.store);
         const status = await projectIssueStatus(
           statusInputFor(detail, {
             ...(await resolveProjectionContext()),
-            ...(await resolveStoreWideningContext(options.store)),
+            ...widening,
             acceptance: await readIssueAcceptanceFacts({
               ...(options.store === undefined ? {} : { store: options.store }),
               startPath: process.cwd(),
@@ -1103,18 +1325,27 @@ export function registerStoreIssueCommand(store: Command): void {
             ),
           })
         );
+        // The delivery rollup derives from the SAME status the section beside
+        // it renders — one projection read, one rollup, no second truth. The
+        // review view derives at the same call site, composing that rollup and
+        // the attention items over the same status.
+        const revisionId = detail.plan?.revisionId ?? null;
+        const delivery = deriveIssueDeliveryEvidence(revisionId, status);
+        const review = deriveIssueReview(issueId, revisionId, status);
         if (options.json) {
           printJson({
             issue: detail.issue,
             plan: detail.plan,
             status,
+            delivery,
+            review,
             complete: detail.complete,
             unsearchedRefs: detail.unsearchedRefs,
             problems: detail.problems,
           });
           return;
         }
-        renderIssueDetail(detail, status);
+        renderIssueDetail(detail, status, delivery, review, widening.projectAliases);
       } catch (error) {
         emitFailure(options.json, { issue: null }, error, 'store_issue_show_failed');
       }

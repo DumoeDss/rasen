@@ -51,7 +51,11 @@ const TROUBLE_OBSERVATIONS: ReadonlySet<string> = new Set([
   'unknown',
 ]);
 
-/** Whether a change node's lifecycle still wants its work (the projection's rule). */
+/**
+ * Whether a change node's lifecycle still wants its work (the projection's
+ * rule): `required` or `optional` positively, so `cancelled`, `superseded`,
+ * and `deferred` nodes raise no attention item at all.
+ */
 function isWanted(node: IssueNodeStatus): boolean {
   return node.kind === 'change' && (node.lifecycle === 'required' || node.lifecycle === 'optional');
 }

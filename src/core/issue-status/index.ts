@@ -15,13 +15,19 @@ export {
   ISSUE_ATTENTION_KIND_ORDER,
   issueAttentionKindRank,
 } from './attention.js';
+export { deriveIssueDeliveryEvidence } from './delivery.js';
+export { deriveIssueReview } from './review.js';
 export type {
   IssueAttentionBlocker,
   IssueAttentionItem,
   IssueAttentionKind,
+  IssueDeliveryCounts,
+  IssueDeliveryEntry,
+  IssueDeliveryEvidence,
   IssueHealth,
   IssueNodeAttribution,
   IssueNodeBlocker,
+  IssueNodeDelivery,
   IssueNodeObservation,
   IssueNodeSession,
   IssueNodeStatus,
@@ -33,6 +39,9 @@ export type {
   IssueReadyExitEntry,
   IssueReadyMember,
   IssueReadySet,
+  IssueReview,
+  IssueReviewDetermination,
+  IssueReviewThread,
   IssueRevisionDelta,
   IssueRevisionEdgeChange,
   IssueRevisionLifecycleChange,

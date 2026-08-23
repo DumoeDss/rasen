@@ -142,17 +142,28 @@ export type ExecutionPlanNodeKind = 'change' | 'intent';
 
 /**
  * The closed lifecycle vocabulary a node carries, scoped by kind: a Change node
- * admits all four values; an intent node admits `required` and `optional` only
+ * admits all five values; an intent node admits `required` and `optional` only
  * (see `ExecutionPlanIntentNode`). An ABSENT lifecycle reads as `required` —
  * the value every revision published before this vocabulary existed has always
  * meant — and the stored canonical form omits a `required` lifecycle exactly as
  * it omits an absent `changeAlias`, so those revisions re-derive their
- * published digests byte-for-byte. `cancelled` and `superseded` carry a
- * recorded `reason`, and stay Change-node-only: they explain work that EXISTED
- * and is no longer wanted, while unwanted intent work — work no Change ever
- * backed — is expressed by omitting the node from the next revision.
+ * published digests byte-for-byte. `cancelled`, `superseded`, and `deferred`
+ * carry a recorded `reason` and stay Change-node-only: they explain work that
+ * EXISTED as a Change and is not demanded toward this Issue's completion —
+ * abandoned, replaced, or postponed. `deferred` is the postponement: work the
+ * Issue still intends but explicitly puts beyond this Issue's own completion —
+ * postponed, not abandoned and not replaced — recorded on the books rather than
+ * spelled as a dangling optional node, a false cancellation, or a silent
+ * omission. Intent work no Change ever backed is postponed by keeping it
+ * `optional`, and expressed as unwanted by omitting the node from the next
+ * revision.
  */
-export type ExecutionPlanNodeLifecycle = 'required' | 'optional' | 'cancelled' | 'superseded';
+export type ExecutionPlanNodeLifecycle =
+  | 'required'
+  | 'optional'
+  | 'cancelled'
+  | 'superseded'
+  | 'deferred';
 
 interface ExecutionPlanNodeBase {
   readonly nodeId: string;
@@ -196,7 +207,7 @@ export interface ExecutionPlanChangeNode extends ExecutionPlanNodeBase {
   readonly changeAlias?: string;
   /** Absent ≡ `required`; see `ExecutionPlanNodeLifecycle`. */
   readonly lifecycle?: ExecutionPlanNodeLifecycle;
-  /** The recorded reason a `cancelled`/`superseded` node must carry. */
+  /** The recorded reason a `cancelled`/`superseded`/`deferred` node must carry. */
   readonly reason?: string;
 }
 
@@ -208,8 +219,9 @@ export interface ExecutionPlanChangeNode extends ExecutionPlanNodeBase {
  *
  * An intent node carries the required/optional half of the lifecycle
  * vocabulary: the decomposition's proposal lives ON the node the review
- * surface shows, not in a sidecar document. `cancelled`/`superseded` are
- * refused here — unwanted intent work is expressed by omitting the node from
+ * surface shows, not in a sidecar document. `cancelled`, `superseded`, and
+ * `deferred` are refused here — intent work is postponed by keeping it
+ * `optional`, and unwanted intent work is expressed by omitting the node from
  * the next revision, because there is no existed work for those values to
  * explain. An absent lifecycle reads `required` and is canonically omitted,
  * so intent revisions published before this field existed re-derive their
@@ -298,14 +310,16 @@ export interface AcceptanceGateSnapshot {
 }
 
 /**
- * One node the gate's required total excluded at acceptance: a `cancelled` or
- * `superseded` node with the reason its revision records. Structurally the
- * evaluation's own exclusion shape, restated at the Store level for the same
- * reason `AcceptanceGateSnapshot` is: `store/issues` takes no upward import.
+ * One node the gate's required total excluded at acceptance: a `cancelled`,
+ * `superseded`, or `deferred` node with the reason its revision records — the
+ * three values that name work the plan does not demand toward Done, abandoned,
+ * replaced, or postponed. Structurally the evaluation's own exclusion shape,
+ * restated at the Store level for the same reason `AcceptanceGateSnapshot` is:
+ * `store/issues` takes no upward import.
  */
 export interface AcceptanceRecordExclusion {
   readonly nodeId: string;
-  readonly lifecycle: 'cancelled' | 'superseded';
+  readonly lifecycle: 'cancelled' | 'superseded' | 'deferred';
   readonly reason: string;
 }
 
@@ -347,7 +361,7 @@ export interface ExecutionPlanChangeNodeInput {
   readonly changeAlias?: string;
   /** Authored lifecycle; validated against the closed vocabulary. */
   readonly lifecycle?: string;
-  /** Authored reason; required for `cancelled`/`superseded`, portable-checked. */
+  /** Authored reason; required for `cancelled`/`superseded`/`deferred`, portable-checked. */
   readonly reason?: string;
   readonly dependsOn?: readonly string[];
   /** Optional suggestion/rationale/uncertainty; see `ExecutionPlanNodeBase`. */

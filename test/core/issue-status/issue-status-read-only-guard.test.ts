@@ -30,7 +30,7 @@ import {
 import { StoreQueryModuleImpl } from '../../../src/core/store/query/index.js';
 import { writeRunState } from '../../../src/core/pipeline-registry/run-state.js';
 import { ephemeraDir } from '../../../src/core/file-placement.js';
-import { projectIssueStatus, deriveIssueReadySet, deriveIssueAttention } from '../../../src/core/issue-status/index.js';
+import { projectIssueStatus, deriveIssueReadySet, deriveIssueAttention, deriveIssueDeliveryEvidence, deriveIssueReview } from '../../../src/core/issue-status/index.js';
 import { readIssueAcceptanceFacts } from '../../../src/core/issue-acceptance/index.js';
 
 const REPO_ROOT = path.resolve(
@@ -98,6 +98,19 @@ describe('The issue-status Module has no write surface', () => {
     // Same reasoning as the ready-set row: the attention post-pass inherits
     // the write-surface scans only by being in the walked set.
     expect(files.map(file => path.basename(file))).toContain('attention.ts');
+  });
+
+  it('covers the delivery derivation module (issue-delivery-evidence-rollup)', () => {
+    // Same reasoning again: the delivery post-pass inherits the write-surface
+    // scans only by being in the walked set.
+    expect(files.map(file => path.basename(file))).toContain('delivery.ts');
+  });
+
+  it('covers the review derivation module (issue-unified-review-gate)', () => {
+    // Same reasoning once more: the review post-pass — a composition over the
+    // delivery rollup and the attention items — inherits the write-surface
+    // scans only by being in the walked set.
+    expect(files.map(file => path.basename(file))).toContain('review.ts');
   });
 
   it('calls no filesystem write function', () => {
@@ -293,6 +306,26 @@ describe('A status projection mutates nothing on disk', () => {
     // in-flight node contributes nothing — honestly unlisted, not unread.
     const attention = deriveIssueAttention(ISSUE, status);
     expect(attention).toEqual([]);
+
+    // The delivery rollup derived over the same read as well: one change
+    // node, not archived — the named absence, honestly counted (its own byte
+    // suite pins the full read-discipline receipt).
+    const delivery = deriveIssueDeliveryEvidence('0001', status);
+    expect(delivery?.counts).toEqual({
+      record: 0,
+      'no-record': 0,
+      'not-archived': 1,
+      unreadable: 0,
+      unattributed: 0,
+    });
+
+    // The review view derived over the same read too, composing that rollup
+    // and the attention items: an answer always present, the un-terminal node
+    // riding the gate's own blockers (its own CLI suite pins show's
+    // write-nothing bytes over a temp store).
+    const review = deriveIssueReview(ISSUE, '0001', status);
+    expect(review.determination).toEqual({ kind: 'not-ready', blockerCount: 1 });
+    expect(review.threads).toEqual([]);
 
     const twinDetail = await new StoreQueryModuleImpl().showIssue({
       ...scope,

@@ -1,0 +1,29 @@
+$ rasen store issue plan defer-dogfood --from-file nodes-bad-1.yaml --json   # deferred, no reason; exit 1
+{
+  "revision": null,
+  "status": [
+    {
+      "severity": "error",
+      "code": "store_issue_plan_failed",
+      "message": "nodes[1].reason: node 'g-opt' is deferred; a deferred node requires a recorded reason"
+    }
+  ]
+}
+
+$ rasen store issue plan defer-dogfood --from-file nodes-bad-2.yaml --json   # deferred intent node; exit 1
+{
+  "revision": null,
+  "status": [
+    {
+      "severity": "error",
+      "code": "store_issue_plan_failed",
+      "message": "nodes[1].lifecycle: node 'i-001' is an intent node carrying lifecycle 'deferred'; deferred explains work that existed as a Change and stays Change-node-only — intent work is postponed by keeping it 'optional' or by omitting the node from the next revision"
+    }
+  ]
+}
+
+$ git -C <store> status --porcelain   # after both refusals
+(empty)
+
+$ ls rasen/issues/defer-dogfood/plans
+0001.yaml, 0002.yaml

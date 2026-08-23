@@ -125,14 +125,16 @@ export type IssueAcceptanceRefusalCode =
   | 'issue_accept_blocked';
 
 /**
- * One node excluded from the gate's required total: a `cancelled` or
- * `superseded` node, with the reason its revision records. Carried beside the
+ * One node excluded from the gate's required total: a `cancelled`,
+ * `superseded`, or `deferred` node, with the reason its revision records — the
+ * three lifecycles that name work the plan does not demand toward Done, and a
+ * deferral never holds Done. Carried beside the
  * gate — on both the eligible and the blocked evaluation — so a smaller total
  * is EXPLAINED rather than silently absorbed.
  */
 export interface IssueAcceptanceGateExclusion {
   readonly nodeId: string;
-  readonly lifecycle: 'cancelled' | 'superseded';
+  readonly lifecycle: 'cancelled' | 'superseded' | 'deferred';
   readonly reason: string;
 }
 
@@ -141,7 +143,8 @@ export interface IssueAcceptanceGateExclusion {
  * and carries the portable snapshot an acceptance would freeze; not eligible
  * names EVERY blocker together, or the one structural reason that applies.
  * Both branches carry the lifecycle accounting beside the gate: the
- * cancelled/superseded exclusions always, and the optional node ids — named
+ * cancelled/superseded/deferred exclusions always, and the optional node ids
+ * — named
  * wherever a render shows them, and never hidden by an empty required total.
  */
 export type IssueAcceptanceGateEvaluation =

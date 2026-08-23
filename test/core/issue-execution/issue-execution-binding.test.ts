@@ -13,6 +13,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  refusalFix,
   resolveIssueLaunchBinding,
   type IssueLaunchContextFor,
 } from '../../../src/core/issue-execution/index.js';
@@ -875,6 +876,135 @@ describe('resolveIssueLaunchBinding — node lifecycles', () => {
     expect(result.binding.nodeId).toBe('g-opt');
     expect(result.binding.mode).toBe('fresh');
     expect(result.binding.launch?.form).toBe('project-checkout');
+  });
+});
+
+describe('resolveIssueLaunchBinding — a deferred node (issue-deferral-record D5)', () => {
+  const DEFERRAL_REASON = 'postponed beyond this Issue to the next milestone';
+
+  /** One wanted node beside one deferred node, both otherwise runnable. */
+  const DEFERRAL_NODES: readonly ExecutionPlanNode[] = [
+    {
+      nodeId: 'g-001',
+      kind: 'change',
+      projectId: PROJECT,
+      targetLineId: LINE,
+      changeInstanceId: 'ci:aaa',
+      changeAlias: 'child-a',
+      dependsOn: [],
+    },
+    {
+      nodeId: 'g-def',
+      kind: 'change',
+      projectId: PROJECT,
+      targetLineId: LINE,
+      changeInstanceId: 'ci:eee',
+      changeAlias: 'child-def',
+      lifecycle: 'deferred',
+      reason: DEFERRAL_REASON,
+      dependsOn: [],
+    },
+  ];
+
+  const deferredStatus = () =>
+    statusFor([
+      nodeStatus('g-001', 'not-started'),
+      nodeStatus('g-def', 'not-started', {
+        lifecycle: 'deferred',
+        reason: DEFERRAL_REASON,
+        projectId: PROJECT,
+        alias: 'child-def',
+      }),
+    ]);
+
+  it('refuses a --node on a deferred node with its own code, emitting no contract', async () => {
+    const result = await resolveIssueLaunchBinding({
+      detail: detailFor(DEFERRAL_NODES),
+      status: deferredStatus(),
+      workspaceEntries: [],
+      launchContextFor: LAUNCH_OK,
+      nodeId: 'g-def',
+    });
+    // The one fall-through that would have SHIPPED a lie: without this
+    // refusal a deferred node emits a real launch contract.
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.code).toBe('issue_start_node_deferred');
+    expect(result.refusal.message).toContain('g-def');
+    expect(result.refusal.message).toContain('deferred');
+    expect(result.refusal.message).toContain(DEFERRAL_REASON);
+    // Postponed, not abandoned: the refusal does not claim the work is
+    // unwanted, the way the cancelled/superseded refusals do.
+    expect(result.refusal.message).toContain('postponed beyond this Issue');
+    expect(result.refusal.message).not.toContain('its work is not wanted');
+    expect(result.refusal.blockers).toEqual([]);
+    expect(result.refusal.candidates).toEqual([]);
+  });
+
+  it('points the refusal fix at the next revision, never at a side door', async () => {
+    const result = await resolveIssueLaunchBinding({
+      detail: detailFor(DEFERRAL_NODES),
+      status: deferredStatus(),
+      workspaceEntries: [],
+      launchContextFor: LAUNCH_OK,
+      nodeId: 'g-def',
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    const fix = refusalFix(result.refusal);
+    expect(fix).toContain('re-publish a revision whose lifecycle wants it');
+    // The same fix the other two not-demanded lifecycles carry — one door.
+    expect(fix).toBe(
+      refusalFix({ ...result.refusal, code: 'issue_start_node_cancelled' })
+    );
+  });
+
+  it('never names a deferred node on the frontier, even when it alone could run', async () => {
+    // Both nodes are not-started with no dependencies: had the deferred node
+    // qualified, the several-candidates refusal would have fired instead.
+    const result = await resolveIssueLaunchBinding({
+      detail: detailFor(DEFERRAL_NODES),
+      status: deferredStatus(),
+      workspaceEntries: [],
+      launchContextFor: LAUNCH_OK,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.binding.nodeId).toBe('g-001');
+    expect(result.binding.mode).toBe('fresh');
+  });
+
+  it('names a deferred node with its reason when nothing is runnable', async () => {
+    const nodes: readonly ExecutionPlanNode[] = DEFERRAL_NODES.map(node =>
+      node.nodeId === 'g-001'
+        ? { ...node, dependsOn: ['g-def'] as readonly string[] }
+        : node
+    );
+    const result = await resolveIssueLaunchBinding({
+      detail: detailFor(nodes),
+      status: statusFor([
+        nodeStatus('g-001', 'not-started', {
+          blockedBy: [{ nodeId: 'g-def', projectId: PROJECT, observation: 'not-started' }],
+        }),
+        nodeStatus('g-def', 'not-started', {
+          lifecycle: 'deferred',
+          reason: DEFERRAL_REASON,
+          alias: 'child-def',
+        }),
+      ]),
+      workspaceEntries: [],
+      launchContextFor: LAUNCH_OK,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.code).toBe('issue_start_node_not_runnable');
+    expect(result.refusal.message).toContain('g-def is deferred');
+    expect(result.refusal.message).toContain(DEFERRAL_REASON);
+    // Deferring upstream work without re-edging is a plan inconsistency the
+    // read surface SHOWS rather than absorbs: the dependent still waits.
+    expect(result.refusal.message).toContain(
+      'g-001 awaits g-def@app-a (not-started, no local run-state)'
+    );
   });
 });
 
