@@ -68,8 +68,14 @@ created or updated and no pull request was opened by this ship stage.
 
 Status: Deferred to the Phase 7 portfolio-level delivery.
 
-## Archive
+## Archive Timing Note
 
 Timing is `on-merge`. Nothing was archived during ship. Retention runs before the later
 archive action; for local delivery there is no child PR merge to poll, so the archive stage
 may proceed after retention under the portfolio's lifecycle policy.
+
+## Archive
+**Date:** 2026-08-24T10:10:21.760Z
+**Ship commit:** 9b7130de7d58e66bd1a8ff8e0c6e0d20181fd10f
+**Outcome:** archived at E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer\rasen\changes\archive\2026-08-24-issue-read-surface
+**Transaction:** 691c2b2c-1719-4322-9097-3d36e033d35e
