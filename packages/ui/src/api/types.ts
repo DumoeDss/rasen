@@ -691,6 +691,12 @@ export interface SessionSpaceWire {
   type: 'project' | 'store';
   id: string;
   root: string;
+  planning?: {
+    storeUid?: string;
+    storeId?: string;
+    projectId?: string;
+    targetLineId?: string;
+  };
 }
 
 /**
@@ -701,7 +707,18 @@ export interface SessionSpaceWire {
  */
 export type SessionExecutionWire =
   | { kind: 'planning-only' }
-  | { kind: 'project'; projectId: string; root: string; home?: string };
+  | {
+      kind: 'project';
+      projectId: string;
+      root: string;
+      home?: string;
+      worktree?: {
+        root: string;
+        worktreeInstanceId: string;
+        ref?: string;
+        headOid?: string;
+      };
+    };
 
 /** Mirrors `SessionRecord` (session-registry.ts) as sent over the wire. */
 export interface SessionRecordWire {
@@ -2387,6 +2404,11 @@ export interface StoreExecutionPlanNode {
   changeAlias?: string;
   /** Present only when `kind === 'intent'`. */
   summary?: string;
+  lifecycle?: StoreIssueNodeLifecycle;
+  reason?: string;
+  suggestedPipeline?: string;
+  rationale?: string;
+  uncertainty?: string;
 }
 
 /** `rasen/issues/<issueId>/plans/<revisionId>.yaml`, as read back. */
@@ -2498,12 +2520,51 @@ export interface StoreExecutionPlanNodeInput {
   changeAlias?: string;
   summary?: string;
   dependsOn?: string[];
+  lifecycle?: string;
+  reason?: string;
+  suggestedPipeline?: string;
+  rationale?: string;
+  uncertainty?: string;
 }
 
 /** `POST /api/v1/stores/execution-plan` request body. */
 export interface StoreExecutionPlanPublishRequest {
   issueId?: string;
   nodes?: StoreExecutionPlanNodeInput[];
+  expectedRevisionId?: string | null;
+}
+
+export type StoreChangeIssueAssociation = 'linked' | 'unlinked' | 'unknown';
+
+export type StoreChangeIssueEligibility =
+  | 'attachable'
+  | 'already-linked'
+  | 'identity-missing'
+  | 'identity-ambiguous'
+  | 'evidence-incomplete';
+
+export type StoreChangeOccurrence =
+  | { kind: 'active'; change: StoreAggregateChangeEntry }
+  | { kind: 'archived'; change: StoreAggregateArchiveEntry };
+
+export interface StoreChangeIssueLink {
+  issueId: string;
+  title: string | null;
+  state: StoreIssueState | null;
+  revisionId: string;
+  nodeIds: string[];
+}
+
+export interface StoreChangeIssueLinkEntry {
+  occurrence: StoreChangeOccurrence;
+  association: StoreChangeIssueAssociation;
+  eligibility: StoreChangeIssueEligibility;
+  issues: StoreChangeIssueLink[];
+}
+
+/** `GET /api/v1/stores/change-issue-links` response. */
+export interface StoreChangeIssueLinksResponse extends StoreAggregateCompleteness {
+  entries: StoreChangeIssueLinkEntry[];
 }
 
 // ---- Issue projections (issue-read-surface) ----

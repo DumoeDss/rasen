@@ -35,14 +35,18 @@ import { findPlanNodeSchemaProblems } from '../store/issues/plans.js';
 import { isStoreIssueError } from '../store/issues/diagnostics.js';
 import { StoreError } from '../store/errors.js';
 import {
+  composeChangeIssueLinks,
   composeIssueProjectionDetail,
   composeIssueProjectionList,
   composeStoreAttention,
+  type ChangeIssueLinksPayload,
   type IssueProjectionDetailPayload,
   type IssueProjectionListPayload,
   type IssueRunStateContext,
   type StoreAttentionPayload,
 } from '../issue-read/index.js';
+import { parseExecutionPlanRevisionId } from '../store/planning-validation.js';
+import { listPipelines } from '../pipeline-registry/resolver.js';
 import { resolveStoreBinding } from '../store/identity.js';
 import { isValidStoreUid } from '../store/identity-types.js';
 import { parseSpaceSelector, unavailableStoreHttpResult } from '../config-api/project-addressing.js';
@@ -171,6 +175,7 @@ function statusForIssueCode(code: StoreIssueErrorCode): number {
     case 'issue_reference_scope_conflict':
     case 'issue_reference_foreign_store':
     case 'execution_plan_revision_exists':
+    case 'execution_plan_revision_conflict':
     case 'execution_plan_cycle':
     case 'execution_plan_node_duplicate':
     case 'execution_plan_digest_mismatch':
@@ -359,6 +364,16 @@ export function handleStoreIssueAttention(
   return run(() =>
     composeStoreAttention(storeQuery, projectionScope(space), runState, issueId)
   );
+}
+
+/**
+ * Fresh Store-wide Change-to-Issue association read. The handler is a direct
+ * pass-through to the shared issue-read composition and keeps no index/cache.
+ */
+export function handleStoreChangeIssueLinks(
+  space: ResolvedStoreSpace
+): Promise<StoreHandlerResult<ChangeIssueLinksPayload>> {
+  return run(() => composeChangeIssueLinks(storeQuery, projectionScope(space)));
 }
 
 export async function handleStoreExecutionPlan(
@@ -554,7 +569,7 @@ export function findInvalidPlanNodes(
 
 export async function handleStorePublishPlan(
   space: ResolvedStoreSpace,
-  body: { issueId?: unknown; nodes?: unknown }
+  body: { issueId?: unknown; nodes?: unknown; expectedRevisionId?: unknown }
 ): Promise<StoreHandlerResult<ExecutionPlanResult>> {
   const issueId = typeof body.issueId === 'string' ? body.issueId : '';
   if (!issueId) {
@@ -571,6 +586,30 @@ export async function handleStorePublishPlan(
       status: 400,
       code: 'plan_nodes_required',
       message: 'Publishing an execution plan requires a "nodes" array.',
+    };
+  }
+  let expectedRevisionId: ReturnType<typeof parseExecutionPlanRevisionId> | null | undefined;
+  if (body.expectedRevisionId === null) {
+    expectedRevisionId = null;
+  } else if (body.expectedRevisionId === undefined) {
+    expectedRevisionId = undefined;
+  } else if (typeof body.expectedRevisionId === 'string') {
+    try {
+      expectedRevisionId = parseExecutionPlanRevisionId(body.expectedRevisionId);
+    } catch {
+      return {
+        ok: false,
+        status: 400,
+        code: 'execution_plan_revision_invalid',
+        message: `expectedRevisionId must be null or a canonical four-digit revision id; got ${JSON.stringify(body.expectedRevisionId)}.`,
+      };
+    }
+  } else {
+    return {
+      ok: false,
+      status: 400,
+      code: 'execution_plan_revision_invalid',
+      message: 'expectedRevisionId must be null or a canonical four-digit revision id.',
     };
   }
   const rawNodes = body.nodes as readonly {
@@ -633,6 +672,9 @@ export async function handleStorePublishPlan(
       ...writeScope(space),
       issueId,
       nodes: rawNodes as unknown as readonly ExecutionPlanNodeInput[],
+      ...(expectedRevisionId === undefined ? {} : { expectedRevisionId }),
+      pipelineKnown: (name: string) =>
+        listPipelines(space.root).includes(name.replace(/\.ya?ml$/, '')),
     })
   );
 }

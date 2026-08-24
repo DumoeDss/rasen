@@ -52,16 +52,17 @@ Spec、Requirement/Scenario、Change/Delta 的 canonical 校验定义。
 - **边界**：只 import 不改 `src/core/pipeline-registry/`（冻结）与 `src/core/store/query/`（store-pure 契约不含 run-state——这就是它独立成顶层模块的原因）。CLI 缝在 `src/commands/store-issue.ts`：best-effort 解析 execution root（失败降级 visibility-none），list 行加 `phase/health n/m [<alias|id> a/b · …]`（per-project 摘要段，无 lanes 时整体省略），show 加 status 块 + 每项目泳道头（`project <alias|id> (<id>): x/y`，其下节点行格式不变）+ 每节点 attribution 行 + acceptance 节，两命令 `--json` 增生 `status` 对象（含 `status.projects` lanes 与 `status.acceptance`）；index 条目每命令收集一次（`listAllWorkspaceIndexEntries` 按 store uid 过滤）；alias 由 `resolveStoreWideningContext` 读 Store 项目 catalogs（`listProjectEntries` → catalog display `id`）作投影输入；list/show 每命令额外经 `readIssueAcceptanceFacts` 读一次验收内容。
 - **连接**：被 `src/commands/store-issue.ts` 与 `src/core/issue-acceptance/orchestration.ts` 消费（一条状态缝）。
 
-## `issue-read/` — Issue 读面组合（CLI 与 daemon 的同一条组装，Phase 7 g-001 起）
+## `issue-read/` — Issue 读面组合与 Change 关联读（Phase 7 起）
 
 一句话：**Issue 的三条读（list / show / attention）只有一份组装代码**，CLI 与 management API 调同一个函数，所以两面 parity 是构造出来的，不是两条路径互相追平出来的。
 
 - **为什么单独成模块**：`issue-status/` 按章程 I/O-free（纯派生 + 一个成文的 run-state 探针），而这里要读 Store（`listIssues`/`showIssue`/`resolveExecutionPlan` + 验收内容 + workspace index + 项目 catalogs）——`issue-execution/confirm.ts` 的 read-compose-report 先例。
-- **关键文件**：`composition.ts`（三个 compose 函数 + 具名 payload 类型 + 下沉自 CLI 的缝 `statusInputFor`/`resolveStoreWideningContext`/`resolvePredecessorPlan`/`detailForList`/`attentionCounts`）、`run-context.ts`（`resolveRunStateContext(startPath)`）、`index.ts`（barrel）。
+- **关键文件**：`composition.ts`（三个 Issue projection compose 函数 + 具名 payload 类型 + 下沉自 CLI 的缝 `statusInputFor`/`resolveStoreWideningContext`/`resolvePredecessorPlan`/`detailForList`/`attentionCounts`）、`run-context.ts`（`resolveRunStateContext(startPath)`）、`change-links.ts`（`composeChangeIssueLinks` + Change association/eligibility/link payload 闭类型）、`index.ts`（barrel）。
 - **payload 键序是承载语义的**：`printJson` 按插入序序列化，所以三个 compose 函数按 CLI 历来打印的字面量顺序建对象。既有 store-issue / store-attention CLI 套件即这次抽取的字节守卫。
 - **谁注入什么**：`query` 是参数（CLI 传 `StoreAggregateQuery`，daemon 传 `createStoreQueryByUid()` 的 uid 严格实例）；`runState` 是参数（CLI 传 `resolveRunStateContext(process.cwd())`，daemon 传 `resolveRunStateContext(context.launchProjectRoot)`）。解不出执行根 = `runStateVisibility:'none'` + 仅 committed evidence，**诚实降级且必须被呈现方披露**（永不伪造 live 事实）。
 - **拒收 vs 不可读是两条互不转换的通道**：attention 的未知 `--issue`/`issueId` 抛 `issue_attention_unknown_issue`（空扫描是关于"扫过哪些 Issue"的断言，必须为真）；而计划读不回 / 引用未检索 / 记录分叉是 **200 载荷内**的 `problems`/`complete:false`/`unsearchedRefs`。
-- **连接**：`src/commands/store-issue.ts`（list/show）、`src/commands/store.ts`（attention）、`src/core/management-api/stores.ts`（三条投影 handler）。CLI 侧只剩 renderer 与 `resolveProjectionContext()` 这个 cwd 薄包装；attention 的失败哨兵（省略 `unsearchedRefs`/`complete`）仍属命令而非扫描。
+- **Change↔Issue association（g-002）**：`composeChangeIssueLinks(query, scope)` 一次读取 grouped active/archive Changes、一次读取 Issues、每个有 latest revision 的 Issue 最多读一次 plan；按稳定 Change instance 收集 Issue/revision/node links。单一 identity + 零 link + 完整扫描才是 `unlinked/attachable`；identity 缺失/重复 claimant/不可读证据均为 `unknown`，已证明的 link 即使旁路证据不完整仍保留 `linked`。条目、link、node、completeness 通道稳定排序/去重；模块不写入、不加锁、不缓存、不持久化反向索引。
+- **连接**：`src/commands/store-issue.ts`（list/show）、`src/commands/store.ts`（attention）、`src/core/management-api/stores.ts`（三条投影 handler + `handleStoreChangeIssueLinks`）。CLI 侧只剩 renderer 与 `resolveProjectionContext()` 这个 cwd 薄包装；attention 的失败哨兵（省略 `unsearchedRefs`/`complete`）仍属命令而非扫描。Change association 目前只由 flat management GET 消费，供 Operations attribution 与 Unlinked inventory 共用。
 
 ## `issue-execution/` — Issue 节点启动绑定（resolve + verify + emit，不 spawn）
 
@@ -92,6 +93,12 @@ Phase 4（g-002）增**第三发布源** `--from-decomposition <path>`（`publis
 - **archived 算证据**：archived 条目的目录名是 `<date>-<change>`（或 v2 `<date>-<change>--<instanceShort>`），用 `archive-engine.ts` 的 `archiveDatePrefixedNameMatches`（只对 archived 条目启用；active 目录长得像日期前缀不算）——子项完成后重发布仍可解析是本片核心 dogfood。
 - **边界**：只 import 不改 `src/core/pipeline-registry` 的冻结面（g-002 起唯一解冻点 = `execution-plan-internal.ts` 的 decompose-bearing v1 裁决改名，见 workflow-pipeline 域）；`store/issues` mutation 词汇不动（新码不进 `StoreIssueErrorCode`）。CLI 缝在 `src/commands/store-issue.ts` 的 `plan` 子命令（三源恰取其一：`--from-file`/`--from-portfolio`/`--from-decomposition`，任两同给或全缺拒绝并点名三源）。
 - **连接**：被 `src/commands/store-issue.ts` 消费；g-003 全环 dogfood（真实 portfolio 重发布）依赖本通道；Phase 4 dogfood（Issue #3 decompose→review-ready）走分解源。
+
+## `store/issues/` — immutable Execution Plan 发布与条件 CAS
+
+- `types.ts` 的 `PublishExecutionPlanInput.expectedRevisionId?: ExecutionPlanRevisionId | null` 是可选 compare-and-publish 前置条件：omitted 保留既有无条件顺序分配，`null` 要求当前无 plan，revision id 要求它正是 latest。
+- `module.ts` 的 `StoreIssuesModule.publishPlan` 在既有 per-Issue write lock 内读取 `{previous,next}` 并比较 expectation；mismatch 抛 `execution_plan_revision_conflict`，且在 reference reads 与 revision write 之前退出，所以零修订写入。匹配后仍走同一 reference/schema/digest/immutable publication 路径，没有第六种 Issue mutation。
+- HTTP 边界 `management-api/stores.ts` 的 `handleStorePublishPlan` 校验 undefined/null/canonical 四位 revision，`wire-types.ts` 与 UI request mirror 携带该字段；共享错误映射把 stale conflict 呈现为 HTTP 409。完整 plan-node 字段镜像保证 read-modify-publish 不丢 lifecycle/reason/suggestion/rationale/uncertainty。
 
 ## `store/issues/` 的 target-project 门（Phase 3 g-001 `issue-target-project-binding`）
 

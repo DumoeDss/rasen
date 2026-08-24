@@ -45,6 +45,12 @@ vi.mock('../src/components/IssueDetailPage.js', async () => {
     },
   };
 });
+vi.mock('../src/components/OperationsPage.js', () => ({
+  OperationsPage: () => <div data-testid="operations-page">operations</div>,
+}));
+vi.mock('../src/components/UnlinkedChangesPage.js', () => ({
+  UnlinkedChangesPage: () => <div data-testid="unlinked-changes-page">unlinked</div>,
+}));
 vi.mock('../src/components/AuditPage.js', () => ({
   AuditPage: () => <div data-testid="audit-page">audit</div>,
 }));
@@ -261,6 +267,24 @@ describe('App routing', () => {
     } finally {
       document.body.removeChild(storeContainer);
     }
+  });
+
+  it.each([
+    ['/s/store_y/operations', 'operations-page', 'nav-operations'],
+    ['/s/store_y/unlinked-changes', 'unlinked-changes-page', 'nav-unlinked-changes'],
+  ])('opens the Store-only %s route directly and marks its nav entry current', async (path, pageTestId, navTestId) => {
+    await mountAt(container, path);
+    expect(container.querySelector(`[data-testid="${pageTestId}"]`)).not.toBeNull();
+    expect(container.querySelector(`[data-testid="${navTestId}"]`)?.getAttribute('aria-current')).toBe('page');
+    expect(container.querySelector('nav a[href="/s/store_y/board"]')?.getAttribute('aria-current')).toBeNull();
+  });
+
+  it('offers neither Operations nor Unlinked Changes in a project space', async () => {
+    await mountAt(container, '/p/proj_x/board');
+    expect(container.querySelector('[data-testid="nav-operations"]')).toBeNull();
+    expect(container.querySelector('[data-testid="nav-unlinked-changes"]')).toBeNull();
+    expect(container.querySelector('nav a[href="/p/proj_x/operations"]')).toBeNull();
+    expect(container.querySelector('nav a[href="/p/proj_x/unlinked-changes"]')).toBeNull();
   });
 
   it('renders the space-agnostic Spaces page at /spaces (no space prefix)', async () => {

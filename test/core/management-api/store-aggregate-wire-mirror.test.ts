@@ -63,6 +63,7 @@ const STORE_AGGREGATE_WIRE_TYPES = [
   'StoreIssueProjectionsResponse',
   'StoreIssueProjectionResponse',
   'StoreIssueAttentionResponse',
+  'StoreChangeIssueLinksResponse',
 ] as const;
 
 /**

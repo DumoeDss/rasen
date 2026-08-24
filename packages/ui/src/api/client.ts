@@ -45,6 +45,7 @@ import type {
   SpaceWorktreesResponse,
   StatusResponse,
   StoreChangesResponse,
+  StoreChangeIssueLinksResponse,
   StoreExecutionPlanPublishRequest,
   StoreExecutionPlanPublishResponse,
   StoreExecutionPlanResponse,
@@ -735,6 +736,15 @@ export function getStoreIssueAttention(
   const query = params.toString();
   return request<StoreIssueAttentionResponse>(
     query ? `/api/v1/stores/issue-attention?${query}` : '/api/v1/stores/issue-attention'
+  );
+}
+
+/** Fresh Store-wide Change-to-Issue association read; no client cache/index. */
+export function getStoreChangeIssueLinks(
+  space?: string
+): Promise<StoreChangeIssueLinksResponse> {
+  return request<StoreChangeIssueLinksResponse>(
+    `/api/v1/stores/change-issue-links${spaceQuery(space)}`
   );
 }
 

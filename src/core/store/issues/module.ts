@@ -230,9 +230,32 @@ export class StoreIssuesModule implements StoreIssues {
       // --pipeline` validates through — this module has no working-directory
       // root of its own to resolve pipelines from).
       assertPlanNodeSuggestions(nodes, input.pipelineKnown);
-      await this.verifyReferences(scope, nodes, input.globalDataDir);
+      let ordinal: { previous: ExecutionPlanRevisionId | null; next: ExecutionPlanRevisionId };
+      if (input.expectedRevisionId !== undefined) {
+        ordinal = await this.allocateOrdinal(addresses.plans);
+        if (input.expectedRevisionId !== ordinal.previous) {
+          throw issueRefusal(
+            'execution_plan_revision_conflict',
+            `Execution Plan publication for Issue '${issueId}' was based on a stale latest revision.`,
+            {
+              expected: input.expectedRevisionId ?? '(no revision)',
+              actual: ordinal.previous ?? '(no revision)',
+              target: addresses.plans,
+              fix: 'Refresh the Issue and rebuild the complete replacement plan from its latest revision before publishing again.',
+            }
+          );
+        }
+        // Reference reads happen only after the lock-held comparison. A stale
+        // request therefore performs no reference work and can write nothing.
+        await this.verifyReferences(scope, nodes, input.globalDataDir);
+      } else {
+        // Preserve the unconditional caller's historical validation/allocation
+        // order exactly.
+        await this.verifyReferences(scope, nodes, input.globalDataDir);
+        ordinal = await this.allocateOrdinal(addresses.plans);
+      }
 
-      const { previous, next } = await this.allocateOrdinal(addresses.plans);
+      const { previous, next } = ordinal;
       const target = revisionAddress(scope.checkoutRoot, issueId, next);
       if ((await this.dependencies.fs.statKind(target)) !== 'absent') {
         throw issueRefusal(

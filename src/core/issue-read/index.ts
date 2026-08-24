@@ -23,3 +23,12 @@ export {
   type StoreAttentionScanEntry,
 } from './composition.js';
 export { resolveRunStateContext, type IssueRunStateContext } from './run-context.js';
+export {
+  composeChangeIssueLinks,
+  type ChangeIssueAssociation,
+  type ChangeIssueEligibility,
+  type ChangeIssueLink,
+  type ChangeIssueLinkEntry,
+  type ChangeIssueLinksPayload,
+  type ChangeOccurrence,
+} from './change-links.js';

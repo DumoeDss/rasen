@@ -44,14 +44,16 @@ export function Layout({ children }: { children: ComponentChildren }) {
   // the current route, so `section` is null and Board/Archive/Config/Pipelines
   // get no aria-current — only Workflows/Profiles highlight themselves.
   const section = routeSpace ? spaceSection(path) : null;
-  // The Issue read surface is deliberately NOT a `SWITCHABLE_SECTIONS` entry
-  // (issue-read-surface design D5): preserving `issues` across a switch into a
-  // project space would build a dead route, and the documented fallback to the
-  // board is the safe behaviour. `spaceSection` therefore reports `board` on an
-  // issues route, so the Issues link marks itself current by path prefix, and
-  // Board stands down while it does — two links claiming the current page is
-  // worse than either claim alone.
+  // Store-only surfaces are deliberately NOT `SWITCHABLE_SECTIONS` entries:
+  // preserving one across a switch into a project space would build a dead
+  // route. `spaceSection` therefore reports `board` on these paths, so each
+  // link marks itself current by prefix and Board explicitly stands down.
   const onIssues = routeSpace !== null && path.startsWith(spaceHref(routeSpace, 'issues'));
+  const onOperations =
+    routeSpace !== null && path.startsWith(spaceHref(routeSpace, 'operations'));
+  const onUnlinkedChanges =
+    routeSpace !== null && path.startsWith(spaceHref(routeSpace, 'unlinked-changes'));
+  const onStoreOnlySurface = onIssues || onOperations || onUnlinkedChanges;
   const onWorkflows = path.startsWith('/workflows');
   const onProfiles = path.startsWith('/profiles');
   const onAudit = path.startsWith('/audit');
@@ -73,20 +75,36 @@ export function Layout({ children }: { children: ComponentChildren }) {
               <>
                 <a
                   href={spaceHref(space, 'board')}
-                  aria-current={section === 'board' && !onIssues ? 'page' : undefined}
+                  aria-current={section === 'board' && !onStoreOnlySurface ? 'page' : undefined}
                 >
                   {t('nav.board')}
                 </a>
                 {/* Issues live in Stores, so a project space offers no Issues
                     section (issue-board-ui spec, requirement 6). */}
                 {space.type === 'store' && (
-                  <a
-                    href={spaceHref(space, 'issues')}
-                    data-testid="nav-issues"
-                    aria-current={onIssues ? 'page' : undefined}
-                  >
-                    {t('nav.issues')}
-                  </a>
+                  <>
+                    <a
+                      href={spaceHref(space, 'issues')}
+                      data-testid="nav-issues"
+                      aria-current={onIssues ? 'page' : undefined}
+                    >
+                      {t('nav.issues')}
+                    </a>
+                    <a
+                      href={spaceHref(space, 'operations')}
+                      data-testid="nav-operations"
+                      aria-current={onOperations ? 'page' : undefined}
+                    >
+                      {t('nav.operations')}
+                    </a>
+                    <a
+                      href={spaceHref(space, 'unlinked-changes')}
+                      data-testid="nav-unlinked-changes"
+                      aria-current={onUnlinkedChanges ? 'page' : undefined}
+                    >
+                      {t('nav.unlinked_changes')}
+                    </a>
+                  </>
                 )}
                 <a
                   href={spaceHref(space, 'archive')}

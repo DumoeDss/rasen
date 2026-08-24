@@ -38,6 +38,7 @@ import {
   handleStoreIssueProjections,
   handleStoreIssueProjection,
   handleStoreIssueAttention,
+  handleStoreChangeIssueLinks,
   handleStoreIssueCreate,
   handleStoreIssueSetState,
   handleStorePublishPlan,
@@ -358,6 +359,7 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/stores/issue-projections',
   '/api/v1/stores/issue-projection',
   '/api/v1/stores/issue-attention',
+  '/api/v1/stores/change-issue-links',
 ]);
 
 const SESSION_ID_PATH_PREFIX = '/api/v1/sessions/';
@@ -614,6 +616,12 @@ function isMethodAdmitted(pathname: string, method: string | undefined): boolean
   if (pathname === '/api/v1/hosted-sessions/execute') return method === 'POST';
   if (pathname === '/api/v1/frozen-action-executor/dispatch') return method === 'POST';
   if (pathname === '/api/v1/frozen-action-executor/continue') return method === 'POST';
+  // The maintained flat Store family has three mutations. They share paths
+  // with GET reads where noted, so the global admission gate must let the
+  // request reach the method-specific branches below.
+  if (pathname === '/api/v1/stores/issues') return method === 'GET' || method === 'POST';
+  if (pathname === '/api/v1/stores/issue-state') return method === 'POST';
+  if (pathname === '/api/v1/stores/execution-plan') return method === 'GET' || method === 'POST';
   if (pathname === '/api/v1/pipelines') {
     return method === 'GET' || method === 'POST';
   }
@@ -1627,7 +1635,11 @@ export function createManagementRouter(
       }
       const result = await handleStorePublishPlan(
         space.space,
-        (body.value ?? {}) as { issueId?: unknown; nodes?: unknown }
+        (body.value ?? {}) as {
+          issueId?: unknown;
+          nodes?: unknown;
+          expectedRevisionId?: unknown;
+        }
       );
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
@@ -1685,6 +1697,21 @@ export function createManagementRouter(
         await resolveRunStateContext(context.launchProjectRoot ?? undefined),
         state
       );
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/change-issue-links') {
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const result = await handleStoreChangeIssueLinks(space.space);
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
         return;

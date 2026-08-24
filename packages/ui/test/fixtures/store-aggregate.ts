@@ -1,5 +1,6 @@
 import type {
   StoreChangesResponse,
+  StoreChangeIssueLinksResponse,
   StoreIssueDetailResponse,
   StoreIssuesResponse,
   StoreProjectsResponse,
@@ -120,6 +121,11 @@ export const storeIssueDetailFixture = {
           dependsOn: [],
           changeInstanceId: 'chg_1',
           changeAlias: 'add-thing',
+          lifecycle: 'deferred',
+          reason: 'scheduled later',
+          suggestedPipeline: 'small-feature',
+          rationale: 'keep this rationale',
+          uncertainty: 'keep this uncertainty',
         },
         {
           nodeId: 'n2',
@@ -220,3 +226,45 @@ export const storeTargetLinesFixture = {
     },
   ],
 } satisfies StoreTargetLinesResponse;
+
+/** Full D1 payload fixture, including an active link and an archived attachable Change. */
+export const storeChangeIssueLinksFixture = {
+  unsearchedRefs: [],
+  problems: [],
+  complete: true,
+  entries: [
+    {
+      occurrence: { kind: 'active', change: storeChangesFixture.groups[0]!.active[0]! },
+      association: 'linked',
+      eligibility: 'already-linked',
+      issues: [
+        {
+          issueId: 'iss_1',
+          title: 'Cross-project rollout',
+          state: 'open',
+          revisionId: '0001',
+          nodeIds: ['n1'],
+        },
+      ],
+    },
+    {
+      occurrence: {
+        kind: 'archived',
+        change: {
+          changeId: 'historical-change',
+          changeInstanceId: 'chg_history',
+          projectId: 'proj_a',
+          targetLineId: 'main',
+          entryName: '2026-08-24-historical-change--abcdef123456',
+          archiveDate: '2026-08-24',
+          outcome: 'landed',
+          legacyRecord: false,
+          foundAtRef: 'refs/heads/main',
+        },
+      },
+      association: 'unlinked',
+      eligibility: 'attachable',
+      issues: [],
+    },
+  ],
+} satisfies StoreChangeIssueLinksResponse;

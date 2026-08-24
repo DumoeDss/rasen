@@ -8,6 +8,8 @@ import { SpaceBootstrap } from './components/SpaceBootstrap.js';
 import { ArchivePage } from './components/ArchivePage.js';
 import { IssueBoardPage } from './components/IssueBoardPage.js';
 import { IssueDetailPage } from './components/IssueDetailPage.js';
+import { OperationsPage } from './components/OperationsPage.js';
+import { UnlinkedChangesPage } from './components/UnlinkedChangesPage.js';
 import { TaskDetailPage } from './components/TaskDetailPage.js';
 import { SpacesPage } from './components/SpacesPage.js';
 import { WorkflowsPage } from './components/WorkflowsPage.js';
@@ -90,6 +92,8 @@ export function App() {
               pair — a project space offers no Issues section at all. */}
           <Route path="/s/:storeId/issues" component={IssueBoardPage} />
           <Route path="/s/:storeId/issues/:issueId" component={IssueDetailPage} />
+          <Route path="/s/:storeId/operations" component={OperationsPage} />
+          <Route path="/s/:storeId/unlinked-changes" component={UnlinkedChangesPage} />
           <Route path="/p/:projectId/archive" component={ArchivePage} />
           <Route path="/s/:storeId/archive" component={ArchivePage} />
           <Route path="/p/:projectId/task/:changeName" component={TaskDetailPage} />
