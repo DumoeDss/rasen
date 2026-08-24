@@ -1,0 +1,66 @@
+{
+  "change": "issue-ui-convergence",
+  "archivedAt": "2026-08-24T10:37:18.275Z",
+  "codeCommit": "744cf75654f76d230a89fffa697a5cdcbcfe86db",
+  "planningBranch": "feat/issue-phase7",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/close-summary.md",
+      "sha256": "ef72e11d6f7e131594b72cfbb0a60abff611659514162e34957b87a6c3932ca8"
+    },
+    {
+      "path": "evidence/issue-6-1-new.json",
+      "sha256": "b003cbe3ef8758b9812778a80663cbecb4beab064fa55ec4290c50df937aaf3f"
+    },
+    {
+      "path": "evidence/issue-6-2-seed.json",
+      "sha256": "cea55660116d4ab7b1446e953e98f9793d8c8df45597a3fea105682a3d8bf960"
+    },
+    {
+      "path": "evidence/issue-6-3-plan.json",
+      "sha256": "6115494c4ae5489cd6951917e635892dc106e841cf7203ed04db2e42157b2629"
+    },
+    {
+      "path": "evidence/issue-6-4-acceptance.json",
+      "sha256": "e09fe2863bd89e3f47a0266fc362c6314338ba4f35a146b2dbc334994ad9429a"
+    },
+    {
+      "path": "evidence/issue-6-5-pre-accept.json",
+      "sha256": "85bc9b7ecadb7fb9ee5041cea32f276655309bd550526b1ef574ef75b8e218af"
+    },
+    {
+      "path": "evidence/issue-6-6-accept.json",
+      "sha256": "203523d0a6e286041a9bce50a0f833e88ce60cd838b550bdea9b5cd8665f9a9a"
+    },
+    {
+      "path": "evidence/issue-6-7-final.json",
+      "sha256": "dcbf7d8b4876102ac43fc36c562d5fe47b13bda78c52ff5c6e833d6482ea5240"
+    },
+    {
+      "path": "evidence/issue-6-8-attention.json",
+      "sha256": "be699605a2823837535bf959dad48d3d95a7c1f437c552731e518bc20ef7934a"
+    },
+    {
+      "path": "evidence/issue-6-conditions.yaml",
+      "sha256": "02067c0d9b9ee971457773df41fa0dfe300380dabc8e2f4363e3351d8a4b2a59"
+    },
+    {
+      "path": "evidence/issue-6-seed-store.mjs",
+      "sha256": "9054cbc5ad63a6db2c6fecdac37803712cd44c81c6cf8ef3692bdde3ebcb828e"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "eee2adf062f5e5fcb09376a3defb9ee6723457087d9927e34c326a515e7a631e"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [
+    "auto-run.json",
+    "portfolio-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

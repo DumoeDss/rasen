@@ -52,3 +52,9 @@ Status: Merged
 CI: Passed
 Production: Not applicable; this repository delivery ends at the merged
 `dev/0.2.0` integration branch.
+
+## Archive
+**Date:** 2026-08-24T10:37:18.275Z
+**Ship commit:** 0d7258735a6abea5cf566179b0224973e5bdf19c
+**Outcome:** archived at E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer\rasen\changes\archive\2026-08-24-issue-ui-convergence
+**Transaction:** 99900f98-7fce-4a4f-81ff-418654c0ee55
