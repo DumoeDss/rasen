@@ -73,10 +73,10 @@ function LegacyStoreTaskRedirect() {
  * source of truth for the selected planning space (management-ui-shell design
  * D1): `/` bootstraps and redirects to a resolved space route; every
  * space-scoped view lives under a `/p/:projectId/…` or `/s/:storeId/…` prefix
- * so it always renders for a resolved space. Every section — Board, Config,
- * Archive, Task detail — now renders its real page; the shell carries no
- * placeholders. The former `/sessions` top-level page is gone — live runs
- * surface through the header summary. `/workflows` is a deliberately
+ * so it always renders for a resolved space. Every section now renders its
+ * real page; the shell carries no placeholders. Store execution lives in
+ * Operations, while project live work remains on Board and Task Detail. The
+ * former `/sessions` top-level page and header summary are gone. `/workflows` is a deliberately
  * space-agnostic route (workflows-ui spec): the installable library is
  * user-wide, so it carries no space prefix, exactly like `/spaces`.
  */

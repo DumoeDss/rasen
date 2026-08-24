@@ -99,9 +99,9 @@ describe('IssueDetailPage', () => {
   it('renders one exact provenance target per state family and preserves payload locators verbatim', async () => {
     await mountAtSpace(container, REAL_PATH);
     const entries = [...container.querySelectorAll('[data-testid="issue-provenance-entry"]')];
-    expect(entries).toHaveLength(6);
+    expect(entries).toHaveLength(7);
     expect(entries.map((entry) => entry.getAttribute('data-provenance-kind'))).toEqual([
-      'git', 'git', 'git', 'runtime', 'git', 'runtime',
+      'git', 'git', 'git', 'runtime', 'git', 'git', 'runtime',
     ]);
     for (const anchor of [
       'issue-provenance-record',
@@ -109,7 +109,8 @@ describe('IssueDetailPage', () => {
       'issue-provenance-acceptance',
       'issue-provenance-runtime',
       'issue-provenance-delivery',
-      'issue-provenance-attention',
+      'issue-provenance-attention-git',
+      'issue-provenance-attention-runtime',
     ]) {
       expect(container.querySelectorAll(`#${anchor}`), anchor).toHaveLength(1);
     }
@@ -133,18 +134,18 @@ describe('IssueDetailPage', () => {
     expect(delivery.textContent).toContain(recordDelivery.blobPath);
     expect(delivery.textContent).toContain(recordDelivery.codeCommit!);
     expect(delivery.textContent).toContain(recordDelivery.evidence![0]!.sha256);
-    const attention = container.querySelector('#issue-provenance-attention')!;
+    const attention = container.querySelector('#issue-provenance-attention-runtime')!;
     const scannedVisibility = issueAttentionNarrowedFixture.scanned[0]!.runStateVisibility;
     if (scannedVisibility.kind !== 'execution-root') throw new Error('fixture must carry an execution root');
     expect(attention.textContent).toContain(scannedVisibility.executionRoot);
 
     const phaseLink = container.querySelector('[data-testid="issue-detail-phase"]') as HTMLAnchorElement;
-    expect(phaseLink.getAttribute('href')).toBe('#issue-provenance-plan');
+    expect(phaseLink.getAttribute('href')).toBe('#issue-provenance-acceptance');
     await act(async () => {
       phaseLink.click();
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
-    expect(window.location.hash).toBe('#issue-provenance-plan');
+    expect(window.location.hash).toBe('#issue-provenance-acceptance');
   });
 
   it('offers ordinary read-only links to this Store Operations and Unlinked Changes', async () => {

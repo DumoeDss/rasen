@@ -204,7 +204,7 @@ const runtimeState: RunState = {
       },
     },
     apply: {
-      status: 'in_progress',
+      status: 'escalated',
       worker: {
         runtime: 'codex',
         role: 'implementer',
@@ -241,12 +241,15 @@ const management = await startManagementServer({
 
 let mutated = false;
 let shuttingDown = false;
-let control: http.Server;
+let control: http.Server | null = null;
 
 async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
-  await new Promise<void>((resolve) => control.close(() => resolve()));
+  if (control !== null) {
+    const server = control;
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
   await management.stopServer();
   fixture.cleanup();
   process.env = originalEnv;
@@ -256,6 +259,13 @@ async function shutdown(): Promise<void> {
     // The caller may already have removed the ephemeral metadata file.
   }
 }
+
+process.on('SIGINT', () => {
+  void shutdown().finally(() => process.exit(0));
+});
+process.on('SIGTERM', () => {
+  void shutdown().finally(() => process.exit(0));
+});
 
 control = http.createServer((request, response) => {
   void (async () => {

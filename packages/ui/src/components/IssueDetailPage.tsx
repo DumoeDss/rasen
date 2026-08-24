@@ -29,6 +29,9 @@ import {
 import {
   buildIssueProvenance,
   ISSUE_PROVENANCE,
+  issueAttentionProvenanceFamily,
+  issueHealthProvenanceFamily,
+  issuePhaseProvenanceFamily,
 } from './issue-provenance.js';
 
 /**
@@ -355,8 +358,18 @@ function IssueDetailState({
         <a href={`#${ISSUE_PROVENANCE['issue-record'].anchor}`} data-testid="issue-detail-state">
           {t('issues.detail.state', { state: issue.record?.state ?? t('issues.state_unknown') })}
         </a>
-        <a href={`#${ISSUE_PROVENANCE['plan-projection'].anchor}`} data-testid="issue-detail-phase">{t(ISSUE_PHASE_LABEL_KEYS[status.phase])}</a>
-        <a href={`#${ISSUE_PROVENANCE.attention.anchor}`} data-testid="issue-detail-health">{t(ISSUE_HEALTH_LABEL_KEYS[status.health])}</a>
+        <a
+          href={`#${ISSUE_PROVENANCE[issuePhaseProvenanceFamily(status.phase)].anchor}`}
+          data-testid="issue-detail-phase"
+        >
+          {t(ISSUE_PHASE_LABEL_KEYS[status.phase])}
+        </a>
+        <a
+          href={`#${ISSUE_PROVENANCE[issueHealthProvenanceFamily(status.phase, status.health)].anchor}`}
+          data-testid="issue-detail-health"
+        >
+          {t(ISSUE_HEALTH_LABEL_KEYS[status.health])}
+        </a>
         <a href={`#${ISSUE_PROVENANCE['plan-projection'].anchor}`} data-testid="issue-detail-progress">
           {status.progress === null
             ? t('issues.progress_none')
@@ -806,7 +819,12 @@ function IssueDetailState({
               </ul>
               {node.delivery !== null && (
                 <div class="issue-detail__node-delivery" data-testid="issue-detail-node-delivery">
-                  <span>{t(ISSUE_DELIVERY_STATE_LABEL_KEYS[node.delivery.state])}</span>
+                  <a
+                    href={`#${ISSUE_PROVENANCE.delivery.anchor}`}
+                    data-testid="issue-detail-delivery-state"
+                  >
+                    {t(ISSUE_DELIVERY_STATE_LABEL_KEYS[node.delivery.state])}
+                  </a>
                   <DeliveryFacts delivery={node.delivery} />
                 </div>
               )}
@@ -834,7 +852,12 @@ function IssueDetailState({
                   </span>
                   {entry.delivery !== null && (
                     <>
-                      <span>{t(ISSUE_DELIVERY_STATE_LABEL_KEYS[entry.delivery.state])}</span>
+                      <a
+                        href={`#${ISSUE_PROVENANCE.delivery.anchor}`}
+                        data-testid="issue-detail-delivery-state"
+                      >
+                        {t(ISSUE_DELIVERY_STATE_LABEL_KEYS[entry.delivery.state])}
+                      </a>
                       <DeliveryFacts delivery={entry.delivery} />
                     </>
                   )}
@@ -964,9 +987,13 @@ function IssueDetailState({
               const detail = attentionItemDetail(item, t);
               return (
                 <li key={index} data-testid="issue-detail-attention-item" data-kind={item.kind}>
-                  <span class="issue-detail__attention-kind">
+                  <a
+                    class="issue-detail__attention-kind"
+                    href={`#${ISSUE_PROVENANCE[issueAttentionProvenanceFamily(item)].anchor}`}
+                    data-testid="issue-detail-attention-evidence"
+                  >
                     {t(ISSUE_ATTENTION_KIND_LABEL_KEYS[item.kind])}
-                  </span>
+                  </a>
                   {item.nodeId !== null && (
                     <span class="issue-detail__attention-node">{item.nodeId}</span>
                   )}

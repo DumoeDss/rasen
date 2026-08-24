@@ -8,11 +8,11 @@ import { useT } from '../i18n/store.js';
 
 /**
  * App layout (management-ui-shell design D7; config-ui-package spec): header
- * (platform title, space-scoped nav, running-run summary, space switcher) +
- * content area. Navigation offers Board · Archive · Config for the current
- * planning space, built from the space prefix in the URL, with active
- * detection relative to that prefix. There is no Sessions entry — live runs
- * surface through the running-run summary. On a space-agnostic route
+ * (platform title, space-scoped nav, space switcher) + content area. Store
+ * execution lives in Operations; project live work stays on Board and Task
+ * Detail. Navigation is built from the space prefix in the URL, with active
+ * detection relative to that prefix; there is no separate Sessions entry or
+ * running-run summary. On a space-agnostic route
  * (/workflows, /spaces) the nav falls back to the most recently visited space
  * so the space-scoped entries stay reachable; only when no space has ever
  * been visited (the `/` bootstrap or a fresh browser) are the space-scoped

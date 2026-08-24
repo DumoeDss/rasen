@@ -6,7 +6,12 @@ import {
   ISSUE_PHASE_LABEL_KEYS,
   attentionItemDetail,
 } from './issue-vocabulary.js';
-import { issueProvenanceHref } from './issue-provenance.js';
+import {
+  issueAttentionProvenanceFamily,
+  issueHealthProvenanceFamily,
+  issuePhaseProvenanceFamily,
+  issueProvenanceHref,
+} from './issue-provenance.js';
 
 /**
  * One Issue's card on the Board (issue-board-ui spec, requirement 1).
@@ -53,14 +58,17 @@ export function IssueCard({
         <a
           class="issue-card__evidence-link"
           data-testid="issue-card-phase-evidence"
-          href={issueProvenanceHref(href, 'plan-projection')}
+          href={issueProvenanceHref(href, issuePhaseProvenanceFamily(status.phase))}
         >
           {t('issues.evidence.phase', { value: t(ISSUE_PHASE_LABEL_KEYS[status.phase]) })}
         </a>
         <a
           class="issue-card__evidence-link"
           data-testid="issue-card-health-evidence"
-          href={issueProvenanceHref(href, 'attention')}
+          href={issueProvenanceHref(
+            href,
+            issueHealthProvenanceFamily(status.phase, status.health)
+          )}
         >
           <span
             class={`issue-card__health issue-card__health--${status.health}`}
@@ -111,7 +119,7 @@ export function IssueCard({
         <a
           class="issue-card__attention issue-card__evidence-link"
           data-testid="issue-card-attention"
-          href={issueProvenanceHref(href, 'attention')}
+          href={issueProvenanceHref(href, issueAttentionProvenanceFamily(attentionItem))}
         >
           <span class="issue-card__attention-kind">
             {t(ISSUE_ATTENTION_KIND_LABEL_KEYS[attentionItem.kind])}
