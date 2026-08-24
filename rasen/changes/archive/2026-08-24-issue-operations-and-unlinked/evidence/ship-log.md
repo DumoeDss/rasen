@@ -78,7 +78,13 @@ branch, pull request, archive, retention artifact, deployment, or persistent Sto
 
 Status: Deferred to the Phase 7 portfolio-level delivery.
 
-## Archive
+## Archive Timing Note
 
 Timing is `on-merge`. Nothing was archived during this local child ship. Portfolio LEAD owns the
 later retention/archive sequence after portfolio delivery facts are final.
+
+## Archive
+**Date:** 2026-08-24T10:12:14.155Z
+**Ship commit:** 0d31dbfabc6fad5e87fce4d97cc8b188560a3f8c
+**Outcome:** archived at E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer\rasen\changes\archive\2026-08-24-issue-operations-and-unlinked
+**Transaction:** 7c1fa74f-a8c0-4296-a68e-1d23bdf76ee2
