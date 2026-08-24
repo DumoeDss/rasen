@@ -36,7 +36,7 @@ state between them. Project Board and Task Detail SHALL live only under project 
 Board/Detail, Store Operations, and Unlinked Changes SHALL live only under Store prefixes; common
 Config, Archive, and Pipelines views SHALL remain addressable in either namespace.
 
-#### Scenario: Project deep link resolves its own space
+#### Scenario: Deep link resolves its own space
 
 - **WHEN** the user opens `/p/<projectId>/board` or `/p/<projectId>/task/<change>` directly
 - **THEN** the project Board or Task Detail renders scoped to that project without depending on any
@@ -53,7 +53,7 @@ Config, Archive, and Pipelines views SHALL remain addressable in either namespac
 - **WHEN** one tab is on `/p/<a>/board` and another on `/s/<b>/issues`
 - **THEN** each tab's data is scoped to its own space and neither tab's navigation changes the other
 
-#### Scenario: Refresh preserves the space and canonical surface
+#### Scenario: Refresh preserves the space
 
 - **WHEN** the user reloads while on a space-prefixed route
 - **THEN** the same space and surface render from the unchanged URL
@@ -71,12 +71,12 @@ when available, otherwise the first listed space and that space type's canonical
 space is resolvable at all, it SHALL render an explicit empty state directing the user to run
 `rasen ui` inside a Rasen project.
 
-#### Scenario: Project launch query becomes a clean Board route
+#### Scenario: Launch query becomes a clean space route
 
 - **WHEN** the browser opens `…/?space=project:<id>#token=<t>` as printed by `rasen ui`
 - **THEN** the app authenticates, lands on `/p/<id>/board`, and removes the `?space=` query
 
-#### Scenario: Store launch query becomes a clean Issue route
+#### Scenario: Store launch query resolves to a store route
 
 - **WHEN** the launch URL carries `?space=store:<id>`
 - **THEN** the app lands on `/s/<id>/issues` and never renders the superseded Store Task board
@@ -115,13 +115,13 @@ preserved only for Store-to-Store switches; every other switch SHALL fall back t
 canonical home. Navigation SHALL be the switcher's only effect. The switcher SHALL NOT offer a
 no-space option; an empty listing SHALL show an explicit registration hint.
 
-#### Scenario: Both namespaces are grouped and tagged
+#### Scenario: Both namespaces grouped and tagged
 
 - **WHEN** the machine has registered projects and Stores and the user opens the switcher
 - **THEN** projects and Stores appear in separate type-tagged groups with the current route's space
   selected
 
-#### Scenario: A common section survives a namespace switch
+#### Scenario: Selecting a space re-scopes the current section
 
 - **WHEN** the user is on `/p/<a>/config` and selects Store `<b>`
 - **THEN** the app navigates to `/s/<b>/config`

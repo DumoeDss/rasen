@@ -71,3 +71,9 @@ supersedes the earlier `14248b34` / `8dd75903` ship claim with the final non-aut
 ## Deployment
 
 Status: Pending merge; the follow-up push refreshes CI on existing PR #176.
+
+## Archive
+**Date:** 2026-08-24T10:17:23.246Z
+**Ship commit:** 5ee0d493d0ba1640a16608104844325e5a0a8449
+**Outcome:** archived at E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer\rasen\changes\archive\2026-08-24-issue-board-cutover
+**Transaction:** 6c32d6be-b435-49a5-86fd-9b7e67a24a08

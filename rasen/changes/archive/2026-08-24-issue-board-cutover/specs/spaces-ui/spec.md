@@ -18,19 +18,19 @@ failure the CLI's own error message SHALL be shown verbatim. Every directory fac
 SHALL refer to the management server's filesystem, and creation/registration SHALL be performed
 entirely by the server-spawned CLI.
 
-#### Scenario: Create a project and enter its Board
+#### Scenario: Create a project and enter it
 
 - **WHEN** the user selects a project directory and activates Create Project
 - **THEN** on success the UI routes to `/p/<projectId>/board` without returning to a terminal
 
-#### Scenario: Create a Store and enter its Issue Board
+#### Scenario: Create a Store from parent plus id
 
 - **WHEN** the user chooses Create new Store, selects a parent directory, enters `team-store`, and
   submits
 - **THEN** the request creates the `team-store` child of that parent and the UI routes to
   `/s/team-store/issues`
 
-#### Scenario: Register an existing Store and enter its Issue Board
+#### Scenario: Register an existing Store explicitly
 
 - **WHEN** the user chooses Register existing Store and selects its existing root
 - **THEN** the request registers that root, never initializes it as a side effect, and routes to the
@@ -74,7 +74,7 @@ the header switcher may continue to present a single selector option according t
 and ordering rules. Navigation after publication SHALL use the new space's canonical home: project
 Board for a project and Issue Board for a Store.
 
-#### Scenario: New Store is immediately available on its Issue route
+#### Scenario: New Store is immediately available in the switcher
 
 - **WHEN** Store creation succeeds and the SPA routes to `/s/<storeId>/issues`
 - **THEN** the header switcher already contains and selects that Store without requiring a reload

@@ -46,51 +46,95 @@ All board data fetching SHALL go through the UI package's single API client seam
 
 ### Requirement: Board-embedded change submission with real-result feedback
 
-The board page SHALL offer a "New change" affordance that opens an inline submission form (change name and description fields) without leaving the board. Submission SHALL go through the UI package's single API client seam to `POST /api/v1/changes`, scoped to the board's currently viewed planning space — the request SHALL carry the current space selector so the new change is created in the space the user is viewing, not the daemon's launch project. On success the form SHALL close and the board SHALL refetch its data through the management API, so the new change appears as a real card sourced from disk — the board SHALL NOT optimistically inject a locally fabricated card. On failure the form SHALL remain open, editable, and display the CLI's error message from the response envelope verbatim. While a submission is in flight, the submit control SHALL be disabled.
+The project Board page SHALL offer a "New change" affordance that opens an inline submission form
+(change name and description fields) without leaving the Board. Submission SHALL go through the UI
+package's single API client seam to `POST /api/v1/changes`, scoped to the currently viewed project.
+On success the form SHALL close and the Board SHALL refetch its data through the management API, so
+the new Change appears as a real card sourced from disk; the Board SHALL NOT optimistically inject a
+locally fabricated card. On failure the form SHALL remain open, editable, and display the CLI's
+error message from the response envelope verbatim. While a submission is in flight, the submit
+control SHALL be disabled. A Store Issue Board SHALL NOT expose this raw Change-only submission;
+Store viewers SHALL use Unlinked Changes when creating a new single-Change Issue.
 
 #### Scenario: Successful submission shows the real new change
 
-- **WHEN** the user submits a valid name and description from the board form
-- **THEN** the form closes, the board refetches changes from the management API, and the newly created change appears as a card in the Planning column
+- **WHEN** the user submits a valid name and description from a project Board form
+- **THEN** the form closes, the Board refetches Changes, and the newly created Change appears as a
+  real Planning card
 
 #### Scenario: New change lands in the viewed space
 
-- **WHEN** the user submits a new change from a board scoped to a store space or a project other than the daemon's launch project
-- **THEN** the submission carries that space's selector and the change is created in that space, not in the daemon's launch project
+- **WHEN** the user submits a new Change from a project Board other than the daemon's launch project
+- **THEN** the request carries that project's selector and creates the Change there
+
+#### Scenario: Store Issue Board offers no raw Change submission
+
+- **WHEN** the user opens `/s/<storeId>/issues`
+- **THEN** no project Change submission form is offered and the Unlinked Changes surface remains the
+  explicit path for creating a single-Change Issue
 
 #### Scenario: CLI failure surfaced verbatim
 
-- **WHEN** the submission fails (e.g. duplicate change name) and the API returns the CLI's error
-- **THEN** the form stays open with the user's input intact and displays the CLI error message as returned, not a generic failure notice
+- **WHEN** submission fails, for example because the Change name already exists
+- **THEN** the form stays open with the user's input intact and displays the returned CLI error
 
 #### Scenario: Unauthorized submission follows the shared auth handling
 
 - **WHEN** the submission request returns 401
-- **THEN** the app switches to the full-screen re-launch notice, consistent with all other API calls
+- **THEN** the app switches to the full-screen re-launch notice consistently with other API calls
 
 #### Scenario: Double submission prevented in the UI
 
 - **WHEN** a submission is in flight
-- **THEN** the submit control is disabled until the request settles
+- **THEN** the submit control remains disabled until the request settles
 
 ### Requirement: Board is the space-scoped home and reachable from navigation
-The board SHALL be the platform's home view for the selected planning space, rendered at the space-scoped route `/p/<projectId>/board` for a project space and `/s/<storeId>/board` for a store space; the space root route (`/p/<projectId>` or `/s/<storeId>`) SHALL redirect to that space's board. The root route `/` SHALL NOT render the board directly; it SHALL resolve a planning space (per the management-ui-shell capability's bootstrap rule) and redirect to that space's board route. The shared layout's navigation SHALL offer an entry to the board within the current space from every view, so a user on the configuration page can reach the board without editing the URL.
+
+The Task/Change Board SHALL be the home view for a selected project space at
+`/p/<projectId>/board`; its project root `/p/<projectId>` SHALL redirect there and project
+navigation SHALL offer Board from every project view. The Issue Board SHALL be the home view for a
+selected Store at `/s/<storeId>/issues`; its Store root `/s/<storeId>` and a legacy
+`/s/<storeId>/board` URL SHALL replace-redirect there, and Store navigation SHALL offer Issues
+instead of the Task/Change Board. The root route `/` SHALL resolve a planning space and redirect to
+the canonical home for that space's namespace.
 
 #### Scenario: Space board route renders the board
-- **WHEN** the user opens `/p/<projectId>/board` (as reached from the URL `rasen ui` prints)
-- **THEN** the board view renders as the landing page for that project space
 
-#### Scenario: Root route redirects to a space board
-- **WHEN** the user opens the platform at `/`
-- **THEN** the app resolves a planning space and redirects to that space's board route rather than rendering the board at `/`
-
-#### Scenario: Board reachable from the config view
-- **WHEN** the user is on the configuration page within a space and activates the board navigation entry
-- **THEN** the app navigates to that space's board view without a full reload or manual URL editing
+- **WHEN** the user opens `/p/<projectId>/board`
+- **THEN** the project Task/Change Board renders as that project's landing page
 
 #### Scenario: Space root redirects to the board
-- **WHEN** the user opens a space root route such as `/p/<projectId>` with no section
-- **THEN** the board view renders, identical to the space's `…/board` route
+
+- **WHEN** the user opens `/p/<projectId>` with no section
+- **THEN** the app replace-redirects to `/p/<projectId>/board`
+
+#### Scenario: Store root redirects to Issues
+
+- **WHEN** the user opens `/s/<storeId>` with no section
+- **THEN** the app replace-redirects to `/s/<storeId>/issues`
+
+#### Scenario: Legacy Store Board redirects without rendering duplicate truth
+
+- **WHEN** the user opens `/s/<storeId>/board`
+- **THEN** the app replace-redirects to `/s/<storeId>/issues` and never mounts the Task/Change Board
+
+#### Scenario: Root route redirects to a space board
+
+- **WHEN** the user opens `/` and the shell resolves a project or Store planning space
+- **THEN** it redirects respectively to the project Board or Store Issue Board
+
+#### Scenario: Navigation exposes only the matching Board owner
+
+- **WHEN** the viewer is in a project or Store space
+- **THEN** project navigation offers Board while Store navigation offers Issues and no Store Board
+  entry
+
+#### Scenario: Board reachable from the config view
+
+- **WHEN** the user is on Config within a project or Store space and activates its canonical home
+  navigation entry
+- **THEN** the app navigates to the project Board or Store Issue Board without a full reload or
+  manual URL editing
 
 ### Requirement: Board groups changes into Tasks
 
@@ -174,30 +218,6 @@ A Task card SHALL show the Task's progress, a live-run indicator, and a link to 
 - **WHEN** a user activates a Task card
 - **THEN** the app navigates to that Task's detail route within the current space, without editing the URL by hand
 
-### Requirement: Store space board offers a member chip filter
-
-When the board renders a store space, it SHALL offer a member chip row built from the store's members as reported by the spaces listing: an "All" chip (selected by default, showing the full member rollup) plus one chip per member. Selecting a member SHALL narrow the board to the Tasks attributed to that member; selecting "All" SHALL restore the full rollup. Member attribution SHALL be derived from session provenance — a Task is attributed to a member when it has a session whose working directory lies within that member's root — introducing no new persisted state. A Task with no attributing session SHALL appear only under "All". A project space board SHALL NOT render a member chip row.
-
-#### Scenario: Store board renders All plus a chip per member
-
-- **WHEN** the board loads a store space whose spaces-listing entry has two members
-- **THEN** a chip row shows "All" (selected) and one chip for each of the two members
-
-#### Scenario: Selecting a member narrows the board
-
-- **WHEN** the user selects a member chip and a Task has a session whose working directory is within that member's root
-- **THEN** the board shows that Task and hides Tasks with no session attributed to that member
-
-#### Scenario: Unattributed Task appears only under All
-
-- **WHEN** a Task has no session run for any of its changes
-- **THEN** it appears when "All" is selected and is hidden under every specific member chip
-
-#### Scenario: Project space has no chip row
-
-- **WHEN** the board loads a project space
-- **THEN** no member chip row is rendered
-
 ### Requirement: Project space board shows worktrees and switches its data source
 
 When a project space's repository has more than one worktree (per the live worktree inventory), the board SHALL render a worktrees panel listing each worktree with its path tail, checked-out branch, active-change count, and a live-session count derived from session provenance (sessions whose working directory lies within that worktree's root — the same attribution rule as the store board's member chips, introducing no new persisted state). The panel SHALL let the user switch the board's data source to a specific worktree: the board's changes and runs then reflect that worktree's own branch-local planning state, addressed through the worktree's root path selector. The default data source SHALL be the main checkout. Exactly one worktree's state SHALL be shown at a time — the board SHALL NOT aggregate changes across worktrees, because same-named changes on different branches would misrepresent each other. The selected worktree SHALL be carried in the board route's query string so it survives a reload, while the space identity (route prefix, pins, header switcher, session space attribution) remains the project's — a worktree is never a separate space. A project space with a single worktree, a non-git root, or an unavailable inventory SHALL render the board exactly as before, with no panel.
@@ -245,23 +265,6 @@ The board's worktrees panel SHALL present its worktrees as one visually structur
 
 - **WHEN** one worktree is the main checkout with no live sessions and another is a linked worktree with live sessions
 - **THEN** each chip shows only its applicable facts while both chips keep the same height and segment order
-
-### Requirement: A layout v2 Store board groups its changes by project and target line
-
-A Store board for a Store declaring layout version 2 SHALL group its Changes by project and by target
-line, so the same Change alias in two projects appears as two entries rather than one ambiguous entry.
-A project or target line with no Changes SHALL appear as present and empty rather than be hidden.
-
-#### Scenario: The same alias in two projects is two board entries
-
-- **WHEN** two of the Store's projects each hold a Change named `refresh-cache`
-- **THEN** the board shows both, each under its own project and target line
-
-#### Scenario: An empty project or line is shown as empty
-
-- **WHEN** a project or target line holds no Changes
-- **THEN** it appears on the board with an empty group
-- **AND** it is not hidden
 
 ### Requirement: Cross-project Issues are a Store-level view whose nodes reference project changes
 

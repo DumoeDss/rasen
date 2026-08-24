@@ -14,13 +14,13 @@ error message from the response envelope verbatim. While a submission is in flig
 control SHALL be disabled. A Store Issue Board SHALL NOT expose this raw Change-only submission;
 Store viewers SHALL use Unlinked Changes when creating a new single-Change Issue.
 
-#### Scenario: Successful submission shows the real new Change
+#### Scenario: Successful submission shows the real new change
 
 - **WHEN** the user submits a valid name and description from a project Board form
 - **THEN** the form closes, the Board refetches Changes, and the newly created Change appears as a
   real Planning card
 
-#### Scenario: New Change lands in the viewed project
+#### Scenario: New change lands in the viewed space
 
 - **WHEN** the user submits a new Change from a project Board other than the daemon's launch project
 - **THEN** the request carries that project's selector and creates the Change there
@@ -31,17 +31,17 @@ Store viewers SHALL use Unlinked Changes when creating a new single-Change Issue
 - **THEN** no project Change submission form is offered and the Unlinked Changes surface remains the
   explicit path for creating a single-Change Issue
 
-#### Scenario: CLI failure is surfaced verbatim
+#### Scenario: CLI failure surfaced verbatim
 
 - **WHEN** submission fails, for example because the Change name already exists
 - **THEN** the form stays open with the user's input intact and displays the returned CLI error
 
-#### Scenario: Unauthorized submission follows shared auth handling
+#### Scenario: Unauthorized submission follows the shared auth handling
 
 - **WHEN** the submission request returns 401
 - **THEN** the app switches to the full-screen re-launch notice consistently with other API calls
 
-#### Scenario: Double submission is prevented
+#### Scenario: Double submission prevented in the UI
 
 - **WHEN** a submission is in flight
 - **THEN** the submit control remains disabled until the request settles
@@ -56,12 +56,12 @@ selected Store at `/s/<storeId>/issues`; its Store root `/s/<storeId>` and a leg
 instead of the Task/Change Board. The root route `/` SHALL resolve a planning space and redirect to
 the canonical home for that space's namespace.
 
-#### Scenario: Project Board route renders the Task/Change Board
+#### Scenario: Space board route renders the board
 
 - **WHEN** the user opens `/p/<projectId>/board`
 - **THEN** the project Task/Change Board renders as that project's landing page
 
-#### Scenario: Project root redirects to Board
+#### Scenario: Space root redirects to the board
 
 - **WHEN** the user opens `/p/<projectId>` with no section
 - **THEN** the app replace-redirects to `/p/<projectId>/board`
@@ -76,7 +76,7 @@ the canonical home for that space's namespace.
 - **WHEN** the user opens `/s/<storeId>/board`
 - **THEN** the app replace-redirects to `/s/<storeId>/issues` and never mounts the Task/Change Board
 
-#### Scenario: Root bootstrap chooses the namespace home
+#### Scenario: Root route redirects to a space board
 
 - **WHEN** the user opens `/` and the shell resolves a project or Store planning space
 - **THEN** it redirects respectively to the project Board or Store Issue Board
@@ -86,6 +86,13 @@ the canonical home for that space's namespace.
 - **WHEN** the viewer is in a project or Store space
 - **THEN** project navigation offers Board while Store navigation offers Issues and no Store Board
   entry
+
+#### Scenario: Board reachable from the config view
+
+- **WHEN** the user is on Config within a project or Store space and activates its canonical home
+  navigation entry
+- **THEN** the app navigates to the project Board or Store Issue Board without a full reload or
+  manual URL editing
 
 ## REMOVED Requirements
 
