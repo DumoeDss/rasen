@@ -1,0 +1,68 @@
+{
+  "issueId": "issue-ui-convergence",
+  "revision": {
+    "version": 1,
+    "issueId": "issue-ui-convergence",
+    "revisionId": "0001",
+    "supersedes": null,
+    "createdAt": "2026-08-24T10:26:49.507Z",
+    "nodes": [
+      {
+        "nodeId": "issue-board-cutover",
+        "kind": "change",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "changeInstanceId": "ci_004cb2221909f68793b8864687fad3e74edb257f2a5b54ce928fb9c8e79e7821",
+        "changeAlias": "issue-board-cutover",
+        "dependsOn": [
+          "issue-operations-and-unlinked",
+          "issue-read-surface"
+        ]
+      },
+      {
+        "nodeId": "issue-operations-and-unlinked",
+        "kind": "change",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "changeInstanceId": "ci_608383b4fb75aae4c4f8ec791b2f8a3c1e3536668572366117da1b120a5ce3ff",
+        "changeAlias": "issue-operations-and-unlinked",
+        "dependsOn": [
+          "issue-read-surface"
+        ]
+      },
+      {
+        "nodeId": "issue-read-surface",
+        "kind": "change",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "changeInstanceId": "ci_8ece9024b9a92468dc5d0dc45e5b36939b239d855426190f4c76eab120d4d095",
+        "changeAlias": "issue-read-surface",
+        "dependsOn": []
+      }
+    ],
+    "contentSha256": "742d7c1574cc927a060ddc2272a8f6f3302a65df87dbc03df85b3df3123f7948"
+  },
+  "storeId": "issue-registry",
+  "storeUid": "f76edc31-229a-42bc-a5c7-848021eeb2da",
+  "checkoutRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+  "checkoutRef": "refs/heads/main",
+  "written": [
+    "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store\\rasen\\issues\\issue-ui-convergence\\plans\\0001.yaml"
+  ],
+  "suggestedCommits": [
+    {
+      "repoRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+      "pathspecs": [
+        "rasen/issues/issue-ui-convergence/plans/0001.yaml"
+      ],
+      "message": "chore(store): publish execution plan issue-ui-convergence/0001",
+      "rationale": "Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing."
+    }
+  ],
+  "source": {
+    "kind": "portfolio",
+    "parent": "issue-ui-convergence",
+    "statePath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\.rasen\\changes\\issue-ui-convergence\\ephemera\\portfolio-run.json",
+    "childCount": 3
+  }
+}
