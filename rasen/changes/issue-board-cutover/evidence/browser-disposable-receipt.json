@@ -1,0 +1,746 @@
+{
+  "schemaVersion": 1,
+  "change": "issue-board-cutover",
+  "capturedOn": "2026-08-24",
+  "fixture": {
+    "kind": "disposable-real-git",
+    "storeUid": "3f0191e5-4199-470f-a364-6165da157b20",
+    "issueId": "browser-proof",
+    "initialHead": "0a0eac025e4ad8a7081f779b45ffb78acbee4ce9",
+    "productionBundle": "index-B18PWETx.js"
+  },
+  "redaction": {
+    "uiToken": "omitted",
+    "controlToken": "omitted",
+    "requestHeaders": "omitted",
+    "urlFragments": "omitted",
+    "rawNetworkEvents": "omitted"
+  },
+  "navigation": {
+    "issues": {
+      "route": "/s/3f0191e5-4199-470f-a364-6165da157b20/issues",
+      "active": [
+        {
+          "text": "议题",
+          "path": "/s/3f0191e5-4199-470f-a364-6165da157b20/issues"
+        }
+      ],
+      "lanes": [
+        "planning",
+        "ready",
+        "active",
+        "review",
+        "done"
+      ],
+      "cards": [
+        {
+          "issue": "browser-proof",
+          "phase": "active",
+          "health": "healthy",
+          "links": [
+            {
+              "testid": "issue-card-main",
+              "text": "Browser provenance proofbrowser-proof",
+              "path": "/s/3f0191e5-4199-470f-a364-6165da157b20/issues/browser-proof",
+              "hash": ""
+            },
+            {
+              "testid": "issue-card-phase-evidence",
+              "text": "阶段证据：进行中",
+              "path": "/s/3f0191e5-4199-470f-a364-6165da157b20/issues/browser-proof",
+              "hash": "#issue-provenance-plan"
+            },
+            {
+              "testid": "issue-card-health-evidence",
+              "text": "健康",
+              "path": "/s/3f0191e5-4199-470f-a364-6165da157b20/issues/browser-proof",
+              "hash": "#issue-provenance-attention"
+            },
+            {
+              "testid": "issue-card-progress-evidence",
+              "text": "1/2",
+              "path": "/s/3f0191e5-4199-470f-a364-6165da157b20/issues/browser-proof",
+              "hash": "#issue-provenance-plan"
+            }
+          ]
+        }
+      ],
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/favicon.ico",
+          "status": 200,
+          "completed": true
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/stores/issue-projections",
+          "status": 200,
+          "completed": true
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/stores/issue-attention",
+          "status": 200,
+          "completed": true
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/stores/projects",
+          "status": 200,
+          "completed": true
+        }
+      ],
+      "getOnly": true
+    },
+    "detail": {
+      "route": "/s/3f0191e5-4199-470f-a364-6165da157b20/issues/browser-proof",
+      "axes": [
+        {
+          "testid": "issue-detail-state",
+          "text": "状态：open",
+          "path": "/s/3f0191e5-4199-470f-a364-6165da157b20/issues/browser-proof",
+          "hash": "#issue-provenance-record",
+          "targetCount": 1
+        },
+        {
+          "testid": "issue-detail-phase",
+          "text": "进行中",
+          "path": "/s/3f0191e5-4199-470f-a364-6165da157b20/issues/browser-proof",
+          "hash": "#issue-provenance-plan",
+          "targetCount": 1
+        },
+        {
+          "testid": "issue-detail-health",
+          "text": "健康",
+          "path": "/s/3f0191e5-4199-470f-a364-6165da157b20/issues/browser-proof",
+          "hash": "#issue-provenance-attention",
+          "targetCount": 1
+        },
+        {
+          "testid": "issue-detail-progress",
+          "text": "1/2",
+          "path": "/s/3f0191e5-4199-470f-a364-6165da157b20/issues/browser-proof",
+          "hash": "#issue-provenance-plan",
+          "targetCount": 1
+        },
+        {
+          "testid": "issue-detail-run-state",
+          "text": "运行状态可见于：C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-g003-browser-R6hb8q\\browser-app",
+          "path": "/s/3f0191e5-4199-470f-a364-6165da157b20/issues/browser-proof",
+          "hash": "#issue-provenance-runtime",
+          "targetCount": 1
+        }
+      ],
+      "actions": [
+        {
+          "testid": "issue-action-operations",
+          "text": "打开 Operations",
+          "path": "/s/3f0191e5-4199-470f-a364-6165da157b20/operations",
+          "hash": ""
+        },
+        {
+          "testid": "issue-action-unlinked",
+          "text": "管理 Change 关联",
+          "path": "/s/3f0191e5-4199-470f-a364-6165da157b20/unlinked-changes",
+          "hash": ""
+        }
+      ]
+    },
+    "operations": {
+      "route": "/s/3f0191e5-4199-470f-a364-6165da157b20/operations",
+      "active": [
+        {
+          "text": "运维",
+          "path": "/s/3f0191e5-4199-470f-a364-6165da157b20/operations"
+        }
+      ],
+      "pageCount": 1,
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/favicon.ico",
+          "status": 200,
+          "completed": true
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/stores/projects",
+          "status": 200,
+          "completed": true
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/spaces",
+          "status": 200,
+          "completed": true
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/stores/change-issue-links",
+          "status": 200,
+          "completed": true
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/sessions",
+          "status": 200,
+          "completed": true
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/sessions",
+          "status": 200,
+          "completed": true
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/runs",
+          "status": 200,
+          "completed": true
+        }
+      ],
+      "sameOriginGetOnly": true
+    },
+    "unlinked": {
+      "route": "/s/3f0191e5-4199-470f-a364-6165da157b20/unlinked-changes",
+      "active": [
+        {
+          "text": "未关联变更",
+          "path": "/s/3f0191e5-4199-470f-a364-6165da157b20/unlinked-changes"
+        }
+      ],
+      "pageCount": 1,
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/favicon.ico",
+          "status": 200,
+          "completed": true
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/stores/change-issue-links",
+          "status": 200,
+          "completed": true
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/stores/issue-projections",
+          "status": 200,
+          "completed": true
+        }
+      ],
+      "getOnly": true
+    }
+  },
+  "provenance": {
+    "entryCount": 6,
+    "families": [
+      "issue-record",
+      "plan-projection",
+      "acceptance-review",
+      "runtime",
+      "delivery",
+      "attention"
+    ],
+    "closedKinds": [
+      "git",
+      "runtime"
+    ],
+    "exactFragmentResolution": true,
+    "entries": [
+      {
+        "family": "issue-record",
+        "id": "issue-provenance-record",
+        "kind": "git",
+        "facts": [
+          {
+            "label": "issue.issueId",
+            "value": "browser-proof"
+          },
+          {
+            "label": "issue.latestRevisionId",
+            "value": "0001"
+          },
+          {
+            "label": "issue.revisionIds[]",
+            "value": "0001"
+          },
+          {
+            "label": "issue.refs[]",
+            "value": "refs/heads/main"
+          }
+        ]
+      },
+      {
+        "family": "plan-projection",
+        "id": "issue-provenance-plan",
+        "kind": "git",
+        "facts": [
+          {
+            "label": "plan.revisionId",
+            "value": "0001"
+          },
+          {
+            "label": "plan.revision.contentSha256",
+            "value": "8e3fd547134cc0bcc5bce5d8aa8892a1e6205b2b36070569d96cb4a51ba75af5"
+          },
+          {
+            "label": "g-delivery.projectId",
+            "value": "browser-app"
+          },
+          {
+            "label": "g-delivery.targetLineId",
+            "value": "main"
+          },
+          {
+            "label": "g-delivery.changeInstanceId",
+            "value": "ci_13e1fc41906635039730c830206852693ff276d6e920b8315a459f8d1bfc82e0"
+          },
+          {
+            "label": "g-delivery.changeAlias",
+            "value": "delivered-change"
+          },
+          {
+            "label": "g-runtime.projectId",
+            "value": "browser-app"
+          },
+          {
+            "label": "g-runtime.targetLineId",
+            "value": "main"
+          },
+          {
+            "label": "g-runtime.changeInstanceId",
+            "value": "ci_9face611393a30ba37de483eb35655068312f8aa62a05ee2c9dcd5aa5a5de931"
+          },
+          {
+            "label": "g-runtime.changeAlias",
+            "value": "active-change"
+          },
+          {
+            "label": "g-delivery.searchedRefs[]",
+            "value": "refs/heads/main"
+          },
+          {
+            "label": "g-delivery.claimant.changeId",
+            "value": "2026-08-24-delivered-change--13e1fc419066"
+          },
+          {
+            "label": "g-delivery.claimant.projectId",
+            "value": "browser-app"
+          },
+          {
+            "label": "g-delivery.claimant.targetLineId",
+            "value": "main"
+          },
+          {
+            "label": "g-delivery.claimant.foundAtRef",
+            "value": "refs/heads/main"
+          },
+          {
+            "label": "g-runtime.searchedRefs[]",
+            "value": "refs/heads/main"
+          },
+          {
+            "label": "g-runtime.claimant.changeId",
+            "value": "active-change"
+          },
+          {
+            "label": "g-runtime.claimant.projectId",
+            "value": "browser-app"
+          },
+          {
+            "label": "g-runtime.claimant.targetLineId",
+            "value": "main"
+          },
+          {
+            "label": "g-runtime.claimant.foundAtRef",
+            "value": "refs/heads/main"
+          }
+        ]
+      },
+      {
+        "family": "acceptance-review",
+        "id": "issue-provenance-acceptance",
+        "kind": "git",
+        "facts": [
+          {
+            "label": "acceptance.conditions.path",
+            "value": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-g003-browser-R6hb8q\\store-integration\\rasen\\issues\\browser-proof\\acceptance\\0001.yaml"
+          },
+          {
+            "label": "acceptance.conditions.revisionId",
+            "value": "0001"
+          },
+          {
+            "label": "acceptance.conditions.contentSha256",
+            "value": "88523478b2116280ab4ccd329eb2fc8c84728c262a120e46460f6add7d4bc299"
+          },
+          {
+            "label": "review.revisionId",
+            "value": "0001"
+          },
+          {
+            "label": "review.determination.kind",
+            "value": "not-ready"
+          }
+        ]
+      },
+      {
+        "family": "runtime",
+        "id": "issue-provenance-runtime",
+        "kind": "runtime",
+        "facts": [
+          {
+            "label": "runStateVisibility.executionRoot",
+            "value": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-g003-browser-R6hb8q\\browser-app"
+          },
+          {
+            "label": "g-runtime.runStatePath",
+            "value": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-g003-browser-R6hb8q\\browser-app\\.rasen\\changes\\active-change\\ephemera\\auto-run.json"
+          },
+          {
+            "label": "g-runtime.locatedBy",
+            "value": "execution-root"
+          },
+          {
+            "label": "g-runtime.evidenceLocator",
+            "value": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-g003-browser-R6hb8q\\store-integration\\rasen\\projects\\browser-app\\changes\\active-change\\evidence"
+          },
+          {
+            "label": "g-runtime.sessionId",
+            "value": "fixture-session-001"
+          },
+          {
+            "label": "g-runtime.transcript",
+            "value": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-g003-browser-R6hb8q\\browser-app\\.rasen\\changes\\active-change\\ephemera\\agent-browser-fixture.jsonl"
+          },
+          {
+            "label": "g-runtime.threadId",
+            "value": "fixture-thread-001"
+          },
+          {
+            "label": "g-runtime.transcript",
+            "value": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-g003-browser-R6hb8q\\browser-app\\.rasen\\changes\\active-change\\ephemera\\agent-browser-fixture.jsonl"
+          }
+        ]
+      },
+      {
+        "family": "delivery",
+        "id": "issue-provenance-delivery",
+        "kind": "git",
+        "facts": [
+          {
+            "label": "g-delivery.delivery.state",
+            "value": "record"
+          },
+          {
+            "label": "g-delivery.delivery.foundAtRef",
+            "value": "refs/heads/main"
+          },
+          {
+            "label": "g-delivery.delivery.blobPath",
+            "value": "rasen/projects/browser-app/changes/archive/main/2026-08-24-delivered-change--13e1fc419066/archive.json"
+          },
+          {
+            "label": "g-delivery.delivery.codeCommit",
+            "value": "0a0a64fb01176fa8c6f527d76f494dc5a73dfb22"
+          },
+          {
+            "label": "g-delivery.delivery.planningBranch",
+            "value": "refs/heads/change/delivered-change"
+          },
+          {
+            "label": "g-delivery.delivery.evidence.path",
+            "value": "evidence/browser-proof.json"
+          },
+          {
+            "label": "g-delivery.delivery.evidence.sha256",
+            "value": "c3bc6d342f1a40e69c3e72fbfd5f0e35b090cf49d9a397f30fd3f0525285d6c1"
+          },
+          {
+            "label": "g-runtime.delivery.state",
+            "value": "not-archived"
+          }
+        ]
+      },
+      {
+        "family": "attention",
+        "id": "issue-provenance-attention",
+        "kind": "runtime",
+        "facts": [
+          {
+            "label": "browser-proof.runStateVisibility.executionRoot",
+            "value": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-g003-browser-R6hb8q\\browser-app"
+          }
+        ]
+      }
+    ],
+    "payloadLocatorChecks": {
+      "issueRecordRef": true,
+      "planContentSha256": true,
+      "acceptancePathAndSha256": true,
+      "executionRoot": true,
+      "runStatePath": true,
+      "runtimeEvidenceLocator": true,
+      "sessionId": true,
+      "codexThreadId": true,
+      "transcriptPath": true,
+      "deliveryRefAndBlob": true,
+      "deliveryCommit": true,
+      "structuredEvidenceSha256": true,
+      "attentionExecutionRoot": true
+    }
+  },
+  "rebuild": {
+    "storageApiSupport": {
+      "localStorage": true,
+      "sessionStorage": true,
+      "cacheStorage": true,
+      "indexedDbDatabases": true,
+      "serviceWorkers": true
+    },
+    "availableStateClearedTo": {
+      "localStorageCount": 0,
+      "sessionStorageCount": 0,
+      "cacheCount": 0,
+      "indexedDbCount": 0,
+      "serviceWorkerCount": 0
+    },
+    "observedReloadStorageInventoryCounts": {
+      "localStorageKeys": 3,
+      "sessionStorageKeys": 1,
+      "caches": 0,
+      "indexedDbDatabases": 0,
+      "serviceWorkers": 0
+    },
+    "before": {
+      "domDigest": "d85d1a174e9f88508c5293f51e36baa832e354c5d764c165e79f7b14de3bc6cf",
+      "responseDigest": "7500e0e5c8de40744f7c93921f0722b61ca156b64f307250a88bf3af8b6a308c"
+    },
+    "afterClear": {
+      "domDigest": "d85d1a174e9f88508c5293f51e36baa832e354c5d764c165e79f7b14de3bc6cf",
+      "responseDigest": "7500e0e5c8de40744f7c93921f0722b61ca156b64f307250a88bf3af8b6a308c",
+      "freshProjection": true,
+      "freshAttention": true,
+      "sameOriginGetOnly": true,
+      "equivalent": true,
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/s/3f0191e5-4199-470f-a364-6165da157b20/issues/browser-proof",
+          "status": 200,
+          "completed": true
+        },
+        {
+          "method": "GET",
+          "path": "/assets/index-B18PWETx.js",
+          "status": 200,
+          "completed": true
+        },
+        {
+          "method": "GET",
+          "path": "/assets/index-DEPrHV1S.css",
+          "status": 200,
+          "completed": true
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/config/ui.theme",
+          "status": 200,
+          "completed": true
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/themes",
+          "status": 200,
+          "completed": true
+        },
+        {
+          "method": "GET",
+          "path": "/favicon.ico",
+          "status": 200,
+          "completed": true
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/spaces",
+          "status": 200,
+          "completed": true
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/stores/issue-projection",
+          "status": 200,
+          "completed": true
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/stores/issue-attention",
+          "status": 200,
+          "completed": true
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/config/language",
+          "status": 200,
+          "completed": true
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/config/ui.pinnedSpaces",
+          "status": 200,
+          "completed": true
+        }
+      ]
+    },
+    "excludedExternalBrowserTrafficCounts": [
+      {
+        "method": "GET",
+        "count": 8
+      },
+      {
+        "method": "OPTIONS",
+        "count": 2
+      },
+      {
+        "method": "POST",
+        "count": 2
+      }
+    ]
+  },
+  "controlledEvidenceMutation": {
+    "mutation": {
+      "head": "0995c6802289b49f91bff59c78b1ecf9878c8a52",
+      "revisionId": "0002",
+      "contentSha256": "eab1bb61bd5f0e16325ac9f59904612229818483363878de6b7a47be6741d343"
+    },
+    "before": {
+      "domDigest": "d85d1a174e9f88508c5293f51e36baa832e354c5d764c165e79f7b14de3bc6cf",
+      "responseDigest": "7500e0e5c8de40744f7c93921f0722b61ca156b64f307250a88bf3af8b6a308c",
+      "acceptanceFacts": [
+        {
+          "label": "acceptance.conditions.path",
+          "value": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-g003-browser-R6hb8q\\store-integration\\rasen\\issues\\browser-proof\\acceptance\\0001.yaml"
+        },
+        {
+          "label": "acceptance.conditions.revisionId",
+          "value": "0001"
+        },
+        {
+          "label": "acceptance.conditions.contentSha256",
+          "value": "88523478b2116280ab4ccd329eb2fc8c84728c262a120e46460f6add7d4bc299"
+        },
+        {
+          "label": "review.revisionId",
+          "value": "0001"
+        },
+        {
+          "label": "review.determination.kind",
+          "value": "not-ready"
+        }
+      ]
+    },
+    "after": {
+      "domDigest": "e9470b41efbc54a26e3caea389c59cee5d03af3e25e9c3f2402e08098476b302",
+      "responseDigest": "f2689a0add801026e0b580ef2310742ab45f4ac1efa8061f4b204273579e7de6",
+      "acceptanceFacts": [
+        {
+          "label": "acceptance.conditions.path",
+          "value": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-g003-browser-R6hb8q\\store-integration\\rasen\\issues\\browser-proof\\acceptance\\0002.yaml"
+        },
+        {
+          "label": "acceptance.conditions.revisionId",
+          "value": "0002"
+        },
+        {
+          "label": "acceptance.conditions.contentSha256",
+          "value": "eab1bb61bd5f0e16325ac9f59904612229818483363878de6b7a47be6741d343"
+        },
+        {
+          "label": "review.revisionId",
+          "value": "0001"
+        },
+        {
+          "label": "review.determination.kind",
+          "value": "not-ready"
+        }
+      ]
+    },
+    "domChanged": true,
+    "responseChanged": true,
+    "freshProjection": true,
+    "freshAttention": true,
+    "sameOriginGetOnly": true,
+    "noInvalidationCall": true,
+    "requests": [
+      {
+        "method": "GET",
+        "path": "/s/3f0191e5-4199-470f-a364-6165da157b20/issues/browser-proof",
+        "status": 200,
+        "completed": true
+      },
+      {
+        "method": "GET",
+        "path": "/assets/index-B18PWETx.js",
+        "status": 200,
+        "completed": true
+      },
+      {
+        "method": "GET",
+        "path": "/assets/index-DEPrHV1S.css",
+        "status": 200,
+        "completed": true
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/config/ui.theme",
+        "status": 200,
+        "completed": true
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/themes",
+        "status": 200,
+        "completed": true
+      },
+      {
+        "method": "GET",
+        "path": "/favicon.ico",
+        "status": 200,
+        "completed": true
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/spaces",
+        "status": 200,
+        "completed": true
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/stores/issue-projection",
+        "status": 200,
+        "completed": true
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/stores/issue-attention",
+        "status": 200,
+        "completed": true
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/config/language",
+        "status": 200,
+        "completed": true
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/config/ui.pinnedSpaces",
+        "status": 200,
+        "completed": true
+      }
+    ]
+  }
+}

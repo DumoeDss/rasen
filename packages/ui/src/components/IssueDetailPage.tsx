@@ -11,7 +11,7 @@ import type {
   StoreIssueProjectionResponse,
 } from '../api/types.js';
 import { PageHeader } from './ui/PageHeader.js';
-import { spaceHref, useSpace } from '../store/use-space.js';
+import { spaceHref, useSpace, type Space } from '../store/use-space.js';
 import { useT } from '../i18n/store.js';
 import {
   ISSUE_ATTENTION_KIND_LABEL_KEYS,
@@ -26,6 +26,10 @@ import {
   attentionItemDetail,
   issueBlockerLabel,
 } from './issue-vocabulary.js';
+import {
+  buildIssueProvenance,
+  ISSUE_PROVENANCE,
+} from './issue-provenance.js';
 
 /**
  * The Issue Detail (issue-board-ui spec / roadmap §9.2): one Issue's whole
@@ -180,12 +184,74 @@ function NodeRow({ node, planNode }: { node: StoreIssueNodeStatus; planNode?: St
   );
 }
 
-export function IssueDetailPage() {
+function ProvenanceMap({
+  projection,
+  attention,
+}: {
+  projection: StoreIssueProjectionResponse;
+  attention: StoreIssueAttentionResponse | null;
+}) {
   const t = useT();
+  const entries = buildIssueProvenance(projection, attention);
+  return (
+    <section class="issue-detail__provenance" data-testid="issue-provenance-map" aria-label={t('issues.provenance.title')}>
+      <h3>{t('issues.provenance.title')}</h3>
+      <div class="issue-detail__provenance-grid">
+        {entries.map((entry) => (
+          <article
+            class="issue-detail__provenance-entry"
+            id={entry.anchor}
+            key={entry.family}
+            data-testid="issue-provenance-entry"
+            data-provenance-family={entry.family}
+            data-provenance-kind={entry.kind}
+            tabIndex={-1}
+          >
+            <h4>{t(entry.labelKey)}</h4>
+            <span class={`issue-detail__provenance-kind issue-detail__provenance-kind--${entry.kind}`}>
+              {t(`issues.provenance.kind.${entry.kind}`)}
+            </span>
+            <dl class="issue-detail__provenance-facts">
+              {entry.facts.map((fact, index) => (
+                <div key={`${fact.label}-${index}`} data-testid="issue-provenance-fact">
+                  <dt>{fact.label}</dt>
+                  <dd>{fact.label === 'diagnostic' && fact.value === 'unavailable' ? t('issues.provenance.unavailable') : fact.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+export function IssueDetailPage() {
   const space = useSpace();
   const { params } = useRoute();
   const issueId = params.issueId;
   const selector = space?.selector;
+  return (
+    <IssueDetailState
+      key={`${selector ?? 'no-store'}\0${issueId}`}
+      space={space}
+      selector={selector}
+      issueId={issueId}
+    />
+  );
+}
+
+/** Store+Issue-owned state: changing either route parameter remounts before paint. */
+function IssueDetailState({
+  space,
+  selector,
+  issueId,
+}: {
+  space: Space | null;
+  selector: string | undefined;
+  issueId: string;
+}) {
+  const t = useT();
   const [projection, setProjection] = useState<StoreIssueProjectionResponse | null>(null);
   const [attention, setAttention] = useState<StoreIssueAttentionResponse | null>(null);
   const [pageError, setPageError] = useState<{ message: string; fix?: string } | null>(null);
@@ -262,6 +328,20 @@ export function IssueDetailPage() {
             <a class="btn--ghost" href={space ? spaceHref(space, 'issues') : '/'}>
               {t('issues.back_to_board')}
             </a>
+            <a
+              class="btn--ghost"
+              data-testid="issue-action-operations"
+              href={space ? spaceHref(space, 'operations') : '/'}
+            >
+              {t('issues.actions.operations')}
+            </a>
+            <a
+              class="btn--ghost"
+              data-testid="issue-action-unlinked"
+              href={space ? spaceHref(space, 'unlinked-changes') : '/'}
+            >
+              {t('issues.actions.unlinked')}
+            </a>
             <button type="button" class="btn--ghost" data-testid="issue-detail-refresh" onClick={refresh}>
               {t('issues.refresh')}
             </button>
@@ -272,24 +352,24 @@ export function IssueDetailPage() {
       {/* The three axes, side by side and separately labelled — never blended. */}
       <section class="issue-detail__axes" data-testid="issue-detail-axes">
         <span class="issue-detail__id">{issue.issueId}</span>
-        <span data-testid="issue-detail-state">
+        <a href={`#${ISSUE_PROVENANCE['issue-record'].anchor}`} data-testid="issue-detail-state">
           {t('issues.detail.state', { state: issue.record?.state ?? t('issues.state_unknown') })}
-        </span>
-        <span data-testid="issue-detail-phase">{t(ISSUE_PHASE_LABEL_KEYS[status.phase])}</span>
-        <span data-testid="issue-detail-health">{t(ISSUE_HEALTH_LABEL_KEYS[status.health])}</span>
-        <span data-testid="issue-detail-progress">
+        </a>
+        <a href={`#${ISSUE_PROVENANCE['plan-projection'].anchor}`} data-testid="issue-detail-phase">{t(ISSUE_PHASE_LABEL_KEYS[status.phase])}</a>
+        <a href={`#${ISSUE_PROVENANCE.attention.anchor}`} data-testid="issue-detail-health">{t(ISSUE_HEALTH_LABEL_KEYS[status.health])}</a>
+        <a href={`#${ISSUE_PROVENANCE['plan-projection'].anchor}`} data-testid="issue-detail-progress">
           {status.progress === null
             ? t('issues.progress_none')
             : t('issues.progress', {
                 completed: status.progress.completed,
                 total: status.progress.total,
               })}
-        </span>
-        <span data-testid="issue-detail-run-state">
+        </a>
+        <a href={`#${ISSUE_PROVENANCE.runtime.anchor}`} data-testid="issue-detail-run-state">
           {status.runStateVisibility.kind === 'execution-root'
             ? t('issues.notice.run_state', { root: status.runStateVisibility.executionRoot })
             : t('issues.notice.run_state_none')}
-        </span>
+        </a>
       </section>
 
       {/* Problems and incompleteness, beside the read rather than instead of it. */}
@@ -339,8 +419,10 @@ export function IssueDetailPage() {
         </ul>
       )}
 
+      <ProvenanceMap projection={projection} attention={attention} />
+
       {/* 1. Background and acceptance. */}
-      <section class="issue-detail__section" data-testid="issue-detail-background">
+      <section class="issue-detail__section" id="issue-section-record" data-testid="issue-detail-background">
         <h3>{t('issues.detail.background')}</h3>
         {issue.record === null ? (
           <p>{t('issues.card.no_record')}</p>
@@ -511,7 +593,7 @@ export function IssueDetailPage() {
       </section>
 
       {/* 2. The Execution Plan, node by node, plus the revision delta. */}
-      <section class="issue-detail__section" data-testid="issue-detail-plan">
+      <section class="issue-detail__section" id="issue-section-plan" data-testid="issue-detail-plan">
         <h3>{t('issues.detail.plan')}</h3>
         <p data-testid="issue-detail-plan-revision">
           {plan === null || plan.revisionId === null
@@ -616,7 +698,7 @@ export function IssueDetailPage() {
       </section>
 
       {/* 3. Changes grouped by member project, each group with its own progress. */}
-      <section class="issue-detail__section" data-testid="issue-detail-projects">
+      <section class="issue-detail__section" id="issue-section-projects" data-testid="issue-detail-projects">
         <h3>{t('issues.detail.projects')}</h3>
         {status.projects.length === 0 ? (
           <p>{t('issues.detail.projects_none')}</p>
@@ -652,7 +734,7 @@ export function IssueDetailPage() {
       </section>
 
       {/* 4. Cross-project dependencies: the projection's own blocker facts. */}
-      <section class="issue-detail__section" data-testid="issue-detail-dependencies">
+      <section class="issue-detail__section" id="issue-section-dependencies" data-testid="issue-detail-dependencies">
         <h3>{t('issues.detail.dependencies')}</h3>
         {blockedNodes.length === 0 ? (
           <p data-testid="issue-detail-dependencies-none">{t('issues.detail.dependencies_none')}</p>
@@ -679,7 +761,7 @@ export function IssueDetailPage() {
       </section>
 
       {/* 5. Runs, sessions, and delivery evidence — per node, then the rollup. */}
-      <section class="issue-detail__section" data-testid="issue-detail-delivery">
+      <section class="issue-detail__section" id="issue-section-delivery" data-testid="issue-detail-delivery">
         <h3>{t('issues.detail.delivery')}</h3>
         <ul>
           {status.nodes.map((node) => (
@@ -773,7 +855,7 @@ export function IssueDetailPage() {
       </section>
 
       {/* 6. The review view: determination, threads, verification summary. */}
-      <section class="issue-detail__section" data-testid="issue-detail-review">
+      <section class="issue-detail__section" id="issue-section-review" data-testid="issue-detail-review">
         <h3>{t('issues.detail.review')}</h3>
         <p data-testid="issue-detail-review-context">
           {t('issues.detail.review_context', {
@@ -838,7 +920,7 @@ export function IssueDetailPage() {
       </section>
 
       {/* 7. Needs attention, narrowed to this Issue. */}
-      <section class="issue-detail__section" data-testid="issue-detail-attention">
+      <section class="issue-detail__section" id="issue-section-attention" data-testid="issue-detail-attention">
         <h3>{t('issues.detail.attention')}</h3>
         {attention !== null && (
           <>

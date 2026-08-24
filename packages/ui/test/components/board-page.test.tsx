@@ -457,7 +457,7 @@ describe('BoardPage', () => {
     });
   });
 
-  describe('Task grouping and store member chips (design D1/D3/D4)', () => {
+  describe('project Task grouping and live indicators', () => {
     async function mountAtSpace(path: string) {
       window.history.pushState({}, '', path);
       await act(async () => {
@@ -546,62 +546,6 @@ describe('BoardPage', () => {
       expect(client.listSpaces).not.toHaveBeenCalled();
     });
 
-    it('renders All + a chip per member for a store space and filters by session provenance', async () => {
-      (client.listChanges as any).mockResolvedValue(portfolioChangesFixture);
-      (client.listRuns as any).mockResolvedValue({ runs: [] });
-      (client.listSessions as any).mockResolvedValue({
-        sessions: [
-          {
-            session: {
-              id: 's1',
-              kind: 'auto',
-              task: 'work',
-              cwd: '/a/repo/sub',
-              state: 'running',
-              startedAt: 0,
-              lastOutputAt: 0,
-              changeName: 'ui-redesign-api', // a child of the ui-redesign portfolio
-            },
-            runState: { kind: 'absent' },
-          },
-        ],
-      });
-      (client.listSpaces as any).mockResolvedValue({
-        spaces: [
-          {
-            type: 'store',
-            id: 'store_x',
-            name: 'Store X',
-            root: '/x',
-            members: [
-              { projectId: 'proj_a', name: 'Repo A', root: '/a/repo' },
-              { projectId: 'proj_b', name: 'Repo B', root: '/b/repo' },
-            ],
-          },
-        ],
-      });
-
-      await mountAtSpace('/s/store_x/board');
-
-      const chips = Array.from(container.querySelectorAll('.member-chip'));
-      expect(chips.map((c) => c.textContent)).toEqual(['All', 'Repo A', 'Repo B']);
-
-      // Under "All", both the portfolio and the bare change show.
-      const allNames = columnNames().flat();
-      expect(allNames).toContain('ui-redesign');
-      expect(allNames).toContain('fix-login');
-
-      // Select Repo A: only the ui-redesign portfolio (session cwd under /a/repo) survives.
-      const repoA = chips.find((c) => c.textContent === 'Repo A') as HTMLButtonElement;
-      await act(async () => {
-        repoA.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await flushMicrotasks();
-      });
-
-      const filteredNames = columnNames().flat();
-      expect(filteredNames).toContain('ui-redesign');
-      expect(filteredNames).not.toContain('fix-login');
-    });
   });
 
   describe('worktrees panel (worktree-aware-spaces D4 / board-ui spec)', () => {
@@ -776,7 +720,7 @@ describe('BoardPage', () => {
       expect(container.querySelector('[data-refreshing]')).toBeNull();
     });
 
-    it('renders no panel for a single-worktree project or a store space', async () => {
+    it('renders no panel for a single-worktree project', async () => {
       (client.listChanges as any).mockResolvedValue({ changes: [], errors: [] });
       (client.listRuns as any).mockResolvedValue({ runs: [] });
       (client.listSpaceWorktrees as any).mockResolvedValue({
@@ -785,14 +729,6 @@ describe('BoardPage', () => {
 
       await mountAtSpace('/p/proj_x/board');
       expect(container.querySelector('[data-testid="worktree-panel"]')).toBeNull();
-
-      window.history.pushState({}, '', '/');
-      container.innerHTML = '';
-      // A store space never fetches the worktree inventory.
-      (client.listSpaceWorktrees as any).mockClear();
-      await mountAtSpace('/s/store_x/board');
-      expect(container.querySelector('[data-testid="worktree-panel"]')).toBeNull();
-      expect(client.listSpaceWorktrees).not.toHaveBeenCalled();
     });
   });
 
@@ -807,11 +743,11 @@ describe('BoardPage', () => {
       window.history.pushState({}, '', '/');
     });
 
-    it('carries the viewed space selector in the createChange request body', async () => {
+    it('carries the exact viewed project selector in the createChange request body', async () => {
       (client.listChanges as any).mockResolvedValue({ changes: [], errors: [] });
       (client.listRuns as any).mockResolvedValue({ runs: [] });
 
-      window.history.pushState({}, '', '/s/store_x/board');
+      window.history.pushState({}, '', '/p/Proj%3Aopaque/board');
       await act(async () => {
         render(
           <LocationProvider>
@@ -856,7 +792,7 @@ describe('BoardPage', () => {
       });
 
       const [, init] = (fetch as any).mock.calls[0];
-      expect(JSON.parse(init.body)).toMatchObject({ name: 'scoped-change', space: 'store:store_x' });
+      expect(JSON.parse(init.body)).toMatchObject({ name: 'scoped-change', space: 'project:Proj:opaque' });
     });
 
     it('omits space entirely in the launch-project fallback (no space route)', async () => {

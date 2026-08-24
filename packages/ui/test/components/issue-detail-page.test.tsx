@@ -20,7 +20,7 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
   };
 });
 
-import { LocationProvider, Route, Router } from 'preact-iso';
+import { LocationProvider, Route, Router, useLocation } from 'preact-iso';
 import { IssueDetailPage } from '../../src/components/IssueDetailPage.js';
 import * as client from '../../src/api/client.js';
 import {
@@ -57,6 +57,17 @@ async function mountAtSpace(container: HTMLElement, path: string): Promise<void>
 
 const REAL_PATH = '/s/store_x/issues/issue-autodecompose-uplift';
 
+function RoutedIssueDetail() {
+  const { route } = useLocation();
+  return (
+    <>
+      <button data-testid="route-issue-b" onClick={() => route('/s/store%3Aa/issues/issue-b')}>Issue B</button>
+      <button data-testid="route-store-b" onClick={() => route('/s/store_b/issues/issue-store-b')}>Store B</button>
+      <Router>{[<Route path="/s/:storeId/issues/:issueId" component={IssueDetailPage} />]}</Router>
+    </>
+  );
+}
+
 describe('IssueDetailPage', () => {
   let container: HTMLElement;
 
@@ -83,6 +94,68 @@ describe('IssueDetailPage', () => {
       'store:store_x',
       'issue-autodecompose-uplift',
     ]);
+  });
+
+  it('renders one exact provenance target per state family and preserves payload locators verbatim', async () => {
+    await mountAtSpace(container, REAL_PATH);
+    const entries = [...container.querySelectorAll('[data-testid="issue-provenance-entry"]')];
+    expect(entries).toHaveLength(6);
+    expect(entries.map((entry) => entry.getAttribute('data-provenance-kind'))).toEqual([
+      'git', 'git', 'git', 'runtime', 'git', 'runtime',
+    ]);
+    for (const anchor of [
+      'issue-provenance-record',
+      'issue-provenance-plan',
+      'issue-provenance-acceptance',
+      'issue-provenance-runtime',
+      'issue-provenance-delivery',
+      'issue-provenance-attention',
+    ]) {
+      expect(container.querySelectorAll(`#${anchor}`), anchor).toHaveLength(1);
+    }
+
+    const record = container.querySelector('#issue-provenance-record')!;
+    expect(record.textContent).toContain(realIssueProjectionFixture.issue.refs[0]!);
+    expect(record.textContent).toContain(realIssueProjectionFixture.issue.latestRevisionId);
+    const plan = container.querySelector('#issue-provenance-plan')!;
+    expect(plan.textContent).toContain(realIssueProjectionFixture.plan.revision.contentSha256);
+    expect(plan.textContent).toContain(realIssueProjectionFixture.plan.revision.nodes[0]!.changeInstanceId!);
+    const acceptance = container.querySelector('#issue-provenance-acceptance')!;
+    expect(acceptance.textContent).toContain(realIssueProjectionFixture.status.acceptance.record.contentSha256);
+    expect(acceptance.textContent).toContain(realIssueProjectionFixture.review.threads[0]!.names[0]!);
+    const runtime = container.querySelector('#issue-provenance-runtime')!;
+    expect(runtime.textContent).toContain(realIssueProjectionFixture.status.runStateVisibility.executionRoot);
+    expect(runtime.textContent).toContain(realIssueProjectionFixture.status.nodes[1]!.attribution.evidenceLocator!);
+    const delivery = container.querySelector('#issue-provenance-delivery')!;
+    const recordDelivery = realIssueProjectionFixture.status.nodes[0]!.delivery;
+    if (recordDelivery?.state !== 'record') throw new Error('fixture must carry record delivery');
+    expect(delivery.textContent).toContain(recordDelivery.foundAtRef);
+    expect(delivery.textContent).toContain(recordDelivery.blobPath);
+    expect(delivery.textContent).toContain(recordDelivery.codeCommit!);
+    expect(delivery.textContent).toContain(recordDelivery.evidence![0]!.sha256);
+    const attention = container.querySelector('#issue-provenance-attention')!;
+    const scannedVisibility = issueAttentionNarrowedFixture.scanned[0]!.runStateVisibility;
+    if (scannedVisibility.kind !== 'execution-root') throw new Error('fixture must carry an execution root');
+    expect(attention.textContent).toContain(scannedVisibility.executionRoot);
+
+    const phaseLink = container.querySelector('[data-testid="issue-detail-phase"]') as HTMLAnchorElement;
+    expect(phaseLink.getAttribute('href')).toBe('#issue-provenance-plan');
+    await act(async () => {
+      phaseLink.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(window.location.hash).toBe('#issue-provenance-plan');
+  });
+
+  it('offers ordinary read-only links to this Store Operations and Unlinked Changes', async () => {
+    await mountAtSpace(container, REAL_PATH);
+    const operations = container.querySelector('[data-testid="issue-action-operations"]') as HTMLAnchorElement;
+    const unlinked = container.querySelector('[data-testid="issue-action-unlinked"]') as HTMLAnchorElement;
+    expect(operations.tagName).toBe('A');
+    expect(operations.getAttribute('href')).toBe('/s/store_x/operations');
+    expect(unlinked.getAttribute('href')).toBe('/s/store_x/unlinked-changes');
+    expect(container.querySelector('a[href*="/task/"]')).toBeNull();
+    expect(container.querySelector('a[href^="/p/"]')).toBeNull();
   });
 
   it('presents the three axes separately, each equal to its payload field', async () => {
@@ -399,6 +472,12 @@ describe('IssueDetailPage', () => {
     expect(container.querySelector('[data-testid="issue-detail-attention-problem"]')?.textContent).toContain(
       issueAttentionUnreadableFixture.items[0]!.problem.ref!
     );
+    expect(container.querySelector('#issue-provenance-plan')?.textContent).toContain(
+      unreadableIssueProjectionFixture.plan.diagnostic
+    );
+    expect(container.querySelector('#issue-provenance-runtime')?.textContent).toContain(
+      'Evidence unavailable'
+    );
   });
 
   it('re-fetches on refresh and writes nothing to client storage', async () => {
@@ -422,5 +501,68 @@ describe('IssueDetailPage', () => {
     expect(container.querySelector('[data-testid="issue-detail-health"]')?.textContent).toBe('failed');
     expect(setItem).not.toHaveBeenCalled();
     setItem.mockRestore();
+  });
+
+  it('keys state by opaque Store selector and Issue id across real same-component routes', async () => {
+    let resolveAProjection!: (value: typeof realIssueProjectionFixture) => void;
+    let resolveAAttention!: (value: typeof issueAttentionNarrowedFixture) => void;
+    const aProjection = new Promise<typeof realIssueProjectionFixture>((resolve) => { resolveAProjection = resolve; });
+    const aAttention = new Promise<typeof issueAttentionNarrowedFixture>((resolve) => { resolveAAttention = resolve; });
+    const detailFor = (issueId: string, title: string) => ({
+      ...realIssueProjectionFixture,
+      issue: {
+        ...realIssueProjectionFixture.issue,
+        issueId,
+        record: { ...realIssueProjectionFixture.issue.record, id: issueId, title },
+      },
+      review: { ...realIssueProjectionFixture.review, issueId },
+    });
+    const attentionFor = (issueId: string) => ({
+      ...issueAttentionNarrowedFixture,
+      issueId,
+      scanned: issueAttentionNarrowedFixture.scanned.map((entry) => ({ ...entry, issueId })),
+    });
+    (client.getStoreIssueProjection as any).mockImplementation((issueId: string, selector: string) => {
+      if (issueId === 'issue-a' && selector === 'store:store:a') return aProjection;
+      if (issueId === 'issue-b') return Promise.resolve(detailFor(issueId, 'Issue B only'));
+      return Promise.resolve(detailFor(issueId, 'Store B only'));
+    });
+    (client.getStoreIssueAttention as any).mockImplementation((selector: string, issueId: string) => {
+      if (issueId === 'issue-a' && selector === 'store:store:a') return aAttention;
+      return Promise.resolve(attentionFor(issueId));
+    });
+
+    window.history.pushState({}, '', '/s/store%3Aa/issues/issue-a');
+    await act(async () => {
+      render(<LocationProvider><RoutedIssueDetail /></LocationProvider>, container);
+      await flushMicrotasks();
+    });
+    await act(async () => {
+      (container.querySelector('[data-testid="route-issue-b"]') as HTMLButtonElement).click();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flushMicrotasks(40);
+    });
+    expect(container.textContent).toContain('Issue B only');
+    expect(container.textContent).not.toContain('Issue layer Phase 4');
+
+    resolveAProjection(realIssueProjectionFixture);
+    resolveAAttention(issueAttentionNarrowedFixture);
+    await act(async () => { await flushMicrotasks(20); });
+    expect(container.textContent).toContain('Issue B only');
+    expect(container.textContent).not.toContain('Issue layer Phase 4');
+
+    await act(async () => {
+      (container.querySelector('[data-testid="route-store-b"]') as HTMLButtonElement).click();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flushMicrotasks(40);
+    });
+    expect(container.textContent).toContain('Store B only');
+    expect((client.getStoreIssueProjection as any).mock.calls).toContainEqual(['issue-store-b', 'store:store_b']);
+    expect((client.getStoreIssueAttention as any).mock.calls).toContainEqual(['store:store_b', 'issue-store-b']);
+    expect(container.querySelector('[data-testid="issue-detail-error"]')).toBeNull();
   });
 });

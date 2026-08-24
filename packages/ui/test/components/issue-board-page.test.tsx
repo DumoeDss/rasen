@@ -24,7 +24,7 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
   };
 });
 
-import { LocationProvider } from 'preact-iso';
+import { LocationProvider, Route, Router, useLocation } from 'preact-iso';
 import { IssueBoardPage } from '../../src/components/IssueBoardPage.js';
 import * as client from '../../src/api/client.js';
 import {
@@ -58,6 +58,16 @@ function cardsInLane(container: HTMLElement, phase: string): HTMLElement[] {
 
 function cardFor(container: HTMLElement, issueId: string): HTMLElement | null {
   return container.querySelector(`[data-testid="issue-card"][data-issue="${issueId}"]`);
+}
+
+function RoutedIssueBoard() {
+  const { route } = useLocation();
+  return (
+    <>
+      <button data-testid="route-store-b" onClick={() => route('/s/store_b/issues')}>route Store B</button>
+      <Router>{[<Route path="/s/:storeId/issues" component={IssueBoardPage} />]}</Router>
+    </>
+  );
 }
 
 describe('IssueBoardPage', () => {
@@ -125,6 +135,12 @@ describe('IssueBoardPage', () => {
       );
       expect(container.querySelectorAll(`[data-testid="issue-card"][data-issue="${entry.issueId}"]`)).toHaveLength(1);
     }
+  });
+
+  it('offers no raw project Change creation form on the Store Issue Board', async () => {
+    await mountAtSpace(container, '/s/store_x/issues');
+    expect(container.querySelector('.new-change-dialog')).toBeNull();
+    expect([...container.querySelectorAll('button')].some((button) => button.textContent === 'New change')).toBe(false);
   });
 
   it('renders all five empty lanes when the Store has no Issues', async () => {
@@ -437,8 +453,91 @@ describe('IssueBoardPage', () => {
   it('addresses the Store by the route`s opaque selector and links each card to its detail', async () => {
     await mountAtSpace(container, '/s/store%3Aabc/issues');
     expect((client.getStoreIssueProjections as any).mock.calls[0][0]).toBe('store:store:abc');
-    expect(cardFor(container, 'issue-ready')?.getAttribute('href')).toBe(
+    expect(cardFor(container, 'issue-ready')?.querySelector('[data-testid="issue-card-main"]')?.getAttribute('href')).toBe(
       '/s/store%3Aabc/issues/issue-ready'
     );
+    expect(cardFor(container, 'issue-ready')?.querySelector('[data-testid="issue-card-phase-evidence"]')?.getAttribute('href')).toBe(
+      '/s/store%3Aabc/issues/issue-ready#issue-provenance-plan'
+    );
+  });
+
+  it('synchronously replaces Store A ownership before late A reads can commit under Store B', async () => {
+    let resolveAProjections!: (value: typeof issueProjectionsFixture) => void;
+    let resolveAAttention!: (value: typeof issueAttentionFixture) => void;
+    let resolveAProjects!: (value: any) => void;
+    const aProjections = new Promise<typeof issueProjectionsFixture>((resolve) => { resolveAProjections = resolve; });
+    const aAttention = new Promise<typeof issueAttentionFixture>((resolve) => { resolveAAttention = resolve; });
+    const aProjects = new Promise<any>((resolve) => { resolveAProjects = resolve; });
+    const bEntry = {
+      ...issueProjectionsFixture.issues[0]!,
+      issueId: 'issue-store-b',
+      record: {
+        version: 1 as const,
+        id: 'issue-store-b',
+        title: 'Store B only',
+        state: 'open' as const,
+        reason: null,
+        createdAt: '2026-08-24T00:00:00.000Z',
+      },
+      diagnostic: null,
+    };
+    const bProjections = {
+      ...issueProjectionsFixture,
+      issues: [bEntry],
+      problems: [],
+      unsearchedRefs: [],
+      complete: true,
+    };
+    const bAttention = {
+      ...issueAttentionFixture,
+      scannedCount: 1,
+      scanned: [],
+      items: [],
+      counts: { failure: 0, 'blocked-behind': 0, 'waiting-human': 0, 'acceptance-awaiting': 0, problem: 0 },
+      total: 0,
+      complete: true,
+    };
+    const bProjects = {
+      storeId: 'store_b',
+      storeUid: 'uid-b',
+      projects: [{ projectId: 'project-b', roles: null, diagnostic: null, targetLines: [], activeChangeCount: 0, archivedChangeCount: 0 }],
+      complete: true,
+      unsearchedRefs: [],
+      problems: [],
+    };
+    (client.getStoreIssueProjections as any).mockImplementation((selector: string) =>
+      selector === 'store:store_x' ? aProjections : Promise.resolve(bProjections)
+    );
+    (client.getStoreIssueAttention as any).mockImplementation((selector: string) =>
+      selector === 'store:store_x' ? aAttention : Promise.resolve(bAttention)
+    );
+    (client.getStoreProjects as any).mockImplementation((selector: string) =>
+      selector === 'store:store_x' ? aProjects : Promise.resolve(bProjects)
+    );
+
+    window.history.pushState({}, '', '/s/store_x/issues');
+    await act(async () => {
+      render(<LocationProvider><RoutedIssueBoard /></LocationProvider>, container);
+      await flushMicrotasks();
+    });
+    await act(async () => {
+      (container.querySelector('[data-testid="route-store-b"]') as HTMLButtonElement).click();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flushMicrotasks(40);
+    });
+    expect(container.textContent).toContain('Store B only');
+    expect(container.textContent).not.toContain('Ready Issue');
+    expect((container.querySelector('.member-chip') as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true');
+
+    resolveAProjections(issueProjectionsFixture);
+    resolveAAttention(issueAttentionFixture);
+    resolveAProjects({ storeId: 'store_x', storeUid: 'uid-a', projects: [], complete: true, unsearchedRefs: [], problems: [] });
+    await act(async () => { await flushMicrotasks(20); });
+
+    expect(container.textContent).toContain('Store B only');
+    expect(container.textContent).not.toContain('Ready Issue');
+    expect(container.querySelector('[data-testid="issue-board-error"]')).toBeNull();
   });
 });

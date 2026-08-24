@@ -3,8 +3,10 @@ import { useT } from '../i18n/store.js';
 import {
   ISSUE_ATTENTION_KIND_LABEL_KEYS,
   ISSUE_HEALTH_LABEL_KEYS,
+  ISSUE_PHASE_LABEL_KEYS,
   attentionItemDetail,
 } from './issue-vocabulary.js';
+import { issueProvenanceHref } from './issue-provenance.js';
 
 /**
  * One Issue's card on the Board (issue-board-ui spec, requirement 1).
@@ -36,31 +38,51 @@ export function IssueCard({
   const detail = attentionItem === null ? null : attentionItemDetail(attentionItem, t);
 
   return (
-    <a
+    <article
       class="issue-card"
       data-testid="issue-card"
       data-issue={entry.issueId}
       data-phase={status.phase}
       data-health={status.health}
-      href={href}
     >
-      <span class="issue-card__title">{title}</span>
-      <span class="issue-card__id">{entry.issueId}</span>
+      <a class="issue-card__main" data-testid="issue-card-main" href={href}>
+        <span class="issue-card__title">{title}</span>
+        <span class="issue-card__id">{entry.issueId}</span>
+      </a>
       <span class="issue-card__axes">
-        <span
-          class={`issue-card__health issue-card__health--${status.health}`}
-          data-testid="issue-card-health"
+        <a
+          class="issue-card__evidence-link"
+          data-testid="issue-card-phase-evidence"
+          href={issueProvenanceHref(href, 'plan-projection')}
         >
-          {t(ISSUE_HEALTH_LABEL_KEYS[status.health])}
-        </span>
-        <span class="issue-card__progress" data-testid="issue-card-progress">
-          {status.progress === null
-            ? t('issues.progress_none')
-            : t('issues.progress', {
-                completed: status.progress.completed,
-                total: status.progress.total,
-              })}
-        </span>
+          {t('issues.evidence.phase', { value: t(ISSUE_PHASE_LABEL_KEYS[status.phase]) })}
+        </a>
+        <a
+          class="issue-card__evidence-link"
+          data-testid="issue-card-health-evidence"
+          href={issueProvenanceHref(href, 'attention')}
+        >
+          <span
+            class={`issue-card__health issue-card__health--${status.health}`}
+            data-testid="issue-card-health"
+          >
+            {t(ISSUE_HEALTH_LABEL_KEYS[status.health])}
+          </span>
+        </a>
+        <a
+          class="issue-card__evidence-link"
+          data-testid="issue-card-progress-evidence"
+          href={issueProvenanceHref(href, 'plan-projection')}
+        >
+          <span class="issue-card__progress" data-testid="issue-card-progress">
+            {status.progress === null
+              ? t('issues.progress_none')
+              : t('issues.progress', {
+                  completed: status.progress.completed,
+                  total: status.progress.total,
+                })}
+          </span>
+        </a>
       </span>
       {/* The record's own incompleteness, never smoothed over. All three are
           independent facts, so each renders on its own line rather than as an
@@ -86,7 +108,11 @@ export function IssueCard({
         </span>
       )}
       {attentionItem !== null && (
-        <span class="issue-card__attention" data-testid="issue-card-attention">
+        <a
+          class="issue-card__attention issue-card__evidence-link"
+          data-testid="issue-card-attention"
+          href={issueProvenanceHref(href, 'attention')}
+        >
           <span class="issue-card__attention-kind">
             {t(ISSUE_ATTENTION_KIND_LABEL_KEYS[attentionItem.kind])}
           </span>
@@ -94,8 +120,8 @@ export function IssueCard({
             <span class="issue-card__attention-node">{attentionItem.nodeId}</span>
           )}
           {detail !== null && <span class="issue-card__attention-detail">{detail}</span>}
-        </span>
+        </a>
       )}
-    </a>
+    </article>
   );
 }

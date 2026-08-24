@@ -18,7 +18,8 @@ import { PipelinesPage } from './components/PipelinesPage.js';
 import { AuditPage } from './components/AuditPage.js';
 import { RelaunchNotice } from './components/RelaunchNotice.js';
 import { LocaleBootstrap } from './i18n/LocaleBootstrap.js';
-import { parseSpacePath, spaceHref } from './store/use-space.js';
+import { useT } from './i18n/store.js';
+import { parseSpacePath, spaceHomeHref, spaceHref } from './store/use-space.js';
 import { SpaceCatalogProvider } from './store/space-catalog.js';
 
 /**
@@ -33,17 +34,37 @@ const PipelineCanvasPage = lazy(() =>
 );
 
 /**
- * Redirects a bare space root (`/p/<id>` or `/s/<id>`, no section) to that
- * space's board (board-ui spec). Replace-history so the section-less URL is
- * not a distinct back-button entry.
+ * Redirects a bare space root to its namespace-aware canonical home.
  */
 function SpaceRootRedirect() {
   const { path, route } = useLocation();
   useEffect(() => {
     const space = parseSpacePath(path);
-    if (space) route(spaceHref(space, 'board'), true);
+    if (space) route(spaceHomeHref(space), true);
   }, [path]);
   return null;
+}
+
+/** Retains legacy Store Board bookmarks without mounting the project Board. */
+function LegacyStoreBoardRedirect() {
+  const t = useT();
+  const { path, route } = useLocation();
+  useEffect(() => {
+    const space = parseSpacePath(path);
+    if (space?.type === 'store') route(spaceHref(space, 'issues'), true);
+  }, [path]);
+  return <p class="route-redirect" data-testid="legacy-store-board-redirect">{t('issues.redirect.board')}</p>;
+}
+
+/** Store Task aliases hand execution work to Operations without guessing a Run. */
+function LegacyStoreTaskRedirect() {
+  const t = useT();
+  const { path, route } = useLocation();
+  useEffect(() => {
+    const space = parseSpacePath(path);
+    if (space?.type === 'store') route(spaceHref(space, 'operations'), true);
+  }, [path]);
+  return <p class="route-redirect" data-testid="legacy-store-task-redirect">{t('issues.redirect.task')}</p>;
 }
 
 /**
@@ -80,7 +101,7 @@ export function App() {
           <Route path="/profiles" component={ProfilesPage} />
           <Route path="/audit" component={AuditPage} />
           <Route path="/p/:projectId/board" component={BoardPage} />
-          <Route path="/s/:storeId/board" component={BoardPage} />
+          <Route path="/s/:storeId/board" component={LegacyStoreBoardRedirect} />
           <Route path="/p/:projectId/config" component={ConfigPage} />
           <Route path="/s/:storeId/config" component={ConfigPage} />
           <Route path="/p/:projectId/pipelines" component={PipelinesPage} />
@@ -97,7 +118,7 @@ export function App() {
           <Route path="/p/:projectId/archive" component={ArchivePage} />
           <Route path="/s/:storeId/archive" component={ArchivePage} />
           <Route path="/p/:projectId/task/:changeName" component={TaskDetailPage} />
-          <Route path="/s/:storeId/task/:changeName" component={TaskDetailPage} />
+          <Route path="/s/:storeId/task/:changeName" component={LegacyStoreTaskRedirect} />
           <Route path="/p/:projectId" component={SpaceRootRedirect} />
           <Route path="/s/:storeId" component={SpaceRootRedirect} />
           <Route default component={SpaceBootstrap} />

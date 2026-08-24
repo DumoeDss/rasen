@@ -1,7 +1,6 @@
 import type { ComponentChildren } from 'preact';
 import { useLocation } from 'preact-iso';
 import { SpaceSwitcher } from './SpaceSwitcher.js';
-import { RunningSessionsMenu } from './RunningSessionsMenu.js';
 import { RasenLogo } from './RasenLogo.js';
 import { isPipelineCanvasPath, parseSelector, parseSpacePath, spaceHref, spaceSection } from '../store/use-space.js';
 import { getRecentSpaces } from '../store/recent-spaces.js';
@@ -44,16 +43,13 @@ export function Layout({ children }: { children: ComponentChildren }) {
   // the current route, so `section` is null and Board/Archive/Config/Pipelines
   // get no aria-current — only Workflows/Profiles highlight themselves.
   const section = routeSpace ? spaceSection(path) : null;
-  // Store-only surfaces are deliberately NOT `SWITCHABLE_SECTIONS` entries:
-  // preserving one across a switch into a project space would build a dead
-  // route. `spaceSection` therefore reports `board` on these paths, so each
-  // link marks itself current by prefix and Board explicitly stands down.
-  const onIssues = routeSpace !== null && path.startsWith(spaceHref(routeSpace, 'issues'));
+  const onIssues =
+    routeSpace?.type === 'store' &&
+    (path === spaceHref(routeSpace, 'issues') || path.startsWith(`${spaceHref(routeSpace, 'issues')}/`));
   const onOperations =
-    routeSpace !== null && path.startsWith(spaceHref(routeSpace, 'operations'));
+    routeSpace?.type === 'store' && path === spaceHref(routeSpace, 'operations');
   const onUnlinkedChanges =
-    routeSpace !== null && path.startsWith(spaceHref(routeSpace, 'unlinked-changes'));
-  const onStoreOnlySurface = onIssues || onOperations || onUnlinkedChanges;
+    routeSpace?.type === 'store' && path === spaceHref(routeSpace, 'unlinked-changes');
   const onWorkflows = path.startsWith('/workflows');
   const onProfiles = path.startsWith('/profiles');
   const onAudit = path.startsWith('/audit');
@@ -73,15 +69,15 @@ export function Layout({ children }: { children: ComponentChildren }) {
           <nav>
             {space && (
               <>
-                <a
-                  href={spaceHref(space, 'board')}
-                  aria-current={section === 'board' && !onStoreOnlySurface ? 'page' : undefined}
-                >
-                  {t('nav.board')}
-                </a>
-                {/* Issues live in Stores, so a project space offers no Issues
-                    section (issue-board-ui spec, requirement 6). */}
-                {space.type === 'store' && (
+                {space.type === 'project' ? (
+                  <a
+                    href={spaceHref(space, 'board')}
+                    data-testid="nav-board"
+                    aria-current={section === 'board' ? 'page' : undefined}
+                  >
+                    {t('nav.board')}
+                  </a>
+                ) : (
                   <>
                     <a
                       href={spaceHref(space, 'issues')}
@@ -134,7 +130,6 @@ export function Layout({ children }: { children: ComponentChildren }) {
               Audit
             </a>
           </nav>
-          {routeSpace && <RunningSessionsMenu />}
           <SpaceSwitcher />
         </div>
       </header>

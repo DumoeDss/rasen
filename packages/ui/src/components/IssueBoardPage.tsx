@@ -12,7 +12,7 @@ import type {
 import { IssueCard } from './IssueCard.js';
 import { MemberChips } from './MemberChips.js';
 import { PageHeader } from './ui/PageHeader.js';
-import { spaceHref, useSpace } from '../store/use-space.js';
+import { spaceHref, useSpace, type Space } from '../store/use-space.js';
 import { useT } from '../i18n/store.js';
 import { ISSUE_PHASE_LABEL_KEYS, ISSUE_PHASE_ORDER } from './issue-vocabulary.js';
 
@@ -35,9 +35,14 @@ import { ISSUE_PHASE_LABEL_KEYS, ISSUE_PHASE_ORDER } from './issue-vocabulary.js
  * leaving and returning starts at "All" again.
  */
 export function IssueBoardPage() {
-  const t = useT();
   const space = useSpace();
   const selector = space?.selector;
+  return <IssueBoardState key={selector ?? 'no-store'} space={space} selector={selector} />;
+}
+
+/** Selector-owned state: a route change replaces this child synchronously. */
+function IssueBoardState({ space, selector }: { space: Space | null; selector: string | undefined }) {
+  const t = useT();
   const [projections, setProjections] = useState<StoreIssueProjectionsResponse | null>(null);
   const [attention, setAttention] = useState<StoreIssueAttentionResponse | null>(null);
   const [projects, setProjects] = useState<StoreProjectsResponse | null>(null);

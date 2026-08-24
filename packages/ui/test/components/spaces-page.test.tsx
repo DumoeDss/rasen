@@ -132,6 +132,12 @@ describe('SpacesPage', () => {
     expect(selectors).toContain('project:proj_a');
     expect(selectors).toContain('store:store_x');
     expect(container.querySelector('[data-testid="space-members"]')?.textContent).toContain('Member One');
+    expect(container.querySelector('[data-selector="project:proj_a"] .space-row__link')?.getAttribute('href')).toBe(
+      '/p/proj_a/board'
+    );
+    expect(container.querySelector('[data-selector="store:store_x"] .space-row__link')?.getAttribute('href')).toBe(
+      '/s/store_x/issues'
+    );
   });
 
   it('shows a worktree badge on a multi-worktree project and none otherwise (spaces-ui spec)', async () => {
@@ -311,6 +317,30 @@ describe('SpacesPage', () => {
     expect(banner?.querySelector('button')?.textContent).toContain('Retry');
   });
 
+  it('does not let a list request started before publication erase the new Store', async () => {
+    let resolveOld!: (value: typeof SPACES) => void;
+    (client.listSpaces as any).mockReturnValueOnce(
+      new Promise<typeof SPACES>((resolve) => {
+        resolveOld = resolve;
+      })
+    );
+    await mount(container);
+
+    await act(async () => {
+      publishSpace({
+        type: 'store',
+        id: 'published-late',
+        name: 'Published Late',
+        root: '/stores/published-late',
+        members: [],
+      });
+      resolveOld(SPACES);
+      await flushMicrotasks();
+    });
+
+    expect(container.querySelector('[data-selector="store:published-late"]')).not.toBeNull();
+  });
+
   it('creates a Store explicitly from parent plus required id', async () => {
     (client.createSpace as any).mockResolvedValue({
       operation: 'store-setup',
@@ -337,7 +367,24 @@ describe('SpacesPage', () => {
       parent: '/home/user',
       id: 'team-store',
     });
-    expect(window.location.pathname).toBe('/s/team-store/board');
+    expect(window.location.pathname).toBe('/s/team-store/issues');
+  });
+
+  it('registers an existing Store and routes to its Issue Board', async () => {
+    (client.createSpace as any).mockResolvedValue({
+      operation: 'store-register',
+      space: { type: 'store', id: 'registered-store', name: 'Registered', root: '/home/user', members: [] },
+    });
+    await mount(container);
+    await click(container.querySelector('[data-testid="new-space"]'));
+    const registerMode = Array.from(
+      container.querySelectorAll('.create-space-dialog__kind-btn')
+    ).find((button) => button.textContent === 'Register existing Store');
+    await click(registerMode ?? null);
+    await click(container.querySelector('.create-space-dialog__actions button[type="submit"]'));
+
+    expect(client.createSpace).toHaveBeenCalledWith({ op: 'register-store', path: '/home/user' });
+    expect(window.location.pathname).toBe('/s/registered-store/issues');
   });
 
   it('registers an existing Store explicitly and preserves a CLI refusal verbatim', async () => {
