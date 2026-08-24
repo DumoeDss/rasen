@@ -1,7 +1,6 @@
 import type { ComponentChildren } from 'preact';
 import { useLocation } from 'preact-iso';
 import { SpaceSwitcher } from './SpaceSwitcher.js';
-import { RunningSessionsMenu } from './RunningSessionsMenu.js';
 import { RasenLogo } from './RasenLogo.js';
 import { isPipelineCanvasPath, parseSelector, parseSpacePath, spaceHref, spaceSection } from '../store/use-space.js';
 import { getRecentSpaces } from '../store/recent-spaces.js';
@@ -9,11 +8,11 @@ import { useT } from '../i18n/store.js';
 
 /**
  * App layout (management-ui-shell design D7; config-ui-package spec): header
- * (platform title, space-scoped nav, running-run summary, space switcher) +
- * content area. Navigation offers Board · Archive · Config for the current
- * planning space, built from the space prefix in the URL, with active
- * detection relative to that prefix. There is no Sessions entry — live runs
- * surface through the running-run summary. On a space-agnostic route
+ * (platform title, space-scoped nav, space switcher) + content area. Store
+ * execution lives in Operations; project live work stays on Board and Task
+ * Detail. Navigation is built from the space prefix in the URL, with active
+ * detection relative to that prefix; there is no separate Sessions entry or
+ * running-run summary. On a space-agnostic route
  * (/workflows, /spaces) the nav falls back to the most recently visited space
  * so the space-scoped entries stay reachable; only when no space has ever
  * been visited (the `/` bootstrap or a fresh browser) are the space-scoped
@@ -44,6 +43,13 @@ export function Layout({ children }: { children: ComponentChildren }) {
   // the current route, so `section` is null and Board/Archive/Config/Pipelines
   // get no aria-current — only Workflows/Profiles highlight themselves.
   const section = routeSpace ? spaceSection(path) : null;
+  const onIssues =
+    routeSpace?.type === 'store' &&
+    (path === spaceHref(routeSpace, 'issues') || path.startsWith(`${spaceHref(routeSpace, 'issues')}/`));
+  const onOperations =
+    routeSpace?.type === 'store' && path === spaceHref(routeSpace, 'operations');
+  const onUnlinkedChanges =
+    routeSpace?.type === 'store' && path === spaceHref(routeSpace, 'unlinked-changes');
   const onWorkflows = path.startsWith('/workflows');
   const onProfiles = path.startsWith('/profiles');
   const onAudit = path.startsWith('/audit');
@@ -63,9 +69,39 @@ export function Layout({ children }: { children: ComponentChildren }) {
           <nav>
             {space && (
               <>
-                <a href={spaceHref(space, 'board')} aria-current={section === 'board' ? 'page' : undefined}>
-                  {t('nav.board')}
-                </a>
+                {space.type === 'project' ? (
+                  <a
+                    href={spaceHref(space, 'board')}
+                    data-testid="nav-board"
+                    aria-current={section === 'board' ? 'page' : undefined}
+                  >
+                    {t('nav.board')}
+                  </a>
+                ) : (
+                  <>
+                    <a
+                      href={spaceHref(space, 'issues')}
+                      data-testid="nav-issues"
+                      aria-current={onIssues ? 'page' : undefined}
+                    >
+                      {t('nav.issues')}
+                    </a>
+                    <a
+                      href={spaceHref(space, 'operations')}
+                      data-testid="nav-operations"
+                      aria-current={onOperations ? 'page' : undefined}
+                    >
+                      {t('nav.operations')}
+                    </a>
+                    <a
+                      href={spaceHref(space, 'unlinked-changes')}
+                      data-testid="nav-unlinked-changes"
+                      aria-current={onUnlinkedChanges ? 'page' : undefined}
+                    >
+                      {t('nav.unlinked_changes')}
+                    </a>
+                  </>
+                )}
                 <a
                   href={spaceHref(space, 'archive')}
                   aria-current={section === 'archive' ? 'page' : undefined}
@@ -94,7 +130,6 @@ export function Layout({ children }: { children: ComponentChildren }) {
               Audit
             </a>
           </nav>
-          {routeSpace && <RunningSessionsMenu />}
           <SpaceSwitcher />
         </div>
       </header>

@@ -2,9 +2,9 @@
 /**
  * Coverage for the app shell's space-scoped routing (management-ui-shell /
  * board-ui specs): the URL is the source of truth for the selected planning
- * space. `/p/:id/board` and `/s/:id/board` render the board; `/p/:id/config`
- * renders config; a bare space root redirects to the board; the nav offers
- * Board · Archive · Config within the current space (no Sessions); `/` and any
+ * space. Project Board/Task routes remain project-owned, while Store roots and
+ * legacy Board/Task routes replace-redirect to Issues/Operations. `/p/:id/config`
+ * renders config; the nav is type-aware (no duplicate Sessions surface); `/` and any
  * unknown path (e.g. the retired `/sessions`) bootstrap and redirect rather
  * than dead-ending.
  */
@@ -33,14 +33,29 @@ vi.mock('../src/components/TaskDetailPage.js', async () => {
 vi.mock('../src/components/SpacesPage.js', () => ({
   SpacesPage: () => <div data-testid="spaces-page">spaces</div>,
 }));
+vi.mock('../src/components/IssueBoardPage.js', () => ({
+  IssueBoardPage: () => <div data-testid="issue-board-page">issues</div>,
+}));
+vi.mock('../src/components/IssueDetailPage.js', async () => {
+  const { useRoute } = await import('preact-iso');
+  return {
+    IssueDetailPage: () => {
+      const { params } = useRoute();
+      return <div data-testid="issue-detail-page">{params.issueId}</div>;
+    },
+  };
+});
+vi.mock('../src/components/OperationsPage.js', () => ({
+  OperationsPage: () => <div data-testid="operations-page">operations</div>,
+}));
+vi.mock('../src/components/UnlinkedChangesPage.js', () => ({
+  UnlinkedChangesPage: () => <div data-testid="unlinked-changes-page">unlinked</div>,
+}));
 vi.mock('../src/components/AuditPage.js', () => ({
   AuditPage: () => <div data-testid="audit-page">audit</div>,
 }));
 vi.mock('../src/components/SpaceSwitcher.js', () => ({
   SpaceSwitcher: () => <div data-testid="space-switcher" />,
-}));
-vi.mock('../src/components/RunningSessionsMenu.js', () => ({
-  RunningSessionsMenu: () => <div data-testid="running-sessions-menu" />,
 }));
 vi.mock('../src/api/token.js', () => ({
   hasToken: () => true,
@@ -103,9 +118,14 @@ describe('App routing', () => {
     expect(mark?.nextElementSibling).toBe(title);
   });
 
-  it('renders the board at a store space board route', async () => {
+  it('replace-redirects a legacy Store Board URL to Issues without mounting the project Board', async () => {
+    const replaceSpy = vi.spyOn(window.history, 'replaceState');
     await mountAt(container, '/s/store_y/board');
-    expect(container.querySelector('[data-testid="board-page"]')).not.toBeNull();
+    expect(window.location.pathname).toBe('/s/store_y/issues');
+    expect(container.querySelector('[data-testid="issue-board-page"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="board-page"]')).toBeNull();
+    expect(replaceSpy).toHaveBeenCalled();
+    replaceSpy.mockRestore();
   });
 
   it('renders the config page at a project space config route', async () => {
@@ -113,10 +133,19 @@ describe('App routing', () => {
     expect(container.querySelector('[data-testid="config-page"]')).not.toBeNull();
   });
 
-  it('redirects a bare space root to that space board', async () => {
+  it('redirects a bare project root to its Board', async () => {
     await mountAt(container, '/p/proj_x');
     expect(container.querySelector('[data-testid="board-page"]')).not.toBeNull();
     expect(window.location.pathname).toBe('/p/proj_x/board');
+  });
+
+  it('replace-redirects a bare Store root to its Issue Board', async () => {
+    const replaceSpy = vi.spyOn(window.history, 'replaceState');
+    await mountAt(container, '/s/store_y');
+    expect(window.location.pathname).toBe('/s/store_y/issues');
+    expect(container.querySelector('[data-testid="issue-board-page"]')).not.toBeNull();
+    expect(replaceSpy).toHaveBeenCalled();
+    replaceSpy.mockRestore();
   });
 
   it('keeps the space-scoped nav on the space-agnostic /workflows route via the recent-space fallback', async () => {
@@ -206,6 +235,94 @@ describe('App routing', () => {
     await mountAt(container, '/p/proj_x/task/my-change');
     expect(container.querySelector('[data-testid="task-detail-page"]')).not.toBeNull();
     expect(container.textContent).toContain('my-change');
+  });
+
+  it('replace-redirects a legacy Store Task URL to Operations without mounting Task Detail', async () => {
+    const replaceSpy = vi.spyOn(window.history, 'replaceState');
+    await mountAt(container, '/s/store_y/task/my-change');
+    expect(window.location.pathname).toBe('/s/store_y/operations');
+    expect(container.querySelector('[data-testid="operations-page"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="task-detail-page"]')).toBeNull();
+    expect(replaceSpy).toHaveBeenCalled();
+    replaceSpy.mockRestore();
+  });
+
+  it('renders the Issue Board at a store space issues route', async () => {
+    await mountAt(container, '/s/store_y/issues');
+    expect(container.querySelector('[data-testid="issue-board-page"]')).not.toBeNull();
+  });
+
+  it('lands a deep link straight on the Issue Detail, carrying the issue id', async () => {
+    await mountAt(container, '/s/store_y/issues/my-issue');
+    expect(container.querySelector('[data-testid="issue-detail-page"]')).not.toBeNull();
+    expect(container.textContent).toContain('my-issue');
+    // The Board was never mounted: the deep link is reachable on its own.
+    expect(container.querySelector('[data-testid="issue-board-page"]')).toBeNull();
+  });
+
+  it('offers the Issues nav entry in a store space, marks it current there, and stands Board down', async () => {
+    await mountAt(container, '/s/store_y/issues');
+    const issuesLink = container.querySelector('nav a[href="/s/store_y/issues"]');
+    expect(issuesLink).not.toBeNull();
+    expect(issuesLink!.getAttribute('aria-current')).toBe('page');
+    expect(container.querySelector('nav a[href="/s/store_y/board"]')).toBeNull();
+  });
+
+  it('offers no Issues section in a project space — Issues live in Stores', async () => {
+    await mountAt(container, '/p/proj_x/board');
+    expect(container.querySelector('[data-testid="nav-issues"]')).toBeNull();
+    expect(container.querySelector('nav a[href="/p/proj_x/issues"]')).toBeNull();
+    // The store-space nav DOES offer it, so the absence above is the space
+    // type's doing rather than the entry being missing everywhere. Mounted into
+    // its own container: `LocationProvider` reads the location once at mount,
+    // so re-rendering into the same node would keep the first route.
+    const storeContainer = document.createElement('div');
+    document.body.appendChild(storeContainer);
+    try {
+      await mountAt(storeContainer, '/s/store_y/issues');
+      expect(storeContainer.querySelector('[data-testid="nav-issues"]')).not.toBeNull();
+    } finally {
+      document.body.removeChild(storeContainer);
+    }
+  });
+
+  it.each([
+    ['/s/store_y/operations', 'operations-page', 'nav-operations'],
+    ['/s/store_y/unlinked-changes', 'unlinked-changes-page', 'nav-unlinked-changes'],
+  ])('opens the Store-only %s route directly and marks its nav entry current', async (path, pageTestId, navTestId) => {
+    await mountAt(container, path);
+    expect(container.querySelector(`[data-testid="${pageTestId}"]`)).not.toBeNull();
+    expect(container.querySelector(`[data-testid="${navTestId}"]`)?.getAttribute('aria-current')).toBe('page');
+    expect(container.querySelector('nav a[href="/s/store_y/board"]')).toBeNull();
+  });
+
+  it('offers neither Operations nor Unlinked Changes in a project space', async () => {
+    await mountAt(container, '/p/proj_x/board');
+    expect(container.querySelector('[data-testid="nav-operations"]')).toBeNull();
+    expect(container.querySelector('[data-testid="nav-unlinked-changes"]')).toBeNull();
+    expect(container.querySelector('nav a[href="/p/proj_x/operations"]')).toBeNull();
+    expect(container.querySelector('nav a[href="/p/proj_x/unlinked-changes"]')).toBeNull();
+  });
+
+  it.each(['/p/proj_x/issues', '/p/proj_x/operations', '/p/proj_x/unlinked-changes'])(
+    'does not expose a project mirror at %s',
+    async (path) => {
+      (client.health as any).mockResolvedValue({
+        ok: true,
+        version: '0',
+        project: { projectId: 'proj_x', name: 'x', root: '/x' },
+      });
+      await mountAt(container, path);
+      expect(window.location.pathname).toBe('/p/proj_x/board');
+      expect(container.querySelector('[data-testid="issue-board-page"]')).toBeNull();
+      expect(container.querySelector('[data-testid="operations-page"]')).toBeNull();
+      expect(container.querySelector('[data-testid="unlinked-changes-page"]')).toBeNull();
+    }
+  );
+
+  it('renders no independently polling running-session menu in the shell', async () => {
+    await mountAt(container, '/p/proj_x/board');
+    expect(container.querySelector('[data-testid="running-sessions-menu"]')).toBeNull();
   });
 
   it('renders the space-agnostic Spaces page at /spaces (no space prefix)', async () => {

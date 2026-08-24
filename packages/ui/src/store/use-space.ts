@@ -25,8 +25,11 @@ export interface Space {
   selector: string;
 }
 
-/** Sections a space switch preserves; anything else (e.g. task detail) falls back to the board. */
-const SWITCHABLE_SECTIONS = new Set(['board', 'config', 'archive', 'pipelines']);
+/** Common sections that remain valid across either planning-space namespace. */
+const SWITCHABLE_SECTIONS = new Set(['config', 'archive', 'pipelines']);
+
+/** Store-owned sections that survive only a Store-to-Store switch. */
+const STORE_ONLY_SECTIONS = new Set(['issues', 'operations', 'unlinked-changes']);
 
 const URL_PREFIX: Record<SpaceType, string> = { project: 'p', store: 's' };
 
@@ -59,10 +62,10 @@ export function parseSpacePath(path: string | undefined): Space | null {
   return { type, id, selector: `${type}:${id}` };
 }
 
-/** The current section (`board` | `config` | `archive`) from a space path, defaulting to `board`. */
+/** The current common section from a space path, defaulting to `board`. */
 export function spaceSection(path: string | undefined): string {
   const section = segmentsOf(path)[2];
-  return section && SWITCHABLE_SECTIONS.has(section) ? section : 'board';
+  return section && (section === 'board' || SWITCHABLE_SECTIONS.has(section)) ? section : 'board';
 }
 
 /**
@@ -92,6 +95,28 @@ export function spaceHref(space: Space, section: string, sub?: string): string {
   return sub === undefined ? base : `${base}/${encodeURIComponent(sub)}`;
 }
 
+/** The namespace-aware canonical home for a planning space. */
+export function spaceHomeHref(space: Space): string {
+  return spaceHref(space, space.type === 'store' ? 'issues' : 'board');
+}
+
+/**
+ * Re-scopes a route to a destination space without manufacturing invalid
+ * cross-namespace mirrors. Common sections survive every switch; Store-only
+ * sections survive Store-to-Store; every other path falls back to the
+ * destination's canonical home.
+ */
+export function spaceSwitchHref(path: string | undefined, destination: Space): string {
+  const section = segmentsOf(path)[2];
+  if (section && SWITCHABLE_SECTIONS.has(section)) {
+    return spaceHref(destination, section);
+  }
+  if (destination.type === 'store' && section && STORE_ONLY_SECTIONS.has(section)) {
+    return spaceHref(destination, section);
+  }
+  return spaceHomeHref(destination);
+}
+
 /** Parses a `<type>:<id>` selector back into a {@link Space}, splitting on the first colon only (the id may itself contain colons). */
 export function parseSelector(selector: string): Space | null {
   const idx = selector.indexOf(':');
@@ -105,10 +130,10 @@ export function parseSelector(selector: string): Space | null {
   return null;
 }
 
-/** The canonical board route for a launch `?space=<selector>`, or `null` when the selector is malformed. */
+/** The canonical home route for a launch `?space=<selector>`, or `null` when the selector is malformed. */
 export function spaceRouteFromSelector(selector: string): string | null {
   const space = parseSelector(selector);
-  return space ? spaceHref(space, 'board') : null;
+  return space ? spaceHomeHref(space) : null;
 }
 
 /** The active planning space, derived from the current URL. `null` on `/` and the empty state. */

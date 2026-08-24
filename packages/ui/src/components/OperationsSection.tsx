@@ -824,7 +824,9 @@ function ControlsSection({
                 </span>
               </div>
             );
-          case 'resume':
+          case 'resume': {
+            const wait = root.waits.find(candidate => candidate.waitId === control.waitId);
+            const retry = wait?.kind === 'infrastructure' && wait.retryable;
             return (
               <div
                 key={`resume-${control.waitId}`}
@@ -834,7 +836,9 @@ function ControlsSection({
                 title={`waitId: ${control.waitId}`}
               >
                 <span class="ops-control__label">
-                  {t('operations.control.resume', { wait: shortId(control.waitId).label })}
+                  {t(retry ? 'operations.control.retry' : 'operations.control.resume', {
+                    wait: shortId(control.waitId).label,
+                  })}
                 </span>
                 <button
                   type="button"
@@ -843,10 +847,11 @@ function ControlsSection({
                   disabled={inFlight}
                   onClick={() => submit({ kind: 'resume', waitId: control.waitId })}
                 >
-                  {t('operations.control.resume_action')}
+                  {t(retry ? 'operations.control.retry_action' : 'operations.control.resume_action')}
                 </button>
               </div>
             );
+          }
           case 'escalate':
             return (
               <div
@@ -1349,15 +1354,20 @@ function RunDetailPanel({
  * filters reconciler Runs to the Task's child change names, and groups them
  * per child without mixing planning spaces.
  */
-export function OperationsSection({
+export function RunOperationsPanel({
   runsResponse,
   selector,
   childNames,
+  projectId,
+  title,
 }: {
   runsResponse: RunsResponse | null;
   selector?: string;
   /** The Task's child change names — used to group runs by child. */
   childNames: readonly string[];
+  /** Exact Store member whose selector produced this response. */
+  projectId?: string;
+  title?: string;
 }) {
   const t = useT();
   const [selectedRun, setSelectedRun] = useState<{ changeId: string; runId: string } | null>(null);
@@ -1386,8 +1396,9 @@ export function OperationsSection({
       class="task-detail__operations"
       aria-label={t('operations.aria')}
       data-testid="operations-section"
+      data-project-id={projectId}
     >
-      <h3 class="operations-section__title">{t('operations.title')}</h3>
+      <h3 class="operations-section__title">{title ?? t('operations.title')}</h3>
 
       {childGroups.map(([changeId, summaries]) => (
         <div
@@ -1453,4 +1464,13 @@ export function OperationsSection({
       )}
     </section>
   );
+}
+
+/** Task-detail compatibility wrapper over the reusable project-tagged panel. */
+export function OperationsSection(props: {
+  runsResponse: RunsResponse | null;
+  selector?: string;
+  childNames: readonly string[];
+}) {
+  return <RunOperationsPanel {...props} />;
 }

@@ -283,9 +283,54 @@ describe('OperationsSection control submit (14.5/14.6)', () => {
     await selectRunAndWait(container);
 
     const resumeBtn = container.querySelector('[data-testid="ops-control-resume-submit"]') as HTMLButtonElement;
+    expect(resumeBtn.textContent).toBe('Resume');
     await clickAndWait(resumeBtn);
 
     expect(client.postRunControl).toHaveBeenCalledTimes(1);
+    const [, , body] = vi.mocked(client.postRunControl).mock.calls[0]!;
+    expect(body.control.expectedRecordVersion).toBe(7);
+    expect(body.control.command).toEqual({ kind: 'resume', waitId: WAIT_ID });
+  });
+
+  it('presents a projected retryable infrastructure resume as Retry and submits the exact Wait id', async () => {
+    const retryView = makeRunView();
+    const root = retryView.sections[0]!;
+    if (root.kind !== 'root-dag') throw new Error('fixture root section changed');
+    vi.mocked(client.getRunDetail).mockResolvedValueOnce({
+      ...retryView,
+      sections: [{
+        ...root,
+        waits: [
+          {
+            waitId: DECISION_WAIT_ID,
+            kind: 'gate',
+            nodeId: 'node:gate1',
+            invocationId: 'invocation:' + 'f'.repeat(64),
+            occurrence: 1,
+            gateId: 'gate-1',
+            decisionIds: ['approve'],
+          },
+          {
+            waitId: WAIT_ID,
+            kind: 'infrastructure',
+            nodeId: 'node:retry',
+            invocationId: 'invocation:' + 'e'.repeat(64),
+            occurrence: 1,
+            code: 'provider_unavailable',
+            retryable: true,
+          },
+        ],
+      }],
+    });
+    render(
+      <OperationsSection runsResponse={makeRunsResponse()} selector="project:test" childNames={['test-change']} />,
+      container
+    );
+    await selectRunAndWait(container);
+
+    const retryBtn = container.querySelector('[data-testid="ops-control-resume-submit"]') as HTMLButtonElement;
+    expect(retryBtn.textContent).toBe('Retry');
+    await clickAndWait(retryBtn);
     const [, , body] = vi.mocked(client.postRunControl).mock.calls[0]!;
     expect(body.control.expectedRecordVersion).toBe(7);
     expect(body.control.command).toEqual({ kind: 'resume', waitId: WAIT_ID });
@@ -331,6 +376,7 @@ describe('OperationsSection control submit (14.5/14.6)', () => {
     await selectRunAndWait(container);
 
     const cancelBtn = container.querySelector('[data-testid="ops-control-cancel-submit"]') as HTMLButtonElement;
+    expect(cancelBtn.textContent).toBe('Stop Run');
     await clickAndWait(cancelBtn);
 
     // No submit yet — the first click only reveals the confirmation prompt.
@@ -339,6 +385,7 @@ describe('OperationsSection control submit (14.5/14.6)', () => {
     // The confirmation prompt is now visible.
     const confirmBtn = container.querySelector('[data-testid="ops-control-cancel-confirm"]') as HTMLButtonElement;
     expect(confirmBtn).not.toBeNull();
+    expect(confirmBtn.textContent).toBe('Confirm stop');
 
     await clickAndWait(confirmBtn);
 

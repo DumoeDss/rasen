@@ -31,20 +31,10 @@ import {
 } from '../core/store/issues/index.js';
 import {
   StoreAggregateQuery,
-  listProjectEntries,
-  nodeStoreQueryFileSystem,
-  productionStoreQueryDependencies,
-  resolveQueryStore,
   type AggregateProblem,
   type IssueDetail,
-  type IssueSummary,
   type IssueSummaryPage,
-  type ResolvedExecutionPlan,
 } from '../core/store/query/index.js';
-import {
-  listAllWorkspaceIndexEntries,
-  type WorkspaceIndexEntry,
-} from '../core/store/workspace/registry.js';
 import { listPipelines } from '../core/pipeline-registry/resolver.js';
 import { resolveSessionLaunchContext } from '../core/management-api/session-launch-context.js';
 import {
@@ -62,8 +52,15 @@ import {
   type IssueReviewThread,
   type IssueStatus,
   type IssueStatusProblem,
-  type ProjectIssueStatusInput,
 } from '../core/issue-status/index.js';
+import {
+  composeIssueProjectionDetail,
+  composeIssueProjectionList,
+  resolveRunStateContext,
+  resolveStoreWideningContext,
+  statusInputFor,
+  type IssueRunStateContext,
+} from '../core/issue-read/index.js';
 import {
   composeIssueConfirm,
   refusalFix,
@@ -78,10 +75,6 @@ import {
   type IssueAcceptanceBlocker,
   type IssueAcceptanceGateEvaluation,
 } from '../core/issue-acceptance/index.js';
-import {
-  resolvedExecutionProjectRoot,
-  resolveOpenSpecRoot,
-} from '../core/root-selection.js';
 import {
   publishPlanFromDecomposition,
   publishPlanFromPortfolio,
@@ -260,150 +253,36 @@ function renderProblems(problems: readonly AggregateProblem[]): void {
 // -----------------------------------------------------------------------------
 
 /**
- * The machine-local inputs the projection needs: resolved from the WORKING
- * DIRECTORY the command runs from, best-effort. An Issue is Store content and
- * readable from anywhere, so a directory that resolves no project execution
- * root degrades to a visibility-`none` answer — committed evidence still
- * derives; never a failure of the store-scoped command.
+ * The machine-local inputs the projection needs, for THIS command's working
+ * directory. An Issue is Store content and readable from anywhere, so a
+ * directory that resolves no project execution root degrades to a
+ * visibility-`none` answer — committed evidence still derives; never a failure
+ * of the store-scoped command.
  *
- * Exported for the store-level `attention` scan (issue-needs-attention D3):
- * the scan composes each Issue through the SAME inputs `show` does, so
- * attention and show cannot disagree about an Issue's facts.
+ * The resolution itself lives in `core/issue-read` (design D1): the daemon
+ * runs the same probe from its launch project root, so "which execution root
+ * did this read see" has one implementation and one failure mode. This wrapper
+ * is only the CLI's start path — the operator's cwd.
  */
-export async function resolveProjectionContext(): Promise<{
-  executionRoot?: string;
-  changesDir?: string;
-  projectRoot?: string;
-}> {
-  try {
-    const root = await resolveOpenSpecRoot({ startPath: process.cwd(), reporter: false });
-    return {
-      executionRoot: resolvedExecutionProjectRoot(root),
-      changesDir: root.changesDir,
-      projectRoot: root.path,
-    };
-  } catch {
-    return {};
-  }
-}
-
-export function statusInputFor(
-  detail: IssueDetail,
-  context: {
-    executionRoot?: string;
-    changesDir?: string;
-    storeRoot?: string;
-    workspaceEntries?: readonly WorkspaceIndexEntry[];
-    projectAliases?: Readonly<Record<string, string>>;
-    acceptance?: Awaited<ReturnType<typeof readIssueAcceptanceFacts>>;
-    predecessorPlan?: ResolvedExecutionPlan | null;
-  }
-): ProjectIssueStatusInput {
-  return {
-    detail,
-    ...(context.executionRoot === undefined ? {} : { executionRoot: context.executionRoot }),
-    ...(context.changesDir === undefined ? {} : { changesDir: context.changesDir }),
-    ...(context.storeRoot === undefined ? {} : { storeRoot: context.storeRoot }),
-    ...(context.workspaceEntries === undefined ? {} : { workspaceEntries: context.workspaceEntries }),
-    ...(context.projectAliases === undefined ? {} : { projectAliases: context.projectAliases }),
-    ...(context.acceptance === undefined ? {} : { acceptance: context.acceptance }),
-    ...(context.predecessorPlan === undefined ? {} : { predecessorPlan: context.predecessorPlan }),
-  };
+export async function resolveProjectionContext(): Promise<IssueRunStateContext> {
+  return resolveRunStateContext(process.cwd());
 }
 
 /**
- * The predecessor revision the latest revision's `supersedes` names, when the
- * plan carries one — resolved with the SAME query the latest revision read
- * through, so the revision delta derives from two digest-verified reads. A
- * first revision (or an unreadable predecessor) contributes null, which the
- * projection reads as "no delta section".
+ * The project display names the delivery section addresses projects by, read
+ * back OUT of the status the same read derived: `IssueProjectLane.alias` IS
+ * the alias the widening context supplied for that project (or null when none
+ * resolved, where the raw id is the fallback). Taking them from the payload
+ * rather than re-reading the Store keeps the rendered names and the projected
+ * lanes one fact — and the show command needs no second Store read now that
+ * its composition returns the payload.
  */
-export async function resolvePredecessorPlan(
-  scope: { store?: string; startPath: string },
-  issueId: string,
-  supersedes: string | null
-): Promise<ResolvedExecutionPlan | null> {
-  if (supersedes === null) return null;
-  return StoreAggregateQuery.resolveExecutionPlan({
-    ...(scope.store === undefined ? {} : { store: scope.store }),
-    startPath: scope.startPath,
-    issueId,
-    revisionId: supersedes,
-  });
-}
-
-/**
- * The Store-scoped widening inputs, gathered ONCE per command: the resolved
- * Store's registered root (the store-side active-change address for evidence
- * locators), the machine workspace index entries filtered to that Store's
- * uid — exactly the storeUid-first filter `gatherReferenceEvidence` applies,
- * so an index entry from another Store can never masquerade as this one's —
- * and the display aliases read from the Store's own project catalogs (the
- * catalog display `id` when one resolves; display-only composition, never a
- * guess — grouping, gating, and progress key on the project id regardless).
- * Returns an empty widening when no `--store` was given; the Store-scoped
- * query itself refuses that case before any of this matters.
- */
-export async function resolveStoreWideningContext(
-  store: string | undefined
-): Promise<{
-  storeId?: string;
-  storeUid?: string;
-  storeRoot?: string;
-  workspaceEntries?: readonly WorkspaceIndexEntry[];
-  projectAliases?: Readonly<Record<string, string>>;
-}> {
-  if (store === undefined) return {};
-  const resolved = await resolveQueryStore({ fs: nodeStoreQueryFileSystem }, { store });
-  const workspaceEntries = (
-    await listAllWorkspaceIndexEntries(productionStoreQueryDependencies.coordination())
-  ).filter(entry => entry.storeUid === resolved.storeUid);
-  // An invalid catalog (the entry carries a diagnostic) contributes no alias;
-  // the lane falls back to the raw id, which never guesses.
-  const projectAliases: Record<string, string> = {};
-  for (const entry of await listProjectEntries(
-    { fs: nodeStoreQueryFileSystem },
-    resolved.registeredRoot
-  )) {
-    if (entry.catalog !== null && entry.catalog.id !== undefined) {
-      projectAliases[entry.projectId] = entry.catalog.id;
-    }
+function projectAliasesFromStatus(status: IssueStatus): Record<string, string> {
+  const aliases: Record<string, string> = {};
+  for (const lane of status.projects) {
+    if (lane.alias !== null) aliases[lane.projectId] = lane.alias;
   }
-  return {
-    storeId: resolved.storeId,
-    storeUid: resolved.storeUid,
-    storeRoot: resolved.registeredRoot,
-    workspaceEntries,
-    projectAliases,
-  };
-}
-
-/**
- * `list` has the summary page but not the plans, so each Issue's latest plan
- * is resolved here (one `resolveExecutionPlan` per Issue — accepted at
- * single-project scale) and assembled into the `IssueDetail` shape the
- * projection consumes.
- */
-async function detailForList(
-  scope: { store?: string; startPath: string },
-  summary: IssueSummary,
-  page: IssueSummaryPage
-): Promise<IssueDetail> {
-  const plan =
-    summary.latestRevisionId === null
-      ? null
-      : await StoreAggregateQuery.resolveExecutionPlan({
-          ...(scope.store === undefined ? {} : { store: scope.store }),
-          startPath: scope.startPath,
-          issueId: summary.issueId,
-        });
-  return {
-    issue: summary,
-    plan,
-    complete: plan === null ? page.complete : plan.complete,
-    unsearchedRefs: plan === null ? page.unsearchedRefs : plan.unsearchedRefs,
-    problems: plan === null ? page.problems : plan.problems,
-  };
+  return aliases;
 }
 
 function renderProgress(status: IssueStatus): string {
@@ -1250,41 +1129,26 @@ export function registerStoreIssueCommand(store: Command): void {
             { fix: `Filter with --state ${ISSUE_STATES.join('|')}, or omit --state.` }
           );
         }
-        const page = await StoreAggregateQuery.listIssues({
-          ...(options.store === undefined ? {} : { store: options.store }),
-          startPath: process.cwd(),
-          ...(options.state === undefined ? {} : { state: options.state as IssueState }),
-        });
-        const scope = {
-          ...(options.store === undefined ? {} : { store: options.store }),
-          startPath: process.cwd(),
-        };
-        const context = await resolveProjectionContext();
-        const widening = await resolveStoreWideningContext(options.store);
-        const statuses: IssueStatus[] = [];
-        for (const summary of page.issues) {
-          const detail = await detailForList(scope, summary, page);
-          // Done follows the recorded acceptance, so the list's phase needs
-          // each Issue's acceptance facts exactly as show's does.
-          const acceptance = await readIssueAcceptanceFacts({
+        // The list composition (design D1): the same function the daemon's
+        // projection path calls, so the two can never assemble different
+        // inputs for the same read.
+        const payload = await composeIssueProjectionList(
+          StoreAggregateQuery,
+          {
             ...(options.store === undefined ? {} : { store: options.store }),
             startPath: process.cwd(),
-            issueId: summary.issueId,
-          });
-          statuses.push(
-            await projectIssueStatus(statusInputFor(detail, { ...context, ...widening, acceptance }))
-          );
-        }
+          },
+          await resolveProjectionContext(),
+          options.state === undefined ? undefined : (options.state as IssueState)
+        );
         if (options.json) {
-          printJson({
-            issues: page.issues.map((summary, index) => ({ ...summary, status: statuses[index] })),
-            complete: page.complete,
-            unsearchedRefs: page.unsearchedRefs,
-            problems: page.problems,
-          });
+          printJson(payload);
           return;
         }
-        renderIssueList(page, statuses);
+        renderIssueList(
+          payload,
+          payload.issues.map(entry => entry.status)
+        );
       } catch (error) {
         emitFailure(options.json, { issues: [] }, error, 'store_issue_list_failed');
       }
@@ -1297,55 +1161,37 @@ export function registerStoreIssueCommand(store: Command): void {
     .option('--json', '')
     .action(async (issueId: string, options: StoreIssueOptions) => {
       try {
-        const detail = await StoreAggregateQuery.showIssue({
-          ...(options.store === undefined ? {} : { store: options.store }),
-          startPath: process.cwd(),
-          issueId,
-        });
-        const widening = await resolveStoreWideningContext(options.store);
-        const status = await projectIssueStatus(
-          statusInputFor(detail, {
-            ...(await resolveProjectionContext()),
-            ...widening,
-            acceptance: await readIssueAcceptanceFacts({
-              ...(options.store === undefined ? {} : { store: options.store }),
-              startPath: process.cwd(),
-              issueId,
-            }),
-            // The predecessor the latest revision supersedes, for the revision
-            // delta — resolved only when there is one; a first revision
-            // contributes nothing and reports no delta section.
-            predecessorPlan: await resolvePredecessorPlan(
-              {
-                ...(options.store === undefined ? {} : { store: options.store }),
-                startPath: process.cwd(),
-              },
-              issueId,
-              detail.plan?.revision?.supersedes ?? null
-            ),
-          })
+        // The single-Issue composition (design D1): record, plan, status,
+        // delivery rollup, and review from ONE read — the same function the
+        // daemon's projection path calls. The delivery rollup and the review
+        // view derive from the SAME status the sections beside them render:
+        // one projection read, one rollup, no second truth.
+        const payload = await composeIssueProjectionDetail(
+          StoreAggregateQuery,
+          {
+            ...(options.store === undefined ? {} : { store: options.store }),
+            startPath: process.cwd(),
+          },
+          await resolveProjectionContext(),
+          issueId
         );
-        // The delivery rollup derives from the SAME status the section beside
-        // it renders — one projection read, one rollup, no second truth. The
-        // review view derives at the same call site, composing that rollup and
-        // the attention items over the same status.
-        const revisionId = detail.plan?.revisionId ?? null;
-        const delivery = deriveIssueDeliveryEvidence(revisionId, status);
-        const review = deriveIssueReview(issueId, revisionId, status);
         if (options.json) {
-          printJson({
-            issue: detail.issue,
-            plan: detail.plan,
-            status,
-            delivery,
-            review,
-            complete: detail.complete,
-            unsearchedRefs: detail.unsearchedRefs,
-            problems: detail.problems,
-          });
+          printJson(payload);
           return;
         }
-        renderIssueDetail(detail, status, delivery, review, widening.projectAliases);
+        renderIssueDetail(
+          {
+            issue: payload.issue,
+            plan: payload.plan,
+            complete: payload.complete,
+            unsearchedRefs: payload.unsearchedRefs,
+            problems: payload.problems,
+          },
+          payload.status,
+          payload.delivery,
+          payload.review,
+          projectAliasesFromStatus(payload.status)
+        );
       } catch (error) {
         emitFailure(options.json, { issue: null }, error, 'store_issue_show_failed');
       }

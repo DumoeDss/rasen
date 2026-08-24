@@ -71,6 +71,15 @@ const KNOWN_SLOW_TEST_WEIGHTS_MS: Record<string, number> = {
   // Real Git fixture (`createStoreWorkspaceFixture`) driven through both the
   // in-process handlers and a `runCLI` subprocess per test (store-issue-resources).
   'test/core/management-api/stores.test.ts': 199980,
+  // Six real-Git Store/Issue/link scenarios, including a daemon route and
+  // repeated byte-parity reads (issue-operations-and-unlinked, task 4.4).
+  // Measured at ~241s solo wall-clock on Windows (198s test body).
+  'test/core/management-api/change-issue-links.test.ts': 241000,
+  // Same real-Git fixture class (a two-revision Issue plus a damaged plan
+  // revision built per test), the in-process projection handlers, and a
+  // `startManagementServer` + six `runCLI` subprocess pairs for the byte-parity
+  // witness (issue-read-surface, task 3.4). Measured at ~230s solo on Windows.
+  'test/core/management-api/issue-projection.test.ts': 240000,
   // Same fixture class, plus 26 scenario cases that each commit real Git
   // objects (store-issue-resources, task 8.5): a wide relative-size gap from
   // the 38KB source file to this solo wall-clock is expected, not a fluke.

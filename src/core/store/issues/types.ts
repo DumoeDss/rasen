@@ -77,6 +77,8 @@ export type StoreIssueErrorCode =
   /** The referenced instance belongs to another Store. */
   | 'issue_reference_foreign_store'
   | 'execution_plan_revision_exists'
+  /** A conditional publication was based on a revision that is no longer latest. */
+  | 'execution_plan_revision_conflict'
   | 'execution_plan_cycle'
   | 'execution_plan_node_duplicate'
   /** A published revision no longer matches its recorded canonical digest. */
@@ -425,6 +427,12 @@ export type IssuePlanPipelineKnown = (name: string) => boolean;
 
 export interface PublishExecutionPlanInput extends StoreIssueSelector {
   readonly nodes: readonly ExecutionPlanNodeInput[];
+  /**
+   * Optional compare-and-publish precondition. Omitted preserves the existing
+   * unconditional allocation; null requires no current revision; a revision
+   * id requires that exact latest revision.
+   */
+  readonly expectedRevisionId?: ExecutionPlanRevisionId | null;
   /**
    * Registry membership test for node `suggestedPipeline` values. When a node
    * carries a suggestion and no test was supplied, publication refuses rather

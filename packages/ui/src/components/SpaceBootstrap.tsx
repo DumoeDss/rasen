@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import * as client from '../api/client.js';
-import { spaceRouteFromSelector } from '../store/use-space.js';
+import { spaceHomeHref, spaceRouteFromSelector } from '../store/use-space.js';
 import { useT } from '../i18n/store.js';
 
 /**
  * The `/` (and unknown-path) bootstrap (management-ui-shell design D1). It
  * never renders lasting content — it resolves a planning space and redirects
- * to that space's canonical `/p/<id>/board` or `/s/<id>/board` route:
+ * to that space's canonical project Board or Store Issues route:
  *
  *   1. `?space=<selector>` from the launch URL `rasen ui` prints (which
  *      survives `token.ts`'s scrub — it preserves `location.search`). Parsed
@@ -41,7 +41,8 @@ export function SpaceBootstrap() {
         const health = await client.health();
         if (cancelled) return;
         if (health.project) {
-          route(`/p/${encodeURIComponent(health.project.projectId)}/board`, true);
+          const id = health.project.projectId;
+          route(spaceHomeHref({ type: 'project', id, selector: `project:${id}` }), true);
           return;
         }
       } catch {
@@ -54,8 +55,14 @@ export function SpaceBootstrap() {
         if (cancelled) return;
         const first = spaces[0];
         if (first) {
-          const prefix = first.type === 'project' ? 'p' : 's';
-          route(`/${prefix}/${encodeURIComponent(first.id)}/board`, true);
+          route(
+            spaceHomeHref({
+              type: first.type,
+              id: first.id,
+              selector: `${first.type}:${first.id}`,
+            }),
+            true
+          );
           return;
         }
       } catch {

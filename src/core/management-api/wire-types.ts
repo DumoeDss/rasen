@@ -54,6 +54,12 @@ import type {
   ResolvedExecutionPlan,
 } from '../store/query/types.js';
 import type { IssueRecordResult, ExecutionPlanResult } from '../store/issues/types.js';
+import type {
+  ChangeIssueLinksPayload,
+  IssueProjectionDetailPayload,
+  IssueProjectionListPayload,
+  StoreAttentionPayload,
+} from '../issue-read/index.js';
 
 /** A registered project, or the server's launch project. Mirrors config-api's `ProjectRef`. */
 export interface ProjectRef {
@@ -346,8 +352,31 @@ export interface SubmitChangeRequest {
 export interface SessionSpaceWire {
   type: 'project' | 'store';
   id: string;
-  root?: string;
+  root: string;
+  /** Stable planning identities frozen at launch; every field is independently optional. */
+  planning?: {
+    storeUid?: string;
+    storeId?: string;
+    projectId?: string;
+    targetLineId?: string;
+  };
 }
+
+/** Mirrors the frozen runtime execution union sent by `sessions.ts#toWire`. */
+export type SessionExecutionWire =
+  | { kind: 'planning-only' }
+  | {
+      kind: 'project';
+      projectId: string;
+      root: string;
+      home?: string;
+      worktree?: {
+        root: string;
+        worktreeInstanceId: string;
+        ref?: string;
+        headOid?: string;
+      };
+    };
 
 /** `POST /api/v1/changes` success response: the CLI-created change, as reported by its own `--json` output. */
 export interface SubmitChangeResponse {
@@ -691,6 +720,8 @@ export interface SessionRecordWire {
   cwd: string;
   /** Planning-space attribution frozen at launch (design D3); absent when the cwd yielded no derivable space. */
   space?: SessionSpaceWire;
+  /** Frozen execution selection; absent only for legacy records. */
+  execution?: SessionExecutionWire;
   pid?: number;
   agentSessionId?: string;
   state: 'starting' | 'running' | 'exiting' | 'exited';
@@ -1439,6 +1470,28 @@ export type StoreIssueReferencesResponse = IssueSummaryPage;
 /** `GET /api/v1/stores/execution-plan` response. */
 export type StoreExecutionPlanResponse = ResolvedExecutionPlan;
 
+/**
+ * The three Issue PROJECTION reads (`issue-read-surface` design D2), aliased
+ * to the core composition's own payload types under the same
+ * unwrapped-passthrough rule as every response above: the wire body IS the
+ * body `store issue list|show --json` and `store attention --json` print,
+ * because both callers compose it through the same functions. Review has no
+ * path of its own — it is a named key of the single-Issue read, derived from
+ * the same status on the same read.
+ */
+
+/** `GET /api/v1/stores/issue-projections` response. */
+export type StoreIssueProjectionsResponse = IssueProjectionListPayload;
+
+/** `GET /api/v1/stores/issue-projection` response. */
+export type StoreIssueProjectionResponse = IssueProjectionDetailPayload;
+
+/** `GET /api/v1/stores/issue-attention` response. */
+export type StoreIssueAttentionResponse = StoreAttentionPayload;
+
+/** `GET /api/v1/stores/change-issue-links` response. */
+export type StoreChangeIssueLinksResponse = ChangeIssueLinksPayload;
+
 /** `POST /api/v1/stores/issues` and `POST /api/v1/stores/issue-state` response — both write one Issue record. */
 export type StoreIssueRecordResponse = IssueRecordResult;
 
@@ -1469,12 +1522,18 @@ export interface StoreExecutionPlanNodeInput {
   changeAlias?: string;
   summary?: string;
   dependsOn?: string[];
+  lifecycle?: string;
+  reason?: string;
+  suggestedPipeline?: string;
+  rationale?: string;
+  uncertainty?: string;
 }
 
 /** `POST /api/v1/stores/execution-plan` request body. */
 export interface StoreExecutionPlanPublishRequest {
   issueId?: string;
   nodes?: StoreExecutionPlanNodeInput[];
+  expectedRevisionId?: string | null;
 }
 
 // ---------------------------------------------------------------------------

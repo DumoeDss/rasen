@@ -9,7 +9,7 @@ import {
   refreshSpaceCatalog,
 } from '../store/space-catalog.js';
 import type { LocalPathSelectionController } from '../store/use-local-path-selection.js';
-import { spaceHref, type Space } from '../store/use-space.js';
+import { spaceHomeHref, type Space } from '../store/use-space.js';
 import { LocalPathPicker } from './LocalPathPicker.js';
 import { useT } from '../i18n/store.js';
 
@@ -70,7 +70,7 @@ export function CreateSpaceDialog({ onCancel }: { onCancel: () => void }) {
         id: result.space.id,
         selector: `${result.space.type}:${result.space.id}`,
       };
-      route(spaceHref(space, 'board'));
+      route(spaceHomeHref(space));
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 401) return;
       setSubmitting(false);
