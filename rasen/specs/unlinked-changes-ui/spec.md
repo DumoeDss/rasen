@@ -1,7 +1,11 @@
 # unlinked-changes-ui Specification
 
 ## Purpose
-TBD - created by archiving change issue-operations-and-unlinked. Update Purpose after archive.
+
+Define Store-scoped discovery and explicit association of provably unlinked Changes, including
+evidence-based eligibility, safe attach and create workflows with revision checks, honest partial
+outcomes, and no synthesized Issue state.
+
 ## Requirements
 ### Requirement: The Unlinked Changes surface shows only provably unlinked Changes
 

@@ -1,7 +1,11 @@
 # issue-operations-ui Specification
 
 ## Purpose
-TBD - created by archiving change issue-operations-and-unlinked. Update Purpose after archive.
+
+Define the Store-scoped Operations surface for observing and controlling Sessions and Runs across
+member projects while keeping actual cwd, frozen execution binding, attribution, API-authorized
+controls, and fresh server-derived state distinct.
+
 ## Requirements
 ### Requirement: Store Operations prioritizes active and abnormal execution
 

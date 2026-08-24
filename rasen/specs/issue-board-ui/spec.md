@@ -1,7 +1,11 @@
 # issue-board-ui Specification
 
 ## Purpose
-TBD - created by archiving change issue-read-surface. Update Purpose after archive.
+
+Define the Store-scoped Issue Board and Issue Detail read surfaces, including five-phase
+presentation, payload-backed status and provenance, member-project filtering, route ownership,
+and evidence-directed handoffs without client-side Issue truth.
+
 ## Requirements
 ### Requirement: The Issue Board renders one card per Issue in the five phase lanes
 
