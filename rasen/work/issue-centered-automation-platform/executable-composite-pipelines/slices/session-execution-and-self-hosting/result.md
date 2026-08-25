@@ -337,3 +337,55 @@ provider change 取任何新 receipt。这是 Roadmap「版本边界」出口条
 ECP-7 继续为 `partial`。本次未新增已验证退出证据；执行前沿收敛为单一 runnable
 change（`ecp-hosted-best-effort-cutover`），executor 的「DO NOT PROPOSE YET」
 条件随之消解。North Star 逐字节未动。
+
+## Reconcile：2026-08-17 账面对齐与收尾延后（操作者拍板）
+
+### 触发
+
+上一次 reconcile 停在 2026-08-07（锁定决策 13）。此后 ECP-7 执行前沿的五个
+child 已全部交付并归档，但本 Result 与 `work.yaml` 未回写。本次按各 child
+archive 证据对齐账面，并记录操作者的收尾延后决定。
+
+### 观察事实（来自各 child `archive.json` 与 git，非转述）
+
+锁定决策 13 之后，串行链按序推进，五个 child 已 ship + archive：
+
+| Child | 归档时间（UTC） | ship commit |
+| --- | --- | --- |
+| `ecp-hosted-best-effort-cutover` | 2026-08-07 18:24 | `cb0b4ce4` |
+| `ecp-native-process-capsule-closure` | 2026-08-08 06:44 | `d17795b8` |
+| `ecp-durable-agent-session-host` | 2026-08-08 07:12 | `4a167bfa` |
+| `ecp-frozen-action-session-executor` | 2026-08-09 07:58 | `ade38535` |
+| `ecp-session-policy-and-control-parity` | 2026-08-09 09:02 | `6eb46a59` |
+
+由此：执行器与策略/控制 parity 已在子 change 层面交付（部分 receipt 被显式
+记为 ECP-8 延后项，见 policy-parity 的 `evidence/ecp8-deferred-receipts.md`）；
+slice 验收 7（非 ECP 玩具 Change 自宿主）与验收 8 的最终账面仍未取证。
+`ecp-session-self-hosting-vertical-proof` 目录仍为空，未开始；ECP-8
+（Completion Audit and Release Truth）未开始。
+
+### 已记录的人类决定
+
+操作者于 2026-08-17 决定：**ECP 先不做收尾**——`ecp-session-self-hosting-vertical-proof`
+与 ECP-8 暂不启动，注意力转向 0.3.0 Issue 层的规划与启动评估。该决定：
+
+- 不改变 ECP-7 的 `partial` 分类与任何验收判据；
+- 不产生任何新的完成声明；五个 child 的交付事实以各自 archive 为准；
+- ECP-8 的 OS × 后端 receipt 矩阵、真实 macOS runner 义务（缺失时显式记
+  缺口）、legacy engine 保留/退休决定、文档/版本/发布事实一致性等责任全部
+  保留，待恢复收尾时履行；
+- 单一 0.2.0 PR 边界等发布约束不变。
+
+### 与父级 gate 的关系（待显式登记，本文件不代作决定）
+
+父级 roadmap 的 Phase 0 进入条件是「ECP-5 产品与发布闭环已通过」。收尾延后
+意味着 Issue 层工作可能在 ECP-8 通过之前启动；若如此操作，须按父级路线的
+版本边界条款在父级 roadmap 显式登记 scope decision，并同步说明 0.2.0 能力
+声明将以何种形式（如未发布基线）被 Issue 层依赖。
+
+### Reconcile 分类
+
+ECP-7 维持 **`partial`**。账面与事实已对齐：五个 child 已交付归档，剩余
+`ecp-session-self-hosting-vertical-proof`（未开始）与 ECP-8（未开始），两者
+均延后且无排期。Direction 维持 `active`；`activeSlice` 维持
+`slices/session-execution-and-self-hosting`（已选未通过，非放弃）。
