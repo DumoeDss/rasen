@@ -1,0 +1,92 @@
+
+ RUN  v3.2.6 E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code
+
+ ❯ test/core/store/identity.test.ts (52 tests | 1 failed) 1785ms
+   ✓ store identity > permanent identity helpers > mints an RFC 4122 identity and accepts any textual form 6ms
+   ✓ store identity > permanent identity helpers > rejects junk rather than treating it as an opaque identity 3ms
+   ✓ store identity > permanent identity helpers > compares identities after trim + lowercase 3ms
+   ✓ store identity > permanent identity helpers > flags an all-digit alias 3ms
+   ✓ store identity > store metadata schema > round-trips v1 metadata unchanged 15ms
+   ✓ store identity > store metadata schema > round-trips v2 metadata carrying the permanent identity 5ms
+   ✓ store identity > store metadata schema > reports a malformed identity instead of accepting it 6ms
+   ✓ store identity > store metadata schema > rejects an unknown metadata key rather than tolerating it 8ms
+   ✓ store identity > registry schema and key grammar > reads a v1 registry with alias keys unchanged 14ms
+   ✓ store identity > registry schema and key grammar > reads a v2 registry keyed by permanent identity 6ms
+   ✓ store identity > registry schema and key grammar > chooses the key grammar from the file version, never the key text 5ms
+   ✓ store identity > registry schema and key grammar > rejects a v2 store key that is not a permanent identity 5ms
+   ✓ store identity > registry schema and key grammar > rejects a v2 store entry with no display alias 6ms
+   ✓ store identity > registry schema and key grammar > keeps project entries alias-keyed in both versions 4ms
+   ✓ store identity > registry schema and key grammar > refuses the v2 rewrite and names the entries that block it 30ms
+   ✓ store identity > registry schema and key grammar > re-keys by permanent identity once every store entry has one 39ms
+   ✓ store identity > project store declaration > reads the legacy single-name form 19ms
+   ✓ store identity > project store declaration > reads the durable object form 22ms
+   ✓ store identity > project store declaration > REPORTS a declaration with no usable identity instead of dropping it 20ms
+   ✓ store identity > project store declaration > REPORTS a non-string, non-object declaration 9ms
+   ✓ store identity > project store declaration > reports no declaration as absent, not malformed 18ms
+   ✓ store identity > remote credentials > rejects an embedded password or token 3ms
+   ✓ store identity > remote credentials > allows the ordinary SSH forms 2ms
+   ✓ store identity > remote credentials > redacts a credential-bearing remote identically everywhere 4ms
+   ✓ store identity > remote credentials > never echoes the rejected value back in full 3ms
+   ✓ store identity > remote credentials > refuses to write a credential-bearing remote into store metadata 11ms
+   ✓ store identity > resolveStoreBinding > resolves absent for a project that declares no store 3ms
+   ✓ store identity > resolveStoreBinding > resolves by permanent identity and says so 52ms
+   ✓ store identity > resolveStoreBinding > reports alias drift as a warning without blocking 60ms
+   ✓ store identity > resolveStoreBinding > reports remote divergence as informational 51ms
+   ✓ store identity > resolveStoreBinding > resolves a legacy single-name declaration and offers the upgrade 49ms
+   ✓ store identity > resolveStoreBinding > reports zero alias matches as not available on this machine 4ms
+   ✓ store identity > resolveStoreBinding > names the declared remote in the repair when the store is not here 3ms
+   ✓ store identity > resolveStoreBinding > reports several alias matches as ambiguous and picks none 97ms
+   ✓ store identity > resolveStoreBinding > fails closed when the registered checkout carries a different identity 49ms
+   ✓ store identity > resolveStoreBinding > reports a uid mismatch when the named entry is not that store 49ms
+   ✓ store identity > resolveStoreBinding > reports missing metadata distinctly 51ms
+   ✓ store identity > resolveStoreBinding > reports an unhealthy store root distinctly 46ms
+   ✓ store identity > resolveStoreBinding > reports an unreadable declaration distinctly 4ms
+   ✓ store identity > resolveStoreBinding > never resolves a store root against its own declaration 50ms
+   ✓ store identity > resolveStoreBinding > performs zero writes on every path 124ms
+   ✓ store identity > path-form independence > matches a registered root that differs only in separator or case 77ms
+   ✓ store identity > path-form independence > does not report a mismatch for a self-declaration whose root differs only in path form 52ms
+   ✓ store identity > registered-store matching by repository identity > matches a non-registered root that shares the entry repository 74ms
+   ✓ store identity > registered-store matching by repository identity > refuses a shared repository whose Store metadata identity disagrees 77ms
+   ✓ store identity > registered-store matching by repository identity > leaves matching unchanged when the probe cannot answer 70ms
+   ✓ store identity > registered-store matching by repository identity > refuses a different repository that carries the same Store metadata 67ms
+   ✓ store identity > registered-store matching by repository identity > spawns the repository probe at most once per path when a cache is shared 94ms
+   ✓ store identity > registered-store matching by repository identity > memoizes a null probe result rather than re-spawning to relearn it 66ms
+   ✓ store identity > registered-store matching by repository identity > is unchanged when no cache is supplied 77ms
+   ✓ store identity > registered-store matching by repository identity > keeps a worktree of a registered Store from inheriting its own declaration 73ms
+   × store identity > registered-store matching by repository identity > threads a caller-supplied probe cache through resolveStoreBinding 98ms
+     → expected [ …(6) ] to deeply equal [ …(2) ]
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/core/store/identity.test.ts > store identity > registered-store matching by repository identity > threads a caller-supplied probe cache through resolveStoreBinding
+AssertionError: expected [ …(6) ] to deeply equal [ …(2) ]
+
+- Expected
++ Received
+
+  [
+    "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-store-identity-ZaYqyT\\worktree-i",
+    "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-store-identity-ZaYqyT\\main-i",
++   "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-store-identity-ZaYqyT\\worktree-i",
++   "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-store-identity-ZaYqyT\\main-i",
++   "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-store-identity-ZaYqyT\\worktree-i",
++   "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-store-identity-ZaYqyT\\main-i",
+  ]
+
+ ❯ test/core/store/identity.test.ts:904:22
+    902|       // `repositoryIdentity` and dropping the cache makes this six sp…
+    903|       // which is design.md D2's "cached per invocation" claim being i…
+    904|       expect(probed).toEqual([worktree, storeRoot]);
+       |                      ^
+    905|       expect(cache.size).toBe(2);
+    906|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 51 passed (52)
+   Start at  16:49:44
+   Duration  4.11s (transform 499ms, setup 87ms, collect 1.63s, tests 1.78s, environment 0ms, prepare 204ms)
+
+EXIT=1

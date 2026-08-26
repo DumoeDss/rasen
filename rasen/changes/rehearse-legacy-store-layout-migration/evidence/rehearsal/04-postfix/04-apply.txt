@@ -1,0 +1,11 @@
+$ (cd <temp>/copy-postfix) rasen store migrate-layout rasen-store --apply
+Store rasen-store — migration published
+  published: .rasen-store/migration/receipts/400f2969ce1d94b1d86dee4b96db31c4de456f2035cbdade028119e2d82a8725.json
+  published: .rasen-store/store.yaml
+  receipt:   <temp>\copy-postfix\.rasen-store\migration\receipts\400f2969ce1d94b1d86dee4b96db31c4de456f2035cbdade028119e2d82a8725.json
+
+Suggested commits (not executed — Rasen never writes your git index):
+  Store repo: record the project partitions, catalogs, and the migration receipt. The flat tree is retired separately.
+    git -C <temp>\copy-postfix add -- rasen .rasen-store && git -C <temp>\copy-postfix commit -m "chore(store): migrate rasen-store planning to layout v2"
+
+[exit code: 0]

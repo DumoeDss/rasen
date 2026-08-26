@@ -1,0 +1,35 @@
+### What the operator's git working tree looks like after the trivial migration
+
+$ git -C <temp>/copy-postfix status --porcelain
+ M .rasen-store/store.yaml
+ D rasen/changes/archive/.gitkeep
+ M rasen/config.yaml
+ D rasen/specs/.gitkeep
+?? .rasen-store/migration/
+?? .rasen-store/target-lines/
+
+# The two .gitkeep files were the ONLY tracked content of the flat tree, so
+# retirement shows up as their deletion. That is correct for layout v2, which
+# has no writable flat Store namespace; the operator commits the deletion with
+# the pathspec-scoped command the command printed.
+
+$ find <temp>/copy-postfix -not -path '*/.git/*' -not -name .git
+<temp>/copy-postfix
+<temp>/copy-postfix/.rasen
+<temp>/copy-postfix/.rasen/migration
+<temp>/copy-postfix/.rasen/migration/staging
+<temp>/copy-postfix/.rasen-store
+<temp>/copy-postfix/.rasen-store/migration
+<temp>/copy-postfix/.rasen-store/migration/receipts
+<temp>/copy-postfix/.rasen-store/migration/receipts/400f2969ce1d94b1d86dee4b96db31c4de456f2035cbdade028119e2d82a8725.json
+<temp>/copy-postfix/.rasen-store/store.yaml
+<temp>/copy-postfix/.rasen-store/target-lines
+<temp>/copy-postfix/.rasen-store/target-lines/main.yaml
+<temp>/copy-postfix/rasen
+<temp>/copy-postfix/rasen/config.yaml
+
+$ cat .rasen-store/store.yaml
+version: 2
+uid: f35acc7d-e088-4186-9ad6-b4b770649b0b
+id: rasen-store
+layoutVersion: 2

@@ -48,6 +48,7 @@
 | Store Operations / Unlinked Changes 界面 | `packages/ui/src/components/OperationsPage.tsx`（Store roster 扇出 Sessions/Runs、cwd 与 frozen execution 分离、D1 Change/Issue attribution、member-local retry/paging/live polling）+ `operations-model.ts`（纯分类/归属）+ `OperationsSection.tsx`（Task Detail 与 Store 页共用的 server-authorized Run panel）；`UnlinkedChangesPage.tsx` + `LinkChangeDialog.tsx`（D1 inventory、preview-confirm attach/create、revision CAS、partial-create recovery）。路由 `/s/:storeId/operations|unlinked-changes` 与导航在 `app.tsx`/`Layout.tsx`，均 Store-only、无 `/p/` 对、不进 `SWITCHABLE_SECTIONS` |
 | `rasen store` 命令 | `src/commands/store.ts` |
 | `rasen store issue` 命令（Issue CRUD + 状态面 + 验收面） | `src/commands/store-issue.ts` |
+| `rasen store workspace` 命令（planning/execution worktree **对**，与 `rasen workset` 无关） | `src/commands/workspace.ts`（plan / plan --apply / apply / show / cleanup；`--apply` = 一次调用内计划+应用，路由到 `StoreWorkspace.prepare()`）+ `src/core/store/workspace/`（`module.ts` = plan/apply/prepare/describe/cleanup 编排与锁持有；`plan.ts` = 只读全量计划：create-vs-reuse、pair 分支 absent/reattach/被别的 worktree 占用三态、own-Change index 条目对账；`apply.ts` = 只消费 token 的重校验+写入（created 侧要的是**缺席**，recorded identity 只对同 root 的续跑比对）；`registry.ts` = 机器索引=可重建投影、对任何事都不是权威；`locks.ts` = scope→workspace→change→integration 固定序） |
 | **Workflow / Pipeline** | |
 | 添加 / 修改 built-in workflow 定义 | `src/core/workflow-registry/builtins.ts`（ID 表 + 适配表） |
 | workflow 目录加载（built-in + user） | `src/core/workflow-registry/registry.ts`（`loadWorkflowCatalog`） |

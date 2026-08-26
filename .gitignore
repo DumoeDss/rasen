@@ -178,3 +178,8 @@ session-audit-*.json
 # for spotting a genuinely untracked receipt, which is how an uncommitted test file
 # cited as a receipt's evidence stayed invisible until a reviewer checked `git log`.
 .cargo-target-*/
+
+# Local v1 store marker leftover in this repo root (2026-08-26): it made the CLI
+# classify the code repo itself as a legacy flat Store root and hard-refuse every
+# flat-path rasen new/archive. The repo is a code project, not a Store.
+.rasen-store/

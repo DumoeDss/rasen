@@ -1,0 +1,10 @@
+$ (cd <temp>/copy-postfix) rasen store migrate-layout rasen-store --status
+Store rasen-store — migration status
+  ref:   refs/heads/master
+  phase: published
+  plan:  400f2969ce1d94b1d86dee4b96db31c4de456f2035cbdade028119e2d82a8725
+  paths created by this run:
+    .rasen-store/migration/receipts/400f2969ce1d94b1d86dee4b96db31c4de456f2035cbdade028119e2d82a8725.json
+  publication recorded: yes
+
+[exit code: 0]

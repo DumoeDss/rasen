@@ -102,7 +102,8 @@ const UNRESOLVED_TEXT: Record<UnresolvedReason, string> = {
   'evidence-conflict': 'two lower-priority evidence sources name different projects',
   'shared-spec': 'two or more projects contributed deltas and no resolution is declared',
   'non-member-owner': 'the evidence names a project that is not a member of this Store',
-  'unrecordable-identity': 'the named project id fails the v2 portable identifier contract',
+  'unrecordable-identity':
+    'an id required to address the layout v2 destination fails the portable identifier contract',
   'missing-target-line': 'no target line is declared for an item that needs one',
 };
 
@@ -115,6 +116,8 @@ const BLOCKED_TEXT: Record<BlockedReason, string> = {
   'target-line-catalog-conflict':
     'the declared target line disagrees with the catalog already present in the Store',
   'dirty-source': 'the source path has tracked modifications or staged changes',
+  'ref-not-checked-out': 'no ref is checked out in the invoking Store worktree',
+  'ref-unborn': 'the checked-out ref has no commit, so there is no recorded state to verify against',
 };
 
 interface DraftItem {
@@ -140,8 +143,16 @@ interface DraftItem {
   planInput?: MigrationItem['planInput'];
 }
 
-function unresolved(reason: UnresolvedReason, repair: string): Pick<DraftItem, 'state' | 'reason' | 'repair'> {
-  return { state: { kind: 'unresolved', reason }, reason: UNRESOLVED_TEXT[reason], repair };
+function unresolved(
+  reason: UnresolvedReason,
+  repair: string,
+  detail?: string
+): Pick<DraftItem, 'state' | 'reason' | 'repair'> {
+  return {
+    state: { kind: 'unresolved', reason },
+    reason: detail === undefined ? UNRESOLVED_TEXT[reason] : `${UNRESOLVED_TEXT[reason]}: ${detail}`,
+    repair,
+  };
 }
 
 function blocked(reason: BlockedReason, repair: string, detail?: string): Pick<DraftItem, 'state' | 'reason' | 'repair'> {
@@ -344,13 +355,26 @@ export async function buildMigrationPlan(
 
       if (owner === undefined) {
         const reason = decision.reason ?? 'unknown-owner';
+        const mappingKey = `${kind === 'change' ? 'changes' : 'archive'}.${name}`;
+        const mappingRepair =
+          mapping?.version === 2
+            ? `Declare ${mappingKey} as kind: project-change with project, or kind: store-issue with explicit Issue fields.`
+            : `Declare ${mappingKey}.project in the mapping file.`;
+        // The mapping file is NOT the escape hatch for a non-member owner that
+        // the item itself recorded: `validateMappingAgainstInventory` refuses
+        // any entry contradicting a recorded identity, so following the generic
+        // repair produced `mapping-contradicts-recorded-identity` and left the
+        // operator with no named way out at all (triage O8).
+        const recorded = recordedIdentity.get(key);
+        const nonMemberRecorded = reason === 'non-member-owner' && recorded !== undefined;
         Object.assign(
           draft,
           unresolved(
             reason,
-            mapping?.version === 2
-              ? `Declare ${kind === 'change' ? 'changes' : 'archive'}.${name} as kind: project-change with project, or kind: store-issue with explicit Issue fields.`
-              : `Declare ${kind === 'change' ? 'changes' : 'archive'}.${name}.project in the mapping file.`
+            nonMemberRecorded
+              ? `Make project ${recorded} a member of Store '${context.storeId}' (for example 'rasen store add-project <path> --to ${context.storeId}'), commit the membership record, and re-plan. The mapping file cannot reassign this item: the Change records that identity, and a mapping entry contradicting a recorded identity is refused.`
+              : mappingRepair,
+            nonMemberRecorded ? `${recorded} is recorded by the item itself` : undefined
           )
         );
         if (decision.conflictingProjects !== undefined) {
@@ -387,11 +411,22 @@ export async function buildMigrationPlan(
           ? safeLayoutPath(storeRoot, { kind: 'active-change', projectId: owner, changeId: name }, flavor)
           : archiveEntryDestination(storeRoot, owner, targetLine, name, flavor);
       if (destination === null) {
+        // Two different facts land here, and reporting the wrong one costs the
+        // operator the whole investigation: a UTF-8 Change directory name is
+        // rejected by `parseChangeId` while its owning project id is perfectly
+        // portable, and the old text blamed the project id and offered a
+        // mapping entry that cannot help (triage O9).
+        const ownerUnrecordable = !isProjectId(owner);
         Object.assign(
           draft,
           unresolved(
             'unrecordable-identity',
-            `Rename the item or declare a portable owner in the mapping file; migration never sanitizes an id.`
+            ownerUnrecordable
+              ? `Declare ${kind === 'change' ? 'changes' : 'archive'}.${name}.project with a portable project id in the mapping file; migration never sanitizes an id.`
+              : `Rename ${draft.sourceRelative} to a lowercase kebab id in the Store worktree, commit it, and re-plan; migration never sanitizes an id, and the mapping file cannot rename an item.`,
+            ownerUnrecordable
+              ? `the owner project id '${owner}' is not a portable v2 identifier`
+              : `the item name '${name}' is not a lowercase kebab id`
           )
         );
         items.push(draft);
@@ -705,16 +740,57 @@ export async function buildMigrationPlan(
   }
 
   if (context.storeUid === undefined) {
+    const identityRepair = `Run 'rasen store upgrade-identity ${context.storeId} --apply' first.`;
     for (const item of items) {
       if (item.kind !== 'change' || item.state.kind === 'blocked') continue;
-      Object.assign(
-        item,
-        blocked(
-          'store-identity-missing',
-          `Run 'rasen store upgrade-identity ${context.storeId} --apply' first.`
-        )
-      );
+      Object.assign(item, blocked('store-identity-missing', identityRepair));
     }
+  }
+
+  // --- Apply-token preconditions, as REPORTED blockers ----------------------
+  //
+  // `applicable` used to be computed from item blockers alone while the apply
+  // token separately required a Store identity, a checked-out ref, and a
+  // commit. Nothing reconciled the two, and both store-level blocks were
+  // stamped onto items that may not exist: a Store with no active Changes
+  // carried the identity block nowhere, so it reported zero blockers, computed
+  // `applicable: true`, minted no token, and the preview printed "Ready to
+  // apply" while `--apply` exited non-zero having printed nothing at all.
+  //
+  // Every fact the token needs is enumerated HERE and reported as a blocked
+  // item on the Store's own metadata, so "this plan is applicable" and "a token
+  // can be minted for this plan" are the same statement for every Store shape,
+  // including one with no content at all. A precondition added to the token
+  // later must be added here too; the invariant below fails loudly if it is not.
+  const tokenPreconditions: Array<{ reason: BlockedReason; repair: string }> = [];
+  if (context.storeUid === undefined) {
+    tokenPreconditions.push({
+      reason: 'store-identity-missing',
+      repair: `Run 'rasen store upgrade-identity ${context.storeId} --apply', commit the metadata, then re-plan.`,
+    });
+  }
+  if (inventory.checkedOutRef === undefined) {
+    tokenPreconditions.push({
+      reason: 'ref-not-checked-out',
+      repair:
+        'Check out the branch you want to migrate in this Store worktree and re-plan; migration only ever writes the ref checked out here.',
+    });
+  } else if (inventory.headOid === undefined) {
+    tokenPreconditions.push({
+      reason: 'ref-unborn',
+      repair: 'Commit the Store worktree at least once, then re-plan.',
+    });
+  }
+  for (const precondition of tokenPreconditions) {
+    items.push({
+      kind: 'store-metadata',
+      name: FLAT_RELATIVE.storeMetadata,
+      source: paths.storeMetadata,
+      sourceRelative: FLAT_RELATIVE.storeMetadata,
+      evidence: [],
+      supersededEvidence: [],
+      ...blocked(precondition.reason, precondition.repair),
+    });
   }
 
   // --- Dirty sources and untracked content ----------------------------------
@@ -1045,7 +1121,17 @@ export async function buildMigrationPlan(
 
   const frozenItems = items.map((item) => Object.freeze({ ...item }) as MigrationItem);
   const blockers = frozenItems.filter((item) => item.state.kind !== 'resolved');
-  const applicable = blockers.length === 0 && frozenItems.length > 0;
+  // Applicability is the item verdict and NOTHING else, because every other
+  // precondition is now an item (see the token-precondition block above). A
+  // plan with zero items and zero blockers is vacuously all-resolved, which is
+  // exactly SS11.3's "apply only once every item is resolved". The old
+  // `frozenItems.length > 0` conjunct instead dead-ended an empty legacy flat
+  // Store: partition writes refused it for being legacy
+  // (`legacy_flat_store_requires_migration`) and named the migration, while the
+  // migration refused it for being empty. Its trivial migration publishes the
+  // receipt and the layout declaration and nothing else. This does NOT weaken
+  // the gate: an unresolved or blocked item still refuses exactly as before.
+  const applicable = blockers.length === 0;
 
   const retirementSet = applicable
     ? [
@@ -1093,6 +1179,8 @@ export async function buildMigrationPlan(
   };
 
   const planId = canonicalPlanId(body);
+  // The three conjuncts after `applicable` are TYPE NARROWING only: each fact
+  // they test is a reported blocker above, so an applicable plan has all three.
   const token: MigrationPlanToken | undefined =
     applicable && context.storeUid !== undefined && body.ref !== undefined && body.headOid !== undefined
       ? {
@@ -1103,6 +1191,23 @@ export async function buildMigrationPlan(
           inventoryFingerprint: inventory.fingerprint,
         }
       : undefined;
+
+  // The invariant that makes "applicable" trustworthy, asserted rather than
+  // assumed. Reporting a plan as applicable while minting no token is precisely
+  // the defect this change closed: the preview said "Ready to apply" and
+  // `--apply` refused with no diagnostic. A precondition added to the token
+  // without a matching blocker above lands here loudly instead of shipping the
+  // same silence again.
+  if (applicable && token === undefined) {
+    throw new StoreError(
+      'A migration plan reported itself applicable but minted no apply token, so an apply-token precondition is not reported as a blocker.',
+      'migration_plan_gate_desync',
+      {
+        target: 'migration.plan',
+        fix: 'This is a defect in the migration planner: every apply-token precondition must also be a reported blocked item.',
+      }
+    );
+  }
 
   return Object.freeze({
     planId,
@@ -1161,6 +1266,8 @@ const ItemStateSchema = z.discriminatedUnion('kind', [
         'unrecordable-catalog-field',
         'target-line-catalog-conflict',
         'dirty-source',
+        'ref-not-checked-out',
+        'ref-unborn',
       ]),
     })
     .strict(),
@@ -1173,6 +1280,7 @@ const CommonItemShape = {
     'design-doc',
     'membership-record',
     'adoptions-manifest',
+    'store-metadata',
   ]),
   name: z.string(),
   source: z.string(),
@@ -1727,14 +1835,20 @@ export function planGateError(plan: ImmutableMigrationPlan): StoreError {
         item.repair.length > 0 ? ` — ${item.repair}` : ''
       }`
   );
+  // The mapping file resolves UNRESOLVED ownership. It cannot clear a blocked
+  // item, and the Store-identity block is blocked, so a plan held up only by
+  // that one used to be answered with 'the mapping file is the only escape
+  // hatch' — which is exactly the kind of repair-that-does-not-work this
+  // change exists to remove.
+  const mappingResolvable = plan.blockers.every((item) => item.state.kind === 'unresolved');
   return new StoreError(
-    plan.blockers.length === 0
-      ? 'There is nothing to migrate: no flat planning content was inventoried for this ref.'
-      : `Migration cannot apply while ${plan.blockers.length} item(s) are unresolved or blocked:\n  - ${lines.join('\n  - ')}`,
+    `Migration cannot apply while ${plan.blockers.length} item(s) are unresolved or blocked:\n  - ${lines.join('\n  - ')}`,
     'migration_plan_blocked',
     {
       target: 'migration.plan',
-      fix: 'Resolve every listed item — the mapping file is the only escape hatch; there is no --force and no partial migration.',
+      fix: mappingResolvable
+        ? `Resolve every listed item — the mapping file is the only escape hatch; there is no --force and no partial migration.`
+        : `Follow the repair named for each listed item; there is no --force and no partial migration. The mapping file resolves unresolved ownership only, never a blocked item.`,
     }
   );
 }

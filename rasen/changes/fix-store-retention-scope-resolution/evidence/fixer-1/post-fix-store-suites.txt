@@ -1,0 +1,33 @@
+
+ RUN  v3.2.6 E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code
+
+ ✓ test/core/store/identity.test.ts (52 tests) 6493ms
+   ✓ store identity > resolveStoreBinding > reports remote divergence as informational  318ms
+   ✓ store identity > resolveStoreBinding > reports several alias matches as ambiguous and picks none  393ms
+   ✓ store identity > resolveStoreBinding > performs zero writes on every path  506ms
+   ✓ store identity > path-form independence > matches a registered root that differs only in separator or case  313ms
+   ✓ store identity > registered-store matching by repository identity > matches a non-registered root that shares the entry repository  355ms
+ ✓ test/core/store-planning/finalize-scope.test.ts (14 tests) 1186ms
+   ✓ the finalize-change intent across the four scope kinds > opens a Store v2 project scope and reports the frozen identity  523ms
+ ✓ test/core/store-planning/store-planning.test.ts (51 tests) 8449ms
+   ✓ StorePlanning.open > keeps Store aggregate addresses separate from project content  319ms
+   ✓ StorePlanning.open > never deletes a non-cooperating Windows-style replacement after reservation  302ms
+   ✓ StorePlanning.open > uses the nearest planning-worktree marker ahead of the registered integration root  419ms
+   ✓ StorePlanning.open > pierces a legacy worktree registry duplicate to its registered main checkout  2552ms
+   ✓ the planning-bound gate > admits an agreeing pair while a sibling pair for the same line is torn  547ms
+ ✓ test/core/store-planning/store-scope-resolution-e2e.test.ts (8 tests) 54247ms
+   ✓ store scope resolution from a real workspace pair > resolves a finalization scope from the planning-worktree seat  13766ms
+   ✓ store scope resolution from a real workspace pair > resolves the store-main seat with an explicit --project selector  8772ms
+   ✓ store scope resolution from a real workspace pair > refuses finalization from the store-main seat for the integration checkout, not for the catalog  6105ms
+   ✓ store scope resolution from a real workspace pair > matches a linked planning worktree to the registry entry that names the main checkout  5321ms
+   ✓ store scope resolution from a real workspace pair > refuses a worktree whose Store metadata identity disagrees with the entry  5069ms
+   ✓ store scope resolution from a real workspace pair > leaves matching unchanged where the repository probe cannot run  4858ms
+   ✓ store scope resolution from a real workspace pair > refuses when the recorded pair sources disagree on the project  5226ms
+   ✓ store scope resolution from a real workspace pair > refuses with the pair repair when neither the catalog nor a pair says planning-bound  5128ms
+
+ Test Files  4 passed (4)
+      Tests  125 passed (125)
+   Start at  16:57:59
+   Duration  75.96s (transform 14.16s, setup 487ms, collect 62.58s, tests 70.37s, environment 1ms, prepare 2.74s)
+
+EXIT=0

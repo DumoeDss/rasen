@@ -225,6 +225,10 @@ function resolver(
     findRegisteredProject: async () => null,
     sessionContextPath: () => undefined,
     checkoutRole: overrides.checkoutRole ?? (() => 'linked-worktree'),
+    // No pair is recorded by default: these fixtures assert the CATALOG
+    // satisfier of the planning-bound gate, so the recorded-pair satisfier
+    // must contribute nothing unless a case supplies it explicitly.
+    listWorkspacePairs: overrides.listWorkspacePairs ?? (async () => []),
     now: () => new Date('2026-08-07T12:00:00.000Z'),
     mintInstanceSeed: () => parseChangeInstanceSeed(SEED),
     randomSuffix: () => 'deterministic',

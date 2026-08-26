@@ -16,6 +16,10 @@
  * `WorkspacePairId` needs a `ChangeInstanceId`, a `ChangeInstanceId` is minted
  * by `createChange`, and `createChange` requires a verified planning worktree.
  * That circle is what the two phases break.
+ *
+ * `plan` and `apply` remain separate for preview-then-decide; `prepare` runs
+ * both under ONE hold of the same locks, so the preconditions a plan freezes
+ * cannot go stale in a gap between two invocations of the caller's own flow.
  */
 import {
   derivePlanningScopeId,
@@ -117,6 +121,18 @@ function selectDescribedEntry(
   return { entry: null, undecided: entries };
 }
 
+/** What a one-invocation preparation reports: the preview, and the result. */
+export interface PreparedWorkspaceOutcome {
+  /** The plan built and frozen inside the lock hold. */
+  readonly plan: ImmutableWorkspacePlan;
+  /**
+   * Absent when the plan carried blockers. A plan with unsatisfied
+   * preconditions has no token, so there is nothing to apply and nothing was
+   * written — the caller gets the preview and the reasons.
+   */
+  readonly prepared?: PreparedChangeWorkspace;
+}
+
 export interface StoreWorkspaceOptions {
   /**
    * Machine data root. Constructor-scoped because `apply(token)` consumes ONLY
@@ -161,59 +177,125 @@ export class StoreWorkspace implements StoreWorkspaceModule {
   async apply(token: WorkspacePlanToken): Promise<PreparedChangeWorkspace> {
     const plan = await this.loadPlan(token);
     const coordination = this.dependencies.coordination(this.globalDataDir);
+    return withWorkspaceLocks(coordination, this.preparationLocks(plan.scope, plan.changeId), () =>
+      this.applyUnderLocks(plan, token, this.globalDataDir)
+    );
+  }
+
+  /**
+   * Plan and apply in ONE invocation, under one continuous hold of the locks
+   * `apply` takes.
+   *
+   * The two-step path freezes the target line's tip at `plan` time and requires
+   * it unchanged at `apply` time, which is correct — but between two CLI
+   * invocations sits an operator-sized gap, and on a line under active
+   * retention the operator's OWN flow advances the ref inside it. The plan is
+   * then born stale, or goes stale before it is used, and the transaction
+   * invalidates itself for no reason anyone chose.
+   *
+   * Under one hold the gap is milliseconds and same-machine workspace
+   * operations on this scope are serialized. Nothing is weakened: a mover that
+   * does not take these locks — a human commit, a finalization merge — can
+   * still move the ref inside the window, and then revalidation refuses stale
+   * exactly as before. What changes is that repeating the invocation now
+   * CONVERGES, which is what the wedge this change removes used to prevent.
+   *
+   * The scope is resolved twice on purpose: once outside the hold, because lock
+   * keys are made of the scope's permanent identities and nothing else, and
+   * again inside it, because everything the plan FREEZES must be read under the
+   * lock rather than before it.
+   */
+  async prepare(input: PrepareChangeWorkspaceInput): Promise<PreparedWorkspaceOutcome> {
+    const globalDataDir = input.globalDataDir ?? this.globalDataDir;
+    const withDataDir = globalDataDir === undefined ? {} : { globalDataDir };
+    const outer = await resolveWorkspaceContext(this.dependencies, {
+      ...input,
+      ...withDataDir,
+      changeId: input.changeId,
+    });
+    const coordination = this.dependencies.coordination(globalDataDir);
     return withWorkspaceLocks(
       coordination,
-      [
-        scopeLockKey({
-          storeUid: plan.scope.storeUid,
-          projectId: plan.scope.projectId,
-          targetLineId: plan.scope.targetLineId,
-        }),
-        workspaceLockKey({
-          planningScopeId: plan.scope.planningScopeId,
-          changeId: plan.changeId,
-        }),
-      ],
+      this.preparationLocks(outer.scope, input.changeId),
       async () => {
-        const prepared = await applyWorkspacePlan(this.dependencies, plan, token, {
-          ...(this.globalDataDir === undefined ? {} : { globalDataDir: this.globalDataDir }),
+        const context = await resolveWorkspaceContext(this.dependencies, {
+          ...input,
+          ...withDataDir,
+          changeId: input.changeId,
         });
-        if (plan.changeInstanceId === undefined) return prepared;
-
-        const completed = await completeChangeBinding(
-          {
-            storeUid: plan.scope.storeUid,
-            storeId: plan.scope.storeId,
-            projectId: plan.scope.projectId,
-            targetLineId: plan.scope.targetLineId,
-            planningScopeId: plan.scope.planningScopeId,
-            changeId: plan.changeId,
-            changeInstanceId: plan.changeInstanceId,
-            planningRoot: plan.planning.root,
-            ...(this.globalDataDir === undefined
-              ? {}
-              : { globalDataDir: this.globalDataDir }),
-            pathFlavor: plan.pathFlavor,
-          },
-          this.dependencies
-        );
-        const {
-          changeInstanceId: _preparedChangeInstanceId,
-          workspacePairId: _preparedWorkspacePairId,
-          ...result
-        } = prepared;
+        const plan = await buildWorkspacePlan(this.dependencies, {
+          ...input,
+          ...withDataDir,
+          context,
+        });
+        // A preview is a read: a plan that cannot be applied writes nothing,
+        // not even under the machine data directory, and carries no token.
+        if (plan.token === undefined) return { plan };
+        await coordination.writeJson(workspacePlanRelativePath(plan.planId), plan);
         return {
-          ...result,
-          bindingState: completed.bindingState,
-          ...(completed.entry?.changeInstanceId === undefined
-            ? {}
-            : { changeInstanceId: completed.entry.changeInstanceId }),
-          ...(completed.workspacePairId === undefined
-            ? {}
-            : { workspacePairId: completed.workspacePairId }),
+          plan,
+          prepared: await this.applyUnderLocks(plan, plan.token, globalDataDir),
         };
       }
     );
+  }
+
+  /** The two locks every preparation takes, in acquisition order. */
+  private preparationLocks(
+    scope: ImmutableWorkspacePlan['scope'],
+    changeId: string
+  ): readonly WorkspaceLockKey[] {
+    return [
+      scopeLockKey({
+        storeUid: scope.storeUid,
+        projectId: scope.projectId,
+        targetLineId: scope.targetLineId,
+      }),
+      workspaceLockKey({ planningScopeId: scope.planningScopeId, changeId }),
+    ];
+  }
+
+  /** The applied half, shared by `apply` and `prepare`. Assumes the locks. */
+  private async applyUnderLocks(
+    plan: ImmutableWorkspacePlan,
+    token: WorkspacePlanToken,
+    globalDataDir: string | undefined
+  ): Promise<PreparedChangeWorkspace> {
+    const prepared = await applyWorkspacePlan(this.dependencies, plan, token, {
+      ...(globalDataDir === undefined ? {} : { globalDataDir }),
+    });
+    if (plan.changeInstanceId === undefined) return prepared;
+
+    const completed = await completeChangeBinding(
+      {
+        storeUid: plan.scope.storeUid,
+        storeId: plan.scope.storeId,
+        projectId: plan.scope.projectId,
+        targetLineId: plan.scope.targetLineId,
+        planningScopeId: plan.scope.planningScopeId,
+        changeId: plan.changeId,
+        changeInstanceId: plan.changeInstanceId,
+        planningRoot: plan.planning.root,
+        ...(globalDataDir === undefined ? {} : { globalDataDir }),
+        pathFlavor: plan.pathFlavor,
+      },
+      this.dependencies
+    );
+    const {
+      changeInstanceId: _preparedChangeInstanceId,
+      workspacePairId: _preparedWorkspacePairId,
+      ...result
+    } = prepared;
+    return {
+      ...result,
+      bindingState: completed.bindingState,
+      ...(completed.entry?.changeInstanceId === undefined
+        ? {}
+        : { changeInstanceId: completed.entry.changeInstanceId }),
+      ...(completed.workspacePairId === undefined
+        ? {}
+        : { workspacePairId: completed.workspacePairId }),
+    };
   }
 
   async describe(input: DescribeWorkspaceInput): Promise<WorkspaceDescription> {

@@ -1,0 +1,22 @@
+$ (cd <temp>/copy-enriched) rasen store register <temp>/copy-enriched --json
+{
+  "store": {
+    "id": "rasen-store",
+    "root": "<temp>\\copy-enriched",
+    "metadata_path": "<temp>\\copy-enriched\\.rasen-store\\store.yaml"
+  },
+  "registry": {
+    "path": "<temp>\\rasen-home-enriched\\stores\\registry.yaml",
+    "registered": true,
+    "already_registered": false
+  },
+  "git": {
+    "is_repository": true,
+    "initialized": false,
+    "committed": false
+  },
+  "created_files": [],
+  "status": []
+}
+
+[exit code: 0]

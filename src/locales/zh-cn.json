@@ -1920,6 +1920,9 @@
                     "existing-change": {
                       "description": "把已创建的变更绑定到新准备的一对，而不是预留新身份"
                     },
+                    "apply": {
+                      "description": "在一次调用内、同一把锁的持有期间完成计划与应用，使冻结的提交 ID 不会在两次调用之间过期"
+                    },
                     "json": {
                       "description": "以 JSON 输出"
                     }

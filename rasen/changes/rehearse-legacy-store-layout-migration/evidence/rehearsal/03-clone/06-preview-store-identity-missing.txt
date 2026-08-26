@@ -1,0 +1,119 @@
+$ (cd <temp>/copy-clone-content) rasen store migrate-layout rasen-store --mapping migration-mapping.yaml
+Store rasen-store — planning layout migration preview
+  plan id: 02547e09f81b0d42402163cf4f98669e6f3c452a1be24c3b4da0cd2d59938587
+  ref:     refs/heads/master
+
+  Items
+    [resolved] archive-entry 2026-01-01-archive-recorded -> 11111111-1111-4111-8111-111111111111
+        source:      rasen/changes/archive/2026-01-01-archive-recorded
+        destination: rasen/projects/11111111-1111-4111-8111-111111111111/changes/archive/main/2026-01-01-archive-recorded
+        target line: main
+        reason:      owner determined and destination computed
+        evidence:    E1-recorded-identity (derived) 11111111-1111-4111-8111-111111111111 <- rasen/changes/archive/2026-01-01-archive-recorded/archive.json
+    [resolved] archive-entry 2026-01-02-archive-bare -> 22222222-2222-4222-8222-222222222222
+        source:      rasen/changes/archive/2026-01-02-archive-bare
+        destination: rasen/projects/22222222-2222-4222-8222-222222222222/changes/archive/main/2026-01-02-archive-bare
+        target line: main
+        reason:      owner determined and destination computed
+        evidence:    E4-explicit-mapping (asserted) 22222222-2222-4222-8222-222222222222 <- migration-mapping.yaml
+    [resolved] archive-entry 2026-02-01-alpha-shared -> 11111111-1111-4111-8111-111111111111
+        source:      rasen/changes/archive/2026-02-01-alpha-shared
+        destination: rasen/projects/11111111-1111-4111-8111-111111111111/changes/archive/main/2026-02-01-alpha-shared
+        target line: main
+        reason:      owner determined and destination computed
+        evidence:    E1-recorded-identity (derived) 11111111-1111-4111-8111-111111111111 <- rasen/changes/archive/2026-02-01-alpha-shared/archive.json
+    [resolved] archive-entry 2026-02-02-beta-shared -> 22222222-2222-4222-8222-222222222222
+        source:      rasen/changes/archive/2026-02-02-beta-shared
+        destination: rasen/projects/22222222-2222-4222-8222-222222222222/changes/archive/main/2026-02-02-beta-shared
+        target line: main
+        reason:      owner determined and destination computed
+        evidence:    E1-recorded-identity (derived) 22222222-2222-4222-8222-222222222222 <- rasen/changes/archive/2026-02-02-beta-shared/archive.json
+    [blocked:store-identity-missing] change change-alpha-recorded -> 11111111-1111-4111-8111-111111111111
+        code:        migration_store_identity_missing
+        source:      rasen/changes/change-alpha-recorded
+        destination: rasen/projects/11111111-1111-4111-8111-111111111111/changes/change-alpha-recorded
+        target line: main
+        reason:      the Store carries no permanent identity, so no v2 identity can be derived
+        repair:      Run 'rasen store upgrade-identity rasen-store --apply' first.
+        evidence:    E1-recorded-identity (derived) 11111111-1111-4111-8111-111111111111 <- rasen/changes/change-alpha-recorded/.openspec.yaml
+    [blocked:store-identity-missing] change change-conflict -> 22222222-2222-4222-8222-222222222222
+        code:        migration_store_identity_missing
+        source:      rasen/changes/change-conflict
+        destination: rasen/projects/22222222-2222-4222-8222-222222222222/changes/change-conflict
+        target line: main
+        reason:      the Store carries no permanent identity, so no v2 identity can be derived
+        repair:      Run 'rasen store upgrade-identity rasen-store --apply' first.
+        evidence:    E2-store-records (derived) 11111111-1111-4111-8111-111111111111 <- .rasen-store/projects/11111111-1111-4111-8111-111111111111.yaml
+        evidence:    E3-association (derived) 22222222-2222-4222-8222-222222222222 <- machine-home:project-beta-e3home/changes/change-conflict
+        evidence:    E4-explicit-mapping (asserted) 22222222-2222-4222-8222-222222222222 <- migration-mapping.yaml
+    [blocked:store-identity-missing] change change-dirty -> 11111111-1111-4111-8111-111111111111
+        code:        migration_store_identity_missing
+        source:      rasen/changes/change-dirty
+        destination: rasen/projects/11111111-1111-4111-8111-111111111111/changes/change-dirty
+        target line: main
+        reason:      the Store carries no permanent identity, so no v2 identity can be derived
+        repair:      Run 'rasen store upgrade-identity rasen-store --apply' first.
+        evidence:    E1-recorded-identity (derived) 11111111-1111-4111-8111-111111111111 <- rasen/changes/change-dirty/.openspec.yaml
+    [blocked:store-identity-missing] change change-no-evidence -> 11111111-1111-4111-8111-111111111111
+        code:        migration_store_identity_missing
+        source:      rasen/changes/change-no-evidence
+        destination: rasen/projects/11111111-1111-4111-8111-111111111111/changes/change-no-evidence
+        target line: main
+        reason:      the Store carries no permanent identity, so no v2 identity can be derived
+        repair:      Run 'rasen store upgrade-identity rasen-store --apply' first.
+        evidence:    E4-explicit-mapping (asserted) 11111111-1111-4111-8111-111111111111 <- migration-mapping.yaml
+    [blocked:store-identity-missing] change change-non-member -> 33333333-3333-4333-8333-333333333333
+        code:        migration_store_identity_missing
+        source:      rasen/changes/change-non-member
+        destination: rasen/projects/33333333-3333-4333-8333-333333333333/changes/change-non-member
+        target line: main
+        reason:      the Store carries no permanent identity, so no v2 identity can be derived
+        repair:      Run 'rasen store upgrade-identity rasen-store --apply' first.
+        evidence:    E1-recorded-identity (derived) 33333333-3333-4333-8333-333333333333 <- rasen/changes/change-non-member/.openspec.yaml
+    [blocked:store-identity-missing] change change-zh-renamed -> 11111111-1111-4111-8111-111111111111
+        code:        migration_store_identity_missing
+        source:      rasen/changes/change-zh-renamed
+        destination: rasen/projects/11111111-1111-4111-8111-111111111111/changes/change-zh-renamed
+        target line: main
+        reason:      the Store carries no permanent identity, so no v2 identity can be derived
+        repair:      Run 'rasen store upgrade-identity rasen-store --apply' first.
+        evidence:    E1-recorded-identity (derived) 11111111-1111-4111-8111-111111111111 <- rasen/changes/change-zh-renamed/.openspec.yaml
+    [resolved] design-doc store-overview.md
+        source:      rasen/design-docs/store-overview.md
+        destination: rasen/design-docs/store-overview.md
+        reason:      retained at the Store-level design-doc address; a design document carries no ownership evidence
+        repair:      Assign it with designDocs.store-overview.md in the mapping file if it belongs to one project.
+    [resolved] membership-record 11111111-1111-4111-8111-111111111111.yaml -> 11111111-1111-4111-8111-111111111111
+        source:      .rasen-store/projects/11111111-1111-4111-8111-111111111111.yaml
+        destination: .rasen-store/projects/11111111-1111-4111-8111-111111111111.yaml
+        reason:      upgraded in place to a v2 project catalog with a bound planning binding
+    [resolved] membership-record 22222222-2222-4222-8222-222222222222.yaml -> 22222222-2222-4222-8222-222222222222
+        source:      .rasen-store/projects/22222222-2222-4222-8222-222222222222.yaml
+        destination: .rasen-store/projects/22222222-2222-4222-8222-222222222222.yaml
+        reason:      upgraded in place to a v2 project catalog with a unbound planning binding
+    [resolved] membership-record 33333333-3333-4333-8333-333333333333.yaml -> 33333333-3333-4333-8333-333333333333
+        source:      .rasen-store/projects/33333333-3333-4333-8333-333333333333.yaml
+        destination: .rasen-store/projects/33333333-3333-4333-8333-333333333333.yaml
+        reason:      upgraded in place to a v2 project catalog with a unbound planning binding
+    [resolved] spec 中文能力 -> 11111111-1111-4111-8111-111111111111
+        source:      rasen/specs/中文能力
+        destination: rasen/projects/11111111-1111-4111-8111-111111111111/specs/中文能力
+        reason:      owner determined and destination computed
+        evidence:    E2-store-records (derived) 11111111-1111-4111-8111-111111111111 <- .rasen-store/projects/11111111-1111-4111-8111-111111111111.yaml
+    [resolved] spec alpha-only-capability -> 11111111-1111-4111-8111-111111111111
+        source:      rasen/specs/alpha-only-capability
+        destination: rasen/projects/11111111-1111-4111-8111-111111111111/specs/alpha-only-capability
+        reason:      owner determined and destination computed
+        evidence:    spec-provenance (derived) 11111111-1111-4111-8111-111111111111 <- provenance:alpha-only-capability
+    [resolved] spec shared-capability -> 11111111-1111-4111-8111-111111111111
+        source:      rasen/specs/shared-capability
+        destination: rasen/projects/11111111-1111-4111-8111-111111111111/specs/shared-capability
+        reason:      owner determined and destination computed
+        evidence:    E4-explicit-mapping (asserted) 11111111-1111-4111-8111-111111111111 <- mapping
+
+  Retained Store-level design docs (unclassified by decision, not omission)
+    rasen/design-docs/store-overview.md
+
+  Not applicable: 6 item(s) unresolved or blocked. There is no --force and no partial migration; the mapping file is the escape hatch.
+
+[exit code: 1]

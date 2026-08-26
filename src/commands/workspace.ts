@@ -42,6 +42,7 @@ export interface WorkspaceCommandOptions {
   executionWorktree?: string;
   existingChange?: boolean;
   includeUntracked?: boolean;
+  apply?: boolean;
   applyPlan?: string;
   json?: boolean;
 }
@@ -94,7 +95,7 @@ function planPayload(plan: ImmutableWorkspacePlan): unknown {
   };
 }
 
-function renderPlan(plan: ImmutableWorkspacePlan): void {
+function renderPlan(plan: ImmutableWorkspacePlan, compound = false): void {
   console.log(
     `Workspace plan for Change ${plan.changeId} — project ${plan.scope.projectId} on target line ${plan.scope.targetLineId}`
   );
@@ -136,11 +137,18 @@ function renderPlan(plan: ImmutableWorkspacePlan): void {
     if (entry.code !== undefined) console.log(`        code: ${entry.code}`);
   }
   console.log('');
-  console.log(
-    plan.applicable
-      ? `  Ready to apply. Run: rasen store workspace apply --apply-plan ${plan.planId}`
-      : `  Not applicable: ${plan.blockers.length} unsatisfied precondition(s). There is no --force; correct the disagreement or prepare a new pair.`
-  );
+  if (!plan.applicable) {
+    console.log(
+      `  Not applicable: ${plan.blockers.length} unsatisfied precondition(s). There is no --force; correct the disagreement or prepare a new pair.`
+    );
+  } else if (compound) {
+    console.log('  Applying under the same lock hold.');
+  } else {
+    console.log(`  Ready to apply. Run: rasen store workspace apply --apply-plan ${plan.planId}`);
+    console.log(
+      '  Or prepare in one invocation: add --apply, which plans and applies under one lock hold, so the frozen tip cannot go stale in between.'
+    );
+  }
   console.log('  Preparation adds worktrees. It never moves a ref, a HEAD, or a working tree.');
 }
 
@@ -266,10 +274,11 @@ export function registerWorkspaceCommand(store: Command): void {
     .option('--planning-worktree <path>', '')
     .option('--execution-worktree <path>', '')
     .option('--existing-change', '')
+    .option('--apply', '')
     .option('--json', '')
     .action(async (options: WorkspaceCommandOptions) => {
       try {
-        const plan = await new StoreWorkspace().plan({
+        const request = {
           ...(options.store === undefined ? {} : { store: options.store }),
           ...(options.project === undefined ? {} : { project: options.project }),
           ...(options.targetLine === undefined ? {} : { targetLine: options.targetLine }),
@@ -282,7 +291,28 @@ export function registerWorkspaceCommand(store: Command): void {
             : { executionWorktree: options.executionWorktree }),
           ...(options.existingChange === true ? { intent: 'existing-change' as const } : {}),
           startPath: process.cwd(),
-        });
+        };
+        // `--apply` is the SAME preview followed by the apply, not a quieter
+        // path: a compound that hid what it froze would be exactly the thing
+        // the field session could not diagnose.
+        if (options.apply === true) {
+          const outcome = await new StoreWorkspace().prepare(request);
+          if (options.json) {
+            printJson({
+              ...(planPayload(outcome.plan) as Record<string, unknown>),
+              prepared: outcome.prepared ?? null,
+            });
+          } else {
+            renderPlan(outcome.plan, true);
+            if (outcome.prepared !== undefined) {
+              console.log('');
+              renderPrepared(outcome.prepared);
+            }
+          }
+          if (outcome.prepared === undefined) process.exitCode = 1;
+          return;
+        }
+        const plan = await new StoreWorkspace().plan(request);
         if (options.json) printJson(planPayload(plan));
         else renderPlan(plan);
         if (!plan.applicable) process.exitCode = 1;

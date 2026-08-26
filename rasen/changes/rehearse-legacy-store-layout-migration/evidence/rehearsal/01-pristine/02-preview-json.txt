@@ -1,0 +1,28 @@
+$ (cd <temp>/copy-pristine) rasen store migrate-layout rasen-store --json
+{
+  "planId": "edeac1888170b956277663d920fffbcd8a4e3aa33efb1dd8959ca0e52a4e5831",
+  "schemaVersion": 1,
+  "storeId": "rasen-store",
+  "ref": "refs/heads/master",
+  "applicable": false,
+  "items": [],
+  "blockers": [],
+  "retainedDesignDocs": [],
+  "sharedSpecResolutions": [],
+  "catalogUpgrades": [],
+  "targetLineCatalogs": [],
+  "changeInstances": [],
+  "retirementSet": [],
+  "otherFlatRefs": [],
+  "refs": [
+    {
+      "ref": "refs/heads/master",
+      "kind": "local-branch",
+      "classification": "flat",
+      "checkedOut": true
+    }
+  ],
+  "inventoryFailures": []
+}
+
+[exit code: 1]

@@ -1,0 +1,52 @@
+
+### The ten pre-existing layout-migration suites, after the fix
+#
+# Command:
+#   VITEST_MAX_WORKERS=2 npx vitest run test/core/store/layout-migration-{apply-recovery,catalog-receipt,doctor,inventory,mapping,module,plan-gates,provenance,scene-bridge-e2e,windows-paths}.test.ts
+#
+# Every existing fail-closed test stays green: no gate was weakened.
+
+   ✓ store layout v2 migration — inventory > surveys remote-tracking refs and states why they are not candidates  3297ms
+   ✓ store layout v2 migration — inventory > changes the fingerprint when flat content changes, and writes nothing anywhere  5199ms
+   ✓ store layout v2 migration — inventory > refuses to inventory from outside the Store worktree rather than guessing a ref  1135ms
+ ✓ test/core/store/layout-migration-catalog-receipt.test.ts (9 tests) 30592ms
+   ✓ store layout v2 migration — catalog upgrade and receipt > carries every v1 field forward and binds only from adoption evidence  3052ms
+   ✓ store layout v2 migration — catalog upgrade and receipt > blocks rather than widening a role when a record records adoption without the planning role  2471ms
+   ✓ store layout v2 migration — catalog upgrade and receipt > blocks a v1 value the stricter v2 validators reject, telling the operator what to change it to  3200ms
+   ✓ store layout v2 migration — catalog upgrade and receipt > accepts every display name the v1 record accepts, so no real Store is unmigratable  388ms
+   ✓ store layout v2 migration — catalog upgrade and receipt > migrates a Store whose membership record carries a human display name  3777ms
+   ✓ store layout v2 migration — catalog upgrade and receipt > preserves in the receipt everything the catalog and the flat tree dropped  5125ms
+   ✓ store layout v2 migration — catalog upgrade and receipt > serializes deterministically: UTF-8, no BOM, trailing newline, and a byte-identical round trip  3405ms
+   ✓ store layout v2 migration — catalog upgrade and receipt > round-trips strict receipt v2 with Store provenance, conversion digests, and unproven terminal acceptance  5708ms
+   ✓ store layout v2 migration — catalog upgrade and receipt > records the superseded evidence a recorded identity outranked  3462ms
+
+ Test Files  10 passed (10)
+      Tests  172 passed | 1 skipped (173)
+   Start at  14:25:31
+   Duration  661.81s (transform 5.73s, setup 304ms, collect 38.55s, tests 1176.59s, environment 3ms, prepare 2.96s)
+
+EXIT=0
+
+### Guard suite alongside heavyweight neighbours (tasks.md 4.3, parallel context)
+#
+# Tree: <temp>/pinned-fixed. 14 files in ONE invocation at default worker
+# count, so the new suite contends with real-git neighbours of its own class
+# rather than running solo. File list and exclusions: 07-what-was-run-and-what-was-not.md
+#
+# Result: 2 failed | 242 passed | 1 skipped (245), 14 files, 449.83s.
+# Both failures were a fixture defect in THIS change's own test (member-less
+# shapes writing a mapping that names a non-member target line); fixed, and
+# both sides re-measured. Every pre-existing suite passed.
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { diagnostic: { severity: 'error', code: 'migration_mapping_invalid', message: 'Mapping file rasen/mapping.yaml cannot be applied:\n  - targetLines.line-0.2.projects.elftia names project \'elftia\', which is not a member of this Store', target: 'migration.mapping', fix: 'Correct the mapping file inside the Store worktree and re-run the plan.' } }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed | 13 passed (14)
+      Tests  2 failed | 242 passed | 1 skipped (245)
+   Start at  15:22:57
+   Duration  449.83s (transform 11.64s, setup 608ms, collect 76.76s, tests 1458.71s, environment 5ms, prepare 4.40s)
+
+EXIT=1

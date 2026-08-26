@@ -14,6 +14,7 @@ import {
   StoreLayoutMigration,
   migrationItemDiagnosticCode,
   migrationItemStateLabel,
+  planGateError,
   type FlatStoreInventory,
   type ImmutableMigrationPlan,
   type MigrationResult,
@@ -182,6 +183,27 @@ function renderPlan(plan: ImmutableMigrationPlan, inventory: FlatStoreInventory)
     console.log('    Migrating this ref does not migrate the others.');
   }
 
+  // `otherFlatRefs` carries LOCAL branches only, because only a local branch can
+  // be checked out here and migrated. The surveyed remote-tracking refs were
+  // therefore reported nowhere in the human output, so a clone of a flat Store
+  // showed no other-refs section at all while three flat refs were surveyed
+  // (triage O21). They cannot be migrated from this worktree, so they are listed
+  // separately with what actually has to happen to them.
+  const remoteFlatRefs = inventory.refs.filter(
+    (ref) => ref.classification === 'flat' && !ref.checkedOut && ref.kind !== 'local-branch'
+  );
+  if (remoteFlatRefs.length > 0) {
+    console.log('');
+    console.log('  Remote-tracking refs that still carry flat planning content');
+    for (const ref of remoteFlatRefs) console.log(`    ${ref.ref}`);
+    console.log(
+      '    Migration only ever writes the ref checked out here. Each of these is migrated'
+    );
+    console.log(
+      '    where it lives, then pushed; nothing in this run changes them.'
+    );
+  }
+
   if (inventory.failures.length > 0) {
     console.log('');
     console.log('  Unreadable items (recorded, never fatal to the scan)');
@@ -191,8 +213,13 @@ function renderPlan(plan: ImmutableMigrationPlan, inventory: FlatStoreInventory)
   }
 
   console.log('');
+  // Readiness is read from the TOKEN, not from `applicable` alone. The planner
+  // now reports every apply-token precondition as a blocker, so the two agree;
+  // this reads the token anyway, because announcing readiness a token cannot
+  // back is the exact defect this change closed, and the cost of asserting it
+  // at the user-facing boundary is one condition.
   console.log(
-    plan.applicable
+    plan.applicable && plan.token !== undefined
       ? `  Ready to apply. Re-run with --apply.`
       : `  Not applicable: ${plan.blockers.length} item(s) unresolved or blocked. There is no --force and no partial migration; the mapping file is the escape hatch.`
   );
@@ -271,14 +298,15 @@ export async function runStoreMigrateLayout(
     if (!options.apply) {
       if (options.json) printJson(planPayload(plan, inventory));
       else renderPlan(plan, inventory);
-      if (!plan.applicable) process.exitCode = 1;
+      if (!plan.applicable || plan.token === undefined) process.exitCode = 1;
       return;
     }
 
+    // A token-less plan is a refusal, so `--apply` reports one. Re-rendering the
+    // preview here printed `Ready to apply` and exited 1 with no code, message,
+    // or fix anywhere in the output (triage O2 and O24).
     if (plan.token === undefined) {
-      if (options.json) printJson(planPayload(plan, inventory));
-      else renderPlan(plan, inventory);
-      process.exitCode = 1;
+      fail(options.json, planGateError(plan), 'migration_plan_not_applicable');
       return;
     }
 

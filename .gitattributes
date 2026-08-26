@@ -65,3 +65,11 @@ test/core/session-host/process-capsule-posix-replacement.test.ts text eol=lf
 # Byte-pinned fixture data: migration-plan digests and instance ids are
 # derived from these exact bytes, so every platform must read the same LF.
 test/fixtures/** text eol=lf
+# Evidence captures are verbatim command output (vitest diffs, CLI receipts):
+# their trailing whitespace is the captured tool's own formatting, not an edit
+# a human made. CI's `git diff --check BASE...HEAD` scans the FULL PR diff, so
+# without this every change that ships a real test-output receipt fails the
+# whitespace gate and the only "fix" is to doctor the receipt. Exempt the
+# capture directories instead; source and specs stay fully checked.
+rasen/changes/**/evidence/** -whitespace
+openspec/changes/**/evidence/** -whitespace

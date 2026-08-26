@@ -1,0 +1,10 @@
+$ (cd <temp>/copy-postfix) rasen store target-line add main --store rasen-store --store-ref refs/heads/master
+Target line main (store rasen-store)
+  store ref: refs/heads/master
+  no project code locators recorded
+  catalog: <temp>\copy-postfix\.rasen-store\target-lines\main.yaml
+
+  The target-line catalog is Git-tracked Store content. Rasen wrote the file and staged nothing.
+    git -C <temp>/copy-postfix add -- .rasen-store/target-lines/main.yaml && git -C <temp>/copy-postfix commit -m "chore(store): record target line main"
+
+[exit code: 0]

@@ -1,0 +1,79 @@
+### Teardown check-point (tasks.md 2.7)
+#
+# Unregistering happens ONLY inside the redirected per-stage homes, which each
+# contain exactly one disposable copy. No unregister command is ever aimed at
+# the real machine registry.
+
+--- home: <temp>/rasen-home-pristine ---
+$ h_preflight   (proves this home never pointed anywhere but the temp root)
+PREFLIGHT-OK: 1 registered entr(ies), all inside <temp>
+  rasen-store [uid f35acc7d-e088-4186-9ad6-b4b770649b0b] -> <temp>\copy-pristine
+[preflight exit: 0]
+--- home: <temp>/rasen-home-enriched ---
+$ h_preflight   (proves this home never pointed anywhere but the temp root)
+PREFLIGHT-OK: 3 registered entr(ies), all inside <temp>
+  project-beta [no uid recorded] -> <temp>\project-beta
+  project-gamma [no uid recorded] -> <temp>\project-gamma
+  rasen-store [uid f35acc7d-e088-4186-9ad6-b4b770649b0b] -> <temp>\copy-enriched
+[preflight exit: 0]
+--- home: <temp>/rasen-home-stale ---
+$ h_preflight   (proves this home never pointed anywhere but the temp root)
+PREFLIGHT-OK: 1 registered entr(ies), all inside <temp>
+  rasen-store [uid f35acc7d-e088-4186-9ad6-b4b770649b0b] -> <temp>\copy-stale
+[preflight exit: 0]
+--- home: <temp>/rasen-home-clone ---
+$ h_preflight   (proves this home never pointed anywhere but the temp root)
+PREFLIGHT-OK: 1 registered entr(ies), all inside <temp>
+  rasen-store [uid 7ec12a39-294f-4fcd-be0f-c68e05b19829] -> <temp>\copy-clone
+[preflight exit: 0]
+--- home: <temp>/rasen-home-clone2 ---
+$ h_preflight   (proves this home never pointed anywhere but the temp root)
+PREFLIGHT-OK: 1 registered entr(ies), all inside <temp>
+  rasen-store [uid ff964a0f-cb5e-42d5-93ad-f1946182406c] -> <temp>\copy-clone-content
+[preflight exit: 0]
+--- home: <temp>/rasen-home-noactive ---
+$ h_preflight   (proves this home never pointed anywhere but the temp root)
+PREFLIGHT-OK: 1 registered entr(ies), all inside <temp>
+  rasen-store [no uid recorded] -> <temp>\copy-clone-noactive
+[preflight exit: 0]
+
+### THE REAL STORE, re-verified against the baseline recorded before any step
+$ git -C <real-store> status --porcelain
+ M .rasen-store/store.yaml
+ M rasen/config.yaml
+  baseline was exactly:  M .rasen-store/store.yaml  /  M rasen/config.yaml
+
+$ git -C <real-store> rev-parse HEAD
+254b265cb4750e2fd7e5fe6caa1e1ffb219a3e4a
+  baseline: 254b265cb4750e2fd7e5fe6caa1e1ffb219a3e4a
+
+$ git -C <real-store> log --oneline --all ; branch -a ; remote -v ; worktree list
+254b265 Initialize Rasen store rasen-store
+* master
+<real-store>  254b265 [master]
+
+$ sha256sum <real-store>/.rasen-store/store.yaml <real-store>/rasen/config.yaml
+3aab228b3b79484cc62324d7a633661de04f975e9a4fbcd6ea1346c96e1eac22 *<real-store>/.rasen-store/store.yaml
+88811da1daf8ba64f2a68ea9c173a85530599fa0a63e2c7f958b72c8fde829ca *<real-store>/rasen/config.yaml
+  baseline: 3aab228b3b79484cc62324d7a633661de04f975e9a4fbcd6ea1346c96e1eac22  store.yaml
+  baseline: 88811da1daf8ba64f2a68ea9c173a85530599fa0a63e2c7f958b72c8fde829ca  config.yaml
+
+$ find <real-store> -not -path '*/.git/*' -not -name .git
+<real-store>
+<real-store>/.rasen-store
+<real-store>/.rasen-store/store.yaml
+<real-store>/rasen
+<real-store>/rasen/changes
+<real-store>/rasen/changes/archive
+<real-store>/rasen/changes/archive/.gitkeep
+<real-store>/rasen/config.yaml
+<real-store>/rasen/specs
+<real-store>/rasen/specs/.gitkeep
+
+### THE REAL MACHINE REGISTRY, re-verified
+$ sha256sum ~/.rasen/stores/registry.yaml
+008b744250406c079a8702e8326490dfb631aa6edcf5018604da7aa0ccc8295e *C:/Users/Sayo/.rasen/stores/registry.yaml
+  baseline: 008b744250406c079a8702e8326490dfb631aa6edcf5018604da7aa0ccc8295e
+
+$ (compare every file under ~/.rasen/store-layout-migration against the baseline)
+  IDENTICAL (7 files, unchanged)

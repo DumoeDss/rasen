@@ -1,0 +1,25 @@
+$ git clone <real> <temp>/copy-clone   # reads the real repo only
+Cloning into '<temp>/copy-clone'...
+done.
+[exit code: 0]
+
+### The clone carries COMMITTED truth only: version 1, no uid, clean worktree
+$ cat <clone>/.rasen-store/store.yaml
+version: 1
+id: rasen-store
+$ git -C <clone> status --porcelain   # (empty = clean)
+$ git -C <clone> log --oneline --all
+254b265 Initialize Rasen store rasen-store
+$ git -C <clone> branch -a
+* master
+  remotes/origin/HEAD -> origin/master
+  remotes/origin/master
+$ cat <clone>/rasen/config.yaml | head -3
+schema: spec-driven
+projectId: 865e2da5-4cc2-4411-bc53-73ac49e01e13
+
+
+### Real store still untouched
+$ git -C <real> status --porcelain
+ M .rasen-store/store.yaml
+ M rasen/config.yaml

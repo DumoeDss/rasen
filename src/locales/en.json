@@ -1920,6 +1920,9 @@
                     "existing-change": {
                       "description": "Bind an already created change to a newly prepared pair instead of reserving a new one"
                     },
+                    "apply": {
+                      "description": "Plan and apply in one invocation, under one hold of the same locks, so the frozen commit ids cannot go stale between two invocations"
+                    },
                     "json": {
                       "description": "Output as JSON"
                     }

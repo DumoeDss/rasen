@@ -106,12 +106,19 @@ export interface WorkspaceGit {
   dirtyEntries(root: string): Promise<readonly WorktreeStatusEntry[]>;
   untrackedFiles(root: string): Promise<readonly string[]>;
   isAncestor(repoRoot: string, candidate: string, descendant: string): Promise<boolean>;
-  /** `git worktree add -b <branch> <destination> <commit>`. */
+  /**
+   * `git worktree add -b <branch> <destination> <commit>`, or, when
+   * `createBranch` is false, `git worktree add <destination> <branch>` for a
+   * branch that already exists. Still one verb; the plan decides which form,
+   * and revalidation has already proved the existing branch is at `commit`.
+   */
   addWorktree(input: {
     readonly repoRoot: string;
     readonly destination: string;
     readonly branch: string;
     readonly commit: string;
+    /** Defaults to true: mint the branch, which is what a fresh pair needs. */
+    readonly createBranch?: boolean;
   }): Promise<void>;
   /** `git worktree remove <root>` — never forced. */
   removeWorktree(repoRoot: string, worktreeRoot: string): Promise<void>;
@@ -1340,7 +1347,7 @@ export const nodeWorkspaceGit: WorkspaceGit = {
     return result !== null;
   },
 
-  async addWorktree({ repoRoot, destination, branch, commit }) {
+  async addWorktree({ repoRoot, destination, branch, commit, createBranch = true }) {
     // `-b` takes a BRANCH NAME, not a full ref: passing `refs/heads/x` creates
     // `refs/heads/refs/heads/x`. Everything above this adapter speaks full refs
     // (that is what the plan freezes and the index records), so the conversion
@@ -1352,7 +1359,16 @@ export const nodeWorkspaceGit: WorkspaceGit = {
       );
     }
     const branchName = branch.slice('refs/heads/'.length);
-    await spawnGit(repoRoot, ['worktree', 'add', '-b', branchName, destination, commit]);
+    // Attaching an existing branch names the BRANCH rather than the commit:
+    // `git worktree add <path> <commit>` on an existing branch would detach the
+    // new worktree's HEAD instead of checking the branch out. The commit is not
+    // lost from the contract — revalidation refuses unless the branch is at it.
+    await spawnGit(
+      repoRoot,
+      createBranch
+        ? ['worktree', 'add', '-b', branchName, destination, commit]
+        : ['worktree', 'add', destination, branchName]
+    );
   },
 
   async removeWorktree(repoRoot, worktreeRoot) {

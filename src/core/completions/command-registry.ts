@@ -578,6 +578,7 @@ const COMMANDS: readonly CommandDefinition[] = [
               { name: 'planning-worktree', takesValue: true },
               { name: 'execution-worktree', takesValue: true },
               { name: 'existing-change' },
+              { name: 'apply' },
               COMMON_FLAGS.json,
             ],
           },

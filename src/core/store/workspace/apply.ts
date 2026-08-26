@@ -8,8 +8,10 @@
  *
  * Before the first write it revalidates, under the scope and workspace locks:
  * the target-line catalog text, both resolved ref OIDs, the HEAD OID and
- * checked-out ref of every reused worktree, the non-existence of every created
- * destination, the Store's declared layout version, and the index fingerprint.
+ * checked-out ref of every reused worktree, the tip of every pair branch a side
+ * reattaches rather than creates, the Store's declared layout version, and the
+ * index fingerprint. A created destination is revalidated against what a create
+ * actually requires: absence, or its own resumable creation on the planned ref.
  * Any mismatch aborts with `workspace_plan_stale` — a stale plan is INVALIDATED,
  * never repaired, because repairing it would mean deciding on the user's behalf
  * which of two disagreeing facts they meant.
@@ -36,7 +38,7 @@ import {
 } from './binding.js';
 import type { StoreWorkspaceDependencies } from './dependencies.js';
 import { workspaceError, workspaceRefusal } from './diagnostics.js';
-import { pathApiFor } from './identity.js';
+import { pathApiFor, samePath } from './identity.js';
 import {
   currentWorkspaceIndexFingerprint,
   readWorkspaceIndexEntry,
@@ -152,9 +154,35 @@ export async function revalidateWorkspacePlan(
     });
     facts.push(live);
     if (side.disposition === 'create') {
-      // Idempotence: a destination this apply already created carries the
-      // planned ref and its identity still agrees with the recorded apply.
-      if (live.exists && live.ref !== side.ref) {
+      // A branch this plan REATTACHES rather than mints is a frozen Git
+      // precondition like the line's own refs, and it is checked first because
+      // it matters most in the case the next check waves through: creating at
+      // an absent destination on a branch an earlier pair left behind. A branch
+      // that moved invalidates the plan rather than being silently retargeted.
+      if (!side.createsBranch) {
+        const branchTargets = await dependencies.git.resolveRef(side.repositoryRoot, side.ref);
+        const liveBranchOid = branchTargets.length === 1 ? branchTargets[0]?.oid : undefined;
+        if (liveBranchOid !== side.fromOid) {
+          stale(
+            `The ${side.side} pair branch ${side.ref}`,
+            side.fromOid,
+            liveBranchOid ?? '(unresolved or ambiguous)',
+            side.ref
+          );
+        }
+      }
+
+      // ABSENCE IS THE PRECONDITION A CREATE NEEDS. The plan surveyed this
+      // destination as absent and blessed creating it there; an apply-time
+      // survey that agrees is the two halves of the transaction agreeing, not a
+      // staleness. There is no identity to compare, because nothing exists to
+      // have one — and the machine index is "a rebuildable projection ... and it
+      // is authority for nothing" (registry.ts), so a leftover entry from an
+      // earlier pair must not veto a creation Git itself has no objection to.
+      if (!live.exists) continue;
+
+      // The destination was occupied between planning and applying.
+      if (live.ref !== side.ref) {
         stale(
           `The planned ${side.side} destination ${side.root}`,
           '(absent)',
@@ -162,11 +190,20 @@ export async function revalidateWorkspacePlan(
           side.root
         );
       }
-      const recordedIdentity =
-        side.side === 'planning'
-          ? existing?.planning.worktreeInstanceId
-          : existing?.execution.worktreeInstanceId;
+
+      // IDEMPOTENT RESUME, and only that. The destination exists, on the planned
+      // ref: this is the incarnation a previous run of THIS apply created, so
+      // verifying that it is still that incarnation is meaningful. The recorded
+      // identity is evidence about the root it was recorded FOR, so an entry
+      // recorded for a different root is never held against this destination.
+      const recordedSide = side.side === 'planning' ? existing?.planning : existing?.execution;
+      const recordedIdentity = recordedSide?.worktreeInstanceId;
+      const recordedAtPlannedRoot =
+        recordedSide !== undefined &&
+        recordedSide.root.length > 0 &&
+        samePath(recordedSide.root, side.root, flavor);
       if (
+        recordedAtPlannedRoot &&
         recordedIdentity !== undefined &&
         recordedIdentity.length > 0 &&
         live.worktreeInstanceId !== recordedIdentity
@@ -356,12 +393,16 @@ export async function applyWorkspacePlan(
     );
     // Created FROM the frozen commit, not from the ref name: a ref that moved
     // is already excluded by revalidation, and using the OID means the
-    // worktree cannot follow it even if it moves during this call.
+    // worktree cannot follow it even if it moves during this call. A pair
+    // branch that already exists is REATTACHED at the tip revalidation just
+    // proved equal to `fromOid`, so the materialized commit is the frozen one
+    // either way; what changes is only whether Git is asked to mint the branch.
     await dependencies.git.addWorktree({
       repoRoot: side.repositoryRoot,
       destination: side.root,
       branch: side.ref,
       commit: side.fromOid,
+      createBranch: side.createsBranch,
     });
     created.push(side.root);
     if (isPlanning) planningFacts = await survey(side);

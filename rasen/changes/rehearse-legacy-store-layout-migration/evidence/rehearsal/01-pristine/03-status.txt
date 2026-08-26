@@ -1,0 +1,7 @@
+$ (cd <temp>/copy-pristine) rasen store migrate-layout rasen-store --status
+Store rasen-store — migration status
+  ref:   refs/heads/master
+  phase: (no run recorded)
+  publication recorded: no
+
+[exit code: 0]

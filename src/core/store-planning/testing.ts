@@ -11,6 +11,7 @@ export type {
   StorePlanningDependencies,
   StorePlanningFileSystem,
   StoreRegistrySnapshotEntry,
+  WorkspacePairSnapshot,
 } from './internal/dependencies.js';
 export {
   nodeStorePlanningFileSystem,

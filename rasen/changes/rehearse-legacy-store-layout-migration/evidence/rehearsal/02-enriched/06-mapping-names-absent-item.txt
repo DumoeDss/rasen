@@ -1,0 +1,5 @@
+$ (cd <temp>/copy-enriched) rasen store migrate-layout rasen-store --mapping migration-mapping-absent.yaml
+migration_mapping_invalid: Mapping file <temp>\copy-enriched\migration-mapping-absent.yaml does not exist.
+  fix: Correct the mapping file inside the Store worktree and re-run the plan.
+
+[exit code: 1]
