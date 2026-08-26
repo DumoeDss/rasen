@@ -68,6 +68,16 @@ const KNOWN_SLOW_TEST_WEIGHTS_MS: Record<string, number> = {
   'test/core/store/workspace-cleanup.test.ts': 166610,
   'test/commands/workspace-cli.test.ts': 166960,
   'test/core/store/workspace-apply.test.ts': 109103,
+  // Same class again (fix-store-workspace-pair-transactions, task 1.5): thirteen
+  // real-Git scenarios that prepare, tear down, and re-prepare a pair, several
+  // of them building three worktrees. 25KB of source implies a 2.5s fallback;
+  // measured solo on Windows at 167.8s in this shape, and at 201.7s in an
+  // intermediate shape carrying two extra cases. The higher figure is not
+  // entered because it is not an observation of the file as it ships; the
+  // measured 167.8s is rounded up instead. Do not lower it without re-measuring
+  // on a quiesced tree -- under-entering a heavy file skews the whole shard,
+  // over-entering only costs balance.
+  'test/core/store/workspace-repreparation.test.ts': 169000,
   // Real Git fixture (`createStoreWorkspaceFixture`) driven through both the
   // in-process handlers and a `runCLI` subprocess per test (store-issue-resources).
   'test/core/management-api/stores.test.ts': 199980,

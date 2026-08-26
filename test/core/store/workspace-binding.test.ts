@@ -64,7 +64,15 @@ function refuses(action: () => void): StoreError {
   throw new Error('expected a refusal, but the call succeeded');
 }
 
-describe('workspace binding carriers and the machine index', () => {
+/**
+ * Same real-Git fixture class as its sibling workspace suites: the cost per
+ * case is worktree and commit wall-clock time, not source size. The 30s
+ * default passes solo and fails under the parallel load of the store suites,
+ * where a timeout reads as a broken assertion rather than as a timeout --
+ * which is what two of this file's siblings did once the re-preparation suite
+ * joined the same run.
+ */
+describe('workspace binding carriers and the machine index', { timeout: 180_000 }, () => {
   let f: StoreWorkspaceFixture;
   let planningRoot: string;
   let executionRoot: string;

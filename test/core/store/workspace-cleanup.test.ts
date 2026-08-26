@@ -115,7 +115,15 @@ function snapshot(root: string): Record<string, string> {
   return out;
 }
 
-describe('workspace cleanup', () => {
+/**
+ * Real worktree creation and removal costs seconds per call on Windows, and
+ * every case here does it several times. The 30s default passes solo and fails
+ * under the parallel load of the store suites -- where a timeout reads as a
+ * broken assertion rather than as a timeout, which is why it is stated here
+ * rather than left to the default (observed: three cases in this file at
+ * 34-41s once `workspace-repreparation.test.ts` joined the same run).
+ */
+describe('workspace cleanup', { timeout: 180_000 }, () => {
   let f: StoreWorkspaceFixture;
   let planningWorktree: string;
   let executionWorktree: string;

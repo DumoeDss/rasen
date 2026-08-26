@@ -39,7 +39,15 @@ function codeOf(error: unknown): string {
   throw error;
 }
 
-describe('applying a workspace plan', () => {
+/**
+ * Same real-Git fixture class as its sibling workspace suites: the cost per
+ * case is worktree and commit wall-clock time, not source size. The 30s
+ * default passes solo and fails under the parallel load of the store suites,
+ * where a timeout reads as a broken assertion rather than as a timeout. Stated
+ * here rather than left to the default -- this file was observed timing out at
+ * 34-37s once the re-preparation suite joined the same run.
+ */
+describe('applying a workspace plan', { timeout: 180_000 }, () => {
   let f: StoreWorkspaceFixture;
   let planningWorktree: string;
   let executionWorktree: string;

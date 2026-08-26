@@ -1,0 +1,159 @@
+
+ RUN  v3.2.6 E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code
+
+ × test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > applies a re-plan whose created destination is simply absent (task 2.2) 10440ms
+   → The identity of the created planning worktree C:\Users\Sayo\AppData\Local\Temp\rasen-workspace-repreparation-prtw2H\store-planning-redesign moved between planning and applying, so the plan no longer describes reality. (recorded: wt_62f811265518814cafec01efe2e2754f694b9bc9dc594e45b8f513c8ba3f20d5; live: (unknown))
+ × test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > refuses a second pair at a fresh destination while the recorded pair is live, and converges after cleanup (task 3.2) 14776ms
+   → expected true to be false // Object.is equality
+ × test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > states the re-creation of a vanished recorded pair in the preview (task 3.3) 14589ms
+   → planning-destination-available, execution-ref-matches, planning-marker-contained, execution-marker-contained, planning-root-outside-repository, execution-root-outside-repository, pair-roots-disjoint: expected undefined to be defined
+ × test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > treats a case-aliased spelling of the recorded root as the same root (task 3.3) 16403ms
+   → expected undefined to be true // Object.is equality
+ × test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > names the ref and frozen commit every created side is born from (task 4.1) 6916ms
+   → planning-destination-available, execution-destination-available, planning-marker-contained, execution-marker-contained, planning-root-outside-repository, execution-root-outside-repository, pair-roots-disjoint: expected undefined to be defined
+ ✓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > still refuses a resumed created destination that is a different incarnation (task 2.3) 19171ms
+ × test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > prepares in one invocation on a line that advanced moments before (task 4.4) 7064ms
+   → f.workspace(...).prepare is not a function
+ × test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > still refuses stale when a competitor moves the ref inside the compound window, and converges on repeat (task 4.4) 3662ms
+   → (intermediate value).prepare is not a function
+ × test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > fails the compound with a named lock holder rather than deadlocking (task 4.4) 3237ms
+   → f.workspace(...).prepare is not a function
+ ✓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > designed staleness > refuses a moved Store ref, naming both the frozen and the live commit (task 1.4) 15089ms
+ ✓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > DEFECT PIN (pre-fix behaviour) > PIN 1.2 — apply refuses a re-plan whose destination is merely absent 23351ms
+ ✓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > DEFECT PIN (pre-fix behaviour) > PIN 1.3 — a second pair at a fresh destination is blessed by plan and refused by apply 15419ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > applies a re-plan whose created destination is simply absent (task 2.2)
+StoreWorkspaceError: The identity of the created planning worktree C:\Users\Sayo\AppData\Local\Temp\rasen-workspace-repreparation-prtw2H\store-planning-redesign moved between planning and applying, so the plan no longer describes reality. (recorded: wt_62f811265518814cafec01efe2e2754f694b9bc9dc594e45b8f513c8ba3f20d5; live: (unknown))
+
+Expected: "wt_62f811265518814cafec01efe2e2754f694b9bc9dc594e45b8f513c8ba3f20d5"
+Received: "(unknown)"
+
+ ❯ workspaceRefusal src/core/store/workspace/diagnostics.ts:70:10
+     68|       ? ''
+     69|       : ` (recorded: ${disagreement.expected ?? '(none)'}; live: ${dis…
+     70|   return new StoreWorkspaceError(code, `${message}${values}`, disagree…
+       |          ^
+     71| }
+     72| 
+ ❯ stale src/core/store/workspace/apply.ts:62:9
+ ❯ revalidateWorkspacePlan src/core/store/workspace/apply.ts:174:9
+ ❯ applyWorkspacePlan src/core/store/workspace/apply.ts:288:3
+ ❯ src/core/store/workspace/module.ts:178:26
+ ❯ withWorkspaceLocks src/core/store/workspace/locks.ts:249:12
+ ❯ test/core/store/workspace-repreparation.test.ts:230:25
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { diagnostic: { severity: 'error', code: 'workspace_plan_stale', message: 'The identity of the created planning worktree C:\Users\Sayo\AppData\Local\Temp\rasen-workspace-repreparation-prtw2H\store-planning-redesign moved between planning and applying, so the plan no longer describes reality. (recorded: wt_62f811265518814cafec01efe2e2754f694b9bc9dc594e45b8f513c8ba3f20d5; live: (unknown))', target: 'C:\Users\Sayo\AppData\Local\Temp\rasen-workspace-repreparation-prtw2H\store-planning-redesign', fix: 'Re-run \'rasen store workspace plan\' and apply the new plan. A stale plan is invalidated, never repaired.' }, workspaceCode: 'workspace_plan_stale' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+ FAIL  test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > refuses a second pair at a fresh destination while the recorded pair is live, and converges after cleanup (task 3.2)
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/core/store/workspace-repreparation.test.ts:268:36
+    266|         const blocked = await f.workspace().plan(input({ planningWorkt…
+    267| 
+    268|         expect(blocked.applicable).toBe(false);
+       |                                    ^
+    269|         expect(blocked.token).toBeUndefined();
+    270|         const blocker = blocked.blockers.find(
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/8]⎯
+
+ FAIL  test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > states the re-creation of a vanished recorded pair in the preview (task 3.3)
+AssertionError: planning-destination-available, execution-ref-matches, planning-marker-contained, execution-marker-contained, planning-root-outside-repository, execution-root-outside-repository, pair-roots-disjoint: expected undefined to be defined
+ ❯ test/core/store/workspace-repreparation.test.ts:323:52
+    321|           (candidate) => candidate.id === 'planning-recorded-pair-recr…
+    322|         );
+    323|         expect(recreated, preconditionIds(replan)).toBeDefined();
+       |                                                    ^
+    324|         expect(recreated?.satisfied).toBe(true);
+    325|         expect(recreated?.detail).toContain(planningWorktree);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/8]⎯
+
+ FAIL  test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > treats a case-aliased spelling of the recorded root as the same root (task 3.3)
+AssertionError: expected undefined to be true // Object.is equality
+
+- Expected: 
+true
+
++ Received: 
+undefined
+
+ ❯ test/core/store/workspace-repreparation.test.ts:361:38
+    359|           (candidate) => candidate.id === 'planning-recorded-pair-recr…
+    360|         );
+    361|         expect(recreated?.satisfied).toBe(true);
+       |                                      ^
+    362|       },
+    363|       REAL_GIT_TIMEOUT_MS
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/8]⎯
+
+ FAIL  test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > names the ref and frozen commit every created side is born from (task 4.1)
+AssertionError: planning-destination-available, execution-destination-available, planning-marker-contained, execution-marker-contained, planning-root-outside-repository, execution-root-outside-repository, pair-roots-disjoint: expected undefined to be defined
+ ❯ test/core/store/workspace-repreparation.test.ts:381:52
+    379|             (candidate) => candidate.id === `${side}-created-from`
+    380|           );
+    381|           expect(disclosed, preconditionIds(plan)).toBeDefined();
+       |                                                    ^
+    382|           expect(disclosed?.satisfied).toBe(true);
+    383|           expect(disclosed?.detail).toContain(STORE_REF);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/8]⎯
+
+ FAIL  test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > prepares in one invocation on a line that advanced moments before (task 4.4)
+TypeError: f.workspace(...).prepare is not a function
+ ❯ test/core/store/workspace-repreparation.test.ts:484:45
+    482|         const advanced = advanceStoreLine();
+    483| 
+    484|         const outcome = await f.workspace().prepare(input());
+       |                                             ^
+    485| 
+    486|         expect(outcome.plan.applicable, JSON.stringify(outcome.plan.bl…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/8]⎯
+
+ FAIL  test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > still refuses stale when a competitor moves the ref inside the compound window, and converges on repeat (task 4.4)
+TypeError: (intermediate value).prepare is not a function
+ ❯ test/core/store/workspace-repreparation.test.ts:523:74
+    521| 
+    522|         const refusal = await refusalFrom(() =>
+    523|           new StoreWorkspace(racing, { globalDataDir: f.globalDataDir …
+       |                                                                          ^
+    524|         );
+    525|         expect(fired).toBe(true);
+ ❯ refusalFrom test/core/store/workspace-repreparation.test.ts:101:22
+ ❯ test/core/store/workspace-repreparation.test.ts:522:31
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/8]⎯
+
+ FAIL  test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > fails the compound with a named lock holder rather than deadlocking (task 4.4)
+TypeError: f.workspace(...).prepare is not a function
+ ❯ test/core/store/workspace-repreparation.test.ts:558:65
+    556|         });
+    557|         try {
+    558|           const refusal = await refusalFrom(() => f.workspace().prepar…
+       |                                                                 ^
+    559|           expect(refusal.code).toBe('workspace_lock_unavailable');
+    560|           expect(refusal.message).toContain('a competing rasen session…
+ ❯ refusalFrom test/core/store/workspace-repreparation.test.ts:101:22
+ ❯ test/core/store/workspace-repreparation.test.ts:558:33
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/8]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  8 failed | 4 passed (12)
+   Start at  13:45:28
+   Duration  169.32s (transform 7.46s, setup 87ms, collect 17.92s, tests 150.12s, environment 0ms, prepare 350ms)
+
+EXIT=1

@@ -143,6 +143,108 @@ interface SidePlan {
 }
 
 /**
+ * The plan for a side that is CREATED, including what to do about the pair
+ * branch when it already exists.
+ *
+ * A pair branch outlives its worktree: neither `git worktree remove` nor
+ * `rasen store workspace cleanup` deletes a branch, deliberately, because a
+ * branch may carry commits. So every re-preparation of a Change meets its own
+ * previous branch, and `git worktree add -b <name>` fails outright on one that
+ * exists. The three answers, in the same authority order the rest of this
+ * Module uses:
+ *
+ *   absent                     -> mint it from the target line's frozen tip.
+ *   exists, checked out nowhere-> REATTACH it at its OWN tip, frozen here and
+ *                                 revalidated at apply time exactly like the
+ *                                 line's refs. The branch is the Change's work;
+ *                                 forcing it back to the line tip would discard
+ *                                 commits, and following the ref name rather
+ *                                 than a frozen OID is what this Module refuses
+ *                                 to do everywhere else.
+ *   exists, checked out already-> refuse. Git checks one branch out in one
+ *                                 worktree at a time, and preparation never
+ *                                 moves another worktree's HEAD.
+ */
+async function planCreatedSide(
+  dependencies: StoreWorkspaceDependencies,
+  input: SidePlanInput,
+  root: string,
+  preconditions: WorkspacePrecondition[]
+): Promise<WorkspacePlanSide> {
+  const base = (createsBranch: boolean, fromOid: string): WorkspacePlanSide => ({
+    side: input.side,
+    root,
+    repositoryRoot: input.repositoryRoot,
+    disposition: 'create',
+    ref: input.expectedRef,
+    fromOid,
+    createsBranch,
+  });
+
+  const targets = await dependencies.git.resolveRef(input.repositoryRoot, input.expectedRef);
+  if (targets.length > 1) {
+    preconditions.push(
+      precondition(
+        `${input.side}-branch-usable`,
+        false,
+        `${input.expectedRef} resolves to ${targets.length} refs in ${input.repositoryRoot}, so which commit the pair would be born from is not decidable.`,
+        {
+          expected: 'exactly one matching ref',
+          actual: `${targets.length} matching refs`,
+          code: 'workspace_ref_mismatch',
+        }
+      )
+    );
+    return base(true, input.fromOid);
+  }
+
+  const existing = targets.length === 1 ? targets[0] : undefined;
+  if (existing === undefined) {
+    preconditions.push(
+      precondition(
+        `${input.side}-branch-available`,
+        true,
+        `${input.expectedRef} does not exist yet, so it is created at ${input.fromOid}.`
+      )
+    );
+    return base(true, input.fromOid);
+  }
+
+  const worktrees = (await dependencies.git.worktreeList(input.repositoryRoot)) ?? [];
+  const heldElsewhere = worktrees.find(
+    (entry) => entry.ref === input.expectedRef && !samePath(entry.root, root, input.flavor)
+  );
+  if (heldElsewhere !== undefined) {
+    // Git prints worktree roots with forward slashes even on Windows. Every
+    // other finding in this plan names a resolved native path, and an operator
+    // comparing the two spellings should not have to notice the difference.
+    const holder = pathApiFor(input.flavor).resolve(heldElsewhere.root);
+    preconditions.push(
+      precondition(
+        `${input.side}-branch-usable`,
+        false,
+        `${input.expectedRef} is already checked out in ${holder}, and Git checks one branch out in one worktree at a time. Remove that worktree first — 'rasen store workspace cleanup --change ${input.changeId}' when it is this Change's own pair — because preparation never moves another worktree's HEAD.`,
+        {
+          expected: `${input.expectedRef} checked out nowhere`,
+          actual: holder,
+          code: 'workspace_ref_mismatch',
+        }
+      )
+    );
+    return base(false, existing.oid);
+  }
+
+  preconditions.push(
+    precondition(
+      `${input.side}-branch-reattached`,
+      true,
+      `${input.expectedRef} already exists at ${existing.oid}, left by an earlier pair, so the worktree is created ON it at that commit rather than minting the branch again.`
+    )
+  );
+  return base(false, existing.oid);
+}
+
+/**
  * Decides create-vs-reuse for one side and reports every problem it finds.
  *
  * Reuse is decided by "is this path already a worktree of the recorded
@@ -183,15 +285,7 @@ async function planSide(
     return {
       facts,
       preconditions,
-      plan: {
-        side: input.side,
-        root,
-        repositoryRoot: input.repositoryRoot,
-        disposition: 'create',
-        ref: input.expectedRef,
-        fromOid: input.fromOid,
-        createsBranch: true,
-      },
+      plan: await planCreatedSide(dependencies, input, root, preconditions),
     };
   }
 
@@ -211,15 +305,7 @@ async function planSide(
     return {
       facts,
       preconditions,
-      plan: {
-        side: input.side,
-        root,
-        repositoryRoot: input.repositoryRoot,
-        disposition: 'create',
-        ref: input.expectedRef,
-        fromOid: input.fromOid,
-        createsBranch: true,
-      },
+      plan: await planCreatedSide(dependencies, input, root, preconditions),
     };
   }
 
@@ -547,6 +633,101 @@ export async function buildWorkspacePlan(
     flavor,
   });
   preconditions.push(...planningSide.preconditions, ...executionSide.preconditions);
+
+  // RECONCILING THE OWN-CHANGE INDEX ENTRY.
+  //
+  // That entry is the one fact `apply` consults and `plan` used to ignore — it
+  // is excluded from the fingerprint on purpose (registry.ts), and exempt from
+  // the `workspace_already_bound` scan above, which filters to OTHER Changes.
+  // Ignoring it is how a plan could bless a create that apply then refused with
+  // a repair that reproduced the same verdict. The plan now states what it sees:
+  // a recorded worktree that is gone is a re-creation visible in the preview,
+  // and a recorded worktree still live at another root is a SECOND pair for one
+  // Change, refused here, before anything is created.
+  for (const side of [
+    { name: 'planning' as const, sidePlan: planningSide, recorded: indexEntry?.planning },
+    { name: 'execution' as const, sidePlan: executionSide, recorded: indexEntry?.execution },
+  ]) {
+    const recordedRoot = side.recorded?.root ?? '';
+    if (recordedRoot.length === 0) continue;
+    const plannedRoot = side.sidePlan.plan.root;
+
+    if (samePath(recordedRoot, plannedRoot, flavor)) {
+      // `planSide` reuses a root exactly when it is a live worktree of the
+      // recorded repository, so `create` at the recorded root IS the vanished
+      // shape — no second survey can disagree with the one it already did.
+      if (side.sidePlan.plan.disposition === 'create' && side.sidePlan.facts.exists === false) {
+        preconditions.push(
+          precondition(
+            `${side.name}-recorded-pair-recreated`,
+            true,
+            `The machine index records a ${side.name} worktree for Change '${changeId}' at ${recordedRoot}, and nothing is there any more, so the pair is re-created at that same recorded root.`
+          )
+        );
+      }
+      continue;
+    }
+
+    const recordedFacts = await surveyWorktree(dependencies, {
+      side: side.name,
+      root: recordedRoot,
+      repositoryRoot: side.sidePlan.plan.repositoryRoot,
+      flavor,
+    });
+    const recordedIsLive =
+      recordedFacts.exists &&
+      recordedFacts.worktreeInstanceId !== undefined &&
+      (await sameRepository(
+        dependencies,
+        side.sidePlan.plan.repositoryRoot,
+        recordedRoot,
+        flavor
+      ));
+    preconditions.push(
+      recordedIsLive
+        ? precondition(
+            `${side.name}-recorded-pair-single`,
+            false,
+            `Change '${changeId}' is already bound to a ${side.name} worktree at ${recordedRoot}, which still exists, and this plan would create a second one at ${plannedRoot}. One Change instance belongs to exactly one pair. Remove the recorded pair with 'rasen store workspace cleanup --change ${changeId}', or plan without naming a destination, which reuses the recorded root.`,
+            { expected: recordedRoot, actual: plannedRoot, code: 'workspace_already_bound' }
+          )
+        : precondition(
+            `${side.name}-recorded-pair-recreated`,
+            true,
+            `The machine index records a ${side.name} worktree for Change '${changeId}' at ${recordedRoot}, which is no longer a worktree, so the pair is re-created at ${plannedRoot} instead.`
+          )
+    );
+  }
+
+  // THE FROZEN TIP, IN THE PREVIEW. The values are already in the plan body;
+  // this puts them where an operator diagnosing "which tip did my plan freeze?"
+  // actually looks — beside every other precondition, and in the refusal
+  // context they compare against.
+  for (const side of [
+    {
+      name: 'planning' as const,
+      plan: planningSide.plan,
+      locatorRef: targetLine.storeRef,
+      locatorOid: targetLine.storeRefOid,
+    },
+    {
+      name: 'execution' as const,
+      plan: executionSide.plan,
+      locatorRef: targetLine.codeRef,
+      locatorOid: targetLine.codeRefOid,
+    },
+  ]) {
+    if (side.plan.disposition !== 'create') continue;
+    preconditions.push(
+      precondition(
+        `${side.name}-created-from`,
+        true,
+        side.plan.createsBranch
+          ? `The ${side.name} worktree will be created from ${side.locatorRef} @ ${side.locatorOid}, on the new branch ${side.plan.ref}.`
+          : `The ${side.name} worktree will be created on the existing branch ${side.plan.ref} @ ${side.plan.fromOid}; the target line ${side.locatorRef} is at ${side.locatorOid}.`
+      )
+    );
+  }
 
   // Default destinations are derived from each repository, which is why the
   // side planner is given the repository root as the naming base.

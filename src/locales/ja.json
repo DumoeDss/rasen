@@ -1920,6 +1920,9 @@
                     "existing-change": {
                       "description": "新しく識別子を発行せず、既存の変更を新しいペアに束縛します"
                     },
+                    "apply": {
+                      "description": "同一のロックを保持したまま計画と適用を 1 回の実行で行い、2 回の実行の間に凍結したコミット ID が古くならないようにします"
+                    },
                     "json": {
                       "description": "JSON で出力"
                     }

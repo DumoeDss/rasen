@@ -1,0 +1,59 @@
+
+ RUN  v3.2.6 E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code
+
+ ✓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > applies a re-plan whose created destination is simply absent (task 2.2) 13446ms
+ ✓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > refuses a second pair at a fresh destination while the recorded pair is live, and converges after cleanup (task 3.2) 19577ms
+ ✓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > states the re-creation of a vanished recorded pair in the preview (task 3.3) 10143ms
+ ✓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > treats a case-aliased spelling of the recorded root as the same root (task 3.3) 10683ms
+ ✓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > names the ref and frozen commit every created side is born from (task 4.1) 10233ms
+ ✓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > still refuses a resumed created destination that is a different incarnation (task 2.3) 10334ms
+ ✓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > prepares in one invocation on a line that advanced moments before (task 4.4) 8468ms
+ ✓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > still refuses stale when a competitor moves the ref inside the compound window, and converges on repeat (task 4.4) 9442ms
+ ✓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > fails the compound with a named lock holder rather than deadlocking (task 4.4) 7793ms
+ ✓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > designed staleness > refuses a moved Store ref, naming both the frozen and the live commit (task 1.4) 19110ms
+ × test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > DEFECT PIN (pre-fix behaviour) > PIN 1.2 — apply refuses a re-plan whose destination is merely absent 24732ms
+   → expected a refusal, but the call resolved with {"planId":"095c05bf85e15c8d73cc828aa08168f6305b5daf7b15b6d067aefd47325b5b4a","scope":{"storeUid":"fe522d17-af22-4a84-9f9c-e5452e3c62d9","storeId":"team-store","storeRoot":"C:/Users/Sayo/AppData/Local/Temp/rasen-workspace-repreparation-QZOyAZ/store-integration","projectId":"app-a","targetLineId":"line-0.2","planningScopeId":"ps_445d1c7746de4f39516d37815c15d27608dbf762d63727374754ad60dbfdeec8"},"tar
+ × test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > DEFECT PIN (pre-fix behaviour) > PIN 1.3 — a second pair at a fresh destination is blessed by plan and refused by apply 44181ms
+   → [{"id":"planning-branch-usable","satisfied":false,"detail":"refs/heads/change/line-0.2/app-a/redesign-routing is already checked out in C:/Users/Sayo/AppData/Local/Temp/rasen-workspace-repreparation-hAm6Bg/store-planning-redesign, and Git checks one branch out in one worktree at a time. Remove that worktree first — 'rasen store workspace cleanup --change redesign-routing' when it is this Change's own pair — because preparation never moves another worktree's HEAD.","expected":"refs/heads/change/line-0.2/app-a/redesign-routing checked out nowhere","actual":"C:/Users/Sayo/AppData/Local/Temp/rasen-workspace-repreparation-hAm6Bg/store-planning-redesign","code":"workspace_ref_mismatch"},{"id":"planning-recorded-pair-single","satisfied":false,"detail":"Change 'redesign-routing' is already bound to a planning worktree at C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-workspace-repreparation-hAm6Bg\\store-planning-redesign, which still exists, and this plan would create a second one at C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-workspace-repreparation-hAm6Bg\\store-planning-redesign-second. One Change instance belongs to exactly one pair. Remove the recorded pair with 'rasen store workspace cleanup --change redesign-routing', or plan without naming a destination, which reuses the recorded root.","expected":"C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-workspace-repreparation-hAm6Bg\\store-planning-redesign","actual":"C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-workspace-repreparation-hAm6Bg\\store-planning-redesign-second","code":"workspace_already_bound"}]: expected false to be true // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > DEFECT PIN (pre-fix behaviour) > PIN 1.2 — apply refuses a re-plan whose destination is merely absent
+Error: expected a refusal, but the call resolved with {"planId":"095c05bf85e15c8d73cc828aa08168f6305b5daf7b15b6d067aefd47325b5b4a","scope":{"storeUid":"fe522d17-af22-4a84-9f9c-e5452e3c62d9","storeId":"team-store","storeRoot":"C:/Users/Sayo/AppData/Local/Temp/rasen-workspace-repreparation-QZOyAZ/store-integration","projectId":"app-a","targetLineId":"line-0.2","planningScopeId":"ps_445d1c7746de4f39516d37815c15d27608dbf762d63727374754ad60dbfdeec8"},"tar
+ ❯ refusalFrom test/core/store/workspace-repreparation.test.ts:105:9
+    103|     return refusalOf(error);
+    104|   }
+    105|   throw new Error(
+       |         ^
+    106|     `expected a refusal, but the call resolved with ${JSON.stringify(r…
+    107|   );
+ ❯ test/core/store/workspace-repreparation.test.ts:623:25
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > DEFECT PIN (pre-fix behaviour) > PIN 1.3 — a second pair at a fresh destination is blessed by plan and refused by apply
+AssertionError: [{"id":"planning-branch-usable","satisfied":false,"detail":"refs/heads/change/line-0.2/app-a/redesign-routing is already checked out in C:/Users/Sayo/AppData/Local/Temp/rasen-workspace-repreparation-hAm6Bg/store-planning-redesign, and Git checks one branch out in one worktree at a time. Remove that worktree first — 'rasen store workspace cleanup --change redesign-routing' when it is this Change's own pair — because preparation never moves another worktree's HEAD.","expected":"refs/heads/change/line-0.2/app-a/redesign-routing checked out nowhere","actual":"C:/Users/Sayo/AppData/Local/Temp/rasen-workspace-repreparation-hAm6Bg/store-planning-redesign","code":"workspace_ref_mismatch"},{"id":"planning-recorded-pair-single","satisfied":false,"detail":"Change 'redesign-routing' is already bound to a planning worktree at C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-workspace-repreparation-hAm6Bg\\store-planning-redesign, which still exists, and this plan would create a second one at C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-workspace-repreparation-hAm6Bg\\store-planning-redesign-second. One Change instance belongs to exactly one pair. Remove the recorded pair with 'rasen store workspace cleanup --change redesign-routing', or plan without naming a destination, which reuses the recorded root.","expected":"C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-workspace-repreparation-hAm6Bg\\store-planning-redesign","actual":"C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-workspace-repreparation-hAm6Bg\\store-planning-redesign-second","code":"workspace_already_bound"}]: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ test/core/store/workspace-repreparation.test.ts:648:68
+    646|         // Defectively applicable: the own-Change entry is exempt from…
+    647|         // plan-time check, so the plan blesses a SECOND pair.
+    648|         expect(replan.applicable, JSON.stringify(replan.blockers)).toB…
+       |                                                                    ^
+    649|         expect(replan.planning.root).toBe(freshPlanning);
+    650| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 10 passed (12)
+   Start at  14:13:28
+   Duration  201.66s (transform 3.84s, setup 76ms, collect 12.23s, tests 188.15s, environment 0ms, prepare 251ms)
+
+EXIT=1

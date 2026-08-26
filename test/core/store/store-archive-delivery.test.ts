@@ -64,7 +64,14 @@ const ARCHIVED_SHAPES = [
 ] as const;
 type ArchivedShape = (typeof ARCHIVED_SHAPES)[number];
 
-describe('the archive delivery block (readArchiveEntry + threading + rollup)', () => {
+/**
+ * Same real-Git fixture class as the `workspace-*` suites: every case builds a
+ * layout-v2 Store with real commits, and the cost is worktree and commit
+ * wall-clock time rather than source size. The 30s default passes solo and
+ * fails under the parallel load of the store suites (observed at 42.5s), where
+ * a timeout reads as a broken assertion rather than as a timeout.
+ */
+describe('the archive delivery block (readArchiveEntry + threading + rollup)', { timeout: 180_000 }, () => {
   let f: StoreWorkspaceFixture;
   let scope: { store: string; startPath: string; globalDataDir: string };
   let execRoot: string;
