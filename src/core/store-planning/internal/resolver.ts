@@ -75,6 +75,7 @@ import type {
   StorePlanningDependencies,
   StorePlanningFileIdentity,
   StoreRegistrySnapshotEntry,
+  WorkspacePairSnapshot,
 } from './dependencies.js';
 
 interface LooseProjectConfig {
@@ -264,6 +265,68 @@ function optionalString(
     );
   }
   return value;
+}
+
+/**
+ * How one side of a recorded pair disagrees with the index entry that names
+ * it, as human-readable clauses (`store-scope-resolution` D3).
+ *
+ * ABSENT evidence produces no clause: a torn-down worktree leaves an entry
+ * behind, and calling that a conflict would turn ordinary cleanup residue into
+ * a hard refusal. Only a file that IS there and names something else counts.
+ * A side that declares nothing about a field is likewise not a disagreement —
+ * the pair simply does not satisfy the gate on that field.
+ */
+function describePairDisagreement(
+  source: 'planning-worktree-marker' | 'execution-association',
+  root: string,
+  fact: AssociationFact | null,
+  pair: WorkspacePairSnapshot
+): readonly string[] {
+  if (fact === null) return [];
+  const findings: string[] = [];
+  if (fact.storeUid !== undefined && !storeUidsMatch(fact.storeUid, pair.storeUid)) {
+    findings.push(
+      `${source} at ${root} names store '${fact.storeUid}', the index entry names '${pair.storeUid}'`
+    );
+  }
+  if (
+    fact.projectId !== undefined &&
+    normalizeProjectIdentity(fact.projectId) !== normalizeProjectIdentity(pair.projectId)
+  ) {
+    findings.push(
+      `${source} at ${root} names project '${fact.projectId}', the index entry names '${pair.projectId}'`
+    );
+  }
+  if (fact.targetLineId !== undefined && fact.targetLineId !== pair.targetLineId) {
+    findings.push(
+      `${source} at ${root} names target line '${fact.targetLineId}', the index entry names '${pair.targetLineId}'`
+    );
+  }
+  return freeze(findings);
+}
+
+/**
+ * Does one side of a recorded pair positively AGREE with the index entry on
+ * the whole triple? Silence is not agreement: a marker that declares no target
+ * line cannot satisfy a gate whose subject is the store/project/line triple,
+ * even though declaring nothing is also not a disagreement.
+ */
+function pairSideAgrees(
+  fact: AssociationFact | null,
+  pair: WorkspacePairSnapshot
+): boolean {
+  if (fact === null) return false;
+  if (fact.storeUid === undefined || !storeUidsMatch(fact.storeUid, pair.storeUid)) {
+    return false;
+  }
+  if (
+    fact.projectId === undefined ||
+    normalizeProjectIdentity(fact.projectId) !== normalizeProjectIdentity(pair.projectId)
+  ) {
+    return false;
+  }
+  return fact.targetLineId !== undefined && fact.targetLineId === pair.targetLineId;
 }
 
 function parseAssociation(text: string, source: string): AssociationFact {
@@ -555,6 +618,24 @@ export class StorePlanningResolver implements StorePlanning {
     return this.findAncestor(startPath, flavor, async (candidate) =>
       (await this.dependencies.fs.statKind(
         api.join(candidate, '.rasen-store', 'store.yaml')
+      )) === 'file'
+    );
+  }
+
+  /**
+   * Is this exact root a Store checkout (integration or linked worktree)?
+   *
+   * `findStoreRoot` answers "is there a Store above me"; this answers "am I
+   * one", which is what D1's fact exclusion turns on — a project nested INSIDE
+   * a Store checkout's directory tree is still a project.
+   */
+  private async isStoreCheckoutRoot(
+    root: string,
+    api: path.PlatformPath
+  ): Promise<boolean> {
+    return (
+      (await this.dependencies.fs.statKind(
+        api.join(root, '.rasen-store', 'store.yaml')
       )) === 'file'
     );
   }
@@ -1027,14 +1108,166 @@ export class StorePlanningResolver implements StorePlanning {
         { target: 'selection.project' }
       );
     }
-    if (match.catalog.planningBinding.state !== 'bound' || !match.catalog.roles.planning) {
+    return match;
+  }
+
+  /**
+   * The planning-bound gate (`store-scope-resolution` D3).
+   *
+   * Two satisfiers, not one. The catalog's `planningBinding: bound` is the
+   * PORTABLE one — it travels with the Store, so a fresh clone with no local
+   * pair still passes, and it stays the adoption path unchanged. But nothing
+   * in the workspace pair flow ever writes that field, and deliberately so:
+   * pair binding lives in the marker, the association, and the machine index
+   * (target design §5.3), because a `bound` write per pair would put dozens of
+   * concurrent planning branches into one shared committed file and
+   * manufacture integration-line merge conflicts.
+   *
+   * So a consistent recorded pair satisfies the gate too — but only a fully
+   * agreeing one: the index entry names the roots, and the marker at the
+   * planning root and the association at the execution root must both agree
+   * with it on the store, the project, and the target line. Incomplete
+   * evidence (a torn-down worktree, a missing file) simply fails to satisfy
+   * and lands on the repair message. A pair whose OWN sources disagree is a
+   * conflict, not a near miss, and refuses naming both sources — but only
+   * when no other recorded pair for the same project and line agrees, because
+   * each pair witnesses that one subject independently (see the loop below).
+   */
+  private async assertProjectPlanningBound(input: {
+    readonly store: StoreState;
+    readonly match: ProjectCatalogEntry;
+    readonly selector: string;
+    readonly targetLineId?: string;
+    readonly globalDataDir?: string;
+    readonly api: path.PlatformPath;
+  }): Promise<void> {
+    const { catalog } = input.match;
+    const catalogBound =
+      catalog.planningBinding.state === 'bound' && catalog.roles.planning === true;
+    if (catalogBound) return;
+    // A knowledge-only partition hosts no planning at all; no recorded pair
+    // can promote it, so the roster is answered before the index is read.
+    if (catalog.roles.planning !== true) {
+      throw this.notPlanningBound(input, 'the project has no planning role in this Store');
+    }
+
+    const pairs = (await this.dependencies.listWorkspacePairs(input.globalDataDir)).filter(
+      (pair) =>
+        this.pairNamesStore(pair, input.store) &&
+        normalizeProjectIdentity(pair.projectId) ===
+          normalizeProjectIdentity(catalog.projectId) &&
+        (input.targetLineId === undefined || pair.targetLineId === input.targetLineId)
+    );
+    // Each recorded pair is an INDEPENDENT witness for the same question -
+    // is this project planning-bound on this line - so one pair whose three
+    // sources agree settles it, and a sibling pair being torn is not
+    // counter-evidence against that proof. D3 states the disagreement rule
+    // WITHIN a pair ("the index entry, marker and association agree", "naming
+    // both sources"), and it has to stay there: the index is a rebuildable
+    // projection that is authority for nothing, so letting one stale entry
+    // veto every scoped write for the project would promote residue to
+    // authority - and would make a REUSED planning directory a hard refusal
+    // while a DELETED one (absent evidence, above) stays a near miss. A torn
+    // sibling is a machine-index defect for the doctor surfaces to report;
+    // keeping a WRONG scope out is the fact merge's job, and the seat's own
+    // marker and association are merged fail-closed there whatever this gate
+    // decides.
+    //
+    // The verdict is therefore order-independent - admitted exactly when SOME
+    // pair agrees - and the disagreement list is consulted only on the path
+    // where none does, by which point every pair has been examined.
+    let agreed = false;
+    const disagreements: string[] = [];
+    for (const pair of pairs) {
+      const marker = await this.readPairSideFact(
+        input.api.join(pair.planningRoot, '.rasen', 'planning-line.json')
+      );
+      const association = await this.readPairSideFact(
+        input.api.join(pair.executionRoot, '.rasen', 'planning-binding.json')
+      );
+      const markerFindings = describePairDisagreement(
+        'planning-worktree-marker',
+        pair.planningRoot,
+        marker,
+        pair
+      );
+      const associationFindings = describePairDisagreement(
+        'execution-association',
+        pair.executionRoot,
+        association,
+        pair
+      );
+      if (pairSideAgrees(marker, pair) && pairSideAgrees(association, pair)) {
+        agreed = true;
+        break;
+      }
+      disagreements.push(...markerFindings, ...associationFindings);
+    }
+    if (agreed) return;
+    if (disagreements.length > 0) {
       throw new PlanningScopeError(
-        'project_not_in_store',
-        `Project '${selector}' is not planning-bound in the selected Store.`,
-        { target: match.path }
+        'planning_selection_conflict',
+        `The recorded workspace pair for project '${catalog.projectId}' disagrees with itself: ${disagreements.join('; ')}.`,
+        {
+          target: input.match.path,
+          fix: `Repair the disagreeing marker or association, or re-record the pair with 'rasen store workspace plan --store ${input.store.id} --project ${catalog.projectId}${
+            input.targetLineId === undefined ? '' : ` --target-line ${input.targetLineId}`
+          } --change <change-id>' and apply it.`,
+          details: freeze({ disagreements: freeze([...disagreements]) }),
+        }
       );
     }
-    return match;
+    throw this.notPlanningBound(
+      input,
+      pairs.length === 0
+        ? 'no workspace pair is recorded on this machine'
+        : 'the recorded workspace pair has no marker/association evidence left on disk'
+    );
+  }
+
+  private notPlanningBound(
+    input: {
+      readonly store: StoreState;
+      readonly match: ProjectCatalogEntry;
+      readonly selector: string;
+      readonly targetLineId?: string;
+    },
+    reason: string
+  ): PlanningScopeError {
+    const line = input.targetLineId ?? '<target-line-id>';
+    return new PlanningScopeError(
+      'project_not_in_store',
+      `Project '${input.selector}' is not planning-bound in the selected Store: its catalog records planningBinding '${input.match.catalog.planningBinding.state}' and ${reason}.`,
+      {
+        target: input.match.path,
+        fix: `Record a planning/execution pair with 'rasen store workspace plan --store ${input.store.id} --project ${input.match.catalog.projectId} --target-line ${line} --change <change-id>' and apply it.`,
+      }
+    );
+  }
+
+  private pairNamesStore(
+    pair: WorkspacePairSnapshot,
+    store: StoreState
+  ): boolean {
+    return store.uid !== undefined && pair.storeUid.length > 0
+      ? storeUidsMatch(pair.storeUid, store.uid)
+      : pair.storeId === store.id;
+  }
+
+  /**
+   * A marker or association read as pair EVIDENCE rather than as a scope fact.
+   * An unreadable or malformed file is absent evidence, not a thrown error:
+   * the gate's own refusal names the repair, which is more actionable than a
+   * parse error from a file the caller never mentioned.
+   */
+  private async readPairSideFact(filePath: string): Promise<AssociationFact | null> {
+    const text = await this.dependencies.fs.readText(filePath);
+    if (text === null) return null;
+    try {
+      return parseAssociation(text, filePath);
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -1662,18 +1895,37 @@ export class StorePlanningResolver implements StorePlanning {
     if (association) candidates.push(association.candidate);
     if (marker) candidates.push(marker.candidate);
     if (bindingStoreEntry || selectedProjectConfig?.projectId || selectedProjectRegistry) {
+      // `store-scope-resolution` D1: a Store aggregate is not a project.
+      //
+      // The projectId `store setup` mints into a Store checkout's own
+      // committed root config is a member of no project catalog, so admitting
+      // it as a project-binding fact can only ever produce a conflict with the
+      // real partition selector or an orphan-id refusal — never a correct
+      // selection. The same root is not an EXECUTION checkout either, for the
+      // same reason: a Store checkout is where planning lives, and claiming it
+      // as the project's execution root collides with the marker that names
+      // the actual execution worktree. Both facts are the Store root
+      // describing itself as a project, and both are suppressed together.
+      //
+      // Detected by Store metadata AT that root, the same signal
+      // `loadStore`/`checkoutRole` already use. A standalone project root's
+      // config is unaffected.
+      const selectedRootIsStoreCheckout =
+        selectedProjectRoot !== null &&
+        (await this.isStoreCheckoutRoot(selectedProjectRoot, api));
+      const configProjectId = selectedRootIsStoreCheckout
+        ? undefined
+        : selectedProjectConfig?.projectId;
+      const bindingProjectId = configProjectId ?? selectedProjectRegistry?.entry.projectId;
       candidates.push(freeze({
         source: 'project-binding',
         ...(store?.uid === undefined ? {} : { storeUid: store.uid }),
         ...(store?.id === undefined ? {} : { storeId: store.id }),
-        ...(selectedProjectConfig?.projectId === undefined && selectedProjectRegistry === undefined
-          ? {}
-          : {
-              projectId: selectedProjectConfig?.projectId ??
-                selectedProjectRegistry!.entry.projectId,
-            }),
+        ...(bindingProjectId === undefined ? {} : { projectId: bindingProjectId }),
         ...(store === undefined ? {} : { planningRoot: store.planningRoot }),
-        ...(selectedProjectRoot === null ? {} : { executionRoot: selectedProjectRoot }),
+        ...(selectedProjectRoot === null || selectedRootIsStoreCheckout
+          ? {}
+          : { executionRoot: selectedProjectRoot }),
       }));
     }
     if (!store && selectedProjectRoot) {
@@ -1781,6 +2033,18 @@ export class StorePlanningResolver implements StorePlanning {
           });
         } else {
           const selectedCatalog = this.selectProjectCatalog(catalogs, projectSelector);
+          await this.assertProjectPlanningBound({
+            store,
+            match: selectedCatalog,
+            selector: projectSelector,
+            ...(reduced.facts.targetLineId === undefined
+              ? {}
+              : { targetLineId: reduced.facts.targetLineId }),
+            ...(input.globalDataDir === undefined
+              ? {}
+              : { globalDataDir: input.globalDataDir }),
+            api,
+          });
           projectCatalog = selectedCatalog.catalog;
           fingerprintParts.push(selectedCatalog.text);
           if (

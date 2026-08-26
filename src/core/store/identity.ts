@@ -19,6 +19,7 @@
  * and `config-api/*` to import command-facing root selection. `root-selection`
  * keeps §31's responsibility as this tri-state's ADAPTER.
  */
+import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 
 import { FileSystemUtils } from '../../utils/file-system.js';
@@ -26,7 +27,9 @@ import type { StoreDiagnostic } from './errors.js';
 import {
   getStoreMetadataPath,
   listStoreRegistryEntries,
+  parseStoreMetadataState,
   readStoreRegistryState,
+  type StoreMetadataState,
   type StorePathOptions,
   type StoreRegistryEntry,
 } from './foundation.js';
@@ -116,11 +119,12 @@ export type StoreBindingDeclaration =
   | { form: 'durable'; uid: string; id?: string; remote?: string }
   | { form: 'malformed'; problem: string; filePath?: string | null };
 
-export interface ResolveStoreBindingInput extends StorePathOptions {
+export interface ResolveStoreBindingInput extends StoreRootMatchOptions {
   declaration: StoreBindingDeclaration;
   /**
    * The project root the declaration was read from. When it is itself a
-   * registered Store root the declaration is inert (no transitivity).
+   * registered Store root — or a linked worktree of one — the declaration is
+   * inert (no transitivity).
    */
   projectRoot?: string;
 }
@@ -332,34 +336,190 @@ async function readStoreEntries(options: StorePathOptions): Promise<StoreRegistr
 }
 
 /**
- * No-transitivity, made mechanical: a root that is itself a registered Store
- * never resolves its own `store:` declaration into a binding. Compared by
- * canonical path — the identity comparison a Store root can make about itself.
+ * Substitutable git repository-identity probe (`store-scope-resolution` D2).
+ *
+ * Resolves the shared `.git` directory — identical for every worktree of one
+ * repository, distinct across clones. Defaults to `gitCommonDir`; tests inject
+ * their own so the fallback below can be exercised without a real repository.
  */
-function isRegisteredStoreRootPath(
-  projectRoot: string | undefined,
-  entries: readonly StoreRegistryEntry[]
-): boolean {
-  if (!projectRoot) return false;
-  const canonicalRoot = canonicalizeOrResolve(projectRoot);
-  return entries.some((entry) => canonicalizeOrResolve(storeEntryRoot(entry)) === canonicalRoot);
+export type RepositoryIdentityProbe = (root: string) => Promise<string | null>;
+
+/**
+ * Memo for one COMMAND INVOCATION's repository-identity probes, keyed by
+ * canonical path.
+ *
+ * Deliberately caller-owned rather than module-level. Git worktree topology
+ * changes under a running process — `workspace apply` adds one, cleanup removes
+ * one — so a process-lifetime cache would let the resolver match a root against
+ * a repository layout that no longer exists. That is a correctness regression,
+ * and a far worse one than the spawns it would save. A caller that resolves
+ * many roots in a single command creates ONE of these and lets it die with the
+ * command; a caller that resolves once passes nothing and probes directly.
+ */
+export type RepositoryIdentityCache = Map<string, string | null>;
+
+/**
+ * The DEFAULT probe: `git rev-parse --git-common-dir`, reached through a
+ * deferred import.
+ *
+ * The deferral is load-bearing, not stylistic. `identity.ts` is imported early
+ * and widely — `effective-config`, `config-api`, `root-selection`,
+ * `learned-skills` — and a STATIC edge from here into `./git.js` was enough to
+ * put an archive transaction into `abort-required`, with none of this file's
+ * logic executing. That was proved by reverting this file to its original
+ * content and adding only the import plus a `void` reference: same failure,
+ * six of seven `archive-consumer-integration` cases. `git.js` itself is clean
+ * (two node imports and two leaf modules, no cycle, no side effects), so the
+ * fragility lives in what the archive engine reads at init and is a separate
+ * defect — but this module must not be the thing that trips it.
+ *
+ * Callers that want no dynamic import at all inject `repositoryIdentity`
+ * through the seam below, which is also how tests substitute it.
+ */
+const defaultRepositoryIdentityProbe: RepositoryIdentityProbe = async (root) => {
+  const { gitCommonDir } = await import('./git.js');
+  return gitCommonDir(root);
+};
+
+export interface StoreRootMatchOptions extends StorePathOptions {
+  readonly repositoryIdentity?: RepositoryIdentityProbe;
+  readonly repositoryIdentityCache?: RepositoryIdentityCache;
+}
+
+function comparableRepositoryIdentity(commonDir: string): string {
+  const resolved = path.resolve(commonDir);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+/** The Store metadata physically at this root, or null when there is none. */
+async function readStoreMetadataAtRoot(
+  canonicalRoot: string
+): Promise<StoreMetadataState | null> {
+  try {
+    const text = await fs.readFile(getStoreMetadataPath(canonicalRoot), 'utf8');
+    return parseStoreMetadataState(text);
+  } catch {
+    return null;
+  }
 }
 
 /**
- * The registered Store whose canonical root IS this path, or null. The
- * read-only answer to "is this planning root a Store's own root?", so a
- * consumer never has to enumerate the registry itself (and so it never reaches
- * for the compat reader to ask).
+ * Does the metadata a checkout carries name the same Store as this entry?
+ * The permanent uid decides whenever both sides have one; the display alias is
+ * the legacy fallback, never an override.
+ */
+function storeMetadataMatchesEntry(
+  entry: StoreRegistryEntry,
+  metadata: StoreMetadataState
+): boolean {
+  const metadataUid = metadata.version === 2 ? metadata.uid : undefined;
+  if (entry.uid !== undefined && metadataUid !== undefined) {
+    return storeUidsMatch(entry.uid, metadataUid);
+  }
+  return metadata.id === entry.id;
+}
+
+/**
+ * Wraps a probe so each canonical path is spawned for AT MOST ONCE per cache.
+ *
+ * A miss and a hit are both memoized: `null` (Git absent, not a working tree,
+ * bare repository) is a real answer and re-spawning to re-learn it is the cost
+ * this exists to avoid. Without a cache the wrapper is the identity function,
+ * so behaviour is unchanged for every caller that passes none.
+ */
+function probeThroughCache(
+  probe: RepositoryIdentityProbe,
+  cache: RepositoryIdentityCache | undefined
+): RepositoryIdentityProbe {
+  if (cache === undefined) return probe;
+  return async (target) => {
+    if (cache.has(target)) return cache.get(target) ?? null;
+    const resolved = await probe(target);
+    cache.set(target, resolved);
+    return resolved;
+  };
+}
+
+/**
+ * The registered entry this root IS, by canonical path first and by git
+ * repository identity second (`store-scope-resolution` D2).
+ *
+ * The fallback exists because the machine registry holds ONE locator per Store
+ * — its main checkout — while planning happens in linked worktrees of that
+ * same repository. Path equality alone therefore answers "no" for every
+ * planning worktree, which is how retention and archive came to refuse the
+ * layout the rest of the system creates.
+ *
+ * It stays fail-closed in three ways, in this order: the root must carry Store
+ * metadata at all (so no ordinary project pays for a git spawn, and no
+ * non-Store directory can ever match); that metadata must name exactly one
+ * registered entry (a disagreeing or ambiguous identity is no match, and the
+ * caller's own resolution then reports the mismatch by name); and only then is
+ * the repository probed, on both sides, with equality of the resolved common
+ * directory required. A probe that cannot run — Git absent, not a working
+ * tree, a bare or deleted main checkout — leaves matching exactly as it was:
+ * no match, never a wrong one.
+ */
+async function findRegisteredStoreEntryAtRoot(
+  root: string,
+  entries: readonly StoreRegistryEntry[],
+  options: StoreRootMatchOptions
+): Promise<StoreRegistryEntry | null> {
+  const canonicalRoot = canonicalizeOrResolve(root);
+  const byPath = entries.find(
+    (candidate) => canonicalizeOrResolve(storeEntryRoot(candidate)) === canonicalRoot
+  );
+  if (byPath) return byPath;
+
+  const metadata = await readStoreMetadataAtRoot(canonicalRoot);
+  if (!metadata) return null;
+  const identityMatches = entries.filter((candidate) =>
+    storeMetadataMatchesEntry(candidate, metadata)
+  );
+  if (identityMatches.length !== 1) return null;
+  const entry = identityMatches[0] as StoreRegistryEntry;
+
+  const probe = probeThroughCache(
+    options.repositoryIdentity ?? defaultRepositoryIdentityProbe,
+    options.repositoryIdentityCache
+  );
+  const [rootCommonDir, entryCommonDir] = await Promise.all([
+    probe(canonicalRoot),
+    probe(canonicalizeOrResolve(storeEntryRoot(entry))),
+  ]);
+  if (!rootCommonDir || !entryCommonDir) return null;
+  return comparableRepositoryIdentity(rootCommonDir) ===
+    comparableRepositoryIdentity(entryCommonDir)
+    ? entry
+    : null;
+}
+
+/**
+ * No-transitivity, made mechanical: a root that is itself a registered Store
+ * — or a linked worktree of one — never resolves its own `store:` declaration
+ * into a binding.
+ */
+async function isRegisteredStoreRootPath(
+  projectRoot: string | undefined,
+  entries: readonly StoreRegistryEntry[],
+  options: StoreRootMatchOptions
+): Promise<boolean> {
+  if (!projectRoot) return false;
+  return (await findRegisteredStoreEntryAtRoot(projectRoot, entries, options)) !== null;
+}
+
+/**
+ * The registered Store this path IS, or null. The read-only answer to "is this
+ * planning root a Store's own root?", so a consumer never has to enumerate the
+ * registry itself (and so it never reaches for the compat reader to ask). A
+ * linked worktree of a registered Store's repository answers as that Store.
  */
 export async function findRegisteredStoreAtRoot(
   root: string,
-  options: StorePathOptions = {}
+  options: StoreRootMatchOptions = {}
 ): Promise<ResolvedStoreRef | null> {
   const entries = await readStoreEntries(options);
-  const canonicalRoot = canonicalizeOrResolve(root);
-  const entry = entries.find(
-    (candidate) => canonicalizeOrResolve(storeEntryRoot(candidate)) === canonicalRoot
-  );
+  const entry = await findRegisteredStoreEntryAtRoot(root, entries, options);
   if (!entry) return null;
   return {
     type: 'store',
@@ -552,11 +712,23 @@ export async function resolveStoreBinding(
     );
   }
 
-  const pathOptions: StorePathOptions =
-    input.globalDataDir !== undefined ? { globalDataDir: input.globalDataDir } : {};
+  // `ResolveStoreBindingInput` extends `StoreRootMatchOptions`, so every match
+  // option a caller declares has to survive the hop into `pathOptions`.
+  // Forwarding the probe while dropping its cache left the cache reachable
+  // only through `findRegisteredStoreAtRoot` - D2's "cached per invocation"
+  // mitigation existing in the type and nowhere a caller could reach it.
+  const pathOptions: StoreRootMatchOptions = {
+    ...(input.globalDataDir !== undefined ? { globalDataDir: input.globalDataDir } : {}),
+    ...(input.repositoryIdentity !== undefined
+      ? { repositoryIdentity: input.repositoryIdentity }
+      : {}),
+    ...(input.repositoryIdentityCache !== undefined
+      ? { repositoryIdentityCache: input.repositoryIdentityCache }
+      : {}),
+  };
   const entries = await readStoreEntries(pathOptions);
 
-  if (isRegisteredStoreRootPath(input.projectRoot, entries)) {
+  if (await isRegisteredStoreRootPath(input.projectRoot, entries, pathOptions)) {
     // A Store root never inherits from its own declaration.
     return { kind: 'absent' };
   }

@@ -13,6 +13,7 @@ import {
   type ProjectIdentityClaimantSnapshot,
   type ProjectRegistrySnapshotEntry,
   type StorePlanningDependencies,
+  type WorkspacePairSnapshot,
 } from '../../../src/core/store-planning/testing.js';
 import { PlanningScopeError } from '../../../src/core/store-planning/index.js';
 import {
@@ -179,6 +180,10 @@ function resolver(
     findRegisteredProject: async () => null,
     sessionContextPath: () => undefined,
     checkoutRole: overrides.checkoutRole ?? role,
+    // No pair is recorded by default: these fixtures assert the CATALOG
+    // satisfier of the planning-bound gate, so the recorded-pair satisfier
+    // must contribute nothing unless a case supplies it explicitly.
+    listWorkspacePairs: overrides.listWorkspacePairs ?? (async () => []),
     now: () => new Date('2026-08-06T12:00:00.000Z'),
     mintInstanceSeed: () => parseChangeInstanceSeed('0123456789abcdef0123456789abcdef'),
     randomSuffix: () => 'deterministic',
@@ -1414,5 +1419,441 @@ describe('typed path flavor validation', () => {
     ).rejects.toMatchObject({
       diagnostic: { code: expect.stringMatching(/invalid|project_not_in_store/u) },
     });
+  });
+});
+
+/**
+ * `store-scope-resolution` D1 — a Store aggregate is not a project, so a Store
+ * checkout's own committed root config contributes no projectId fact.
+ */
+describe('store-checkout root configuration as scope evidence', () => {
+  it('excludes a Store checkout root config projectId from the fact merge', async () => {
+    const roots = storeFixture();
+    // The setup-time id `store setup` mints into the Store's own root config.
+    // It belongs to no project catalog, so admitting it could only collide
+    // with the marker's partition id — which is exactly the refusal this
+    // removes.
+    write(
+      path.join(roots.storeRoot, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nprojectId: a7c28fc7-3091-41eb-84c4-af737bfcce97\n'
+    );
+    const planning = resolver(roots);
+
+    const scope = await planning.open({
+      intent: 'project-read',
+      startPath: roots.storeRoot,
+    });
+
+    expect(scope.describe().ref).toMatchObject({
+      mode: 'store-project',
+      projectId: 'project-a',
+    });
+    expect(
+      scope
+        .describe()
+        .evidence.filter((item) => item.value === 'a7c28fc7-3091-41eb-84c4-af737bfcce97')
+    ).toEqual([]);
+  });
+
+  it('suppresses the root config projectId for a Store with no project catalog at all', async () => {
+    // Every registered Store on a real machine carries a setup-minted root
+    // projectId that belongs to no catalog, so this branch is the COMMON path,
+    // not an edge case — and it has to hold for a Store that has no catalog
+    // directory to be a member of. Pre-fix this refused with "Project
+    // 'a7c28fc7-…' is not in the selected Store's v2 catalog", a dead end
+    // naming an id the caller never chose.
+    const roots = storeFixture({ marker: false });
+    fs.rmSync(path.join(roots.storeRoot, '.rasen-store', 'projects'), {
+      recursive: true,
+      force: true,
+    });
+    write(
+      path.join(roots.storeRoot, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nprojectId: a7c28fc7-3091-41eb-84c4-af737bfcce97\n'
+    );
+    const planning = resolver(roots);
+
+    const error = await planning
+      .open({ intent: 'project-read', startPath: roots.storeRoot })
+      .then(
+        () => null,
+        (caught: unknown) => caught
+      );
+
+    expect(error).toBeInstanceOf(PlanningScopeError);
+    const diagnostic = (error as PlanningScopeError).diagnostic;
+    // A named selector requirement, not an orphan-id dead end.
+    expect(diagnostic.code).toBe('project_scope_required');
+    expect(diagnostic.fix).toContain('--project');
+    expect(diagnostic.message).not.toContain('a7c28fc7-3091-41eb-84c4-af737bfcce97');
+
+    // The Store aggregate itself still resolves from the same seat.
+    const aggregate = await planning.open({
+      intent: 'store-read',
+      startPath: roots.storeRoot,
+      selection: { store: STORE_UID },
+    });
+    expect(aggregate.describe().kind).toBe('store-aggregate');
+  });
+
+  it('still admits a standalone project root config projectId', async () => {
+    const roots = storeFixture({ marker: false, localPlanning: true });
+    // No Store metadata at this root, so nothing about D1 applies to it.
+    write(
+      path.join(roots.projectRoot, 'rasen', 'config.yaml'),
+      'schema: spec-driven\nprojectId: project-a\n'
+    );
+    const planning = resolver(roots);
+
+    const scope = await planning.open({
+      intent: 'project-read',
+      startPath: roots.projectRoot,
+    });
+
+    expect(scope.describe().ref).toMatchObject({
+      mode: 'standalone',
+      projectId: 'project-a',
+    });
+    expect(scope.describe().evidence.some((item) => item.value === 'project-a')).toBe(true);
+  });
+
+  it('refuses when the marker and the execution association name different projects', async () => {
+    const roots = storeFixture();
+    write(
+      path.join(roots.storeRoot, '.rasen-store', 'projects', 'project-b.yaml'),
+      'version: 2\nprojectId: project-b\nid: project-b\nroles:\n  planning: true\n  knowledge: false\nplanningBinding:\n  state: bound\n  boundAt: 2026-08-06T00:00:00.000Z\n'
+    );
+    // The marker (in the Store checkout) says project-a; the association (in
+    // the execution checkout) says project-b. Neither wins: the merge names
+    // both sources and both values, and nothing is written.
+    write(
+      path.join(roots.projectRoot, '.rasen', 'planning-binding.json'),
+      JSON.stringify({
+        version: 1,
+        storeUid: STORE_UID,
+        storeId: 'team-store',
+        projectId: 'project-b',
+        targetLineId: 'line-0.2',
+        planningWorktree: roots.storeRoot,
+      }) + '\n'
+    );
+    const planning = resolver(roots);
+
+    const error = await planning
+      .open({ intent: 'project-read', startPath: roots.projectRoot })
+      .then(
+        () => null,
+        (caught: unknown) => caught
+      );
+
+    expect(error).toBeInstanceOf(PlanningScopeError);
+    const diagnostic = (error as PlanningScopeError).diagnostic;
+    expect(diagnostic.code).toBe('planning_selection_conflict');
+    expect(diagnostic.message).toContain('planning-worktree-marker');
+    expect(diagnostic.message).toContain('execution-association');
+    expect(diagnostic.message).toContain('project-a');
+    expect(diagnostic.message).toContain('project-b');
+  });
+
+  it('still refuses a genuine conflict between an explicit selector and the marker', async () => {
+    const roots = storeFixture();
+    write(
+      path.join(roots.storeRoot, '.rasen-store', 'projects', 'project-b.yaml'),
+      'version: 2\nprojectId: project-b\nid: project-b\nroles:\n  planning: true\n  knowledge: false\nplanningBinding:\n  state: bound\n  boundAt: 2026-08-06T00:00:00.000Z\n'
+    );
+    const planning = resolver(roots);
+
+    // The marker names project-a; the caller names project-b. Suppressing the
+    // root config's fact must not suppress a real disagreement.
+    await expect(
+      planning.open({
+        intent: 'project-read',
+        startPath: roots.storeRoot,
+        selection: { store: STORE_UID, project: 'project-b', targetLine: 'line-0.2' },
+      })
+    ).rejects.toMatchObject({ diagnostic: { code: 'planning_selection_conflict' } });
+  });
+});
+
+/**
+ * `store-scope-resolution` D3 — the planning-bound gate's two satisfiers and
+ * its two refusals.
+ */
+describe('the planning-bound gate', () => {
+  function unboundCatalog(roots: { storeRoot: string }): void {
+    write(
+      path.join(roots.storeRoot, '.rasen-store', 'projects', 'project-a.yaml'),
+      'version: 2\nprojectId: project-a\nid: project-a\nroles:\n  planning: true\n  knowledge: true\nplanningBinding:\n  state: unbound\n'
+    );
+  }
+
+  function recordedPair(
+    roots: { storeRoot: string; projectRoot: string },
+    overrides: { markerProjectId?: string } = {}
+  ): readonly WorkspacePairSnapshot[] {
+    const executionRoot = roots.projectRoot;
+    write(
+      path.join(roots.storeRoot, '.rasen', 'planning-line.json'),
+      JSON.stringify({
+        version: 1,
+        storeUid: STORE_UID,
+        storeId: 'team-store',
+        projectId: overrides.markerProjectId ?? 'project-a',
+        targetLineId: 'line-0.2',
+        executionRoot,
+      }) + '\n'
+    );
+    write(
+      path.join(executionRoot, '.rasen', 'planning-binding.json'),
+      JSON.stringify({
+        version: 1,
+        storeUid: STORE_UID,
+        storeId: 'team-store',
+        projectId: 'project-a',
+        targetLineId: 'line-0.2',
+        planningWorktree: roots.storeRoot,
+        executionRoot,
+      }) + '\n'
+    );
+    return [
+      {
+        planningScopeId: 'ps_fixture',
+        storeUid: STORE_UID,
+        storeId: 'team-store',
+        projectId: 'project-a',
+        targetLineId: 'line-0.2',
+        changeId: 'some-change',
+        planningRoot: roots.storeRoot,
+        executionRoot,
+      },
+    ];
+  }
+
+  it('admits an unbound catalog when a consistent pair is recorded', async () => {
+    const roots = storeFixture();
+    unboundCatalog(roots);
+    const pairs = recordedPair(roots);
+    const planning = resolver(roots, () => 'linked-worktree', {
+      listWorkspacePairs: async () => pairs,
+    });
+
+    const scope = await planning.open({
+      intent: 'project-read',
+      startPath: roots.storeRoot,
+      selection: { store: STORE_UID, project: 'project-a', targetLine: 'line-0.2' },
+    });
+
+    expect(scope.describe().ref).toMatchObject({
+      mode: 'store-project',
+      projectId: 'project-a',
+    });
+  });
+
+  it('admits a bound catalog with no pair recorded on this machine', async () => {
+    const roots = storeFixture();
+    const planning = resolver(roots, () => 'linked-worktree', {
+      listWorkspacePairs: async () => [],
+    });
+
+    const scope = await planning.open({
+      intent: 'project-read',
+      startPath: roots.storeRoot,
+      selection: { store: STORE_UID, project: 'project-a', targetLine: 'line-0.2' },
+    });
+
+    expect(scope.describe().ref).toMatchObject({
+      mode: 'store-project',
+      projectId: 'project-a',
+    });
+  });
+
+  it('refuses with the pair repair when neither the catalog nor a pair holds', async () => {
+    const roots = storeFixture();
+    unboundCatalog(roots);
+    const planning = resolver(roots, () => 'linked-worktree', {
+      listWorkspacePairs: async () => [],
+    });
+
+    const error = await planning
+      .open({
+        intent: 'project-read',
+        startPath: roots.storeRoot,
+        selection: { store: STORE_UID, project: 'project-a', targetLine: 'line-0.2' },
+      })
+      .then(
+        () => null,
+        (caught: unknown) => caught
+      );
+
+    expect(error).toBeInstanceOf(PlanningScopeError);
+    const diagnostic = (error as PlanningScopeError).diagnostic;
+    expect(diagnostic.code).toBe('project_not_in_store');
+    expect(diagnostic.fix).toContain(
+      'rasen store workspace plan --store team-store --project project-a --target-line line-0.2'
+    );
+  });
+
+  it('refuses as a conflict when the recorded pair disagrees with itself', async () => {
+    const roots = storeFixture();
+    unboundCatalog(roots);
+    // The marker now names a different project than the index entry does.
+    const pairs = recordedPair(roots, { markerProjectId: 'project-zeta' });
+    const planning = resolver(roots, () => 'linked-worktree', {
+      listWorkspacePairs: async () => pairs,
+    });
+
+    const error = await planning
+      .open({
+        intent: 'project-read',
+        startPath: roots.storeRoot,
+        selection: { store: STORE_UID, project: 'project-a', targetLine: 'line-0.2' },
+      })
+      .then(
+        () => null,
+        (caught: unknown) => caught
+      );
+
+    expect(error).toBeInstanceOf(PlanningScopeError);
+    expect((error as PlanningScopeError).diagnostic.message).toContain('project-zeta');
+  });
+
+  /**
+   * A SECOND recorded pair for the same project and target line, rooted
+   * OUTSIDE the seat.
+   *
+   * Nothing written here can reach scope selection: `readMarkerFact` and
+   * `readAssociationFact` only ever look at the seat's own store root and
+   * project root, so these files reach the resolver through the planning-bound
+   * gate and through nothing else. That is what makes the multi-pair shape
+   * testable at all - and it is the NORMAL machine shape, one index entry per
+   * Change.
+   */
+  function siblingPair(
+    overrides: { markerProjectId?: string; associationTargetLineId?: string } = {}
+  ): WorkspacePairSnapshot {
+    const root = temporaryRoot();
+    const planningRoot = path.join(root, 'sibling-planning');
+    const executionRoot = path.join(root, 'sibling-execution');
+    write(
+      path.join(planningRoot, '.rasen', 'planning-line.json'),
+      JSON.stringify({
+        version: 1,
+        storeUid: STORE_UID,
+        storeId: 'team-store',
+        projectId: overrides.markerProjectId ?? 'project-a',
+        targetLineId: 'line-0.2',
+        executionRoot,
+      }) + '\n'
+    );
+    write(
+      path.join(executionRoot, '.rasen', 'planning-binding.json'),
+      JSON.stringify({
+        version: 1,
+        storeUid: STORE_UID,
+        storeId: 'team-store',
+        projectId: 'project-a',
+        targetLineId: overrides.associationTargetLineId ?? 'line-0.2',
+        planningWorktree: planningRoot,
+        executionRoot,
+      }) + '\n'
+    );
+    return {
+      planningScopeId: `ps_sibling_${path.basename(root)}`,
+      storeUid: STORE_UID,
+      storeId: 'team-store',
+      projectId: 'project-a',
+      targetLineId: 'line-0.2',
+      changeId: 'sibling-change',
+      planningRoot,
+      executionRoot,
+    };
+  }
+
+  it('admits an agreeing pair while a sibling pair for the same line is torn', async () => {
+    // The pinned semantics: each pair is an independent witness for the same
+    // subject, so one fully agreeing pair settles the gate and a sibling's torn
+    // evidence is not counter-evidence against it. Both enumeration orders are
+    // asserted because the index yields pairs in no guaranteed order and the
+    // verdict must not depend on which one is read first.
+    for (const order of ['agreeing-first', 'torn-first'] as const) {
+      const roots = storeFixture();
+      unboundCatalog(roots);
+      const agreeing = recordedPair(roots);
+      const torn = siblingPair({ markerProjectId: 'project-zeta' });
+      const pairs =
+        order === 'agreeing-first' ? [...agreeing, torn] : [torn, ...agreeing];
+      const planning = resolver(roots, () => 'linked-worktree', {
+        listWorkspacePairs: async () => pairs,
+      });
+
+      const scope = await planning.open({
+        intent: 'project-read',
+        startPath: roots.storeRoot,
+        selection: { store: STORE_UID, project: 'project-a', targetLine: 'line-0.2' },
+      });
+
+      expect(scope.describe().ref, order).toMatchObject({
+        mode: 'store-project',
+        projectId: 'project-a',
+      });
+    }
+  });
+
+  it('refuses through the GATE when the only recorded pair is torn', async () => {
+    const roots = storeFixture();
+    unboundCatalog(roots);
+    // The seat's own marker agrees with the selector, so the fact merge has
+    // nothing to refuse: the only source that can name this root is the gate.
+    const torn = siblingPair({ markerProjectId: 'project-zeta' });
+    const planning = resolver(roots, () => 'linked-worktree', {
+      listWorkspacePairs: async () => [torn],
+    });
+
+    const error = await planning
+      .open({
+        intent: 'project-read',
+        startPath: roots.storeRoot,
+        selection: { store: STORE_UID, project: 'project-a', targetLine: 'line-0.2' },
+      })
+      .then(
+        () => null,
+        (caught: unknown) => caught
+      );
+
+    expect(error).toBeInstanceOf(PlanningScopeError);
+    const diagnostic = (error as PlanningScopeError).diagnostic;
+    expect(diagnostic.code).toBe('planning_selection_conflict');
+    expect(diagnostic.message).toContain(torn.planningRoot);
+    expect(diagnostic.message).toContain('project-zeta');
+  });
+
+  it('names every torn pair when no pair agrees', async () => {
+    const roots = storeFixture();
+    unboundCatalog(roots);
+    const tornMarker = siblingPair({ markerProjectId: 'project-zeta' });
+    const tornAssociation = siblingPair({ associationTargetLineId: 'line-0.9' });
+    const planning = resolver(roots, () => 'linked-worktree', {
+      listWorkspacePairs: async () => [tornMarker, tornAssociation],
+    });
+
+    const error = await planning
+      .open({
+        intent: 'project-read',
+        startPath: roots.storeRoot,
+        selection: { store: STORE_UID, project: 'project-a', targetLine: 'line-0.2' },
+      })
+      .then(
+        () => null,
+        (caught: unknown) => caught
+      );
+
+    expect(error).toBeInstanceOf(PlanningScopeError);
+    const diagnostic = (error as PlanningScopeError).diagnostic;
+    expect(diagnostic.code).toBe('planning_selection_conflict');
+    // The refusal enumerates the whole torn set, not the first one found.
+    expect(diagnostic.message).toContain('project-zeta');
+    expect(diagnostic.message).toContain('line-0.9');
+    expect(diagnostic.message).toContain(tornMarker.planningRoot);
+    expect(diagnostic.message).toContain(tornAssociation.executionRoot);
   });
 });

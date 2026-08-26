@@ -1,0 +1,81 @@
+
+ RUN  v3.2.6 E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code
+
+ ❯ test/core/store-planning/store-planning.test.ts (51 tests | 1 failed) 2642ms
+   ✓ StorePlanning.open > keeps Store aggregate addresses separate from project content 50ms
+   ✓ StorePlanning.open > maps a v2 project through the Foundation partition and returns deterministic locations 27ms
+   ✓ StorePlanning.open > creates one complete Store v2 Change with verified portable identity 81ms
+   ✓ StorePlanning.open > validates Store v2 creation schemas from the selected project partition 56ms
+   ✓ StorePlanning.open > rejects a stale creation capability before writing a Change 37ms
+   ✓ StorePlanning.open > preserves an existing Change when duplicate creation is attempted 44ms
+   ✓ StorePlanning.open > serializes concurrent publication without clobbering or leaving residue 63ms
+   ✓ StorePlanning.open > rejects invalid schemas and caller-controlled identity without writing 22ms
+   ✓ StorePlanning.open > cleans staging and lock paths when publication is interrupted 43ms
+   ✓ StorePlanning.open > maps a Windows EPERM publication collision to duplicate without residue 40ms
+   ✓ StorePlanning.open > does not replace a non-cooperating POSIX-style target creator 45ms
+   ✓ StorePlanning.open > never deletes a non-cooperating Windows-style replacement after reservation 50ms
+   ✓ StorePlanning.open > fails closed for Store integration checkout creation 21ms
+   ✓ StorePlanning.open > uses the nearest planning-worktree marker ahead of the registered integration root 61ms
+   ✓ StorePlanning.open > does not let an unrelated Store checkout in the start path redirect an explicit selection 23ms
+   ✓ StorePlanning.open > keeps other projects and the aggregate usable when one sibling catalog is unreadable 35ms
+   ✓ StorePlanning.open > names the offending catalog file when the selected project cannot be read 19ms
+   ✓ StorePlanning.open > returns configuration inheritance as a standalone scope, not as a thrown diagnostic 28ms
+   ✓ StorePlanning.open > reports the unbound planning relationship for a pointer checkout with no local planning 20ms
+   ✓ StorePlanning.open > detects split planning truth and allows only Store-backed reads 48ms
+   ✓ StorePlanning.open > reports every project claimant and actionable pruning for duplicate identities 20ms
+   ✓ StorePlanning.open > refuses a canonical claimant whose live aliases conflict on fixed metadata 33ms
+   ✓ StorePlanning.open > rejects registry/config identity drift selected by normalized id without mutation 31ms
+   ✓ StorePlanning.open > rejects registry/config identity drift selected by display name without mutation 22ms
+   ✓ StorePlanning.open > rejects registry/config identity drift selected by absolute root without mutation 22ms
+   ✓ StorePlanning.open > expands a normalized id selector to conflicting aliases at its canonical root without mutation 25ms
+   ✓ StorePlanning.open > expands a display name selector to conflicting aliases at its canonical root without mutation 20ms
+   ✓ StorePlanning.open > expands a absolute root selector to conflicting aliases at its canonical root without mutation 21ms
+   ✓ StorePlanning.open > accepts equivalent normalized registry and config identities 20ms
+   ✓ StorePlanning.open > unifies a legacy worktree root with its machine-registered main checkout 35ms
+   ✓ StorePlanning.open > pierces a legacy worktree registry duplicate to its registered main checkout  993ms
+   ✓ StorePlanning.open > rejects conflicts instead of letting explicit evidence rewrite a marker 23ms
+   ✓ a session freezes the worktree pair > resolves the frozen planning root from a completely unrelated directory 48ms
+   ✓ a session freezes the worktree pair > fails closed when the frozen planning worktree is no longer a worktree 26ms
+   ✓ a session freezes the worktree pair > fails closed when the frozen worktree no longer re-derives its identity 27ms
+   ✓ a session freezes the worktree pair > fails closed when the frozen worktree has been switched to another ref, naming both 27ms
+   ✓ a session freezes the worktree pair > refuses a mutation the frozen root cannot authorize instead of falling back to the directory 36ms
+   ✓ a session freezes the worktree pair > leaves the Store integration checkout byte-identical when a mutation is refused 29ms
+   ✓ typed path flavor validation > uses win32 path semantics and rejects Windows device aliases on every host 15ms
+   ✓ store-checkout root configuration as scope evidence > excludes a Store checkout root config projectId from the fact merge 25ms
+   ✓ store-checkout root configuration as scope evidence > suppresses the root config projectId for a Store with no project catalog at all 22ms
+   ✓ store-checkout root configuration as scope evidence > still admits a standalone project root config projectId 17ms
+   ✓ store-checkout root configuration as scope evidence > refuses when the marker and the execution association name different projects 32ms
+   ✓ store-checkout root configuration as scope evidence > still refuses a genuine conflict between an explicit selector and the marker 19ms
+   ✓ the planning-bound gate > admits an unbound catalog when a consistent pair is recorded 35ms
+   ✓ the planning-bound gate > admits a bound catalog with no pair recorded on this machine 20ms
+   ✓ the planning-bound gate > refuses with the pair repair when neither the catalog nor a pair holds 21ms
+   ✓ the planning-bound gate > refuses as a conflict when the recorded pair disagrees with itself 34ms
+   × the planning-bound gate > admits an agreeing pair while a sibling pair for the same line is torn 54ms
+     → The recorded workspace pair for project 'project-a' disagrees with itself: planning-worktree-marker at C:\Users\Sayo\AppData\Local\Temp\rasen-store-planning-89Nczp\sibling-planning names project 'project-zeta', the index entry names 'project-a'.
+   ✓ the planning-bound gate > refuses through the GATE when the only recorded pair is torn 38ms
+   ✓ the planning-bound gate > names every torn pair when no pair agrees 39ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/core/store-planning/store-planning.test.ts > the planning-bound gate > admits an agreeing pair while a sibling pair for the same line is torn
+PlanningScopeError: The recorded workspace pair for project 'project-a' disagrees with itself: planning-worktree-marker at C:\Users\Sayo\AppData\Local\Temp\rasen-store-planning-89Nczp\sibling-planning names project 'project-zeta', the index entry names 'project-a'.
+ ❯ StorePlanningResolver.assertProjectPlanningBound src/core/store-planning/internal/resolver.ts:1208:13
+    1206|     if (agreed && disagreements.length === 0) return;
+    1207|     if (disagreements.length > 0) {
+    1208|       throw new PlanningScopeError(
+       |             ^
+    1209|         'planning_selection_conflict',
+    1210|         `The recorded workspace pair for project '${catalog.projectId}…
+ ❯ StorePlanningResolver.resolve src/core/store-planning/internal/resolver.ts:2036:11
+ ❯ StorePlanningResolver.open src/core/store-planning/internal/resolver.ts:532:24
+ ❯ test/core/store-planning/store-planning.test.ts:1789:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 50 passed (51)
+   Start at  16:54:54
+   Duration  11.56s (transform 2.56s, setup 57ms, collect 8.33s, tests 2.64s, environment 0ms, prepare 156ms)
+
+EXIT=1

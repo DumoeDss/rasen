@@ -1,0 +1,2 @@
+Change 'fix-store-retention-scope-resolution' is valid
+EXIT=0

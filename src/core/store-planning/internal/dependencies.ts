@@ -26,7 +26,9 @@ import {
 import {
   assertPlanningWorktreeUnbound,
   completeChangeBinding,
+  listAllWorkspaceIndexEntries,
   probePlanningWorktree,
+  productionStoreWorkspaceDependencies,
   type ChangeBindingInput,
   type CompleteChangeBindingInput,
   type CompletedChangeBinding,
@@ -55,6 +57,26 @@ export interface ProjectIdentityClaimantSnapshot {
 }
 
 export type CheckoutRole = 'integration' | 'linked-worktree' | 'not-git' | 'unavailable';
+
+/**
+ * One recorded planning/execution pair, flattened out of the machine workspace
+ * index (`<dataDir>/planning-workspaces/index/<scope>.json`).
+ *
+ * `store-scope-resolution` D3 reads these as the planning-bound gate's second
+ * satisfier. The index is authority for NOTHING on its own — it is a
+ * rebuildable projection — so the roots it names are only where the gate goes
+ * looking for the marker and the association it must actually agree with.
+ */
+export interface WorkspacePairSnapshot {
+  readonly planningScopeId: string;
+  readonly storeUid: string;
+  readonly storeId: string;
+  readonly projectId: string;
+  readonly targetLineId: string;
+  readonly changeId: string;
+  readonly planningRoot: string;
+  readonly executionRoot: string;
+}
 
 export interface StorePlanningFileIdentity {
   readonly dev: number;
@@ -112,6 +134,13 @@ export interface StorePlanningDependencies {
    * instance. Machine-local only; it writes nothing into either repository.
    */
   completeChangeBinding(input: CompleteChangeBindingInput): Promise<CompletedChangeBinding>;
+  /**
+   * Every planning/execution pair this machine has recorded, for the
+   * planning-bound gate's recorded-pair satisfier (`store-scope-resolution`
+   * D3). Read only when the project catalog does not already say `bound`, so
+   * the adoption path pays nothing for it.
+   */
+  listWorkspacePairs(globalDataDir?: string): Promise<readonly WorkspacePairSnapshot[]>;
   now(): Date;
   mintInstanceSeed(): ChangeInstanceSeed;
   randomSuffix(): string;
@@ -289,6 +318,21 @@ export const productionStorePlanningDependencies: StorePlanningDependencies = {
     await assertPlanningWorktreeUnbound(input);
   },
   completeChangeBinding: (input) => completeChangeBinding(input),
+  async listWorkspacePairs(globalDataDir) {
+    const entries = await listAllWorkspaceIndexEntries(
+      productionStoreWorkspaceDependencies.coordination(globalDataDir)
+    );
+    return entries.map((entry) => ({
+      planningScopeId: entry.planningScopeId,
+      storeUid: entry.storeUid,
+      storeId: entry.storeId,
+      projectId: entry.projectId,
+      targetLineId: entry.targetLineId,
+      changeId: entry.changeId,
+      planningRoot: entry.planning.root,
+      executionRoot: entry.execution.root,
+    }));
+  },
   now: () => new Date(),
   mintInstanceSeed: () => mintChangeInstanceSeed(),
   randomSuffix: () => `${process.pid}.${randomBytes(16).toString('hex')}`,

@@ -1,0 +1,12 @@
+
+ RUN  v3.2.6 E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code
+
+ ✓ test/core/store-planning/store-planning.test.ts (51 tests) 3007ms
+   ✓ StorePlanning.open > pierces a legacy worktree registry duplicate to its registered main checkout  1098ms
+
+ Test Files  1 passed (1)
+      Tests  51 passed (51)
+   Start at  16:54:24
+   Duration  12.10s (transform 2.68s, setup 46ms, collect 8.48s, tests 3.01s, environment 0ms, prepare 172ms)
+
+EXIT=0
