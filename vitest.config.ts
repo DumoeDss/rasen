@@ -71,6 +71,15 @@ const KNOWN_SLOW_TEST_WEIGHTS_MS: Record<string, number> = {
   // Real Git fixture (`createStoreWorkspaceFixture`) driven through both the
   // in-process handlers and a `runCLI` subprocess per test (store-issue-resources).
   'test/core/management-api/stores.test.ts': 199980,
+  // Six real-Git Store/Issue/link scenarios, including a daemon route and
+  // repeated byte-parity reads (issue-operations-and-unlinked, task 4.4).
+  // Measured at ~241s solo wall-clock on Windows (198s test body).
+  'test/core/management-api/change-issue-links.test.ts': 241000,
+  // Same real-Git fixture class (a two-revision Issue plus a damaged plan
+  // revision built per test), the in-process projection handlers, and a
+  // `startManagementServer` + six `runCLI` subprocess pairs for the byte-parity
+  // witness (issue-read-surface, task 3.4). Measured at ~230s solo on Windows.
+  'test/core/management-api/issue-projection.test.ts': 240000,
   // Same fixture class, plus 26 scenario cases that each commit real Git
   // objects (store-issue-resources, task 8.5): a wide relative-size gap from
   // the 38KB source file to this solo wall-clock is expected, not a fluke.
@@ -95,6 +104,17 @@ const KNOWN_SLOW_TEST_WEIGHTS_MS: Record<string, number> = {
   // higher observation is entered deliberately — under-entering is the failure
   // mode the `workspace-cleanup` entry above already demonstrates.
   'test/core/store/store-issue-scope.test.ts': 16150,
+  // issue-acceptance-close: three real-Git-fixture suites and one runCLI
+  // subprocess-per-case CLI suite, the same underestimated classes as the
+  // entries above. The CLI file was measured twice: 145128ms during fix round
+  // 1 under a warm tree and 194524ms solo on the reviewer's pass — the
+  // HIGHER observation is entered (review round 1, Info-5), for the same
+  // reason as `store-aggregate-query` above: underestimating a spawn-heavy
+  // file skews the whole shard, overestimating only costs balance.
+  'test/core/store/store-issue-acceptance-content.test.ts': 1100,
+  'test/core/store/store-issue-acceptance-mutations.test.ts': 24000,
+  'test/core/issue-acceptance/issue-acceptance-gate.test.ts': 45000,
+  'test/commands/store-issue-acceptance-cli.test.ts': 200000,
 };
 
 function listTestFiles(directory: string, root: string): TestFile[] {

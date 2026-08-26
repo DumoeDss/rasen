@@ -296,6 +296,14 @@ async function ensureDirectoryAnchor(
 
 export interface EnsureOpenSpecRootOptions {
   anchorEmptyDirectories?: boolean;
+  /**
+   * Create the layout-2 scaffold: no flat planning tree. A v2-native store's
+   * planning content arrives with its first member project, so setup with an
+   * explicit layout-2 request creates neither `rasen/specs` nor
+   * `rasen/changes` — nothing a later layout-2 use would have to retire. The
+   * root stays healthy either way: planning directories are optional.
+   */
+  layoutVersion?: 2;
 }
 
 export async function ensureOpenSpecRoot(
@@ -312,12 +320,14 @@ export async function ensureOpenSpecRoot(
   }
 
   await ensureDirectory(storeRoot, WORKSPACE_ROOT_DIR, ledger);
-  await ensureDirectory(storeRoot, WORKSPACE_SPECS_DIR, ledger);
-  await ensureDirectory(storeRoot, WORKSPACE_CHANGES_DIR, ledger);
-  await ensureDirectory(storeRoot, WORKSPACE_ARCHIVE_DIR, ledger);
+  if (options.layoutVersion !== 2) {
+    await ensureDirectory(storeRoot, WORKSPACE_SPECS_DIR, ledger);
+    await ensureDirectory(storeRoot, WORKSPACE_CHANGES_DIR, ledger);
+    await ensureDirectory(storeRoot, WORKSPACE_ARCHIVE_DIR, ledger);
+  }
   await ensureDefaultConfig(storeRoot, ledger);
 
-  if (options.anchorEmptyDirectories) {
+  if (options.anchorEmptyDirectories && options.layoutVersion !== 2) {
     for (const relativeDir of ANCHORED_WORKSPACE_DIRS) {
       await ensureDirectoryAnchor(storeRoot, relativeDir, ledger);
     }

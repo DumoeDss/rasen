@@ -1,0 +1,12 @@
+{
+  "issue": null,
+  "binding": null,
+  "status": [
+    {
+      "severity": "error",
+      "code": "issue_start_unprepared",
+      "message": "Change instance ci_4950d004af6e4085c862933dc877396e904522b71d50d07573e4dfe68b8d72c4 (alias document-multi-project-issues) has neither a workspace index entry nor a resolvable member-project checkout for project 6ca78b98-777f-45bc-8d9b-b84c34e1a531.",
+      "fix": "rasen store workspace plan --existing-change --store issue-registry --project 6ca78b98-777f-45bc-8d9b-b84c34e1a531 --target-line line-0.2 --change document-multi-project-issues"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+Issue issue-autodecompose-uplift accepted (resolved)
+  conditions: revision 0001 (4d5fb462b904318820b4c4809a688d575eee6933e1c37d14136b7977f29b431a)
+  gate: 2/2 waiting-human, 0 problems standing
+  note: Phase 4 auto-decompose uplift verified: truthful boundary crossing, reviewable graphs, real confirm flow (PR #173)
+
+  Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing.
+    git -C E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-issue-store add rasen/issues/issue-autodecompose-uplift/accepted.yaml rasen/issues/issue-autodecompose-uplift/issue.yaml
+    git -C E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-issue-store commit -m "chore(store): accept issue issue-autodecompose-uplift"

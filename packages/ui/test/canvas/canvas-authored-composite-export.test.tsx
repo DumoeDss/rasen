@@ -49,7 +49,13 @@ vi.mock('@xyflow/react', () => ({
   ReactFlowProvider: ({ children }: { children: unknown }) => <>{children}</>,
   Handle: () => null,
   Position: { Left: 'left', Right: 'right' },
+  // Mirrors @xyflow/system's real enum values: PipelineCanvasPage now
+  // imports SelectionMode, which must resolve under this mock too.
+  SelectionMode: { Partial: 'partial', Full: 'full' },
   useReactFlow: () => ({ screenToFlowPosition: (p: { x: number; y: number }) => p }),
+  // canvas-loop-body-visibility: the page forces a node-internals refresh
+  // when the node id set changes; jsdom measures nothing, so a no-op.
+  useUpdateNodeInternals: () => () => undefined,
   addEdge: (edge: unknown, edges: unknown[]) => [...edges, edge],
   applyNodeChanges: (_c: unknown[], nodes: unknown[]) => nodes,
   applyEdgeChanges: (_c: unknown[], edges: unknown[]) => edges,
@@ -85,6 +91,7 @@ const catalogFixture: PipelineCatalogResponse = {
       id: CATALOG_ENTRY.id.replace(/^skill:/, ''),
       description: 'Canvas-authored body capability',
       enabled: true,
+      kind: 'task',
       capability: {
         id: CATALOG_ENTRY.id,
         version: CATALOG_ENTRY.version,

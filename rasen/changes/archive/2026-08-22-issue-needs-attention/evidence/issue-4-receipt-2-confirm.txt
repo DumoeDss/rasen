@@ -1,0 +1,27 @@
+Issue issue-cross-project-replanning — confirm report (revision 0002)
+  launchable: 3
+
+Issue issue-cross-project-replanning node issue-needs-attention — already running (resume-oriented)
+  change: issue-needs-attention (ci_6680a8bfed77fe5b5225e6203580165e768e73a43f3ecc3d72bb06beccad26e5)
+  project: e2ee72ed-04a1-4395-86aa-7e77d2b83ec7  target-line: line-0.2
+  binding: project-checkout
+    cwd: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code
+    attached: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-issue-store
+  pipeline: small-feature (recorded in run-state)
+  run-state: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer\.rasen\changes\issue-needs-attention\ephemera\auto-run.json (located by execution-root)
+
+Issue issue-cross-project-replanning node issue-ready-set-scheduling — already complete
+  change: 2026-08-21-issue-ready-set-scheduling (ci_720f005056ac205062fe6df97795ce8c34df19bfdbb1bb6b79251e9dc406108a)
+  project: e2ee72ed-04a1-4395-86aa-7e77d2b83ec7  target-line: line-0.2
+  no launch contract: the node's work is complete.
+  pipeline: (chosen at launch)
+
+Issue issue-cross-project-replanning node issue-revision-history-preservation — already complete
+  change: 2026-08-22-issue-revision-history-preservation (ci_f1f9efb27efa440f4e927cbf54aca67aabbcc4f7ea7738839346992aae758342)
+  project: e2ee72ed-04a1-4395-86aa-7e77d2b83ec7  target-line: line-0.2
+  no launch contract: the node's work is complete.
+  pipeline: (chosen at launch)
+
+  pending Change creation: 0
+
+  wrote nothing — confirm composes; starting a node remains a per-node act.

@@ -1,0 +1,898 @@
+{
+  "issue": {
+    "issueId": "issue-ui-convergence",
+    "record": {
+      "version": 1,
+      "id": "issue-ui-convergence",
+      "title": "Issue layer Phase 7: UI convergence and completion evidence",
+      "state": "resolved",
+      "reason": null,
+      "createdAt": "2026-08-24T10:04:07.758Z"
+    },
+    "diagnostic": null,
+    "divergence": null,
+    "revisionIds": [
+      "0001"
+    ],
+    "latestRevisionId": "0001",
+    "refs": [
+      "refs/heads/main"
+    ],
+    "uncommitted": false
+  },
+  "plan": {
+    "issueId": "issue-ui-convergence",
+    "revisionId": "0001",
+    "revision": {
+      "version": 1,
+      "issueId": "issue-ui-convergence",
+      "revisionId": "0001",
+      "supersedes": null,
+      "createdAt": "2026-08-24T10:26:49.507Z",
+      "contentSha256": "742d7c1574cc927a060ddc2272a8f6f3302a65df87dbc03df85b3df3123f7948",
+      "nodes": [
+        {
+          "nodeId": "issue-board-cutover",
+          "kind": "change",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "changeInstanceId": "ci_004cb2221909f68793b8864687fad3e74edb257f2a5b54ce928fb9c8e79e7821",
+          "changeAlias": "issue-board-cutover",
+          "dependsOn": [
+            "issue-operations-and-unlinked",
+            "issue-read-surface"
+          ]
+        },
+        {
+          "nodeId": "issue-operations-and-unlinked",
+          "kind": "change",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "changeInstanceId": "ci_608383b4fb75aae4c4f8ec791b2f8a3c1e3536668572366117da1b120a5ce3ff",
+          "changeAlias": "issue-operations-and-unlinked",
+          "dependsOn": [
+            "issue-read-surface"
+          ]
+        },
+        {
+          "nodeId": "issue-read-surface",
+          "kind": "change",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "changeInstanceId": "ci_8ece9024b9a92468dc5d0dc45e5b36939b239d855426190f4c76eab120d4d095",
+          "changeAlias": "issue-read-surface",
+          "dependsOn": []
+        }
+      ]
+    },
+    "diagnostic": null,
+    "readiness": {
+      "nodes": [
+        {
+          "node": {
+            "nodeId": "issue-board-cutover",
+            "kind": "change",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "changeInstanceId": "ci_004cb2221909f68793b8864687fad3e74edb257f2a5b54ce928fb9c8e79e7821",
+            "changeAlias": "issue-board-cutover",
+            "dependsOn": [
+              "issue-operations-and-unlinked",
+              "issue-read-surface"
+            ]
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "2026-08-24-issue-board-cutover",
+                "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+                "targetLineId": "line-0.2",
+                "foundAtRef": "refs/heads/main",
+                "archived": true
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": true,
+            "outcomeBasis": "legacy",
+            "outcomeBasisReason": null,
+            "outcomeBasisPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-24-issue-board-cutover/archive.json",
+            "delivery": {
+              "basis": "legacy",
+              "archivedAt": "2026-08-24T10:17:23.246Z",
+              "codeCommit": "4a692691c2fb6bf8b69eea37bd90a00e7fcae097",
+              "planningBranch": "feat/issue-phase7",
+              "outcome": null,
+              "evidence": [
+                {
+                  "path": "evidence/browser-capture-runner.mjs",
+                  "sha256": "f7b2399cd1fccbf610c504e685710d0cfd14918836c23e9c9f509f93a88821a2"
+                },
+                {
+                  "path": "evidence/browser-disposable-receipt.json",
+                  "sha256": "ae63cb70f22bf54c944b5b88aeb6c3aad79a68c71d3592db6e9991e233fde851"
+                },
+                {
+                  "path": "evidence/browser-evidence.md",
+                  "sha256": "bb74e1a486bb926484118b8d8bef86e361630b331464902b990e06a7dbfdfbd9"
+                },
+                {
+                  "path": "evidence/browser-fixture.ts",
+                  "sha256": "5dec14d5a2079fa0388f9fbc7054b020154f05d00b6ca94cde90c41a1740439c"
+                },
+                {
+                  "path": "evidence/browser-persistent-capture-runner.mjs",
+                  "sha256": "4f9726ce7f06c5c0b0de26f8b445f0ce45ffee05cd64e2a9470e6247612adac4"
+                },
+                {
+                  "path": "evidence/browser-persistent-readonly-receipt.json",
+                  "sha256": "c988cf021c58310bba6f1e70a4ad88c408b09f1fcaaa99c55485677d16213de0"
+                },
+                {
+                  "path": "evidence/browser-persistent-server.mjs",
+                  "sha256": "326a42cd5b4bf0d87beed91bb8b0a60b7c19b6e046e87e1d96d55a1b1298815e"
+                },
+                {
+                  "path": "evidence/browser-receipt-guards.mjs",
+                  "sha256": "98fc2dd449313c1b021bd178afcbb991131e63b4229d3a33d3fa31f984d4685d"
+                },
+                {
+                  "path": "evidence/browser-receipt-runner-self-test.mjs",
+                  "sha256": "89966343f06068365b2176e1f6010141b0370ceb53215c6ed341b204c6cbf577"
+                },
+                {
+                  "path": "evidence/browser-ts-loader.mjs",
+                  "sha256": "e2a7e8e1dcff9be4f38d755bfbd9fd9261f897f3d06abae41b5948ce40c2c97e"
+                },
+                {
+                  "path": "evidence/orphan-inventory-after.md",
+                  "sha256": "40768b44c66af205d39bf5484f789429c89df7bf1601dbf8a229cd51cc4aa306"
+                },
+                {
+                  "path": "evidence/orphan-inventory-before.md",
+                  "sha256": "2fcc91adaedfa0976b4052042216eed3de58c02c8c073c5a8e922d0f08a8b8b8"
+                },
+                {
+                  "path": "evidence/review-cycle-report.md",
+                  "sha256": "bdd1498eb0758d33f0d575889e64a8ac76d542eac3f9276362ebea882f1bccf8"
+                },
+                {
+                  "path": "evidence/review-report.md",
+                  "sha256": "5d22137b0733a6e4bc228405d24a369cfd9ecc9d71e42b119fd1043bbd8144a4"
+                },
+                {
+                  "path": "evidence/ship-log.md",
+                  "sha256": "0961081d1d4468648552575654f494a31a752b4eab93b016c397bddea30d0216"
+                },
+                {
+                  "path": "evidence/verification-report.md",
+                  "sha256": "09e214c4bc0eebb8a697ba86a31d06aa5ea67745b083c35462ed8d435aeacd21"
+                }
+              ],
+              "missing": [],
+              "entryName": "2026-08-24-issue-board-cutover",
+              "foundAtRef": "refs/heads/main",
+              "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-24-issue-board-cutover/archive.json"
+            }
+          },
+          "readiness": "blocked",
+          "blockedBy": [
+            "issue-operations-and-unlinked",
+            "issue-read-surface"
+          ]
+        },
+        {
+          "node": {
+            "nodeId": "issue-operations-and-unlinked",
+            "kind": "change",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "changeInstanceId": "ci_608383b4fb75aae4c4f8ec791b2f8a3c1e3536668572366117da1b120a5ce3ff",
+            "changeAlias": "issue-operations-and-unlinked",
+            "dependsOn": [
+              "issue-read-surface"
+            ]
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "2026-08-24-issue-operations-and-unlinked",
+                "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+                "targetLineId": "line-0.2",
+                "foundAtRef": "refs/heads/main",
+                "archived": true
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": true,
+            "outcomeBasis": "legacy",
+            "outcomeBasisReason": null,
+            "outcomeBasisPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-24-issue-operations-and-unlinked/archive.json",
+            "delivery": {
+              "basis": "legacy",
+              "archivedAt": "2026-08-24T10:12:14.155Z",
+              "codeCommit": "274c766ce7738fe5ed507c8f0336cb640a6c7095",
+              "planningBranch": "feat/issue-phase7",
+              "outcome": null,
+              "evidence": [
+                {
+                  "path": "evidence/dogfood-change-links.json",
+                  "sha256": "af26882e43816d8fc277049d57cd10d5d0668f8ff60c04fa95cb40fbe89f2353"
+                },
+                {
+                  "path": "evidence/fixture-mutation-receipts.md",
+                  "sha256": "438e85f98b5e32c027f00bb1390670b021525edd3ad57e90c3b7d7519682b135"
+                },
+                {
+                  "path": "evidence/review-cycle-report.md",
+                  "sha256": "610928f17232f9fbad29a88fcabb3828ec71c8cea58b0d162d268a55b2e0dfb4"
+                },
+                {
+                  "path": "evidence/review-report.md",
+                  "sha256": "114525d86326e4fda757a35f936758933c6783f0a418d989886c0465168c4cc7"
+                },
+                {
+                  "path": "evidence/ship-log.md",
+                  "sha256": "93e8d576e13bdc4665b002c85be26deb8f04aceb576f8cc61f59f8aee417b982"
+                },
+                {
+                  "path": "evidence/verification-report.md",
+                  "sha256": "095ba64af99d953cbbd4cfa7cca0ee3377a61f43e2555ea5099a528001ade28a"
+                }
+              ],
+              "missing": [],
+              "entryName": "2026-08-24-issue-operations-and-unlinked",
+              "foundAtRef": "refs/heads/main",
+              "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-24-issue-operations-and-unlinked/archive.json"
+            }
+          },
+          "readiness": "blocked",
+          "blockedBy": [
+            "issue-read-surface"
+          ]
+        },
+        {
+          "node": {
+            "nodeId": "issue-read-surface",
+            "kind": "change",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "changeInstanceId": "ci_8ece9024b9a92468dc5d0dc45e5b36939b239d855426190f4c76eab120d4d095",
+            "changeAlias": "issue-read-surface",
+            "dependsOn": []
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "2026-08-24-issue-read-surface",
+                "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+                "targetLineId": "line-0.2",
+                "foundAtRef": "refs/heads/main",
+                "archived": true
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": true,
+            "outcomeBasis": "legacy",
+            "outcomeBasisReason": null,
+            "outcomeBasisPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-24-issue-read-surface/archive.json",
+            "delivery": {
+              "basis": "legacy",
+              "archivedAt": "2026-08-24T10:10:21.760Z",
+              "codeCommit": "0d7258735a6abea5cf566179b0224973e5bdf19c",
+              "planningBranch": "feat/issue-phase7",
+              "outcome": null,
+              "evidence": [
+                {
+                  "path": "evidence/dogfood-board-render.html",
+                  "sha256": "9be74b80fedefde19ec4439f2754b136e9ef8ffa41fdf262bc6ccf7c449a8097"
+                },
+                {
+                  "path": "evidence/dogfood-board-render.json",
+                  "sha256": "63fbbb7116daf883ac5f1167a4efb57e1477cb35991712c8beafae5af601cb30"
+                },
+                {
+                  "path": "evidence/dogfood-cli-http-parity.json",
+                  "sha256": "b248b686f2f4acb82836a24281c6792f45716b9c9c722de8c8313bdd64486df1"
+                },
+                {
+                  "path": "evidence/dogfood-readonly-proof.txt",
+                  "sha256": "13ddc720a1d0f06b5ae5f9bf90d2fda7c553a185c44fb48dfe1ec776a919ec16"
+                },
+                {
+                  "path": "evidence/dogfood-real-issue-projection.json",
+                  "sha256": "0a81c37d240d59bc4a70324e798f2b04cd1ade7284b4a6e67b1c05590d54e192"
+                },
+                {
+                  "path": "evidence/review-cycle-report.md",
+                  "sha256": "560a472d9334202fa06a6c2a5aa6eded67b3103dbbcf6d70c92912463c924d17"
+                },
+                {
+                  "path": "evidence/review-report.md",
+                  "sha256": "80e0f4dee9fc73ec1416f33c7edea626d07e24de989a83c58e13c294274661fc"
+                },
+                {
+                  "path": "evidence/ship-log.md",
+                  "sha256": "9f7c96c88fa66f6fec2fb858ef49397a30ecfb20689079a659b8f0b146d826c0"
+                },
+                {
+                  "path": "evidence/verification-report.md",
+                  "sha256": "292b8e208fc5aa8ecf11fac4477edddb840ebacc5fb855b3cda12162ebf813ac"
+                }
+              ],
+              "missing": [],
+              "entryName": "2026-08-24-issue-read-surface",
+              "foundAtRef": "refs/heads/main",
+              "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-24-issue-read-surface/archive.json"
+            }
+          },
+          "readiness": "in-progress",
+          "blockedBy": []
+        }
+      ],
+      "readyToResolve": false
+    },
+    "unsearchedRefs": [],
+    "problems": [],
+    "complete": true
+  },
+  "status": {
+    "phase": "done",
+    "health": "healthy",
+    "progress": {
+      "completed": 3,
+      "total": 3
+    },
+    "nodes": [
+      {
+        "nodeId": "issue-board-cutover",
+        "kind": "change",
+        "alias": "2026-08-24-issue-board-cutover",
+        "observation": "finalized",
+        "diagnostic": "finalized on a legacy archive record (no v2 outcome was ever recorded)",
+        "runStatePath": null,
+        "locatedBy": null,
+        "attribution": {
+          "pipeline": null,
+          "sessions": [],
+          "evidenceLocator": null
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": "required",
+        "reason": null,
+        "suggestedPipeline": null,
+        "rationale": null,
+        "uncertainty": null,
+        "delivery": {
+          "state": "record",
+          "basis": "legacy",
+          "archivedAt": "2026-08-24T10:17:23.246Z",
+          "codeCommit": "4a692691c2fb6bf8b69eea37bd90a00e7fcae097",
+          "planningBranch": "feat/issue-phase7",
+          "outcome": null,
+          "evidence": [
+            {
+              "path": "evidence/browser-capture-runner.mjs",
+              "sha256": "f7b2399cd1fccbf610c504e685710d0cfd14918836c23e9c9f509f93a88821a2"
+            },
+            {
+              "path": "evidence/browser-disposable-receipt.json",
+              "sha256": "ae63cb70f22bf54c944b5b88aeb6c3aad79a68c71d3592db6e9991e233fde851"
+            },
+            {
+              "path": "evidence/browser-evidence.md",
+              "sha256": "bb74e1a486bb926484118b8d8bef86e361630b331464902b990e06a7dbfdfbd9"
+            },
+            {
+              "path": "evidence/browser-fixture.ts",
+              "sha256": "5dec14d5a2079fa0388f9fbc7054b020154f05d00b6ca94cde90c41a1740439c"
+            },
+            {
+              "path": "evidence/browser-persistent-capture-runner.mjs",
+              "sha256": "4f9726ce7f06c5c0b0de26f8b445f0ce45ffee05cd64e2a9470e6247612adac4"
+            },
+            {
+              "path": "evidence/browser-persistent-readonly-receipt.json",
+              "sha256": "c988cf021c58310bba6f1e70a4ad88c408b09f1fcaaa99c55485677d16213de0"
+            },
+            {
+              "path": "evidence/browser-persistent-server.mjs",
+              "sha256": "326a42cd5b4bf0d87beed91bb8b0a60b7c19b6e046e87e1d96d55a1b1298815e"
+            },
+            {
+              "path": "evidence/browser-receipt-guards.mjs",
+              "sha256": "98fc2dd449313c1b021bd178afcbb991131e63b4229d3a33d3fa31f984d4685d"
+            },
+            {
+              "path": "evidence/browser-receipt-runner-self-test.mjs",
+              "sha256": "89966343f06068365b2176e1f6010141b0370ceb53215c6ed341b204c6cbf577"
+            },
+            {
+              "path": "evidence/browser-ts-loader.mjs",
+              "sha256": "e2a7e8e1dcff9be4f38d755bfbd9fd9261f897f3d06abae41b5948ce40c2c97e"
+            },
+            {
+              "path": "evidence/orphan-inventory-after.md",
+              "sha256": "40768b44c66af205d39bf5484f789429c89df7bf1601dbf8a229cd51cc4aa306"
+            },
+            {
+              "path": "evidence/orphan-inventory-before.md",
+              "sha256": "2fcc91adaedfa0976b4052042216eed3de58c02c8c073c5a8e922d0f08a8b8b8"
+            },
+            {
+              "path": "evidence/review-cycle-report.md",
+              "sha256": "bdd1498eb0758d33f0d575889e64a8ac76d542eac3f9276362ebea882f1bccf8"
+            },
+            {
+              "path": "evidence/review-report.md",
+              "sha256": "5d22137b0733a6e4bc228405d24a369cfd9ecc9d71e42b119fd1043bbd8144a4"
+            },
+            {
+              "path": "evidence/ship-log.md",
+              "sha256": "0961081d1d4468648552575654f494a31a752b4eab93b016c397bddea30d0216"
+            },
+            {
+              "path": "evidence/verification-report.md",
+              "sha256": "09e214c4bc0eebb8a697ba86a31d06aa5ea67745b083c35462ed8d435aeacd21"
+            }
+          ],
+          "missing": [],
+          "entryName": "2026-08-24-issue-board-cutover",
+          "foundAtRef": "refs/heads/main",
+          "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-24-issue-board-cutover/archive.json"
+        },
+        "blockedBy": []
+      },
+      {
+        "nodeId": "issue-operations-and-unlinked",
+        "kind": "change",
+        "alias": "2026-08-24-issue-operations-and-unlinked",
+        "observation": "finalized",
+        "diagnostic": "finalized on a legacy archive record (no v2 outcome was ever recorded)",
+        "runStatePath": null,
+        "locatedBy": null,
+        "attribution": {
+          "pipeline": null,
+          "sessions": [],
+          "evidenceLocator": null
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": "required",
+        "reason": null,
+        "suggestedPipeline": null,
+        "rationale": null,
+        "uncertainty": null,
+        "delivery": {
+          "state": "record",
+          "basis": "legacy",
+          "archivedAt": "2026-08-24T10:12:14.155Z",
+          "codeCommit": "274c766ce7738fe5ed507c8f0336cb640a6c7095",
+          "planningBranch": "feat/issue-phase7",
+          "outcome": null,
+          "evidence": [
+            {
+              "path": "evidence/dogfood-change-links.json",
+              "sha256": "af26882e43816d8fc277049d57cd10d5d0668f8ff60c04fa95cb40fbe89f2353"
+            },
+            {
+              "path": "evidence/fixture-mutation-receipts.md",
+              "sha256": "438e85f98b5e32c027f00bb1390670b021525edd3ad57e90c3b7d7519682b135"
+            },
+            {
+              "path": "evidence/review-cycle-report.md",
+              "sha256": "610928f17232f9fbad29a88fcabb3828ec71c8cea58b0d162d268a55b2e0dfb4"
+            },
+            {
+              "path": "evidence/review-report.md",
+              "sha256": "114525d86326e4fda757a35f936758933c6783f0a418d989886c0465168c4cc7"
+            },
+            {
+              "path": "evidence/ship-log.md",
+              "sha256": "93e8d576e13bdc4665b002c85be26deb8f04aceb576f8cc61f59f8aee417b982"
+            },
+            {
+              "path": "evidence/verification-report.md",
+              "sha256": "095ba64af99d953cbbd4cfa7cca0ee3377a61f43e2555ea5099a528001ade28a"
+            }
+          ],
+          "missing": [],
+          "entryName": "2026-08-24-issue-operations-and-unlinked",
+          "foundAtRef": "refs/heads/main",
+          "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-24-issue-operations-and-unlinked/archive.json"
+        },
+        "blockedBy": []
+      },
+      {
+        "nodeId": "issue-read-surface",
+        "kind": "change",
+        "alias": "2026-08-24-issue-read-surface",
+        "observation": "finalized",
+        "diagnostic": "finalized on a legacy archive record (no v2 outcome was ever recorded)",
+        "runStatePath": null,
+        "locatedBy": null,
+        "attribution": {
+          "pipeline": null,
+          "sessions": [],
+          "evidenceLocator": null
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": "required",
+        "reason": null,
+        "suggestedPipeline": null,
+        "rationale": null,
+        "uncertainty": null,
+        "delivery": {
+          "state": "record",
+          "basis": "legacy",
+          "archivedAt": "2026-08-24T10:10:21.760Z",
+          "codeCommit": "0d7258735a6abea5cf566179b0224973e5bdf19c",
+          "planningBranch": "feat/issue-phase7",
+          "outcome": null,
+          "evidence": [
+            {
+              "path": "evidence/dogfood-board-render.html",
+              "sha256": "9be74b80fedefde19ec4439f2754b136e9ef8ffa41fdf262bc6ccf7c449a8097"
+            },
+            {
+              "path": "evidence/dogfood-board-render.json",
+              "sha256": "63fbbb7116daf883ac5f1167a4efb57e1477cb35991712c8beafae5af601cb30"
+            },
+            {
+              "path": "evidence/dogfood-cli-http-parity.json",
+              "sha256": "b248b686f2f4acb82836a24281c6792f45716b9c9c722de8c8313bdd64486df1"
+            },
+            {
+              "path": "evidence/dogfood-readonly-proof.txt",
+              "sha256": "13ddc720a1d0f06b5ae5f9bf90d2fda7c553a185c44fb48dfe1ec776a919ec16"
+            },
+            {
+              "path": "evidence/dogfood-real-issue-projection.json",
+              "sha256": "0a81c37d240d59bc4a70324e798f2b04cd1ade7284b4a6e67b1c05590d54e192"
+            },
+            {
+              "path": "evidence/review-cycle-report.md",
+              "sha256": "560a472d9334202fa06a6c2a5aa6eded67b3103dbbcf6d70c92912463c924d17"
+            },
+            {
+              "path": "evidence/review-report.md",
+              "sha256": "80e0f4dee9fc73ec1416f33c7edea626d07e24de989a83c58e13c294274661fc"
+            },
+            {
+              "path": "evidence/ship-log.md",
+              "sha256": "9f7c96c88fa66f6fec2fb858ef49397a30ecfb20689079a659b8f0b146d826c0"
+            },
+            {
+              "path": "evidence/verification-report.md",
+              "sha256": "292b8e208fc5aa8ecf11fac4477edddb840ebacc5fb855b3cda12162ebf813ac"
+            }
+          ],
+          "missing": [],
+          "entryName": "2026-08-24-issue-read-surface",
+          "foundAtRef": "refs/heads/main",
+          "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-24-issue-read-surface/archive.json"
+        },
+        "blockedBy": []
+      }
+    ],
+    "delta": null,
+    "projects": [
+      {
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "alias": "rasen",
+        "nodeIds": [
+          "issue-board-cutover",
+          "issue-operations-and-unlinked",
+          "issue-read-surface"
+        ],
+        "progress": {
+          "completed": 3,
+          "total": 3
+        }
+      }
+    ],
+    "problems": [],
+    "runStateVisibility": {
+      "kind": "execution-root",
+      "executionRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer"
+    },
+    "complete": true,
+    "acceptance": {
+      "conditions": {
+        "revision": {
+          "version": 1,
+          "issueId": "issue-ui-convergence",
+          "revisionId": "0001",
+          "supersedes": null,
+          "createdAt": "2026-08-24T10:27:15.908Z",
+          "contentSha256": "11342fd4722f75aa7297e1153a27c0dbe2c808ee2c427783db3d6b159ee0cc5c",
+          "conditions": [
+            {
+              "id": "cache-rebuild-is-read-only-and-reproducible",
+              "requirement": "Disposable and persistent browser receipts prove cache-cleared rebuild from fresh exact GET 200 responses, with fail-closed request identity, payload, storage, digest, cleanup, and mutation-inventory guards; the persistent issue-registry Store remained clean at f295abce with 311 tracked files before the Issue #6 close action."
+            },
+            {
+              "id": "displayed-state-is-payload-backed",
+              "requirement": "Every displayed phase, health, progress, attention, review, runtime, and delivery state family resolves to provenance facts carried by the existing Git/runtime projection payload rather than a UI-owned second truth."
+            },
+            {
+              "id": "issue-surfaces-converged",
+              "requirement": "Issue Board, Issue Detail, Store Operations, and Unlinked Changes are the delivered Store surfaces; Store navigation cuts over to the Issue Board while project-scoped Change and Run surfaces remain available at their project routes."
+            },
+            {
+              "id": "portfolio-delivered",
+              "requirement": "All three Phase-7 children are independently verification-clean and review-clean, the final portfolio head 0d725873 passed CI run 32711980305 with zero failures, and PR #176 merged into dev/0.2.0 as d2f59f857fea134bb0166e91428680749c004300."
+            }
+          ]
+        },
+        "revisionId": "0001",
+        "diagnostic": null,
+        "path": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store\\rasen\\issues\\issue-ui-convergence\\acceptance\\0001.yaml"
+      },
+      "gate": {
+        "eligible": false,
+        "refusalCode": "issue_accept_already_accepted",
+        "blockers": [],
+        "message": "the Issue already carries an acceptance record; an acceptance is never rewritten.",
+        "exclusions": [],
+        "optionalNodes": []
+      },
+      "record": {
+        "version": 1,
+        "issueId": "issue-ui-convergence",
+        "acceptedAt": "2026-08-24T10:28:07.925Z",
+        "conditionsRevisionId": "0001",
+        "conditionsSha256": "11342fd4722f75aa7297e1153a27c0dbe2c808ee2c427783db3d6b159ee0cc5c",
+        "gate": {
+          "completed": 3,
+          "total": 3,
+          "health": "waiting-human",
+          "problemsStanding": 0
+        },
+        "note": "Phase 7 UI convergence delivered via merged PR #176; independent verify/review clean and cache/provenance receipts complete",
+        "contentSha256": "007e926aec106cd5b06d710cc373c95936e1e25d3e95e2437102dcc2b1660486"
+      }
+    }
+  },
+  "delivery": {
+    "revisionId": "0001",
+    "entries": [
+      {
+        "nodeId": "issue-board-cutover",
+        "alias": "2026-08-24-issue-board-cutover",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "lifecycle": "required",
+        "observation": "finalized",
+        "delivery": {
+          "state": "record",
+          "basis": "legacy",
+          "archivedAt": "2026-08-24T10:17:23.246Z",
+          "codeCommit": "4a692691c2fb6bf8b69eea37bd90a00e7fcae097",
+          "planningBranch": "feat/issue-phase7",
+          "outcome": null,
+          "evidence": [
+            {
+              "path": "evidence/browser-capture-runner.mjs",
+              "sha256": "f7b2399cd1fccbf610c504e685710d0cfd14918836c23e9c9f509f93a88821a2"
+            },
+            {
+              "path": "evidence/browser-disposable-receipt.json",
+              "sha256": "ae63cb70f22bf54c944b5b88aeb6c3aad79a68c71d3592db6e9991e233fde851"
+            },
+            {
+              "path": "evidence/browser-evidence.md",
+              "sha256": "bb74e1a486bb926484118b8d8bef86e361630b331464902b990e06a7dbfdfbd9"
+            },
+            {
+              "path": "evidence/browser-fixture.ts",
+              "sha256": "5dec14d5a2079fa0388f9fbc7054b020154f05d00b6ca94cde90c41a1740439c"
+            },
+            {
+              "path": "evidence/browser-persistent-capture-runner.mjs",
+              "sha256": "4f9726ce7f06c5c0b0de26f8b445f0ce45ffee05cd64e2a9470e6247612adac4"
+            },
+            {
+              "path": "evidence/browser-persistent-readonly-receipt.json",
+              "sha256": "c988cf021c58310bba6f1e70a4ad88c408b09f1fcaaa99c55485677d16213de0"
+            },
+            {
+              "path": "evidence/browser-persistent-server.mjs",
+              "sha256": "326a42cd5b4bf0d87beed91bb8b0a60b7c19b6e046e87e1d96d55a1b1298815e"
+            },
+            {
+              "path": "evidence/browser-receipt-guards.mjs",
+              "sha256": "98fc2dd449313c1b021bd178afcbb991131e63b4229d3a33d3fa31f984d4685d"
+            },
+            {
+              "path": "evidence/browser-receipt-runner-self-test.mjs",
+              "sha256": "89966343f06068365b2176e1f6010141b0370ceb53215c6ed341b204c6cbf577"
+            },
+            {
+              "path": "evidence/browser-ts-loader.mjs",
+              "sha256": "e2a7e8e1dcff9be4f38d755bfbd9fd9261f897f3d06abae41b5948ce40c2c97e"
+            },
+            {
+              "path": "evidence/orphan-inventory-after.md",
+              "sha256": "40768b44c66af205d39bf5484f789429c89df7bf1601dbf8a229cd51cc4aa306"
+            },
+            {
+              "path": "evidence/orphan-inventory-before.md",
+              "sha256": "2fcc91adaedfa0976b4052042216eed3de58c02c8c073c5a8e922d0f08a8b8b8"
+            },
+            {
+              "path": "evidence/review-cycle-report.md",
+              "sha256": "bdd1498eb0758d33f0d575889e64a8ac76d542eac3f9276362ebea882f1bccf8"
+            },
+            {
+              "path": "evidence/review-report.md",
+              "sha256": "5d22137b0733a6e4bc228405d24a369cfd9ecc9d71e42b119fd1043bbd8144a4"
+            },
+            {
+              "path": "evidence/ship-log.md",
+              "sha256": "0961081d1d4468648552575654f494a31a752b4eab93b016c397bddea30d0216"
+            },
+            {
+              "path": "evidence/verification-report.md",
+              "sha256": "09e214c4bc0eebb8a697ba86a31d06aa5ea67745b083c35462ed8d435aeacd21"
+            }
+          ],
+          "missing": [],
+          "entryName": "2026-08-24-issue-board-cutover",
+          "foundAtRef": "refs/heads/main",
+          "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-24-issue-board-cutover/archive.json"
+        }
+      },
+      {
+        "nodeId": "issue-operations-and-unlinked",
+        "alias": "2026-08-24-issue-operations-and-unlinked",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "lifecycle": "required",
+        "observation": "finalized",
+        "delivery": {
+          "state": "record",
+          "basis": "legacy",
+          "archivedAt": "2026-08-24T10:12:14.155Z",
+          "codeCommit": "274c766ce7738fe5ed507c8f0336cb640a6c7095",
+          "planningBranch": "feat/issue-phase7",
+          "outcome": null,
+          "evidence": [
+            {
+              "path": "evidence/dogfood-change-links.json",
+              "sha256": "af26882e43816d8fc277049d57cd10d5d0668f8ff60c04fa95cb40fbe89f2353"
+            },
+            {
+              "path": "evidence/fixture-mutation-receipts.md",
+              "sha256": "438e85f98b5e32c027f00bb1390670b021525edd3ad57e90c3b7d7519682b135"
+            },
+            {
+              "path": "evidence/review-cycle-report.md",
+              "sha256": "610928f17232f9fbad29a88fcabb3828ec71c8cea58b0d162d268a55b2e0dfb4"
+            },
+            {
+              "path": "evidence/review-report.md",
+              "sha256": "114525d86326e4fda757a35f936758933c6783f0a418d989886c0465168c4cc7"
+            },
+            {
+              "path": "evidence/ship-log.md",
+              "sha256": "93e8d576e13bdc4665b002c85be26deb8f04aceb576f8cc61f59f8aee417b982"
+            },
+            {
+              "path": "evidence/verification-report.md",
+              "sha256": "095ba64af99d953cbbd4cfa7cca0ee3377a61f43e2555ea5099a528001ade28a"
+            }
+          ],
+          "missing": [],
+          "entryName": "2026-08-24-issue-operations-and-unlinked",
+          "foundAtRef": "refs/heads/main",
+          "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-24-issue-operations-and-unlinked/archive.json"
+        }
+      },
+      {
+        "nodeId": "issue-read-surface",
+        "alias": "2026-08-24-issue-read-surface",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "lifecycle": "required",
+        "observation": "finalized",
+        "delivery": {
+          "state": "record",
+          "basis": "legacy",
+          "archivedAt": "2026-08-24T10:10:21.760Z",
+          "codeCommit": "0d7258735a6abea5cf566179b0224973e5bdf19c",
+          "planningBranch": "feat/issue-phase7",
+          "outcome": null,
+          "evidence": [
+            {
+              "path": "evidence/dogfood-board-render.html",
+              "sha256": "9be74b80fedefde19ec4439f2754b136e9ef8ffa41fdf262bc6ccf7c449a8097"
+            },
+            {
+              "path": "evidence/dogfood-board-render.json",
+              "sha256": "63fbbb7116daf883ac5f1167a4efb57e1477cb35991712c8beafae5af601cb30"
+            },
+            {
+              "path": "evidence/dogfood-cli-http-parity.json",
+              "sha256": "b248b686f2f4acb82836a24281c6792f45716b9c9c722de8c8313bdd64486df1"
+            },
+            {
+              "path": "evidence/dogfood-readonly-proof.txt",
+              "sha256": "13ddc720a1d0f06b5ae5f9bf90d2fda7c553a185c44fb48dfe1ec776a919ec16"
+            },
+            {
+              "path": "evidence/dogfood-real-issue-projection.json",
+              "sha256": "0a81c37d240d59bc4a70324e798f2b04cd1ade7284b4a6e67b1c05590d54e192"
+            },
+            {
+              "path": "evidence/review-cycle-report.md",
+              "sha256": "560a472d9334202fa06a6c2a5aa6eded67b3103dbbcf6d70c92912463c924d17"
+            },
+            {
+              "path": "evidence/review-report.md",
+              "sha256": "80e0f4dee9fc73ec1416f33c7edea626d07e24de989a83c58e13c294274661fc"
+            },
+            {
+              "path": "evidence/ship-log.md",
+              "sha256": "9f7c96c88fa66f6fec2fb858ef49397a30ecfb20689079a659b8f0b146d826c0"
+            },
+            {
+              "path": "evidence/verification-report.md",
+              "sha256": "292b8e208fc5aa8ecf11fac4477edddb840ebacc5fb855b3cda12162ebf813ac"
+            }
+          ],
+          "missing": [],
+          "entryName": "2026-08-24-issue-read-surface",
+          "foundAtRef": "refs/heads/main",
+          "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-24-issue-read-surface/archive.json"
+        }
+      }
+    ],
+    "counts": {
+      "record": 3,
+      "no-record": 0,
+      "not-archived": 0,
+      "unreadable": 0,
+      "unattributed": 0
+    }
+  },
+  "review": {
+    "issueId": "issue-ui-convergence",
+    "revisionId": "0001",
+    "determination": {
+      "kind": "accepted",
+      "acceptedAt": "2026-08-24T10:28:07.925Z",
+      "conditionsRevisionId": "0001"
+    },
+    "threads": [],
+    "verification": {
+      "progress": {
+        "completed": 3,
+        "total": 3
+      },
+      "delivery": {
+        "record": 3,
+        "no-record": 0,
+        "not-archived": 0,
+        "unreadable": 0,
+        "unattributed": 0
+      }
+    }
+  },
+  "complete": true,
+  "unsearchedRefs": [],
+  "problems": []
+}

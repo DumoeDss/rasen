@@ -452,3 +452,168 @@ server's own working directory.
 - **WHEN** a Store has exactly one project and a mutation omits the project
 - **THEN** the mutation is still refused
 - **AND** the single project is not adopted as the missing scope
+
+### Requirement: The Store aggregate projection paths serve Issue status, attention, and review reads
+
+The management API SHALL serve the Issue projection reads — the Issue list with each Issue's
+derived status, one Issue's full projection read (its status, its delivery evidence, and its
+review view together), and the store-wide needs-attention scan with its optional single-Issue
+narrowing — over paths scoped to a Store's stable identity, under the management security
+posture. Each path SHALL be a passthrough of the same core composition the command line
+prints: the server SHALL NOT maintain its own derivation, translation layer, or cached copy of
+any projected fact, and the same read taken over the API and from the command line SHALL
+report the same facts, including reported problems.
+
+#### Scenario: Projection reads are available over the API
+
+- **WHEN** a client requests a Store's Issue projections, one Issue's projection, or the
+  Store's attention scan
+- **THEN** each is served from its own Store-scoped path as the composition's own payload —
+  the list carrying each Issue's status beside its summary, the single-Issue read carrying
+  status, delivery, and review together, and the attention scan carrying its scanned entries,
+  items, and counts
+
+#### Scenario: The API and the command line derive the same facts
+
+- **WHEN** the same projection read is taken over the API and from the command line against
+  the same Store evidence
+- **THEN** both report the same payload content — the same axes, nodes, lanes, delta,
+  acceptance, delivery, review, and attention facts, and the same reported problems
+
+#### Scenario: Review rides the single-Issue read
+
+- **WHEN** a client requests one Issue's projection
+- **THEN** the response carries the Issue's review view — determination, threads, and
+  verification summary — beside its status and delivery, derived from the same status on the
+  same read, and no separate review derivation exists server-side
+
+#### Scenario: Attention narrowing to an unknown Issue is refused
+
+- **WHEN** a client narrows the attention scan to an Issue identifier that is not in the
+  scanned set
+- **THEN** the request is refused with a not-found status and the store's own refusal code in
+  the error envelope, rather than answered with an empty scan
+
+### Requirement: A projection read derives fresh and reports its channels honestly
+
+Every projection read SHALL re-derive its payload from Store evidence at request time: the
+server SHALL hold no cache, snapshot, or second state between requests, SHALL NOT mutate
+anything, and SHALL NOT take a lock. The two reporting channels SHALL stay disjoint as the
+command line keeps them: a refusal is an error response carrying the store's own code in the
+shared error envelope, while unreadable or incomplete evidence is a successful payload
+carrying its problem reports — the server SHALL NOT convert one channel into the other. The
+payload SHALL carry its run-state visibility fact so a consumer always knows whether live-run
+evidence was in scope for the derivation.
+
+#### Scenario: A mutation between two reads is reflected without invalidation
+
+- **WHEN** the same projection path is requested, the Store's evidence changes, and the path
+  is requested again
+- **THEN** the second response reflects the changed evidence with no invalidation or refresh
+  step in between, because nothing was cached
+
+#### Scenario: A projection read never mutates
+
+- **WHEN** any projection path is called repeatedly
+- **THEN** no file in the Store, no run-state file, and no index is created, modified, or
+  removed
+
+#### Scenario: Refusals carry the store's own codes
+
+- **WHEN** a projection read is refused — an unknown Issue, an incomplete scope, or an
+  unreadable store ref
+- **THEN** the response is an error in the shared envelope whose code is the store's own
+  refusal code, mapped to a client-fault or upstream-fault HTTP status, never a generic
+  server error
+
+#### Scenario: Unreadable evidence is not a refusal
+
+- **WHEN** a projection read encounters evidence that exists but cannot be read — an
+  unreadable plan, a divergent record, an unsearched ref
+- **THEN** the response is successful and carries the incompleteness in its payload — its
+  problem reports, its completeness flag, and its unsearched refs — exactly as the command
+  line reports them
+
+#### Scenario: Run-state visibility is disclosed, never fabricated
+
+- **WHEN** the server cannot resolve an execution root for live run-state probing
+- **THEN** the payload's run-state visibility reports that none was in scope and the
+  projection degrades to committed evidence only, rather than fabricating or omitting the
+  fact
+
+### Requirement: The Store Change-to-Issue link path reports provable association
+
+The management API SHALL serve one Store-scoped read that joins every active and archived Change
+occurrence to the latest readable Execution Plans that name its stable Change instance. Each entry
+SHALL carry its Change occurrence and proven Issue links plus a closed association of `linked`,
+`unlinked`, or `unknown` and a closed eligibility reason. `unlinked`/attachable SHALL require a
+complete scan, one stable unambiguous Change instance, and zero proven links. The path SHALL derive
+fresh on every request from the existing Store aggregate and Execution Plan reads and SHALL hold no
+cache, index, persisted link, or alternate Issue truth.
+
+#### Scenario: Linked and unlinked entries share one fresh read
+
+- **WHEN** a client requests a Store's Change-to-Issue links
+- **THEN** the response includes active and archived Change occurrences with their exact evidence,
+  proven Issue links, association, and attachability
+
+#### Scenario: A complete zero-link scan reports unlinked
+
+- **WHEN** one stable Change instance has no node in any latest readable Issue plan and every required
+  ref and plan was searched
+- **THEN** its entry reports `unlinked` and `attachable`
+
+#### Scenario: An incomplete scan reports unknown
+
+- **WHEN** a candidate has no proven link but a latest plan, ref, identity, or claimant set prevents
+  a complete absence conclusion
+- **THEN** its entry reports `unknown` with the exact eligibility reason, completeness flag,
+  unsearched refs, and problems
+
+#### Scenario: A proven link survives unrelated incompleteness
+
+- **WHEN** a readable latest plan names a Change instance while some unrelated Store evidence is
+  unreadable
+- **THEN** that Change reports `linked` with the proven Issue link and the response separately reports
+  its aggregate incompleteness
+
+#### Scenario: Repeated link reads never mutate
+
+- **WHEN** the link path is called repeatedly
+- **THEN** no Store file, run-state file, client cache, or index is created, modified, or removed
+
+### Requirement: Plan publication can be conditioned on the observed revision
+
+The management API's Execution Plan publication request SHALL accept an optional expected revision:
+an omitted field preserves the existing unconditional-next-revision behavior, `null` means the
+caller observed no plan, and a canonical revision id means the caller observed that latest revision.
+The request SHALL pass this precondition to the Store Issue mutation and SHALL return a conflict in
+the shared error envelope when it is stale. The request's node mirror SHALL carry every field the
+plan schema admits so a read-modify-publish client can preserve the graph without dropping lifecycle,
+reason, suggestion, rationale, or uncertainty fields.
+
+#### Scenario: Omitted expectation remains backward compatible
+
+- **WHEN** a caller publishes a valid plan without an expected revision
+- **THEN** the next immutable revision is published under the existing behavior
+
+#### Scenario: Null expectation accepts only no plan
+
+- **WHEN** a caller submits expected revision `null`
+- **THEN** publication succeeds only when the Issue still has no plan revision
+
+#### Scenario: Matching expectation publishes the next revision
+
+- **WHEN** a caller names the current latest revision and submits a valid complete plan
+- **THEN** the next revision is published with that revision as `supersedes`
+
+#### Scenario: Stale expectation is a conflict
+
+- **WHEN** the latest revision differs from the submitted expectation
+- **THEN** the API returns a conflict with the Store's revision-conflict code and writes no revision
+
+#### Scenario: Full node fields round-trip through the request
+
+- **WHEN** a read-modify-publish request resubmits existing nodes carrying lifecycle, reason,
+  suggestion, rationale, or uncertainty
+- **THEN** the published revision preserves each admitted field verbatim after canonical validation

@@ -1,0 +1,143 @@
+# Dogfood receipt 2 — re-publish 0002 with a cancelled (reason) + optional node
+
+Date: 2026-08-20T05:09:07Z
+
+0001 sha256 before: 01ffd5a8a7f21456ca075ec1d21d15019bbd8783ead91799ace8c4dc54110e2b
+
+## 0002 authored by the copy-edit-publish flow (0001's node list from show --json, edited: one node optional, one cancelled with a recorded reason)
+nodes:
+  - nodeId: issue-node-lifecycle
+    kind: change
+    projectId: 0c3a4b80-c33b-4a7c-a797-b571630367c8
+    targetLineId: line-0.2
+    changeInstanceId: ci_ba3eac3d40969ed06063eef13191df5ffc30fc624f8ce5b247ca3f1d0b8a1089
+    changeAlias: issue-node-lifecycle
+    lifecycle: optional
+    dependsOn: [issue-plan-publication]
+  - nodeId: issue-persistent-baseline
+    kind: change
+    projectId: 0c3a4b80-c33b-4a7c-a797-b571630367c8
+    targetLineId: line-0.2
+    changeInstanceId: ci_36f55155e56869bfa2c208621e9021da3b160da2fbc1a1d4e5c55f1cba717baf
+    changeAlias: issue-persistent-baseline
+    lifecycle: cancelled
+    reason: descoped from this milestone by the operator; g-003 planning decides its shape
+    dependsOn: [issue-node-lifecycle]
+  - nodeId: issue-plan-publication
+    kind: change
+    projectId: 0c3a4b80-c33b-4a7c-a797-b571630367c8
+    targetLineId: line-0.2
+    changeInstanceId: ci_b617c64368ab01577a2ada8b03b732bf3365fb5e80ebfc1b222741358f9bfe03
+    changeAlias: issue-plan-publication
+    dependsOn: []
+
+## Publish 0002 via --from-file (cwd = the member project root)
+Issue issue-lc-dogfood: Execution Plan revision 0002
+  supersedes: 0001
+  nodes: 3
+
+  Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing.
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-lc-dogfood.GnSFri\store add rasen/issues/issue-lc-dogfood/plans/0002.yaml
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-lc-dogfood.GnSFri\store commit -m "chore(store): publish execution plan issue-lc-dogfood/0002"
+
+## Receipt facts
+revision files:
+0001.yaml
+0002.yaml
+0001 sha256 after:  01ffd5a8a7f21456ca075ec1d21d15019bbd8783ead91799ace8c4dc54110e2b
+0001 bytes UNCHANGED: yes (before == after == receipt 1's recorded file sha256; the
+  verdict line in an earlier draft of this receipt compared against the plan's
+  contentSha256 by mistake and said MISMATCH — corrected here against the three
+  equal file-digest lines quoted above)
+0002 stored bytes:
+version: 1
+issueId: issue-lc-dogfood
+revisionId: "0002"
+supersedes: "0001"
+createdAt: 2026-08-20T05:09:09.919Z
+contentSha256: ac608381f9485d49514f8b13fc6e6554f74527f469b0df8fb06d8d9faa4f9aff
+nodes:
+  - nodeId: issue-node-lifecycle
+    kind: change
+    projectId: 0c3a4b80-c33b-4a7c-a797-b571630367c8
+    targetLineId: line-0.2
+    changeInstanceId: ci_ba3eac3d40969ed06063eef13191df5ffc30fc624f8ce5b247ca3f1d0b8a1089
+    changeAlias: issue-node-lifecycle
+    lifecycle: optional
+    dependsOn:
+      - issue-plan-publication
+  - nodeId: issue-persistent-baseline
+    kind: change
+    projectId: 0c3a4b80-c33b-4a7c-a797-b571630367c8
+    targetLineId: line-0.2
+    changeInstanceId: ci_36f55155e56869bfa2c208621e9021da3b160da2fbc1a1d4e5c55f1cba717baf
+    changeAlias: issue-persistent-baseline
+    lifecycle: cancelled
+    reason: descoped from this milestone by the operator; g-003 planning decides its
+      shape
+    dependsOn:
+      - issue-node-lifecycle
+  - nodeId: issue-plan-publication
+    kind: change
+    projectId: 0c3a4b80-c33b-4a7c-a797-b571630367c8
+    targetLineId: line-0.2
+    changeInstanceId: ci_b617c64368ab01577a2ada8b03b732bf3365fb5e80ebfc1b222741358f9bfe03
+    changeAlias: issue-plan-publication
+    dependsOn: []
+
+## Acceptance conditions, so the gate renders eligible over the re-scoped plan
+Issue issue-lc-dogfood: acceptance conditions revision 0001
+  supersedes: (none)
+  conditions: 1
+
+  Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing.
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-lc-dogfood.GnSFri\store add rasen/issues/issue-lc-dogfood/acceptance/0001.yaml
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-lc-dogfood.GnSFri\store commit -m "chore(store): publish acceptance conditions issue-lc-dogfood/0001"
+
+## show under 0002: progress re-scoped to 1/1, the lifecycle named on node lines, the exclusion beside the gate
+Issue issue-lc-dogfood
+  state: open
+  title: Dogfood: node lifecycles through the issue-lc-dogfood store
+  revisions: 0001, 0002
+  latest plan: revision 0002
+  plan digest: ac608381f9485d49514f8b13fc6e6554f74527f469b0df8fb06d8d9faa4f9aff
+  status:
+    phase: review
+    health: waiting-human
+    progress: 1/1
+    run-state: C:\Users\Sayo\AppData\Local\Temp\rasen-lc-dogfood.GnSFri\app
+    nodes:
+      issue-node-lifecycle change issue-node-lifecycle — not-started (optional) (blockedBy issue-plan-publication)
+        evidence: C:\Users\Sayo\AppData\Local\Temp\rasen-lc-dogfood.GnSFri\store\rasen\projects\0c3a4b80-c33b-4a7c-a797-b571630367c8\changes\issue-node-lifecycle\evidence
+      issue-persistent-baseline change issue-persistent-baseline — not-started (cancelled: descoped from this milestone by the operator; g-003 planning decides its shape) (blockedBy issue-node-lifecycle)
+        evidence: C:\Users\Sayo\AppData\Local\Temp\rasen-lc-dogfood.GnSFri\store\rasen\projects\0c3a4b80-c33b-4a7c-a797-b571630367c8\changes\issue-persistent-baseline\evidence
+      issue-plan-publication change issue-plan-publication — run-terminal
+        pipeline: small-feature (located by execution-root)
+        evidence: C:\Users\Sayo\AppData\Local\Temp\rasen-lc-dogfood.GnSFri\store\rasen\projects\0c3a4b80-c33b-4a7c-a797-b571630367c8\changes\issue-plan-publication\evidence
+
+  acceptance:
+    conditions: revision 0001 (1 condition(s))
+      cond-1: The four lifecycle states hold through projection, gate, and start
+    gate: eligible (would accept conditions revision 0001)
+      - excluded issue-persistent-baseline (cancelled): descoped from this milestone by the operator; g-003 planning decides its shape
+    record: (not accepted)
+
+## start refuses the cancelled node
+{
+  "issue": null,
+  "binding": null,
+  "status": [
+    {
+      "severity": "error",
+      "code": "issue_start_node_cancelled",
+      "message": "Node 'issue-persistent-baseline' is cancelled: descoped from this milestone by the operator; g-003 planning decides its shape — the plan says its work is not wanted; no launch contract is emitted.",
+      "fix": "The plan does not want this node’s work. Start a wanted node, or re-publish a revision whose lifecycle wants it."
+    }
+  ]
+}
+exit: 1
+
+## start still offers the wanted frontier (the optional node)
+Error: Change instance ci_ba3eac3d40969ed06063eef13191df5ffc30fc624f8ce5b247ca3f1d0b8a1089 (alias issue-node-lifecycle) has neither a workspace index entry nor a resolvable member-project checkout for project 0c3a4b80-c33b-4a7c-a797-b571630367c8.
+Fix: rasen store workspace plan --existing-change --store issue-lc-dogfood --project 0c3a4b80-c33b-4a7c-a797-b571630367c8 --target-line line-0.2 --change issue-node-lifecycle
+exit: 1

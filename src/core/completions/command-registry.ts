@@ -348,6 +348,10 @@ const COMMANDS: readonly CommandDefinition[] = [
             name: 'remote',
             takesValue: true,
           },
+          {
+            name: 'layout',
+            takesValue: true,
+          },
           COMMON_FLAGS.json,
         ],
       },
@@ -665,8 +669,77 @@ const COMMANDS: readonly CommandDefinition[] = [
             flags: [
               COMMON_FLAGS.store,
               { name: 'from-file', takesValue: true },
+              // The second publication source: a parent change name whose
+              // portfolio run-state compiles into the next revision.
+              // Mutually exclusive with from-file; the CLI refuses both-or-neither.
+              { name: 'from-portfolio', takesValue: true },
+              // The third publication source: a machine-proposed decomposition
+              // document compiled into the next revision. Mutually exclusive
+              // with the other two; the CLI refuses any two-or-none together.
+              { name: 'from-decomposition', takesValue: true },
               COMMON_FLAGS.json,
             ],
+          },
+          {
+            // Publishes the next immutable acceptance-conditions revision —
+            // the checklist an Issue is accepted against.
+            name: 'acceptance',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-id' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'from-file', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            // The explicit close: evaluates the acceptance gate and records
+            // the acceptance only when it holds.
+            name: 'accept',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-id' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'note', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            // Resolves and verifies the next node's launch binding — it never
+            // spawns; the contract is for the operator or agent session that
+            // receives it.
+            name: 'start',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-id' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'node', takesValue: true },
+              { name: 'pipeline', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            // The Issue dispatch's confirm step: composes the verified
+            // launch-contract set and pending-Change report for one revision
+            // and writes nothing — starting a confirmed node stays a
+            // per-node act.
+            name: 'confirm',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-id' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'revision', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            // The deterministic scheduling read: the ready set of the LATEST
+            // published revision plus every non-member with its exit reason.
+            // Read-only; no --revision — the scheduler schedules the latest.
+            name: 'ready',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-id' }],
+            flags: [COMMON_FLAGS.store, COMMON_FLAGS.json],
           },
         ],
       },
@@ -687,6 +760,19 @@ const COMMANDS: readonly CommandDefinition[] = [
         // The per-project rollup read: same rationale as `changes` above.
         name: 'projects',
         flags: [COMMON_FLAGS.store, COMMON_FLAGS.json],
+      },
+      {
+        // The cross-Issue attention scan: what across the Store's Issues
+        // needs a human right now — five kinds in fail-first order, every
+        // scanned Issue visible in the summary. A Store-scoped fleet read
+        // (hence a sibling of `issue`, not one of its per-Issue verbs);
+        // read-only; `--issue` narrows and refuses an unknown id.
+        name: 'attention',
+        flags: [
+          COMMON_FLAGS.store,
+          { name: 'issue', takesValue: true },
+          COMMON_FLAGS.json,
+        ],
       },
     ],
   },

@@ -1613,6 +1613,9 @@
                 "remote": {
                   "description": "记录在 store.yaml 中的规范克隆源"
                 },
+                "layout": {
+                  "description": "显式请求的布局版本；仅支持 2（创建带 layout-2 声明、无扁平 planning 树的 Store）"
+                },
                 "json": {
                   "description": "输出为 JSON"
                 }
@@ -2052,6 +2055,82 @@
                     "from-file": {
                       "description": "列出计划节点的 YAML 文件路径"
                     },
+                    "from-portfolio": {
+                      "description": "不从 YAML 节点列表发布，而是从父 Change 的 portfolio 运行状态发布"
+                    },
+                    "from-decomposition": {
+                      "description": "不从 YAML 节点列表发布，而是从机器提出的分解文档发布"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                },
+                "acceptance": {
+                  "description": "从 YAML 条件清单为 Issue 发布一个新的不可变验收条件修订",
+                  "options": {
+                    "store": {
+                      "description": "持有该 Issue 的仓库"
+                    },
+                    "from-file": {
+                      "description": "列出验收条件的 YAML 文件路径"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                },
+                "accept": {
+                  "description": "显式接受一个 Issue：评估验收闸门，仅在闸门成立时记录验收并关闭该 Issue",
+                  "options": {
+                    "store": {
+                      "description": "持有该 Issue 的仓库"
+                    },
+                    "note": {
+                      "description": "随验收一并记录的备注"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                },
+                "start": {
+                  "description": "解析下一个计划节点绑定的执行上下文并输出启动契约；启动是解析与验证，绝不生成进程",
+                  "options": {
+                    "store": {
+                      "description": "持有该 Issue 的仓库"
+                    },
+                    "node": {
+                      "description": "要寻址的计划节点；省略则推导唯一的可执行前沿节点"
+                    },
+                    "pipeline": {
+                      "description": "记录进启动契约的流水线，会对照流水线注册表校验"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                },
+                "confirm": {
+                  "description": "为指定修订（缺省为最新可读修订）组装确认报告：已验证的启动契约集合与待创建的 Change。confirm 只组装、不写入任何内容；启动仍是逐节点的操作",
+                  "options": {
+                    "store": {
+                      "description": "持有该 Issue 的仓库"
+                    },
+                    "revision": {
+                      "description": "要确认的修订；省略时确认最新可读修订"
+                    },
+                    "json": {
+                      "description": "以 JSON 输出"
+                    }
+                  }
+                },
+                "ready": {
+                  "description": "报告该 Issue 最新已发布修订的确定性就绪集：每个可运行的 Change 节点，以及每个非成员节点及其退出理由，附运行状态可见性标签与状态问题。只读且仅针对最新修订——调度器调度的是最新修订",
+                  "options": {
+                    "store": {
+                      "description": "持有该 Issue 的仓库"
+                    },
                     "json": {
                       "description": "以 JSON 输出"
                     }
@@ -2087,6 +2166,20 @@
               "options": {
                 "store": {
                   "description": "要列出项目的仓库"
+                },
+                "json": {
+                  "description": "以 JSON 输出"
+                }
+              }
+            },
+            "attention": {
+              "description": "扫描仓库的全部 Issue,报告现在需要人处理的事项(失败、受阻于故障的节点、等待人工的阶段、评审阶段的验收、状态问题)——失败优先,所有被扫描的 Issue 在摘要中保持可见。只读",
+              "options": {
+                "store": {
+                  "description": "要扫描的仓库"
+                },
+                "issue": {
+                  "description": "将扫描收窄到一个 Issue id;未知 id 会被拒绝"
                 },
                 "json": {
                   "description": "以 JSON 输出"

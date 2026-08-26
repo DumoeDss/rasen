@@ -1,0 +1,91 @@
+{
+  "change": "issue-persistent-baseline",
+  "archivedAt": "2026-08-20T07:34:13.817Z",
+  "codeCommit": "889f1ef7285730bae134b20291898cab64f416c8",
+  "planningBranch": "feat/issue-phase2",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/2-1-store-facts.md",
+      "sha256": "32a0a1ea89432b2da5aebe18f64542725b566701cc6d6a4ea4de4dd25e6350c2"
+    },
+    {
+      "path": "evidence/2-1-store-setup.json",
+      "sha256": "a76fec76a293446b5584891ad1c575754a082480e81471b83ae6be8711d1231a"
+    },
+    {
+      "path": "evidence/2-2-add-project.json",
+      "sha256": "ddddd789f23adb8e65346e747019bd1626a39d5b6b740ab0584af10c9a5ef8cf"
+    },
+    {
+      "path": "evidence/2-2-membership.md",
+      "sha256": "aba0aa0024a3d3597562c27404e1ec83d00490578eb82d382c76281f8a978218"
+    },
+    {
+      "path": "evidence/2-3-target-line.json",
+      "sha256": "1958c7f6ec0fab9760d8f013f9ef4dff4744abd406a852b35c131c0926ba5093"
+    },
+    {
+      "path": "evidence/3-seed-map.json",
+      "sha256": "7aa23c15ee097d6a85c60ee5a34f0b3b078503201b0001ab7a6281748dac369a"
+    },
+    {
+      "path": "evidence/3-seeding.md",
+      "sha256": "fcc4ed6a1d4283f6e3e7ae78ef8e5f5aed11fa7da375df841b74f617bb2d2669"
+    },
+    {
+      "path": "evidence/3-store-tree.txt",
+      "sha256": "653e2d61179b5703f6ef942bf01639a7921dc287279cd00bea77e194f17ca2a6"
+    },
+    {
+      "path": "evidence/4-1-issue-new.json",
+      "sha256": "9751a49df24068305b3316260f48400051071a973aa364ce480dcff8a23b8a9f"
+    },
+    {
+      "path": "evidence/4-1-plan-0001.json",
+      "sha256": "024e3f5c5d19482183ea3bbf9982f126e45fbf5407e45947aeb5a7e7bbd3b16c"
+    },
+    {
+      "path": "evidence/4-2-acceptance-conditions-source.yaml",
+      "sha256": "9d00f9d9a764f7ca38db1abb9d0281703f3ba557ba5d72db8563b93e720a4967"
+    },
+    {
+      "path": "evidence/4-2-acceptance-conditions.json",
+      "sha256": "ab227ddf4eb78bba50cfcc9c34081617ffcc6a9ecc5e8424c01720a748184a67"
+    },
+    {
+      "path": "evidence/4-2-tri-axis-gate-holds.json",
+      "sha256": "d11060998e47eb2302e3b41c59448a7e2f0b09d8b608bce0213271642306c01d"
+    },
+    {
+      "path": "evidence/4-issue-loop.md",
+      "sha256": "202a95d1f422493121a74480875bc0fcd26d3da6b265c77871a1e15e28d940f8"
+    },
+    {
+      "path": "evidence/5-1-durability.md",
+      "sha256": "ddf6d5d038e1e19f4e1b4434aa31b7e92857e31d56f909ab67acd860c03f2419"
+    },
+    {
+      "path": "evidence/5-2-gates.log",
+      "sha256": "4e7ffd166fb8b4b3371b9e99b88725464d5c47f136f96157f3aa0cc88bcbcc2f"
+    },
+    {
+      "path": "evidence/fix-round-1.md",
+      "sha256": "691ae3087c66d1c31feef7dd375cb8c8caa3aad0ea90591a9103cda1899a9125"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "7b1b5a62ffc83b4f104c68ad88eef8252e4c530c3c50f27bc1c70bafb260d6a0"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "51839d0c40fb7743fb679bc7dc82c89bc5203c6de5517d3be2c0524fb16208c4"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [],
+  "missing": [
+    "verification-report"
+  ]
+}

@@ -45,11 +45,15 @@ import type {
   SpaceWorktreesResponse,
   StatusResponse,
   StoreChangesResponse,
+  StoreChangeIssueLinksResponse,
   StoreExecutionPlanPublishRequest,
   StoreExecutionPlanPublishResponse,
   StoreExecutionPlanResponse,
+  StoreIssueAttentionResponse,
   StoreIssueCreateRequest,
   StoreIssueDetailResponse,
+  StoreIssueProjectionResponse,
+  StoreIssueProjectionsResponse,
   StoreIssueRecordResponse,
   StoreIssueReferencesResponse,
   StoreIssuesResponse,
@@ -683,6 +687,65 @@ export function getStoreIssue(issueId: string, space?: string): Promise<StoreIss
   const params = new URLSearchParams({ issueId });
   if (space) params.set('space', space);
   return request<StoreIssueDetailResponse>(`/api/v1/stores/issue?${params.toString()}`);
+}
+
+/**
+ * The Issue PROJECTION reads (issue-read-surface). Each is a passthrough of
+ * the same core composition `rasen store issue list|show` and
+ * `rasen store attention` print, re-derived on every request: there is no
+ * cache on either side of this call, so a refresh is a re-derivation and
+ * nothing here holds a second copy of any status fact.
+ */
+
+/** Every Issue with its projected status, optionally narrowed by lifecycle state. */
+export function getStoreIssueProjections(
+  space?: string,
+  state?: StoreIssueState
+): Promise<StoreIssueProjectionsResponse> {
+  const params = new URLSearchParams();
+  if (space) params.set('space', space);
+  if (state) params.set('state', state);
+  const query = params.toString();
+  return request<StoreIssueProjectionsResponse>(
+    query ? `/api/v1/stores/issue-projections?${query}` : '/api/v1/stores/issue-projections'
+  );
+}
+
+/** One Issue's whole read: status, delivery evidence, and review from one derivation. */
+export function getStoreIssueProjection(
+  issueId: string,
+  space?: string
+): Promise<StoreIssueProjectionResponse> {
+  const params = new URLSearchParams({ issueId });
+  if (space) params.set('space', space);
+  return request<StoreIssueProjectionResponse>(`/api/v1/stores/issue-projection?${params.toString()}`);
+}
+
+/**
+ * The Store-wide needs-attention scan, optionally narrowed to one Issue. An
+ * unknown narrowing id is REFUSED by the server (404), never answered with an
+ * empty scan — the empty state is a claim about scanned Issues.
+ */
+export function getStoreIssueAttention(
+  space?: string,
+  issueId?: string
+): Promise<StoreIssueAttentionResponse> {
+  const params = new URLSearchParams();
+  if (space) params.set('space', space);
+  if (issueId) params.set('issueId', issueId);
+  const query = params.toString();
+  return request<StoreIssueAttentionResponse>(
+    query ? `/api/v1/stores/issue-attention?${query}` : '/api/v1/stores/issue-attention'
+  );
+}
+
+/** Fresh Store-wide Change-to-Issue association read; no client cache/index. */
+export function getStoreChangeIssueLinks(
+  space?: string
+): Promise<StoreChangeIssueLinksResponse> {
+  return request<StoreChangeIssueLinksResponse>(
+    `/api/v1/stores/change-issue-links${spaceQuery(space)}`
+  );
 }
 
 /** The derived reverse lookup: which Issues reference a given Change instance. */

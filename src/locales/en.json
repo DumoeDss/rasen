@@ -1613,6 +1613,9 @@
                 "remote": {
                   "description": "Canonical clone source recorded in store.yaml"
                 },
+                "layout": {
+                  "description": "Explicit layout version request; only 2 is supported (creates the store with the layout-2 declaration and no flat planning tree)"
+                },
                 "json": {
                   "description": "Output as JSON"
                 }
@@ -2052,6 +2055,82 @@
                     "from-file": {
                       "description": "Path to a YAML file listing the plan's nodes"
                     },
+                    "from-portfolio": {
+                      "description": "Publish from a parent change's portfolio run-state instead of a YAML node list"
+                    },
+                    "from-decomposition": {
+                      "description": "Publish from a machine-proposed decomposition document instead of a YAML node list"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "acceptance": {
+                  "description": "Publish a new immutable acceptance-conditions revision for an Issue from a YAML condition list",
+                  "options": {
+                    "store": {
+                      "description": "Store holding the Issue"
+                    },
+                    "from-file": {
+                      "description": "Path to a YAML file listing the acceptance conditions"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "accept": {
+                  "description": "Accept an Issue explicitly: evaluate the acceptance gate and, only when it holds, record the acceptance and close the Issue",
+                  "options": {
+                    "store": {
+                      "description": "Store holding the Issue"
+                    },
+                    "note": {
+                      "description": "Note recorded alongside the acceptance"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "start": {
+                  "description": "Resolve the next plan node's bound execution context and emit the launch contract; starting resolves and verifies, it never spawns",
+                  "options": {
+                    "store": {
+                      "description": "Store holding the Issue"
+                    },
+                    "node": {
+                      "description": "Plan node to address; omit to derive the single runnable frontier node"
+                    },
+                    "pipeline": {
+                      "description": "Pipeline to record in the launch contract, validated against the pipeline registry"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "confirm": {
+                  "description": "Compose the confirm report for one revision (default the latest readable): the verified launch-contract set and the pending-Change report. Confirm composes and writes nothing; starting a node remains a per-node act",
+                  "options": {
+                    "store": {
+                      "description": "Store holding the Issue"
+                    },
+                    "revision": {
+                      "description": "Revision to confirm; omit to confirm the latest readable revision"
+                    },
+                    "json": {
+                      "description": "Output as JSON"
+                    }
+                  }
+                },
+                "ready": {
+                  "description": "Report the deterministic ready set for the Issue's latest published revision: every runnable Change node plus every non-member with its exit reason, the run-state visibility label, and the status problems. Read-only and latest-revision only; the scheduler schedules the latest",
+                  "options": {
+                    "store": {
+                      "description": "Store holding the Issue"
+                    },
                     "json": {
                       "description": "Output as JSON"
                     }
@@ -2087,6 +2166,20 @@
               "options": {
                 "store": {
                   "description": "Store to list projects from"
+                },
+                "json": {
+                  "description": "Output as JSON"
+                }
+              }
+            },
+            "attention": {
+              "description": "Scan every Issue of the store for what needs a human right now: failures, nodes blocked behind trouble, parked stages, review-phase acceptances, and status problems — fail-first, with every scanned Issue visible in the summary. Read-only",
+              "options": {
+                "store": {
+                  "description": "Store to scan"
+                },
+                "issue": {
+                  "description": "Narrow the scan to one Issue id; an unknown id is refused"
                 },
                 "json": {
                   "description": "Output as JSON"

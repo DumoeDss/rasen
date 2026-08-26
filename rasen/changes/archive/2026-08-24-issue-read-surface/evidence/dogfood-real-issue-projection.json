@@ -1,0 +1,780 @@
+{
+  "issue": {
+    "issueId": "issue-autodecompose-uplift",
+    "record": {
+      "version": 1,
+      "id": "issue-autodecompose-uplift",
+      "title": "Issue layer Phase 4: auto-decompose uplift (reviewable decomposition dispatch)",
+      "state": "resolved",
+      "reason": null,
+      "createdAt": "2026-08-21T08:10:49.108Z"
+    },
+    "diagnostic": null,
+    "divergence": null,
+    "revisionIds": [
+      "0001",
+      "0002",
+      "0003",
+      "0004"
+    ],
+    "latestRevisionId": "0004",
+    "refs": [
+      "refs/heads/main"
+    ],
+    "uncommitted": false
+  },
+  "plan": {
+    "issueId": "issue-autodecompose-uplift",
+    "revisionId": "0004",
+    "revision": {
+      "version": 1,
+      "issueId": "issue-autodecompose-uplift",
+      "revisionId": "0004",
+      "supersedes": "0003",
+      "createdAt": "2026-08-21T20:49:56.788Z",
+      "contentSha256": "693b77aec5ab9538f896d12c6308571ef90e5140142a382acdd4dfbd97d47ac0",
+      "nodes": [
+        {
+          "nodeId": "issue-autodecompose-graph",
+          "kind": "change",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "changeInstanceId": "ci_96db06e16c62383fc2c4218874cb00e6e2a93a9b3c5415206bb8c568d267ab42",
+          "changeAlias": "issue-autodecompose-graph",
+          "suggestedPipeline": "small-feature",
+          "rationale": "promoted from intent to Change now that the child's committed Store instance exists (seeded archived evidence, repo archive 15b60a63); its work shipped and archived, so no dependent waits on it",
+          "dependsOn": []
+        },
+        {
+          "nodeId": "issue-autodecompose-review-flow",
+          "kind": "change",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "changeInstanceId": "ci_7743ca6838b1cb8f3d94ca5b4b3267c26ef3a069505967520d261d845d5e5696",
+          "changeAlias": "issue-autodecompose-review-flow",
+          "suggestedPipeline": "small-feature",
+          "rationale": "promoted from intent to Change at portfolio close — the child shipped (80194e98) and archived (d78f3be1) via merged PR #173; seeded Store evidence carries its identity",
+          "dependsOn": []
+        }
+      ]
+    },
+    "diagnostic": null,
+    "readiness": {
+      "nodes": [
+        {
+          "node": {
+            "nodeId": "issue-autodecompose-graph",
+            "kind": "change",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "changeInstanceId": "ci_96db06e16c62383fc2c4218874cb00e6e2a93a9b3c5415206bb8c568d267ab42",
+            "changeAlias": "issue-autodecompose-graph",
+            "suggestedPipeline": "small-feature",
+            "rationale": "promoted from intent to Change now that the child's committed Store instance exists (seeded archived evidence, repo archive 15b60a63); its work shipped and archived, so no dependent waits on it",
+            "dependsOn": []
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "2026-08-21-issue-autodecompose-graph",
+                "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+                "targetLineId": "line-0.2",
+                "foundAtRef": "refs/heads/main",
+                "archived": true
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": true,
+            "outcomeBasis": "legacy",
+            "outcomeBasisReason": null,
+            "outcomeBasisPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-21-issue-autodecompose-graph/archive.json",
+            "delivery": {
+              "basis": "legacy",
+              "archivedAt": "2026-08-21T12:13:49.958Z",
+              "codeCommit": "6b00f24da260b510d43ff0ceeef03aa7c895bc35",
+              "planningBranch": "feat/issue-phase4",
+              "outcome": null,
+              "evidence": [
+                {
+                  "path": "evidence/dogfood-issue3-create.json",
+                  "sha256": "982c2a720a34fcc27dfc82f6497435537d63a8d501b08a1764c3b36782dccde8"
+                },
+                {
+                  "path": "evidence/dogfood-issue3-doc-sha-after.txt",
+                  "sha256": "7ea3c3235fb8a1ebd4581739dfd25e0204c234b2c42eda3f3680a9f3b19b5a55"
+                },
+                {
+                  "path": "evidence/dogfood-issue3-doc-sha-before.txt",
+                  "sha256": "7ea3c3235fb8a1ebd4581739dfd25e0204c234b2c42eda3f3680a9f3b19b5a55"
+                },
+                {
+                  "path": "evidence/dogfood-issue3-publish-human-0001.txt",
+                  "sha256": "c57c2a3491fb3c2ba8d375075b8e550c6e103a1fc09fa279e5b09453ccf1a499"
+                },
+                {
+                  "path": "evidence/dogfood-issue3-publish-json-0002.json",
+                  "sha256": "a5c2baf7883e64c0071c2ab2a164f6eb99d42878b8109d8fd24942fa4e3e5041"
+                },
+                {
+                  "path": "evidence/dogfood-issue3-show-human.txt",
+                  "sha256": "77b2d5698c9a2dfadbf6014dfb7e2b532f3b89d0be31feb65edb523b2b15cca4"
+                },
+                {
+                  "path": "evidence/dogfood-issue3-show-json.json",
+                  "sha256": "9832c087a107a1b18fda65fa1b8c22b385ab43d12d4fe5b70c49fe50d3b9f59e"
+                },
+                {
+                  "path": "evidence/fix-round-1.md",
+                  "sha256": "386938f4e37f67839af1af2224ad9f58cb13e0b6aee321ef82c197226d26e1a9"
+                },
+                {
+                  "path": "evidence/issue-3-decomposition.yaml",
+                  "sha256": "9b29c574ff7ef4e697cef77d177e3e287ad15797ee64623c6069dc3b4e6f9bf7"
+                },
+                {
+                  "path": "evidence/local-full-suite-triage.md",
+                  "sha256": "b6e5ce54da6f3ea85fcad75fc37278940febbd929372a0fb0d4ce903904c9ca3"
+                },
+                {
+                  "path": "evidence/pipeline-show-auto-decompose.json",
+                  "sha256": "2dbc6a8245cf443199c5998b37415a82939f5981e61d266dd1597b53a85c6927"
+                },
+                {
+                  "path": "evidence/registry-diff-sanctioned.patch",
+                  "sha256": "f87cc6712611053e1a94e44772b3c1cacdd029444ce01f29aff9d3bfd1cc6561"
+                },
+                {
+                  "path": "evidence/review-report.md",
+                  "sha256": "d6862ae46e5b72cdc2e16e93b9a0830a00520ce638d761b076f10ec4487cafbb"
+                },
+                {
+                  "path": "evidence/ship-log.md",
+                  "sha256": "1ce4520ac956340e99f3279e74e7e9228f74ea2536af570f6fa1727a7afd6e00"
+                }
+              ],
+              "missing": [
+                "verification-report"
+              ],
+              "entryName": "2026-08-21-issue-autodecompose-graph",
+              "foundAtRef": "refs/heads/main",
+              "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-21-issue-autodecompose-graph/archive.json"
+            }
+          },
+          "readiness": "in-progress",
+          "blockedBy": []
+        },
+        {
+          "node": {
+            "nodeId": "issue-autodecompose-review-flow",
+            "kind": "change",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "changeInstanceId": "ci_7743ca6838b1cb8f3d94ca5b4b3267c26ef3a069505967520d261d845d5e5696",
+            "changeAlias": "issue-autodecompose-review-flow",
+            "suggestedPipeline": "small-feature",
+            "rationale": "promoted from intent to Change at portfolio close — the child shipped (80194e98) and archived (d78f3be1) via merged PR #173; seeded Store evidence carries its identity",
+            "dependsOn": []
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "2026-08-21-issue-autodecompose-review-flow",
+                "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+                "targetLineId": "line-0.2",
+                "foundAtRef": "refs/heads/main",
+                "archived": true
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": true,
+            "outcomeBasis": "legacy",
+            "outcomeBasisReason": null,
+            "outcomeBasisPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-21-issue-autodecompose-review-flow/archive.json",
+            "delivery": {
+              "basis": "legacy",
+              "archivedAt": "2026-08-21T18:32:13.922Z",
+              "codeCommit": "80194e98a6408a0177aba1df24f3c86bfb37a340",
+              "planningBranch": "feat/issue-phase4",
+              "outcome": null,
+              "evidence": [
+                {
+                  "path": "evidence/dogfood-issue3-confirm-store-root.json",
+                  "sha256": "da714c0985b7eae42eabcdad5e360a83714bc14d96249d34cc2cf942b6a99d07"
+                },
+                {
+                  "path": "evidence/dogfood-issue3-confirm-store-root.txt",
+                  "sha256": "328424c92eb80b4ee836fd03be171f9060c2be21b42edc868862cc83b2a1c110"
+                },
+                {
+                  "path": "evidence/dogfood-issue3-confirm-worktree.txt",
+                  "sha256": "328424c92eb80b4ee836fd03be171f9060c2be21b42edc868862cc83b2a1c110"
+                },
+                {
+                  "path": "evidence/dogfood-issue3-publish-human-0003.txt",
+                  "sha256": "1386c7320ce26b38b0669973f19546bf153fe48c92597c533a4fd0ea899c3945"
+                },
+                {
+                  "path": "evidence/dogfood-issue3-show-human-0003.txt",
+                  "sha256": "21af4be11177876ddc51cd72959037faa4dfd6af0dea0065939baf538a64b7ae"
+                },
+                {
+                  "path": "evidence/dogfood-issue3-show-json-0003.json",
+                  "sha256": "23524123cbeaa6ed83fa433fa939c4a68a6caf2324b9304a8f8f0ab5c1885558"
+                },
+                {
+                  "path": "evidence/dogfood-staged-starts.md",
+                  "sha256": "ee90756eae956b7ed9c277be6597991fc30fa450720111713c23fca5df183adb"
+                },
+                {
+                  "path": "evidence/fix-round-1-confirm-revision-9999.txt",
+                  "sha256": "260f1901b081c6220683dfe2924837fb5e93eff0ee29a52ff1ad3e022dc5d862"
+                },
+                {
+                  "path": "evidence/fix-round-1.md",
+                  "sha256": "579502c931b9137dece05036521ce85ac4598cc899ad7dcee064dfe2b8b6dba8"
+                },
+                {
+                  "path": "evidence/issue-3-revision-0003-nodes.yaml",
+                  "sha256": "890840a37ea3a7ae0284efff960005c2962f99db3822437a4a8ca32c46350297"
+                },
+                {
+                  "path": "evidence/local-gates.md",
+                  "sha256": "5c054b165bbccf1f890337ab8ac74a8e9e16ef156dff3008deeb9105ef572a5b"
+                },
+                {
+                  "path": "evidence/review-report.md",
+                  "sha256": "a982dba488d1f4d9ec6032a87e63ade89929d5ad9c4762c37cb025a441425d1e"
+                },
+                {
+                  "path": "evidence/ship-log.md",
+                  "sha256": "0bfc2d10e07826e7bc0ce45237eafa70ee98c8120198d6c123eb156561733b6f"
+                },
+                {
+                  "path": "evidence/validate.txt",
+                  "sha256": "fdcfab62de7cc89efdd1ed671c270e29476d38dbdf963695940e4299ab1ddb46"
+                }
+              ],
+              "missing": [
+                "verification-report"
+              ],
+              "entryName": "2026-08-21-issue-autodecompose-review-flow",
+              "foundAtRef": "refs/heads/main",
+              "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-21-issue-autodecompose-review-flow/archive.json"
+            }
+          },
+          "readiness": "in-progress",
+          "blockedBy": []
+        }
+      ],
+      "readyToResolve": false
+    },
+    "unsearchedRefs": [],
+    "problems": [],
+    "complete": true
+  },
+  "status": {
+    "phase": "done",
+    "health": "healthy",
+    "progress": {
+      "completed": 2,
+      "total": 2
+    },
+    "nodes": [
+      {
+        "nodeId": "issue-autodecompose-graph",
+        "kind": "change",
+        "alias": "2026-08-21-issue-autodecompose-graph",
+        "observation": "finalized",
+        "diagnostic": "finalized on a legacy archive record (no v2 outcome was ever recorded)",
+        "runStatePath": null,
+        "locatedBy": null,
+        "attribution": {
+          "pipeline": null,
+          "sessions": [],
+          "evidenceLocator": null
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": "required",
+        "reason": null,
+        "suggestedPipeline": "small-feature",
+        "rationale": "promoted from intent to Change now that the child's committed Store instance exists (seeded archived evidence, repo archive 15b60a63); its work shipped and archived, so no dependent waits on it",
+        "uncertainty": null,
+        "delivery": {
+          "state": "record",
+          "basis": "legacy",
+          "archivedAt": "2026-08-21T12:13:49.958Z",
+          "codeCommit": "6b00f24da260b510d43ff0ceeef03aa7c895bc35",
+          "planningBranch": "feat/issue-phase4",
+          "outcome": null,
+          "evidence": [
+            {
+              "path": "evidence/dogfood-issue3-create.json",
+              "sha256": "982c2a720a34fcc27dfc82f6497435537d63a8d501b08a1764c3b36782dccde8"
+            },
+            {
+              "path": "evidence/dogfood-issue3-doc-sha-after.txt",
+              "sha256": "7ea3c3235fb8a1ebd4581739dfd25e0204c234b2c42eda3f3680a9f3b19b5a55"
+            },
+            {
+              "path": "evidence/dogfood-issue3-doc-sha-before.txt",
+              "sha256": "7ea3c3235fb8a1ebd4581739dfd25e0204c234b2c42eda3f3680a9f3b19b5a55"
+            },
+            {
+              "path": "evidence/dogfood-issue3-publish-human-0001.txt",
+              "sha256": "c57c2a3491fb3c2ba8d375075b8e550c6e103a1fc09fa279e5b09453ccf1a499"
+            },
+            {
+              "path": "evidence/dogfood-issue3-publish-json-0002.json",
+              "sha256": "a5c2baf7883e64c0071c2ab2a164f6eb99d42878b8109d8fd24942fa4e3e5041"
+            },
+            {
+              "path": "evidence/dogfood-issue3-show-human.txt",
+              "sha256": "77b2d5698c9a2dfadbf6014dfb7e2b532f3b89d0be31feb65edb523b2b15cca4"
+            },
+            {
+              "path": "evidence/dogfood-issue3-show-json.json",
+              "sha256": "9832c087a107a1b18fda65fa1b8c22b385ab43d12d4fe5b70c49fe50d3b9f59e"
+            },
+            {
+              "path": "evidence/fix-round-1.md",
+              "sha256": "386938f4e37f67839af1af2224ad9f58cb13e0b6aee321ef82c197226d26e1a9"
+            },
+            {
+              "path": "evidence/issue-3-decomposition.yaml",
+              "sha256": "9b29c574ff7ef4e697cef77d177e3e287ad15797ee64623c6069dc3b4e6f9bf7"
+            },
+            {
+              "path": "evidence/local-full-suite-triage.md",
+              "sha256": "b6e5ce54da6f3ea85fcad75fc37278940febbd929372a0fb0d4ce903904c9ca3"
+            },
+            {
+              "path": "evidence/pipeline-show-auto-decompose.json",
+              "sha256": "2dbc6a8245cf443199c5998b37415a82939f5981e61d266dd1597b53a85c6927"
+            },
+            {
+              "path": "evidence/registry-diff-sanctioned.patch",
+              "sha256": "f87cc6712611053e1a94e44772b3c1cacdd029444ce01f29aff9d3bfd1cc6561"
+            },
+            {
+              "path": "evidence/review-report.md",
+              "sha256": "d6862ae46e5b72cdc2e16e93b9a0830a00520ce638d761b076f10ec4487cafbb"
+            },
+            {
+              "path": "evidence/ship-log.md",
+              "sha256": "1ce4520ac956340e99f3279e74e7e9228f74ea2536af570f6fa1727a7afd6e00"
+            }
+          ],
+          "missing": [
+            "verification-report"
+          ],
+          "entryName": "2026-08-21-issue-autodecompose-graph",
+          "foundAtRef": "refs/heads/main",
+          "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-21-issue-autodecompose-graph/archive.json"
+        },
+        "blockedBy": []
+      },
+      {
+        "nodeId": "issue-autodecompose-review-flow",
+        "kind": "change",
+        "alias": "2026-08-21-issue-autodecompose-review-flow",
+        "observation": "finalized",
+        "diagnostic": "finalized on a legacy archive record (no v2 outcome was ever recorded)",
+        "runStatePath": null,
+        "locatedBy": null,
+        "attribution": {
+          "pipeline": null,
+          "sessions": [],
+          "evidenceLocator": null
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": "required",
+        "reason": null,
+        "suggestedPipeline": "small-feature",
+        "rationale": "promoted from intent to Change at portfolio close — the child shipped (80194e98) and archived (d78f3be1) via merged PR #173; seeded Store evidence carries its identity",
+        "uncertainty": null,
+        "delivery": {
+          "state": "record",
+          "basis": "legacy",
+          "archivedAt": "2026-08-21T18:32:13.922Z",
+          "codeCommit": "80194e98a6408a0177aba1df24f3c86bfb37a340",
+          "planningBranch": "feat/issue-phase4",
+          "outcome": null,
+          "evidence": [
+            {
+              "path": "evidence/dogfood-issue3-confirm-store-root.json",
+              "sha256": "da714c0985b7eae42eabcdad5e360a83714bc14d96249d34cc2cf942b6a99d07"
+            },
+            {
+              "path": "evidence/dogfood-issue3-confirm-store-root.txt",
+              "sha256": "328424c92eb80b4ee836fd03be171f9060c2be21b42edc868862cc83b2a1c110"
+            },
+            {
+              "path": "evidence/dogfood-issue3-confirm-worktree.txt",
+              "sha256": "328424c92eb80b4ee836fd03be171f9060c2be21b42edc868862cc83b2a1c110"
+            },
+            {
+              "path": "evidence/dogfood-issue3-publish-human-0003.txt",
+              "sha256": "1386c7320ce26b38b0669973f19546bf153fe48c92597c533a4fd0ea899c3945"
+            },
+            {
+              "path": "evidence/dogfood-issue3-show-human-0003.txt",
+              "sha256": "21af4be11177876ddc51cd72959037faa4dfd6af0dea0065939baf538a64b7ae"
+            },
+            {
+              "path": "evidence/dogfood-issue3-show-json-0003.json",
+              "sha256": "23524123cbeaa6ed83fa433fa939c4a68a6caf2324b9304a8f8f0ab5c1885558"
+            },
+            {
+              "path": "evidence/dogfood-staged-starts.md",
+              "sha256": "ee90756eae956b7ed9c277be6597991fc30fa450720111713c23fca5df183adb"
+            },
+            {
+              "path": "evidence/fix-round-1-confirm-revision-9999.txt",
+              "sha256": "260f1901b081c6220683dfe2924837fb5e93eff0ee29a52ff1ad3e022dc5d862"
+            },
+            {
+              "path": "evidence/fix-round-1.md",
+              "sha256": "579502c931b9137dece05036521ce85ac4598cc899ad7dcee064dfe2b8b6dba8"
+            },
+            {
+              "path": "evidence/issue-3-revision-0003-nodes.yaml",
+              "sha256": "890840a37ea3a7ae0284efff960005c2962f99db3822437a4a8ca32c46350297"
+            },
+            {
+              "path": "evidence/local-gates.md",
+              "sha256": "5c054b165bbccf1f890337ab8ac74a8e9e16ef156dff3008deeb9105ef572a5b"
+            },
+            {
+              "path": "evidence/review-report.md",
+              "sha256": "a982dba488d1f4d9ec6032a87e63ade89929d5ad9c4762c37cb025a441425d1e"
+            },
+            {
+              "path": "evidence/ship-log.md",
+              "sha256": "0bfc2d10e07826e7bc0ce45237eafa70ee98c8120198d6c123eb156561733b6f"
+            },
+            {
+              "path": "evidence/validate.txt",
+              "sha256": "fdcfab62de7cc89efdd1ed671c270e29476d38dbdf963695940e4299ab1ddb46"
+            }
+          ],
+          "missing": [
+            "verification-report"
+          ],
+          "entryName": "2026-08-21-issue-autodecompose-review-flow",
+          "foundAtRef": "refs/heads/main",
+          "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-21-issue-autodecompose-review-flow/archive.json"
+        },
+        "blockedBy": []
+      }
+    ],
+    "delta": {
+      "revisionId": "0004",
+      "supersedes": "0003",
+      "added": [],
+      "removed": [],
+      "retargeted": [],
+      "edgeChanges": [],
+      "lifecycleChanges": [],
+      "suggestionChanges": []
+    },
+    "projects": [
+      {
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "alias": "rasen",
+        "nodeIds": [
+          "issue-autodecompose-graph",
+          "issue-autodecompose-review-flow"
+        ],
+        "progress": {
+          "completed": 2,
+          "total": 2
+        }
+      }
+    ],
+    "problems": [],
+    "runStateVisibility": {
+      "kind": "execution-root",
+      "executionRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer"
+    },
+    "complete": true,
+    "acceptance": {
+      "conditions": {
+        "revision": {
+          "version": 1,
+          "issueId": "issue-autodecompose-uplift",
+          "revisionId": "0001",
+          "supersedes": null,
+          "createdAt": "2026-08-21T20:51:27.025Z",
+          "contentSha256": "4d5fb462b904318820b4c4809a688d575eee6933e1c37d14136b7977f29b431a",
+          "conditions": [
+            {
+              "id": "boundary-crossed-truthfully",
+              "requirement": "The auto-decompose fail-close resolved as a truthful verdict, not faked support: registry diff exactly the sanctioned one-file guard (verified byte-identical by reviewer), boundary issue-dispatch-0.3.0 unchanged."
+            },
+            {
+              "id": "confirm-flow-real",
+              "requirement": "The confirm verb composed real launch contracts from both roots (byte-reproduced by the reviewer), wrote nothing, and refuses honestly (distinct unreadable-revision refusal live on 9999)."
+            },
+            {
+              "id": "reviewable-graph-proven",
+              "requirement": "Decomposition output lands as a reviewable target-project-bound execution plan revision with suggestion fields, proven live on Issue #3 (0001-0004 lineage, ordinal add-never-rewrite, one-edge delta)."
+            },
+            {
+              "id": "three-children-delivered",
+              "requirement": "All three Phase-4 children shipped and archived on dev/0.2.0 via merged PR #173 (CI green after two budget fixes): containment fix, decompose graph, review flow."
+            }
+          ]
+        },
+        "revisionId": "0001",
+        "diagnostic": null,
+        "path": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store\\rasen\\issues\\issue-autodecompose-uplift\\acceptance\\0001.yaml"
+      },
+      "gate": {
+        "eligible": false,
+        "refusalCode": "issue_accept_already_accepted",
+        "blockers": [],
+        "message": "the Issue already carries an acceptance record; an acceptance is never rewritten.",
+        "exclusions": [],
+        "optionalNodes": []
+      },
+      "record": {
+        "version": 1,
+        "issueId": "issue-autodecompose-uplift",
+        "acceptedAt": "2026-08-21T20:51:33.888Z",
+        "conditionsRevisionId": "0001",
+        "conditionsSha256": "4d5fb462b904318820b4c4809a688d575eee6933e1c37d14136b7977f29b431a",
+        "gate": {
+          "completed": 2,
+          "total": 2,
+          "health": "waiting-human",
+          "problemsStanding": 0
+        },
+        "note": "Phase 4 auto-decompose uplift verified: truthful boundary crossing, reviewable graphs, real confirm flow (PR #173)",
+        "contentSha256": "f730271f6987c98244d93c1c245955229eb5c9c9695e634b2728f9f453cbbd68"
+      }
+    }
+  },
+  "delivery": {
+    "revisionId": "0004",
+    "entries": [
+      {
+        "nodeId": "issue-autodecompose-graph",
+        "alias": "2026-08-21-issue-autodecompose-graph",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "lifecycle": "required",
+        "observation": "finalized",
+        "delivery": {
+          "state": "record",
+          "basis": "legacy",
+          "archivedAt": "2026-08-21T12:13:49.958Z",
+          "codeCommit": "6b00f24da260b510d43ff0ceeef03aa7c895bc35",
+          "planningBranch": "feat/issue-phase4",
+          "outcome": null,
+          "evidence": [
+            {
+              "path": "evidence/dogfood-issue3-create.json",
+              "sha256": "982c2a720a34fcc27dfc82f6497435537d63a8d501b08a1764c3b36782dccde8"
+            },
+            {
+              "path": "evidence/dogfood-issue3-doc-sha-after.txt",
+              "sha256": "7ea3c3235fb8a1ebd4581739dfd25e0204c234b2c42eda3f3680a9f3b19b5a55"
+            },
+            {
+              "path": "evidence/dogfood-issue3-doc-sha-before.txt",
+              "sha256": "7ea3c3235fb8a1ebd4581739dfd25e0204c234b2c42eda3f3680a9f3b19b5a55"
+            },
+            {
+              "path": "evidence/dogfood-issue3-publish-human-0001.txt",
+              "sha256": "c57c2a3491fb3c2ba8d375075b8e550c6e103a1fc09fa279e5b09453ccf1a499"
+            },
+            {
+              "path": "evidence/dogfood-issue3-publish-json-0002.json",
+              "sha256": "a5c2baf7883e64c0071c2ab2a164f6eb99d42878b8109d8fd24942fa4e3e5041"
+            },
+            {
+              "path": "evidence/dogfood-issue3-show-human.txt",
+              "sha256": "77b2d5698c9a2dfadbf6014dfb7e2b532f3b89d0be31feb65edb523b2b15cca4"
+            },
+            {
+              "path": "evidence/dogfood-issue3-show-json.json",
+              "sha256": "9832c087a107a1b18fda65fa1b8c22b385ab43d12d4fe5b70c49fe50d3b9f59e"
+            },
+            {
+              "path": "evidence/fix-round-1.md",
+              "sha256": "386938f4e37f67839af1af2224ad9f58cb13e0b6aee321ef82c197226d26e1a9"
+            },
+            {
+              "path": "evidence/issue-3-decomposition.yaml",
+              "sha256": "9b29c574ff7ef4e697cef77d177e3e287ad15797ee64623c6069dc3b4e6f9bf7"
+            },
+            {
+              "path": "evidence/local-full-suite-triage.md",
+              "sha256": "b6e5ce54da6f3ea85fcad75fc37278940febbd929372a0fb0d4ce903904c9ca3"
+            },
+            {
+              "path": "evidence/pipeline-show-auto-decompose.json",
+              "sha256": "2dbc6a8245cf443199c5998b37415a82939f5981e61d266dd1597b53a85c6927"
+            },
+            {
+              "path": "evidence/registry-diff-sanctioned.patch",
+              "sha256": "f87cc6712611053e1a94e44772b3c1cacdd029444ce01f29aff9d3bfd1cc6561"
+            },
+            {
+              "path": "evidence/review-report.md",
+              "sha256": "d6862ae46e5b72cdc2e16e93b9a0830a00520ce638d761b076f10ec4487cafbb"
+            },
+            {
+              "path": "evidence/ship-log.md",
+              "sha256": "1ce4520ac956340e99f3279e74e7e9228f74ea2536af570f6fa1727a7afd6e00"
+            }
+          ],
+          "missing": [
+            "verification-report"
+          ],
+          "entryName": "2026-08-21-issue-autodecompose-graph",
+          "foundAtRef": "refs/heads/main",
+          "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-21-issue-autodecompose-graph/archive.json"
+        }
+      },
+      {
+        "nodeId": "issue-autodecompose-review-flow",
+        "alias": "2026-08-21-issue-autodecompose-review-flow",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "lifecycle": "required",
+        "observation": "finalized",
+        "delivery": {
+          "state": "record",
+          "basis": "legacy",
+          "archivedAt": "2026-08-21T18:32:13.922Z",
+          "codeCommit": "80194e98a6408a0177aba1df24f3c86bfb37a340",
+          "planningBranch": "feat/issue-phase4",
+          "outcome": null,
+          "evidence": [
+            {
+              "path": "evidence/dogfood-issue3-confirm-store-root.json",
+              "sha256": "da714c0985b7eae42eabcdad5e360a83714bc14d96249d34cc2cf942b6a99d07"
+            },
+            {
+              "path": "evidence/dogfood-issue3-confirm-store-root.txt",
+              "sha256": "328424c92eb80b4ee836fd03be171f9060c2be21b42edc868862cc83b2a1c110"
+            },
+            {
+              "path": "evidence/dogfood-issue3-confirm-worktree.txt",
+              "sha256": "328424c92eb80b4ee836fd03be171f9060c2be21b42edc868862cc83b2a1c110"
+            },
+            {
+              "path": "evidence/dogfood-issue3-publish-human-0003.txt",
+              "sha256": "1386c7320ce26b38b0669973f19546bf153fe48c92597c533a4fd0ea899c3945"
+            },
+            {
+              "path": "evidence/dogfood-issue3-show-human-0003.txt",
+              "sha256": "21af4be11177876ddc51cd72959037faa4dfd6af0dea0065939baf538a64b7ae"
+            },
+            {
+              "path": "evidence/dogfood-issue3-show-json-0003.json",
+              "sha256": "23524123cbeaa6ed83fa433fa939c4a68a6caf2324b9304a8f8f0ab5c1885558"
+            },
+            {
+              "path": "evidence/dogfood-staged-starts.md",
+              "sha256": "ee90756eae956b7ed9c277be6597991fc30fa450720111713c23fca5df183adb"
+            },
+            {
+              "path": "evidence/fix-round-1-confirm-revision-9999.txt",
+              "sha256": "260f1901b081c6220683dfe2924837fb5e93eff0ee29a52ff1ad3e022dc5d862"
+            },
+            {
+              "path": "evidence/fix-round-1.md",
+              "sha256": "579502c931b9137dece05036521ce85ac4598cc899ad7dcee064dfe2b8b6dba8"
+            },
+            {
+              "path": "evidence/issue-3-revision-0003-nodes.yaml",
+              "sha256": "890840a37ea3a7ae0284efff960005c2962f99db3822437a4a8ca32c46350297"
+            },
+            {
+              "path": "evidence/local-gates.md",
+              "sha256": "5c054b165bbccf1f890337ab8ac74a8e9e16ef156dff3008deeb9105ef572a5b"
+            },
+            {
+              "path": "evidence/review-report.md",
+              "sha256": "a982dba488d1f4d9ec6032a87e63ade89929d5ad9c4762c37cb025a441425d1e"
+            },
+            {
+              "path": "evidence/ship-log.md",
+              "sha256": "0bfc2d10e07826e7bc0ce45237eafa70ee98c8120198d6c123eb156561733b6f"
+            },
+            {
+              "path": "evidence/validate.txt",
+              "sha256": "fdcfab62de7cc89efdd1ed671c270e29476d38dbdf963695940e4299ab1ddb46"
+            }
+          ],
+          "missing": [
+            "verification-report"
+          ],
+          "entryName": "2026-08-21-issue-autodecompose-review-flow",
+          "foundAtRef": "refs/heads/main",
+          "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-21-issue-autodecompose-review-flow/archive.json"
+        }
+      }
+    ],
+    "counts": {
+      "record": 2,
+      "no-record": 0,
+      "not-archived": 0,
+      "unreadable": 0,
+      "unattributed": 0
+    }
+  },
+  "review": {
+    "issueId": "issue-autodecompose-uplift",
+    "revisionId": "0004",
+    "determination": {
+      "kind": "accepted",
+      "acceptedAt": "2026-08-21T20:51:33.888Z",
+      "conditionsRevisionId": "0001"
+    },
+    "threads": [
+      {
+        "kind": "evidence-missing",
+        "nodeId": "issue-autodecompose-graph",
+        "names": [
+          "verification-report"
+        ]
+      },
+      {
+        "kind": "evidence-missing",
+        "nodeId": "issue-autodecompose-review-flow",
+        "names": [
+          "verification-report"
+        ]
+      }
+    ],
+    "verification": {
+      "progress": {
+        "completed": 2,
+        "total": 2
+      },
+      "delivery": {
+        "record": 2,
+        "no-record": 0,
+        "not-archived": 0,
+        "unreadable": 0,
+        "unattributed": 0
+      }
+    }
+  },
+  "complete": true,
+  "unsearchedRefs": [],
+  "problems": []
+}

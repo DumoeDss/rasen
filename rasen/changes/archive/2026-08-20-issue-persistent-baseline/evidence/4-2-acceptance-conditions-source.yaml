@@ -1,0 +1,16 @@
+conditions:
+  - id: plan-published-from-real-portfolio
+    requirement: Revision 0001 names every portfolio child as an explicit change reference (no name-prefix inference) with the serial dependsOn DAG intact
+    verification: store issue plan --from-portfolio receipt (4-1-plan-0001.json) over the worktree's real portfolio run-state
+  - id: each-change-runs-and-verifies-independently
+    requirement: Every change node reaches a terminal run (ship + archive for g-001/g-002; g-003 closes with this baseline persisted), each through its own small-feature pipeline with its own verification gates
+    verification: per-child run-states under the worktree ephemera + the repo's archived changes
+  - id: persistent-store-is-the-registry
+    requirement: The loop runs against the persistent store issue-registry (not a temp store) and the store survives this change as the machine's Issue registry
+    verification: this change's evidence receipts + the store's own git history
+  - id: tri-axis-live-through-completion
+    requirement: The projection shows progress moving 2/3 to 3/3 and phase reaching review as g-003 completes, derived from real evidence rather than fixtures
+    verification: store issue show captures from the worktree cwd (4-2 receipt pre-close, portfolio-close receipt final)
+  - id: acceptance-gate-holds-until-close
+    requirement: The acceptance gate holds while any required node's work is un-terminal, and the Issue is accepted only at portfolio close through the recorded acceptance
+    verification: staged gate-holds capture (this change) + the portfolio-close accept record (LEAD-driven)

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import * as client from '../api/client.js';
 import type { ProjectSpaceEntry, SpaceEntry, StoreSpaceEntry } from '../api/types.js';
-import { parseSelector, parseSpacePath, spaceHref, spaceSection } from '../store/use-space.js';
+import { parseSelector, parseSpacePath, spaceSwitchHref } from '../store/use-space.js';
 import { getRecentSpaces, recordSpaceVisit } from '../store/recent-spaces.js';
 import { guardedRoute } from '../store/use-navigation-guard.js';
 import { useT } from '../i18n/store.js';
@@ -75,7 +75,6 @@ export function SpaceSwitcher() {
   const t = useT();
   const { path, route } = useLocation();
   const space = parseSpacePath(path);
-  const section = spaceSection(path);
 
   const { spaces, error: catalogError } = useSpaceCatalog();
   const [pins, setPins] = useState<string[]>([]);
@@ -132,7 +131,7 @@ export function SpaceSwitcher() {
       return;
     }
     const selected = parseSelector(value);
-    if (selected) guardedRoute(route, spaceHref(selected, section));
+    if (selected) guardedRoute(route, spaceSwitchHref(path, selected));
   }
 
   return (

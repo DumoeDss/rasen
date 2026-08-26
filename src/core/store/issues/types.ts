@@ -64,13 +64,44 @@ export type StoreIssueErrorCode =
   | 'issue_reference_ambiguous'
   /** The reference's declared scope disagrees with committed identity. */
   | 'issue_reference_scope_conflict'
+  /**
+   * The node's target project is a member the Store records as NOT planning
+   * here (`roles.planning: false`). Distinct from the catalog-absence branch of
+   * `issue_reference_scope_conflict` for the same reason
+   * `issue_reference_uncommitted` is distinct from `issue_reference_unresolved`:
+   * the two say different true things — "no such member" and "member, but it
+   * does not plan here" have different repairs — and a refusal that named the
+   * wrong one would lie about what was checked.
+   */
+  | 'issue_reference_target_not_planning_member'
   /** The referenced instance belongs to another Store. */
   | 'issue_reference_foreign_store'
   | 'execution_plan_revision_exists'
+  /** A conditional publication was based on a revision that is no longer latest. */
+  | 'execution_plan_revision_conflict'
   | 'execution_plan_cycle'
   | 'execution_plan_node_duplicate'
   /** A published revision no longer matches its recorded canonical digest. */
   | 'execution_plan_digest_mismatch'
+  /** An acceptance-conditions revision ordinal that already exists. */
+  | 'acceptance_conditions_revision_exists'
+  /** The acceptance input names a conditions revision that does not read back. */
+  | 'issue_accept_conditions_unreadable'
+  /** The acceptance note is blank or not portable durable text. */
+  | 'issue_accept_note_invalid'
+  /** The acceptance publish reached without --from-file (input shape, not scope). */
+  | 'issue_acceptance_from_file_required'
+  /** The acceptance publish file carries no conditions: list. */
+  | 'issue_acceptance_conditions_list_required'
+  /** The Issue is already carrying an acceptance record. */
+  | 'issue_accept_already_accepted'
+  /** A dropped Issue is abandoned, not acceptable. */
+  | 'issue_accept_dropped'
+  /** The gate's structural refusals (no plan / no conditions revision). */
+  | 'issue_accept_requires_plan'
+  | 'issue_accept_conditions_required'
+  /** The gate's fact blockers hold the acceptance. */
+  | 'issue_accept_blocked'
   /** A mutation reached with a scope segment missing or not declared. */
   | 'store_query_scope_incomplete'
   /** A Store ref could not be read. NEVER evidence of absence. */
@@ -111,12 +142,59 @@ export interface IssueRecordV1 {
 
 export type ExecutionPlanNodeKind = 'change' | 'intent';
 
+/**
+ * The closed lifecycle vocabulary a node carries, scoped by kind: a Change node
+ * admits all five values; an intent node admits `required` and `optional` only
+ * (see `ExecutionPlanIntentNode`). An ABSENT lifecycle reads as `required` —
+ * the value every revision published before this vocabulary existed has always
+ * meant — and the stored canonical form omits a `required` lifecycle exactly as
+ * it omits an absent `changeAlias`, so those revisions re-derive their
+ * published digests byte-for-byte. `cancelled`, `superseded`, and `deferred`
+ * carry a recorded `reason` and stay Change-node-only: they explain work that
+ * EXISTED as a Change and is not demanded toward this Issue's completion —
+ * abandoned, replaced, or postponed. `deferred` is the postponement: work the
+ * Issue still intends but explicitly puts beyond this Issue's own completion —
+ * postponed, not abandoned and not replaced — recorded on the books rather than
+ * spelled as a dangling optional node, a false cancellation, or a silent
+ * omission. Intent work no Change ever backed is postponed by keeping it
+ * `optional`, and expressed as unwanted by omitting the node from the next
+ * revision.
+ */
+export type ExecutionPlanNodeLifecycle =
+  | 'required'
+  | 'optional'
+  | 'cancelled'
+  | 'superseded'
+  | 'deferred';
+
 interface ExecutionPlanNodeBase {
   readonly nodeId: string;
   /** Every node names its project, whether or not its Change exists yet. */
   readonly projectId: ProjectId;
   readonly targetLineId: TargetLineId;
   readonly dependsOn: readonly string[];
+  /**
+   * The pipeline the plan proposes to run for this node. A name the pipeline
+   * registry resolves at PUBLICATION (validated through the same registry seam
+   * `store issue start --pipeline` uses — the store module takes the
+   * membership test as an injected input because it owns no working-directory
+   * root to resolve pipelines from). Absent fields are omitted from the
+   * canonical form exactly as an absent `lifecycle` is, so revisions published
+   * before this field existed re-derive their digests byte-for-byte.
+   */
+  readonly suggestedPipeline?: string;
+  /**
+   * Why the work exists as this node — the decomposition reasoning that
+   * produced it. Portable durable text, refused at the schema rather than
+   * trimmed; canonically omitted when absent.
+   */
+  readonly rationale?: string;
+  /**
+   * What the decomposer was unsure about when it proposed this node. Portable
+   * durable text, refused at the schema rather than trimmed; canonically
+   * omitted when absent.
+   */
+  readonly uncertainty?: string;
 }
 
 /**
@@ -129,6 +207,10 @@ export interface ExecutionPlanChangeNode extends ExecutionPlanNodeBase {
   readonly kind: 'change';
   readonly changeInstanceId: ChangeInstanceId;
   readonly changeAlias?: string;
+  /** Absent ≡ `required`; see `ExecutionPlanNodeLifecycle`. */
+  readonly lifecycle?: ExecutionPlanNodeLifecycle;
+  /** The recorded reason a `cancelled`/`superseded`/`deferred` node must carry. */
+  readonly reason?: string;
 }
 
 /**
@@ -136,10 +218,22 @@ export interface ExecutionPlanChangeNode extends ExecutionPlanNodeBase {
  * Not a weaker `change` node with a missing field: ownership is explicit from
  * the first draft, which is what keeps "exactly one owner" true across the
  * whole lifecycle rather than only at the end.
+ *
+ * An intent node carries the required/optional half of the lifecycle
+ * vocabulary: the decomposition's proposal lives ON the node the review
+ * surface shows, not in a sidecar document. `cancelled`, `superseded`, and
+ * `deferred` are refused here — intent work is postponed by keeping it
+ * `optional`, and unwanted intent work is expressed by omitting the node from
+ * the next revision, because there is no existed work for those values to
+ * explain. An absent lifecycle reads `required` and is canonically omitted,
+ * so intent revisions published before this field existed re-derive their
+ * digests byte-for-byte.
  */
 export interface ExecutionPlanIntentNode extends ExecutionPlanNodeBase {
   readonly kind: 'intent';
   readonly summary: string;
+  /** Absent ≡ `required`; only `optional` is ever stored. */
+  readonly lifecycle?: 'optional';
 }
 
 export type ExecutionPlanNode = ExecutionPlanChangeNode | ExecutionPlanIntentNode;
@@ -166,6 +260,100 @@ export interface ExecutionPlanDraft {
   readonly nodes: readonly ExecutionPlanNodeInput[];
 }
 
+// -----------------------------------------------------------------------------
+// Acceptance content
+// -----------------------------------------------------------------------------
+
+/**
+ * One acceptance condition: a stable identifier, the requirement statement,
+ * and an optional note on how it was or will be verified. The MACHINE gate is
+ * the derived node/health/problem state; the checklist's satisfaction is
+ * attested by the act of accepting, frozen with the gate snapshot.
+ */
+export interface AcceptanceCondition {
+  readonly id: string;
+  readonly requirement: string;
+  readonly verification?: string;
+}
+
+/** A condition as authored, before canonicalization. */
+export interface AcceptanceConditionInput {
+  readonly id: string;
+  readonly requirement: string;
+  readonly verification?: string;
+}
+
+/**
+ * `rasen/issues/<issueId>/acceptance/<revisionId>.yaml`, immutable once
+ * published — the same ordinal/digest/supersedes discipline an Execution Plan
+ * revision follows, reused rather than rebuilt.
+ */
+export interface AcceptanceConditionsRevisionV1 {
+  readonly version: 1;
+  readonly issueId: IssueId;
+  readonly revisionId: ExecutionPlanRevisionId;
+  readonly supersedes: ExecutionPlanRevisionId | null;
+  readonly createdAt: string;
+  readonly contentSha256: Sha256Digest;
+  readonly conditions: readonly AcceptanceCondition[];
+}
+
+/**
+ * The gate facts an acceptance freezes: counts, the health value, and that no
+ * status problem stood — portable facts only, no paths, no machine names
+ * (design D7). A snapshot a different machine cannot read would be a defect in
+ * a Store-level artifact.
+ */
+export interface AcceptanceGateSnapshot {
+  readonly completed: number;
+  readonly total: number;
+  readonly health: string;
+  readonly problemsStanding: number;
+}
+
+/**
+ * One node the gate's required total excluded at acceptance: a `cancelled`,
+ * `superseded`, or `deferred` node with the reason its revision records — the
+ * three values that name work the plan does not demand toward Done, abandoned,
+ * replaced, or postponed. Structurally the evaluation's own exclusion shape,
+ * restated at the Store level for the same reason `AcceptanceGateSnapshot` is:
+ * `store/issues` takes no upward import.
+ */
+export interface AcceptanceRecordExclusion {
+  readonly nodeId: string;
+  readonly lifecycle: 'cancelled' | 'superseded' | 'deferred';
+  readonly reason: string;
+}
+
+/**
+ * `rasen/issues/<issueId>/accepted.yaml` — ONE record per Issue, never
+ * rewritten. It freezes WHAT was accepted (the conditions revision id and that
+ * revision's digest, so a later revision cannot change what the record says
+ * was accepted), the gate snapshot at acceptance with the lifecycle
+ * accounting that explains its total (every exclusion that stood, each with
+ * its node, lifecycle, and recorded reason), an optional note, and its own
+ * content digest — so the record explains its own arithmetic rather than
+ * deferring it to a later read's evaluation.
+ */
+export interface IssueAcceptedRecordV1 {
+  readonly version: 1;
+  readonly issueId: IssueId;
+  readonly acceptedAt: string;
+  readonly conditionsRevisionId: ExecutionPlanRevisionId;
+  readonly conditionsSha256: Sha256Digest;
+  readonly gate: AcceptanceGateSnapshot;
+  /**
+   * The gate's exclusions at acceptance, verbatim from the evaluation. Omitted
+   * from the stored canonical form and the digest body when no exclusion stood
+   * — the plan-node suggestion-field discipline — so an acceptance over a plan
+   * with no exclusions writes the bytes the field's absence defined, and a
+   * record accepted before the field existed reads back unchanged.
+   */
+  readonly exclusions?: readonly AcceptanceRecordExclusion[];
+  readonly note: string | null;
+  readonly contentSha256: Sha256Digest;
+}
+
 export interface ExecutionPlanChangeNodeInput {
   readonly nodeId: string;
   readonly kind: 'change';
@@ -173,7 +361,15 @@ export interface ExecutionPlanChangeNodeInput {
   readonly targetLineId: string;
   readonly changeInstanceId: string;
   readonly changeAlias?: string;
+  /** Authored lifecycle; validated against the closed vocabulary. */
+  readonly lifecycle?: string;
+  /** Authored reason; required for `cancelled`/`superseded`/`deferred`, portable-checked. */
+  readonly reason?: string;
   readonly dependsOn?: readonly string[];
+  /** Optional suggestion/rationale/uncertainty; see `ExecutionPlanNodeBase`. */
+  readonly suggestedPipeline?: string;
+  readonly rationale?: string;
+  readonly uncertainty?: string;
 }
 
 export interface ExecutionPlanIntentNodeInput {
@@ -183,6 +379,12 @@ export interface ExecutionPlanIntentNodeInput {
   readonly targetLineId: string;
   readonly summary: string;
   readonly dependsOn?: readonly string[];
+  /** Authored lifecycle; `required`|`optional` only, validated semantically. */
+  readonly lifecycle?: string;
+  /** Optional suggestion/rationale/uncertainty; see `ExecutionPlanNodeBase`. */
+  readonly suggestedPipeline?: string;
+  readonly rationale?: string;
+  readonly uncertainty?: string;
 }
 
 export type ExecutionPlanNodeInput =
@@ -214,8 +416,53 @@ export interface SetIssueStateInput extends StoreIssueSelector {
   readonly reason?: string;
 }
 
+/**
+ * Whether a pipeline name is known to the pipeline registry — the SAME seam
+ * `store issue start --pipeline` validates through (the CLI composes the
+ * root-aware variant over the working directory's resolved root). Structural
+ * duplicate of issue-execution's `IssuePipelineKnown`, declared locally so the
+ * store module takes no upward dependency on the composition layer above it.
+ */
+export type IssuePlanPipelineKnown = (name: string) => boolean;
+
 export interface PublishExecutionPlanInput extends StoreIssueSelector {
   readonly nodes: readonly ExecutionPlanNodeInput[];
+  /**
+   * Optional compare-and-publish precondition. Omitted preserves the existing
+   * unconditional allocation; null requires no current revision; a revision
+   * id requires that exact latest revision.
+   */
+  readonly expectedRevisionId?: ExecutionPlanRevisionId | null;
+  /**
+   * Registry membership test for node `suggestedPipeline` values. When a node
+   * carries a suggestion and no test was supplied, publication refuses rather
+   * than storing a suggestion it could not check; the CLI injects the
+   * root-aware variant on every source path.
+   */
+  readonly pipelineKnown?: IssuePlanPipelineKnown;
+}
+
+export interface PublishAcceptanceConditionsInput extends StoreIssueSelector {
+  readonly conditions: readonly AcceptanceConditionInput[];
+}
+
+/**
+ * The already-evaluated gate an acceptance is recorded under. The mutation
+ * takes the snapshot as input and performs no run-state reads itself (design
+ * D6: evaluate fresh, then write under the lock — the snapshot states the
+ * facts the acceptance was made under, so the boundary is auditable).
+ */
+export interface AcceptIssueInput extends StoreIssueSelector {
+  readonly conditionsRevisionId: string;
+  readonly conditionsSha256: Sha256Digest;
+  readonly gate: AcceptanceGateSnapshot;
+  /**
+   * The gate evaluation's exclusions, verbatim. An empty array writes the
+   * absent form — the record's canonical shape omits the field when no
+   * exclusion stood.
+   */
+  readonly exclusions?: readonly AcceptanceRecordExclusion[];
+  readonly note?: string;
 }
 
 /**
@@ -251,6 +498,16 @@ export interface ExecutionPlanResult extends IssueWriteReport {
   readonly revision: ExecutionPlanRevisionV1;
 }
 
+export interface AcceptanceConditionsResult extends IssueWriteReport {
+  readonly revision: AcceptanceConditionsRevisionV1;
+}
+
+export interface AcceptIssueResult extends IssueWriteReport {
+  readonly record: IssueAcceptedRecordV1;
+  /** The Issue's state after the mutation: `resolved` on both D5 write rows. */
+  readonly state: IssueState;
+}
+
 /**
  * The Store-level Issue Module.
  *
@@ -262,4 +519,6 @@ export interface StoreIssues {
   create(input: CreateIssueInput): Promise<IssueRecordResult>;
   setState(input: SetIssueStateInput): Promise<IssueRecordResult>;
   publishPlan(input: PublishExecutionPlanInput): Promise<ExecutionPlanResult>;
+  publishAcceptance(input: PublishAcceptanceConditionsInput): Promise<AcceptanceConditionsResult>;
+  accept(input: AcceptIssueInput): Promise<AcceptIssueResult>;
 }

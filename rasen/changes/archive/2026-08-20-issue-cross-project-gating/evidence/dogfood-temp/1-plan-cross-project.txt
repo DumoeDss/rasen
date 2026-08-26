@@ -1,0 +1,53 @@
+$ rasen store issue plan dogfood-cross --from-file <nodes.yaml> --json --store dogfood-store
+(exit 0)
+
+{
+  "issueId": "dogfood-cross",
+  "revision": {
+    "version": 1,
+    "issueId": "dogfood-cross",
+    "revisionId": "0001",
+    "supersedes": null,
+    "createdAt": "2026-08-20T12:24:47.922Z",
+    "nodes": [
+      {
+        "nodeId": "alpha-work",
+        "kind": "change",
+        "projectId": "alpha-core",
+        "targetLineId": "main",
+        "changeInstanceId": "ci_b05b383ef554779369a5f4bf5054edba8774455b9636dd04a32e086eb859b762",
+        "changeAlias": "alpha-down",
+        "dependsOn": [
+          "beta-work"
+        ]
+      },
+      {
+        "nodeId": "beta-work",
+        "kind": "change",
+        "projectId": "beta-site",
+        "targetLineId": "main",
+        "changeInstanceId": "ci_5f972dae313720f725119dc25c39997eaac56454ec8dbed30e1841b530aba3af",
+        "changeAlias": "beta-up",
+        "dependsOn": []
+      }
+    ],
+    "contentSha256": "ea1228456379d5577a200e7d07e7f03dcba43f6800bcf101272c8e857c1067c0"
+  },
+  "storeId": "dogfood-store",
+  "storeUid": "be86dec4-30c3-4279-8652-23bf9eb8993e",
+  "checkoutRoot": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-dogfood-gating-Hu2QdF\\store",
+  "checkoutRef": "refs/heads/main",
+  "written": [
+    "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-dogfood-gating-Hu2QdF\\store\\rasen\\issues\\dogfood-cross\\plans\\0001.yaml"
+  ],
+  "suggestedCommits": [
+    {
+      "repoRoot": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-dogfood-gating-Hu2QdF\\store",
+      "pathspecs": [
+        "rasen/issues/dogfood-cross/plans/0001.yaml"
+      ],
+      "message": "chore(store): publish execution plan dogfood-cross/0001",
+      "rationale": "Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing."
+    }
+  ]
+}

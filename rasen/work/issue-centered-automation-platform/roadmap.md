@@ -701,3 +701,181 @@ verb，stdout 复用构成 receipt 伪造面。修复需要 Windows 侧全新协
 **0.3.0+ 重启时的入口。** 按 D4/D2/verb 三缺陷起修（一次 break、一次 re-freeze、
 一次全仓 re-bind per crate），不必重做既有审查；资产清单见子 Direction
 `slices/session-execution-and-self-hosting/plan.md` Architecture Replan 6。
+
+## 14. Issue 层提前启动的 scope decision（2026-08-17）
+
+操作者拍板：ECP-7 尾段（`ecp-session-self-hosting-vertical-proof`）与 ECP-8 收尾延后
+（见子 Direction result.md 的 2026-08-17 reconcile），0.3.0 Issue 层即刻启动。首个
+portfolio 为 `issue-layer-phase1`（worktree `feat/issue-layer`，自 dev/0.2.0 `2fc92079`
+切出；三 child 串行：issue-status-projection → issue-execution-binding →
+issue-acceptance-close，各走 `small-feature`）。按「版本边界」条款显式登记：
+
+- 本文件 §2 Phase 0 的进入条件（ECP-5 产品与发布闭环已通过）被本决定实质放宽为
+  「ECP-6 passed、ECP-7 五个 child 已交付归档、ECP-8 未收尾」的已知基线；
+- Issue 层不吸收 ECP-8 的任何发布义务；ECP-8 恢复时其 OS × 后端 receipt 矩阵、
+  legacy engine 退休决定与发布事实责任全部不变；
+- Issue 层首竖切走 §12 黄金路径（单 Issue / 单项目 / 单 Change，CLI-first），
+  不提前铺开跨项目路由、auto-decompose 上移与 Phase 7 界面收敛；
+- 与并行会话的协调：canvas gesture→IR compiler 工作流位于
+  `.claude/worktrees/canvas-ir-compiler`（`feat/canvas-gesture-ir-compiler`，基线
+  `74568906`），触面为 `packages/ui/src/canvas/*`、`pipelines-ui` spec 与冻结的
+  `src/core/pipeline-registry/`，与 Issue 首竖切零文件交集；若后续 Issue 切片
+  需触碰上述区域，须先核查对方 worktree 的完成状态。
+
+### §14 结果回写（2026-08-17，portfolio 闭环）
+
+`issue-layer-phase1` 已全量交付并归档：PR #168 合并（merge `57b1b1c1`，CI 一次全绿，
+三 OS 分片 + lint/typecheck + UI build 零 flake），parent 归档 `a717ae01` 已推
+dev/0.2.0。三个 child（issue-status-projection / issue-execution-binding /
+issue-acceptance-close）各经 1 轮 review-loop CLEAN 后 ship+archive，7 份 spec delta
+同步（3 新能力 + 4 MODIFIED）。黄金路径证据：三轴投影的真实转移 receipt（C1×3）、
+四条启动路线 + 从无关目录经 workspace-index 的归属读（C2×5）、验收门的 HOLD（exit 1
+具名拒绝）与 CLOSE 全链（C3×4）——其中 C3 的 CLOSE 直接以本 portfolio 已归档的
+children 为 plan 节点完成，即 meta-dogfood。Phase 0–1 的竖切据此成立；Phase 2
+（单 Issue 多 Change 的正式推进）与后续阶段保持 Later，按本路线继续。
+
+### §14.1 Phase 2 激活（2026-08-20，campaign 启动）
+
+操作者授权 campaign：Issue 层剩余切片（Phase 2–7）由 LEAD 逐片 direction 激活并
+auto 推进；每片一个 portfolio，循 PR #168 模式（PR → CI 监控 → 绿即合并）。
+Phase 2（单 Issue / 单项目 / 多 Change）现为 activeSlice，portfolio
+`issue-multi-change-execution`，分支 `feat/issue-phase2`（自 dev/0.2.0 `71b64a16`）。
+ECP-7 尾段与 ECP-8 维持延后（§14 与子 Direction 2026-08-17 reconcile 不变）。
+
+### §14.2 Phase 2 结果回写（2026-08-20，portfolio 闭环）
+
+`issue-multi-change-execution` 全量交付：PR #171 合并（merge `30b25dd6`，CI 全绿——
+一次 Windows shard 超时类 flake 重跑后过），parent 归档 `24d7f58e` 推 dev/0.2.0。
+三 child：issue-plan-publication（portfolio→Execution Plan 修订发布通道）/
+issue-node-lifecycle（required/optional/cancelled/superseded 四态全栈语义）/
+issue-persistent-baseline（`store setup --layout 2` + 本机第一个持久 store
+`issue-registry`）。**黄金路径多 Change 格真实闭环**：Issue #1 即本 portfolio——
+从真实 run-state 发布 plan、随 children 完成活体观察（2/3 门持→3/3 review）、
+显式 accept、终态 **done · healthy · 3/3**，验收记录 commit 于 store
+（证据：archive/2026-08-20-issue-multi-change-execution/evidence/）。
+Phase 3 follow-ups 已记账：claimant-alias keying 归属、openFindings schema 容差、
+seeding 产品面。Phase 2 完成；Phase 3（多成员项目）激活。
+
+### §14.3 Phase 3 结果回写（2026-08-21，portfolio 闭环）
+
+`issue-cross-project-execution` 全量交付：PR #172 合并（merge `4bac13d7`，CI 首轮全绿）。
+三 child 全部首轮 review CLEAN（零修复轮）：issue-target-project-binding（plan 节点
+target project + membership 双路径校验，Phase-2 修订字节稳定）/ issue-cross-project-gating
+（跨项目依赖门 + WORK-basis 阻塞显示，结构性保证）/ issue-project-grouped-views（项目
+泳道 + progressOver 单谓词）。**Issue #2 双真实成员项目（rasen + rasen-site）活体运行**：
+两泳道投影、跨项目门具名拒绝、site 节点真实 terminal（rasen-site main `2dc9e31` 真实
+docs 工作与构建验证）。
+
+**Leg 4 完成于 2026-08-21（推迟→解锁→关闭）**：先因 workspace-pair 机器自相矛盾
+（side-planner 祝福 main-checkout 执行、containment 层判等 veto——`isContainedIn` 把
+equality 当 inside）诚实推迟；随后 pair 经**设计好的默认目的地路线**落地（MAX_PATH 环境
+坎由 `--planning-worktree` 短根参数化解），worktree 聚合 4/4、site 节点经 workspace-index
+定位——C2 设计路线原样走通；conditions 0001 发布、门 4/4/waiting-human/0 problems、
+显式 accept、终态 **done · healthy · 4/4**（store commits 2f61fbe/2446e14）。等式矛盾
+仍为真（main-checkout 路线被 veto），降级为 Phase 4 应修项而非阻塞项。Phase 4 候选
+清单另含：membership hint 翻转宿主规划根解析（legacy-flat 无法归档接缝）、add-project
+拒绝文案过诺 + `--planning` 旗标、partial store planning 缺口、claimant-alias keying 归属
+（本机镜像已三份）。Phase 3 完成；Phase 4（auto-decompose 上移）激活。
+
+### §14.4 Phase 4 结果回写（2026-08-21，portfolio 闭环）
+
+`issue-autodecompose-uplift` 全量交付：PR #173 合并（merge `23513cd2`；CI 第四轮全绿——
+两处预算修复随 PR：Windows shard 30→40m（套件增长越过 job 预算）、archive fault-matrix
+60s（三成员越过单测预算），均零断言失败类）。三 child：issue-workspace-containment-fix
+（等式缝一刀修，main-checkout pair 路线解锁）/ issue-autodecompose-graph（**0.3.0 边界
+诚实跨越**：registry 恰一文件 +30/−0 的 truthful verdict；第三发布源 --from-decomposition；
+建议字段；Issue #3 staging）/ issue-autodecompose-review-flow（intent 节点 lifecycle、
+suggestion 感知发射链、未知字段具名拒绝、修订 delta 可见性、**confirm 读-组-报动词**）。
+
+**Issue #3 黄金关闭**（LEAD 亲手）：seed（经 deriveChangeInstanceId 正确推导——朴素
+ci_<seed> 形状被当场抓正）→ 修订 0004 晋升 → 第三次镜像（openFindings 规范化）→
+conditions 0001 → 门 2/2 → accept → **done · healthy · 2/2**（store commits
+8c65d14/e982cda/a478d37）。Phase 5 移交：legacy-seed-reads-fresh（确定性调度器须裁决：
+outcome-bearing seed vs archived-legacy-as-complete）、pinned-confirmation anchor
+（拒绝理由即设计输入）、claimant-alias keying 归属（镜像已三份）、foreign-repo keying +
+cleanup 不对称、本机全量套件分箱配方（≤25 文件/次）。Phase 4 完成；Phase 5（跨项目
+重规划）激活。
+
+### §14.5 Phase 5 结果回写（2026-08-22，portfolio 闭环）
+
+`issue-cross-project-replanning` 全量交付：PR #174 合并（merge `e488d95a`，CI 首轮全绿
+——P4 预算修复持续生效）。三 child：issue-ready-set-scheduling（**单一 ready-set 推导**
+三面共享 + 读侧 legacy 裁决：真 legacy 读完成、损坏 v2 fail-closed——Issue #3 的镜像之痛
+除根）/ issue-revision-history-preservation（验收记录携带排除账，字节同一；连续性 +
+retarget 谱系钉死）/ issue-needs-attention（`store attention` 五词汇聚合入口：failure
+永不被运行掩盖、blocked-behind 单跳爆炸半径、缺失即真相、零缓存零第二真相）。
+
+**Issue #4 黄金关闭**（LEAD 亲手，含两处诚实处置：冗余归档种子撤回避 M-1 形状、被
+cleaner 清掉的 ephemera 依归档事实重建）：3/3 → accept → **done · healthy**（store
+`3af7041`）。**注册表现状：四个 Issue 全部 done，attention 扫描零项**。
+
+Phase 5 §8 退出判据全部落地（p5-exit-criteria.md 六 receipts 在 g-003 归档）。
+Phase 6 移交：attention 直钉 invalid-archive-record（直接性缺口）、--issue 拒绝的
+unsearched-refs 语义务、常驻开放账（claimant-alias keying、pinned-anchor、
+foreign-repo workspace）。Phase 5 完成；Phase 6（Issue 级 Review、Delivery 与
+Acceptance 收口）激活。
+
+### §14.6 Phase 6 结果回写（2026-08-23，portfolio 闭环）
+
+`issue-level-review-delivery` 全量交付：PR #175 合并（merge `ef8daad8`，CI 首轮全绿
+16 pass/1 skip）。三 child：issue-delivery-evidence-rollup（per-node 交付事实纯后置
+聚合入 Issue 读面：零新 blob 读、散文永不解析、missing[] 具名不发明、五态 counts）/
+issue-unified-review-gate（review 视图 = 验收门全量 1:1 映射：单一 blocking 基 + 穷尽
+钉、七 kind 封闭线程词汇、验证摘要按引用不复制、list 紧凑围栏 CLI 钉住）/
+issue-deferral-record（第五 lifecycle `deferred`：reason 必填、与 cancelled/superseded
+全同构、canonical 只省 required；门排除账 + accepted.yaml 冻结 exclusion + 具名 ready
+exit + `issue_start_node_deferred` 拒绝——延期不阻 Done 但三面记录在案；正向检查零逻辑
+改动由测试钉住，独立负向枚举清扫 9 点无漏）。
+
+**Issue #5 黄金关闭**（LEAD 亲手）：三归档 child 以 v2 identity 种入 store（派生先自
+校验——用先例实例逐字节复现 ci_ 后才写；M-1 守卫拒双实例；store `f1c35bb`）→ plan
+0001 三节点串行链 + conditions 0001 四条 → pre-accept 收据读 **review-ready**（g-002
+能力读自建 portfolio 的金环）→ gate 3/3 waiting-human 零 problems → accept（store
+`f295abc`）→ **done · healthy · 3/3，review.determination = accepted**。**注册表现状：
+五个 Issue 全部 done，attention 扫描零项。**
+
+本机全量门 687 文件/28 箱零未知红（仅已知 6 文件本机簇，裁决入 parent evidence）；
+归档新教训：MODIFIED 合并的引擎 EOF 缺陷与 ADDED 反向（删段间空行 + 加尾空行），两向
+都要查。Phase 6 完成；**Phase 7（界面收敛，campaign 最后一片，`packages/ui` 解冻）
+激活**——预分析（P6 交接档）：约四成可前置（设计/IA、Unlinked Changes、Operations
+收敛、Issue 只读骨架），派生状态显示等 Phase 1 投影器（已在位），旧板退休放最后。
+
+### §14.7 Phase 7 结果回写（2026-08-24 闭环，2026-08-26 补记）
+
+`issue-ui-convergence` 全量交付：PR #176 合并（merge `d2f59f85`，2026-08-24，CI run
+32711980305 全绿 13 成功 / 1 路径跳过 / 0 失败），portfolio head `0d725873`。三 child
+依序独立 verify + review CLEAN 后归档：issue-read-surface（`274c766c`，只读投影面——
+Issue Board/Detail 读模型直接来自 store 真相，缓存可重建）/ issue-operations-and-unlinked
+（`4a692691`，Operations 收敛 + Unlinked Changes 挂接面）/ issue-board-cutover
+（`e7426278`，Store 首页切换为 Issue Board，旧板退休）。parent 归档 `cdbea4a3`，关闭
+证据 `744cf756`；tip 另有一次归档 Purpose 占位符手工修补（`2a283646`——该引擎缺陷已知，
+待根治 change）。
+
+**Issue #6 黄金关闭**（LEAD 亲手）：三归档 child 以 v2 identity 种入 store `line-0.2`
+分区（`2bcbae0f`）→ plan 0001 绑定真实身份 → conditions 0001（合并交付 / UI 收敛 /
+payload 支撑状态 / 只读缓存可重建四条）→ pre-accept 读 review-ready、零 standing
+problems → accept（2026-08-24，store `eb397300`）→ 终态 **resolved · done · healthy ·
+3/3，review.determination = accepted**。**注册表现状：六个 Issue 全部 done，attention
+六 Issue 扫描零项。** Phase 7 完成——campaign 授权范围（Phase 2–7）全部交付。
+
+### §14.8 Campaign 终局 reconcile（2026-08-26，操作者拍板）
+
+campaign（§14.1 授权）至此整体关闭：七个 portfolio（PR #168、#171–#176）全部合并
+dev/0.2.0，Phase 0–7 均以真实 Issue 黄金关闭取证（Issue #1–#6 + Phase 1 的
+meta-dogfood）。本次 reconcile 同步登记：
+
+- **操作者决定（2026-08-26）**：ECP 收尾（`ecp-session-self-hosting-vertical-proof`
+  与 ECP-8）**继续延后**——当前处于测试期，暂不启动；子 Direction 维持
+  active/partial，其 2026-08-17 reconcile 的义务保留条款（OS × 后端 receipt 矩阵、
+  真实 macOS 取证或显式记缺口、legacy engine 退休决定、发布事实一致性）全部不变；
+- 父 Direction 撤销 activeSlice，进入 holding：Phase 8（平台增强）按 §10 设计保持
+  Later、按真实需求逐项启动；下一前沿（恢复 ECP 收尾 / Phase 8 / 0.2.0 发布事实）
+  待操作者拍板后再登记；
+- 常驻开放账随 campaign 结束失去承接 Phase，落点待安排：claimant-alias keying 归属、
+  pinned-confirmation anchor、foreign-repo keying + cleanup 不对称、attention 直钉
+  invalid-archive-record、`--issue` 拒绝的 unsearched-refs 语义。完整清单与两线完成度
+  审查见
+  [`docs/audits/0.2.0-ecp-and-0.3.0-issue-layer-completion-review-2026-08-26.md`](../../../docs/audits/0.2.0-ecp-and-0.3.0-issue-layer-completion-review-2026-08-26.md)；
+- 本次同时把 §14–§14.7 全部 scope decision 与结果回写、父 `work.yaml`、ECP-7 的
+  2026-08-17 reconcile **首次提交上远端**（此前仅存于单机未提交工作树，见审查文档
+  P1）。

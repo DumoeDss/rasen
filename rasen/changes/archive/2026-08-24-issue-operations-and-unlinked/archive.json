@@ -1,0 +1,39 @@
+{
+  "change": "issue-operations-and-unlinked",
+  "archivedAt": "2026-08-24T10:12:14.155Z",
+  "codeCommit": "274c766ce7738fe5ed507c8f0336cb640a6c7095",
+  "planningBranch": "feat/issue-phase7",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/dogfood-change-links.json",
+      "sha256": "af26882e43816d8fc277049d57cd10d5d0668f8ff60c04fa95cb40fbe89f2353"
+    },
+    {
+      "path": "evidence/fixture-mutation-receipts.md",
+      "sha256": "438e85f98b5e32c027f00bb1390670b021525edd3ad57e90c3b7d7519682b135"
+    },
+    {
+      "path": "evidence/review-cycle-report.md",
+      "sha256": "610928f17232f9fbad29a88fcabb3828ec71c8cea58b0d162d268a55b2e0dfb4"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "114525d86326e4fda757a35f936758933c6783f0a418d989886c0465168c4cc7"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "93e8d576e13bdc4665b002c85be26deb8f04aceb576f8cc61f59f8aee417b982"
+    },
+    {
+      "path": "evidence/verification-report.md",
+      "sha256": "095ba64af99d953cbbd4cfa7cca0ee3377a61f43e2555ea5099a528001ade28a"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": []
+}

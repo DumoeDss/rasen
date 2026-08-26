@@ -1,0 +1,22 @@
+# Decomposition of Issue #3 (issue-autodecompose-uplift) — the portfolio's
+# remaining work, authored by the g-002 implementer leg (2026-08-21).
+# g-001 (issue-workspace-containment-fix) already landed and is outside this
+# revision. Targets are the decomposer's proposal, gated at publication by the
+# planning-member rule.
+nodes:
+  - nodeId: issue-autodecompose-graph
+    kind: intent
+    projectId: e2ee72ed-04a1-4395-86aa-7e77d2b83ec7
+    targetLineId: line-0.2
+    summary: Land the decomposition-graph child (truthful boundary verdict, the from-decomposition channel, node guidance fields, the playbook stop-short branch)
+    dependsOn: []
+    suggestedPipeline: small-feature
+    rationale: the carrier exists from Phase 1-3; this child connects the decomposer's output to it and resolves the auto-decompose fail-close by the uplift, so every later revision rides a truthful boundary
+  - nodeId: issue-autodecompose-review-flow
+    kind: intent
+    projectId: e2ee72ed-04a1-4395-86aa-7e77d2b83ec7
+    targetLineId: line-0.2
+    summary: Human review, revision, and confirm-to-start flow over decomposition revisions
+    dependsOn: [issue-autodecompose-graph]
+    suggestedPipeline: small-feature
+    uncertainty: whether store issue start should adopt a node's recorded suggestedPipeline as the launch contract's pipeline when no --pipeline is given is still this child's planner question

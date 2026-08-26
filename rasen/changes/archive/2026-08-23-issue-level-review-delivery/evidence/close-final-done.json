@@ -1,0 +1,938 @@
+{
+  "issue": {
+    "issueId": "issue-level-review-delivery",
+    "record": {
+      "version": 1,
+      "id": "issue-level-review-delivery",
+      "title": "Issue layer Phase 6: unified review & delivery close (evidence rollup, review gate, deferral record)",
+      "state": "resolved",
+      "reason": null,
+      "createdAt": "2026-08-23T15:24:13.461Z"
+    },
+    "diagnostic": null,
+    "divergence": null,
+    "revisionIds": [
+      "0001"
+    ],
+    "latestRevisionId": "0001",
+    "refs": [
+      "refs/heads/main"
+    ],
+    "uncommitted": false
+  },
+  "plan": {
+    "issueId": "issue-level-review-delivery",
+    "revisionId": "0001",
+    "revision": {
+      "version": 1,
+      "issueId": "issue-level-review-delivery",
+      "revisionId": "0001",
+      "supersedes": null,
+      "createdAt": "2026-08-23T15:24:31.266Z",
+      "contentSha256": "9bd7c8b9b3225ade07fd352a9fe412e8996a2763c4eda3c2734bde6aeeaddea8",
+      "nodes": [
+        {
+          "nodeId": "issue-deferral-record",
+          "kind": "change",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "changeInstanceId": "ci_faf1d69e28904b9afc3d35c2bb8a078479e9888058c7255994481d877f1f7126",
+          "changeAlias": "issue-deferral-record",
+          "suggestedPipeline": "small-feature",
+          "rationale": "promoted from intent to Change at portfolio close - shipped a0d4d6b2 and archived 8c70ac7e via merged PR #175; verify 1 Minor fixed + 2 Info; seeded Store evidence carries its identity",
+          "dependsOn": [
+            "issue-delivery-evidence-rollup",
+            "issue-unified-review-gate"
+          ]
+        },
+        {
+          "nodeId": "issue-delivery-evidence-rollup",
+          "kind": "change",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "changeInstanceId": "ci_a73bd8e258946ec67b2179f05c377a86b5878e7eca7654005488d92095defa91",
+          "changeAlias": "issue-delivery-evidence-rollup",
+          "suggestedPipeline": "small-feature",
+          "rationale": "promoted from intent to Change at portfolio close - shipped c870a4b2 and archived 2bdd1513 via merged PR #175; seeded Store evidence carries its identity",
+          "dependsOn": []
+        },
+        {
+          "nodeId": "issue-unified-review-gate",
+          "kind": "change",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "changeInstanceId": "ci_08dfeba86d9ff15caacfaebfde14abe8a0ec961e9200c63fe662e75b38021fd9",
+          "changeAlias": "issue-unified-review-gate",
+          "suggestedPipeline": "small-feature",
+          "rationale": "promoted from intent to Change at portfolio close - shipped e5c88225 and archived 62553fe0 via merged PR #175; verify CLEAN (4 Info); seeded Store evidence carries its identity",
+          "dependsOn": [
+            "issue-delivery-evidence-rollup"
+          ]
+        }
+      ]
+    },
+    "diagnostic": null,
+    "readiness": {
+      "nodes": [
+        {
+          "node": {
+            "nodeId": "issue-deferral-record",
+            "kind": "change",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "changeInstanceId": "ci_faf1d69e28904b9afc3d35c2bb8a078479e9888058c7255994481d877f1f7126",
+            "changeAlias": "issue-deferral-record",
+            "suggestedPipeline": "small-feature",
+            "rationale": "promoted from intent to Change at portfolio close - shipped a0d4d6b2 and archived 8c70ac7e via merged PR #175; verify 1 Minor fixed + 2 Info; seeded Store evidence carries its identity",
+            "dependsOn": [
+              "issue-delivery-evidence-rollup",
+              "issue-unified-review-gate"
+            ]
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "2026-08-23-issue-deferral-record",
+                "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+                "targetLineId": "line-0.2",
+                "foundAtRef": "refs/heads/main",
+                "archived": true
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": true,
+            "outcomeBasis": "legacy",
+            "outcomeBasisReason": null,
+            "outcomeBasisPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-23-issue-deferral-record/archive.json",
+            "delivery": {
+              "basis": "legacy",
+              "archivedAt": "2026-08-23T13:01:26.546Z",
+              "codeCommit": "a0d4d6b292172606fda45b1f41f971244b75a167",
+              "planningBranch": "feat/issue-phase6",
+              "outcome": null,
+              "evidence": [
+                {
+                  "path": "evidence/dogfood-1-publish-deferral.txt",
+                  "sha256": "3becccd86ace9d6b414a587a015a301c055afc9cb7f18ba647db93866cf1eeb7"
+                },
+                {
+                  "path": "evidence/dogfood-2-show.txt",
+                  "sha256": "308b20361df3e600ab57548e69c263982d8275e4d4e8441118ce41b3e7596584"
+                },
+                {
+                  "path": "evidence/dogfood-3-show.json",
+                  "sha256": "3edb6fc4e15ee69525820a423fae25b15ba912201d99f29cdfcc0f17b7431bc4"
+                },
+                {
+                  "path": "evidence/dogfood-4-ready-and-start.txt",
+                  "sha256": "039510bc7cf93a9c375bf8a73b80077846f0cc6c64263a961c784adfa538d632"
+                },
+                {
+                  "path": "evidence/dogfood-5-accept.txt",
+                  "sha256": "f6005d2014596e8af1aa5a06e8ca4f344bb47e79d605610e33b92c25dbc065cb"
+                },
+                {
+                  "path": "evidence/dogfood-6-refusals.txt",
+                  "sha256": "cb9f92429d3f9953427bb35128aea71c3466dff63441287681bf9f97ba27b940"
+                },
+                {
+                  "path": "evidence/dogfood-receipts-summary.md",
+                  "sha256": "2e9076074b90d3f2d23fca92be7e9493b78cb9c235605012c5502020bf7dda1f"
+                },
+                {
+                  "path": "evidence/readonly-1-cross-project-replanning.txt",
+                  "sha256": "5414c535a36155289251ca5d7afa643d98779b96d20d1b827c2f8fdb3b169177"
+                },
+                {
+                  "path": "evidence/readonly-2-cross-project-replanning.json",
+                  "sha256": "97f354db54a2fb3790cb3d293a52489454220913e5e43ce26ac47a19cd555875"
+                },
+                {
+                  "path": "evidence/readonly-3-autodecompose-uplift.txt",
+                  "sha256": "ac632cf2270573f8e5a60f82b9147eebc8bd91090a70feec463477782710c5b1"
+                },
+                {
+                  "path": "evidence/readonly-4-multi-change-execution.txt",
+                  "sha256": "4999194fcd3253044c62524b5bbeb01cdc58cc47bf9a0acd77720c5cb19b97b6"
+                },
+                {
+                  "path": "evidence/readonly-5-cross-project-execution.txt",
+                  "sha256": "6b0fbde925fba4d2d907b002265e5b3c2bf0a27009963bd562f8f2c3d25bf8e0"
+                },
+                {
+                  "path": "evidence/review-report.md",
+                  "sha256": "70d3c34dd5874598afe814387920c4ef90b6796d0f390804298e6ed02939ba15"
+                },
+                {
+                  "path": "evidence/ship-log.md",
+                  "sha256": "20cdcec619cf5d8519016065500ce8a464ac78e62fc664d6b212b1b5e8c57fdd"
+                }
+              ],
+              "missing": [
+                "verification-report"
+              ],
+              "entryName": "2026-08-23-issue-deferral-record",
+              "foundAtRef": "refs/heads/main",
+              "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-23-issue-deferral-record/archive.json"
+            }
+          },
+          "readiness": "blocked",
+          "blockedBy": [
+            "issue-delivery-evidence-rollup",
+            "issue-unified-review-gate"
+          ]
+        },
+        {
+          "node": {
+            "nodeId": "issue-delivery-evidence-rollup",
+            "kind": "change",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "changeInstanceId": "ci_a73bd8e258946ec67b2179f05c377a86b5878e7eca7654005488d92095defa91",
+            "changeAlias": "issue-delivery-evidence-rollup",
+            "suggestedPipeline": "small-feature",
+            "rationale": "promoted from intent to Change at portfolio close - shipped c870a4b2 and archived 2bdd1513 via merged PR #175; seeded Store evidence carries its identity",
+            "dependsOn": []
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "2026-08-23-issue-delivery-evidence-rollup",
+                "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+                "targetLineId": "line-0.2",
+                "foundAtRef": "refs/heads/main",
+                "archived": true
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": true,
+            "outcomeBasis": "legacy",
+            "outcomeBasisReason": null,
+            "outcomeBasisPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-23-issue-delivery-evidence-rollup/archive.json",
+            "delivery": {
+              "basis": "legacy",
+              "archivedAt": "2026-08-23T08:58:54.941Z",
+              "codeCommit": "c870a4b223d4b4edb99aee251e182a8e57898259",
+              "planningBranch": "feat/issue-phase6",
+              "outcome": null,
+              "evidence": [
+                {
+                  "path": "evidence/dogfood-1-autodecompose-uplift.txt",
+                  "sha256": "9f8d733d3adb46f3e38ba53d77d7a36fbc20aae7960b73119aa83feee5dd01f0"
+                },
+                {
+                  "path": "evidence/dogfood-2-cross-project-execution.txt",
+                  "sha256": "5af27964a7760e611d9377896c67e26e3544197141724941dbb73fd498c5b0ed"
+                },
+                {
+                  "path": "evidence/dogfood-3-cross-project-replanning.txt",
+                  "sha256": "2c0fae36f8d9c8a54fc9c93c7a655e51e291c4e80a5f1386210f6dc4b5b849bb"
+                },
+                {
+                  "path": "evidence/dogfood-4-multi-change-execution.txt",
+                  "sha256": "c4505e99446a6279ea87eb9b5e75bf6f24d07b58fb64625b4e0562517f3c4c7a"
+                },
+                {
+                  "path": "evidence/dogfood-5-multi-change-execution.json",
+                  "sha256": "d94c4c3c96b50e4aabaca40d2aacc43cb9c6e115c8723e2a9096309c01f13b2b"
+                },
+                {
+                  "path": "evidence/dogfood-receipts-summary.md",
+                  "sha256": "750522cce125e7a4df7301c6ffef87eccbee1be9febdc98ebc67fd9f19efe1ba"
+                },
+                {
+                  "path": "evidence/review-report.md",
+                  "sha256": "542b4a0a1e4eb750668392358aabca05faa5895111c278b6999f28634ce3a110"
+                },
+                {
+                  "path": "evidence/ship-log.md",
+                  "sha256": "b525ee4710a11dad3383d4cc564bc9101f76bf604ec54d935f280f4d67cd0879"
+                }
+              ],
+              "missing": [
+                "verification-report"
+              ],
+              "entryName": "2026-08-23-issue-delivery-evidence-rollup",
+              "foundAtRef": "refs/heads/main",
+              "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-23-issue-delivery-evidence-rollup/archive.json"
+            }
+          },
+          "readiness": "in-progress",
+          "blockedBy": []
+        },
+        {
+          "node": {
+            "nodeId": "issue-unified-review-gate",
+            "kind": "change",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "changeInstanceId": "ci_08dfeba86d9ff15caacfaebfde14abe8a0ec961e9200c63fe662e75b38021fd9",
+            "changeAlias": "issue-unified-review-gate",
+            "suggestedPipeline": "small-feature",
+            "rationale": "promoted from intent to Change at portfolio close - shipped e5c88225 and archived 62553fe0 via merged PR #175; verify CLEAN (4 Info); seeded Store evidence carries its identity",
+            "dependsOn": [
+              "issue-delivery-evidence-rollup"
+            ]
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "2026-08-23-issue-unified-review-gate",
+                "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+                "targetLineId": "line-0.2",
+                "foundAtRef": "refs/heads/main",
+                "archived": true
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": true,
+            "outcomeBasis": "legacy",
+            "outcomeBasisReason": null,
+            "outcomeBasisPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-23-issue-unified-review-gate/archive.json",
+            "delivery": {
+              "basis": "legacy",
+              "archivedAt": "2026-08-23T10:50:26.078Z",
+              "codeCommit": "e5c88225d4c40d2eaabcceafccd19a8a0788c63c",
+              "planningBranch": "feat/issue-phase6",
+              "outcome": null,
+              "evidence": [
+                {
+                  "path": "evidence/dogfood-1-autodecompose-uplift.txt",
+                  "sha256": "ac632cf2270573f8e5a60f82b9147eebc8bd91090a70feec463477782710c5b1"
+                },
+                {
+                  "path": "evidence/dogfood-2-cross-project-execution.txt",
+                  "sha256": "6b0fbde925fba4d2d907b002265e5b3c2bf0a27009963bd562f8f2c3d25bf8e0"
+                },
+                {
+                  "path": "evidence/dogfood-3-cross-project-replanning.txt",
+                  "sha256": "5414c535a36155289251ca5d7afa643d98779b96d20d1b827c2f8fdb3b169177"
+                },
+                {
+                  "path": "evidence/dogfood-4-multi-change-execution.txt",
+                  "sha256": "4999194fcd3253044c62524b5bbeb01cdc58cc47bf9a0acd77720c5cb19b97b6"
+                },
+                {
+                  "path": "evidence/dogfood-5-multi-change-execution.json",
+                  "sha256": "812106135b0026af9c44e4b45621094c913dc0f1b4f45779b571f4a0e19d45ee"
+                },
+                {
+                  "path": "evidence/dogfood-receipts-summary.md",
+                  "sha256": "629a8dcec4f297f5d9abe7ddc19ac743b08060aa9ab5121d3306c017cf1c1f0d"
+                },
+                {
+                  "path": "evidence/review-report.md",
+                  "sha256": "665e34998138b5edd1a7487c98aa24c6e3e3c445480864dfd46c89da8496c98a"
+                },
+                {
+                  "path": "evidence/ship-log.md",
+                  "sha256": "758d86b181672273a5fab59d6e1b3b50280de348c41cf834b021dd3166b20ba0"
+                }
+              ],
+              "missing": [
+                "verification-report"
+              ],
+              "entryName": "2026-08-23-issue-unified-review-gate",
+              "foundAtRef": "refs/heads/main",
+              "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-23-issue-unified-review-gate/archive.json"
+            }
+          },
+          "readiness": "blocked",
+          "blockedBy": [
+            "issue-delivery-evidence-rollup"
+          ]
+        }
+      ],
+      "readyToResolve": false
+    },
+    "unsearchedRefs": [],
+    "problems": [],
+    "complete": true
+  },
+  "status": {
+    "phase": "done",
+    "health": "healthy",
+    "progress": {
+      "completed": 3,
+      "total": 3
+    },
+    "nodes": [
+      {
+        "nodeId": "issue-deferral-record",
+        "kind": "change",
+        "alias": "2026-08-23-issue-deferral-record",
+        "observation": "finalized",
+        "diagnostic": "finalized on a legacy archive record (no v2 outcome was ever recorded)",
+        "runStatePath": null,
+        "locatedBy": null,
+        "attribution": {
+          "pipeline": null,
+          "sessions": [],
+          "evidenceLocator": null
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": "required",
+        "reason": null,
+        "suggestedPipeline": "small-feature",
+        "rationale": "promoted from intent to Change at portfolio close - shipped a0d4d6b2 and archived 8c70ac7e via merged PR #175; verify 1 Minor fixed + 2 Info; seeded Store evidence carries its identity",
+        "uncertainty": null,
+        "delivery": {
+          "state": "record",
+          "basis": "legacy",
+          "archivedAt": "2026-08-23T13:01:26.546Z",
+          "codeCommit": "a0d4d6b292172606fda45b1f41f971244b75a167",
+          "planningBranch": "feat/issue-phase6",
+          "outcome": null,
+          "evidence": [
+            {
+              "path": "evidence/dogfood-1-publish-deferral.txt",
+              "sha256": "3becccd86ace9d6b414a587a015a301c055afc9cb7f18ba647db93866cf1eeb7"
+            },
+            {
+              "path": "evidence/dogfood-2-show.txt",
+              "sha256": "308b20361df3e600ab57548e69c263982d8275e4d4e8441118ce41b3e7596584"
+            },
+            {
+              "path": "evidence/dogfood-3-show.json",
+              "sha256": "3edb6fc4e15ee69525820a423fae25b15ba912201d99f29cdfcc0f17b7431bc4"
+            },
+            {
+              "path": "evidence/dogfood-4-ready-and-start.txt",
+              "sha256": "039510bc7cf93a9c375bf8a73b80077846f0cc6c64263a961c784adfa538d632"
+            },
+            {
+              "path": "evidence/dogfood-5-accept.txt",
+              "sha256": "f6005d2014596e8af1aa5a06e8ca4f344bb47e79d605610e33b92c25dbc065cb"
+            },
+            {
+              "path": "evidence/dogfood-6-refusals.txt",
+              "sha256": "cb9f92429d3f9953427bb35128aea71c3466dff63441287681bf9f97ba27b940"
+            },
+            {
+              "path": "evidence/dogfood-receipts-summary.md",
+              "sha256": "2e9076074b90d3f2d23fca92be7e9493b78cb9c235605012c5502020bf7dda1f"
+            },
+            {
+              "path": "evidence/readonly-1-cross-project-replanning.txt",
+              "sha256": "5414c535a36155289251ca5d7afa643d98779b96d20d1b827c2f8fdb3b169177"
+            },
+            {
+              "path": "evidence/readonly-2-cross-project-replanning.json",
+              "sha256": "97f354db54a2fb3790cb3d293a52489454220913e5e43ce26ac47a19cd555875"
+            },
+            {
+              "path": "evidence/readonly-3-autodecompose-uplift.txt",
+              "sha256": "ac632cf2270573f8e5a60f82b9147eebc8bd91090a70feec463477782710c5b1"
+            },
+            {
+              "path": "evidence/readonly-4-multi-change-execution.txt",
+              "sha256": "4999194fcd3253044c62524b5bbeb01cdc58cc47bf9a0acd77720c5cb19b97b6"
+            },
+            {
+              "path": "evidence/readonly-5-cross-project-execution.txt",
+              "sha256": "6b0fbde925fba4d2d907b002265e5b3c2bf0a27009963bd562f8f2c3d25bf8e0"
+            },
+            {
+              "path": "evidence/review-report.md",
+              "sha256": "70d3c34dd5874598afe814387920c4ef90b6796d0f390804298e6ed02939ba15"
+            },
+            {
+              "path": "evidence/ship-log.md",
+              "sha256": "20cdcec619cf5d8519016065500ce8a464ac78e62fc664d6b212b1b5e8c57fdd"
+            }
+          ],
+          "missing": [
+            "verification-report"
+          ],
+          "entryName": "2026-08-23-issue-deferral-record",
+          "foundAtRef": "refs/heads/main",
+          "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-23-issue-deferral-record/archive.json"
+        },
+        "blockedBy": []
+      },
+      {
+        "nodeId": "issue-delivery-evidence-rollup",
+        "kind": "change",
+        "alias": "2026-08-23-issue-delivery-evidence-rollup",
+        "observation": "finalized",
+        "diagnostic": "finalized on a legacy archive record (no v2 outcome was ever recorded)",
+        "runStatePath": null,
+        "locatedBy": null,
+        "attribution": {
+          "pipeline": null,
+          "sessions": [],
+          "evidenceLocator": null
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": "required",
+        "reason": null,
+        "suggestedPipeline": "small-feature",
+        "rationale": "promoted from intent to Change at portfolio close - shipped c870a4b2 and archived 2bdd1513 via merged PR #175; seeded Store evidence carries its identity",
+        "uncertainty": null,
+        "delivery": {
+          "state": "record",
+          "basis": "legacy",
+          "archivedAt": "2026-08-23T08:58:54.941Z",
+          "codeCommit": "c870a4b223d4b4edb99aee251e182a8e57898259",
+          "planningBranch": "feat/issue-phase6",
+          "outcome": null,
+          "evidence": [
+            {
+              "path": "evidence/dogfood-1-autodecompose-uplift.txt",
+              "sha256": "9f8d733d3adb46f3e38ba53d77d7a36fbc20aae7960b73119aa83feee5dd01f0"
+            },
+            {
+              "path": "evidence/dogfood-2-cross-project-execution.txt",
+              "sha256": "5af27964a7760e611d9377896c67e26e3544197141724941dbb73fd498c5b0ed"
+            },
+            {
+              "path": "evidence/dogfood-3-cross-project-replanning.txt",
+              "sha256": "2c0fae36f8d9c8a54fc9c93c7a655e51e291c4e80a5f1386210f6dc4b5b849bb"
+            },
+            {
+              "path": "evidence/dogfood-4-multi-change-execution.txt",
+              "sha256": "c4505e99446a6279ea87eb9b5e75bf6f24d07b58fb64625b4e0562517f3c4c7a"
+            },
+            {
+              "path": "evidence/dogfood-5-multi-change-execution.json",
+              "sha256": "d94c4c3c96b50e4aabaca40d2aacc43cb9c6e115c8723e2a9096309c01f13b2b"
+            },
+            {
+              "path": "evidence/dogfood-receipts-summary.md",
+              "sha256": "750522cce125e7a4df7301c6ffef87eccbee1be9febdc98ebc67fd9f19efe1ba"
+            },
+            {
+              "path": "evidence/review-report.md",
+              "sha256": "542b4a0a1e4eb750668392358aabca05faa5895111c278b6999f28634ce3a110"
+            },
+            {
+              "path": "evidence/ship-log.md",
+              "sha256": "b525ee4710a11dad3383d4cc564bc9101f76bf604ec54d935f280f4d67cd0879"
+            }
+          ],
+          "missing": [
+            "verification-report"
+          ],
+          "entryName": "2026-08-23-issue-delivery-evidence-rollup",
+          "foundAtRef": "refs/heads/main",
+          "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-23-issue-delivery-evidence-rollup/archive.json"
+        },
+        "blockedBy": []
+      },
+      {
+        "nodeId": "issue-unified-review-gate",
+        "kind": "change",
+        "alias": "2026-08-23-issue-unified-review-gate",
+        "observation": "finalized",
+        "diagnostic": "finalized on a legacy archive record (no v2 outcome was ever recorded)",
+        "runStatePath": null,
+        "locatedBy": null,
+        "attribution": {
+          "pipeline": null,
+          "sessions": [],
+          "evidenceLocator": null
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": "required",
+        "reason": null,
+        "suggestedPipeline": "small-feature",
+        "rationale": "promoted from intent to Change at portfolio close - shipped e5c88225 and archived 62553fe0 via merged PR #175; verify CLEAN (4 Info); seeded Store evidence carries its identity",
+        "uncertainty": null,
+        "delivery": {
+          "state": "record",
+          "basis": "legacy",
+          "archivedAt": "2026-08-23T10:50:26.078Z",
+          "codeCommit": "e5c88225d4c40d2eaabcceafccd19a8a0788c63c",
+          "planningBranch": "feat/issue-phase6",
+          "outcome": null,
+          "evidence": [
+            {
+              "path": "evidence/dogfood-1-autodecompose-uplift.txt",
+              "sha256": "ac632cf2270573f8e5a60f82b9147eebc8bd91090a70feec463477782710c5b1"
+            },
+            {
+              "path": "evidence/dogfood-2-cross-project-execution.txt",
+              "sha256": "6b0fbde925fba4d2d907b002265e5b3c2bf0a27009963bd562f8f2c3d25bf8e0"
+            },
+            {
+              "path": "evidence/dogfood-3-cross-project-replanning.txt",
+              "sha256": "5414c535a36155289251ca5d7afa643d98779b96d20d1b827c2f8fdb3b169177"
+            },
+            {
+              "path": "evidence/dogfood-4-multi-change-execution.txt",
+              "sha256": "4999194fcd3253044c62524b5bbeb01cdc58cc47bf9a0acd77720c5cb19b97b6"
+            },
+            {
+              "path": "evidence/dogfood-5-multi-change-execution.json",
+              "sha256": "812106135b0026af9c44e4b45621094c913dc0f1b4f45779b571f4a0e19d45ee"
+            },
+            {
+              "path": "evidence/dogfood-receipts-summary.md",
+              "sha256": "629a8dcec4f297f5d9abe7ddc19ac743b08060aa9ab5121d3306c017cf1c1f0d"
+            },
+            {
+              "path": "evidence/review-report.md",
+              "sha256": "665e34998138b5edd1a7487c98aa24c6e3e3c445480864dfd46c89da8496c98a"
+            },
+            {
+              "path": "evidence/ship-log.md",
+              "sha256": "758d86b181672273a5fab59d6e1b3b50280de348c41cf834b021dd3166b20ba0"
+            }
+          ],
+          "missing": [
+            "verification-report"
+          ],
+          "entryName": "2026-08-23-issue-unified-review-gate",
+          "foundAtRef": "refs/heads/main",
+          "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-23-issue-unified-review-gate/archive.json"
+        },
+        "blockedBy": []
+      }
+    ],
+    "delta": null,
+    "projects": [
+      {
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "alias": "rasen",
+        "nodeIds": [
+          "issue-deferral-record",
+          "issue-delivery-evidence-rollup",
+          "issue-unified-review-gate"
+        ],
+        "progress": {
+          "completed": 3,
+          "total": 3
+        }
+      }
+    ],
+    "problems": [],
+    "runStateVisibility": {
+      "kind": "execution-root",
+      "executionRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer"
+    },
+    "complete": true,
+    "acceptance": {
+      "conditions": {
+        "revision": {
+          "version": 1,
+          "issueId": "issue-level-review-delivery",
+          "revisionId": "0001",
+          "supersedes": null,
+          "createdAt": "2026-08-23T15:24:42.788Z",
+          "contentSha256": "f3c1b78ae4bf47370a1383c95eb2e23280c3f599d8323831c638c01a2e56235f",
+          "conditions": [
+            {
+              "id": "children-delivered",
+              "requirement": "All three Phase-6 children shipped and archived on dev/0.2.0 via merged PR #175 (CI green): delivery evidence rollup (c870a4b2/2bdd1513), unified review gate (e5c88225/62553fe0), deferral record (a0d4d6b2/8c70ac7e)."
+            },
+            {
+              "id": "deferral-recorded-not-blocking",
+              "requirement": "The deferred lifecycle live end-to-end on a hermetic store (defer with reason -> gate exclusion accounting -> named ready exit -> start refusal -> accepted.yaml frozen exclusion), never blocking Done; positive checks absorb the fifth value with zero logic changes (independent reviewer replay 40/40, negative-enumeration sweep clean)."
+            },
+            {
+              "id": "delivery-evidence-honest",
+              "requirement": "Delivery facts aggregate as a pure post-pass over already-parsed archive.json: recorded missing[] named not invented, prose never parsed, five-state counts; registry reads byte-zero (HEAD pinned before/after in receipts)."
+            },
+            {
+              "id": "review-derives-not-decides",
+              "requirement": "The unified review view proven a total 1:1 mapping of the acceptance gate on the four closed Issues (retrospective accepted with standing threads, evidence-missing x9 / archive-pending x3), --json review-key parity deep-equal, no second blocking basis (mutation-pinned x3, exhaustiveness-pinned switch)."
+            }
+          ]
+        },
+        "revisionId": "0001",
+        "diagnostic": null,
+        "path": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store\\rasen\\issues\\issue-level-review-delivery\\acceptance\\0001.yaml"
+      },
+      "gate": {
+        "eligible": false,
+        "refusalCode": "issue_accept_already_accepted",
+        "blockers": [],
+        "message": "the Issue already carries an acceptance record; an acceptance is never rewritten.",
+        "exclusions": [],
+        "optionalNodes": []
+      },
+      "record": {
+        "version": 1,
+        "issueId": "issue-level-review-delivery",
+        "acceptedAt": "2026-08-23T15:25:04.457Z",
+        "conditionsRevisionId": "0001",
+        "conditionsSha256": "f3c1b78ae4bf47370a1383c95eb2e23280c3f599d8323831c638c01a2e56235f",
+        "gate": {
+          "completed": 3,
+          "total": 3,
+          "health": "waiting-human",
+          "problemsStanding": 0
+        },
+        "note": "Phase 6 unified review & delivery close verified: evidence rollup, 1:1 review determination, deferral vocabulary live (PR #175, Issue #5 loop)",
+        "contentSha256": "4dac40b902cab09af4ad80450cc0ef6f331f514fdce9c4a3ab851ff035c5096d"
+      }
+    }
+  },
+  "delivery": {
+    "revisionId": "0001",
+    "entries": [
+      {
+        "nodeId": "issue-deferral-record",
+        "alias": "2026-08-23-issue-deferral-record",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "lifecycle": "required",
+        "observation": "finalized",
+        "delivery": {
+          "state": "record",
+          "basis": "legacy",
+          "archivedAt": "2026-08-23T13:01:26.546Z",
+          "codeCommit": "a0d4d6b292172606fda45b1f41f971244b75a167",
+          "planningBranch": "feat/issue-phase6",
+          "outcome": null,
+          "evidence": [
+            {
+              "path": "evidence/dogfood-1-publish-deferral.txt",
+              "sha256": "3becccd86ace9d6b414a587a015a301c055afc9cb7f18ba647db93866cf1eeb7"
+            },
+            {
+              "path": "evidence/dogfood-2-show.txt",
+              "sha256": "308b20361df3e600ab57548e69c263982d8275e4d4e8441118ce41b3e7596584"
+            },
+            {
+              "path": "evidence/dogfood-3-show.json",
+              "sha256": "3edb6fc4e15ee69525820a423fae25b15ba912201d99f29cdfcc0f17b7431bc4"
+            },
+            {
+              "path": "evidence/dogfood-4-ready-and-start.txt",
+              "sha256": "039510bc7cf93a9c375bf8a73b80077846f0cc6c64263a961c784adfa538d632"
+            },
+            {
+              "path": "evidence/dogfood-5-accept.txt",
+              "sha256": "f6005d2014596e8af1aa5a06e8ca4f344bb47e79d605610e33b92c25dbc065cb"
+            },
+            {
+              "path": "evidence/dogfood-6-refusals.txt",
+              "sha256": "cb9f92429d3f9953427bb35128aea71c3466dff63441287681bf9f97ba27b940"
+            },
+            {
+              "path": "evidence/dogfood-receipts-summary.md",
+              "sha256": "2e9076074b90d3f2d23fca92be7e9493b78cb9c235605012c5502020bf7dda1f"
+            },
+            {
+              "path": "evidence/readonly-1-cross-project-replanning.txt",
+              "sha256": "5414c535a36155289251ca5d7afa643d98779b96d20d1b827c2f8fdb3b169177"
+            },
+            {
+              "path": "evidence/readonly-2-cross-project-replanning.json",
+              "sha256": "97f354db54a2fb3790cb3d293a52489454220913e5e43ce26ac47a19cd555875"
+            },
+            {
+              "path": "evidence/readonly-3-autodecompose-uplift.txt",
+              "sha256": "ac632cf2270573f8e5a60f82b9147eebc8bd91090a70feec463477782710c5b1"
+            },
+            {
+              "path": "evidence/readonly-4-multi-change-execution.txt",
+              "sha256": "4999194fcd3253044c62524b5bbeb01cdc58cc47bf9a0acd77720c5cb19b97b6"
+            },
+            {
+              "path": "evidence/readonly-5-cross-project-execution.txt",
+              "sha256": "6b0fbde925fba4d2d907b002265e5b3c2bf0a27009963bd562f8f2c3d25bf8e0"
+            },
+            {
+              "path": "evidence/review-report.md",
+              "sha256": "70d3c34dd5874598afe814387920c4ef90b6796d0f390804298e6ed02939ba15"
+            },
+            {
+              "path": "evidence/ship-log.md",
+              "sha256": "20cdcec619cf5d8519016065500ce8a464ac78e62fc664d6b212b1b5e8c57fdd"
+            }
+          ],
+          "missing": [
+            "verification-report"
+          ],
+          "entryName": "2026-08-23-issue-deferral-record",
+          "foundAtRef": "refs/heads/main",
+          "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-23-issue-deferral-record/archive.json"
+        }
+      },
+      {
+        "nodeId": "issue-delivery-evidence-rollup",
+        "alias": "2026-08-23-issue-delivery-evidence-rollup",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "lifecycle": "required",
+        "observation": "finalized",
+        "delivery": {
+          "state": "record",
+          "basis": "legacy",
+          "archivedAt": "2026-08-23T08:58:54.941Z",
+          "codeCommit": "c870a4b223d4b4edb99aee251e182a8e57898259",
+          "planningBranch": "feat/issue-phase6",
+          "outcome": null,
+          "evidence": [
+            {
+              "path": "evidence/dogfood-1-autodecompose-uplift.txt",
+              "sha256": "9f8d733d3adb46f3e38ba53d77d7a36fbc20aae7960b73119aa83feee5dd01f0"
+            },
+            {
+              "path": "evidence/dogfood-2-cross-project-execution.txt",
+              "sha256": "5af27964a7760e611d9377896c67e26e3544197141724941dbb73fd498c5b0ed"
+            },
+            {
+              "path": "evidence/dogfood-3-cross-project-replanning.txt",
+              "sha256": "2c0fae36f8d9c8a54fc9c93c7a655e51e291c4e80a5f1386210f6dc4b5b849bb"
+            },
+            {
+              "path": "evidence/dogfood-4-multi-change-execution.txt",
+              "sha256": "c4505e99446a6279ea87eb9b5e75bf6f24d07b58fb64625b4e0562517f3c4c7a"
+            },
+            {
+              "path": "evidence/dogfood-5-multi-change-execution.json",
+              "sha256": "d94c4c3c96b50e4aabaca40d2aacc43cb9c6e115c8723e2a9096309c01f13b2b"
+            },
+            {
+              "path": "evidence/dogfood-receipts-summary.md",
+              "sha256": "750522cce125e7a4df7301c6ffef87eccbee1be9febdc98ebc67fd9f19efe1ba"
+            },
+            {
+              "path": "evidence/review-report.md",
+              "sha256": "542b4a0a1e4eb750668392358aabca05faa5895111c278b6999f28634ce3a110"
+            },
+            {
+              "path": "evidence/ship-log.md",
+              "sha256": "b525ee4710a11dad3383d4cc564bc9101f76bf604ec54d935f280f4d67cd0879"
+            }
+          ],
+          "missing": [
+            "verification-report"
+          ],
+          "entryName": "2026-08-23-issue-delivery-evidence-rollup",
+          "foundAtRef": "refs/heads/main",
+          "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-23-issue-delivery-evidence-rollup/archive.json"
+        }
+      },
+      {
+        "nodeId": "issue-unified-review-gate",
+        "alias": "2026-08-23-issue-unified-review-gate",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "lifecycle": "required",
+        "observation": "finalized",
+        "delivery": {
+          "state": "record",
+          "basis": "legacy",
+          "archivedAt": "2026-08-23T10:50:26.078Z",
+          "codeCommit": "e5c88225d4c40d2eaabcceafccd19a8a0788c63c",
+          "planningBranch": "feat/issue-phase6",
+          "outcome": null,
+          "evidence": [
+            {
+              "path": "evidence/dogfood-1-autodecompose-uplift.txt",
+              "sha256": "ac632cf2270573f8e5a60f82b9147eebc8bd91090a70feec463477782710c5b1"
+            },
+            {
+              "path": "evidence/dogfood-2-cross-project-execution.txt",
+              "sha256": "6b0fbde925fba4d2d907b002265e5b3c2bf0a27009963bd562f8f2c3d25bf8e0"
+            },
+            {
+              "path": "evidence/dogfood-3-cross-project-replanning.txt",
+              "sha256": "5414c535a36155289251ca5d7afa643d98779b96d20d1b827c2f8fdb3b169177"
+            },
+            {
+              "path": "evidence/dogfood-4-multi-change-execution.txt",
+              "sha256": "4999194fcd3253044c62524b5bbeb01cdc58cc47bf9a0acd77720c5cb19b97b6"
+            },
+            {
+              "path": "evidence/dogfood-5-multi-change-execution.json",
+              "sha256": "812106135b0026af9c44e4b45621094c913dc0f1b4f45779b571f4a0e19d45ee"
+            },
+            {
+              "path": "evidence/dogfood-receipts-summary.md",
+              "sha256": "629a8dcec4f297f5d9abe7ddc19ac743b08060aa9ab5121d3306c017cf1c1f0d"
+            },
+            {
+              "path": "evidence/review-report.md",
+              "sha256": "665e34998138b5edd1a7487c98aa24c6e3e3c445480864dfd46c89da8496c98a"
+            },
+            {
+              "path": "evidence/ship-log.md",
+              "sha256": "758d86b181672273a5fab59d6e1b3b50280de348c41cf834b021dd3166b20ba0"
+            }
+          ],
+          "missing": [
+            "verification-report"
+          ],
+          "entryName": "2026-08-23-issue-unified-review-gate",
+          "foundAtRef": "refs/heads/main",
+          "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-23-issue-unified-review-gate/archive.json"
+        }
+      }
+    ],
+    "counts": {
+      "record": 3,
+      "no-record": 0,
+      "not-archived": 0,
+      "unreadable": 0,
+      "unattributed": 0
+    }
+  },
+  "review": {
+    "issueId": "issue-level-review-delivery",
+    "revisionId": "0001",
+    "determination": {
+      "kind": "accepted",
+      "acceptedAt": "2026-08-23T15:25:04.457Z",
+      "conditionsRevisionId": "0001"
+    },
+    "threads": [
+      {
+        "kind": "evidence-missing",
+        "nodeId": "issue-deferral-record",
+        "names": [
+          "verification-report"
+        ]
+      },
+      {
+        "kind": "evidence-missing",
+        "nodeId": "issue-delivery-evidence-rollup",
+        "names": [
+          "verification-report"
+        ]
+      },
+      {
+        "kind": "evidence-missing",
+        "nodeId": "issue-unified-review-gate",
+        "names": [
+          "verification-report"
+        ]
+      }
+    ],
+    "verification": {
+      "progress": {
+        "completed": 3,
+        "total": 3
+      },
+      "delivery": {
+        "record": 3,
+        "no-record": 0,
+        "not-archived": 0,
+        "unreadable": 0,
+        "unattributed": 0
+      }
+    }
+  },
+  "complete": true,
+  "unsearchedRefs": [],
+  "problems": []
+}

@@ -1,0 +1,236 @@
+{
+  "issue": {
+    "issueId": "issue-autodecompose-uplift",
+    "record": {
+      "version": 1,
+      "id": "issue-autodecompose-uplift",
+      "title": "Issue layer Phase 4: auto-decompose uplift (reviewable decomposition dispatch)",
+      "state": "open",
+      "reason": null,
+      "createdAt": "2026-08-21T08:10:49.108Z"
+    },
+    "diagnostic": null,
+    "divergence": null,
+    "revisionIds": [
+      "0001",
+      "0002",
+      "0003"
+    ],
+    "latestRevisionId": "0003",
+    "refs": [],
+    "uncommitted": true
+  },
+  "plan": {
+    "issueId": "issue-autodecompose-uplift",
+    "revisionId": "0003",
+    "revision": {
+      "version": 1,
+      "issueId": "issue-autodecompose-uplift",
+      "revisionId": "0003",
+      "supersedes": "0002",
+      "createdAt": "2026-08-21T14:37:08.937Z",
+      "contentSha256": "788e37945465149602daf432fd49a6561bbfff779607b08c92825066f9b1dc6d",
+      "nodes": [
+        {
+          "nodeId": "issue-autodecompose-graph",
+          "kind": "change",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "changeInstanceId": "ci_96db06e16c62383fc2c4218874cb00e6e2a93a9b3c5415206bb8c568d267ab42",
+          "changeAlias": "issue-autodecompose-graph",
+          "suggestedPipeline": "small-feature",
+          "rationale": "promoted from intent to Change now that the child's committed Store instance exists (seeded archived evidence, repo archive 15b60a63); its work shipped and archived, so no dependent waits on it",
+          "dependsOn": []
+        },
+        {
+          "nodeId": "issue-autodecompose-review-flow",
+          "kind": "intent",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "summary": "Human review, revision, and confirm-to-start flow over decomposition revisions",
+          "suggestedPipeline": "small-feature",
+          "rationale": "0002's uncertainty is decided — a fresh node's launch contract adopts the node's recorded suggestedPipeline when no --pipeline is given, resolved as flag over run-state recording over suggestion, with the contract naming which source supplied the pipeline",
+          "dependsOn": []
+        }
+      ]
+    },
+    "diagnostic": null,
+    "readiness": {
+      "nodes": [
+        {
+          "node": {
+            "nodeId": "issue-autodecompose-graph",
+            "kind": "change",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "changeInstanceId": "ci_96db06e16c62383fc2c4218874cb00e6e2a93a9b3c5415206bb8c568d267ab42",
+            "changeAlias": "issue-autodecompose-graph",
+            "suggestedPipeline": "small-feature",
+            "rationale": "promoted from intent to Change now that the child's committed Store instance exists (seeded archived evidence, repo archive 15b60a63); its work shipped and archived, so no dependent waits on it",
+            "dependsOn": []
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "2026-08-21-issue-autodecompose-graph",
+                "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+                "targetLineId": "line-0.2",
+                "foundAtRef": "refs/heads/main",
+                "archived": true
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": true
+          },
+          "readiness": "in-progress",
+          "blockedBy": []
+        },
+        {
+          "node": {
+            "nodeId": "issue-autodecompose-review-flow",
+            "kind": "intent",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "summary": "Human review, revision, and confirm-to-start flow over decomposition revisions",
+            "suggestedPipeline": "small-feature",
+            "rationale": "0002's uncertainty is decided — a fresh node's launch contract adopts the node's recorded suggestedPipeline when no --pipeline is given, resolved as flag over run-state recording over suggestion, with the contract naming which source supplied the pipeline",
+            "dependsOn": []
+          },
+          "resolution": {
+            "status": "not-created",
+            "claimants": [],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": false
+          },
+          "readiness": "not-started",
+          "blockedBy": []
+        }
+      ],
+      "readyToResolve": false
+    },
+    "unsearchedRefs": [],
+    "problems": [],
+    "complete": true
+  },
+  "status": {
+    "phase": "ready",
+    "health": "healthy",
+    "progress": {
+      "completed": 0,
+      "total": 1
+    },
+    "nodes": [
+      {
+        "nodeId": "issue-autodecompose-graph",
+        "kind": "change",
+        "alias": "2026-08-21-issue-autodecompose-graph",
+        "observation": "not-started",
+        "diagnostic": null,
+        "runStatePath": null,
+        "locatedBy": null,
+        "attribution": {
+          "pipeline": null,
+          "sessions": [],
+          "evidenceLocator": null
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": "required",
+        "reason": null,
+        "suggestedPipeline": "small-feature",
+        "rationale": "promoted from intent to Change now that the child's committed Store instance exists (seeded archived evidence, repo archive 15b60a63); its work shipped and archived, so no dependent waits on it",
+        "uncertainty": null,
+        "blockedBy": []
+      },
+      {
+        "nodeId": "issue-autodecompose-review-flow",
+        "kind": "intent",
+        "alias": null,
+        "observation": "not-started",
+        "diagnostic": null,
+        "runStatePath": null,
+        "locatedBy": null,
+        "attribution": {
+          "pipeline": null,
+          "sessions": [],
+          "evidenceLocator": null
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": "required",
+        "reason": null,
+        "suggestedPipeline": "small-feature",
+        "rationale": "0002's uncertainty is decided — a fresh node's launch contract adopts the node's recorded suggestedPipeline when no --pipeline is given, resolved as flag over run-state recording over suggestion, with the contract naming which source supplied the pipeline",
+        "uncertainty": null,
+        "blockedBy": []
+      }
+    ],
+    "delta": {
+      "revisionId": "0003",
+      "supersedes": "0002",
+      "added": [],
+      "removed": [],
+      "retargeted": [],
+      "edgeChanges": [
+        {
+          "nodeId": "issue-autodecompose-review-flow",
+          "addedDependencies": [],
+          "removedDependencies": [
+            "issue-autodecompose-graph"
+          ]
+        }
+      ],
+      "lifecycleChanges": [],
+      "suggestionChanges": []
+    },
+    "projects": [
+      {
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "alias": "rasen",
+        "nodeIds": [
+          "issue-autodecompose-graph",
+          "issue-autodecompose-review-flow"
+        ],
+        "progress": {
+          "completed": 0,
+          "total": 1
+        }
+      }
+    ],
+    "problems": [],
+    "runStateVisibility": {
+      "kind": "execution-root",
+      "executionRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer"
+    },
+    "complete": true,
+    "acceptance": {
+      "conditions": {
+        "revision": null,
+        "revisionId": null,
+        "diagnostic": null,
+        "path": null
+      },
+      "gate": {
+        "eligible": false,
+        "refusalCode": "issue_accept_conditions_required",
+        "blockers": [],
+        "message": "the Issue has no readable acceptance conditions — no acceptance conditions revision exists for it.",
+        "exclusions": [],
+        "optionalNodes": []
+      },
+      "record": null
+    }
+  },
+  "complete": true,
+  "unsearchedRefs": [],
+  "problems": []
+}

@@ -1,0 +1,36 @@
+# Close Leg 3 — site node terminal, observed from the site checkout (2026-08-21)
+
+```
+$ cd E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-site
+$ node <issue-layer worktree>\bin\rasen.js store issue show issue-cross-project-execution --store issue-registry
+  Issue issue-cross-project-execution
+    state: open
+    title: Issue layer Phase 3: one Issue across member projects
+    revisions: 0001, 0002
+    latest plan: revision 0002
+    plan digest: d9d4d63ec4cfe8b6583c916ae2b47505f03e5b28beecd9e4ee1c94ff8a9f1db8
+    status:
+      phase: active
+      health: healthy
+      progress: 1/4
+      run-state: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-site
+      nodes:
+        project rasen-site (6ca78b98-777f-45bc-8d9b-b84c34e1a531): 1/1
+        document-multi-project-issues change 6ca78b98-777f-45bc-8d9b-b84c34e1a531 document-multi-project-issues — run-terminal (blockedBy issue-project-grouped-views@e2ee72ed-04a1-4395-86aa-7e77d2b83ec7: not-started, no local run-state)
+          pipeline: manual (located by execution-root)
+          evidence: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-site\rasen\changes\document-multi-project-issues\evidence
+        project rasen (e2ee72ed-04a1-4395-86aa-7e77d2b83ec7): 0/3
+        issue-cross-project-gating change e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 2026-08-20-issue-cross-project-gating — not-started (blockedBy issue-target-project-binding@e2ee72ed-04a1-4395-86aa-7e77d2b83ec7: not-started, no local run-state)
+        issue-project-grouped-views change e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 2026-08-20-issue-project-grouped-views — not-started (blockedBy issue-cross-project-gating@e2ee72ed-04a1-4395-86aa-7e77d2b83ec7: not-started, no local run-state)
+        issue-target-project-binding change e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 2026-08-20-issue-target-project-binding — not-started
+
+    acceptance:
+      conditions: (none published)
+      gate: not eligible — the Issue has no readable acceptance conditions — no acceptance conditions revision exists for it.
+      record: (not accepted)
+```
+
+Site lane 1/1 run-terminal (pipeline: manual, located by execution-root = the site repo).
+The rasen lane reads not-started HERE because the engine children's run-state lives in
+the issue-layer worktree's .rasen/ — the documented machine-local visibility split:
+each machine observes the run-state it holds; the Store holds plan + evidence.

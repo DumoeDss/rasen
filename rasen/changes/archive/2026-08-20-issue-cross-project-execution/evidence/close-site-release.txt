@@ -1,0 +1,76 @@
+# Close Leg 3 — site-node gate refusal, then release
+
+Issued from the issue-layer worktree (revision 0002 published, g-003 mirror written).
+
+## 1. Refusal BEFORE the gate released (fresh, at revision 0002)
+
+```
+$ node bin/rasen.js store issue start issue-cross-project-execution --node document-multi-project-issues --store issue-registry --json
+{
+  "issue": null,
+  "binding": null,
+  "status": [
+    {
+      "severity": "error",
+      "code": "issue_start_node_not_runnable",
+      "message": "Node 'document-multi-project-issues' is not runnable: the work of issue-project-grouped-views@e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 (not-started, no local run-state) is not complete.",
+      "fix": "Complete the named dependencies’ work (terminal run-state or finalized evidence), then re-run."
+    }
+  ]
+}
+```
+(exit 1 — full receipt: evidence/close-site-refusal-at-0002.json; the site node's dependency
+issue-project-grouped-views was then recorded terminal via the dated mirror, unblocking it.)
+
+## 2. Machine-registry prerequisite
+
+After the gate released, start refused once with issue_start_unprepared: the site checkout
+had no machine project-registry entry (no read-only CLI command registers an already-
+configured checkout; touchProjectRegistry is refresh-only). Fixed by performing bootstrap's
+own idempotent Step-2 registration via the shipped dist helper, derived from the checkout's
+committed config — ephemera/register-site-checkout.mjs, output:
+
+```json
+  {
+    "registered": {
+      "entry": {
+        "projectId": "6ca78b98-777f-45bc-8d9b-b84c34e1a531",
+        "name": "rasen-site",
+        "mode": "in-repo",
+        "home": "rasen-site-d15b8698",
+        "lastSeen": "2026-08-20T17:42:09.419Z"
+      },
+      "canonicalPath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-site"
+    }
+  }
+```
+(full intermediate refusal: evidence/close-site-release-start.json)
+
+## 3. Release AFTER
+
+```
+$ node bin/rasen.js store issue start issue-cross-project-execution --node document-multi-project-issues --store issue-registry --json
+  {
+    "issueId": "issue-cross-project-execution",
+    "binding": {
+      "issueId": "issue-cross-project-execution",
+      "nodeId": "document-multi-project-issues",
+      "changeInstanceId": "ci_4950d004af6e4085c862933dc877396e904522b71d50d07573e4dfe68b8d72c4",
+      "alias": "document-multi-project-issues",
+      "projectId": "6ca78b98-777f-45bc-8d9b-b84c34e1a531",
+      "targetLineId": "line-0.2",
+      "launch": {
+        "form": "project-checkout",
+        "cwd": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-site",
+        "attachedRoots": [
+          "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store"
+        ]
+      },
+      "pipeline": null,
+      "mode": "fresh",
+      "runStatePath": null,
+      "locatedBy": null
+    }
+  }
+```
+(exit 0 — Route 2 member-project checkout: cwd = the site repo, store planning root attached.)

@@ -1,0 +1,145 @@
+{
+  "allOk": true,
+  "results": [
+    {
+      "name": "the first dispatch half (S -> b1) offers nothing",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the first barrier half (b1 -> T) offers nothing (one clean branch)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the first chain drew exactly two edges",
+      "ok": true,
+      "detail": "[\"atomic-stage:done->atomic-stage-2:input\",\"atomic-stage-2:done->finish:input\"]"
+    },
+    {
+      "name": "the second dispatch half (S -> b2) still offers nothing",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the completing reconverge (b2 -> T) surfaces the non-blocking offer",
+      "ok": true,
+      "detail": "Detected a parallel frontier: atomic-stage fans out to 2 branches that reconverge at finish.Run in parallel×"
+    },
+    {
+      "name": "the offer action is labeled \"Run in parallel\"",
+      "ok": true,
+      "detail": "Run in parallel"
+    },
+    {
+      "name": "review shows the read-only route S -> fan-out -> 2 branches -> barrier -> T",
+      "ok": true,
+      "detail": "atomic-stage → fan-out → 2 branches → barrier → finish"
+    },
+    {
+      "name": "both branches default required (createParallelPair own default)",
+      "ok": true,
+      "detail": "[{\"id\":\"atomic-stage-2\",\"checked\":true},{\"id\":\"atomic-stage-3\",\"checked\":true}]"
+    },
+    {
+      "name": "review defaults the cap to max(1, min(3, 2)) = 2",
+      "ok": true,
+      "detail": "2"
+    },
+    {
+      "name": "review defaults the budget to max(1, 2) = 2",
+      "ok": true,
+      "detail": "2"
+    },
+    {
+      "name": "review defaults proceed to the first definition outcome",
+      "ok": true,
+      "detail": "done"
+    },
+    {
+      "name": "review defaults failed to the second definition outcome",
+      "ok": true,
+      "detail": "archived"
+    },
+    {
+      "name": "the flipped branch reads optional in the review",
+      "ok": true,
+      "detail": "false"
+    },
+    {
+      "name": "success toast names the frontier synthesis",
+      "ok": true,
+      "detail": "Parallel frontier created over 2 branches."
+    },
+    {
+      "name": "review dialog closed after confirm",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "root graph keeps S, both branches, T, and adds fan-out + join",
+      "ok": true,
+      "detail": "[\"atomic-stage\",\"atomic-stage-2\",\"atomic-stage-3\",\"finish\",\"fan-out\",\"join\"]"
+    },
+    {
+      "name": "the fan-out IS the selection after confirm",
+      "ok": true,
+      "detail": "[\"fan-out\"]"
+    },
+    {
+      "name": "the fan-out node panel is open",
+      "ok": true,
+      "detail": "fan-out"
+    },
+    {
+      "name": "the drawn sandwich is gone — no S->b or b->T edge survives",
+      "ok": true,
+      "detail": "[\"atomic-stage:done->fan-out:input\",\"fan-out:atomic-stage-2->atomic-stage-2:input\",\"atomic-stage-2:done->join:atomic-stage-2\",\"fan-out:atomic-stage-3->atomic-stage-3:input\",\"atomic-stage-3:done->join:atomic-stage-3\",\"join:done->finish:input\"]"
+    },
+    {
+      "name": "the four wiring families are present with exact endpoint/port ids",
+      "ok": true,
+      "detail": "[\"atomic-stage:done->fan-out:input\",\"fan-out:atomic-stage-2->atomic-stage-2:input\",\"atomic-stage-2:done->join:atomic-stage-2\",\"fan-out:atomic-stage-3->atomic-stage-3:input\",\"atomic-stage-3:done->join:atomic-stage-3\",\"join:done->finish:input\"]"
+    },
+    {
+      "name": "the fan-out renders one dispatch handle named by the branch id",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the join renders one barrier handle named by the branch id",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the review's optional flip landed in the pair's contract (required: b1 only)",
+      "ok": true,
+      "detail": "required: atomic-stage-2"
+    },
+    {
+      "name": "the panel edits membership metadata (b2 back to required)",
+      "ok": true,
+      "detail": "required: atomic-stage-2, atomic-stage-3"
+    },
+    {
+      "name": "removing the branch from the pair drops its dispatch handle",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "re-adding the branch restores its dispatch handle",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the palette gesture mints the second pair beside the inferred one",
+      "ok": true,
+      "detail": "[\"atomic-stage\",\"atomic-stage-2\",\"atomic-stage-3\",\"finish\",\"fan-out\",\"join\",\"fan-out-2\",\"join-2\"]"
+    },
+    {
+      "name": "tab is alive after the full pass (no listener freeze)",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

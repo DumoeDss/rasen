@@ -1,0 +1,22 @@
+{
+  "change": "canvas-loop-ux",
+  "archivedAt": "2026-08-17T17:42:29.207Z",
+  "codeCommit": "112c31fb4acdcf8289f6f4f3ac585f22a0d36f73",
+  "planningBranch": null,
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "a145eb3d8e79a98b785e1fddc3f71a8313385e24e64ce038063c5fd8e7484f56"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [
+    "auto-run.json",
+    "portfolio-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

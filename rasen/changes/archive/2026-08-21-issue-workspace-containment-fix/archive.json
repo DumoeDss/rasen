@@ -1,0 +1,45 @@
+{
+  "change": "issue-workspace-containment-fix",
+  "archivedAt": "2026-08-21T06:38:19.876Z",
+  "codeCommit": "d3f60e8c517241fc0145cebe6dc188ba7e3f936f",
+  "planningBranch": "feat/issue-phase4",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "8b1424bd39e140e34fd1aa9c0d3b5c87d204cfa2ba3c2b50ac789b50ea49b136"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "386171c15f97b5d9cb5dd3b39825ee711c82930536f86c7736b970065c42bd8e"
+    },
+    {
+      "path": "evidence/temp-pair-apply-main-checkout-state.txt",
+      "sha256": "892baec898cea8827b47af0f5f41782e0d99de7666efa1cb0eb45e0a35b56f72"
+    },
+    {
+      "path": "evidence/temp-pair-apply.json",
+      "sha256": "c8904797136e9da6fff8364034110cff3b835c89da956dc9732a03c060987ced"
+    },
+    {
+      "path": "evidence/temp-pair-main-checkout-plan.json",
+      "sha256": "5025c41bf1ecc1f9c27b9710490bf6eed51675f04641f3262658b3e821bfbd48"
+    },
+    {
+      "path": "evidence/temp-pair-nested-refusal.json",
+      "sha256": "711d579e9568222d79d843517a9dfbf5bbeaf57e1da40c98db8c5948ed4d91ea"
+    },
+    {
+      "path": "evidence/temp-pair-note.md",
+      "sha256": "868a85107b62b1faa3bd67b8a13d4b55ea5c747db7375f03f55ce5a1d2b2d7e9"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

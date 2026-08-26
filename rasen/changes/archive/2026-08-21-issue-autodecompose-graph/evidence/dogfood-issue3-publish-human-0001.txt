@@ -1,0 +1,8 @@
+Issue issue-autodecompose-uplift: Execution Plan revision 0001
+  supersedes: (none)
+  nodes: 2
+  source: decomposition — 2 intent nodes, document E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer\rasen\changes\issue-autodecompose-graph\evidence\issue-3-decomposition.yaml
+
+  Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing.
+    git -C E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-issue-store add rasen/issues/issue-autodecompose-uplift/plans/0001.yaml
+    git -C E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-issue-store commit -m "chore(store): publish execution plan issue-autodecompose-uplift/0001"

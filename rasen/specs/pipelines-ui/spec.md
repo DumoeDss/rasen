@@ -699,3 +699,653 @@ have restored is instead silently discarded.
 - **WHEN** the user clears the condition on a branch whose other outcome is not connected
 - **THEN** the branch point is removed and the original connection from A to B is restored
 
+### Requirement: Canvas selection is a set
+
+The canvas editor SHALL treat selection as a set of nodes and connections rather than a single
+chosen element. Holding Shift and dragging on the canvas SHALL draw a selection box that selects
+every node and connection the box overlaps — full containment is NOT required, and a box that
+clips any part of a node's bounds selects that node; clicking with the platform multi-select key
+held (Control on Windows and Linux, Command on macOS) SHALL add one element to the selection or
+remove it if already selected; a plain click on an element SHALL leave exactly that element
+selected; clicking empty canvas SHALL leave nothing selected. Nodes and connections SHALL be
+selectable together in one selection.
+
+Panels SHALL follow the selection's shape. When exactly one node is selected, that node's
+existing properties panel SHALL open and behave as it does today; when exactly one connection
+is selected, the connection's existing panel SHALL open and behave as it does today. When two
+or more elements are selected, the editor SHALL present a selection summary stating how many
+nodes and how many connections are selected, naming the selected node kinds, and offering a
+delete action for the selection. Selecting an issue in the issues list SHALL leave exactly the
+one element the issue points at selected, opening its panel.
+
+Deleting a multi-selection SHALL remove every selected node the editor permits to delete, each
+with the same reference cleanup a single delete performs. A parallel pair SHALL be treated as
+one unit in deletion: a selected fan-out SHALL be removed together with its paired barrier. A
+selected barrier whose fan-out is not selected SHALL be refused, as SHALL a stage still
+targeted by an approval gate and a parallel pair's only member. Every refusal SHALL be
+reported in a single summary message naming each refused element and why, presented once for
+the whole deletion. Elements removed by any edit SHALL leave the selection, and the selection
+SHALL otherwise survive edits: after adding a node or editing a contract, the elements still
+present SHALL remain selected (their positions may re-layout).
+
+The same set selection SHALL apply to the v1 stage editor: selecting several stage cards and
+deleting SHALL remove all of them together with every dependency reference to them.
+
+#### Scenario: Box-select gathers many nodes
+
+- **WHEN** the user holds Shift and drags a selection box around four nodes in the v2 editor
+- **THEN** all four nodes are selected together and the selection summary reports four nodes
+
+#### Scenario: A clipped node still selects
+
+- **WHEN** the user holds Shift and drags a selection box that fully covers three nodes but enters only the outer ten pixels of a fourth node's left edge
+- **THEN** all four nodes are selected — overlap, not full containment, is the rule
+
+#### Scenario: A single-node rectangle selects its node
+
+- **WHEN** the user holds Shift and drags a small selection box that overlaps exactly one node without fully containing it
+- **THEN** that node is selected and the selection summary reports one node
+
+#### Scenario: Multi-select key augments the selection
+
+- **WHEN** two nodes are selected and the user clicks a third node while holding the platform multi-select key
+- **THEN** the selection grows to three nodes, and clicking an already-selected node with the key held removes it
+
+#### Scenario: Nodes and connections select together
+
+- **WHEN** a selection box encloses two nodes and the connection between them
+- **THEN** the selection summary reports two nodes and one connection
+
+#### Scenario: A single selection keeps today's panels
+
+- **WHEN** exactly one node is selected
+- **THEN** that node's properties panel opens exactly as before this change, and likewise exactly one selected connection opens the connection panel
+
+#### Scenario: Multi-delete removes the whole selection
+
+- **WHEN** three stages are selected and the user deletes the selection from the summary panel
+- **THEN** all three nodes are removed and every connection and member reference to them is cleaned up
+
+#### Scenario: A fan-out deletes with its barrier
+
+- **WHEN** the selection contains a fan-out whose barrier is not selected, and the user deletes the selection
+- **THEN** the fan-out and its paired barrier are both removed together with their connections
+
+#### Scenario: Refusals arrive as one summary
+
+- **WHEN** the selection contains two plain stages, a barrier whose fan-out is not selected, and a stage targeted by an approval gate, and the user deletes the selection
+- **THEN** the two plain stages are removed while the barrier and the gate-targeted stage remain
+- **AND** exactly one message names the barrier and the gate-targeted stage with the reason each was refused
+
+#### Scenario: Selection survives a non-destructive edit
+
+- **WHEN** two nodes are selected and the user adds another node from the palette
+- **THEN** the two previously selected nodes are still selected after the new node appears
+
+#### Scenario: An issue selects exactly its target
+
+- **WHEN** several nodes are selected and the user clicks an issue in the issues list that maps to one stage
+- **THEN** that stage becomes the only selected element and its properties panel opens
+
+#### Scenario: v1 stages delete as a set
+
+- **WHEN** the user box-selects three stage cards in a v1 pipeline and deletes the selection
+- **THEN** all three stages are removed together with every dependency reference to them
+
+### Requirement: The canvas packages a selection into a reusable declaration
+
+In the v2 editor, a multi-selection of nodes SHALL be offered a package-into-reusable-block
+action that moves the selected nodes into a new Custom Composite declaration and replaces them
+in the root graph with one reference to that declaration. The editor SHALL derive the cut from
+the draft itself: each root connection entering the selected set from outside SHALL become one
+declaration input port (one port per distinct target stage and port), each root connection
+leaving the selected set SHALL become one declaration outcome (one outcome per distinct source
+stage and port, defaulting to the source stage's name), connections with both ends inside the
+set SHALL move into the declaration body unchanged, and the crossing root connections SHALL be
+rewired onto the reference's corresponding ports. When no connection leaves the set, the
+declaration SHALL carry a single default outcome. Moved stages and moved connections SHALL keep
+their existing fields, and the editor SHALL NOT add runtime-ownership metadata to any node it
+moves or creates.
+
+Before the change applies, the editor SHALL present the derived declaration for review: the
+author names the declaration id and may edit the derived input, artifact, and outcome rows,
+with the same blank and uniqueness rules the declarations editor enforces. Confirming SHALL
+leave the new reference selected, and the declaration SHALL appear in the declarations panel
+as a custom row whose insert action works exactly as before.
+
+The action SHALL be offered only for selections the model can package, and the editor SHALL
+name every blocker otherwise: a selection containing anything other than plain stages SHALL be
+refused (only plain stages may live in a declaration body), as SHALL a selection containing a
+stage that an approval gate outside the set targets, that an outside fan-out or barrier counts
+as a parallel member or input, or that a consultation binding references.
+
+#### Scenario: A selected pair becomes one reusable block
+
+- **WHEN** the user box-selects two connected stages that sit between an upstream stage and a finish, and confirms the package action with the derived defaults
+- **THEN** a custom declaration exists whose body holds the two stages and their internal connection, with one derived input and one derived outcome
+- **AND** the root graph shows one reference to that declaration, wired from the upstream stage and to the finish, and the reference is the selection
+
+#### Scenario: The review step edits the derived contract
+
+- **WHEN** the package review is open and the author renames an outcome and adds an artifact row before confirming
+- **THEN** the created declaration carries the edited outcome and artifact, and the rewired root connection uses the edited outcome as its source port
+
+#### Scenario: Mixed or non-stage selections are refused with the reason
+
+- **WHEN** the selection contains a fan-out or a finish alongside plain stages
+- **THEN** the package action reports that only plain stages can be packaged, and the draft is unchanged
+
+#### Scenario: A stage under outside structural references is refused
+
+- **WHEN** the selection contains a stage an approval gate targets, or a stage counted as a parallel member by an outside fan-out, or a stage a consultation binding references
+- **THEN** the package action names that stage and the blocker, and the draft is unchanged
+
+#### Scenario: The extracted declaration stays reusable
+
+- **WHEN** a selection has been packaged into a declaration and the author uses that declaration row's insert action
+- **THEN** a second reference to the same declaration is added to the root graph
+
+#### Scenario: Definition content survives the packaging
+
+- **WHEN** a packaged stage carried unedited execution settings and a crossing connection carried extension fields
+- **THEN** the moved stage keeps its settings verbatim inside the declaration body and the rewired connection keeps its extension fields with only its endpoints and identity rewritten
+- **AND** no node in the resulting definition carries runtime-ownership metadata it did not carry before
+
+### Requirement: The canvas turns a drawn back-edge into a bounded loop
+
+In the v2 editor, when the author draws a connection that would close a cycle, the editor SHALL
+recognize the drawn edge as loop intent and offer to turn it into a bounded loop, instead of
+refusing it outright. The offered loop SHALL enclose the region the edge closes: the drawn
+edge's two endpoints and every node on a path between them. The editor SHALL present a review
+before anything changes: the enclosed region, the derived declaration contract (entry input rows
+typed as control ports, and outcome rows naming the terminal outcomes the enclosed body can
+actually produce), the loop's maximum iterations, and the definition outcome the loop exits to.
+Declining the review SHALL leave the draft exactly as it was, with the same refusal explanation
+as before this change.
+
+Confirming SHALL move the enclosed region into a new Custom Composite declaration (the same
+extraction the package-into-block action performs), synthesize one bounded-loop node pointing
+at that declaration carrying the author's iteration bound and exit mapping, and rewire every
+root connection that crossed the region onto the loop's corresponding ports: incoming crossings
+onto the derived entry rows, outgoing crossings onto the loop's exit outcome. Confirming SHALL
+also declare, in the definition's outcome contract, every outcome the loop can emit as an exit
+that the definition does not already declare. The chosen exit outcome SHALL be a declared
+definition outcome; a confirm naming an undeclared outcome SHALL be refused with a named
+message. The drawn edge SHALL NOT appear as a root connection anywhere in the result, the
+synthesized loop SHALL be the
+selection, and no node the editor creates or moves in the result SHALL carry runtime-ownership
+metadata it did not carry before.
+
+A region the extraction rules refuse SHALL be refused here too, naming the same blockers: only
+plain stages may be enclosed, and no outside approval gate, parallel member listing, or
+consultation binding may reference an enclosed stage. A body stage whose capability is missing
+from the catalog SHALL likewise be refused in the review, naming the stage, because the loop's
+exit outcomes cannot be derived for it. The explicit loop gesture on the palette SHALL keep
+working unchanged.
+
+#### Scenario: A drawn back-edge offers a loop
+
+- **WHEN** the author draws a connection from a downstream stage back to an upstream stage that already reaches it
+- **THEN** the loop review opens showing the two endpoints and the stages between them, with the iteration bound and exit outcome ready to adjust
+
+- **AND** no connection has been added to the draft
+
+#### Scenario: Declining keeps the refusal outcome
+
+- **WHEN** the review is open and the author cancels
+- **THEN** the draft is unchanged and the cycle-refusal message stands, exactly as before this change
+
+#### Scenario: Confirming synthesizes the loop
+
+- **WHEN** the author confirms the review with three stages enclosed between an external upstream stage and an external finish
+- **THEN** a custom declaration holds the three stages, one bounded-loop node references it with the author's iteration bound, the incoming external connection is rewired onto the derived entry row, the outgoing external connection is rewired onto the loop's exit outcome, and the loop is the selection
+- **AND** the definition's outcome contract has gained every outcome the loop can emit as an exit that it did not already declare
+- **AND** the drawn back-edge exists nowhere in the root graph
+
+#### Scenario: The exit mapping follows the author's choice
+
+- **WHEN** the review's exit outcome is set to the definition's second outcome and confirmed
+- **THEN** the loop's exit action resolves to that outcome, and the loop remains editable afterwards through its properties panel as before
+
+#### Scenario: An undeclared exit outcome is refused
+
+- **WHEN** a confirm names an exit outcome the definition does not declare
+- **THEN** the model refuses the synthesis with a message naming the outcome, and the draft is unchanged
+
+#### Scenario: An unextractable region is refused with its blockers
+
+- **WHEN** the enclosed region contains a fan-out or a stage an outside approval gate targets
+- **THEN** the review reports the named blockers and offers no confirm, and the draft is unchanged
+
+#### Scenario: A body capability missing from the catalog is refused in the review
+
+- **WHEN** an enclosed stage's capability is not in the catalog
+- **THEN** the review reports a refusal naming that stage and offers no confirm, and the draft is unchanged
+
+#### Scenario: The explicit loop gesture still works
+
+- **WHEN** the author uses the palette's loop gesture after this change
+- **THEN** it creates a bounded loop over its declaration exactly as it did before, and the same synthesis declares the loop's exit outcomes in the definition contract when absent
+
+#### Scenario: Content survives the synthesis
+
+- **WHEN** an enclosed stage carried unedited execution settings and a crossing connection carried extension fields
+- **THEN** the moved stage keeps its settings verbatim inside the declaration body and the rewired connection keeps its extension fields with only its endpoints and identity rewritten
+- **AND** neither the synthesized loop nor any moved node carries runtime-ownership metadata it did not carry before
+
+### Requirement: The canvas offers a parallel frontier when branches reconverge
+
+In the v2 editor, the editor SHALL offer to turn a drawn parallel frontier into a parallel
+fan-out and barrier: the shape is one source whose outgoing edges reach two or more branch
+stages that each connect onward to one common target. The offer SHALL be non-blocking and
+SHALL appear when a successfully drawn connection completes the shape; declining or
+dismissing it SHALL change nothing (the drawn connections are legal and remain as drawn).
+
+A branch stage SHALL count toward the frontier only when its sole incoming connection is from
+the source and its sole outgoing connection is to the common target; a shape with fewer than
+two such branches SHALL offer nothing. Before anything changes, the editor SHALL present a
+review: the branch stages with a required-versus-optional choice each, the concurrency cap,
+the budget, and the proceed and failed outcomes picked from the definition's outcomes, with
+the source and target shown read-only.
+
+Confirming SHALL remove the drawn branch connections (they SHALL NOT survive alongside the
+synthesized structure) and replace them with the parallel pair's wiring: the source connects
+to the fan-out, the fan-out dispatches to every branch stage, the branch stages feed the
+barrier, and the barrier connects to the target. The fan-out SHALL be selected after the
+change, and the pair SHALL remain editable through its properties panel exactly as an
+explicitly authored one. No node the editor creates in the result SHALL carry runtime-ownership
+metadata. The explicit parallel gesture on the palette SHALL keep working unchanged.
+
+#### Scenario: A completed reconverge offers the frontier
+
+- **WHEN** the author has drawn source to two branch stages and both branches onward to one target, and then the completing connection lands
+- **THEN** a non-blocking offer to run the branches in parallel appears
+- **AND** dismissing it leaves every drawn connection in place
+
+#### Scenario: Two branches are the minimum
+
+- **WHEN** the source reaches only one branch stage that connects to the target
+- **THEN** no offer is made
+
+#### Scenario: A shared branch does not count
+
+- **WHEN** a branch stage also receives a connection from elsewhere or sends one elsewhere besides the target
+- **THEN** that stage is not part of the offered frontier, and the offer appears only if at least two clean branches remain
+
+#### Scenario: The review sets the contract
+
+- **WHEN** the review is open and the author marks one branch optional, sets the cap to 2 and the budget to 4, and picks the definition's second outcome for proceed
+- **THEN** confirming creates the fan-out and barrier with exactly that membership metadata, cap, budget, and outcome mapping
+
+#### Scenario: Confirming consumes the drawn branch connections
+
+- **WHEN** the author confirms the review over source, two branches, and target
+- **THEN** the drawn source-to-branch and branch-to-target connections are gone from the root graph
+- **AND** the root graph instead carries source-to-fan-out, fan-out-to-branch, branch-to-barrier, and barrier-to-target connections
+- **AND** the fan-out is the selection and its properties panel is open
+
+#### Scenario: The pair stays editable and the gesture still works
+
+- **WHEN** the inferred pair exists and the author edits its membership through the properties panel, or uses the palette's parallel gesture
+- **THEN** both behave exactly as they do for an explicitly authored pair
+
+#### Scenario: Content survives the synthesis
+
+- **WHEN** a branch stage carried unedited execution settings
+- **THEN** the stage keeps its settings verbatim — only the connections around it change
+- **AND** neither the fan-out nor the barrier carries runtime-ownership metadata
+
+### Requirement: The canvas names a sink's outcome
+
+In the v2 editor, the editor SHALL recognize a terminal node: a root node with no outgoing
+connection of its own. For a selected terminal plain stage or parallel barrier, the node's
+properties panel SHALL offer to name the endpoint's outcome, presenting the definition's
+outcomes as the choice. The offer SHALL be absent for a node that has an outgoing connection
+and for other node kinds (their terminal wiring stays with the explicit gesture).
+
+Confirming SHALL append one Finish node carrying the author's chosen outcome, wired from the
+terminal node to the Finish, and the Finish SHALL be the selection afterwards. A parallel
+barrier SHALL be promoted the same way, by appending a Finish after it; the barrier itself
+SHALL never be converted (a Finish is its own kind and a barrier's outcomes are barrier
+semantics). The promoted Finish SHALL remain editable through its properties panel exactly as
+an explicitly authored one, and the explicit Finish gesture on the palette SHALL keep working
+unchanged. No node the editor creates SHALL carry runtime-ownership metadata.
+
+#### Scenario: A terminal stage offers to name its outcome
+
+- **WHEN** the author selects a plain stage that has no outgoing connection
+- **THEN** its properties panel offers the endpoint-naming section with the definition's outcomes as the choice
+
+#### Scenario: A node with an outgoing edge offers nothing
+
+- **WHEN** the author selects a stage that still connects onward
+- **THEN** the endpoint-naming section is absent
+
+#### Scenario: Confirming appends the named Finish
+
+- **WHEN** the author picks the definition's second outcome and confirms
+- **THEN** a Finish carrying that outcome exists, wired from the terminal stage, and the Finish is the selection
+- **AND** the terminal stage's own settings are unchanged
+
+#### Scenario: A parallel barrier is promoted, never converted
+
+- **WHEN** the author names the outcome of a terminal parallel barrier
+- **THEN** a Finish is appended after the barrier and wired from it, and the barrier remains a barrier with its own semantics intact
+
+#### Scenario: Other terminal kinds keep the explicit path
+
+- **WHEN** the author finishes a definition whose ending is a loop or a composite reference
+- **THEN** the endpoint-naming section is absent for it, and the palette's Finish gesture still adds a Finish the author wires themselves
+
+#### Scenario: The promoted Finish stays editable
+
+- **WHEN** the promoted Finish exists and the author changes its outcome through its properties panel
+- **THEN** the change applies exactly as it does for an explicitly authored Finish
+
+#### Scenario: Content survives the promotion
+
+- **WHEN** the terminal stage carried unedited execution settings
+- **THEN** the stage keeps its settings verbatim, and neither the Finish nor the wiring carries runtime-ownership metadata
+
+### Requirement: The canvas declares the definition's outcome contract
+
+The v2 canvas edit session SHALL let the author declare the root definition's named
+outcome contract in the definition contract panel: edit the named outcome list (adding,
+renaming, or removing entries) with the list-field idiom used for declaration outcomes,
+committing on blur. The list-field commit SHALL canonicalize the text into the trimmed,
+non-blank, deduplicated names in typed order, so a blank or duplicate entry in the text
+never reaches the contract from the list. Refusal of blank and duplicate names SHALL
+live at the contract rule site every contract write goes through (the typed input and
+artifact row edits and the single-outcome declare helper reach it): a refusal there
+SHALL surface a diagnostic and keep the previous contract. The definition's typed input
+and artifact rows SHALL remain editable in the same panel under the same refusal rules.
+Outcome pickers elsewhere on the canvas SHALL stay read-only over the declared contract:
+the loop review's exit-outcome choice and the sink endpoint offer SHALL offer exactly the
+declared outcomes and create none on their own. The loop review SHALL read the
+definition's current outcomes while it is open, and, while it is open and the definition
+declares no outcomes, SHALL offer an inline declare affordance that appends one outcome
+through the same contract rule site without closing the review. The sink endpoint offer,
+when the definition declares no outcomes, SHALL say so and SHALL offer an action that
+locates the definition contract's outcome list instead of presenting an empty choice.
+
+#### Scenario: An undeclared terminal outcome is declared from the contract panel
+
+- **WHEN** a definition whose graph produces a terminal outcome that its contract does not declare shows the corresponding issue, and the author adds that outcome to the definition contract panel's named outcome list and re-runs validation
+- **THEN** the issue is gone and no other edit was made to the definition
+
+#### Scenario: The outcome list commits on blur and canonicalizes
+
+- **WHEN** the author edits the named outcome list text and focus leaves the field
+- **THEN** the definition's outcomes equal the trimmed, non-blank, deduplicated names in typed order
+- **WHEN** the committed text contains a blank or duplicate outcome name
+- **THEN** the commit canonicalizes it away (blanks dropped, duplicates merged) and no refusal is raised, because the list-field commit never submits a blank or duplicate name to the contract rule site
+
+#### Scenario: Typed input and artifact rows stay editable
+
+- **WHEN** the author adds, renames, or removes a typed input row or an artifact row in the definition contract panel
+- **THEN** the definition contract reflects the edited rows, and a blank or duplicate row name is refused with a diagnostic
+
+#### Scenario: The loop review reads the live contract and can declare inline
+
+- **WHEN** the loop review is open and the definition declares no outcomes, and the author enters a name in the inline declare affordance and confirms it
+- **THEN** the definition gains that outcome as its single declaring transaction, the exit-outcome choice offers it, and the review stays open with its other edits intact
+- **WHEN** the inline declare name is blank
+- **THEN** the affordance's confirm action stays disabled, so a blank never reaches the contract rule site; a duplicate cannot be submitted through this affordance (it renders only while the definition declares nothing), and the rule site's own blank/duplicate refusal is the model's guarantee for every write path
+
+#### Scenario: The sink endpoint offer points at the contract when no outcomes exist
+
+- **WHEN** the selected promotable sink's endpoint offer renders while the definition declares no outcomes
+- **THEN** the offer states that no outcomes are declared and presents an action that locates the definition contract's outcome list rather than an empty outcome choice
+
+#### Scenario: Pickers offer exactly the declared outcomes
+
+- **WHEN** the definition declares one or more outcomes and the loop review or the sink endpoint offer renders
+- **THEN** their outcome choices list exactly the declared outcomes and none beyond them
+
+### Requirement: The canvas keeps the author's node placement
+
+In a v2 edit session the canvas SHALL keep the placement an author gives a node by
+dragging: after any subsequent non-destructive edit that rebuilds the flow (adding a
+node, editing a contract, declaring an outcome, wiring a connection), a dragged node
+SHALL render at the author's placement. Elements the author has not dragged (palette
+adds, synthesized references, loops, parallel pairs, inserted declaration refs) SHALL
+receive computed layout positions. The canvas SHALL capture a placement when a drag ends
+and SHALL apply it by node identity. Placement SHALL follow a node through a rename.
+When an element leaves the root graph (deletion or extraction into a declaration) the
+canvas SHALL drop its placement, and an element later added under the same id SHALL
+receive a computed layout position. The Re-layout action SHALL clear the session's
+placement memory and return every element to computed layout. Placement SHALL remain
+edit-session state: the definition payload the canvas saves SHALL carry no placement
+fields, and a fresh edit session SHALL start from computed layout.
+
+#### Scenario: A dragged node keeps its placement across a follow-up edit
+
+- **WHEN** the author drags a node in a v2 edit session and then adds another node from the palette
+- **THEN** the dragged node renders at the author's placement and the added node renders at a computed layout position
+
+#### Scenario: A dragged node keeps its placement across a contract edit
+
+- **WHEN** the author drags a node and then edits the definition contract (for example declaring an outcome) in the same session
+- **THEN** the dragged node still renders at the author's placement after the rebuild
+
+#### Scenario: Undragged elements always lay out afresh
+
+- **WHEN** the flow is rebuilt after a mutation and an element has no captured placement (palette add, synthesized reference, loop, pair, or inserted declaration ref)
+- **THEN** that element renders at its computed layout position
+
+#### Scenario: Placement follows a rename
+
+- **WHEN** the author renames a node that has a captured placement
+- **THEN** the renamed node renders at the same placement under its new identity
+
+#### Scenario: A departed element leaves no placement behind
+
+- **WHEN** a node with a captured placement leaves the root graph by deletion or by being packaged into a declaration, and an element with the same id is later added again
+- **THEN** the re-added element renders at a computed layout position, not the departed placement
+
+#### Scenario: Re-layout resets placement and the payload stays clean
+
+- **WHEN** the author presses Re-layout after dragging nodes, and then saves
+- **THEN** every element returns to computed layout, subsequent edits keep treating all elements as undragged, and the definition payload the canvas submits contains no placement fields
+
+### Requirement: The palette groups the stage vocabulary
+
+The assembly palette SHALL present the installed skill vocabulary in ordered groups: the
+common core stages first (propose, apply, review, ship, archive, in pipeline order),
+then the ordinary workflows, then the experts in their own visually distinct section,
+then the internal workflows in their own section. Within every group the palette SHALL
+preserve the catalog's own order, so the same catalog always renders the same palette.
+Grouping SHALL rest on the skill's declared workflow kind as delivered by the pipeline
+catalog, and the palette SHALL NOT infer a skill's kind from its name or any other
+heuristic. A skill the catalog delivers without a kind SHALL render in the workflows
+group. A core stage the catalog does not deliver SHALL simply not render; the palette
+SHALL NOT show a placeholder for it. Every listed skill SHALL keep its bindability
+state exactly as before grouping (a disabled skill stays listed, visibly disabled, in
+its group), and both palette renderings (the version 1 skill cards and the version 2
+Stage gesture expansion) SHALL present the same grouped order.
+
+#### Scenario: The core stages lead the palette
+
+- **WHEN** the palette renders a catalog that contains the core stage skills
+- **THEN** those five skills appear first, in pipeline order (propose, apply, review, ship, archive), ahead of every other skill
+
+#### Scenario: Experts render in their own distinct section
+
+- **WHEN** the palette renders a catalog containing expert-kind skills
+- **THEN** those skills appear in a separate, visually distinct experts section after the ordinary workflows, not interleaved with them
+
+#### Scenario: Ordinary and internal workflows keep stable order in their own sections
+
+- **WHEN** the palette renders the same catalog twice, or a catalog whose entries arrive in a different order
+- **THEN** each section's members are exactly the skills of its kind, in the catalog's own order within the section, and internal workflows appear in their own section after the experts section
+
+#### Scenario: A catalog without kind metadata still groups
+
+- **WHEN** the palette renders a catalog whose skills carry no kind field
+- **THEN** every such skill renders in the workflows section and the palette renders without error
+
+#### Scenario: Both palette branches present the same groups
+
+- **WHEN** a version 1 draft and a version 2 draft render the palette in the same space
+- **THEN** the version 1 skill cards and the version 2 Stage gesture expansion list the same skills in the same grouped order
+
+#### Scenario: Grouping never changes bindability
+
+- **WHEN** a disabled skill renders in any group
+- **THEN** it stays listed, visibly disabled, and behaves exactly as it did before grouping
+
+### Requirement: The loop carries its entry and exit
+
+The back-edge loop review SHALL derive the entry input rows and the outcome rows so the
+synthesized loop offers connectable handles and validates as minted: the entry input port for a
+side that severed no connection SHALL be named for the back-edge's target stage, and every
+derived input row SHALL be typed as the engine's control port type. The outcome rows SHALL name
+the terminal outcomes the enclosed body actually produces (its stages' capability outcomes not
+consumed by the region's internal connections), on every side alike, because the engine accepts
+only outcome rows the body can produce. Severed connections SHALL keep precedence for the ENTRY
+row names: a side whose extraction severs connections derives its entry names from the severed
+edges exactly as before, and a side that severs none falls back to the back-edge's target. The
+input rows SHALL remain editable defaults in the review, and the declaration's contract SHALL
+remain editable afterwards as before.
+
+A loop synthesized from a standalone cycle SHALL therefore render an input handle and an
+exit outcome handle, so external stages can be connected onto the loop after the
+fact and the order in which the author draws the cycle and the external connections
+SHALL not change what the loop offers.
+
+#### Scenario: A standalone cycle yields a connectable loop
+
+- **WHEN** the author wires two stages into a cycle on an otherwise empty canvas and confirms the loop review
+- **THEN** the synthesized bounded loop renders an input handle named for the back-edge's target stage and an exit outcome handle named for a terminal outcome the enclosed body produces
+- **AND** the loop body declaration carries those same rows in its contract, with the entry row typed as a control port
+
+#### Scenario: External stages connect after the loop exists
+
+- **WHEN** such a loop exists and the author draws a connection from an external stage onto the loop's entry handle, and a connection from the loop onward
+- **THEN** the connections land on the loop's entry port and exit outcome
+- **AND** Validate reports zero errors for the wired graph with no author edits to any contract
+
+#### Scenario: Severed connections keep precedence
+
+- **WHEN** the region's extraction severs connections on a side, as when external stages were wired before the cycle was closed
+- **THEN** that side's entry row names derive from the severed connections exactly as before this change
+- **AND** the outcome rows still name the body's producible terminal outcomes, deliberately superseding the earlier severed-name rows that could not validate
+
+#### Scenario: Mixed sides take their own rule
+
+- **WHEN** the region's extraction severs incoming connections but none outgoing, or severs outgoing connections but none incoming
+- **THEN** the severed side derives its entry names from the severed connections and the empty side falls back to the back-edge's target, while the outcome rows always derive from the body's producible terminal outcomes
+
+#### Scenario: The derived names stay the author's to change
+
+- **WHEN** the review is open over a standalone cycle and the author renames the derived input row before confirming
+- **THEN** the confirmed declaration and the loop's rendered handles use the author's name
+- **AND** renaming the declaration's input rows afterwards through the declaration contract editor keeps the referencing loop's exit mapping consistent
+
+#### Scenario: Outcome rows mirror what the body produces
+
+- **WHEN** the derived outcome rows are shown in the review
+- **THEN** they name exactly the body's producible terminal outcomes, and an outcome consumed by an internal connection of the region is not among them
+- **AND** an author renaming or removing an outcome row produces a definition Validate rejects, because the rows mirror what the body produces
+
+#### Scenario: A single-stage self loop gets both handles
+
+- **WHEN** the author draws a back-edge from a stage back to itself and confirms the review
+- **THEN** the synthesized loop's entry port is named for that stage, its exit outcome handle names an outcome that stage produces, and the loop is connectable like any other
+
+### Requirement: Loop synthesis needs no contract repair
+
+Loop synthesis SHALL mint defaults that the definition validator accepts with zero author
+edits to any contract, for both the drawn back-edge path and the palette loop gesture: entry
+rows typed as control ports, outcome rows the body can produce, an exit mapping that covers
+them, and every outcome the loop can emit as an exit declared in the definition's outcome
+contract by the synthesis transaction itself. The loop review SHALL show, before confirming,
+which outcome names confirming will add to the definition's outcome contract. A body stage
+whose capability is absent from the catalog SHALL be surfaced as a review refusal rather than
+as a validation error.
+
+#### Scenario: A drawn-back-edge loop validates with zero contract edits
+
+- **WHEN** the author starts from an empty canvas, wires two stages into a cycle, confirms the loop review (declaring the exit outcome it asks for), connects an external stage onto the loop's entry and the loop onward, and presses Validate
+- **THEN** the validator reports zero errors with no edits to the declaration contract or the definition contract beyond what confirming declared
+
+#### Scenario: The lifecycle exit outcome is declared at synthesis
+
+- **WHEN** a loop is synthesized and the definition's outcome contract does not declare the default lifecycle's exit outcome
+- **THEN** confirming appends that outcome to the definition's outcome contract, and a definition that already declares it is left unchanged
+
+#### Scenario: The palette gesture loop validates too
+
+- **WHEN** the author uses the palette loop gesture over a declaration whose contract matches its body graph and presses Validate
+- **THEN** the validator reports zero errors for the loop, with the same synthesis-time declarations applied
+
+#### Scenario: An underivable body is refused, not failed by Validate
+
+- **WHEN** a loop review opens over a region containing a stage whose capability is missing from the catalog
+- **THEN** the review reports the refusal naming the stage and offers no confirm, and nothing reaches Validate
+
+#### Scenario: Consumed outcomes are not terminal
+
+- **WHEN** an internal connection of the enclosed region consumes one of a body stage's outcomes
+- **THEN** that outcome is not among the derived outcome rows
+
+### Requirement: The loop shows its body
+
+The canvas SHALL let the author open a bounded loop's body inside the node itself: a
+collapsed loop renders exactly the compact card it renders today, and an expand control
+on that card SHALL turn the node into a frame showing the declaration's body stages and
+the connections between them, laid out inside the frame with the frame sized to fit
+them. The frame SHALL keep the node's identity and its external connection handles, and
+external connections SHALL be unaffected by expanding or collapsing. The same affordance
+SHALL work on a composite reference, which carries its declaration by the same
+mechanism.
+
+A loop created by a synthesis SHALL open expanded (the drawn back-edge review, the
+palette loop gesture, and the package-into-block extraction alike), so the author
+immediately sees what was captured. Expansion SHALL be edit-session state only and
+SHALL never become part of the saved definition. Selecting a body stage SHALL show its
+facts in a read-only panel naming the owning declaration; body stages SHALL NOT start
+connections, drag, or mutate the draft through any interaction. Placement of root nodes
+SHALL survive expanding and collapsing.
+
+#### Scenario: A collapsed loop keeps today's card
+
+- **WHEN** a loop node exists and has not been expanded
+- **THEN** it renders the same compact card with the same handles as before this change, and no body stages render anywhere in the flow
+
+#### Scenario: Expanding shows the body inside
+
+- **WHEN** the author clicks the expand control on a loop whose declaration body holds two stages joined by a connection
+- **THEN** the node becomes a frame sized to its content, the two body stages and the connection between them render inside the frame, and the frame keeps the loop's identity and its external handles
+
+#### Scenario: Collapsing restores the compact card
+
+- **WHEN** an expanded frame's collapse control is clicked
+- **THEN** the body stages and their connections stop rendering and the node renders the compact card again, with its handles and external connections unchanged
+
+#### Scenario: The synthesized loop opens expanded
+
+- **WHEN** the author confirms a loop review, uses the palette loop gesture, or confirms a package-into-block extraction
+- **THEN** the newly created loop or reference node renders expanded, showing the captured body immediately
+
+#### Scenario: Selecting a body stage opens a read-only panel
+
+- **WHEN** an expanded frame is showing and the author clicks one of its body stages
+- **THEN** a panel shows that stage's identity, kind, and capability, and names the declaration it lives in
+- **AND** the panel offers no edits for the body stage, and clicking the pane clears the panel
+
+#### Scenario: Body stages are inert
+
+- **WHEN** the author interacts with a body stage's handles or tries to drag a body stage
+- **THEN** no connection is started, nothing moves, and the draft is unchanged
+
+#### Scenario: A composite reference expands the same way
+
+- **WHEN** the author expands a composite reference whose declaration carries a body graph
+- **THEN** it renders as a frame with its body stages and connections inside, exactly like a loop, keeping its own identity and handles
+
+#### Scenario: Placement survives expanding and collapsing
+
+- **WHEN** the author has dragged a root node to a placement and then expands and collapses a loop elsewhere on the canvas
+- **THEN** the dragged node keeps the author's placement throughout
+

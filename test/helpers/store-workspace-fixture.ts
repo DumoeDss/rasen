@@ -50,6 +50,13 @@ export interface StoreWorkspaceFixtureOptions {
   readonly storeBranches?: readonly string[];
   /** Extra branches created in every code repository beyond `main`. */
   readonly projectBranches?: readonly string[];
+  /**
+   * Members recorded `planning: false, knowledge: true` instead of the default
+   * planning roles — the roster shape the publication gate must refuse as a
+   * target. Must be listed in `projects` too; the catalog is what differs, not
+   * the membership itself.
+   */
+  readonly knowledgeOnlyProjects?: readonly string[];
 }
 
 export interface StoreWorkspaceFixture {
@@ -163,6 +170,7 @@ export async function createStoreWorkspaceFixture(
     `version: 2\nuid: ${storeUid}\nid: ${DEFAULT_STORE_ID}\nlayoutVersion: 2\n`
   );
   for (const projectId of projects) {
+    const knowledgeOnly = options.knowledgeOnlyProjects?.includes(projectId) ?? false;
     write(
       at('.rasen-store', 'projects', `${projectId}.yaml`),
       [
@@ -170,11 +178,11 @@ export async function createStoreWorkspaceFixture(
         `projectId: ${projectId}`,
         `id: ${projectId}`,
         'roles:',
-        '  planning: true',
-        '  knowledge: false',
+        `  planning: ${!knowledgeOnly}`,
+        `  knowledge: ${knowledgeOnly}`,
         'planningBinding:',
-        '  state: bound',
-        `  boundAt: ${FIXTURE_NOW}`,
+        knowledgeOnly ? '  state: unbound' : '  state: bound',
+        ...(knowledgeOnly ? [] : [`  boundAt: ${FIXTURE_NOW}`]),
         '',
       ].join('\n')
     );

@@ -1,0 +1,16 @@
+# Focused suite summaries (implementer, 2026-08-22) — exit codes from the shell
+
+## focused-1
+ Test Files  17 passed (17)
+      Tests  99 passed (99)
+   Duration  186.03s (transform 4.15s, setup 651ms, collect 68.57s, tests 655.44s, environment 5ms, prepare 5.63s)
+
+## focused-2a
+ Test Files  7 passed (7)
+      Tests  34 passed (34)
+   Duration  236.94s (transform 3.79s, setup 307ms, collect 50.16s, tests 801.46s, environment 2ms, prepare 2.35s)
+
+## focused-2b
+ Test Files  11 passed (11)
+      Tests  144 passed (144)
+   Duration  173.32s (transform 3.97s, setup 430ms, collect 51.44s, tests 398.93s, environment 3ms, prepare 3.95s)

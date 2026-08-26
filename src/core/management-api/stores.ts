@@ -33,6 +33,20 @@ import { createStoreQueryByUid } from '../store/query/module.js';
 import { StoreIssuesModuleInstance } from '../store/issues/module.js';
 import { findPlanNodeSchemaProblems } from '../store/issues/plans.js';
 import { isStoreIssueError } from '../store/issues/diagnostics.js';
+import { StoreError } from '../store/errors.js';
+import {
+  composeChangeIssueLinks,
+  composeIssueProjectionDetail,
+  composeIssueProjectionList,
+  composeStoreAttention,
+  type ChangeIssueLinksPayload,
+  type IssueProjectionDetailPayload,
+  type IssueProjectionListPayload,
+  type IssueRunStateContext,
+  type StoreAttentionPayload,
+} from '../issue-read/index.js';
+import { parseExecutionPlanRevisionId } from '../store/planning-validation.js';
+import { listPipelines } from '../pipeline-registry/resolver.js';
 import { resolveStoreBinding } from '../store/identity.js';
 import { isValidStoreUid } from '../store/identity-types.js';
 import { parseSpaceSelector, unavailableStoreHttpResult } from '../config-api/project-addressing.js';
@@ -161,6 +175,7 @@ function statusForIssueCode(code: StoreIssueErrorCode): number {
     case 'issue_reference_scope_conflict':
     case 'issue_reference_foreign_store':
     case 'execution_plan_revision_exists':
+    case 'execution_plan_revision_conflict':
     case 'execution_plan_cycle':
     case 'execution_plan_node_duplicate':
     case 'execution_plan_digest_mismatch':
@@ -171,9 +186,33 @@ function statusForIssueCode(code: StoreIssueErrorCode): number {
   }
 }
 
+/**
+ * Refusals the Issue read composition raises that are NOT `StoreIssueError`s,
+ * mapped to their client-fault statuses.
+ *
+ * `issue_attention_unknown_issue` (the attention scan's unknown-narrowing
+ * refusal) is a plain `StoreError`: the `StoreIssueErrorCode` union is closed
+ * and this code was deliberately never added to it. Without this table the
+ * code falls through to the generic arm below and a client naming an Issue the
+ * Store does not have is told the SERVER failed — a 500 for a 404 fact. The
+ * table stays separate from `statusForIssueCode` for exactly that reason: that
+ * function's parameter type is the closed union, and widening it to keep one
+ * outsider company would blur the boundary the union draws.
+ */
+const STATUS_FOR_STORE_ERROR_CODE: Readonly<Record<string, number>> = {
+  issue_attention_unknown_issue: 404,
+};
+
 function mapThrown(error: unknown): { status: number; code: string; message: string } {
   if (isStoreIssueError(error)) {
     return { status: statusForIssueCode(error.issueCode), code: error.issueCode, message: error.message };
+  }
+  if (error instanceof StoreError) {
+    const code = error.diagnostic.code;
+    const status = STATUS_FOR_STORE_ERROR_CODE[code];
+    if (status !== undefined) {
+      return { status, code, message: error.message };
+    }
   }
   if (error instanceof Error) {
     return { status: 500, code: 'store_query_failed', message: error.message };
@@ -259,6 +298,82 @@ export async function handleStoreIssueReferences(
     };
   }
   return run(() => storeQuery.issuesReferencing({ ...baseQuery(space), changeInstanceId }));
+}
+
+// -----------------------------------------------------------------------------
+// Projection reads — the SAME composition the command line prints
+// (`issue-read-surface` design D1/D2)
+// -----------------------------------------------------------------------------
+
+/**
+ * The Store scope the projection compositions read through. `startPath` is
+ * inert for the uid-addressed query (`baseQuery`'s note), and inert again for
+ * the acceptance and widening reads the composition performs: those resolve
+ * the Store by the uid passed here and fall back to its canonical checkout
+ * when no worktree contains the start path — which is the right answer for an
+ * HTTP request, since a request has no working directory of its own.
+ */
+function projectionScope(space: ResolvedStoreSpace): { store: string; startPath: string } {
+  return { store: space.storeUid, startPath: '' };
+}
+
+/**
+ * Every Issue with its projected status. A passthrough of
+ * `composeIssueProjectionList`: no derivation, no translation, and no cached
+ * copy of any projected fact lives on this side of the call.
+ */
+export function handleStoreIssueProjections(
+  space: ResolvedStoreSpace,
+  runState: IssueRunStateContext,
+  state?: IssueState
+): Promise<StoreHandlerResult<IssueProjectionListPayload>> {
+  return run(() =>
+    composeIssueProjectionList(storeQuery, projectionScope(space), runState, state)
+  );
+}
+
+/**
+ * One Issue's whole read — status, delivery evidence, and review together,
+ * exactly the body `store issue show --json` prints. A missing `issueId` is
+ * refused with the same scope code `handleStoreIssue` refuses one with: the
+ * single-Issue read names its Issue or it is not a request.
+ */
+export async function handleStoreIssueProjection(
+  space: ResolvedStoreSpace,
+  runState: IssueRunStateContext,
+  issueId: string | undefined
+): Promise<StoreHandlerResult<IssueProjectionDetailPayload>> {
+  if (!issueId) {
+    return { ok: false, status: 400, code: 'issue_id_required', message: 'issueId is required.' };
+  }
+  return run(() =>
+    composeIssueProjectionDetail(storeQuery, projectionScope(space), runState, issueId)
+  );
+}
+
+/**
+ * The Store-wide needs-attention scan, with the CLI's `--issue` narrowing
+ * carried whole: an unknown narrowing id is REFUSED (404), never answered with
+ * an empty scan, because the empty state is a claim about scanned Issues.
+ */
+export function handleStoreIssueAttention(
+  space: ResolvedStoreSpace,
+  runState: IssueRunStateContext,
+  issueId?: string
+): Promise<StoreHandlerResult<StoreAttentionPayload>> {
+  return run(() =>
+    composeStoreAttention(storeQuery, projectionScope(space), runState, issueId)
+  );
+}
+
+/**
+ * Fresh Store-wide Change-to-Issue association read. The handler is a direct
+ * pass-through to the shared issue-read composition and keeps no index/cache.
+ */
+export function handleStoreChangeIssueLinks(
+  space: ResolvedStoreSpace
+): Promise<StoreHandlerResult<ChangeIssueLinksPayload>> {
+  return run(() => composeChangeIssueLinks(storeQuery, projectionScope(space)));
 }
 
 export async function handleStoreExecutionPlan(
@@ -454,7 +569,7 @@ export function findInvalidPlanNodes(
 
 export async function handleStorePublishPlan(
   space: ResolvedStoreSpace,
-  body: { issueId?: unknown; nodes?: unknown }
+  body: { issueId?: unknown; nodes?: unknown; expectedRevisionId?: unknown }
 ): Promise<StoreHandlerResult<ExecutionPlanResult>> {
   const issueId = typeof body.issueId === 'string' ? body.issueId : '';
   if (!issueId) {
@@ -471,6 +586,30 @@ export async function handleStorePublishPlan(
       status: 400,
       code: 'plan_nodes_required',
       message: 'Publishing an execution plan requires a "nodes" array.',
+    };
+  }
+  let expectedRevisionId: ReturnType<typeof parseExecutionPlanRevisionId> | null | undefined;
+  if (body.expectedRevisionId === null) {
+    expectedRevisionId = null;
+  } else if (body.expectedRevisionId === undefined) {
+    expectedRevisionId = undefined;
+  } else if (typeof body.expectedRevisionId === 'string') {
+    try {
+      expectedRevisionId = parseExecutionPlanRevisionId(body.expectedRevisionId);
+    } catch {
+      return {
+        ok: false,
+        status: 400,
+        code: 'execution_plan_revision_invalid',
+        message: `expectedRevisionId must be null or a canonical four-digit revision id; got ${JSON.stringify(body.expectedRevisionId)}.`,
+      };
+    }
+  } else {
+    return {
+      ok: false,
+      status: 400,
+      code: 'execution_plan_revision_invalid',
+      message: 'expectedRevisionId must be null or a canonical four-digit revision id.',
     };
   }
   const rawNodes = body.nodes as readonly {
@@ -533,6 +672,9 @@ export async function handleStorePublishPlan(
       ...writeScope(space),
       issueId,
       nodes: rawNodes as unknown as readonly ExecutionPlanNodeInput[],
+      ...(expectedRevisionId === undefined ? {} : { expectedRevisionId }),
+      pipelineKnown: (name: string) =>
+        listPipelines(space.root).includes(name.replace(/\.ya?ml$/, '')),
     })
   );
 }

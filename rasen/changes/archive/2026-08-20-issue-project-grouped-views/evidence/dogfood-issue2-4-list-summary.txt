@@ -1,0 +1,4 @@
+issue-cross-project-execution  [open]  active/healthy 2/3 [rasen-site 0/1 · rasen 2/2]  Issue layer Phase 3: one Issue across member projects
+issue-multi-change-execution  [resolved]  done/healthy 3/3 [rasen 3/3]  Issue layer Phase 2: single Issue, single project, multi-Change execution
+
+Run-state visible at: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer

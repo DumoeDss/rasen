@@ -70,10 +70,13 @@ shipped 内容: skills/ (sidecar) · pipelines/ (8 YAML) · schemas/spec-driven/
 | 模块（`src/core/`）| 一句话 |
 |---|---|
 | `store/` | Store 抽象（git-backed、registry-tracked、永久 `uid`）；`resolveStoreBinding()` 三态零写 |
+| `issue-status/` | Issue 三轴状态投影（phase×health×progress，读时推导不持久化；run-state 定位 + workspace index 加宽 + attribution） |
+| `issue-execution/` | Issue 节点启动绑定（frontier 解析 + launch contract 输出，resolve+verify 不 spawn；九码 refusal 闭集） |
 | `artifact-graph/` | 工作流 schema DAG（artifact 依赖序）+ 三层 schema 解析（project>user>package） |
 | `schemas/` | Zod 校验 schema：Spec / Requirement·Scenario / Change·Delta |
 | `validation/` | `Validator`：结构规则 + SHALL/MUST + delta 合法性 |
 | `change-metadata/` | 每 change `change.yaml`（用哪个工作流 schema + goal + initiative） |
+| `issue-status/` | Issue 三轴状态投影器（`phase×health×progress`，读时推导不持久化；import 只读复用 run-state readers + store query） |
 | `change-run/` | **最复杂**。durable Run Record 引擎（reducer/reconciler/projector 事件溯源 + 全链摘要完整性） |
 | `parsers/` | Markdown→领域对象（`MarkdownParser`/`ChangeParser`/`parseDeltaSpec`） |
 | `converters/` | spec/change → JSON 导出（`JsonConverter`，叶子模块） |

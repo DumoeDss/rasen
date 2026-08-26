@@ -1454,6 +1454,28 @@ describe('management-api pipelines endpoints (pipeline-http-api, moved by unify-
       expect(body.handoff.fractionRange).toEqual([0, 1]);
     });
 
+    it('carries each workflow kind from the registry through to every skill entry (canvas-palette-grouping)', async () => {
+      // The palette groups on this field and MUST NOT infer a kind from names,
+      // so the wire must expose the registry's own classification for EVERY
+      // entry — the per-id spot checks below pin one known member per kind
+      // (template names verified against the template sources).
+      const h = await startServer();
+      const res = await req(h.port, { method: 'GET', path: '/api/v1/pipeline-catalog', headers: authed() });
+      expect(res.status).toBe(200);
+      const body = res.json() as PipelineCatalogResponse;
+      expect(body.skills.length).toBeGreaterThan(0);
+      for (const skill of body.skills) {
+        expect(skill.kind, `skill ${skill.id} must carry a kind`).toBeDefined();
+      }
+      const kindById = new Map(body.skills.map((skill) => [skill.id, skill.kind]));
+      expect(kindById.get('rasen-propose')).toBe('task');
+      expect(kindById.get('rasen-auto')).toBe('driver');
+      expect(kindById.get('rasen-review-fix')).toBe('internal');
+      expect(kindById.get('rasen-task-loop')).toBe('internal');
+      expect(kindById.get('rasen-cso')).toBe('expert');
+      expect(kindById.get('rasen-review')).toBe('expert');
+    });
+
     it('rejects POST/PUT/DELETE with 405', async () => {
       const h = await startServer();
       for (const method of ['POST', 'PUT', 'DELETE']) {

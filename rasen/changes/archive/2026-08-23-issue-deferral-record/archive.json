@@ -1,0 +1,71 @@
+{
+  "change": "issue-deferral-record",
+  "archivedAt": "2026-08-23T13:01:26.546Z",
+  "codeCommit": "a0d4d6b292172606fda45b1f41f971244b75a167",
+  "planningBranch": "feat/issue-phase6",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/dogfood-1-publish-deferral.txt",
+      "sha256": "3becccd86ace9d6b414a587a015a301c055afc9cb7f18ba647db93866cf1eeb7"
+    },
+    {
+      "path": "evidence/dogfood-2-show.txt",
+      "sha256": "308b20361df3e600ab57548e69c263982d8275e4d4e8441118ce41b3e7596584"
+    },
+    {
+      "path": "evidence/dogfood-3-show.json",
+      "sha256": "3edb6fc4e15ee69525820a423fae25b15ba912201d99f29cdfcc0f17b7431bc4"
+    },
+    {
+      "path": "evidence/dogfood-4-ready-and-start.txt",
+      "sha256": "039510bc7cf93a9c375bf8a73b80077846f0cc6c64263a961c784adfa538d632"
+    },
+    {
+      "path": "evidence/dogfood-5-accept.txt",
+      "sha256": "f6005d2014596e8af1aa5a06e8ca4f344bb47e79d605610e33b92c25dbc065cb"
+    },
+    {
+      "path": "evidence/dogfood-6-refusals.txt",
+      "sha256": "cb9f92429d3f9953427bb35128aea71c3466dff63441287681bf9f97ba27b940"
+    },
+    {
+      "path": "evidence/dogfood-receipts-summary.md",
+      "sha256": "2e9076074b90d3f2d23fca92be7e9493b78cb9c235605012c5502020bf7dda1f"
+    },
+    {
+      "path": "evidence/readonly-1-cross-project-replanning.txt",
+      "sha256": "5414c535a36155289251ca5d7afa643d98779b96d20d1b827c2f8fdb3b169177"
+    },
+    {
+      "path": "evidence/readonly-2-cross-project-replanning.json",
+      "sha256": "97f354db54a2fb3790cb3d293a52489454220913e5e43ce26ac47a19cd555875"
+    },
+    {
+      "path": "evidence/readonly-3-autodecompose-uplift.txt",
+      "sha256": "ac632cf2270573f8e5a60f82b9147eebc8bd91090a70feec463477782710c5b1"
+    },
+    {
+      "path": "evidence/readonly-4-multi-change-execution.txt",
+      "sha256": "4999194fcd3253044c62524b5bbeb01cdc58cc47bf9a0acd77720c5cb19b97b6"
+    },
+    {
+      "path": "evidence/readonly-5-cross-project-execution.txt",
+      "sha256": "6b0fbde925fba4d2d907b002265e5b3c2bf0a27009963bd562f8f2c3d25bf8e0"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "70d3c34dd5874598afe814387920c4ef90b6796d0f390804298e6ed02939ba15"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "20cdcec619cf5d8519016065500ce8a464ac78e62fc664d6b212b1b5e8c57fdd"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [],
+  "missing": [
+    "verification-report"
+  ]
+}

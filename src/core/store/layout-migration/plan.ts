@@ -935,7 +935,20 @@ export async function buildMigrationPlan(
         storeUid: context.storeUid,
         nodes: evidenceNodes,
         catalogs: {
-          projectIds: evidenceIndex.members,
+          // The replay states its OWN eligibility set, from its own authority:
+          // the migration's frozen member set is by construction the projects
+          // whose planning content is migrating into this Store's planning
+          // layout, so every member is declared planning-eligible here. The
+          // plans being replayed were grandfathered under the rules of their
+          // authoring day; retroactively tightening a REPLAY would block
+          // v1→v2 migrations on exactly the role drift real stores exhibit
+          // (a knowledge-only record that nonetheless carries planning
+          // content). The gate stays one code path — the caller supplies the
+          // roster, and on this roster the role branch cannot fire.
+          projects: evidenceIndex.members.map(projectId => ({
+            projectId,
+            roles: { planning: true, knowledge: true },
+          })),
           targetLines: [...referenceLines]
             .map(([targetLineId, storeRef]) => ({ targetLineId, storeRef }))
             .sort((left, right) => left.targetLineId.localeCompare(right.targetLineId)),

@@ -28,6 +28,7 @@ export {
   validateIssueRecordLocation,
 } from './records.js';
 export {
+  assertPlanNodeSuggestions,
   checkExecutionPlanGraph,
   executionPlanDigest,
   normalizePlanNodes,
@@ -36,6 +37,20 @@ export {
   validateExecutionPlanRevision,
   type GraphViolation,
 } from './plans.js';
+export {
+  acceptanceConditionsDigest,
+  acceptedRecordDigest,
+  acceptanceConditionsDigestBody,
+  acceptedRecordDigestBody,
+  assertCoherentGateSnapshot,
+  normalizeAcceptanceConditions,
+  parseAcceptanceConditionsRevision,
+  parseAcceptedRecord,
+  serializeAcceptanceConditionsRevision,
+  serializeAcceptedRecord,
+  validateAcceptanceConditionsRevision,
+  validateAcceptedRecord,
+} from './acceptance.js';
 export {
   compileMigrationIssueTree,
   type CompiledMigrationIssueFile,
@@ -60,6 +75,7 @@ export {
   type StoreLockKind,
 } from './locks.js';
 export {
+  acceptanceRevisionAddress,
   issueAddresses,
   issuePathspec,
   resolveIssueScope,

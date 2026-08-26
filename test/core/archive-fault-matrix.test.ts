@@ -54,7 +54,10 @@ async function snapshotTree(root: string): Promise<Record<string, string> | null
   }
 }
 
-describe('archive apply named fault and recovery matrix', () => {
+// spawn-heavy: the whole matrix drives real git operations per test; three members
+// crossed the default 30s on CI windows runners as the suite grew (PR #173, 3x at 30s
+// with zero assertion failures — the C2-parity budget class, solo-measured convention).
+describe('archive apply named fault and recovery matrix', { timeout: 60000 }, () => {
   let root: string;
   let active: string;
   let archiveParent: string;

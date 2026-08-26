@@ -1,0 +1,62 @@
+$ rasen store issue ready defer-dogfood
+Issue defer-dogfood — ready set (revision 0002)
+  ready: 1
+    g-001 change app-a child-a
+  not ready: 1
+    g-opt: deferred (postponed beyond this Issue to the next milestone)
+  run-state: C:\Users\Sayo\AppData\Local\Temp\rasen-defer-dogfood-3ovilM\exec-project
+
+  wrote nothing — ready derives; starting a node remains a per-node act.
+
+$ rasen store issue ready defer-dogfood --json
+{
+  "issueId": "defer-dogfood",
+  "revisionId": "0002",
+  "ready": {
+    "members": [
+      {
+        "nodeId": "g-001",
+        "projectId": "app-a",
+        "targetLineId": "main",
+        "alias": "child-a",
+        "suggestedPipeline": null,
+        "lifecycle": "required"
+      }
+    ],
+    "exits": [
+      {
+        "nodeId": "g-opt",
+        "reason": {
+          "kind": "deferred",
+          "reason": "postponed beyond this Issue to the next milestone"
+        }
+      }
+    ]
+  },
+  "runStateVisibility": {
+    "kind": "execution-root",
+    "executionRoot": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-defer-dogfood-3ovilM\\exec-project"
+  },
+  "problems": []
+}
+
+$ rasen store issue start defer-dogfood --node g-opt   # exit 1
+Error: Node 'g-opt' is deferred: postponed beyond this Issue to the next milestone — the plan says its work is postponed beyond this Issue; no launch contract is emitted.
+Fix: The plan does not demand this node’s work now. Start a wanted node, or re-publish a revision whose lifecycle wants it.
+
+$ rasen store issue start defer-dogfood --node g-opt --json   # exit 1
+{
+  "issue": null,
+  "binding": null,
+  "status": [
+    {
+      "severity": "error",
+      "code": "issue_start_node_deferred",
+      "message": "Node 'g-opt' is deferred: postponed beyond this Issue to the next milestone — the plan says its work is postponed beyond this Issue; no launch contract is emitted.",
+      "fix": "The plan does not demand this node’s work now. Start a wanted node, or re-publish a revision whose lifecycle wants it."
+    }
+  ]
+}
+
+$ git -C <store> status --porcelain   # after every read above
+(empty)

@@ -1,0 +1,21 @@
+{
+  "change": "canvas-authoring-followups",
+  "archivedAt": "2026-08-17T07:44:11.380Z",
+  "codeCommit": "e8c63beadd656ff3798f6f740234592474cbeb12",
+  "planningBranch": null,
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "fef1839a0135bfedba75c25c1ce8504a12d69bcedb204fc20ffb86e5d72518ec"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

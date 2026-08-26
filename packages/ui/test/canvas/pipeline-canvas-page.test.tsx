@@ -28,6 +28,8 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
 interface MockNode {
   id: string;
   type?: string;
+  selected?: boolean;
+  position?: { x: number; y: number };
   data?: {
     definitionKind?: string;
     editorSupported?: boolean;
@@ -37,14 +39,31 @@ interface MockNode {
   };
   deletable?: boolean;
   connectable?: boolean;
+  parentId?: string;
+  extent?: string;
+  style?: { width?: number; height?: number };
 }
 
 interface MockEdge {
   id: string;
+  selected?: boolean;
   data?: { issueSeverity?: string };
 }
 
-vi.mock('@xyflow/react', () => ({
+/** The change shapes the mock's ReactFlow emits and applies — the three the page's handlers act on. */
+type MockFlowChange =
+  | { type: 'remove'; id: string }
+  | { type: 'select'; id: string; selected: boolean }
+  | {
+      type: 'position';
+      id: string;
+      position: { x: number; y: number };
+      dragging: boolean;
+    };
+
+vi.mock('@xyflow/react', async () => {
+  const { useEffect } = await import('preact/hooks');
+  return {
   ReactFlow: (props: {
     nodes: MockNode[];
     edges: MockEdge[];
@@ -52,8 +71,7 @@ vi.mock('@xyflow/react', () => ({
       string,
       FunctionComponent<{ data: MockNode['data'] }>
     >;
-    onNodeClick?: (e: unknown, n: MockNode) => void;
-    onEdgeClick?: (e: unknown, edge: MockEdge) => void;
+    onSelectionChange?: (params: { nodes: MockNode[]; edges: MockEdge[] }) => void;
     onPaneClick?: () => void;
     onConnect?: (connection: {
       source: string;
@@ -61,10 +79,77 @@ vi.mock('@xyflow/react', () => ({
       target: string;
       targetHandle: string | null;
     }) => void;
-    onNodesChange?: (changes: { type: 'remove'; id: string }[]) => void;
-    onEdgesChange?: (changes: { type: 'remove'; id: string }[]) => void;
+    onNodesChange?: (changes: MockFlowChange[]) => void;
+    onEdgesChange?: (changes: MockFlowChange[]) => void;
+    selectionKeyCode?: string | null;
+    selectionMode?: string;
     proOptions?: { hideAttribution?: boolean };
   }) => {
+    // Selection stand-ins for the real library's two truths (review m1 —
+    // before this existed, nothing modeled the listener, and a Blocker in
+    // exactly that mechanism passed a fully green suite):
+    //
+    // 1. Store truth IS the `selected` flags on the nodes/edges the page
+    //    passes: controlled-mode React Flow adopts them on every prop
+    //    change (`StoreUpdater` -> `adoptUserNodes`). An interaction is
+    //    echoed back as `select` changes through onNodesChange/
+    //    onEdgesChange — exactly what the real library emits in controlled
+    //    mode — and a programmatic page re-stamp reaches store truth the
+    //    same way.
+    // 2. SelectionListener: the real component keys its effect on
+    //    [selectedNodes, selectedEdges, onSelectionChange] and the page
+    //    passes a fresh callback identity on every render, so the listener
+    //    RE-FIRES with current store truth after EVERY page re-render, not
+    //    only on interactions. The effect below deliberately has no
+    //    dependency array, so it runs after every render of this mock and
+    //    reproduces that re-fire: a page write that changes the mirror
+    //    without re-stamping the flags is reverted one commit later.
+    function flaggedIds(): Set<string> {
+      return new Set<string>([
+        ...props.nodes.filter((node) => node.selected).map((node) => node.id),
+        ...props.edges.filter((edge) => edge.selected).map((edge) => edge.id),
+      ]);
+    }
+    function emitSelection(next: ReadonlySet<string>) {
+      const nodeChanges: MockFlowChange[] = [];
+      for (const node of props.nodes) {
+        if (!!node.selected !== next.has(node.id)) {
+          nodeChanges.push({
+            type: 'select',
+            id: node.id,
+            selected: next.has(node.id),
+          });
+        }
+      }
+      const edgeChanges: MockFlowChange[] = [];
+      for (const edge of props.edges) {
+        if (!!edge.selected !== next.has(edge.id)) {
+          edgeChanges.push({
+            type: 'select',
+            id: edge.id,
+            selected: next.has(edge.id),
+          });
+        }
+      }
+      if (nodeChanges.length > 0) props.onNodesChange?.(nodeChanges);
+      if (edgeChanges.length > 0) props.onEdgesChange?.(edgeChanges);
+      props.onSelectionChange?.({
+        nodes: props.nodes.filter((node) => next.has(node.id)),
+        edges: props.edges.filter((edge) => next.has(edge.id)),
+      });
+    }
+    function toggleSelection(id: string) {
+      const next = flaggedIds();
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      emitSelection(next);
+    }
+    useEffect(() => {
+      props.onSelectionChange?.({
+        nodes: props.nodes.filter((node) => node.selected),
+        edges: props.edges.filter((edge) => edge.selected),
+      });
+    });
     const atomicNodes = props.nodes.filter(
       (node) => node.data?.definitionKind === 'AtomicStage'
     );
@@ -73,13 +158,34 @@ vi.mock('@xyflow/react', () => ({
     const authoredRoute = [
       ['composite-ref', 'body-report', 'bounded-loop', 'brief'],
       ['bounded-loop', 'done', 'fan-out', 'input'],
+      // The loop's exit-outcome handle onto a Finish (canvas-loop-validate-
+      // clean-synthesis task 5.1: the loop-onward half of the zero-edit
+      // acceptance — the handle is the declaration's 'done' outcome row,
+      // which the synthesized loop also emits as its exit value).
+      ['bounded-loop', 'done', 'finish', 'input'],
       ['fan-out', 'atomic-stage', 'atomic-stage', 'input'],
       ['atomic-stage', 'done', 'join', 'atomic-stage'],
       ['join', 'done', 'finish', 'input'],
     ] as const;
     return (
-    <div data-testid="mock-reactflow-wrapper" data-hide-attribution={String(props.proOptions?.hideAttribution)}>
+    <div data-testid="mock-reactflow-wrapper" data-hide-attribution={String(props.proOptions?.hideAttribution)} data-selection-key={props.selectionKeyCode ?? ''} data-selection-mode={props.selectionMode ?? ''}>
       <div data-testid="mock-reactflow">{props.nodes.map((n) => n.id).join(',')}</div>
+      {/* Positions dump (canvas-durable-node-positioning): every stage
+          node's rendered position, so page tests assert placements without
+          depending on the canvas's own rendering. */}
+      <div data-testid="mock-node-positions">
+        {props.nodes
+          .filter((node) => node.type === 'stage')
+          .map((node) => (
+            <span
+              key={node.id}
+              data-testid="mock-node-position"
+              data-node-id={node.id}
+              data-x={String(node.position?.x)}
+              data-y={String(node.position?.y)}
+            />
+          ))}
+      </div>
       <div data-testid="mock-rendered-node-types">
         {props.nodes
           .filter((node) => node.type === 'stage')
@@ -97,15 +203,24 @@ vi.mock('@xyflow/react', () => ({
             data-testid="mock-edge"
             data-edge-id={edge.id}
             data-issue={edge.data?.issueSeverity}
+            data-selected={String(edge.selected)}
           >
             {edge.id}
             <button
               type="button"
               data-testid="mock-edge-click"
               data-edge-id={edge.id}
-              onClick={() => props.onEdgeClick?.(null, edge)}
+              onClick={() => emitSelection(new Set([edge.id]))}
             >
               select {edge.id}
+            </button>
+            <button
+              type="button"
+              data-testid="mock-edge-augment"
+              data-edge-id={edge.id}
+              onClick={() => toggleSelection(edge.id)}
+            >
+              augment {edge.id}
             </button>
             <button
               type="button"
@@ -133,14 +248,26 @@ vi.mock('@xyflow/react', () => ({
               data-issue={n.data?.issueSeverity}
               data-deletable={String(n.deletable)}
               data-connectable={String(n.connectable)}
+              data-selected={String(n.selected)}
+              data-parent-id={n.parentId}
+              data-extent={n.extent}
+              data-node-style={JSON.stringify(n.style ?? null)}
             >
               <button
                 type="button"
                 data-testid="mock-node-click"
                 data-node-id={n.id}
-                onClick={() => props.onNodeClick?.(null, n)}
+                onClick={() => emitSelection(new Set([n.id]))}
               >
                 select {n.id}
+              </button>
+              <button
+                type="button"
+                data-testid="mock-node-augment"
+                data-node-id={n.id}
+                onClick={() => toggleSelection(n.id)}
+              >
+                augment {n.id}
               </button>
               <button
                 type="button"
@@ -149,6 +276,31 @@ vi.mock('@xyflow/react', () => ({
                 onClick={() => props.onNodesChange?.([{ type: 'remove', id: n.id }])}
               >
                 remove {n.id}
+              </button>
+              {/* Drag stand-in (canvas-durable-node-positioning): displaces
+                  the node by a fixed delta and emits the DRAG-FINAL change
+                  (`dragging: false`) exactly as controlled-mode React Flow
+                  does at drag end — mid-drag intermediates are not modeled,
+                  matching what the page's cache capture consumes. */}
+              <button
+                type="button"
+                data-testid="mock-node-drag"
+                data-node-id={n.id}
+                onClick={() =>
+                  props.onNodesChange?.([
+                    {
+                      type: 'position',
+                      id: n.id,
+                      position: {
+                        x: (n.position?.x ?? 0) + 180,
+                        y: (n.position?.y ?? 0) + 120,
+                      },
+                      dragging: false,
+                    },
+                  ])
+                }
+              >
+                drag {n.id}
               </button>
             </span>
           ))}
@@ -182,6 +334,68 @@ vi.mock('@xyflow/react', () => ({
         >
           connect production-shaped AtomicStages
         </button>
+        {/* Back-edge draws for the loop-inference flow: the LAST AtomicStage
+            (draft node order) drawn back onto the FIRST, and onto the SECOND
+            (skipping an external upstream). Both connect rendered control
+            handles, exactly like a real drag between node cards. */}
+        {[0, 1].map((skip) => {
+          const source = atomicNodes[atomicNodes.length - 1];
+          const target = atomicNodes[skip];
+          return (
+            <button
+              key={skip}
+              type="button"
+              data-testid={
+                skip === 0 ? 'mock-connect-backedge' : 'mock-connect-backedge-inner'
+              }
+              disabled={!source || !target || atomicNodes.length <= skip}
+              onClick={() => {
+                if (!source || !target) return;
+                props.onConnect?.({
+                  source: source.id,
+                  sourceHandle: source.data?.outputPorts?.[0]?.id ?? null,
+                  target: target.id,
+                  targetHandle: target.data?.inputPorts?.[0]?.id ?? null,
+                });
+              }}
+            >
+              connect back-edge over {skip === 0 ? 'all' : 'inner'} atomics
+            </button>
+          );
+        })}
+        {/* Loop-entry draw (canvas-loop-port-inference): the FIRST
+            AtomicStage's LAST output handle (AtomicStage cards render
+            artifacts then outcomes, so the last is the control outcome)
+            onto the FIRST BoundedLoop's first input handle — the
+            connect-after-synthesis acceptance draws onto whatever entry
+            port the loop's declaration contract renders (disabled until
+            both handles render, exactly like a real drag). */}
+        {(() => {
+          const loopNode = props.nodes.find(
+            (node) => node.data?.definitionKind === 'BoundedLoop'
+          );
+          const sourcePorts = sourceAtomic?.data?.outputPorts ?? [];
+          const sourceHandleId = sourcePorts[sourcePorts.length - 1]?.id ?? null;
+          const targetHandleId = loopNode?.data?.inputPorts?.[0]?.id ?? null;
+          return (
+            <button
+              type="button"
+              data-testid="mock-connect-loop-entry"
+              disabled={!sourceAtomic || !loopNode || !sourceHandleId || !targetHandleId}
+              onClick={() => {
+                if (!sourceAtomic || !loopNode) return;
+                props.onConnect?.({
+                  source: sourceAtomic.id,
+                  sourceHandle: sourceHandleId,
+                  target: loopNode.id,
+                  targetHandle: targetHandleId,
+                });
+              }}
+            >
+              connect first atomic onto the loop entry
+            </button>
+          );
+        })()}
         {authoredRoute.map(([source, sourceHandle, target, targetHandle]) => {
           const sourceNode = props.nodes.find((node) => node.id === source);
           const targetNode = props.nodes.find((node) => node.id === target);
@@ -208,8 +422,42 @@ vi.mock('@xyflow/react', () => ({
             </button>
           );
         })}
-        <button type="button" data-testid="mock-pane-click" onClick={() => props.onPaneClick?.()}>
+        {/* The pane click, as React Flow sequences it: the store deselects
+            (selection listener fires with the emptied truth) AND the page's
+            onPaneClick fires — the body-panel clear rides the second. */}
+        <button
+          type="button"
+          data-testid="mock-pane-click"
+          onClick={() => {
+            emitSelection(new Set<string>());
+            props.onPaneClick?.();
+          }}
+        >
           pane
+        </button>
+        {/* The Delete key: removes the store's selection — flagged nodes
+            (only those React Flow would consider deletable) and edges — as
+            one batch of remove changes. Refused nodes stay flagged, as in
+            the real store. */}
+        <button
+          type="button"
+          data-testid="mock-delete-selection"
+          onClick={() => {
+            const nodeIds = props.nodes
+              .filter((n) => n.selected && n.deletable !== false)
+              .map((n) => n.id);
+            const edgeIds = props.edges
+              .filter((edge) => edge.selected)
+              .map((edge) => edge.id);
+            if (nodeIds.length > 0) {
+              props.onNodesChange?.(nodeIds.map((id) => ({ type: 'remove' as const, id })));
+            }
+            if (edgeIds.length > 0) {
+              props.onEdgesChange?.(edgeIds.map((id) => ({ type: 'remove' as const, id })));
+            }
+          }}
+        >
+          delete selection
         </button>
       </div>
     </div>
@@ -226,17 +474,68 @@ vi.mock('@xyflow/react', () => ({
     />
   ),
   Position: { Left: 'left', Right: 'right' },
+  // Mirrors @xyflow/system's real enum values ('partial'/'full', verified
+  // against the installed package): the page imports SelectionMode from the
+  // mocked module, so without this stand-in the prop's expression throws.
+  SelectionMode: { Partial: 'partial', Full: 'full' },
   // pipeline-canvas-edit additions: the editor's connect/drag/drop wiring.
   useReactFlow: () => ({ screenToFlowPosition: (p: { x: number; y: number }) => p }),
+  // canvas-loop-body-visibility: the page forces an internals refresh when
+  // the node id set changes (real-browser measurement determinism); jsdom
+  // measures nothing, so the stand-in is a no-op.
+  useUpdateNodeInternals: () => () => undefined,
   addEdge: (edge: unknown, edges: unknown[]) => [...edges, edge],
-  applyNodeChanges: (_changes: unknown[], nodes: unknown[]) => nodes,
-  applyEdgeChanges: (_changes: unknown[], edges: unknown[]) => edges,
-}));
+  // Minimal but real: the three change types this page's handlers feed back —
+  // `select` so interaction echoes land on the flags (controlled-mode RF
+  // keeps its store only because the page re-passes them), `remove` so the
+  // Delete key's cards leave the canvas as they do in the real app, and
+  // `position` so a drag moves the controlled node (mirroring real RF).
+  applyNodeChanges: (changes: MockFlowChange[], nodes: MockNode[]) =>
+    changes.reduce<MockNode[]>(
+      (acc, change) =>
+        change.type === 'remove'
+          ? acc.filter((node) => node.id !== change.id)
+          : change.type === 'select'
+            ? acc.map((node) =>
+                node.id === change.id
+                  ? { ...node, selected: change.selected }
+                  : node
+              )
+            : change.type === 'position'
+              ? acc.map((node) =>
+                  node.id === change.id
+                    ? { ...node, position: change.position }
+                    : node
+                )
+              : acc,
+      nodes
+    ),
+  applyEdgeChanges: (changes: MockFlowChange[], edges: MockEdge[]) =>
+    changes.reduce<MockEdge[]>(
+      (acc, change) =>
+        change.type === 'remove'
+          ? acc.filter((edge) => edge.id !== change.id)
+          : change.type === 'select'
+            ? acc.map((edge) =>
+                edge.id === change.id
+                  ? { ...edge, selected: change.selected }
+                  : edge
+              )
+            : acc,
+      edges
+    ),
+  };
+});
 
 import { LocationProvider, Router, Route } from 'preact-iso';
+// Resolves to the vi.mock('@xyflow/react') stand-in above — the selection
+// prop-pin test compares the page's passed selectionMode against this enum.
+import { SelectionMode } from '@xyflow/react';
 import { DefinitionContractPanel } from '../../src/canvas/DefinitionContractPanel.js';
 import { PipelineCanvasPage } from '../../src/canvas/PipelineCanvasPage.js';
+import { V2LoopReviewPanel } from '../../src/canvas/V2LoopReviewPanel.js';
 import { V2NodePanel } from '../../src/canvas/V2NodePanel.js';
+import { draftToGraph, layoutGraph } from '../../src/canvas/layout.js';
 import * as client from '../../src/api/client.js';
 import { ApiError } from '../../src/api/client.js';
 import { pipelineDetailFixture } from '../fixtures/pipelines.js';
@@ -251,6 +550,9 @@ import type {
   PipelineDetailResponse,
   ThresholdValue,
   WireBoundedLoopNode,
+  WireConsultationBinding,
+  WireFanOutNode,
+  WireJoinNode,
   WirePipelineDefinition,
   WirePipelineDefinitionV2,
 } from '../../src/api/types.js';
@@ -262,8 +564,8 @@ import {
 const catalogFixture: PipelineCatalogResponse = {
   roles: ['planner', 'implementer', 'reviewer', 'fixer', 'shipper'],
   skills: [
-    { id: 'rasen-propose', description: 'Propose a change', enabled: true },
-    { id: 'rasen-apply', description: 'Apply tasks', enabled: true },
+    { id: 'rasen-propose', description: 'Propose a change', enabled: true, kind: 'task' },
+    { id: 'rasen-apply', description: 'Apply tasks', enabled: true, kind: 'task' },
   ],
   runtimes: ['claude', 'codex'],
   stageKinds: ['standard', 'decompose'],
@@ -304,6 +606,7 @@ const v2CatalogWithUnplaceableSkills = {
       id: 'rasen-profile-disabled',
       description: 'Off in the active profile',
       enabled: false,
+      kind: 'task',
       capability: {
         id: 'skill:rasen-profile-disabled',
         version: 'digest-disabled',
@@ -316,6 +619,7 @@ const v2CatalogWithUnplaceableSkills = {
       id: 'rasen-no-capability',
       description: 'Served without an exact capability revision',
       enabled: true,
+      kind: 'task',
     },
   ],
 } as PipelineCatalogResponse;
@@ -1024,6 +1328,88 @@ describe('PipelineCanvasPage — edit mode', () => {
     );
   });
 
+  it('acceptance: an undeclared terminal outcome is declared from the contract panel and re-validation clears it (spec scenario 1)', async () => {
+    // The live-testing dead end this change resolves (proposal Why): a
+    // fresh v2 definition seeds `outcomes: []`, its sinks produce `done`,
+    // the engine raises PORT_MISMATCH — and the fix must be satisfiable at
+    // the moment of need, from the definition contract panel.
+    vi.mocked(client.getPipelineDetail).mockRejectedValue(
+      new ApiError(404, {
+        error: { code: 'not_found', message: 'No pipeline named "contract-editor".' },
+      })
+    );
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(CANVAS_V2_AUTHORING_CATALOG);
+    vi.mocked(client.validatePipeline)
+      .mockResolvedValueOnce({
+        valid: false,
+        issues: [
+          {
+            severity: 'error',
+            code: 'PORT_MISMATCH',
+            path: '/root/nodes/0/capability',
+            message:
+              "Definition graph produces terminal outcome 'done', but it is not declared by the owner contract.",
+            related: [
+              {
+                path: '/root/nodes/1/capability',
+                message: "Also produces terminal outcome 'done'.",
+              },
+            ],
+          },
+        ],
+      })
+      .mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/contract-editor');
+    await clickAndFlush(
+      container.querySelector('[data-testid="pipeline-canvas-start-assembling"]')
+    );
+
+    // Two unconnected stage sinks from the catalog's one bindable skill.
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-apply-change"]')
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-apply-change"]')
+    );
+
+    // Validate: the engine-shaped PORT_MISMATCH lands in the drawer.
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    expect(client.validatePipeline).toHaveBeenCalledTimes(1);
+    const withIssue = vi.mocked(client.validatePipeline).mock.calls[0]![0] as WirePipelineDefinitionV2;
+    expect(withIssue.outcomes).toEqual([]);
+    expect(withIssue.root.nodes).toHaveLength(2);
+    const beforeNodes = withIssue.root.nodes.map((node) => ({ ...node }));
+    const beforeConnections = withIssue.root.connections.map((connection) => ({
+      ...connection,
+    }));
+    expect(container.querySelector('[data-testid="issues-drawer"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="issues-drawer-item"]')!.textContent
+    ).toContain("terminal outcome 'done'");
+
+    // The fix: declare `done` in the definition contract panel (blur commit).
+    const outcomesField = () =>
+      container.querySelector('[data-testid="definition-outcomes"]') as HTMLInputElement;
+    outcomesField().focus();
+    await setValueAndFlush(outcomesField(), 'done', 'input');
+    await act(async () => {
+      outcomesField().blur();
+      await flushMicrotasks();
+    });
+
+    // Re-run Validate: clean — the issue is gone and NO other edit was made
+    // to the definition (nodes and connections byte-identical).
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    const fixed = vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+    expect(fixed.outcomes).toEqual(['done']);
+    expect(fixed.root.nodes).toEqual(beforeNodes);
+    expect(fixed.root.connections).toEqual(beforeConnections);
+    expect(container.querySelector('[data-testid="issues-drawer"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="pipeline-canvas-validation-result"]')!.textContent
+    ).toContain('No issues');
+  });
+
   it('authors the shared all-eight v2 request from a real blank Canvas, through the closed gesture vocabulary, and submits it unchanged to validate and save', async () => {
     // Same "one of every node kind" claim as the pre-refactor version of this
     // test, but reached exclusively through the four root gestures and the
@@ -1087,10 +1473,22 @@ describe('PipelineCanvasPage — edit mode', () => {
       'report',
       'input'
     );
+    // The outcomes field commits on blur (the NameListField idiom), so drive
+    // it with the same focus/input/blur pattern the declaration-outcomes
+    // field below uses — a bare input event no longer patches the contract.
+    const definitionOutcomes = container.querySelector(
+      '[data-testid="definition-outcomes"]'
+    ) as HTMLInputElement;
+    definitionOutcomes.focus();
     await setValueAndFlush(
-      container.querySelector('[data-testid="definition-outcomes"]'),
-      CANVAS_V2_GESTURE_AUTHORED_DEFINITION.outcomes.join(',')
+      definitionOutcomes,
+      CANVAS_V2_GESTURE_AUTHORED_DEFINITION.outcomes.join(','),
+      'input'
     );
+    await act(async () => {
+      definitionOutcomes.blur();
+      await flushMicrotasks();
+    });
     await setValueAndFlush(
       container.querySelector('[data-testid="definition-limit-max-actions"]'),
       '32',
@@ -1754,6 +2152,41 @@ describe('PipelineCanvasPage — edit mode', () => {
     expect(container.querySelector('[data-testid="issues-drawer"]')).toBeNull();
   });
 
+  it('a no-edit blur of the outcomes field commits nothing and keeps the validation findings (review m2)', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline).mockResolvedValue({
+      valid: false,
+      issues: [
+        { severity: 'error', path: '/root/nodes/0/capability', message: 'Something to fix.' },
+      ],
+    });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    expect(container.querySelector('[data-testid="issues-drawer"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="pipeline-canvas-validation-result"]')).not.toBeNull();
+
+    // Focus the outcomes field, retype its UNCHANGED canonical value
+    // ('done,rejected' — the fixture's outcomes), blur: the identical-value
+    // guard must keep this a no-op. Pre-m2 the blur committed a
+    // content-identical patch whose markDraftChanged wiped the chip and the
+    // drawer even though no contract value changed.
+    const outcomes = container.querySelector(
+      '[data-testid="definition-outcomes"]'
+    ) as HTMLInputElement;
+    outcomes.focus();
+    await setValueAndFlush(outcomes, 'done,rejected', 'input');
+    await act(async () => {
+      outcomes.blur();
+      await flushMicrotasks();
+    });
+    expect(container.querySelector('[data-testid="pipeline-canvas-validation-result"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="issues-drawer"]')).not.toBeNull();
+    expect(client.validatePipeline).toHaveBeenCalledTimes(1);
+  });
+
   it('dismissing the drawer also clears the blocked-save message it referenced', async () => {
     vi.mocked(client.getPipelineDetail).mockResolvedValue(editableDetail);
     await mountAt(container, '/p/proj_x/pipelines/small-feature');
@@ -2278,14 +2711,20 @@ describe('PipelineCanvasPage — edit mode', () => {
     expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).not.toContain(
       'composite'
     );
-    // A FanOut is not independently deletable because its Join belongs to the
-    // same paired parallel contract. The pair-level removal action owns that
-    // structural edit, so this single-node removal is refused.
+    // A FanOut's Join belongs to the same paired parallel contract, so the
+    // pair is one unit in deletion (canvas-multi-selection): a removal
+    // carrying the FanOut takes its Join too — never a half-pair left
+    // behind. (React Flow itself never emits a remove for these
+    // non-deletable nodes; this exercises the same batch path the selection
+    // panel's delete button drives.)
     await clickAndFlush(
       container.querySelector('[data-testid="mock-node-remove"][data-node-id="fanout"]')
     );
-    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).toContain(
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).not.toContain(
       'fanout'
+    );
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent).not.toContain(
+      'join'
     );
     await clickAndFlush(
       container.querySelector('[data-testid="mock-node-remove"][data-node-id="choice"]')
@@ -3690,6 +4129,82 @@ describe('PipelineCanvasPage — edit mode', () => {
     expect(onInvalidChange).toHaveBeenLastCalledWith('limits/budget', null);
   });
 
+  it('definition outcomes: the list-field idiom, committed on blur only (NameListField swap)', async () => {
+    const onPatch = vi.fn();
+    const outcomesPatchOf = () =>
+      onPatch.mock.calls.at(-1)![0] as { outcomes: string[] };
+    await act(async () => {
+      render(
+        <DefinitionContractPanel
+          definition={{
+            ...(structuredClone(v2Definition) as WirePipelineDefinitionV2),
+            outcomes: ['done', 'partial'],
+          }}
+          focusedField={null}
+          onPatch={onPatch}
+          onInvalidChange={vi.fn()}
+        />,
+        container
+      );
+      await flushMicrotasks();
+    });
+
+    const field = () =>
+      container.querySelector('[data-testid="definition-outcomes"]') as HTMLInputElement;
+    // The field renders the current contract as comma text.
+    expect(field().value).toBe('done,partial');
+
+    // Intermediate keystrokes never reach the model (the per-keystroke full
+    // draft patch this field used to perform is gone).
+    field().focus();
+    await setValueAndFlush(field(), 'done,partial,re', 'input');
+    expect(onPatch).not.toHaveBeenCalled();
+
+    // Blur commits the canonical parse: trimmed, non-blank, deduplicated,
+    // typed order preserved.
+    await act(async () => {
+      field().blur();
+      await flushMicrotasks();
+    });
+    expect(onPatch).toHaveBeenCalledTimes(1);
+    expect(outcomesPatchOf().outcomes).toEqual(['done', 'partial', 're']);
+
+    // A duplicate in the text is deduplicated by the same parse — the
+    // canonical value equals the contract's, so the guard commits NOTHING
+    // (review m2: an unchanged value must not fire the commit path's
+    // draft-change bookkeeping) while the displayed text re-normalizes.
+    field().focus();
+    await setValueAndFlush(field(), '  done , done , partial  , ', 'input');
+    await act(async () => {
+      field().blur();
+      await flushMicrotasks();
+    });
+    expect(onPatch).toHaveBeenCalledTimes(1);
+    expect(field().value).toBe('done,partial');
+
+    // The outcomes focused-field key still ring-marks the field for issue
+    // navigation (shared stylesheet class with the declaration editor's).
+    await act(async () => {
+      render(
+        <DefinitionContractPanel
+          definition={
+            structuredClone(v2Definition) as WirePipelineDefinitionV2
+          }
+          focusedField="outcomes"
+          onPatch={onPatch}
+          onInvalidChange={vi.fn()}
+        />,
+        container
+      );
+      await flushMicrotasks();
+    });
+    expect(
+      field().closest('.declaration-editor__field')?.classList.contains(
+        'declaration-editor__field--focused'
+      )
+    ).toBe(true);
+  });
+
   it('keeps invalid loop, lifecycle, and paired-parallel integers raw and blocks every action until repair', async () => {
     vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
     vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
@@ -3932,6 +4447,36 @@ describe('PipelineCanvasPage — edit mode', () => {
     ).toEqual(['done', 'partial']);
   });
 
+  it('the definition contract panel refuses blank/duplicate row names with a diagnostic and keeps the previous contract', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await enterEdit();
+
+    // Two typed-input rows; renaming the second onto the first's name makes
+    // the patch hit the model's uniqueness rule — the panel's refusal path
+    // (the outcomes list itself pre-dedupes through the NameListField parse,
+    // pinned by the component test above; the rule site is shared).
+    await clickAndFlush(container.querySelector('[data-testid="definition-input-add"]'));
+    await clickAndFlush(container.querySelector('[data-testid="definition-input-add"]'));
+    const inputName = (index: number) =>
+      container.querySelector(
+        `[data-testid="definition-input-name"][data-row-index="${index}"]`
+      ) as HTMLInputElement;
+    await setValueAndFlush(inputName(0), 'same', 'input');
+    await setValueAndFlush(inputName(1), 'same', 'input');
+
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent)
+      .toContain('definition input names must be unique');
+
+    // The refused patch never landed: the submitted contract keeps the
+    // pre-refusal rows verbatim.
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    const submitted = vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+    expect(submitted.inputs.map((row) => row.name)).toEqual(['same', 'input-2']);
+  });
+
   it('authors definition, AtomicStage, Gate, loop lifecycle, and parallel fields through mounted controls', async () => {
     vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
     vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
@@ -3960,10 +4505,15 @@ describe('PipelineCanvasPage — edit mode', () => {
       'report',
       'input'
     );
-    await setValueAndFlush(
-      container.querySelector('[data-testid="definition-outcomes"]'),
-      'done,partial'
-    );
+    const mountedOutcomes = container.querySelector(
+      '[data-testid="definition-outcomes"]'
+    ) as HTMLInputElement;
+    mountedOutcomes.focus();
+    await setValueAndFlush(mountedOutcomes, 'done,partial', 'input');
+    await act(async () => {
+      mountedOutcomes.blur();
+      await flushMicrotasks();
+    });
     await setValueAndFlush(
       container.querySelector('[data-testid="definition-limit-max-actions"]'),
       '24',
@@ -4613,3 +5163,3065 @@ describe('PipelineCanvasPage — edit mode', () => {
     ).toBeNull();
   });
 });
+
+/**
+ * Multi-selection coverage (canvas-multi-selection). The ReactFlow mock's
+ * interaction buttons drive `onSelectionChange` — the single user-action
+ * mirror writer (design D1): plain click replaces, augment (the platform
+ * multi-select key) toggles within the selection, pane click empties it,
+ * and `mock-delete-selection` is the Delete key's batch of remove changes.
+ * The mock also carries the SelectionListener stand-in (see the mock body,
+ * review m1): it re-emits store truth after every render, so the
+ * programmatic-write tests at the bottom of this block pin that the page
+ * re-stamps the flow's `selected` flags with every mirror write (B1/M1).
+ * jsdom performs no layout, so the Shift+drag box geometry itself is
+ * verified only by the real-browser CDP check recorded in the change's
+ * evidence dir; these tests pin the selection CONTRACT each gesture
+ * produces.
+ */
+describe('PipelineCanvasPage — multi-selection', () => {
+  let container: HTMLElement;
+
+  const editableDetail = {
+    ...pipelineDetailFixture,
+    pipeline: { ...pipelineDetailFixture.pipeline, provenance: 'user' as const, sourceLayer: 'user' as const },
+    editable: true,
+  };
+
+  beforeEach(() => {
+    __resetLocaleForTesting();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+  });
+
+  afterEach(() => {
+    render(null, container);
+    document.body.removeChild(container);
+    window.history.replaceState({}, '', '/');
+    __resetLocaleForTesting();
+    vi.clearAllMocks();
+  });
+
+  async function clickAndFlush(el: Element | null): Promise<void> {
+    await act(async () => {
+      (el as HTMLElement).click();
+      await flushMicrotasks();
+    });
+  }
+
+  function nodeButton(kind: 'click' | 'augment', id: string): Element | null {
+    return container.querySelector(
+      `[data-testid="mock-node-${kind}"][data-node-id="${id}"]`
+    );
+  }
+
+  async function mountV2Edit(): Promise<void> {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+  }
+
+  async function submittedDefinition(): Promise<WirePipelineDefinitionV2> {
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    return vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+  }
+
+  it('renders the selection summary for a multi-node selection, with counts and kinds', async () => {
+    await mountV2Edit();
+    await clickAndFlush(await nodeButton('click', 'atomic'));
+    // Exactly one node: today's node panel, no summary.
+    expect(container.querySelector('[data-testid="v2-node-panel"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).toBeNull();
+
+    await clickAndFlush(await nodeButton('augment', 'choice'));
+    const panel = container.querySelector('[data-testid="v2-selection-panel"]');
+    expect(panel).not.toBeNull();
+    expect(panel!.getAttribute('data-node-count')).toBe('2');
+    expect(panel!.getAttribute('data-connection-count')).toBe('0');
+    expect(
+      panel!.querySelector('[data-testid="v2-selection-panel-counts"]')!.textContent
+    ).toContain('2 nodes');
+    const kinds = panel!.querySelector('[data-testid="v2-selection-panel-kinds"]')!.textContent!;
+    expect(kinds).toContain('AtomicStage');
+    expect(kinds).toContain('Choice');
+    // The singleton node panel yielded to the summary.
+    expect(container.querySelector('[data-testid="v2-node-panel"]')).toBeNull();
+  });
+
+  it('selects nodes and connections together as one mixed selection', async () => {
+    await mountV2Edit();
+    await clickAndFlush(await nodeButton('click', 'finish'));
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-edge-augment"][data-edge-id="atomic:done->gate:input"]')
+    );
+    const panel = container.querySelector('[data-testid="v2-selection-panel"]');
+    expect(panel).not.toBeNull();
+    expect(panel!.getAttribute('data-node-count')).toBe('1');
+    expect(panel!.getAttribute('data-connection-count')).toBe('1');
+    expect(
+      panel!.querySelector('[data-testid="v2-selection-panel-counts"]')!.textContent
+    ).toContain('1 node');
+    expect(
+      panel!.querySelector('[data-testid="v2-selection-panel-counts"]')!.textContent
+    ).toContain('1 connection');
+  });
+
+  it('removes an element from the selection when augment-clicked again', async () => {
+    await mountV2Edit();
+    await clickAndFlush(await nodeButton('click', 'atomic'));
+    await clickAndFlush(await nodeButton('augment', 'choice'));
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).not.toBeNull();
+
+    await clickAndFlush(await nodeButton('augment', 'choice'));
+    // Back to a singleton: the summary closes and the node panel reopens.
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).toBeNull();
+    expect(container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-node')).toBe(
+      'atomic'
+    );
+  });
+
+  it('multi-deletes the whole set and cleans every connection reference', async () => {
+    vi.mocked(client.getPipelineDetail).mockRejectedValue(
+      new ApiError(404, { error: { code: 'not_found', message: 'No pipeline named "multi-delete".' } })
+    );
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/multi-delete');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-start-assembling"]'));
+
+    // Two stages, wired together — then selected together (the second
+    // gesture UNIONs into the first's selection).
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-propose"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-apply"]'));
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-production-atomics"]'));
+    const panel = container.querySelector('[data-testid="v2-selection-panel"]');
+    expect(panel!.getAttribute('data-node-count')).toBe('2');
+
+    await clickAndFlush(container.querySelector('[data-testid="v2-selection-panel-delete"]'));
+    const submitted = await submittedDefinition();
+    expect(submitted.root.nodes).toEqual([]);
+    expect(submitted.root.connections).toEqual([]);
+    // The selection left with the nodes — no orphaned summary panel.
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).toBeNull();
+  });
+
+  it('deletes a selected FanOut together with its Join from the summary panel', async () => {
+    await mountV2Edit();
+    await clickAndFlush(await nodeButton('click', 'fanout'));
+    await clickAndFlush(await nodeButton('augment', 'finish'));
+
+    await clickAndFlush(container.querySelector('[data-testid="v2-selection-panel-delete"]'));
+    const submitted = await submittedDefinition();
+    expect(submitted.root.nodes.map((node) => node.id)).toEqual([
+      'atomic',
+      'gate',
+      'choice',
+      'composite',
+      'loop',
+    ]);
+    // No refusal toast — the pair went as one unit.
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')).toBeNull();
+  });
+
+  it('reports every refusal in one summary message naming each refused element', async () => {
+    await mountV2Edit();
+    // join: a lone barrier whose FanOut was not selected; atomic: still
+    // targeted by the fixture's Gate; choice: plain and deletable.
+    await clickAndFlush(await nodeButton('click', 'join'));
+    await clickAndFlush(await nodeButton('augment', 'atomic'));
+    await clickAndFlush(await nodeButton('augment', 'choice'));
+
+    await clickAndFlush(container.querySelector('[data-testid="v2-selection-panel-delete"]'));
+    const toast = container.querySelector('[data-testid="pipeline-canvas-toast"]');
+    expect(toast).not.toBeNull();
+    // ONE message carries the deleted count and names BOTH refusals with
+    // their reasons — a per-node toast loop would leave only the last
+    // refusal visible.
+    expect(toast!.textContent).toContain('Deleted 1');
+    expect(toast!.textContent).toContain('2 refused');
+    expect(toast!.textContent).toContain("atomic (Node 'atomic' is still targeted by Gate 'gate'.)");
+    expect(toast!.textContent).toContain('join (FanOut and Join require explicit paired deletion.)');
+
+    const submitted = await submittedDefinition();
+    expect(submitted.root.nodes.map((node) => node.id)).toContain('atomic');
+    expect(submitted.root.nodes.map((node) => node.id)).toContain('join');
+    expect(submitted.root.nodes.map((node) => node.id)).not.toContain('choice');
+  });
+
+  it('keeps the previous selection stamped selected across a palette add', async () => {
+    await mountV2Edit();
+    await clickAndFlush(await nodeButton('click', 'atomic'));
+    await clickAndFlush(await nodeButton('augment', 'choice'));
+
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-propose"]')
+    );
+    // The rebuild re-stamps `selected` from the mirror (design D3's
+    // selection-carry): the two previously selected nodes are still
+    // selected after the new node appears — the spec's
+    // "Selection survives a non-destructive edit" scenario.
+    for (const id of ['atomic', 'choice']) {
+      expect(
+        container.querySelector(`[data-testid="mock-node"][data-node-id="${id}"]`)?.getAttribute('data-selected')
+      ).toBe('true');
+    }
+    expect(
+      container.querySelector('[data-testid="mock-node"][data-node-id="finish"]')?.getAttribute('data-selected')
+    ).not.toBe('true');
+    const panel = container.querySelector('[data-testid="v2-selection-panel"]');
+    expect(panel!.getAttribute('data-node-count')).toBe('3');
+  });
+
+  it('prunes the selection after the Delete key removes the batch', async () => {
+    await mountV2Edit();
+    await clickAndFlush(await nodeButton('click', 'finish'));
+    await clickAndFlush(await nodeButton('augment', 'composite'));
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).not.toBeNull();
+
+    await clickAndFlush(container.querySelector('[data-testid="mock-delete-selection"]'));
+    const flowText = container.querySelector('[data-testid="mock-reactflow"]')!.textContent!;
+    expect(flowText).not.toContain('finish');
+    expect(flowText).not.toContain('composite');
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).toBeNull();
+  });
+
+  it('replaces a multi-selection with exactly the issue\'s target on an issue click', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({
+      valid: false,
+      issues: [{ severity: 'error', path: '/root/nodes/1/skill', message: 'Gate skill issue.' }],
+    });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+
+    await clickAndFlush(await nodeButton('click', 'atomic'));
+    await clickAndFlush(await nodeButton('augment', 'choice'));
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).not.toBeNull();
+
+    await clickAndFlush(container.querySelector('[data-testid="issues-drawer-select"]'));
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).toBeNull();
+    expect(container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-node')).toBe(
+      'gate'
+    );
+  });
+
+  it('deletes several v1 stages as a set, cleaning every dependency reference', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(editableDetail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+
+    await clickAndFlush(await nodeButton('click', 'propose'));
+    await clickAndFlush(await nodeButton('augment', 'apply'));
+    const panel = container.querySelector('[data-testid="v2-selection-panel"]');
+    expect(panel).not.toBeNull();
+    expect(panel!.getAttribute('data-node-count')).toBe('2');
+
+    await clickAndFlush(container.querySelector('[data-testid="v2-selection-panel-delete"]'));
+    const submitted = await submittedDefinition() as unknown as { stages: { id: string; requires: string[] }[] };
+    expect(submitted.stages.map((stage) => stage.id)).not.toContain('propose');
+    expect(submitted.stages.map((stage) => stage.id)).not.toContain('apply');
+    // review/cso/qa required 'apply' — the group's references were cleaned,
+    // not left dangling.
+    for (const stage of submitted.stages) {
+      expect(stage.requires).not.toContain('apply');
+      expect(stage.requires).not.toContain('propose');
+    }
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).toBeNull();
+  });
+
+  // --- Review round 1 regression pins (B1/M1) -----------------------------
+  //
+  // These only discriminate because the mock now carries the SelectionListener
+  // stand-in: every programmatic selection write must re-stamp the flow's
+  // `selected` flags in the same update, or the listener's next firing reverts
+  // the mirror one commit later.
+
+  it('keeps an issue-click selection: the listener re-fire cannot revert it (B1)', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({
+      valid: false,
+      issues: [{ severity: 'error', path: '/root/nodes/1/skill', message: 'Gate skill issue.' }],
+    });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+
+    // A multi-selection is standing when the issue is clicked — the
+    // listener's next firing must see flow state for the issue's target,
+    // not for the selection that write replaces.
+    await clickAndFlush(await nodeButton('click', 'atomic'));
+    await clickAndFlush(await nodeButton('augment', 'choice'));
+
+    await clickAndFlush(container.querySelector('[data-testid="issues-drawer-select"]'));
+    // The target's panel stays open — the re-fire used to clear the mirror
+    // (no prior selection) or revert it to the box selection.
+    expect(container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-node')).toBe(
+      'gate'
+    );
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).toBeNull();
+    // The flow flags agree with the mirror: exactly the target.
+    expect(
+      container.querySelector('[data-testid="mock-node"][data-node-id="gate"]')?.getAttribute('data-selected')
+    ).toBe('true');
+    expect(
+      container.querySelector('[data-testid="mock-node"][data-node-id="atomic"]')?.getAttribute('data-selected')
+    ).not.toBe('true');
+    expect(
+      container.querySelector('[data-testid="mock-node"][data-node-id="choice"]')?.getAttribute('data-selected')
+    ).not.toBe('true');
+  });
+
+  it('keeps the singleton and summary panels closed after their close button (B1)', async () => {
+    await mountV2Edit();
+    await clickAndFlush(await nodeButton('click', 'atomic'));
+    expect(container.querySelector('[data-testid="v2-node-panel"]')).not.toBeNull();
+
+    await clickAndFlush(
+      container.querySelector('button[aria-label="Close node properties"]')
+    );
+    // The close persists: the listener's re-fire with flow truth used to
+    // re-select the node and reopen the panel one frame later.
+    expect(container.querySelector('[data-testid="v2-node-panel"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="mock-node"][data-node-id="atomic"]')?.getAttribute('data-selected')
+    ).not.toBe('true');
+
+    // Same contract for the multi-selection summary panel.
+    await clickAndFlush(await nodeButton('click', 'atomic'));
+    await clickAndFlush(await nodeButton('augment', 'choice'));
+    const panel = container.querySelector('[data-testid="v2-selection-panel"]');
+    expect(panel).not.toBeNull();
+    // v2 keeps the version-neutral heading (review t1 pins the v1 variant
+    // in the v1 test below).
+    expect(panel!.querySelector('.stage-panel__title')?.textContent).toBe('Selection');
+    await clickAndFlush(
+      container.querySelector('button[aria-label="Close selection summary"]')
+    );
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).toBeNull();
+    for (const id of ['atomic', 'choice']) {
+      expect(
+        container.querySelector(`[data-testid="mock-node"][data-node-id="${id}"]`)?.getAttribute('data-selected')
+      ).not.toBe('true');
+    }
+  });
+
+  it('v1 delete removes the stage cards from the canvas and the summary stays closed (M1)', async () => {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(editableDetail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+
+    await clickAndFlush(await nodeButton('click', 'propose'));
+    await clickAndFlush(await nodeButton('augment', 'apply'));
+    const panel = container.querySelector('[data-testid="v2-selection-panel"]');
+    expect(panel).not.toBeNull();
+    // The v1 editor's summary names its mode's vocabulary — its elements
+    // are stage cards (review t1).
+    expect(panel!.querySelector('.stage-panel__title')?.textContent).toBe('Selected stages');
+
+    await clickAndFlush(container.querySelector('[data-testid="v2-selection-panel-delete"]'));
+    // Ghost check: the deleted cards leave the canvas — this path used to
+    // leave them rendered as still-selected ghosts, and the listener then
+    // re-popped the summary reporting the deleted stages.
+    const flowText = container.querySelector('[data-testid="mock-reactflow"]')!.textContent!;
+    expect(flowText).not.toContain('propose');
+    expect(flowText).not.toContain('apply');
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).toBeNull();
+  });
+
+  // PROP PIN (canvas-boxselect-containment-fix design D2): jsdom performs no
+  // layout, so the mock cannot express box-select rect geometry — this pins
+  // only that CanvasFlow configures React Flow for overlap selection
+  // (SelectionMode.Partial, not the v12 default Full containment that
+  // dropped every clipped node). The BEHAVIORAL pin is the real-browser CDP
+  // probe recorded in the change's evidence dir.
+  it('passes selectionMode Partial to React Flow (prop pin)', async () => {
+    await mountV2Edit();
+    const mode = container
+      .querySelector('[data-testid="mock-reactflow-wrapper"]')
+      ?.getAttribute('data-selection-mode');
+    expect(mode).toBe(SelectionMode.Partial);
+    // The stand-in mirrors @xyflow/system's real enum value; this anchor
+    // keeps a mutated stand-in from making a wrong source value pass.
+    expect(mode).toBe('partial');
+  });
+});
+
+describe('PipelineCanvasPage — package into reusable block', () => {
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    __resetLocaleForTesting();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+  });
+
+  afterEach(() => {
+    render(null, container);
+    document.body.removeChild(container);
+    window.history.replaceState({}, '', '/');
+    __resetLocaleForTesting();
+    vi.clearAllMocks();
+  });
+
+  async function clickAndFlush(el: Element | null): Promise<void> {
+    await act(async () => {
+      (el as HTMLElement).click();
+      await flushMicrotasks();
+    });
+  }
+
+  async function setValueAndFlush(
+    el: Element | null,
+    value: string,
+    eventType: 'change' | 'input' = 'change'
+  ): Promise<void> {
+    await act(async () => {
+      const input = el as HTMLInputElement;
+      input.value = value;
+      input.dispatchEvent(new Event(eventType, { bubbles: true }));
+      await flushMicrotasks();
+    });
+  }
+
+  function nodeButton(kind: 'click' | 'augment', id: string): Element | null {
+    return container.querySelector(
+      `[data-testid="mock-node-${kind}"][data-node-id="${id}"]`
+    );
+  }
+
+  /**
+   * The canonical extraction shape: upstream -> work-b -> work-c -> finish.
+   * The middle pair is the cut every happy-path assertion packages.
+   */
+  function extractableDetail(
+    extra: {
+      nodes?: Record<string, unknown>[];
+      consultations?: WireConsultationBinding[];
+    } = {}
+  ): PipelineDetailResponse {
+    const stage = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: 'skill:rasen-apply', version: 'digest-apply' },
+      execution: {
+        version: 1 as const,
+        role: 'implementer' as const,
+        workspace: { access: 'write' as const },
+        retainedExecutionNote: `keep ${id}`,
+      },
+    });
+    const definition = {
+      version: 2 as const,
+      id: 'definition:extract',
+      sourceId: 'fixture:extract',
+      name: 'extract',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [],
+      root: {
+        nodes: [
+          stage('upstream'),
+          stage('work-b'),
+          stage('work-c'),
+          { id: 'finish', kind: 'Finish' as const, outcome: 'done' },
+          ...((extra.nodes ?? []) as never[]),
+        ],
+        connections: [
+          {
+            id: 'upstream:done->work-b:input',
+            from: { node: 'upstream', port: 'done' },
+            to: { node: 'work-b', port: 'input' },
+            condition: 'always',
+          },
+          {
+            id: 'work-b:done->work-c:input',
+            from: { node: 'work-b', port: 'done' },
+            to: { node: 'work-c', port: 'input' },
+          },
+          {
+            id: 'work-c:done->finish:input',
+            from: { node: 'work-c', port: 'done' },
+            to: { node: 'finish', port: 'input' },
+          },
+        ],
+      },
+      ...(extra.consultations ? { consultations: extra.consultations } : {}),
+    };
+    return {
+      ...pipelineDetailFixture,
+      pipeline: {
+        ...pipelineDetailFixture.pipeline,
+        name: 'extract',
+        description: 'Extraction fixture',
+        provenance: 'user' as const,
+        sourceLayer: 'user' as const,
+        stages: [],
+        authoredVersion: 2 as const,
+        normalizedVersion: 2 as const,
+        definitionValid: true,
+        planAvailable: true,
+        executable: false,
+        executionMode: 'unavailable' as const,
+        unavailableReason: 'ecp_v2_runtime_unavailable',
+      },
+      definition,
+      preparation: v2Preparation,
+      editable: true,
+    } as PipelineDetailResponse;
+  }
+
+  async function mountExtractEdit(detail: PipelineDetailResponse): Promise<void> {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(detail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/extract');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+  }
+
+  /** Selects the canonical middle pair (the multi state the panel needs). */
+  async function selectPair(): Promise<void> {
+    await clickAndFlush(await nodeButton('click', 'work-b'));
+    await clickAndFlush(await nodeButton('augment', 'work-c'));
+  }
+
+  /** Selects the pair plus extra node ids (the mixed-kind refusal case). */
+  async function selectWith(extra: readonly string[]): Promise<void> {
+    await selectPair();
+    for (const id of extra) {
+      await clickAndFlush(await nodeButton('augment', id));
+    }
+  }
+
+  async function submittedDefinition(): Promise<WirePipelineDefinitionV2> {
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    return vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+  }
+
+  it('offers the action for a multi selection of plain stages and opens the review with the derived defaults', async () => {
+    await mountExtractEdit(extractableDetail());
+    // A singleton opens the node panel — no summary, no package action.
+    await clickAndFlush(await nodeButton('click', 'work-b'));
+    expect(container.querySelector('[data-testid="v2-node-panel"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="v2-selection-panel-package"]')).toBeNull();
+
+    await clickAndFlush(await nodeButton('augment', 'work-c'));
+    const packageButton = container.querySelector('[data-testid="v2-selection-panel-package"]');
+    expect(packageButton).not.toBeNull();
+    expect(packageButton!.textContent).toContain('Package into reusable block');
+    await clickAndFlush(packageButton);
+
+    const review = container.querySelector('[data-testid="v2-extract-review-panel"]');
+    expect(review).not.toBeNull();
+    expect(
+      (review!.querySelector('[data-testid="v2-extract-review-id"]') as HTMLInputElement).value
+    ).toBe('block');
+    const summary = review!.querySelector('[data-testid="v2-extract-review-summary"]')!
+      .textContent!;
+    expect(summary).toContain('2 stages');
+    expect(summary).toContain('1 internal connection');
+    expect(summary).toContain('cut: 1 input, 1 outcome');
+    expect(
+      (review!.querySelector('[data-testid="v2-extract-review-input-name"]') as HTMLInputElement)
+        .value
+    ).toBe('work-b');
+    expect(
+      (review!.querySelector('[data-testid="v2-extract-review-outcomes"]') as HTMLInputElement)
+        .value
+    ).toBe('work-c');
+  });
+
+  it('offers no package action in the v1 editor even for a multi selection', async () => {
+    const v1Detail = {
+      ...pipelineDetailFixture,
+      pipeline: {
+        ...pipelineDetailFixture.pipeline,
+        provenance: 'user' as const,
+        sourceLayer: 'user' as const,
+      },
+      editable: true,
+    } as PipelineDetailResponse;
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v1Detail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/small-feature');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+
+    await clickAndFlush(await nodeButton('click', 'propose'));
+    await clickAndFlush(await nodeButton('augment', 'apply'));
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="v2-selection-panel-package"]')).toBeNull();
+    expect(container.querySelector('[data-testid="v2-selection-panel-refusals"]')).toBeNull();
+  });
+
+  it('names every blocker instead of offering the action — kinds, gate, fan-out, join, consultation', async () => {
+    const cases: Array<{
+      label: string;
+      detail: PipelineDetailResponse;
+      pattern: RegExp;
+      select?: readonly string[];
+    }> = [
+      {
+        label: 'mixed kinds',
+        detail: extractableDetail({
+          nodes: [{ id: 'extra-finish', kind: 'Finish', outcome: 'done' }],
+        }),
+        select: ['extra-finish'],
+        pattern: /Only plain stages can be packaged.*'extra-finish' is a Finish/,
+      },
+      {
+        label: 'outside gate target',
+        detail: extractableDetail({
+          nodes: [
+            {
+              id: 'gate-1',
+              kind: 'Gate',
+              target: 'work-b',
+              outcomes: ['approve'],
+              dispositions: { approve: 'proceed' },
+            },
+          ],
+        }),
+        pattern: /Stage 'work-b' is targeted by Gate 'gate-1' outside the selection/,
+      },
+      {
+        label: 'outside fan-out member',
+        detail: extractableDetail({
+          nodes: [
+            {
+              id: 'fan',
+              kind: 'FanOut',
+              branches: [],
+              concurrencyCap: 1,
+              budget: 1,
+              joinNodeId: 'join-x',
+              members: [
+                {
+                  id: 'unrelated',
+                  hierarchicalPath: 'stage:work-b',
+                  required: true,
+                  condition: 'always',
+                },
+              ],
+            },
+          ],
+        }),
+        pattern: /Stage 'work-b' is a branch or member of FanOut 'fan' outside the selection/,
+      },
+      {
+        label: 'outside join input (prefixed form)',
+        detail: extractableDetail({
+          nodes: [
+            {
+              id: 'join-x',
+              kind: 'Join',
+              inputs: ['stage:work-c'],
+              requiredMembers: [],
+              optionalMembers: [],
+              outcomes: { proceed: 'done', failed: 'failed' },
+            },
+          ],
+        }),
+        pattern: /Stage 'work-c' is an input of Join 'join-x' outside the selection/,
+      },
+      {
+        label: 'consultation binding',
+        detail: extractableDetail({
+          consultations: [
+            {
+              sourceStage: 'work-c',
+              teacherSkill: 'skill:teacher',
+              maxConsultationsPerInvocation: 1,
+              maxTeacherAttemptsPerConsultation: 1,
+            },
+          ],
+        }),
+        pattern: /Stage 'work-c' is referenced by a consultation binding/,
+      },
+    ];
+    for (const testCase of cases) {
+      await mountExtractEdit(testCase.detail);
+      await selectWith(testCase.select ?? []);
+      expect(
+        container.querySelector('[data-testid="v2-selection-panel-package"]'),
+        testCase.label
+      ).toBeNull();
+      const refusals = container.querySelector('[data-testid="v2-selection-panel-refusals"]');
+      expect(refusals, testCase.label).not.toBeNull();
+      expect(refusals!.textContent, testCase.label).toMatch(testCase.pattern);
+      // Refused means unchanged: every node is still on the canvas.
+      const flowText = container.querySelector('[data-testid="mock-reactflow"]')!
+        .textContent!;
+      expect(flowText, testCase.label).toContain('work-b');
+      expect(flowText, testCase.label).toContain('work-c');
+      render(null, container);
+      document.body.removeChild(container);
+      container = document.createElement('div');
+      document.body.appendChild(container);
+    }
+  });
+
+  it('confirming the review packages the pair onto the EDITED outcome, selects the ref, and keeps the declaration reusable', async () => {
+    await mountExtractEdit(extractableDetail());
+    await selectPair();
+    await clickAndFlush(container.querySelector('[data-testid="v2-selection-panel-package"]'));
+
+    // Rename the derived outcome — NameListField commits on blur, exactly
+    // like the declarations editor's own outcomes field.
+    const outcomes = container.querySelector(
+      '[data-testid="v2-extract-review-outcomes"]'
+    ) as HTMLInputElement;
+    outcomes.focus();
+    await setValueAndFlush(outcomes, 'complete', 'input');
+    await act(async () => {
+      outcomes.blur();
+      await flushMicrotasks();
+    });
+
+    await clickAndFlush(container.querySelector('[data-testid="v2-extract-review-confirm"]'));
+
+    // The review closed and the success toast names the declaration.
+    expect(container.querySelector('[data-testid="v2-extract-review-panel"]')).toBeNull();
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toContain(
+      "Packaged 2 stages into 'block'."
+    );
+
+    // The ref IS the selection and its panel is open (both selection truths
+    // written in one tick — the pairing discipline).
+    expect(
+      container
+        .querySelector('[data-testid="mock-node"][data-node-id="composite-ref"]')
+        ?.getAttribute('data-selected')
+    ).toBe('true');
+    expect(
+      container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-node')
+    ).toBe('composite-ref');
+    // The summary closed: the selection is a singleton now.
+    expect(container.querySelector('[data-testid="v2-selection-panel"]')).toBeNull();
+
+    // The declarations panel lists the new custom row; its insert action adds
+    // a second ref (no capability hole — the explicit path still works).
+    const row = container.querySelector(
+      '[data-testid="declaration-row"][data-declaration-id="block"]'
+    );
+    expect(row).not.toBeNull();
+    expect(row!.getAttribute('data-provenance')).toBe('custom');
+    await clickAndFlush(
+      container.querySelector(
+        '[data-testid="declaration-insert-ref"][data-declaration-id="block"]'
+      )
+    );
+    const flowText = container.querySelector('[data-testid="mock-reactflow"]')!.textContent!;
+    expect(flowText).toContain('composite-ref');
+    expect(flowText).toContain('composite-ref-2');
+
+    // The definition actually sent to validation: the rewired crossing uses
+    // the edited outcome as its source port, the body is verbatim, and NO
+    // moved node or created node carries legacyRuntimeOwner (the POST-body
+    // half of the two-layer guard).
+    const submitted = await submittedDefinition();
+    const block = submitted.declarations.find((declaration) => declaration.id === 'block')!;
+    expect(block.provenance).toBe('custom');
+    expect(block.inputs).toEqual([{ name: 'work-b', type: 'input' }]);
+    expect(block.outcomes).toEqual(['complete']);
+    expect(block.graph.nodes.map((node) => node.id)).toEqual(['work-b', 'work-c']);
+    expect(block.graph.nodes[0]).toHaveProperty('execution.retainedExecutionNote', 'keep work-b');
+    expect(submitted.root.connections.map((connection) => connection.id)).toEqual([
+      'upstream:done->composite-ref:work-b',
+      'composite-ref:complete->finish:input',
+    ]);
+    expect(
+      submitted.root.connections.find(
+        (connection) => connection.id === 'upstream:done->composite-ref:work-b'
+      )
+    ).toHaveProperty('condition', 'always');
+    const everyNode = [
+      ...submitted.root.nodes,
+      ...submitted.declarations.flatMap((declaration) => declaration.graph.nodes),
+    ];
+    expect(everyNode.length).toBeGreaterThan(0);
+    for (const node of everyNode) {
+      expect(node).not.toHaveProperty('legacyRuntimeOwner');
+    }
+  });
+
+  it('renders byte-identical refusals as distinct lines with index keys (review m1)', async () => {
+    // Two consultation bindings on the SAME selected stage emit two
+    // byte-identical refusal strings — the refusal list must still render
+    // BOTH lines (a string key would collide; review round 1, m1).
+    const detail = extractableDetail({
+      consultations: [
+        {
+          sourceStage: 'work-c',
+          teacherSkill: 'skill:teacher-a',
+          maxConsultationsPerInvocation: 1,
+          maxTeacherAttemptsPerConsultation: 1,
+        },
+        {
+          sourceStage: 'work-c',
+          teacherSkill: 'skill:teacher-b',
+          maxConsultationsPerInvocation: 2,
+          maxTeacherAttemptsPerConsultation: 1,
+        },
+      ],
+    });
+    await mountExtractEdit(detail);
+    await selectPair();
+    const refusals = () =>
+      Array.from(
+        container.querySelectorAll('[data-testid="v2-selection-panel-refusals"] > p')
+      );
+    let lines = refusals();
+    expect(lines).toHaveLength(2);
+    expect(lines[0]!.textContent).toBe(
+      "Stage 'work-c' is referenced by a consultation binding."
+    );
+    expect(lines[1]!.textContent).toBe(lines[0]!.textContent);
+
+    // Churn the list through a different shape and back — the keyed
+    // reconciliation over a duplicate-string list must keep every line.
+    await clickAndFlush(await nodeButton('augment', 'finish'));
+    lines = refusals();
+    expect(lines).toHaveLength(3);
+    expect(lines[0]!.textContent).toMatch(/Only plain stages/);
+    expect(lines[1]!.textContent).toBe(
+      "Stage 'work-c' is referenced by a consultation binding."
+    );
+    expect(lines[2]!.textContent).toBe(lines[1]!.textContent);
+
+    await clickAndFlush(await nodeButton('augment', 'finish'));
+    lines = refusals();
+    expect(lines).toHaveLength(2);
+    expect(lines.every((line) => line.textContent === lines[0]!.textContent)).toBe(
+      true
+    );
+  });
+
+  it('cancel discards; a duplicate-id confirm toasts the model message, keeps the review open, and leaves the draft unchanged', async () => {
+    const detail = extractableDetail();
+    (detail.definition as WirePipelineDefinitionV2).declarations.push({
+      id: 'block',
+      kind: 'Composite',
+      provenance: 'custom',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      graph: { nodes: [], connections: [] },
+    });
+    await mountExtractEdit(detail);
+    await selectPair();
+    await clickAndFlush(container.querySelector('[data-testid="v2-selection-panel-package"]'));
+
+    // The default id skips the taken one.
+    expect(
+      (container.querySelector('[data-testid="v2-extract-review-id"]') as HTMLInputElement)
+        .value
+    ).toBe('block-2');
+
+    // Cancel: the draft is untouched.
+    await clickAndFlush(container.querySelector('[data-testid="v2-extract-review-cancel"]'));
+    expect(container.querySelector('[data-testid="v2-extract-review-panel"]')).toBeNull();
+    let submitted = await submittedDefinition();
+    expect(submitted.declarations.map((declaration) => declaration.id)).toEqual(['block']);
+    expect(submitted.root.nodes.map((node) => node.id)).toContain('work-b');
+
+    // A forced duplicate id: the model refuses on confirm, the message
+    // surfaces (toast + in-dialog), and the review keeps its edits. (The
+    // pair selection survived the cancel — augmenting would toggle it off.)
+    await clickAndFlush(container.querySelector('[data-testid="v2-selection-panel-package"]'));
+    const idInput = container.querySelector(
+      '[data-testid="v2-extract-review-id"]'
+    ) as HTMLInputElement;
+    await setValueAndFlush(idInput, 'block', 'input');
+    await clickAndFlush(container.querySelector('[data-testid="v2-extract-review-confirm"]'));
+
+    const review = container.querySelector('[data-testid="v2-extract-review-panel"]');
+    expect(review).not.toBeNull();
+    expect(
+      review!.querySelector('[data-testid="v2-extract-review-error"]')!.textContent
+    ).toMatch(/Declaration id 'block' already exists/);
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toMatch(
+      /already exists/
+    );
+    expect(
+      (review!.querySelector('[data-testid="v2-extract-review-id"]') as HTMLInputElement).value
+    ).toBe('block');
+
+    submitted = await submittedDefinition();
+    expect(submitted.declarations).toHaveLength(1);
+    expect(submitted.root.nodes.map((node) => node.id)).toContain('work-b');
+    expect(submitted.root.nodes.map((node) => node.id)).toContain('work-c');
+  });
+});
+
+describe('PipelineCanvasPage — back-edge loop inference', () => {
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    __resetLocaleForTesting();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+  });
+
+  afterEach(() => {
+    render(null, container);
+    document.body.removeChild(container);
+    window.history.replaceState({}, '', '/');
+    __resetLocaleForTesting();
+    vi.clearAllMocks();
+  });
+
+  async function clickAndFlush(el: Element | null): Promise<void> {
+    await act(async () => {
+      (el as HTMLElement).click();
+      await flushMicrotasks();
+    });
+  }
+
+  async function setValueAndFlush(
+    el: Element | null,
+    value: string,
+    eventType: 'change' | 'input' = 'change'
+  ): Promise<void> {
+    await act(async () => {
+      const input = el as HTMLInputElement;
+      input.value = value;
+      input.dispatchEvent(new Event(eventType, { bubbles: true }));
+      await flushMicrotasks();
+    });
+  }
+
+  /**
+   * The canonical back-edge shape: upstream -> work-b -> work-c -> work-d ->
+   * finish. The inner back-edge (work-d -> work-b — the mock's
+   * `mock-connect-backedge-inner`, last AtomicStage onto the second) encloses
+   * the three middle stages between the external upstream and the external
+   * finish; the full back-edge (work-d -> upstream — `mock-connect-backedge`)
+   * encloses the whole chain.
+   */
+  function backedgeDetail(
+    extra: {
+      outcomes?: string[];
+      middleNode?: Record<string, unknown>;
+    } = {}
+  ): PipelineDetailResponse {
+    const stage = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: 'skill:rasen-apply', version: 'digest-apply' },
+      execution: {
+        version: 1 as const,
+        role: 'implementer' as const,
+        workspace: { access: 'write' as const },
+        retainedExecutionNote: `keep ${id}`,
+      },
+    });
+    const middle = extra.middleNode
+      ? [stage('work-b'), extra.middleNode as never, stage('work-d')]
+      : [stage('work-b'), stage('work-c'), stage('work-d')];
+    const chain = [
+      'upstream',
+      ...middle.map((node: { id: string }) => node.id),
+      'finish',
+    ];
+    const definition = {
+      version: 2 as const,
+      id: 'definition:backedge',
+      sourceId: 'fixture:backedge',
+      name: 'backedge',
+      inputs: [],
+      artifacts: [],
+      outcomes: extra.outcomes ?? ['done'],
+      declarations: [],
+      root: {
+        nodes: [stage('upstream'), ...middle, { id: 'finish', kind: 'Finish' as const, outcome: 'done' }],
+        connections: chain.slice(0, -1).map((node, index) => ({
+          id: `${node}:done->${chain[index + 1]}:input`,
+          from: { node, port: 'done' },
+          to: { node: chain[index + 1]!, port: 'input' },
+          ...(index === 0 ? { condition: 'always' as const } : {}),
+        })),
+      },
+    };
+    return {
+      ...pipelineDetailFixture,
+      pipeline: {
+        ...pipelineDetailFixture.pipeline,
+        name: 'backedge',
+        description: 'Back-edge fixture',
+        provenance: 'user' as const,
+        sourceLayer: 'user' as const,
+        stages: [],
+        authoredVersion: 2 as const,
+        normalizedVersion: 2 as const,
+        definitionValid: true,
+        planAvailable: true,
+        executable: false,
+        executionMode: 'unavailable' as const,
+        unavailableReason: 'ecp_v2_runtime_unavailable',
+      },
+      definition,
+      preparation: v2Preparation,
+      editable: true,
+    } as PipelineDetailResponse;
+  }
+
+  async function mountBackedgeEdit(detail: PipelineDetailResponse): Promise<void> {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(detail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/backedge');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+  }
+
+  async function submittedDefinition(): Promise<WirePipelineDefinitionV2> {
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    return vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+  }
+
+  it('a refused cycle-closing draw opens the loop review with the draft unchanged', async () => {
+    await mountBackedgeEdit(backedgeDetail());
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge-inner"]'));
+
+    // The review opened, headed by the drawn endpoints and the computed
+    // region (to first, then from, then intermediates in node order).
+    const review = container.querySelector('[data-testid="v2-loop-review-panel"]');
+    expect(review).not.toBeNull();
+    expect(review!.querySelector('[data-testid="v2-loop-review-endpoints"]')!.textContent)
+      .toContain('work-d → work-b');
+    expect(review!.querySelector('[data-testid="v2-loop-review-region"]')!.textContent)
+      .toContain('work-b, work-d, work-c');
+    expect(
+      (review!.querySelector('[data-testid="v2-loop-review-id"]') as HTMLInputElement).value
+    ).toBe('loop-body');
+    expect(
+      (review!.querySelector('[data-testid="v2-loop-review-max-iterations"]') as HTMLInputElement)
+        .value
+    ).toBe('3');
+    expect(
+      (review!.querySelector('[data-testid="v2-loop-review-exit-outcome"]') as HTMLSelectElement)
+        .value
+    ).toBe('done');
+    expect(
+      (review!.querySelector('[data-testid="v2-loop-review-input-name"]') as HTMLInputElement)
+        .value
+    ).toBe('work-b');
+    // DELIBERATE SUPERSESSION (canvas-loop-validate-clean-synthesis): the
+    // outcome rows now name the body's producible terminal outcomes ('done'
+    // — the chain consumes work-b's and work-c's, work-d alone produces the
+    // terminal one), not the severed stage id ('work-d' — unproducible by
+    // the engine's exact-cover rule).
+    expect(
+      (review!.querySelector('[data-testid="v2-loop-review-outcomes"]') as HTMLInputElement).value
+    ).toBe('done');
+    // The entry row carries the engine's control type (was 'input' — the
+    // port name typed as a type, engine-red on any connection).
+    expect(
+      (
+        review!.querySelector(
+          '[data-testid="v2-loop-review-input-type"][data-port-index="0"]'
+        ) as HTMLInputElement
+      ).value
+    ).toBe('ecp/control');
+    // The declare-notice line: confirming will declare the default
+    // lifecycle's exit outcome (the definition declares only 'done').
+    expect(
+      review!.querySelector('[data-testid="v2-loop-review-declares"]')!.textContent
+    ).toContain('iteration-limit');
+
+    // The draw-time refusal toast stands, and NOTHING was added: the
+    // submitted definition still carries the untouched chain.
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toContain(
+      'Rejected: work-d → work-b would create a cycle'
+    );
+    const submitted = await submittedDefinition();
+    expect(submitted.root.nodes.map((node) => node.id)).toEqual([
+      'upstream',
+      'work-b',
+      'work-c',
+      'work-d',
+      'finish',
+    ]);
+    expect(submitted.root.connections).toHaveLength(4);
+  });
+
+  it('cancel leaves the refusal message and the draft untouched', async () => {
+    await mountBackedgeEdit(backedgeDetail());
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge-inner"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-loop-review-cancel"]'));
+
+    expect(container.querySelector('[data-testid="v2-loop-review-panel"]')).toBeNull();
+    // Today's refusal outcome exactly: the toast message stands.
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toContain(
+      'Rejected: work-d → work-b would create a cycle'
+    );
+    const submitted = await submittedDefinition();
+    expect(submitted.root.nodes.map((node) => node.id)).toEqual([
+      'upstream',
+      'work-b',
+      'work-c',
+      'work-d',
+      'finish',
+    ]);
+    expect(submitted.root.connections).toHaveLength(4);
+    expect(submitted.declarations).toHaveLength(0);
+  });
+
+  it('confirm synthesizes the loop: region gone, externals rewired, loop selected, no legacyRuntimeOwner in the POST body', async () => {
+    await mountBackedgeEdit(backedgeDetail());
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge-inner"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-loop-review-confirm"]'));
+
+    expect(container.querySelector('[data-testid="v2-loop-review-panel"]')).toBeNull();
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toContain(
+      "Loop created from back-edge over 3 stages ('loop-body')."
+    );
+
+    // The loop IS the selection (both selection truths in one tick) and its
+    // properties panel is open.
+    expect(
+      container
+        .querySelector('[data-testid="mock-node"][data-node-id="bounded-loop"]')
+        ?.getAttribute('data-selected')
+    ).toBe('true');
+    expect(
+      container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-node')
+    ).toBe('bounded-loop');
+
+    // The region's nodes left the ROOT graph; the declaration row landed.
+    // (DELIBERATE SUPERSESSION — canvas-loop-body-visibility: the synthesized
+    // loop now opens EXPANDED, so the region's ids DO render — as namespaced
+    // BODY children `bounded-loop::<id>` inside the frame. "Gone" is now a
+    // statement about the root ids, asserted by the exact root list.)
+    const flowText = container.querySelector('[data-testid="mock-reactflow"]')!.textContent!;
+    expect(flowText.split(',').filter((id) => !id.includes('::'))).toEqual([
+      'upstream',
+      'finish',
+      'bounded-loop',
+    ]);
+    expect(flowText).toContain('bounded-loop::work-b');
+    expect(flowText).toContain('bounded-loop::work-d');
+    const row = container.querySelector('[data-testid="declaration-row"][data-declaration-id="loop-body"]');
+    expect(row).not.toBeNull();
+    expect(row!.getAttribute('data-provenance')).toBe('custom');
+
+    // The definition actually sent to validation: externals rewired onto the
+    // loop's derived ports (extension fields carried — the inbound
+    // condition), body verbatim, the back-edge nowhere, and NO node carries
+    // legacyRuntimeOwner (the POST-body half of the two-layer guard).
+    const submitted = await submittedDefinition();
+    expect(submitted.root.nodes.map((node) => node.id)).toEqual([
+      'upstream',
+      'finish',
+      'bounded-loop',
+    ]);
+    expect(
+      submitted.root.connections.some(
+        (connection) => connection.from.node === 'work-d' || connection.to.node === 'work-b'
+      )
+    ).toBe(false);
+    expect(submitted.root.connections.map((connection) => connection.id)).toEqual([
+      // Incoming crossing: positional rewire onto the derived entry row's
+      // NAME (unchanged from round one), now control-typed.
+      'upstream:done->bounded-loop:work-b',
+      // Outgoing crossing: onto the loop's EXIT OUTCOME (was the severed
+      // row name 'work-d' — deliberate supersession, the engine reads a
+      // BoundedLoop's output ports from its exit mappings).
+      'bounded-loop:done->finish:input',
+    ]);
+    expect(
+      submitted.root.connections.find(
+        (connection) => connection.id === 'upstream:done->bounded-loop:work-b'
+      )
+    ).toHaveProperty('condition', 'always');
+
+    const declaration = submitted.declarations.find((d) => d.id === 'loop-body')!;
+    expect(declaration.provenance).toBe('custom');
+    expect(declaration.inputs).toEqual([{ name: 'work-b', type: 'ecp/control' }]);
+    expect(declaration.outcomes).toEqual(['done']);
+    expect(declaration.graph.nodes.map((node) => node.id)).toEqual(['work-b', 'work-c', 'work-d']);
+    expect(declaration.graph.nodes[0]).toHaveProperty('execution.retainedExecutionNote', 'keep work-b');
+
+    const loop = submitted.root.nodes[2] as WireBoundedLoopNode;
+    expect(loop.kind).toBe('BoundedLoop');
+    expect(loop.body).toBe('loop-body');
+    expect(loop.limits).toEqual({ maxIterations: 3, maxActions: 12, budget: 12 });
+    expect(loop.exits).toEqual({ done: { action: 'exit', outcome: 'done' } });
+    // Declare-on-synthesis: the definition contract gained the default
+    // lifecycle's exit outcome with zero author edits.
+    expect(submitted.outcomes).toEqual(['done', 'iteration-limit']);
+
+    const everyNode = [
+      ...submitted.root.nodes,
+      ...submitted.declarations.flatMap((d) => d.graph.nodes),
+    ];
+    expect(everyNode.length).toBeGreaterThan(0);
+    for (const node of everyNode) {
+      expect(node).not.toHaveProperty('legacyRuntimeOwner');
+    }
+  });
+
+  it('the exit mapping follows the author-chosen definition outcome', async () => {
+    await mountBackedgeEdit(backedgeDetail({ outcomes: ['done', 'archived'] }));
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge-inner"]'));
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-loop-review-exit-outcome"]'),
+      'archived'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="v2-loop-review-confirm"]'));
+
+    const submitted = await submittedDefinition();
+    const loop = submitted.root.nodes[2] as WireBoundedLoopNode;
+    expect(loop.exits).toEqual({ done: { action: 'exit', outcome: 'archived' } });
+  });
+
+  it('an invalid iteration bound blocks confirm under the authoring-draft-errors discipline', async () => {
+    await mountBackedgeEdit(backedgeDetail());
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge-inner"]'));
+
+    const bound = () =>
+      container.querySelector('[data-testid="v2-loop-review-max-iterations"]') as HTMLInputElement;
+    // A fraction the field must refuse (jsdom sanitizes non-numeric text on
+    // number inputs, so '1.5' is the invalid value that survives).
+    await setValueAndFlush(bound(), '1.5', 'input');
+    expect(bound().getAttribute('aria-invalid')).toBe('true');
+    expect(
+      container.querySelector('[data-testid="integer-contract-error"]')!.textContent
+    ).toBe('Max iterations must be a positive integer.');
+    const confirm = container.querySelector(
+      '[data-testid="v2-loop-review-confirm"]'
+    ) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    // The page's own discipline agrees: validation is blocked until repair.
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    expect(vi.mocked(client.validatePipeline)).not.toHaveBeenCalled();
+    // A click on the disabled confirm synthesizes nothing — the review stays
+    // open and the region is still on the canvas.
+    await clickAndFlush(confirm);
+    expect(container.querySelector('[data-testid="v2-loop-review-panel"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="mock-reactflow"]')!.textContent!).toContain(
+      'work-b'
+    );
+
+    // Repair unblocks confirm, and the repaired bound is the one that lands.
+    await setValueAndFlush(bound(), '4', 'input');
+    expect(bound().getAttribute('aria-invalid')).toBe('false');
+    expect(
+      (container.querySelector('[data-testid="v2-loop-review-confirm"]') as HTMLButtonElement)
+        .disabled
+    ).toBe(false);
+    await clickAndFlush(container.querySelector('[data-testid="v2-loop-review-confirm"]'));
+    const submitted = await submittedDefinition();
+    expect((submitted.root.nodes[2] as WireBoundedLoopNode).limits.maxIterations).toBe(4);
+  });
+
+  it('reports the named blockers for an unextractable region and offers no confirm', async () => {
+    // A Choice mid-chain: the full back-edge's region includes it, and only
+    // plain stages may be enclosed.
+    await mountBackedgeEdit(
+      backedgeDetail({ middleNode: { id: 'branch', kind: 'Choice', outcomes: ['taken', 'skipped'] } })
+    );
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge"]'));
+
+    const review = container.querySelector('[data-testid="v2-loop-review-panel"]');
+    expect(review).not.toBeNull();
+    expect(container.querySelector('[data-testid="v2-loop-review-confirm"]')).toBeNull();
+    const refusals = review!.querySelector('[data-testid="v2-loop-review-refusals"]')!;
+    expect(refusals.textContent).toMatch(
+      /Only plain stages can be packaged into a reusable block — 'branch' is a Choice/
+    );
+
+    // Cancel leaves the draft unchanged.
+    await clickAndFlush(container.querySelector('[data-testid="v2-loop-review-cancel"]'));
+    const submitted = await submittedDefinition();
+    expect(submitted.root.nodes.map((node) => node.id)).toEqual([
+      'upstream',
+      'work-b',
+      'branch',
+      'work-d',
+      'finish',
+    ]);
+    expect(submitted.declarations).toHaveLength(0);
+  });
+
+  it('the explicit palette loop gesture still works after a synthesis', async () => {
+    await mountBackedgeEdit(backedgeDetail());
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge-inner"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-loop-review-confirm"]'));
+
+    // No capability hole: the palette gesture still mints a BoundedLoop over
+    // the first declaration carrying a body — the one just extracted.
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-gesture-loop"]'));
+    const flowText = container.querySelector('[data-testid="mock-reactflow"]')!.textContent!;
+    expect(flowText).toContain('bounded-loop');
+    expect(flowText).toContain('bounded-loop-2');
+    const submitted = await submittedDefinition();
+    const secondLoop = submitted.root.nodes[3] as WireBoundedLoopNode;
+    expect(secondLoop.id).toBe('bounded-loop-2');
+    expect(secondLoop.body).toBe('loop-body');
+  });
+
+  it('declares an outcome inline while the review is open and the exit select reads it live', async () => {
+    await mountBackedgeEdit(backedgeDetail({ outcomes: [] }));
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge-inner"]'));
+
+    // Fresh-contract corner (canvas-root-contract-editor design D3/D5): the
+    // exit select has nothing to offer and the inline declare affordance
+    // stands in for the contract panel this modal covers.
+    const review = container.querySelector('[data-testid="v2-loop-review-panel"]')!;
+    const exitSelect = review.querySelector(
+      '[data-testid="v2-loop-review-exit-outcome"]'
+    ) as HTMLSelectElement;
+    expect(exitSelect.options).toHaveLength(0);
+    expect(review.querySelector('[data-testid="v2-loop-review-declare"]')).not.toBeNull();
+
+    // One declaring transaction, the trimmed name.
+    await setValueAndFlush(
+      review.querySelector('[data-testid="v2-loop-review-declare-name"]'),
+      '  done  ',
+      'input'
+    );
+    await clickAndFlush(
+      review.querySelector('[data-testid="v2-loop-review-declare-confirm"]')
+    );
+
+    // The review stays open, the affordance is gone (the contract is no
+    // longer empty), and the exit select — reading the LIVE draft, not the
+    // open-time snapshot this render used to capture — offers the new
+    // outcome, adopted as the pick.
+    expect(container.querySelector('[data-testid="v2-loop-review-panel"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="v2-loop-review-declare"]')).toBeNull();
+    const liveSelect = container.querySelector(
+      '[data-testid="v2-loop-review-exit-outcome"]'
+    ) as HTMLSelectElement;
+    expect(Array.from(liveSelect.options).map((option) => option.value)).toEqual(['done']);
+    expect(liveSelect.value).toBe('done');
+
+    // The definition actually sent: the one outcome appended, the graph
+    // untouched (the review's own confirm never ran — still the chain).
+    const submitted = await submittedDefinition();
+    expect(submitted.outcomes).toEqual(['done']);
+    expect(submitted.root.nodes.map((node) => node.id)).toEqual([
+      'upstream',
+      'work-b',
+      'work-c',
+      'work-d',
+      'finish',
+    ]);
+    expect(submitted.root.connections).toHaveLength(4);
+    expect(submitted.declarations).toHaveLength(0);
+  });
+
+  it('the loop review reads a contract edited while it is open (no open-time snapshot)', async () => {
+    // The declare is the only writer while the modal is open, so drive it:
+    // open on an empty contract, declare twice in sequence — the second
+    // affordance pass proves the select re-reads the draft each render.
+    await mountBackedgeEdit(backedgeDetail({ outcomes: [] }));
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge-inner"]'));
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-loop-review-declare-name"]'),
+      'done',
+      'input'
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-loop-review-declare-confirm"]')
+    );
+    // Declared one — the affordance hides; the exit select now lists exactly
+    // the declared set (pickers stay read-only over the contract).
+    const select = () =>
+      container.querySelector(
+        '[data-testid="v2-loop-review-exit-outcome"]'
+      ) as HTMLSelectElement;
+    expect(Array.from(select().options).map((option) => option.value)).toEqual(['done']);
+    const submitted = await submittedDefinition();
+    expect(submitted.outcomes).toEqual(['done']);
+  });
+
+  it('inline declare affordance (direct render): hidden once outcomes exist, hands over the trimmed name, keeps the review open', async () => {
+    const onDeclareOutcome = vi.fn();
+    const baseProps = {
+      from: 'work-d',
+      to: 'work-b',
+      regionNodeIds: ['work-b', 'work-c', 'work-d'],
+      defaultId: 'loop-body',
+      derived: { inputs: [], artifacts: [], outcomes: ['done'] },
+      defaultMaxIterations: 3,
+      lifecycleExitOutcomes: ['iteration-limit'],
+      refusals: [],
+      integerDraftError: null,
+      onIntegerDraftError: vi.fn(),
+      onDeclareOutcome,
+      error: null,
+      onConfirm: vi.fn(),
+      onCancel: vi.fn(),
+    };
+    const renderPanel = async (definitionOutcomes: readonly string[]) => {
+      await act(async () => {
+        render(
+          <V2LoopReviewPanel {...baseProps} definitionOutcomes={definitionOutcomes} />,
+          container
+        );
+        await flushMicrotasks();
+      });
+    };
+
+    // Affordance hidden when outcomes exist.
+    await renderPanel(['done']);
+    expect(container.querySelector('[data-testid="v2-loop-review-declare"]')).toBeNull();
+
+    // Visible while the contract is empty; a blank name disables confirm.
+    await renderPanel([]);
+    const affordance = () =>
+      container.querySelector('[data-testid="v2-loop-review-declare"]')!;
+    const declareName = () =>
+      affordance().querySelector(
+        '[data-testid="v2-loop-review-declare-name"]'
+      ) as HTMLInputElement;
+    expect(declareName().value).toBe('');
+    expect(
+      (affordance().querySelector(
+        '[data-testid="v2-loop-review-declare-confirm"]'
+      ) as HTMLButtonElement).disabled
+    ).toBe(true);
+
+    // A local edit the review must keep across the declare: its id draft.
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-loop-review-id"]'),
+      'renamed-loop',
+      'input'
+    );
+
+    await setValueAndFlush(declareName(), '  done  ', 'input');
+    await clickAndFlush(
+      affordance().querySelector('[data-testid="v2-loop-review-declare-confirm"]')
+    );
+    expect(onDeclareOutcome).toHaveBeenCalledTimes(1);
+    expect(onDeclareOutcome).toHaveBeenCalledWith('done');
+    // The review is still mounted with its other local edits intact.
+    expect(container.querySelector('[data-testid="v2-loop-review-panel"]')).not.toBeNull();
+    expect(
+      (container.querySelector('[data-testid="v2-loop-review-id"]') as HTMLInputElement)
+        .value
+    ).toBe('renamed-loop');
+  });
+
+  /**
+   * The empty-canvas acceptance shape (canvas-loop-port-inference): the
+   * cycle is closed BEFORE anything external is wired. `external` is a
+   * bystander stage with no edges — it is on no path between the back-edge
+   * endpoints, so the region {review, fix} severs NOTHING and, before this
+   * change, the synthesized loop rendered zero input handles. Node order is
+   * deliberate: the mock's inner back-edge (last AtomicStage onto the
+   * second) draws exactly fix -> review.
+   */
+  function standaloneCycleDetail(): PipelineDetailResponse {
+    const stage = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: 'skill:rasen-apply', version: 'digest-apply' },
+      execution: {
+        version: 1 as const,
+        role: 'implementer' as const,
+        workspace: { access: 'write' as const },
+        retainedExecutionNote: `keep ${id}`,
+      },
+    });
+    const definition = {
+      version: 2 as const,
+      id: 'definition:standalone-cycle',
+      sourceId: 'fixture:standalone-cycle',
+      name: 'standalone-cycle',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [],
+      root: {
+        nodes: [stage('external'), stage('review'), stage('fix')],
+        connections: [
+          {
+            id: 'review:done->fix:input',
+            from: { node: 'review', port: 'done' },
+            to: { node: 'fix', port: 'input' },
+          },
+        ],
+      },
+    };
+    return {
+      ...pipelineDetailFixture,
+      pipeline: {
+        ...pipelineDetailFixture.pipeline,
+        name: 'standalone-cycle',
+        description: 'Standalone cycle fixture',
+        provenance: 'user' as const,
+        sourceLayer: 'user' as const,
+        stages: [],
+        authoredVersion: 2 as const,
+        normalizedVersion: 2 as const,
+        definitionValid: true,
+        planAvailable: true,
+        executable: false,
+        executionMode: 'unavailable' as const,
+        unavailableReason: 'ecp_v2_runtime_unavailable',
+      },
+      definition,
+      preparation: v2Preparation,
+      editable: true,
+    } as PipelineDetailResponse;
+  }
+
+  it('cycle-first on a near-empty canvas: zero-edit acceptance — engine-clean defaults, both handles, externals both sides, Validate clean', async () => {
+    await mountBackedgeEdit(standaloneCycleDetail());
+
+    // The refused cycle-closing draw fix -> review opens the loop review.
+    await clickAndFlush(
+      container.querySelector('[data-testid="mock-connect-backedge-inner"]')
+    );
+    const review = container.querySelector('[data-testid="v2-loop-review-panel"]');
+    expect(review).not.toBeNull();
+    // The review opens on the derived rows: the entry named for the
+    // back-edge's target (child-1's fallback naming, kept) and TYPED
+    // ecp/control (canvas-loop-validate-clean-synthesis), the outcome rows
+    // naming the body's producible terminal outcomes ('done' — the internal
+    // review->fix edge consumes review's, fix alone produces the terminal
+    // one; DELIBERATE SUPERSESSION of child-1's 'fix' row, which was
+    // unproducible by the engine's exact-cover rule).
+    expect(
+      (review!.querySelector('[data-testid="v2-loop-review-input-name"]') as HTMLInputElement)
+        .value
+    ).toBe('review');
+    expect(
+      (
+        review!.querySelector(
+          '[data-testid="v2-loop-review-input-type"][data-port-index="0"]'
+        ) as HTMLInputElement
+      ).value
+    ).toBe('ecp/control');
+    expect(
+      (review!.querySelector('[data-testid="v2-loop-review-outcomes"]') as HTMLInputElement)
+        .value
+    ).toBe('done');
+    // The declare-notice names what confirming will declare: only the
+    // lifecycle's exit outcome ('done' is already declared here).
+    expect(
+      review!.querySelector('[data-testid="v2-loop-review-declares"]')!.textContent
+    ).toContain('iteration-limit');
+
+    // Confirm synthesizes the loop over {review, fix} with the unedited
+    // defaults — ZERO contract edits anywhere; the loop is the selection.
+    await clickAndFlush(container.querySelector('[data-testid="v2-loop-review-confirm"]'));
+    expect(container.querySelector('[data-testid="v2-loop-review-panel"]')).toBeNull();
+
+    // The rendered flow node exposes BOTH handles — port descriptors read
+    // straight from the declaration contract (lookupDeclarationPorts), so
+    // the assertions are over the same rows the connection drag targets.
+    const loopNode = container.querySelector(
+      '[data-testid="mock-node"][data-node-id="bounded-loop"]'
+    );
+    expect(loopNode).not.toBeNull();
+    expect(JSON.parse(loopNode!.getAttribute('data-input-ports')!)).toEqual([
+      { id: 'review', type: 'ecp/control' },
+    ]);
+    expect(JSON.parse(loopNode!.getAttribute('data-output-ports')!)).toEqual([
+      { id: 'done', type: 'outcome/done' },
+    ]);
+
+    // The external stage's connection onto the entry handle lands on the
+    // entry port (nothing was connectable before this change).
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-loop-entry"]'));
+    // And the loop onward: a Finish from the palette gesture, then the
+    // loop's exit-outcome handle onto it (the zero-edit flow's second half).
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-finish"]')
+    );
+    await clickAndFlush(
+      container.querySelector(
+        '[data-testid="mock-connect-authored-route-bounded-loop-done-finish-input"]'
+      )
+    );
+
+    // Validate: the posted definition is the wired graph and the page
+    // reports the clean result. (The badge runs against the standard mocked
+    // validate response — this file's idiom; the REAL engine verdict over
+    // this exact synthesized shape is pinned in
+    // test/core/pipeline-registry/canvas-loop-synthesis-engine-clean.test.ts.)
+    const submitted = await submittedDefinition();
+    expect(submitted.root.nodes.map((node) => node.id)).toEqual([
+      'external',
+      'bounded-loop',
+      'finish',
+    ]);
+    expect(submitted.root.connections.map((connection) => connection.id)).toEqual([
+      'external:done->bounded-loop:review',
+      'bounded-loop:done->finish:input',
+    ]);
+    const declaration = submitted.declarations.find((d) => d.id === 'loop-body')!;
+    expect(declaration.inputs).toEqual([{ name: 'review', type: 'ecp/control' }]);
+    expect(declaration.outcomes).toEqual(['done']);
+    const loop = submitted.root.nodes[1] as WireBoundedLoopNode;
+    expect(loop.exits).toEqual({ done: { action: 'exit', outcome: 'done' } });
+    // Declare-on-synthesis ran inside the confirm: the definition contract
+    // carries the lifecycle's exit outcome without any author edit.
+    expect(submitted.outcomes).toEqual(['done', 'iteration-limit']);
+    expect(
+      container.querySelector('[data-testid="pipeline-canvas-validation-result"]')!
+        .textContent
+    ).toContain('No issues');
+  });
+});
+
+describe('PipelineCanvasPage — parallel frontier inference', () => {
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    __resetLocaleForTesting();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+  });
+
+  afterEach(() => {
+    render(null, container);
+    document.body.removeChild(container);
+    window.history.replaceState({}, '', '/');
+    __resetLocaleForTesting();
+    vi.clearAllMocks();
+  });
+
+  async function clickAndFlush(el: Element | null): Promise<void> {
+    await act(async () => {
+      (el as HTMLElement).click();
+      await flushMicrotasks();
+    });
+  }
+
+  async function setValueAndFlush(
+    el: Element | null,
+    value: string,
+    eventType: 'change' | 'input' = 'change'
+  ): Promise<void> {
+    await act(async () => {
+      const input = el as HTMLInputElement;
+      input.value = value;
+      input.dispatchEvent(new Event(eventType, { bubbles: true }));
+      await flushMicrotasks();
+    });
+  }
+
+  /**
+   * The canonical frontier shape minus exactly one drawn edge: source fans
+   * out to branch-2, both branches reconverge at the Finish target, and the
+   * mock's `mock-connect-production-atomics` (first AtomicStage onto the
+   * second: source -> branch-1, from the 'patch' artifact handle) draws the
+   * completing dispatch half. With `edges` overridden, the same trigger
+   * draws a FIRST branch edge instead (both barrier halves pre-authored, no
+   * source dispatch yet).
+   */
+  function frontierDetail(
+    extra: { outcomes?: string[]; edges?: Array<[string, string]> } = {}
+  ): PipelineDetailResponse {
+    const stage = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: 'skill:rasen-apply', version: 'digest-apply' },
+      execution: {
+        version: 1 as const,
+        role: 'implementer' as const,
+        workspace: { access: 'write' as const },
+        retainedExecutionNote: `keep ${id}`,
+      },
+    });
+    const edges = extra.edges ?? [
+      ['source', 'branch-2'],
+      ['branch-1', 'target'],
+      ['branch-2', 'target'],
+    ];
+    const definition = {
+      version: 2 as const,
+      id: 'definition:frontier',
+      sourceId: 'fixture:frontier',
+      name: 'frontier',
+      inputs: [],
+      artifacts: [],
+      outcomes: extra.outcomes ?? ['done', 'rejected'],
+      declarations: [],
+      root: {
+        nodes: [
+          stage('source'),
+          stage('branch-1'),
+          stage('branch-2'),
+          { id: 'target', kind: 'Finish' as const, outcome: 'done' },
+        ],
+        connections: edges.map(([from, to]) => ({
+          id: `${from}:done->${to}:input`,
+          from: { node: from, port: 'done' },
+          to: { node: to, port: 'input' },
+        })),
+      },
+    };
+    return {
+      ...pipelineDetailFixture,
+      pipeline: {
+        ...pipelineDetailFixture.pipeline,
+        name: 'frontier',
+        description: 'Frontier fixture',
+        provenance: 'user' as const,
+        sourceLayer: 'user' as const,
+        stages: [],
+        authoredVersion: 2 as const,
+        normalizedVersion: 2 as const,
+        definitionValid: true,
+        planAvailable: true,
+        executable: false,
+        executionMode: 'unavailable' as const,
+        unavailableReason: 'ecp_v2_runtime_unavailable',
+      },
+      definition,
+      preparation: v2Preparation,
+      editable: true,
+    } as PipelineDetailResponse;
+  }
+
+  async function mountFrontierEdit(detail: PipelineDetailResponse): Promise<void> {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(detail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/frontier');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+  }
+
+  async function submittedDefinition(): Promise<WirePipelineDefinitionV2> {
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    return vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+  }
+
+  it('surfaces the offer only when a connection COMPLETES a frontier, not on the first branch edge', async () => {
+    // Completing edge: source -> branch-1 lands last and closes the sandwich.
+    await mountFrontierEdit(frontierDetail());
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-production-atomics"]'));
+
+    const toast = container.querySelector('[data-testid="pipeline-canvas-toast"]');
+    expect(toast).not.toBeNull();
+    expect(toast!.textContent).toContain('parallel frontier');
+    expect(toast!.textContent).toContain('reconverge at target');
+    const action = container.querySelector('[data-testid="pipeline-canvas-toast-action"]');
+    expect(action).not.toBeNull();
+    expect(action!.textContent).toBe('Run in parallel');
+
+    // First branch edge: both barrier halves pre-authored but no dispatch
+    // yet — the same trigger now draws the FIRST branch edge and no offer
+    // appears (one clean branch is below the minimum).
+    render(null, container);
+    await mountFrontierEdit(
+      frontierDetail({ edges: [['branch-1', 'target'], ['branch-2', 'target']] })
+    );
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-production-atomics"]'));
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')).toBeNull();
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast-action"]')).toBeNull();
+  });
+
+  it('dismissing the offer leaves the draft unchanged — every drawn connection stays', async () => {
+    await mountFrontierEdit(frontierDetail());
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-production-atomics"]'));
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-toast-dismiss"]'));
+
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')).toBeNull();
+    const submitted = await submittedDefinition();
+    expect(submitted.root.nodes.map((node) => node.id)).toEqual([
+      'source',
+      'branch-1',
+      'branch-2',
+      'target',
+    ]);
+    // The three pre-authored halves plus the just-drawn completing edge.
+    expect(submitted.root.connections.map((connection) => connection.id).sort()).toEqual([
+      'branch-1:done->target:input',
+      'branch-2:done->target:input',
+      'source:done->branch-2:input',
+      'source:patch->branch-1:input',
+    ]);
+    expect(submitted.root.nodes.some((node) => node.kind === 'FanOut' || node.kind === 'Join')).toBe(false);
+  });
+
+  it("the review's toggles, cap, budget, and outcome picks land in the POSTed definition", async () => {
+    await mountFrontierEdit(frontierDetail({ outcomes: ['done', 'rejected', 'archived'] }));
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-production-atomics"]'));
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-toast-action"]'));
+
+    // The review opened prefilled from detection: route read-only, both
+    // branches required by default, gesture-default cap/budget, first/second
+    // outcome picks.
+    const review = container.querySelector('[data-testid="v2-parallel-review-panel"]');
+    expect(review).not.toBeNull();
+    expect(review!.querySelector('[data-testid="v2-parallel-review-route"]')!.textContent)
+      .toBe('source → fan-out → 2 branches → barrier → target');
+    expect(
+      (review!.querySelector(
+        '[data-testid="v2-parallel-review-member-required"][data-member-id="branch-1"]'
+      ) as HTMLInputElement).checked
+    ).toBe(true);
+    expect(
+      (review!.querySelector('[data-testid="v2-parallel-review-concurrency-cap"]') as HTMLInputElement)
+        .value
+    ).toBe('2');
+    expect(
+      (review!.querySelector('[data-testid="v2-parallel-review-budget"]') as HTMLInputElement).value
+    ).toBe('2');
+    expect(
+      (review!.querySelector('[data-testid="v2-parallel-review-proceed-outcome"]') as HTMLSelectElement)
+        .value
+    ).toBe('done');
+    expect(
+      (review!.querySelector('[data-testid="v2-parallel-review-failed-outcome"]') as HTMLSelectElement)
+        .value
+    ).toBe('rejected');
+
+    // One branch optional, budget 4, proceed = the definition's third outcome.
+    await clickAndFlush(
+      review!.querySelector(
+        '[data-testid="v2-parallel-review-member-required"][data-member-id="branch-2"]'
+      )
+    );
+    await setValueAndFlush(
+      review!.querySelector('[data-testid="v2-parallel-review-budget"]'),
+      '4',
+      'input'
+    );
+    await setValueAndFlush(
+      review!.querySelector('[data-testid="v2-parallel-review-proceed-outcome"]'),
+      'archived'
+    );
+    await clickAndFlush(review!.querySelector('[data-testid="v2-parallel-review-confirm"]'));
+
+    expect(container.querySelector('[data-testid="v2-parallel-review-panel"]')).toBeNull();
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toContain(
+      'Parallel frontier created over 2 branches.'
+    );
+
+    // The fan-out IS the selection (both selection truths in one tick) and
+    // its properties panel is open.
+    expect(
+      container
+        .querySelector('[data-testid="mock-node"][data-node-id="fan-out"]')
+        ?.getAttribute('data-selected')
+    ).toBe('true');
+    expect(
+      container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-node')
+    ).toBe('fan-out');
+
+    // The definition actually sent to validation: the drawn sandwich gone,
+    // the four wiring families on the rendered handle ids (the S->fan-out
+    // edge preserves the first drawn source handle — the pre-authored
+    // 'done'), the reviewed contract, and NO node carries
+    // legacyRuntimeOwner (the POST-body half of the two-layer guard).
+    const submitted = await submittedDefinition();
+    expect(
+      submitted.root.connections.some(
+        (connection) =>
+          (connection.from.node === 'source' &&
+            ['branch-1', 'branch-2'].includes(connection.to.node)) ||
+          (['branch-1', 'branch-2'].includes(connection.from.node) &&
+            connection.to.node === 'target')
+      )
+    ).toBe(false);
+    expect(submitted.root.connections.map((connection) => connection.id)).toEqual([
+      'source:done->fan-out:input',
+      'fan-out:branch-1->branch-1:input',
+      'branch-1:done->join:branch-1',
+      'fan-out:branch-2->branch-2:input',
+      'branch-2:done->join:branch-2',
+      'join:archived->target:input',
+    ]);
+    const fanOut = submitted.root.nodes.find((node) => node.id === 'fan-out') as WireFanOutNode;
+    expect(fanOut.kind).toBe('FanOut');
+    expect(fanOut.branches).toEqual(['branch-1', 'branch-2']);
+    expect(fanOut.concurrencyCap).toBe(2);
+    expect(fanOut.budget).toBe(4);
+    expect(fanOut.members).toEqual([
+      { id: 'branch-1', hierarchicalPath: 'branch-1', required: true, condition: 'always' },
+      { id: 'branch-2', hierarchicalPath: 'branch-2', required: false, condition: 'always' },
+    ]);
+    expect(fanOut.joinNodeId).toBe('join');
+    const join = submitted.root.nodes.find((node) => node.id === 'join') as WireJoinNode;
+    expect(join.requiredMembers).toEqual(['branch-1']);
+    expect(join.optionalMembers).toEqual(['branch-2']);
+    expect(join.outcomes).toEqual({ proceed: 'archived', failed: 'rejected' });
+    // Branch content survives verbatim — only the connections changed.
+    expect(
+      (submitted.root.nodes.find((node) => node.id === 'branch-1') as { execution?: { retainedExecutionNote?: string } })
+        .execution?.retainedExecutionNote
+    ).toBe('keep branch-1');
+    for (const node of submitted.root.nodes) {
+      expect(node).not.toHaveProperty('legacyRuntimeOwner');
+    }
+  });
+
+  it('an invalid cap blocks confirm under the authoring-draft-errors discipline', async () => {
+    await mountFrontierEdit(frontierDetail());
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-production-atomics"]'));
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-toast-action"]'));
+
+    const cap = () =>
+      container.querySelector('[data-testid="v2-parallel-review-concurrency-cap"]') as HTMLInputElement;
+    await setValueAndFlush(cap(), '1.5', 'input');
+    expect(cap().getAttribute('aria-invalid')).toBe('true');
+    expect(
+      container.querySelector('[data-testid="integer-contract-error"]')!.textContent
+    ).toBe('Concurrency cap must be a positive integer.');
+    const confirm = container.querySelector(
+      '[data-testid="v2-parallel-review-confirm"]'
+    ) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    // The page's own discipline agrees: validation is blocked until repair.
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    expect(vi.mocked(client.validatePipeline)).not.toHaveBeenCalled();
+
+    // Repair unblocks confirm.
+    await setValueAndFlush(cap(), '1', 'input');
+    expect((container.querySelector('[data-testid="v2-parallel-review-confirm"]') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('a stale offer re-detects at open and offers no confirm', async () => {
+    await mountFrontierEdit(frontierDetail());
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-production-atomics"]'));
+    // The offer toast stays (no auto-dismiss with an action, and this legal
+    // draw fires no new toast). Dirty one branch: branch-2 -> branch-1 makes
+    // branch-1's incoming set {source, branch-2}.
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge-inner"]'));
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-toast-action"]'));
+
+    const review = container.querySelector('[data-testid="v2-parallel-review-panel"]');
+    expect(review).not.toBeNull();
+    expect(review!.querySelector('[data-testid="v2-parallel-review-confirm"]')).toBeNull();
+    expect(review!.querySelector('[data-testid="v2-parallel-review-refusals"]')!.textContent)
+      .toMatch(/no longer a clean parallel frontier/);
+
+    // Cancel leaves the draft exactly as drawn — including both drawn edges.
+    await clickAndFlush(review!.querySelector('[data-testid="v2-parallel-review-cancel"]'));
+    const submitted = await submittedDefinition();
+    expect(submitted.root.nodes.map((node) => node.id)).toEqual([
+      'source',
+      'branch-1',
+      'branch-2',
+      'target',
+    ]);
+    expect(submitted.root.connections.map((connection) => connection.id).sort()).toEqual([
+      'branch-1:done->target:input',
+      'branch-2:done->target:input',
+      'branch-2:patch->branch-1:input',
+      'source:done->branch-2:input',
+      'source:patch->branch-1:input',
+    ]);
+  });
+
+  it('the palette parallel gesture still works after a synthesis', async () => {
+    await mountFrontierEdit(frontierDetail());
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-production-atomics"]'));
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-toast-action"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-parallel-review-confirm"]'));
+
+    // No capability hole: the gesture still mints a pair over every root
+    // AtomicStage, ids uniquified past the synthesized pair.
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-gesture-parallel"]'));
+    const flowText = container.querySelector('[data-testid="mock-reactflow"]')!.textContent!;
+    expect(flowText).toContain('fan-out');
+    expect(flowText).toContain('fan-out-2');
+    const submitted = await submittedDefinition();
+    const secondFanOut = submitted.root.nodes.find(
+      (node) => node.id === 'fan-out-2'
+    ) as WireFanOutNode;
+    expect(secondFanOut.branches).toEqual(['source', 'branch-1', 'branch-2']);
+    expect(secondFanOut.joinNodeId).toBe('join-2');
+  });
+
+  it('a notification toast inside its 2.5s window cannot wipe a freshly surfaced offer (review m1)', async () => {
+    await mountFrontierEdit(frontierDetail());
+    // Fire a plain notification toast: the refused cycle-closing draw
+    // branch-2 -> source (last AtomicStage onto the first). The loop review
+    // it opens is cancelled immediately — the draw-time rejection toast
+    // stands, exactly like the child-3 cancel scenario.
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge"]'));
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toContain(
+      'Rejected: branch-2 → source would create a cycle'
+    );
+    await clickAndFlush(container.querySelector('[data-testid="v2-loop-review-cancel"]'));
+
+    // Complete the frontier inside the rejection toast's 2.5s auto-dismiss
+    // window: the offer must REPLACE the notification and own the surface.
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-production-atomics"]'));
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toContain(
+      'parallel frontier'
+    );
+
+    // Outlive the FIRST toast's window. Pre-m1, its pending
+    // setTimeout(() => setToast('')) fired here and silently erased the
+    // offer — which nothing re-offers (the completing connection is already
+    // drawn). Post-m1 there is exactly one stored timer and it belongs to
+    // the offer, which carries an action and never auto-dismisses.
+    await new Promise((resolve) => setTimeout(resolve, 2700));
+    const toast = container.querySelector('[data-testid="pipeline-canvas-toast"]');
+    expect(toast).not.toBeNull();
+    expect(toast!.textContent).toContain('parallel frontier');
+    const action = container.querySelector('[data-testid="pipeline-canvas-toast-action"]');
+    expect(action).not.toBeNull();
+    expect(action!.textContent).toBe('Run in parallel');
+  });
+});
+
+describe('PipelineCanvasPage — sink promotion', () => {
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    __resetLocaleForTesting();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+  });
+
+  afterEach(() => {
+    render(null, container);
+    document.body.removeChild(container);
+    window.history.replaceState({}, '', '/');
+    __resetLocaleForTesting();
+    vi.clearAllMocks();
+  });
+
+  async function clickAndFlush(el: Element | null): Promise<void> {
+    await act(async () => {
+      (el as HTMLElement).click();
+      await flushMicrotasks();
+    });
+  }
+
+  async function setValueAndFlush(
+    el: Element | null,
+    value: string,
+    eventType: 'change' | 'input' = 'change'
+  ): Promise<void> {
+    await act(async () => {
+      const input = el as HTMLInputElement;
+      input.value = value;
+      input.dispatchEvent(new Event(eventType, { bubbles: true }));
+      await flushMicrotasks();
+    });
+  }
+
+  /**
+   * A chain ending in a plain stage: source -> end, with `end` terminal. The
+   * `loop` variant appends an unwired BoundedLoop (a terminal kind that must
+   * NOT get the offer) and, when `wireLoop` is set, wires end -> loop so the
+   * loop is the sole sink.
+   */
+  function sinkDetail(
+    extra: { outcomes?: string[]; loop?: boolean; wireLoop?: boolean } = {}
+  ): PipelineDetailResponse {
+    const stage = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: 'skill:rasen-apply', version: 'digest-apply' },
+      execution: {
+        version: 1 as const,
+        role: 'implementer' as const,
+        workspace: { access: 'write' as const },
+        retainedExecutionNote: `keep ${id}`,
+      },
+    });
+    const nodes: Array<Record<string, unknown>> = [stage('source'), stage('end')];
+    const edges: Array<[string, string]> = [['source', 'end']];
+    if (extra.loop) {
+      nodes.push({
+        id: 'loop-end',
+        kind: 'BoundedLoop' as const,
+        body: 'composite:body',
+        limits: { maxIterations: 2, maxActions: 8, budget: 8 },
+        lifecycle: {
+          version: 1 as const,
+          thresholds: { stallIterations: 2, sameBlockerAttempts: 2 },
+          strategy: { maxAttempts: 0, requireMaterialChange: true as const },
+          exits: {},
+        },
+        exits: { done: { action: 'exit' as const, outcome: 'done' } },
+      });
+      if (extra.wireLoop) edges.push(['end', 'loop-end']);
+    }
+    const definition = {
+      version: 2 as const,
+      id: 'definition:sink-promotion',
+      sourceId: 'fixture:sink-promotion',
+      name: 'sink-promotion',
+      inputs: [],
+      artifacts: [],
+      outcomes: extra.outcomes ?? ['done', 'rejected', 'archived'],
+      declarations: extra.loop
+        ? [
+            {
+              id: 'composite:body',
+              kind: 'Composite' as const,
+              provenance: 'custom' as const,
+              inputs: [],
+              artifacts: [],
+              outcomes: ['done'],
+              graph: { nodes: [], connections: [] },
+            },
+          ]
+        : [],
+      root: {
+        nodes,
+        connections: edges.map(([from, to]) => ({
+          id: `${from}:done->${to}:input`,
+          from: { node: from, port: 'done' },
+          to: { node: to, port: 'input' },
+        })),
+      },
+    };
+    return {
+      ...pipelineDetailFixture,
+      pipeline: {
+        ...pipelineDetailFixture.pipeline,
+        name: 'sink-promotion',
+        description: 'Sink promotion fixture',
+        provenance: 'user' as const,
+        sourceLayer: 'user' as const,
+        stages: [],
+        authoredVersion: 2 as const,
+        normalizedVersion: 2 as const,
+        definitionValid: true,
+        planAvailable: true,
+        executable: false,
+        executionMode: 'unavailable' as const,
+        unavailableReason: 'ecp_v2_runtime_unavailable',
+      },
+      definition,
+      preparation: v2Preparation,
+      editable: true,
+    } as PipelineDetailResponse;
+  }
+
+  async function mountSinkEdit(detail: PipelineDetailResponse): Promise<void> {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(detail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/sink-promotion');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+  }
+
+  async function submittedDefinition(): Promise<WirePipelineDefinitionV2> {
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    return vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+  }
+
+  async function selectNode(id: string): Promise<void> {
+    await clickAndFlush(
+      container.querySelector(`[data-testid="mock-node-click"][data-node-id="${id}"]`)
+    );
+  }
+
+  it('renders the endpoint-naming section for a selected stage sink, never for a wired node or a loop end', async () => {
+    await mountSinkEdit(sinkDetail());
+
+    // The terminal stage: the section offers the definition's outcomes,
+    // defaulted to the first.
+    await selectNode('end');
+    const sinkPanel = container.querySelector('[data-testid="v2-node-panel"]');
+    expect(sinkPanel?.getAttribute('data-node')).toBe('end');
+    const section = container.querySelector('[data-testid="v2-node-panel-sink-promotion"]');
+    expect(section).not.toBeNull();
+    const outcomeSelect = section!.querySelector(
+      '[data-testid="v2-node-panel-sink-outcome"]'
+    ) as HTMLSelectElement;
+    expect(outcomeSelect.value).toBe('done');
+    expect(
+      Array.from(outcomeSelect.options).map((option) => option.value)
+    ).toEqual(['done', 'rejected', 'archived']);
+
+    // The wired source: its panel opens, the section is absent.
+    await selectNode('source');
+    expect(
+      container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-node')
+    ).toBe('source');
+    expect(container.querySelector('[data-testid="v2-node-panel-sink-promotion"]')).toBeNull();
+
+    // A loop end keeps the explicit path: section absent for it too.
+    render(null, container);
+    document.body.removeChild(container);
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    await mountSinkEdit(sinkDetail({ loop: true, wireLoop: true }));
+    await selectNode('loop-end');
+    expect(
+      container.querySelector('[data-testid="v2-node-panel"]')?.getAttribute('data-node')
+    ).toBe('loop-end');
+    expect(container.querySelector('[data-testid="v2-node-panel-sink-promotion"]')).toBeNull();
+    // And with the loop wired after end, end is no longer terminal either.
+    await selectNode('end');
+    expect(container.querySelector('[data-testid="v2-node-panel-sink-promotion"]')).toBeNull();
+  });
+
+  it('with no declared outcomes the offer states so and locates the contract panel instead of an empty select', async () => {
+    await mountSinkEdit(sinkDetail({ outcomes: [] }));
+    await selectNode('end');
+
+    const section = container.querySelector('[data-testid="v2-node-panel-sink-promotion"]')!;
+    expect(section).not.toBeNull();
+    // The dead end is gone: no empty outcome select, no disabled confirm.
+    expect(section.querySelector('[data-testid="v2-node-panel-sink-outcome"]')).toBeNull();
+    expect(section.querySelector('[data-testid="v2-node-panel-sink-confirm"]')).toBeNull();
+    const empty = section.querySelector('[data-testid="v2-node-panel-sink-empty"]')!;
+    expect(empty.textContent).toContain('declares no outcomes');
+
+    // Locate: scroll the contract panel into view (jsdom performs no layout,
+    // so the assertion is the call, not geometry) and focus its outcomes
+    // field — the single home for declaring, pointed at read-only.
+    const scrollIntoView = vi.fn();
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      await clickAndFlush(section.querySelector('[data-testid="v2-node-panel-sink-locate"]'));
+    } finally {
+      if (originalScrollIntoView) Element.prototype.scrollIntoView = originalScrollIntoView;
+      else delete Element.prototype.scrollIntoView;
+    }
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView.mock.calls[0]![0]).toEqual({ block: 'nearest' });
+    expect(document.activeElement?.getAttribute('data-testid')).toBe('definition-outcomes');
+
+    // Read-only pointer by design: the definition was not touched.
+    const submitted = await submittedDefinition();
+    expect(submitted.outcomes).toEqual([]);
+  });
+
+  it('picking the second outcome and confirming lands the wired Finish in the POSTed definition and selects it', async () => {
+    await mountSinkEdit(sinkDetail());
+    await selectNode('end');
+    await setValueAndFlush(
+      container.querySelector('[data-testid="v2-node-panel-sink-outcome"]'),
+      'rejected'
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-node-panel-sink-confirm"]')
+    );
+
+    expect(container.querySelector('[data-testid="pipeline-canvas-toast"]')!.textContent).toContain(
+      'Finish added'
+    );
+
+    // The Finish IS the selection (both selection truths in one tick) and its
+    // own properties panel is open with the picked outcome.
+    expect(
+      container
+        .querySelector('[data-testid="mock-node"][data-node-id="finish"]')
+        ?.getAttribute('data-selected')
+    ).toBe('true');
+    const finishPanel = container.querySelector('[data-testid="v2-node-panel"]');
+    expect(finishPanel?.getAttribute('data-node')).toBe('finish');
+    expect(
+      (finishPanel!.querySelector(
+        '[data-testid="v2-node-panel-outcome"]'
+      ) as HTMLSelectElement).value
+    ).toBe('rejected');
+    // The offer never re-offers itself: the Finish is not a promotable sink.
+    expect(finishPanel!.querySelector('[data-testid="v2-node-panel-sink-promotion"]')).toBeNull();
+
+    // The definition actually sent to validation: the Finish appended with
+    // the picked outcome, wired on the rendered handle ids, the stage's own
+    // settings untouched, and NO node carries legacyRuntimeOwner (the
+    // POST-body half of the two-layer guard).
+    const submitted = await submittedDefinition();
+    expect(
+      submitted.root.nodes.find((node) => node.id === 'finish')
+    ).toEqual({ id: 'finish', kind: 'Finish', outcome: 'rejected' });
+    expect(submitted.root.connections.map((connection) => connection.id)).toEqual([
+      'source:done->end:input',
+      'end:done->finish:input',
+    ]);
+    expect(
+      (submitted.root.nodes.find((node) => node.id === 'end') as {
+        execution?: { retainedExecutionNote?: string };
+      }).execution?.retainedExecutionNote
+    ).toBe('keep end');
+    for (const node of submitted.root.nodes) {
+      expect(node).not.toHaveProperty('legacyRuntimeOwner');
+    }
+  });
+
+  it('the palette Finish gesture still works after a promotion (no capability hole)', async () => {
+    await mountSinkEdit(sinkDetail());
+    await selectNode('end');
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-node-panel-sink-confirm"]')
+    );
+
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-gesture-finish"]'));
+    const flowText = container.querySelector('[data-testid="mock-reactflow"]')!.textContent!;
+    expect(flowText).toContain('finish');
+    expect(flowText).toContain('finish-2');
+    // The gesture's Finish stays UNWIRED with the first-outcome default —
+    // exactly addFinishNode's behavior beside the promoted one.
+    const submitted = await submittedDefinition();
+    expect(
+      submitted.root.nodes.find((node) => node.id === 'finish-2')
+    ).toEqual({ id: 'finish-2', kind: 'Finish', outcome: 'done' });
+    expect(
+      submitted.root.connections.some((connection) => connection.from.node === 'finish-2')
+    ).toBe(false);
+  });
+});
+
+describe('PipelineCanvasPage — durable node positioning', () => {
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    __resetLocaleForTesting();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+  });
+
+  afterEach(() => {
+    render(null, container);
+    document.body.removeChild(container);
+    window.history.replaceState({}, '', '/');
+    __resetLocaleForTesting();
+    vi.clearAllMocks();
+  });
+
+  async function clickAndFlush(el: Element | null): Promise<void> {
+    await act(async () => {
+      (el as HTMLElement).click();
+      await flushMicrotasks();
+    });
+  }
+
+  async function setValueAndFlush(
+    el: Element | null,
+    value: string,
+    eventType: 'change' | 'input' = 'change'
+  ): Promise<void> {
+    await act(async () => {
+      const input = el as HTMLInputElement;
+      input.value = value;
+      input.dispatchEvent(new Event(eventType, { bubbles: true }));
+      await flushMicrotasks();
+    });
+  }
+
+  function nodeButton(
+    kind: 'click' | 'augment' | 'remove' | 'drag',
+    id: string
+  ): Element | null {
+    return container.querySelector(
+      `[data-testid="mock-node-${kind}"][data-node-id="${id}"]`
+    );
+  }
+
+  async function mountV2Edit(): Promise<void> {
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+  }
+
+  async function submittedDefinition(): Promise<WirePipelineDefinitionV2> {
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    return vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+  }
+
+  /** The drag trigger's fixed displacement — one delta, every drag assertion. */
+  const DRAG_DELTA = { x: 180, y: 120 } as const;
+
+  /** Reads every stage node's rendered position from the mock's dump. */
+  function renderedPositions(): Map<string, { x: number; y: number }> {
+    const positions = new Map<string, { x: number; y: number }>();
+    for (const span of container.querySelectorAll('[data-testid="mock-node-position"]')) {
+      const x = Number(span.getAttribute('data-x'));
+      const y = Number(span.getAttribute('data-y'));
+      expect(Number.isFinite(x)).toBe(true);
+      expect(Number.isFinite(y)).toBe(true);
+      positions.set(span.getAttribute('data-node-id')!, { x, y });
+    }
+    return positions;
+  }
+
+  /**
+   * The pure computed layout for the draft the page CURRENTLY holds (the
+   * definition the last Validate call submitted), run through the same
+   * geometry the page runs with NO author cache — the oracle for "lays out
+   * afresh" assertions without pinning dagre bytes.
+   */
+  async function computedLayoutPositions(): Promise<Map<string, { x: number; y: number }>> {
+    const submitted = await submittedDefinition();
+    const { nodes, edges } = draftToGraph(submitted, v2CatalogFixture);
+    return new Map(
+      layoutGraph(nodes, edges)
+        .filter((node) => node.type === 'stage')
+        .map((node) => [node.id, node.position])
+    );
+  }
+
+  async function dragNode(id: string): Promise<{ x: number; y: number }> {
+    const before = renderedPositions().get(id)!;
+    await clickAndFlush(await nodeButton('drag', id));
+    const placement = { x: before.x + DRAG_DELTA.x, y: before.y + DRAG_DELTA.y };
+    expect(renderedPositions().get(id)).toEqual(placement);
+    return placement;
+  }
+
+  /** Renames the selected node through the node panel's id field (blur commit). */
+  async function renameSelectedViaPanel(newId: string): Promise<void> {
+    const idInput = container.querySelector(
+      '[data-testid="v2-node-panel-id"]'
+    ) as HTMLInputElement;
+    idInput.focus();
+    await setValueAndFlush(idInput, newId, 'input');
+    await act(async () => {
+      idInput.blur();
+      await flushMicrotasks();
+    });
+  }
+
+  /** No placement/coordinate field exists anywhere in a wire definition. */
+  function containsPlacementField(value: unknown): boolean {
+    if (Array.isArray(value)) {
+      return value.some((entry) => containsPlacementField(entry));
+    }
+    if (value !== null && typeof value === 'object') {
+      return Object.entries(value as Record<string, unknown>).some(
+        ([key, entry]) =>
+          key === 'position' || key === 'x' || key === 'y' || containsPlacementField(entry)
+      );
+    }
+    return false;
+  }
+
+  it('a dragged node keeps its placement across a palette add; the new node lays out afresh (spec scenario 1)', async () => {
+    await mountV2Edit();
+    const placement = await dragNode('atomic');
+
+    // Follow-up mutation: a palette add rebuilds the whole flow from layout.
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-propose"]')
+    );
+
+    const after = renderedPositions();
+    // THE durable assertion: the dragged node still sits where the author
+    // put it — without the cache this snaps back to the dagre position.
+    expect(after.get('atomic')).toEqual(placement);
+    // The added node rendered at a computed layout position, and so did
+    // every other (uncached) node.
+    const computed = await computedLayoutPositions();
+    expect(after.has('atomic-stage')).toBe(true);
+    for (const [id, position] of after) {
+      if (id === 'atomic') continue;
+      expect(position).toEqual(computed.get(id));
+    }
+  });
+
+  it('a dragged node keeps its placement across a definition-contract edit (spec scenario 2)', async () => {
+    await mountV2Edit();
+    const placement = await dragNode('gate');
+
+    // Definition-contract edit: declare a new outcome through child 1's
+    // NameListField (commit on blur) — a full-draft patch that rebuilds.
+    const outcomesField = () =>
+      container.querySelector('[data-testid="definition-outcomes"]') as HTMLInputElement;
+    outcomesField().focus();
+    await setValueAndFlush(outcomesField(), 'done,rejected,declared', 'input');
+    await act(async () => {
+      outcomesField().blur();
+      await flushMicrotasks();
+    });
+
+    const after = renderedPositions();
+    expect(after.get('gate')).toEqual(placement);
+    const computed = await computedLayoutPositions();
+    expect((await submittedDefinition()).outcomes).toEqual([
+      'done',
+      'rejected',
+      'declared',
+    ]);
+    for (const [id, position] of after) {
+      if (id === 'gate') continue;
+      expect(position).toEqual(computed.get(id));
+    }
+  });
+
+  it('elements with no captured placement always lay out afresh on rebuild (spec scenario 3)', async () => {
+    await mountV2Edit();
+    // Mutations with an EMPTY cache: a palette stage add plus the finish
+    // gesture — both synthesized elements must land on computed layout.
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-propose"]')
+    );
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-gesture-finish"]'));
+
+    const after = renderedPositions();
+    const computed = await computedLayoutPositions();
+    expect(after.size).toBe(computed.size);
+    expect(after.has('atomic-stage')).toBe(true);
+    expect(after.has('finish-2')).toBe(true);
+    for (const [id, position] of after) {
+      expect(position).toEqual(computed.get(id));
+    }
+  });
+
+  it('placement follows a rename: the renamed node keeps it under the new id (spec scenario 4)', async () => {
+    await mountV2Edit();
+    const placement = await dragNode('choice');
+
+    await clickAndFlush(await nodeButton('click', 'choice'));
+    await renameSelectedViaPanel('picker');
+
+    const after = renderedPositions();
+    expect(after.has('choice')).toBe(false);
+    // The placement followed the id change — a rename must not teleport the
+    // node to its dagre position.
+    expect(after.get('picker')).toEqual(placement);
+    const computed = await computedLayoutPositions();
+    for (const [id, position] of after) {
+      if (id === 'picker') continue;
+      expect(position).toEqual(computed.get(id));
+    }
+  });
+
+  it('a departed placement is dropped: re-adding the same id via the palette lays out afresh (spec scenario 5)', async () => {
+    await mountV2Edit();
+    const placement = await dragNode('finish');
+
+    // 'finish' is unreferenced — the delete is accepted and the rebuild's
+    // prune drops its placement.
+    await clickAndFlush(await nodeButton('remove', 'finish'));
+    expect(renderedPositions().has('finish')).toBe(false);
+
+    // Re-create under the SAME id: the palette finish gesture mints 'finish'
+    // again now that the id is free.
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-gesture-finish"]'));
+
+    const after = renderedPositions();
+    expect(after.has('finish')).toBe(true);
+    const computed = await computedLayoutPositions();
+    expect(after.get('finish')).toEqual(computed.get('finish'));
+    expect(after.get('finish')).not.toEqual(placement);
+  });
+
+  it('extraction drops the moved nodes\' placements: the replacing ref lays out afresh (spec scenario 5)', async () => {
+    // upstream -> work-b -> work-c -> finish; the middle pair packages.
+    const detail = extractablePositioningDetail();
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(detail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/positioning');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+
+    const placement = await dragNode('work-b');
+
+    await clickAndFlush(await nodeButton('click', 'work-b'));
+    await clickAndFlush(await nodeButton('augment', 'work-c'));
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-selection-panel-package"]')
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-extract-review-confirm"]')
+    );
+
+    // The moved nodes left the root graph; the ref replaced them and sits at
+    // its computed position — never at the dragged placement.
+    const after = renderedPositions();
+    expect(after.has('work-b')).toBe(false);
+    expect(after.has('work-c')).toBe(false);
+    expect(after.has('composite-ref')).toBe(true);
+    const computed = await computedLayoutPositions();
+    expect(after.get('composite-ref')).toEqual(computed.get('composite-ref'));
+    expect(after.get('composite-ref')).not.toEqual(placement);
+  });
+
+  it('a fresh edit session starts from computed layout (no placement leaks across sessions)', async () => {
+    await mountV2Edit();
+    const placement = await dragNode('choice');
+
+    // A drag alone does not dirty the draft — one description keystroke does,
+    // so the Discard path back to view mode is available in the same page
+    // instance (no remount: the ref under test would be recreated anyway).
+    const description = container.querySelector(
+      '[data-testid="pipeline-canvas-description"]'
+    ) as HTMLInputElement;
+    await act(async () => {
+      description.value = 'edited';
+      description.dispatchEvent(new Event('input', { bubbles: true }));
+      await flushMicrotasks();
+    });
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-discard"]'));
+    expect(container.querySelector('[data-testid="pipeline-canvas-edit"]')).not.toBeNull();
+
+    // Re-enter edit on the SAME definition: the session's cache was reset, so
+    // the previously dragged node starts at its computed layout position —
+    // not the placement captured by the previous session.
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+    const reopened = renderedPositions();
+    const computed = await computedLayoutPositions();
+    expect(reopened.get('choice')).toEqual(computed.get('choice'));
+    expect(reopened.get('choice')).not.toEqual(placement);
+  });
+
+  it('Re-layout resets every placement, later edits treat all nodes as undragged, and the saved payload carries no placement fields (spec scenario 6)', async () => {
+    await mountV2Edit();
+    const before = renderedPositions();
+    await dragNode('atomic');
+    await dragNode('choice');
+    expect(renderedPositions().get('atomic')).toEqual({
+      x: before.get('atomic')!.x + DRAG_DELTA.x,
+      y: before.get('atomic')!.y + DRAG_DELTA.y,
+    });
+
+    // Re-layout: the explicit reset returns every node to computed layout.
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-relayout"]'));
+    let after = renderedPositions();
+    let computed = await computedLayoutPositions();
+    for (const [id, position] of after) {
+      expect(position).toEqual(computed.get(id));
+    }
+
+    // A later edit still treats them as undragged (the cache was CLEARED,
+    // not merely unapplied): the rebuild keeps pure layout positions.
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-palette-gesture-stage-rasen-propose"]')
+    );
+    after = renderedPositions();
+    computed = await computedLayoutPositions();
+    for (const [id, position] of after) {
+      expect(position).toEqual(computed.get(id));
+    }
+
+    // The definition the canvas SAVES carries no placement fields anywhere.
+    vi.mocked(client.mutatePipeline).mockResolvedValueOnce({
+      pipeline: { name: 'v2-canvas', path: '/pipelines/v2-canvas' },
+      created: false,
+    });
+    vi.mocked(client.getPipelineDetail).mockResolvedValueOnce(v2EditableDetail);
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-save"]'));
+    expect(client.mutatePipeline).toHaveBeenCalledTimes(1);
+    const savedBody = vi.mocked(client.mutatePipeline).mock.calls[0][0] as {
+      definition: unknown;
+    };
+    expect(containsPlacementField(savedBody.definition)).toBe(false);
+  });
+});
+
+describe('PipelineCanvasPage — loop body visibility (canvas-loop-body-visibility)', () => {
+  let container: HTMLElement;
+
+  beforeEach(() => {
+    __resetLocaleForTesting();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    vi.mocked(client.getPipelineCatalog).mockResolvedValue(v2CatalogFixture);
+  });
+
+  afterEach(() => {
+    render(null, container);
+    document.body.removeChild(container);
+    window.history.replaceState({}, '', '/');
+    __resetLocaleForTesting();
+    vi.clearAllMocks();
+  });
+
+  async function clickAndFlush(el: Element | null): Promise<void> {
+    await act(async () => {
+      (el as HTMLElement).click();
+      await flushMicrotasks();
+    });
+  }
+
+  function nodeButton(kind: 'click' | 'augment' | 'drag', id: string): Element | null {
+    return container.querySelector(
+      `[data-testid="mock-node-${kind}"][data-node-id="${id}"]`
+    );
+  }
+
+  function mockNode(id: string): Element | null {
+    return container.querySelector(`[data-testid="mock-node"][data-node-id="${id}"]`);
+  }
+
+  function frameToggle(frameId: string): Element | null {
+    return container.querySelector(
+      `[data-testid="stage-node-frame-toggle"][data-frame-id="${frameId}"]`
+    );
+  }
+
+  /** The real StageNode card rendered for a BODY child, clickable like on the canvas. */
+  function bodyCard(frameId: string, stageId: string): Element | null {
+    return container.querySelector(
+      `[data-testid="mock-rendered-node-types"] [data-testid="stage-node"][data-frame-id="${frameId}"][data-stage="${stageId}"]`
+    );
+  }
+
+  function flowIds(): string[] {
+    return (container.querySelector('[data-testid="mock-reactflow"]')!.textContent ?? '')
+      .split(',')
+      .filter(Boolean);
+  }
+
+  function bodyPanel(): Element | null {
+    return container.querySelector('[data-testid="v2-body-stage-panel"]');
+  }
+
+  /**
+   * The canonical round-3 flow: the back-edge fixture's inner cycle
+   * (work-d → work-b) confirmed into a BoundedLoop over the three middle
+   * stages — mounted, review confirmed, the synthesized loop left EXPANDED
+   * (the moment-of-formation default this change introduces).
+   */
+  async function mountSynthesizedLoop(): Promise<void> {
+    const stage = (id: string) => ({
+      id,
+      kind: 'AtomicStage' as const,
+      capability: { id: 'skill:rasen-apply', version: 'digest-apply' },
+      execution: {
+        version: 1 as const,
+        role: 'implementer' as const,
+        workspace: { access: 'write' as const },
+      },
+    });
+    const definition = {
+      version: 2 as const,
+      id: 'definition:backedge',
+      sourceId: 'fixture:backedge',
+      name: 'backedge',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [],
+      root: {
+        nodes: [
+          stage('upstream'),
+          stage('work-b'),
+          stage('work-c'),
+          stage('work-d'),
+          { id: 'finish', kind: 'Finish' as const, outcome: 'done' },
+        ],
+        connections: [
+          'upstream->work-b',
+          'work-b->work-c',
+          'work-c->work-d',
+          'work-d->finish',
+        ].map((pair, index) => {
+          const [from, to] = pair.split('->');
+          return {
+            id: `${from}:done->${to}:input`,
+            from: { node: from!, port: 'done' },
+            to: { node: to!, port: 'input' },
+            ...(index === 0 ? { condition: 'always' as const } : {}),
+          };
+        }),
+      },
+    };
+    const detail = {
+      ...pipelineDetailFixture,
+      pipeline: {
+        ...pipelineDetailFixture.pipeline,
+        name: 'backedge',
+        provenance: 'user' as const,
+        sourceLayer: 'user' as const,
+        stages: [],
+        authoredVersion: 2 as const,
+        normalizedVersion: 2 as const,
+        definitionValid: true,
+        planAvailable: true,
+        executable: false,
+        executionMode: 'unavailable' as const,
+        unavailableReason: 'ecp_v2_runtime_unavailable',
+      },
+      definition,
+      preparation: v2Preparation,
+      editable: true,
+    } as PipelineDetailResponse;
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(detail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/backedge');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+    await clickAndFlush(container.querySelector('[data-testid="mock-connect-backedge-inner"]'));
+    await clickAndFlush(container.querySelector('[data-testid="v2-loop-review-confirm"]'));
+  }
+
+  async function submittedDefinition(): Promise<WirePipelineDefinitionV2> {
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-validate"]'));
+    return vi.mocked(client.validatePipeline).mock.calls.at(-1)![0] as WirePipelineDefinitionV2;
+  }
+
+  it('collapsed default parity: no body nodes anywhere, and no chevron on a loop whose body is empty (spec scenario 1)', async () => {
+    // v2EditableDetail's loop references a declaration with an EMPTY body —
+    // today's compact card is all there is to render.
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(v2EditableDetail);
+    vi.mocked(client.validatePipeline).mockResolvedValue({ valid: true, issues: [] });
+    await mountAt(container, '/p/proj_x/pipelines/v2-canvas');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+
+    const loop = mockNode('loop')!;
+    expect(loop).not.toBeNull();
+    // Today's card assertions, unchanged: kind badge, declaration-derived
+    // ports, compact (no explicit style), and NOTHING namespaced.
+    expect(loop.getAttribute('data-definition-kind')).toBe('BoundedLoop');
+    expect(JSON.parse(loop.getAttribute('data-output-ports')!)).toEqual([
+      { id: 'done', type: 'outcome/done' },
+    ]);
+    expect(loop.getAttribute('data-node-style')).toBe('null');
+    expect(flowIds().every((id) => !id.includes('::'))).toBe(true);
+    expect(frameToggle('loop')).toBeNull();
+    expect(bodyPanel()).toBeNull();
+  });
+
+  it('expand and collapse: body cards and the internal edge render inside the frame; external handles and edges never move (spec scenarios 2-3)', async () => {
+    await mountSynthesizedLoop();
+
+    // Auto-expanded (spec scenario 4's loop-review half is asserted in its
+    // own test): the frame carries its box, the body children and their
+    // connection render inside.
+    const loop = mockNode('bounded-loop')!;
+    const style = JSON.parse(loop.getAttribute('data-node-style')!);
+    expect(style.width).toBeGreaterThan(200);
+    expect(style.height).toBeGreaterThan(92);
+    for (const childId of [
+      'bounded-loop::work-b',
+      'bounded-loop::work-c',
+      'bounded-loop::work-d',
+    ]) {
+      const child = mockNode(childId)!;
+      expect(child.getAttribute('data-parent-id')).toBe('bounded-loop');
+      expect(child.getAttribute('data-extent')).toBe('parent');
+      // Body cards are inert in React Flow terms.
+      expect(child.getAttribute('data-connectable')).toBe('false');
+    }
+    expect(
+      container.querySelector('[data-testid="mock-edge"][data-edge-id^="body:bounded-loop:"]')
+    ).not.toBeNull();
+
+    // The frame's external contract, captured now and re-asserted after each
+    // toggle: handles from the declaration, and both external edges.
+    const externalPorts = () => ({
+      input: mockNode('bounded-loop')!.getAttribute('data-input-ports'),
+      output: mockNode('bounded-loop')!.getAttribute('data-output-ports'),
+    });
+    const externalEdgeIds = () =>
+      Array.from(container.querySelectorAll('[data-testid="mock-edge"]'))
+        .map((edge) => edge.getAttribute('data-edge-id')!)
+        .filter((id) => !id.startsWith('body:'));
+    const before = { ports: externalPorts(), edges: externalEdgeIds() };
+
+    // Collapse: the compact card returns (no namespaced ids, no style, the
+    // chevron now on the collapsed card), externals byte-identical.
+    await clickAndFlush(frameToggle('bounded-loop'));
+    expect(flowIds().every((id) => !id.includes('::'))).toBe(true);
+    expect(mockNode('bounded-loop')!.getAttribute('data-node-style')).toBe('null');
+    expect(frameToggle('bounded-loop')!.getAttribute('data-expanded')).toBe('false');
+    expect(externalPorts()).toEqual(before.ports);
+    expect(externalEdgeIds()).toEqual(before.edges);
+
+    // Re-expand: everything is back, externals STILL byte-identical.
+    await clickAndFlush(frameToggle('bounded-loop'));
+    expect(flowIds().filter((id) => id.includes('::'))).toHaveLength(3);
+    expect(externalPorts()).toEqual(before.ports);
+    expect(externalEdgeIds()).toEqual(before.edges);
+  });
+
+  it('body selection: the read-only panel opens with the stage facts, is mutually exclusive with root selection, the pane clears it, and no body interaction mutates the draft (spec scenarios 5-6)', async () => {
+    await mountSynthesizedLoop();
+    const postSynthesis = await submittedDefinition();
+
+    // The loop WAS the selection; clicking a body card replaces it.
+    expect(mockNode('bounded-loop')!.getAttribute('data-selected')).toBe('true');
+    await clickAndFlush(bodyCard('bounded-loop', 'work-b'));
+
+    const panel = bodyPanel()!;
+    expect(panel).not.toBeNull();
+    expect(panel.getAttribute('data-stage')).toBe('work-b');
+    expect(panel.getAttribute('data-declaration')).toBe('loop-body');
+    expect(panel.getAttribute('data-frame')).toBe('bounded-loop');
+    expect(
+      panel.querySelector('[data-testid="v2-body-stage-panel-kind"]')!.textContent
+    ).toBe('AtomicStage');
+    expect(
+      panel.querySelector('[data-testid="v2-body-stage-panel-capability"]')!.textContent
+    ).toContain('skill:rasen-apply');
+    // Root selection cleared (mutual exclusivity, both truths).
+    expect(mockNode('bounded-loop')!.getAttribute('data-selected')).toBe('false');
+    // The panel offers no mutating control.
+    expect(panel.querySelectorAll('button')).toHaveLength(1); // the close button
+    expect(panel.querySelector('[data-testid="v2-body-stage-panel-editing"]')!.textContent)
+      .toContain('future change');
+
+    // Pane click clears the panel (the RF deselect handles the mirror).
+    await clickAndFlush(container.querySelector('[data-testid="mock-pane-click"]'));
+    expect(bodyPanel()).toBeNull();
+
+    // Re-open, then a root node click clears it (and selects the node).
+    await clickAndFlush(bodyCard('bounded-loop', 'work-c'));
+    expect(bodyPanel()!.getAttribute('data-stage')).toBe('work-c');
+    await clickAndFlush(nodeButton('click', 'upstream'));
+    expect(bodyPanel()).toBeNull();
+    expect(mockNode('upstream')!.getAttribute('data-selected')).toBe('true');
+
+    // Inertness end-to-end: clicks, toggles, and a stray drag under a body
+    // id change NOTHING in the definition the editor holds.
+    await clickAndFlush(bodyCard('bounded-loop', 'work-b'));
+    await clickAndFlush(nodeButton('drag', 'bounded-loop::work-b'));
+    await clickAndFlush(frameToggle('bounded-loop'));
+    await clickAndFlush(frameToggle('bounded-loop'));
+    const after = await submittedDefinition();
+    expect(after).toEqual(postSynthesis);
+  });
+
+  it('auto-expand at formation: loop-review confirm, the palette loop gesture, and extract confirm each render the new node expanded (spec scenario 4)', async () => {
+    await mountSynthesizedLoop();
+    // 1. Loop-review confirm — the setup flow just did it.
+    expect(flowIds()).toContain('bounded-loop::work-b');
+    expect(mockNode('bounded-loop')!.getAttribute('data-parent-id')).toBeNull();
+
+    // 2. The palette loop gesture over the now-nonempty declaration.
+    await clickAndFlush(container.querySelector('[data-testid="v2-palette-gesture-loop"]'));
+    expect(flowIds()).toContain('bounded-loop-2::work-b');
+    expect(mockNode('bounded-loop-2::work-d')!.getAttribute('data-parent-id')).toBe(
+      'bounded-loop-2'
+    );
+
+    // 3. Extract confirm: the replacing ref opens expanded too. (Fresh
+    // container for the second mount — the same mid-test remount pattern the
+    // extract suite uses.)
+    render(null, container);
+    document.body.removeChild(container);
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    const positioning = extractablePositioningDetail();
+    vi.mocked(client.getPipelineDetail).mockResolvedValue(positioning);
+    await mountAt(container, '/p/proj_x/pipelines/positioning');
+    await clickAndFlush(container.querySelector('[data-testid="pipeline-canvas-edit"]'));
+    await clickAndFlush(nodeButton('click', 'work-b'));
+    await clickAndFlush(nodeButton('augment', 'work-c'));
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-selection-panel-package"]')
+    );
+    await clickAndFlush(
+      container.querySelector('[data-testid="v2-extract-review-confirm"]')
+    );
+    expect(flowIds()).toContain('composite-ref::work-b');
+    expect(mockNode('composite-ref::work-c')!.getAttribute('data-parent-id')).toBe(
+      'composite-ref'
+    );
+    expect(
+      container.querySelector('[data-testid="mock-edge"][data-edge-id^="body:composite-ref:"]')
+    ).not.toBeNull();
+  });
+
+  it('placement survival: a dragged root node keeps its placement across expand/collapse, and body ids never enter the placement cache (spec scenario 8)', async () => {
+    await mountSynthesizedLoop();
+    const DRAG_DELTA = { x: 180, y: 120 } as const;
+    function renderedPosition(id: string): { x: number; y: number } {
+      const span = container.querySelector(
+        `[data-testid="mock-node-position"][data-node-id="${id}"]`
+      )!;
+      return {
+        x: Number(span.getAttribute('data-x')),
+        y: Number(span.getAttribute('data-y')),
+      };
+    }
+
+    const before = renderedPosition('upstream');
+    await clickAndFlush(nodeButton('drag', 'upstream'));
+    const placement = {
+      x: before.x + DRAG_DELTA.x,
+      y: before.y + DRAG_DELTA.y,
+    };
+    expect(renderedPosition('upstream')).toEqual(placement);
+
+    // The body child's LAYOUT position, captured before the rogue drag.
+    const bodyLayoutPosition = renderedPosition('bounded-loop::work-b');
+    // A stray drag-final change under a BODY id (React Flow never emits one
+    // — body cards are undraggable — but if it did, the capture guard skips
+    // it): React Flow's renderer still applies the visual move, but the
+    // layout-owned position must win the next rebuild.
+    await clickAndFlush(nodeButton('drag', 'bounded-loop::work-b'));
+    expect(renderedPosition('bounded-loop::work-b')).not.toEqual(bodyLayoutPosition);
+
+    // Collapse and re-expand the loop: the dragged root keeps the author's
+    // placement throughout; the body child re-renders at its LAYOUT
+    // position, never the rogue drag position.
+    await clickAndFlush(frameToggle('bounded-loop'));
+    await clickAndFlush(frameToggle('bounded-loop'));
+    expect(renderedPosition('upstream')).toEqual(placement);
+    expect(renderedPosition('bounded-loop::work-b')).toEqual(bodyLayoutPosition);
+
+    // And the saved payload carries no frame/expansion fields anywhere.
+    const submitted = await submittedDefinition();
+    const serialized = JSON.stringify(submitted);
+    expect(serialized).not.toContain('::');
+    expect(serialized).not.toContain('expandedFrame');
+  });
+});
+
+/**
+ * The extraction-fixture shape for the positioning suite: the canonical
+ * `upstream -> work-b -> work-c -> finish` chain the package gesture cuts.
+ */
+function extractablePositioningDetail(): PipelineDetailResponse {
+  const stage = (id: string) => ({
+    id,
+    kind: 'AtomicStage' as const,
+    capability: { id: 'skill:rasen-apply', version: 'digest-apply' },
+    execution: {
+      version: 1 as const,
+      role: 'implementer' as const,
+      workspace: { access: 'write' as const },
+    },
+  });
+  return {
+    ...pipelineDetailFixture,
+    pipeline: {
+      ...pipelineDetailFixture.pipeline,
+      name: 'positioning',
+      provenance: 'user' as const,
+      sourceLayer: 'user' as const,
+      stages: [],
+      authoredVersion: 2 as const,
+      normalizedVersion: 2 as const,
+      definitionValid: true,
+      planAvailable: true,
+      executable: false,
+      executionMode: 'unavailable' as const,
+      unavailableReason: 'ecp_v2_runtime_unavailable',
+    },
+    definition: {
+      version: 2 as const,
+      id: 'definition:positioning',
+      sourceId: 'fixture:positioning',
+      name: 'positioning',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [],
+      root: {
+        nodes: [
+          stage('upstream'),
+          stage('work-b'),
+          stage('work-c'),
+          { id: 'finish', kind: 'Finish' as const, outcome: 'done' },
+        ],
+        connections: [
+          {
+            id: 'upstream:done->work-b:input',
+            from: { node: 'upstream', port: 'done' },
+            to: { node: 'work-b', port: 'input' },
+          },
+          {
+            id: 'work-b:done->work-c:input',
+            from: { node: 'work-b', port: 'done' },
+            to: { node: 'work-c', port: 'input' },
+          },
+          {
+            id: 'work-c:done->finish:input',
+            from: { node: 'work-c', port: 'done' },
+            to: { node: 'finish', port: 'input' },
+          },
+        ],
+      },
+    },
+    preparation: v2Preparation,
+    editable: true,
+  } as PipelineDetailResponse;
+}

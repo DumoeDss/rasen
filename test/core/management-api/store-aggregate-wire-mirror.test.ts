@@ -57,6 +57,13 @@ const STORE_AGGREGATE_WIRE_TYPES = [
   'StoreIssueSetStateRequest',
   'StoreExecutionPlanNodeInput',
   'StoreExecutionPlanPublishRequest',
+  // The Issue projection reads (issue-read-surface). Aliased core-side to the
+  // `core/issue-read` payload types; redeclared UI-side like every other
+  // mirror here, together with the whole `IssueStatus` tree they carry.
+  'StoreIssueProjectionsResponse',
+  'StoreIssueProjectionResponse',
+  'StoreIssueAttentionResponse',
+  'StoreChangeIssueLinksResponse',
 ] as const;
 
 /**

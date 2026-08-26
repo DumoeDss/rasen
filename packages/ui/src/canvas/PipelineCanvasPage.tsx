@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { useLocation, useRoute } from 'preact-iso';
 import {
   ReactFlow,
@@ -6,13 +6,16 @@ import {
   Controls,
   ReactFlowProvider,
   useReactFlow,
+  useUpdateNodeInternals,
   addEdge,
   applyNodeChanges,
   applyEdgeChanges,
+  SelectionMode,
   type Connection,
   type Edge,
   type NodeChange,
   type EdgeChange,
+  type OnSelectionChangeParams,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import * as client from '../api/client.js';
@@ -32,7 +35,13 @@ import type {
   WirePipelineDefinitionStage,
 } from '../api/types.js';
 import { useSpace, spaceHref } from '../store/use-space.js';
-import { definitionToGraph, draftToGraph, layoutGraph, type PipelineFlowNode } from './layout.js';
+import {
+  definitionToGraph,
+  draftToGraph,
+  layoutGraph,
+  pruneAuthorPositions,
+  type PipelineFlowNode,
+} from './layout.js';
 import { stageNodeTypes } from './StageNode.js';
 import {
   CONTROL_SOURCE_PORT,
@@ -48,30 +57,50 @@ import {
   addRequire,
   addStage,
   addV2Connection,
+  backedgeRegion,
+  CanvasSelection,
+  completedFrontier,
+  declareDefinitionOutcome,
+  defaultBoundedLoopExitOutcomeValues,
   definitionIssuePathTarget,
+  deriveBackedgeLoopContract,
+  deriveSubgraphContract,
+  detectParallelFrontiers,
   duplicateV2Definition,
+  EMPTY_CANVAS_SELECTION,
+  extractSubgraph,
   insertCompositeRef,
   isBindableSkill,
+  isDeclarationIdUnique,
+  isPromotableSink,
   isDirty,
   isV2EditableNodeKind,
   issuePathTarget,
   bodyConnectionIdFor,
+  promoteSinkToFinish,
   removeBodyConnection,
   removeBodyStage,
   removeDeclaration,
   removeRequire,
   removeStage,
   removeV2Connection,
-  removeV2Node,
+  removeV2Nodes,
   removeParallelPair,
   renameDeclaration,
   renameStage,
   renameV2Node,
+  selectionPanelMode,
   setParallelMembers,
+  subgraphExtractionRefusals,
   setStageGate,
+  singletonConnectionId,
+  singletonNodeId,
   spliceConditionOntoConnection,
   stageIdFor,
+  synthesizeBoundedLoopFromBackedge,
+  synthesizeParallelFrontier,
   unavailableRootGestures,
+  underivableBodyStageRefusals,
   unspliceChoice,
   updateBodyStage,
   updateBodyStageExecution,
@@ -99,8 +128,22 @@ import { DefinitionContractPanel } from './DefinitionContractPanel.js';
 import type { IntegerContractDraftError } from './IntegerContractField.js';
 import { PalettePanel, PALETTE_DND_TYPE } from './PalettePanel.js';
 import { StagePanel } from './StagePanel.js';
+import { V2BodyStagePanel } from './V2BodyStagePanel.js';
 import { V2NodePanel } from './V2NodePanel.js';
 import { V2ConnectionPanel } from './V2ConnectionPanel.js';
+import { V2SelectionPanel } from './V2SelectionPanel.js';
+import {
+  V2ExtractReviewPanel,
+  type SubgraphExtractionReview,
+} from './V2ExtractReviewPanel.js';
+import {
+  V2LoopReviewPanel,
+  type BoundedLoopSynthesisReview,
+} from './V2LoopReviewPanel.js';
+import {
+  V2ParallelReviewPanel,
+  type ParallelFrontierReview,
+} from './V2ParallelReviewPanel.js';
 import { IssuesDrawer } from './IssuesDrawer.js';
 import { EngineSupportPanel } from './EngineSupportPanel.js';
 import { consumePendingDraft, setPendingDraft } from './pending-draft.js';
@@ -117,6 +160,42 @@ interface ExportState {
   path: string;
   status: 'idle' | 'exporting' | 'done' | 'error';
   message?: string;
+}
+
+/**
+ * The authoring-draft error scope the loop review's max-iterations field owns
+ * (canvas-backedge-loop-inference design D6): an invalid integer blocks
+ * confirm until repaired, and the scope is cleared whenever the review closes
+ * — the same discipline every other integer field on this page follows.
+ */
+const LOOP_REVIEW_INTEGER_FIELD = 'loop-review:maxIterations';
+
+/**
+ * The authoring-draft error scopes the parallel review's two integer fields
+ * own (canvas-parallel-frontier-inference design D3): an invalid cap or
+ * budget blocks confirm until repaired, and the scopes are cleared whenever
+ * the review closes — the same discipline every other integer field on this
+ * page follows.
+ */
+const PARALLEL_REVIEW_INTEGER_FIELDS = [
+  'parallel-review:concurrencyCap',
+  'parallel-review:budget',
+];
+
+/**
+ * The default lifecycle's exit-action outcome values (under
+ * `createDefaultBoundedLoopLifecycle` exactly `['iteration-limit']`) — what
+ * every canvas-minted loop emits on top of its chosen exit outcome. The
+ * loop review renders these (minus what the definition already declares)
+ * as its declare-notice line, from the model's own function rather than a
+ * second copy of the lifecycle vocabulary.
+ */
+const LOOP_LIFECYCLE_EXIT_OUTCOMES = defaultBoundedLoopExitOutcomeValues();
+
+/** The toast's optional action (design D4): a button riding the toast. */
+interface ToastAction {
+  label: string;
+  onClick: () => void;
 }
 
 /**
@@ -145,12 +224,20 @@ export function PipelineCanvasPage() {
   const [loadedDefinition, setLoadedDefinition] = useState<WirePipelineDefinition | null>(null);
   const [flowNodes, setFlowNodes] = useState<PipelineFlowNode[]>([]);
   const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
-  const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
-  /** The v2 connection open in the Connection panel, if any (design D5).
-   * Mutually exclusive with `selectedStageId` — selecting one clears the
-   * other, and the pane click clears both. */
-  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
-  /** The Custom Composite declaration open in the declaration editor, if any. */
+  /**
+   * The canvas selection mirror (canvas-multi-selection design D1): React
+   * Flow owns the interaction truth (box-select via Shift+drag, augmentation
+   * via the platform multi-select key, click, pane click) and
+   * `onSelectionChange` mirrors every user-driven change here; the only
+   * other writers are the page's programmatic replacers (gesture adds,
+   * rename id-follow, issue navigation, edit-mode entry/exit). Panels derive
+   * their mode from this set via `selectionPanelMode` — singleton behavior
+   * is preserved by derivation, not by parallel state.
+   */
+  const [selection, setSelection] = useState<CanvasSelection>(EMPTY_CANVAS_SELECTION);
+  /** The Custom Composite declaration open in the declaration editor, if any.
+   * Deliberately still a single scalar — the declaration editor edits
+   * exactly one declaration (design D1/D2). */
   const [selectedDeclarationId, setSelectedDeclarationId] = useState<string | null>(null);
   const [selectedIssueTarget, setSelectedIssueTarget] =
     useState<DefinitionIssueTarget | null>(null);
@@ -184,9 +271,109 @@ export function PipelineCanvasPage() {
   // render happens; the ref is set/read synchronously with the click instead
   // (spec: never submit a second mutation while one is in flight).
   const savingRef = useRef(false);
+  /**
+   * The session's author placements (canvas-durable-node-positioning design
+   * D1): node id -> where the author's last drag ended. Written ONLY by the
+   * drag-final position change (`dragging === false`, v2 edit sessions),
+   * consumed by `recomputeFlow` (apply, then prune to the current root ids),
+   * reset by `enterEditWith` (every session starts from layout) and cleared
+   * by `relayout`. Edit-session state only — never written to the draft, the
+   * definition payload, or any storage.
+   */
+  const authorPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+  /**
+   * The session's expanded frames (canvas-loop-body-visibility design D2):
+   * root node ids currently rendered as frames. A ref, not state — the
+   * flow-node rebuild IS the render truth (the placement cache's pattern):
+   * the toggle writes the ref and calls `recomputeFlow`, with no draft
+   * mutation and no `markDraftChanged` (expansion is edit-session state
+   * only, never part of the saved definition). Reset by `enterEditWith`
+   * (every session starts collapsed).
+   */
+  const expandedFramesRef = useRef<Set<string>>(new Set());
+  /**
+   * The body stage selected inside an expanded frame (design D3): opens the
+   * read-only `V2BodyStagePanel`. Mutually exclusive with root selection
+   * (the round-1 node/edge pattern — selecting either clears the other; the
+   * pane click clears both). Body cards are React Flow-unselectable by
+   * construction, so `CanvasSelection` and every selection consumer never
+   * see a body id.
+   */
+  const [bodySelection, setBodySelection] = useState<{
+    frameId: string;
+    declarationId: string;
+    nodeId: string;
+  } | null>(null);
+  /**
+   * The definition contract panel's aliases for the sink offer's locate
+   * action (canvas-root-contract-editor design D6): the outcomes input's ref
+   * (focus) and the panel root's ref (scrollIntoView). jsdom asserts focus
+   * and the wiring only; the real-browser check covers visibility.
+   */
+  const definitionOutcomesInputRef = useRef<HTMLInputElement | null>(null);
+  const definitionContractPanelRef = useRef<HTMLElement | null>(null);
   const [toast, setToast] = useState('');
+  /**
+   * The current toast's optional action (design D4): while present the toast
+   * renders a button and never auto-dismisses — a toast with an action is a
+   * question (the parallel-frontier offer), not a notification. Every
+   * existing `showToast` caller passes no action and keeps today's behavior.
+   */
+  const [toastAction, setToastAction] = useState<ToastAction | null>(null);
   const [pendingExit, setPendingExit] = useState<(() => void) | null>(null);
   const [duplicateDialog, setDuplicateDialog] = useState<{ name: string; error: string | null } | null>(null);
+  /**
+   * The open package-into-reusable-block review (canvas-subgraph-extraction
+   * design D4): which nodes are being packaged, the derivation defaults the
+   * dialog opened with, the body summary, and the model's last confirm-time
+   * refusal. Null when no review is open; the nodeIds are captured at open so
+   * the transaction judges the exact set the author reviewed.
+   */
+  const [extractReview, setExtractReview] = useState<{
+    nodeIds: ReadonlySet<string>;
+    derived: ReturnType<typeof deriveSubgraphContract>;
+    stageCount: number;
+    internalConnectionCount: number;
+    defaultId: string;
+    error: string | null;
+  } | null>(null);
+  /**
+   * The open back-edge loop review (canvas-backedge-loop-inference design
+   * D6): the drawn edge's endpoints, the enclosed region, the derivation
+   * defaults, the open-time refusals, and the model's last confirm-time
+   * refusal. Null when no review is open; the drawn Connection itself is
+   * NEVER written to the draft, so cancel equals today's pre-change refusal
+   * outcome exactly. The definition's outcomes are NOT captured here — the
+   * review reads them live from the draft (the parallel review's posture,
+   * canvas-root-contract-editor design D5), because the review's own inline
+   * declare writes them while it is open.
+   */
+  const [loopReview, setLoopReview] = useState<{
+    from: string;
+    to: string;
+    nodeIds: ReadonlySet<string>;
+    derived: ReturnType<typeof deriveBackedgeLoopContract>;
+    refusals: readonly string[];
+    stageCount: number;
+    internalConnectionCount: number;
+    defaultId: string;
+    error: string | null;
+  } | null>(null);
+  /**
+   * The open parallel-frontier review (canvas-parallel-frontier-inference
+   * design D1/D3): the drawn sandwich's outer endpoints and its clean
+   * branches (re-detected at open — a stale offer refuses cleanly), the
+   * open-time refusals, and the model's last confirm-time refusal. Null when
+   * no review is open; the drawn edges are LEGAL and stay in the draft, so
+   * cancel changes nothing.
+   */
+  const [parallelReview, setParallelReview] = useState<{
+    source: string;
+    target: string;
+    branches: readonly string[];
+    refusals: readonly string[];
+    error: string | null;
+  } | null>(null);
 
   const hasAuthoringDraftErrors = Object.keys(authoringDraftErrors).length > 0;
   const dirty =
@@ -310,29 +497,244 @@ export function PipelineCanvasPage() {
     );
   }
 
+  /**
+   * Re-stamps `selected` on the current flow nodes/edges from the given
+   * selection — the React Flow half of every programmatic selection write
+   * (review B1). RF's SelectionListener keys its effect on the
+   * `onSelectionChange` callback identity — a fresh function on every page
+   * render — so it re-fires with its OWN store truth after every commit,
+   * and that store adopts the `selected` flags we pass
+   * (`StoreUpdater`/`adoptUserNodes`). A mirror write that leaves the flags
+   * at the old value is therefore reverted one commit later: issue
+   * navigation's panel closed again, and every panel close reopened.
+   * Pairing the write with this re-stamp makes the next listener firing
+   * carry a value equal to the mirror, which `onSelectionChange`'s
+   * same-state guard absorbs.
+   */
+  function syncFlowSelection(next: CanvasSelection) {
+    setFlowNodes((nodes) =>
+      nodes.map((node) =>
+        next.nodeIds.has(node.id) === !!node.selected
+          ? node
+          : { ...node, selected: next.nodeIds.has(node.id) }
+      )
+    );
+    setFlowEdges((edges) =>
+      edges.map((edge) =>
+        next.connectionIds.has(edge.id) === !!edge.selected
+          ? edge
+          : { ...edge, selected: next.connectionIds.has(edge.id) }
+      )
+    );
+  }
+
+  /**
+   * Replaces the whole selection — the programmatic replacer (design D1).
+   * Writes BOTH truths in one update: the mirror the panels derive from,
+   * and the flow's `selected` flags React Flow's store adopts (see
+   * `syncFlowSelection`). Handlers that rebuild the whole flow in the same
+   * tick (`recomputeFlow` with a `selectionOverride`) already keep the two
+   * equal; this is the pairing for writes that don't.
+   */
+  function replaceSelection(
+    nodeIds: readonly string[],
+    connectionIds: readonly string[] = []
+  ) {
+    const next: CanvasSelection = {
+      nodeIds: new Set(nodeIds),
+      connectionIds: new Set(connectionIds),
+    };
+    setSelection(next);
+    syncFlowSelection(next);
+  }
+
+  /**
+   * Drops every selected id the next draft no longer contains — the
+   * "elements removed by any edit SHALL leave the selection" half of the
+   * selection-survival rule. Idempotent and shape-preserving: live ids are
+   * never touched, so non-destructive edits keep the selection intact.
+   */
+  function pruneSelectionToDraft(nextDraft: WirePipelineDefinition) {
+    setSelection((current) => {
+      const nodeIds = new Set(
+        [...current.nodeIds].filter((id) =>
+          nextDraft.version === 2
+            ? nextDraft.root.nodes.some((node) => node.id === id)
+            : nextDraft.stages.some((stage) => stage.id === id)
+        )
+      );
+      const connectionIds = new Set(
+        [...current.connectionIds].filter(
+          (id) =>
+            nextDraft.version === 2 &&
+            nextDraft.root.connections.some(
+              (connection) => connection.id === id
+            )
+        )
+      );
+      if (
+        nodeIds.size === current.nodeIds.size &&
+        connectionIds.size === current.connectionIds.size
+      ) {
+        return current;
+      }
+      return { nodeIds, connectionIds };
+    });
+  }
+
   function recomputeFlow(
     def: WirePipelineDefinition,
-    catalogOverride: PipelineCatalogResponse | null = catalog
+    catalogOverride: PipelineCatalogResponse | null = catalog,
+    selectionOverride: CanvasSelection = selection
   ) {
-    const { nodes, edges } = draftToGraph(def, catalogOverride);
-    const laidOut = layoutGraph(nodes, edges).map((node) =>
+    const { nodes, edges, frameChildren } = draftToGraph(
+      def,
+      catalogOverride,
+      def.version === 2 ? expandedFramesRef.current : undefined
+    );
+    const laidOut = layoutGraph(
+      nodes,
+      edges,
+      def.version === 2 ? authorPositionsRef.current : undefined,
+      frameChildren
+    ).map((node) =>
       node.type === 'stage' && def.version === 1
         ? { ...node, draggable: true, connectable: true, deletable: true }
         : node
     );
-    setFlowNodes(laidOut);
-    setFlowEdges(edges);
+    // Selection-carry (design D3): rebuilt nodes/edges re-stamp `selected`
+    // from the mirror by id, so a non-destructive mutation no longer
+    // visually deselects everything. Handlers that replace the selection in
+    // the same tick pass the NEXT selection explicitly — this closure's
+    // `selection` is still the pre-replace value.
+    //
+    // Measurement-carry (canvas-loop-body-visibility): the rebuild's fresh
+    // node objects must PRESERVE React Flow's `measured` for ids that
+    // persist. An adopted node without `measured` renders
+    // `visibility: hidden` until its ResizeObserver re-measures — and a
+    // re-observed element whose size did not change never re-fires, which
+    // wedged expanded frames hidden (their body edges never initialized)
+    // until a collapse/expand cycle remounted them. Carrying `measured`
+    // keeps `handleBounds` alive through adoption (the same stability
+    // `applyNodeChanges`-only updates give a controlled flow).
+    const measuredById = new Map(
+      flowNodes.flatMap((node) =>
+        node.measured ? ([[node.id, node.measured] as const] as const) : []
+      )
+    );
+    setFlowNodes(
+      laidOut.map((node) => {
+        const stamped =
+          selectionOverride.nodeIds.has(node.id) && !node.selected
+            ? { ...node, selected: true }
+            : node;
+        const measured = measuredById.get(node.id);
+        return measured && !stamped.measured ? { ...stamped, measured } : stamped;
+      })
+    );
+    setFlowEdges(
+      edges.map((edge) =>
+        selectionOverride.connectionIds.has(edge.id)
+          ? { ...edge, selected: true }
+          : edge
+      )
+    );
+    // Placement invalidation (canvas-durable-node-positioning design D3):
+    // after the rebuild the cache is exactly "placements of nodes present in
+    // the root graph" — deleted/extracted nodes drop theirs, so a re-added
+    // id lays out afresh instead of resurrecting a departed placement. Body
+    // children never enter it: `nodes` is the ROOT projection only.
+    if (def.version === 2) {
+      authorPositionsRef.current = pruneAuthorPositions(
+        authorPositionsRef.current,
+        nodes.map((node) => node.id)
+      );
+      // The open body panel survives a rebuild only while its frame, its
+      // declaration, and its stage all still exist in the draft.
+      setBodySelection((current) => {
+        if (!current) return null;
+        const framePresent = def.root.nodes.some(
+          (node) => node.id === current.frameId
+        );
+        const stagePresent = def.declarations
+          .find((declaration) => declaration.id === current.declarationId)
+          ?.graph.nodes.some((node) => node.id === current.nodeId);
+        return framePresent && stagePresent ? current : null;
+      });
+    } else {
+      setBodySelection(null);
+    }
   }
+
+  /**
+   * Live-state mirror for the two node-data callbacks (canvas-loop-body-
+   * visibility design D2/D3). The callbacks ride React Flow node objects,
+   * whose IDENTITY must stay stable between flow rebuilds — React Flow's
+   * controlled adoption (`adoptUserNodes` checkEquality) re-initializes any
+   * node whose object identity changed, clearing `measured`/`handleBounds`
+   * and ping-ponging with the ResizeObserver-driven measurement loop (found
+   * live as a wedged renderer). So the callbacks are created ONCE and read
+   * the current draft/catalog/selection through this ref instead of closing
+   * over render state.
+   */
+  const latestFlowInputsRef = useRef<{
+    draft: WirePipelineDefinition | null;
+    catalog: PipelineCatalogResponse | null;
+    selection: CanvasSelection;
+  }>({ draft: null, catalog: null, selection: EMPTY_CANVAS_SELECTION });
+  latestFlowInputsRef.current = { draft, catalog, selection };
+
+  /**
+   * The frame chevron (canvas-loop-body-visibility design D2): a session-only
+   * ref write plus a flow rebuild — NO draft mutation, no `markDraftChanged`
+   * (expansion never touches the definition), no selection change. A
+   * collapsing frame stops rendering its body, so an open body panel for that
+   * frame goes with it. Stable identity (see `latestFlowInputsRef`).
+   */
+  const toggleFrameExpand = useCallback((frameId: string) => {
+    const current = latestFlowInputsRef.current.draft;
+    if (!current) return;
+    if (expandedFramesRef.current.has(frameId)) {
+      expandedFramesRef.current.delete(frameId);
+      setBodySelection((sel) => (sel?.frameId === frameId ? null : sel));
+    } else {
+      expandedFramesRef.current.add(frameId);
+    }
+    const { catalog: liveCatalog, selection: liveSelection } =
+      latestFlowInputsRef.current;
+    recomputeFlow(current, liveCatalog, liveSelection);
+  }, []);
+
+  /**
+   * A body card's click (design D3): opens the read-only panel and REPLACES
+   * the root selection with empty (mutually exclusive, the round-1 pattern;
+   * `replaceSelection` pairs both selection truths so React Flow's listener
+   * cannot revert it one commit later). Stable identity (see above).
+   */
+  const selectBodyStage = useCallback(
+    (frameId: string, declarationId: string, nodeId: string) => {
+      setBodySelection({ frameId, declarationId, nodeId });
+      replaceSelection([]);
+    },
+    []
+  );
 
   function enterEditWith(
     seed: WirePipelineDefinition,
     preparation: WireDefinitionPreparation | null = null,
     initialIssues: PipelineValidationIssue[] = []
   ) {
+    // Every session starts from computed layout (design D6): no placement
+    // from a previous session can leak across definitions or reloads.
+    authorPositionsRef.current = new Map();
+    // Every session also starts COLLAPSED (canvas-loop-body-visibility
+    // design D2): expansion is edit-session state, never carried across.
+    expandedFramesRef.current = new Set();
+    setBodySelection(null);
     setDraft(seed);
     setLoadedDefinition(seed);
     setMode('edit');
-    setSelectedStageId(null);
+    setSelection(EMPTY_CANVAS_SELECTION);
     setSelectedDeclarationId(null);
     setSelectedIssueTarget(null);
     setSelectedIssueSeverity(null);
@@ -342,7 +744,7 @@ export function PipelineCanvasPage() {
     setLastValidation(null);
     setSaveState({ status: 'idle' });
     setExportState({ open: false, path: '', status: 'idle' });
-    recomputeFlow(seed);
+    recomputeFlow(seed, catalog, EMPTY_CANVAS_SELECTION);
     if (initialIssues.length > 0) {
       applyIssueMarkers(initialIssues, seed);
     }
@@ -357,9 +759,42 @@ export function PipelineCanvasPage() {
     );
   }
 
-  function showToast(message: string) {
+  /**
+   * The live toast's auto-dismiss timer (review m1): exactly one handle, so a
+   * previous toast's pending clear can never fire against a newer toast — a
+   * notification within the 2.5s window used to wipe a freshly surfaced
+   * parallel offer, which nothing re-offers (the completing connection is
+   * already drawn).
+   */
+  const toastTimerRef = useRef<number | null>(null);
+
+  function clearToast() {
+    if (toastTimerRef.current !== null) {
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+    setToast('');
+    setToastAction(null);
+  }
+
+  function showToast(message: string, action?: ToastAction) {
+    // Clear the previous toast's timer before replacing it — only the newest
+    // toast's clear may ever run (see toastTimerRef).
+    if (toastTimerRef.current !== null) {
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
     setToast(message);
-    setTimeout(() => setToast(''), 2500);
+    setToastAction(action ?? null);
+    // A toast with an action is a question, not a notification (design D4):
+    // it stays until answered (the action), dismissed, or replaced by the
+    // next toast. Every existing caller passes no action and keeps the
+    // auto-dismiss.
+    if (action) return;
+    toastTimerRef.current = window.setTimeout(() => {
+      toastTimerRef.current = null;
+      setToast('');
+    }, 2500);
   }
 
   function requestExit(action: () => void) {
@@ -374,7 +809,8 @@ export function PipelineCanvasPage() {
     setMode('view');
     setDraft(null);
     setLoadedDefinition(null);
-    setSelectedStageId(null);
+    setSelection(EMPTY_CANVAS_SELECTION);
+    setBodySelection(null);
     setSelectedDeclarationId(null);
     setSelectedIssueTarget(null);
     setSelectedIssueSeverity(null);
@@ -527,7 +963,7 @@ export function PipelineCanvasPage() {
         setDraft(null);
         setMode('view');
         setIssues([]);
-        setSelectedStageId(null);
+        setSelection(EMPTY_CANVAS_SELECTION);
         setSelectedDeclarationId(null);
         setSelectedIssueTarget(null);
         setSelectedIssueSeverity(null);
@@ -606,7 +1042,34 @@ export function PipelineCanvasPage() {
   function onConnect(connection: Connection) {
     if (!draft || !connection.source || !connection.target) return;
     if (wouldCreateCycle(draft, connection.source, connection.target)) {
-      showToast(`Rejected: ${connection.source} → ${connection.target} would create a cycle`);
+      // A refused cycle-closing draw IS loop intent by construction
+      // (canvas-backedge-loop-inference design D1) — in the v2 editor, over
+      // editable nodes, it opens the loop review instead of dead-ending. The
+      // toast still fires first (the author sees why the edge was not added
+      // as a plain connection); cancel leaves exactly this state. v1 and
+      // non-editable endpoints keep the plain refusal. `wouldCreateCycle`
+      // stays the single owner of cycle semantics — there is no second
+      // "is this a back-edge" predicate to drift.
+      const refusal = `Rejected: ${connection.source} → ${connection.target} would create a cycle`;
+      if (draft.version === 2) {
+        const sourceNode = draft.root.nodes.find(
+          (node) => node.id === connection.source
+        );
+        const targetNode = draft.root.nodes.find(
+          (node) => node.id === connection.target
+        );
+        if (
+          sourceNode &&
+          targetNode &&
+          isV2EditableNodeKind(sourceNode.kind) &&
+          isV2EditableNodeKind(targetNode.kind)
+        ) {
+          showToast(refusal);
+          openLoopReview(connection.source, connection.target);
+          return;
+        }
+      }
+      showToast(refusal);
       return;
     }
     if (draft.version === 2) {
@@ -644,6 +1107,28 @@ export function PipelineCanvasPage() {
       setDraft(nextDraft);
       recomputeFlow(nextDraft);
       markDraftChanged();
+      // A successfully drawn connection that completes a drawn
+      // fan-out/reconverge sandwich earns the non-blocking parallel offer
+      // (canvas-parallel-frontier-inference design D1): detection over the
+      // POST-connect draft, filtered to frontiers whose branch-edge set
+      // contains this connection. The edge is legal and stays either way —
+      // dismissing or declining the offer changes nothing.
+      const frontier = completedFrontier(nextDraft, {
+        source: endpoints.source,
+        target: endpoints.target,
+      });
+      if (frontier) {
+        showToast(
+          `Detected a parallel frontier: ${frontier.source} fans out to ` +
+            `${frontier.branches.length} branches that reconverge at ` +
+            `${frontier.target}.`,
+          {
+            label: 'Run in parallel',
+            onClick: () =>
+              openParallelReviewRef.current(frontier.source, frontier.target),
+          }
+        );
+      }
       return;
     }
     setDraft(addRequire(draft, connection.source, connection.target));
@@ -651,36 +1136,84 @@ export function PipelineCanvasPage() {
     markDraftChanged();
   }
 
+  /**
+   * One batch removal over a set of selected v2 node ids and connection ids
+   * (canvas-multi-selection design D5) — the path BOTH the Delete key (via
+   * `onNodesChange`/`onEdgesChange`) and the selection panel's delete button
+   * take. `removeV2Nodes` owns every node rule (pair co-deletion, refusals,
+   * reference cleanup); selected connections go through the same
+   * editable-endpoint guard the Delete key's edge path has always used. The
+   * page's only added behavior: pruning the selection of removed ids,
+   * clearing authoring-error scopes, and showing ONE summary toast when
+   * nodes were refused.
+   */
+  function applyV2BatchRemoval(
+    nodeIds: ReadonlySet<string>,
+    connectionIds: ReadonlySet<string>
+  ) {
+    if (!draft || draft.version !== 2) return;
+    const plan = removeV2Nodes(draft, nodeIds);
+    let nextDraft = plan.next;
+    const removedConnectionIds = new Set<string>();
+    for (const id of connectionIds) {
+      const connection = nextDraft.root.connections.find(
+        (candidate) => candidate.id === id
+      );
+      if (!connection) continue;
+      const sourceNode = nextDraft.root.nodes.find(
+        (node) => node.id === connection.from.node
+      );
+      const targetNode = nextDraft.root.nodes.find(
+        (node) => node.id === connection.to.node
+      );
+      if (
+        sourceNode &&
+        targetNode &&
+        isV2EditableNodeKind(sourceNode.kind) &&
+        isV2EditableNodeKind(targetNode.kind)
+      ) {
+        nextDraft = removeV2Connection(nextDraft, id);
+        removedConnectionIds.add(id);
+      }
+    }
+    if (
+      plan.removedIds.length === 0 &&
+      plan.refused.length === 0 &&
+      removedConnectionIds.size === 0
+    ) {
+      return;
+    }
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
+    pruneSelectionToDraft(nextDraft);
+    const removedFanOutIds = plan.removedIds.filter(
+      (id) =>
+        draft.root.nodes.find((node) => node.id === id)?.kind === 'FanOut'
+    );
+    removeAuthoringDraftErrorScopes([
+      ...plan.removedIds.map((id) => `root-node:${id}`),
+      ...removedFanOutIds.map((id) => `parallel:${id}`),
+    ]);
+    if (plan.refused.length > 0) {
+      showToast(
+        `Deleted ${plan.removedIds.length + removedConnectionIds.size}` +
+          ` · ${plan.refused.length} refused: ` +
+          plan.refused
+            .map((refusal) => `${refusal.id} (${refusal.reason})`)
+            .join('; ')
+      );
+    }
+    markDraftChanged();
+  }
+
   function onNodesChange(changes: NodeChange[]) {
     const removed = changes.filter((c) => c.type === 'remove');
     if (removed.length > 0 && draft) {
       if (draft.version === 2) {
-        let nextDraft = draft;
-        for (const change of removed) {
-          const id = (change as { id: string }).id;
-          const node = nextDraft.root.nodes.find(
-            (candidate) => candidate.id === id
-          );
-          if (node && isV2EditableNodeKind(node.kind)) {
-            try {
-              nextDraft = removeV2Node(nextDraft, id);
-              removeAuthoringDraftErrorScopes([`root-node:${id}`]);
-            } catch (error) {
-              showToast(
-                error instanceof Error ? error.message : 'Could not remove the node.'
-              );
-            }
-          }
-        }
-        setDraft(nextDraft);
-        recomputeFlow(nextDraft);
-        if (
-          selectedStageId &&
-          !nextDraft.root.nodes.some((node) => node.id === selectedStageId)
-        ) {
-          setSelectedStageId(null);
-        }
-        markDraftChanged();
+        applyV2BatchRemoval(
+          new Set(removed.map((change) => (change as { id: string }).id)),
+          new Set<string>()
+        );
         return;
       }
       let nextDraft = draft;
@@ -688,8 +1221,35 @@ export function PipelineCanvasPage() {
       setDraft(nextDraft);
       const removedIds = new Set(removed.map((c) => (c as { id: string }).id));
       setFlowEdges((eds) => eds.filter((e) => !removedIds.has(e.source) && !removedIds.has(e.target)));
-      if (selectedStageId && removedIds.has(selectedStageId)) setSelectedStageId(null);
+      pruneSelectionToDraft(nextDraft);
       markDraftChanged();
+    }
+    // Author placement capture (canvas-durable-node-positioning design D1):
+    // the drag-final position change (`dragging === false`) records where
+    // the author's drag ended, so the next `recomputeFlow` honors it.
+    // Mid-drag intermediates (`dragging === true`) never enter the cache, and
+    // v1 editing is excluded (different coordinate contract for its group
+    // children).
+    if (draft?.version === 2) {
+      const rootIds = new Set(draft.root.nodes.map((node) => node.id));
+      for (const change of changes) {
+        if (
+          change.type !== 'position' ||
+          change.dragging !== false ||
+          !change.position
+        ) {
+          continue;
+        }
+        // Root-keyed by capture guard too (canvas-loop-body-visibility): a
+        // body child is never draggable in React Flow, but a stray position
+        // change under a body id is skipped on arrival — frame-local
+        // positions are layout-owned, recomputed every rebuild.
+        if (!rootIds.has(change.id)) continue;
+        authorPositionsRef.current.set(change.id, {
+          x: change.position.x,
+          y: change.position.y,
+        });
+      }
     }
     setFlowNodes((nds) => applyNodeChanges(changes, nds) as PipelineFlowNode[]);
   }
@@ -698,36 +1258,10 @@ export function PipelineCanvasPage() {
     const removed = changes.filter((c) => c.type === 'remove');
     if (removed.length > 0 && draft) {
       if (draft.version === 2) {
-        let nextDraft = draft;
-        const removedConnectionIds = new Set<string>();
-        for (const change of removed) {
-          const id = (change as { id: string }).id;
-          const connection = nextDraft.root.connections.find(
-            (candidate) => candidate.id === id
-          );
-          if (!connection) continue;
-          const sourceNode = nextDraft.root.nodes.find(
-            (node) => node.id === connection.from.node
-          );
-          const targetNode = nextDraft.root.nodes.find(
-            (node) => node.id === connection.to.node
-          );
-          if (
-            sourceNode &&
-            targetNode &&
-            isV2EditableNodeKind(sourceNode.kind) &&
-            isV2EditableNodeKind(targetNode.kind)
-          ) {
-            nextDraft = removeV2Connection(nextDraft, id);
-            removedConnectionIds.add(id);
-          }
-        }
-        setDraft(nextDraft);
-        recomputeFlow(nextDraft);
-        if (selectedConnectionId && removedConnectionIds.has(selectedConnectionId)) {
-          setSelectedConnectionId(null);
-        }
-        markDraftChanged();
+        applyV2BatchRemoval(
+          new Set<string>(),
+          new Set(removed.map((change) => (change as { id: string }).id))
+        );
         return;
       }
       let nextDraft = draft;
@@ -736,28 +1270,74 @@ export function PipelineCanvasPage() {
         if (edge) nextDraft = removeRequire(nextDraft, edge.source, edge.target);
       }
       setDraft(nextDraft);
+      pruneSelectionToDraft(nextDraft);
       markDraftChanged();
     }
     setFlowEdges((eds) => applyEdgeChanges(changes, eds));
   }
 
-  function onNodeClick(_event: unknown, node: { id: string; type?: string }) {
-    if (node.type === 'stage') {
-      setSelectedConnectionId(null);
-      setSelectedStageId(node.id);
+  /**
+   * The single user-action mirror writer (canvas-multi-selection design
+   * D1/D3): React Flow reports every interaction-driven selection change —
+   * plain click, Shift+drag box-select, multi-select-key augmentation, pane
+   * click, delete — and the page mirrors it verbatim. The hand-rolled
+   * `onNodeClick`/`onEdgeClick`/`onPaneClick` XOR clearing this replaces
+   * could not represent the multi state at all.
+   *
+   * Same value → same state, deliberately: React Flow's SelectionListener
+   * runs its effect on this callback's IDENTITY (and once at mount), so a
+   * fresh object for an unchanged selection would re-render the page, mint
+   * a new callback, re-fire the listener, and spin the renderer forever —
+   * found as a hard tab freeze in the task 5.1 real-browser check.
+   */
+  function onSelectionChange({ nodes, edges }: OnSelectionChangeParams) {
+    const nodeIds = new Set(nodes.map((node) => node.id));
+    const connectionIds = new Set(edges.map((edge) => edge.id));
+    // Root selection and body selection are mutually exclusive
+    // (canvas-loop-body-visibility design D3): a REAL selection WITH CONTENT
+    // — user interaction or a programmatic replace that diverged from the
+    // mirror — closes the body panel. An EMPTYING selection deliberately
+    // does NOT: the body click itself empties the mirror
+    // (`replaceSelection([])`), and the listener's identity-driven re-fire
+    // against this render's PRE-replace mirror would read that as a change
+    // and wipe the panel one commit after it opened (an intermittent race,
+    // found live). The pane-click path owns the empty case.
+    const sameNodes =
+      selection.nodeIds.size === nodeIds.size &&
+      [...nodeIds].every((id) => selection.nodeIds.has(id));
+    const sameConnections =
+      selection.connectionIds.size === connectionIds.size &&
+      [...connectionIds].every((id) => selection.connectionIds.has(id));
+    if (
+      (nodeIds.size > 0 || connectionIds.size > 0) &&
+      (!sameNodes || !sameConnections)
+    ) {
+      setBodySelection(null);
     }
+    setSelection((current) => {
+      const sameNodes =
+        current.nodeIds.size === nodeIds.size &&
+        [...nodeIds].every((id) => current.nodeIds.has(id));
+      const sameConnections =
+        current.connectionIds.size === connectionIds.size &&
+        [...connectionIds].every((id) => current.connectionIds.has(id));
+      return sameNodes && sameConnections
+        ? current
+        : { nodeIds, connectionIds };
+    });
   }
 
-  function onEdgeClick(_event: unknown, edge: { id: string }) {
-    if (!draft || draft.version !== 2) return;
-    if (!draft.root.connections.some((connection) => connection.id === edge.id)) return;
-    setSelectedStageId(null);
-    setSelectedConnectionId(edge.id);
-  }
-
+  /**
+   * The pane click (canvas-loop-body-visibility design D3): clears BOTH
+   * selection truths — the root mirror (React Flow reports the deselect when
+   * something was selected; `replaceSelection` re-stamps both so the
+   * listener re-fire carries the same value) and the body panel (a pane
+   * click with nothing selected never fires `onSelectionChange`, so the
+   * panel needs this explicit clear).
+   */
   function onPaneClick() {
-    setSelectedStageId(null);
-    setSelectedConnectionId(null);
+    setBodySelection(null);
+    replaceSelection([]);
   }
 
   function onDropStage(skill: PipelineCatalogSkill, position: { x: number; y: number }) {
@@ -800,6 +1380,24 @@ export function PipelineCanvasPage() {
    * re-decides a rule the model owns — replaces the old `addV2RootNode`
    * switch, which built every node kind's shape inline.
    */
+  /**
+   * Selects the node(s) a gesture just created — a UNION, not a replace:
+   * the spec's "Selection survives a non-destructive edit" scenario pins
+   * that previously selected nodes stay selected across a palette add
+   * (select a region, keep adding to it — the workflow every later
+   * portfolio child builds on). Unioning also preserves the pre-change
+   * singleton behavior: from an empty selection the new node is the whole
+   * selection and its panel opens exactly as before.
+   */
+  function selectAddedNodes(ids: readonly string[]) {
+    const nextSelection: CanvasSelection = {
+      nodeIds: new Set([...selection.nodeIds, ...ids]),
+      connectionIds: selection.connectionIds,
+    };
+    setSelection(nextSelection);
+    return nextSelection;
+  }
+
   function addStageGesture(capability: { id: string; version: string }) {
     if (!draft || draft.version !== 2) return;
     const id = v2NodeIdFor('AtomicStage', draft);
@@ -811,33 +1409,37 @@ export function PipelineCanvasPage() {
       return;
     }
     setDraft(nextDraft);
-    recomputeFlow(nextDraft);
-    setSelectedStageId(id);
+    recomputeFlow(nextDraft, catalog, selectAddedNodes([id]));
     markDraftChanged();
   }
 
   function addRootGesture(gesture: 'parallel' | 'loop' | 'finish') {
     if (!draft || draft.version !== 2) return;
-    let id: string;
+    let ids: readonly string[];
     let nextDraft;
     try {
       if (gesture === 'parallel') {
-        id = v2NodeIdFor('FanOut', draft);
+        // The parallel gesture creates a PAIR; both halves land in the
+        // selection together, because the pair is one structural unit.
+        ids = [v2NodeIdFor('FanOut', draft), v2NodeIdFor('Join', draft)];
         nextDraft = addParallelFrontier(draft);
       } else if (gesture === 'loop') {
-        id = v2NodeIdFor('BoundedLoop', draft);
+        ids = [v2NodeIdFor('BoundedLoop', draft)];
         nextDraft = addBoundedLoopOverDeclaration(draft);
       } else {
-        id = v2NodeIdFor('Finish', draft);
+        ids = [v2NodeIdFor('Finish', draft)];
         nextDraft = addFinishNode(draft);
       }
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not add this gesture.');
       return;
     }
+    // Moment-of-formation feedback (canvas-loop-body-visibility design D2):
+    // the just-minted loop opens EXPANDED — the author sees what the gesture
+    // captured immediately.
+    if (gesture === 'loop') expandedFramesRef.current.add(ids[0]!);
     setDraft(nextDraft);
-    recomputeFlow(nextDraft);
-    setSelectedStageId(id);
+    recomputeFlow(nextDraft, catalog, selectAddedNodes(ids));
     markDraftChanged();
   }
 
@@ -856,14 +1458,15 @@ export function PipelineCanvasPage() {
 
   /** Splices a condition onto the selected connection (design D5). The
    * spliced connection no longer exists afterward, so the Connection panel
-   * closes; the new Choice node is left selectable on the canvas. */
+   * closes (the removed id leaves the selection); the new Choice node is
+   * left selectable on the canvas. */
   function spliceConnectionCondition(connectionId: string, expression: string) {
     if (!draft || draft.version !== 2) return;
     try {
       const nextDraft = spliceConditionOntoConnection(draft, connectionId, expression);
       setDraft(nextDraft);
       recomputeFlow(nextDraft);
-      setSelectedConnectionId(null);
+      pruneSelectionToDraft(nextDraft);
       markDraftChanged();
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not add this condition.');
@@ -877,7 +1480,7 @@ export function PipelineCanvasPage() {
       const nextDraft = unspliceChoice(draft, choiceId);
       setDraft(nextDraft);
       recomputeFlow(nextDraft);
-      setSelectedStageId(null);
+      pruneSelectionToDraft(nextDraft);
       markDraftChanged();
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not remove this condition.');
@@ -891,13 +1494,356 @@ export function PipelineCanvasPage() {
     try {
       const nextDraft = insertCompositeRef(draft, declarationId);
       setDraft(nextDraft);
-      recomputeFlow(nextDraft);
-      setSelectedStageId(id);
+      recomputeFlow(nextDraft, catalog, selectAddedNodes([id]));
       markDraftChanged();
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not insert this declaration.');
     }
   }
+
+  // --- Package-into-reusable-block (canvas-subgraph-extraction design D4) --
+
+  /**
+   * Opens the extraction review with the derivation defaults. The rules and
+   * the cut live in `draft.ts` (`subgraphExtractionRefusals` /
+   * `deriveSubgraphContract`); this handler only captures what the author is
+   * about to review.
+   */
+  function openExtractReview() {
+    if (!draft || draft.version !== 2 || selection.nodeIds.size === 0) return;
+    const derived = deriveSubgraphContract(draft, selection.nodeIds);
+    const internalConnectionCount = draft.root.connections.filter(
+      (connection) =>
+        selection.nodeIds.has(connection.from.node) &&
+        selection.nodeIds.has(connection.to.node)
+    ).length;
+    // `block`, `block-2`, … — the `v2NodeIdFor` suffix convention over the
+    // model's uniqueness rule.
+    let defaultId = 'block';
+    for (let suffix = 2; !isDeclarationIdUnique(draft, defaultId); suffix += 1) {
+      defaultId = `block-${suffix}`;
+    }
+    setExtractReview({
+      nodeIds: new Set(selection.nodeIds),
+      derived,
+      stageCount: selection.nodeIds.size,
+      internalConnectionCount,
+      defaultId,
+      error: null,
+    });
+  }
+
+  /**
+   * Confirms the review: one `extractSubgraph` transaction, then the
+   * selectionOverride path — both selection truths in the same tick (the
+   * `syncFlowSelection` discipline: the moved ids are gone from the draft, so
+   * the mirror must become the ref in the same update that rebuilds the
+   * flow, or React Flow's listener reverts it one commit later). A model
+   * refusal keeps the draft unchanged, toasts the message, and leaves the
+   * review open with its edits intact.
+   */
+  function confirmExtractReview(review: SubgraphExtractionReview) {
+    if (!draft || draft.version !== 2 || !extractReview) return;
+    let result;
+    try {
+      result = extractSubgraph(draft, { nodeIds: extractReview.nodeIds, ...review });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Could not package this selection.';
+      setExtractReview((current) => (current ? { ...current, error: message } : current));
+      showToast(message);
+      return;
+    }
+    setExtractReview(null);
+    // Moment-of-formation feedback (canvas-loop-body-visibility design D2):
+    // the replacing ref opens EXPANDED — the packaged body shows itself.
+    expandedFramesRef.current.add(result.refId);
+    const nextSelection: CanvasSelection = {
+      nodeIds: new Set([result.refId]),
+      connectionIds: new Set<string>(),
+    };
+    setDraft(result.next);
+    setSelection(nextSelection);
+    recomputeFlow(result.next, catalog, nextSelection);
+    markDraftChanged();
+    showToast(
+      `Packaged ${extractReview.stageCount} stage${extractReview.stageCount === 1 ? '' : 's'} into '${result.declarationId}'.`
+    );
+  }
+
+  // --- Back-edge loop inference (canvas-backedge-loop-inference D1/D6) ----
+
+  /**
+   * Opens the loop review for a refused cycle-closing draw. The region, the
+   * derivation, and the refusals live in `draft.ts` (`backedgeRegion`,
+   * `deriveBackedgeLoopContract` — the cut contract with control-typed entry
+   * rows and the body's producible terminal outcomes, from the catalog;
+   * `subgraphExtractionRefusals`; `underivableBodyStageRefusals` — a body
+   * stage whose capability is not in the catalog blocks confirm here because
+   * the loop's exit outcomes cannot be derived for it); this handler only
+   * captures what the author is about to review. The drawn connection is
+   * never written to the draft — the review state carries the endpoints as
+   * data, so cancel reproduces today's refusal outcome exactly.
+   */
+  function openLoopReview(from: string, to: string) {
+    if (!draft || draft.version !== 2) return;
+    const nodeIds = backedgeRegion(draft, from, to);
+    const derived = deriveBackedgeLoopContract(draft, nodeIds, to, catalog);
+    const refusals = [
+      ...subgraphExtractionRefusals(draft, {
+        nodeIds,
+        connectionIds: new Set<string>(),
+      }),
+      ...underivableBodyStageRefusals(draft, nodeIds, catalog),
+    ];
+    const internalConnectionCount = draft.root.connections.filter(
+      (connection) =>
+        nodeIds.has(connection.from.node) && nodeIds.has(connection.to.node)
+    ).length;
+    // `loop-body`, `loop-body-2`, … — the `v2NodeIdFor` suffix convention
+    // over the model's uniqueness rule.
+    let defaultId = 'loop-body';
+    for (let suffix = 2; !isDeclarationIdUnique(draft, defaultId); suffix += 1) {
+      defaultId = `loop-body-${suffix}`;
+    }
+    removeAuthoringDraftErrorScopes([LOOP_REVIEW_INTEGER_FIELD]);
+    setLoopReview({
+      from,
+      to,
+      nodeIds: new Set(nodeIds),
+      derived,
+      refusals,
+      stageCount: nodeIds.size,
+      internalConnectionCount,
+      defaultId,
+      error: null,
+    });
+  }
+
+  /**
+   * Confirms the review: one `synthesizeBoundedLoopFromBackedge` transaction,
+   * then the same selectionOverride pairing `confirmExtractReview` uses —
+   * both selection truths in the same tick (the region's node ids are gone
+   * from the draft, so the mirror must become the loop in the same update
+   * that rebuilds the flow, or React Flow's listener reverts it one commit
+   * later). A model refusal keeps the draft unchanged, toasts the message,
+   * and leaves the review open with its edits intact (child-2's rule).
+   */
+  function confirmLoopReview(review: BoundedLoopSynthesisReview) {
+    if (!draft || draft.version !== 2 || !loopReview) return;
+    let result;
+    try {
+      result = synthesizeBoundedLoopFromBackedge(
+        draft,
+        {
+          from: loopReview.from,
+          to: loopReview.to,
+          ...review,
+        },
+        catalog
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Could not turn this back-edge into a loop.';
+      setLoopReview((current) => (current ? { ...current, error: message } : current));
+      showToast(message);
+      return;
+    }
+    setLoopReview(null);
+    removeAuthoringDraftErrorScopes([LOOP_REVIEW_INTEGER_FIELD]);
+    // Moment-of-formation feedback (canvas-loop-body-visibility design D2):
+    // the synthesized loop opens EXPANDED — the captured region shows itself
+    // immediately (the point of the round-3 question this change answers).
+    expandedFramesRef.current.add(result.loopId);
+    const nextSelection: CanvasSelection = {
+      nodeIds: new Set([result.loopId]),
+      connectionIds: new Set<string>(),
+    };
+    setDraft(result.next);
+    setSelection(nextSelection);
+    recomputeFlow(result.next, catalog, nextSelection);
+    markDraftChanged();
+    showToast(
+      `Loop created from back-edge over ${loopReview.stageCount} stage${loopReview.stageCount === 1 ? '' : 's'} ('${result.declarationId}').`
+    );
+  }
+
+  /**
+   * Cancels the review: today's refusal outcome, exactly — the draft was
+   * never touched (the drawn edge never entered it) and the draw-time
+   * rejection toast stands. Only the review's integer-error scope needs
+   * clearing, so it cannot linger to block the next authoring action.
+   */
+  function cancelLoopReview() {
+    setLoopReview(null);
+    removeAuthoringDraftErrorScopes([LOOP_REVIEW_INTEGER_FIELD]);
+  }
+
+  /**
+   * The loop review's inline declare (canvas-root-contract-editor design
+   * D3/D5): the review's overlay covers the contract panel, so while the
+   * definition declares no outcomes the review offers a name field whose
+   * confirm performs exactly one `declareDefinitionOutcome` transaction —
+   * the same rule site the contract panel writes through. The review stays
+   * open; the live outcomes read (D5) is what makes the new option reach
+   * the exit-outcome select. A refusal toasts the message and leaves the
+   * draft untouched.
+   */
+  function declareOutcomeFromLoopReview(name: string) {
+    if (!draft || draft.version !== 2) return;
+    let nextDraft;
+    try {
+      nextDraft = declareDefinitionOutcome(draft, name);
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : 'Could not declare the outcome.'
+      );
+      return;
+    }
+    setDraft(nextDraft);
+    recomputeFlow(nextDraft);
+    markDraftChanged();
+  }
+
+  // --- Parallel frontier inference (canvas-parallel-frontier-inference D1/D3) -
+
+  /**
+   * Opens the parallel review from the offer's action. The branches are
+   * RE-DETECTED here against the live draft: the offer carried `(source,
+   * target)` as data and the toast does not block the editor, so the draft may
+   * have moved under it — a stale offer must refuse cleanly rather than
+   * confirm against a shape that no longer exists. The drawn edges stay in
+   * the draft the whole time; cancel changes nothing.
+   */
+  function openParallelReview(source: string, target: string) {
+    if (!draft || draft.version !== 2) return;
+    const frontier = detectParallelFrontiers(draft).find(
+      (candidate) => candidate.source === source && candidate.target === target
+    );
+    const refusals = frontier
+      ? []
+      : [
+          'The drawn connections changed — this fan-out and reconverge shape is no longer a clean parallel frontier.',
+        ];
+    removeAuthoringDraftErrorScopes(PARALLEL_REVIEW_INTEGER_FIELDS);
+    setParallelReview({
+      source,
+      target,
+      branches: frontier?.branches ?? [],
+      refusals,
+      error: null,
+    });
+  }
+
+  /**
+   * Confirms the review: one `synthesizeParallelFrontier` transaction
+   * (consume the drawn sandwich, mint the pair, wire the four families),
+   * then the same selectionOverride pairing `confirmLoopReview` uses — both
+   * selection truths in the same tick, with the fan-out as the selection. A
+   * model refusal keeps the draft unchanged, toasts the message, and leaves
+   * the review open with its edits intact (child-2's rule).
+   */
+  function confirmParallelReview(review: ParallelFrontierReview) {
+    if (!draft || draft.version !== 2 || !parallelReview) return;
+    let result;
+    try {
+      result = synthesizeParallelFrontier(draft, {
+        source: parallelReview.source,
+        target: parallelReview.target,
+        members: review.members,
+        concurrencyCap: review.concurrencyCap,
+        budget: review.budget,
+        outcomes: review.outcomes,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Could not turn these branches into a parallel frontier.';
+      setParallelReview((current) =>
+        current ? { ...current, error: message } : current
+      );
+      showToast(message);
+      return;
+    }
+    setParallelReview(null);
+    removeAuthoringDraftErrorScopes(PARALLEL_REVIEW_INTEGER_FIELDS);
+    const nextSelection: CanvasSelection = {
+      nodeIds: new Set([result.fanOutId]),
+      connectionIds: new Set<string>(),
+    };
+    setDraft(result.next);
+    setSelection(nextSelection);
+    recomputeFlow(result.next, catalog, nextSelection);
+    markDraftChanged();
+    showToast(`Parallel frontier created over ${review.members.length} branches.`);
+  }
+
+  /**
+   * Cancels the review: the drawn connections are legal and stay exactly as
+   * drawn — the offer was never blocking. Only the integer-error scopes need
+   * clearing, so they cannot linger to block the next authoring action.
+   */
+  function cancelParallelReview() {
+    setParallelReview(null);
+    removeAuthoringDraftErrorScopes(PARALLEL_REVIEW_INTEGER_FIELDS);
+  }
+
+  // --- Sink promotion (canvas-sink-finish-inference design D2/D3) ---------
+
+  /**
+   * Confirms the endpoint-naming section on the selected promotable sink: one
+   * `promoteSinkToFinish` transaction (append the Finish in the explicit
+   * gesture's node shape with the picked outcome, wire the sink to it on the
+   * rendered handle ids), then the same selectionOverride pairing
+   * `confirmParallelReview` uses — both selection truths in the same tick,
+   * with the new Finish as the selection. A model refusal keeps the draft
+   * unchanged and toasts the message.
+   */
+  function confirmSinkPromotion(sinkId: string, outcome: string) {
+    if (!draft || draft.version !== 2) return;
+    let result;
+    try {
+      result = promoteSinkToFinish(draft, sinkId, outcome);
+    } catch (error) {
+      showToast(
+        error instanceof Error
+          ? error.message
+          : 'Could not name this endpoint.'
+      );
+      return;
+    }
+    const nextSelection: CanvasSelection = {
+      nodeIds: new Set([result.finishId]),
+      connectionIds: new Set<string>(),
+    };
+    setDraft(result.next);
+    setSelection(nextSelection);
+    recomputeFlow(result.next, catalog, nextSelection);
+    markDraftChanged();
+    showToast('Finish added for this endpoint.');
+  }
+
+  /**
+   * The sink offer's locate action (canvas-root-contract-editor design
+   * D6): scroll the definition contract panel into view within the
+   * authoring column and focus its outcomes field. Read-only over the
+   * contract by design — the panel beside this one is the home for
+   * declaring.
+   */
+  function locateDefinitionOutcomes() {
+    definitionContractPanelRef.current?.scrollIntoView({ block: 'nearest' });
+    definitionOutcomesInputRef.current?.focus();
+  }
+
+  // The offer's toast action outlives the render that created it (its
+  // auto-dismiss is suppressed), so it must reach the LATEST
+  // `openParallelReview` — the one closing over the draft the completing
+  // edge landed in — not the pre-connect closure it was minted with. The
+  // ref is re-stamped every render; the re-detection inside stays the
+  // staleness guard (a draft that genuinely moved under the offer refuses).
+  const openParallelReviewRef = useRef(openParallelReview);
+  openParallelReviewRef.current = openParallelReview;
 
   // --- Custom Composite declaration authoring (ECP-2 8.5/8.6) -------------
   //
@@ -1277,9 +2223,19 @@ export function PipelineCanvasPage() {
       );
       const oldJoinId = previousJoin?.kind === 'FanOut' ? previousJoin.joinNodeId : null;
       const nextDraft = updateParallelContract(draft, fanOutId, patch);
+      // Join-rename follow: when the renamed Join was THE selection, the
+      // selection follows to the new id (a rename is the element surviving
+      // under a new name, not a removal).
+      const followJoinId =
+        patch.joinId && oldJoinId !== null && singletonNodeId(selection) === oldJoinId
+          ? patch.joinId.trim()
+          : null;
+      const nextSelection: CanvasSelection = followJoinId
+        ? { nodeIds: new Set([followJoinId]), connectionIds: new Set() }
+        : selection;
       setDraft(nextDraft);
-      recomputeFlow(nextDraft);
-      if (patch.joinId && selectedStageId === oldJoinId) setSelectedStageId(patch.joinId.trim());
+      recomputeFlow(nextDraft, catalog, nextSelection);
+      if (followJoinId) setSelection(nextSelection);
       markDraftChanged();
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not edit the parallel contract.');
@@ -1295,7 +2251,9 @@ export function PipelineCanvasPage() {
       const nextDraft = removeParallelPair(draft, fanOutId);
       setDraft(nextDraft);
       recomputeFlow(nextDraft);
-      setSelectedStageId(null);
+      // Both halves left the draft, so both leave the selection; any other
+      // selected element survives.
+      pruneSelectionToDraft(nextDraft);
       removeAuthoringDraftErrorScopes([
         `parallel:${fanOutId}`,
         `root-node:${fanOutId}`,
@@ -1310,29 +2268,47 @@ export function PipelineCanvasPage() {
   }
 
   function renameSelectedV2Node(newId: string) {
-    if (!draft || draft.version !== 2 || !selectedStageId) return;
+    if (!draft || draft.version !== 2) return;
+    const currentId = singletonNodeId(selection);
+    if (!currentId) return;
     const node = draft.root.nodes.find(
-      (candidate) => candidate.id === selectedStageId
+      (candidate) => candidate.id === currentId
     );
     if (
       !node ||
       !isV2EditableNodeKind(node.kind) ||
-      newId === selectedStageId ||
+      newId === currentId ||
       draft.root.nodes.some((candidate) => candidate.id === newId)
     ) {
       return;
     }
-    const nextDraft = renameV2Node(draft, selectedStageId, newId);
+    const nextDraft = renameV2Node(draft, currentId, newId);
+    // The author's placement follows the rename across the id change
+    // (canvas-durable-node-positioning design D4) — the same
+    // identity-follows-rename posture the selection has below. Without the
+    // carry, the rebuild's prune would drop the entry and the renamed node
+    // would teleport to its dagre position.
+    const carriedPlacement = authorPositionsRef.current.get(currentId);
+    if (carriedPlacement) {
+      authorPositionsRef.current.delete(currentId);
+      authorPositionsRef.current.set(newId, carriedPlacement);
+    }
+    // The renamed node survives under its new id — the selection follows
+    // the rename rather than being cleared (design D3).
+    const nextSelection: CanvasSelection = {
+      nodeIds: new Set([newId]),
+      connectionIds: new Set(),
+    };
     setDraft(nextDraft);
-    recomputeFlow(nextDraft);
-    setSelectedStageId(newId);
+    recomputeFlow(nextDraft, catalog, nextSelection);
+    setSelection(nextSelection);
     renameAuthoringDraftErrorScope(
-      `root-node:${selectedStageId}`,
+      `root-node:${currentId}`,
       `root-node:${newId}`
     );
     if (node.kind === 'FanOut') {
       renameAuthoringDraftErrorScope(
-        `parallel:${selectedStageId}`,
+        `parallel:${currentId}`,
         `parallel:${newId}`
       );
     }
@@ -1397,33 +2373,40 @@ export function PipelineCanvasPage() {
   }
 
   function renameSelectedStage(newId: string) {
-    if (!draft || draft.version !== 1 || !selectedStageId) return;
-    const nextDraft = renameStage(draft, selectedStageId, newId);
+    if (!draft || draft.version !== 1) return;
+    const currentId = singletonNodeId(selection);
+    if (!currentId) return;
+    const nextDraft = renameStage(draft, currentId, newId);
     setDraft(nextDraft);
     markDraftChanged();
     setFlowNodes((nodes) =>
       nodes.map((n) =>
-        n.id === selectedStageId && n.type === 'stage' ? { ...n, id: newId, data: { ...n.data, id: newId } } : n
+        n.id === currentId && n.type === 'stage' ? { ...n, id: newId, data: { ...n.data, id: newId } } : n
       )
     );
     // The id rewrite below assumes an edge's source and target are never BOTH
-    // `selectedStageId` at once — relies on the no-self-edges invariant
+    // `currentId` at once — relies on the no-self-edges invariant
     // (`wouldCreateCycle` rejects a self-loop, so a stage can never require
     // itself) — otherwise the `${newId}->${e.target}` branch would silently
     // drop a rewritten target half of a self-referencing id.
     setFlowEdges((eds) =>
       eds.map((e) => ({
         ...e,
-        id: e.id === `${selectedStageId}->${e.target}` || e.source === selectedStageId ? `${newId}->${e.target}` : e.id,
-        source: e.source === selectedStageId ? newId : e.source,
-        target: e.target === selectedStageId ? newId : e.target,
+        id: e.id === `${currentId}->${e.target}` || e.source === currentId ? `${newId}->${e.target}` : e.id,
+        source: e.source === currentId ? newId : e.source,
+        target: e.target === currentId ? newId : e.target,
       }))
     );
-    setSelectedStageId(newId);
+    // The renamed stage survives under its new id — the selection follows.
+    replaceSelection([newId]);
   }
 
   function relayout() {
     if (!draft) return;
+    // Re-layout is the explicit placement reset (canvas-durable-node-positioning
+    // design D5): clearing the cache returns every dragged node to computed
+    // layout, and later edits treat them as undragged again.
+    authorPositionsRef.current = new Map();
     recomputeFlow(draft);
   }
 
@@ -1459,27 +2442,114 @@ export function PipelineCanvasPage() {
 
   const backHref = space ? spaceHref(space, 'pipelines') : '/';
 
+  /**
+   * Frame affordance wiring (canvas-loop-body-visibility design D1/D2): the
+   * flow state stays serializable — layout.ts emits the STATE only (which
+   * cards are frames / body stages) — and the handlers are attached here.
+   * Memoized on `flowNodes` with STABLE callbacks (see
+   * `latestFlowInputsRef`): the wired array's identity changes exactly when
+   * the flow rebuilds, never on unrelated page renders — React Flow's
+   * adoption must not see new node identities per render (it re-initializes
+   * them, wedging the measurement loop). A rebuild-time-only closure would
+   * also freeze against the rebuild's draft snapshot (the chevron on a
+   * just-synthesized loop would collapse the PRE-synthesis draft) — the
+   * stable-callback + live-ref shape gives freshness WITHOUT identity churn.
+   */
+  const wiredFlowNodes = useMemo(
+    () =>
+      flowNodes.map((node) => {
+        if (node.type !== 'stage') return node;
+        if (node.data.frameToggle) {
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              frameToggle: {
+                ...node.data.frameToggle,
+                onToggleExpand: toggleFrameExpand,
+              },
+            },
+          };
+        }
+        if (node.data.bodyStage) {
+          const { frameId, declarationId } = node.data.bodyStage;
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              bodyStage: {
+                frameId,
+                declarationId,
+                onSelectBody: () =>
+                  selectBodyStage(frameId, declarationId, node.data.id),
+              },
+            },
+          };
+        }
+        return node;
+      }),
+    [flowNodes, toggleFrameExpand, selectBodyStage]
+  );
+
+  // Singleton derivations (design D3): the panel objects come from
+  // `singletonNodeId`/`singletonConnectionId`, so singleton panel behavior —
+  // including `key={id}` remount semantics below — is unchanged while a
+  // multi or mixed selection yields null and opens no singleton panel.
+  const primarySelectedNodeId = singletonNodeId(selection);
+  const primarySelectedConnectionId = singletonConnectionId(selection);
   const selectedStage = useMemo(
     () =>
-      draft?.version === 1 && selectedStageId
-        ? draft.stages.find((stage) => stage.id === selectedStageId) ?? null
+      draft?.version === 1 && primarySelectedNodeId
+        ? draft.stages.find((stage) => stage.id === primarySelectedNodeId) ?? null
         : null,
-    [draft, selectedStageId]
+    [draft, primarySelectedNodeId]
   );
   const selectedV2Node = useMemo(
     () =>
-      draft?.version === 2 && selectedStageId
-        ? draft.root.nodes.find((node) => node.id === selectedStageId) ?? null
+      draft?.version === 2 && primarySelectedNodeId
+        ? draft.root.nodes.find((node) => node.id === primarySelectedNodeId) ?? null
         : null,
-    [draft, selectedStageId]
+    [draft, primarySelectedNodeId]
+  );
+  /**
+   * The selected node's outcome list when it IS a promotable sink (the
+   * endpoint-naming offer's data), null otherwise — the ONE place the page
+   * consults `isPromotableSink`, so the offer can never disagree with the
+   * model's own confirm-time re-validation.
+   */
+  const selectedV2SinkOutcomes = useMemo(
+    () =>
+      draft?.version === 2 && selectedV2Node && isPromotableSink(draft, selectedV2Node)
+        ? draft.outcomes
+        : null,
+    [draft, selectedV2Node]
   );
   const selectedConnection = useMemo(
     () =>
-      draft?.version === 2 && selectedConnectionId
-        ? draft.root.connections.find((connection) => connection.id === selectedConnectionId) ?? null
+      draft?.version === 2 && primarySelectedConnectionId
+        ? draft.root.connections.find((connection) => connection.id === primarySelectedConnectionId) ?? null
         : null,
-    [draft, selectedConnectionId]
+    [draft, primarySelectedConnectionId]
   );
+  /**
+   * The selected body stage's panel facts (canvas-loop-body-visibility
+   * design D3): read straight from the owning declaration's graph — the
+   * same source of truth the frame children render from. Null (panel
+   * closed) whenever the selection left the draft, which `recomputeFlow`'s
+   * prune already enforced.
+   */
+  const selectedBodyStage = useMemo(() => {
+    if (draft?.version !== 2 || !bodySelection) return null;
+    const node = draft.declarations
+      .find((declaration) => declaration.id === bodySelection.declarationId)
+      ?.graph.nodes.find((candidate) => candidate.id === bodySelection.nodeId);
+    if (!node) return null;
+    const capability =
+      node.kind === 'AtomicStage' && node.capability
+        ? { id: node.capability.id, version: node.capability.version }
+        : null;
+    return { node, kind: node.kind, capability };
+  }, [draft, bodySelection]);
   const existingGroups = useMemo(
     () =>
       draft?.version === 1
@@ -1496,23 +2566,23 @@ export function PipelineCanvasPage() {
   /** Field-level issue severities for the currently open stage panel (design D5's "panel field highlight"). */
   const selectedStageFieldIssues = useMemo(() => {
     const result: Record<string, 'error' | 'warning'> = {};
-    if (!draft || draft.version !== 1 || !selectedStageId) return result;
+    if (!draft || draft.version !== 1 || !primarySelectedNodeId) return result;
     for (const issue of issues) {
       const target = issuePathTarget(issue.path, draft.stages.length);
       if (!target || !target.field) continue;
-      if (draft.stages[target.stageIndex]?.id !== selectedStageId) continue;
+      if (draft.stages[target.stageIndex]?.id !== primarySelectedNodeId) continue;
       if (result[target.field] !== 'error') result[target.field] = issue.severity;
     }
     return result;
-  }, [draft, selectedStageId, issues]);
+  }, [draft, primarySelectedNodeId, issues]);
   const selectedV2NodeFieldIssues = useMemo(() => {
     const result: Record<string, 'error' | 'warning'> = {};
-    if (!draft || draft.version !== 2 || !selectedStageId) return result;
+    if (!draft || draft.version !== 2 || !primarySelectedNodeId) return result;
     for (const issue of issues) {
       const target = definitionIssuePathTarget(draft, issue.path);
       if (
         target?.kind !== 'node' ||
-        target.id !== selectedStageId ||
+        target.id !== primarySelectedNodeId ||
         !target.field
       ) {
         continue;
@@ -1522,7 +2592,33 @@ export function PipelineCanvasPage() {
       }
     }
     return result;
-  }, [draft, selectedStageId, issues]);
+  }, [draft, primarySelectedNodeId, issues]);
+
+  /**
+   * The selection summary panel's kind breakdown (`AtomicStage × 2`), read
+   * from the v2 draft in draft order. Empty for v1 — its stages carry no
+   * node kinds — and empty whenever no selected id matches a node.
+   */
+  const selectionNodeKindSummary = useMemo(() => {
+    if (draft?.version !== 2) return [];
+    const counts = new Map<string, number>();
+    for (const node of draft.root.nodes) {
+      if (!selection.nodeIds.has(node.id)) continue;
+      counts.set(node.kind, (counts.get(node.kind) ?? 0) + 1);
+    }
+    return [...counts.entries()].map(([kind, count]) => `${kind} × ${count}`);
+  }, [draft, selection]);
+
+  /**
+   * The package action's availability, read once from the model
+   * (canvas-subgraph-extraction design D3/D4): the selection panel offers the
+   * button only when this is empty and renders the strings as muted text
+   * otherwise — the panel decides nothing. v2 edit mode only.
+   */
+  const packageRefusals = useMemo(() => {
+    if (draft?.version !== 2) return [];
+    return subgraphExtractionRefusals(draft, selection);
+  }, [draft, selection]);
 
   function selectIssueTarget(
     target: DefinitionIssueTarget,
@@ -1531,19 +2627,26 @@ export function PipelineCanvasPage() {
     setSelectedIssueTarget(target);
     setSelectedIssueSeverity(severity);
     if (!draft) return;
+    // "Selecting an issue in the issues list SHALL leave exactly the one
+    // element the issue points at selected, opening its panel" — every
+    // branch REPLACES the selection (through the paired replacer, which
+    // also re-stamps the flow so the listener cannot revert it one commit
+    // later — review B1), so a box-selection is not left half-standing
+    // behind the newly focused element.
     if (target.kind === 'definition') {
-      setSelectedStageId(null);
+      replaceSelection([]);
       setSelectedDeclarationId(null);
       return;
     }
     if (target.kind === 'node') {
       setSelectedDeclarationId(null);
-      setSelectedStageId(target.id);
+      replaceSelection([target.id]);
       return;
     }
     if (target.kind === 'connection' && draft.version === 2) {
       const consuming = draft.root.connections[target.index]?.to.node;
-      if (consuming) setSelectedStageId(consuming);
+      if (consuming) replaceSelection([consuming]);
+      else replaceSelection([]);
       setSelectedDeclarationId(null);
       return;
     }
@@ -1552,11 +2655,42 @@ export function PipelineCanvasPage() {
       target.kind === 'body-node' ||
       target.kind === 'body-connection'
     ) {
-      setSelectedStageId(null);
+      replaceSelection([]);
       setSelectedDeclarationId(
         target.kind === 'declaration' ? target.id : target.declarationId
       );
     }
+  }
+
+  /**
+   * The selection summary panel's delete action — the same batch path the
+   * Delete key takes. v2 routes the whole node set through
+   * `applyV2BatchRemoval` (pair co-deletion, one refusal summary); v1 keeps
+   * its existing `removeStage` loop, which is already batch-capable and
+   * cleans every `requires` reference (design D5).
+   */
+  function deleteSelection() {
+    if (!draft || selection.nodeIds.size === 0) return;
+    if (draft.version === 2) {
+      applyV2BatchRemoval(selection.nodeIds, selection.connectionIds);
+      return;
+    }
+    let nextDraft: WirePipelineDefinition = draft;
+    for (const id of selection.nodeIds) nextDraft = removeStage(nextDraft, id);
+    const removedIds = new Set(selection.nodeIds);
+    setDraft(nextDraft);
+    setFlowEdges((eds) =>
+      eds.filter((e) => !removedIds.has(e.source) && !removedIds.has(e.target))
+    );
+    // Canvas truth in the same update (review M1): unlike the Delete key,
+    // whose `applyNodeChanges` tail drops the removed cards, this path
+    // never rebuilt the flow — the deleted stages survived as still-
+    // selected ghosts, and with the selection listener live they re-popped
+    // the summary panel reporting the deleted stages. Drop the cards, then
+    // clear mirror and flags together through the paired replacer.
+    setFlowNodes((nodes) => nodes.filter((node) => !removedIds.has(node.id)));
+    replaceSelection([]);
+    markDraftChanged();
   }
 
   function selectDeclaration(id: string | null) {
@@ -1604,7 +2738,7 @@ export function PipelineCanvasPage() {
       : null;
   const selectedRootFocusedField =
     selectedIssueTarget?.kind === 'node' &&
-    selectedIssueTarget.id === selectedStageId
+    selectedIssueTarget.id === primarySelectedNodeId
       ? selectedIssueTarget.field ?? null
       : null;
 
@@ -1969,6 +3103,69 @@ export function PipelineCanvasPage() {
         </div>
       )}
 
+      {extractReview && (
+        <V2ExtractReviewPanel
+          defaultId={extractReview.defaultId}
+          derived={extractReview.derived}
+          bodySummary={{
+            stageCount: extractReview.stageCount,
+            internalConnectionCount: extractReview.internalConnectionCount,
+          }}
+          error={extractReview.error}
+          onConfirm={confirmExtractReview}
+          onCancel={() => setExtractReview(null)}
+        />
+      )}
+
+      {loopReview && (
+        <V2LoopReviewPanel
+          from={loopReview.from}
+          to={loopReview.to}
+          regionNodeIds={[...loopReview.nodeIds]}
+          // Live draft read (design D5), matching the parallel review below:
+          // the review's own inline declare changes these while it is open.
+          definitionOutcomes={draft?.version === 2 ? [...draft.outcomes] : []}
+          defaultId={loopReview.defaultId}
+          derived={loopReview.derived}
+          defaultMaxIterations={3}
+          lifecycleExitOutcomes={LOOP_LIFECYCLE_EXIT_OUTCOMES}
+          refusals={loopReview.refusals}
+          integerDraftError={authoringDraftErrors[LOOP_REVIEW_INTEGER_FIELD] ?? null}
+          onIntegerDraftError={setAuthoringDraftError}
+          onDeclareOutcome={declareOutcomeFromLoopReview}
+          error={loopReview.error}
+          onConfirm={confirmLoopReview}
+          onCancel={cancelLoopReview}
+        />
+      )}
+
+      {parallelReview && (
+        <V2ParallelReviewPanel
+          source={parallelReview.source}
+          target={parallelReview.target}
+          branchIds={[...parallelReview.branches]}
+          definitionOutcomes={
+            draft?.version === 2 ? [...draft.outcomes] : []
+          }
+          defaultConcurrencyCap={Math.max(
+            1,
+            Math.min(3, parallelReview.branches.length)
+          )}
+          defaultBudget={Math.max(1, parallelReview.branches.length)}
+          refusals={parallelReview.refusals}
+          capDraftError={
+            authoringDraftErrors['parallel-review:concurrencyCap'] ?? null
+          }
+          budgetDraftError={
+            authoringDraftErrors['parallel-review:budget'] ?? null
+          }
+          onIntegerDraftError={setAuthoringDraftError}
+          error={parallelReview.error}
+          onConfirm={confirmParallelReview}
+          onCancel={cancelParallelReview}
+        />
+      )}
+
       <div class="pipeline-canvas__body">
         {editable && (
           <PalettePanel
@@ -1999,6 +3196,8 @@ export function PipelineCanvasPage() {
               draftErrors={authoringDraftErrors}
               onPatch={patchDefinitionContract}
               onInvalidChange={setAuthoringDraftError}
+              outcomesInputRef={definitionOutcomesInputRef}
+              panelRef={definitionContractPanelRef}
             />
             <DeclarationsPanel
               definition={draft}
@@ -2036,20 +3235,49 @@ export function PipelineCanvasPage() {
         <div class="pipeline-canvas__flow-column">
           <div class="pipeline-canvas__flow" data-testid="pipeline-canvas-flow">
             {toast && (
-              <div class="pipeline-canvas__toast" data-testid="pipeline-canvas-toast">
-                {toast}
+              <div
+                class={`pipeline-canvas__toast${
+                  toastAction ? ' pipeline-canvas__toast--with-action' : ''
+                }`}
+                data-testid="pipeline-canvas-toast"
+              >
+                <span class="pipeline-canvas__toast-message">{toast}</span>
+                {toastAction && (
+                  <>
+                    <button
+                      type="button"
+                      class="pipeline-canvas__toast-action"
+                      data-testid="pipeline-canvas-toast-action"
+                      onClick={() => {
+                        const action = toastAction;
+                        clearToast();
+                        action.onClick();
+                      }}
+                    >
+                      {toastAction.label}
+                    </button>
+                    <button
+                      type="button"
+                      class="pipeline-canvas__toast-dismiss"
+                      data-testid="pipeline-canvas-toast-dismiss"
+                      aria-label="Dismiss"
+                      onClick={clearToast}
+                    >
+                      ×
+                    </button>
+                  </>
+                )}
               </div>
             )}
             <ReactFlowProvider>
               <CanvasFlow
-                nodes={mode === 'view' ? viewFlowNodes(detail) : flowNodes}
+                nodes={mode === 'view' ? viewFlowNodes(detail) : wiredFlowNodes}
                 edges={mode === 'view' ? viewFlowEdges(detail) : flowEdges}
                 editable={editable}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
-                onNodeClick={onNodeClick}
-                onEdgeClick={onEdgeClick}
+                onSelectionChange={onSelectionChange}
                 onPaneClick={onPaneClick}
                 onDropStage={onDropStage}
               />
@@ -2098,7 +3326,7 @@ export function PipelineCanvasPage() {
             onHandoffThreshold={(threshold) =>
               patchStageHandoffThreshold(selectedStage.id, threshold)
             }
-            onClose={() => setSelectedStageId(null)}
+            onClose={() => replaceSelection([])}
           />
         )}
         {editable && selectedV2Node && (
@@ -2136,7 +3364,17 @@ export function PipelineCanvasPage() {
             onParallelContractPatch={editParallelContract}
             onDeleteParallelPair={deleteParallel}
             onInvalidChange={setAuthoringDraftError}
-            onClose={() => setSelectedStageId(null)}
+            sinkPromotion={
+              selectedV2SinkOutcomes
+                ? {
+                    outcomes: selectedV2SinkOutcomes,
+                    onPromote: (outcome) =>
+                      confirmSinkPromotion(selectedV2Node.id, outcome),
+                    onLocateDefinitionOutcomes: locateDefinitionOutcomes,
+                  }
+                : undefined
+            }
+            onClose={() => replaceSelection([])}
           />
         )}
         {editable && selectedConnection && (
@@ -2144,7 +3382,38 @@ export function PipelineCanvasPage() {
             key={selectedConnection.id}
             connection={selectedConnection}
             onSpliceCondition={spliceConnectionCondition}
-            onClose={() => setSelectedConnectionId(null)}
+            onClose={() => replaceSelection([])}
+          />
+        )}
+        {editable && bodySelection && selectedBodyStage && (
+          <V2BodyStagePanel
+            key={`${bodySelection.frameId}::${bodySelection.nodeId}`}
+            stageId={bodySelection.nodeId}
+            kind={selectedBodyStage.kind}
+            capability={selectedBodyStage.capability}
+            declarationId={bodySelection.declarationId}
+            frameId={bodySelection.frameId}
+            onClose={() => setBodySelection(null)}
+          />
+        )}
+        {editable && draft && selectionPanelMode(selection) === 'multi' && (
+          <V2SelectionPanel
+            // The summary serves both editors; v1's elements are stage
+            // cards, so its heading names that mode's vocabulary (review t1).
+            title={draft.version === 1 ? 'Selected stages' : 'Selection'}
+            nodeCount={selection.nodeIds.size}
+            connectionCount={selection.connectionIds.size}
+            nodeKinds={selectionNodeKindSummary}
+            // The package gesture is v2-only, and offered only when the
+            // model's refusal list is empty — the refusals render instead.
+            onPackage={
+              draft.version === 2 && packageRefusals.length === 0
+                ? openExtractReview
+                : undefined
+            }
+            packageRefusals={draft.version === 2 ? packageRefusals : undefined}
+            onDelete={deleteSelection}
+            onClose={() => replaceSelection([])}
           />
         )}
       </div>
@@ -2170,8 +3439,7 @@ function CanvasFlow({
   onNodesChange,
   onEdgesChange,
   onConnect,
-  onNodeClick,
-  onEdgeClick,
+  onSelectionChange,
   onPaneClick,
   onDropStage,
 }: {
@@ -2181,12 +3449,29 @@ function CanvasFlow({
   onNodesChange: (changes: NodeChange[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
   onConnect: (connection: Connection) => void;
-  onNodeClick: (event: unknown, node: { id: string; type?: string }) => void;
-  onEdgeClick: (event: unknown, edge: { id: string }) => void;
+  onSelectionChange: (params: OnSelectionChangeParams) => void;
   onPaneClick: () => void;
   onDropStage: (skill: PipelineCatalogSkill, position: { x: number; y: number }) => void;
 }) {
   const { screenToFlowPosition } = useReactFlow();
+  /**
+   * External-layout measurement discipline (canvas-loop-body-visibility):
+   * the page rebuilds node objects wholesale on every draft mutation, and a
+   * node whose element persists through the rebuild can end up re-adopted
+   * with `measured` cleared while its ResizeObserver never re-delivers (a
+   * re-observed element whose size did not change fires no observation) —
+   * `handleBounds` stays undefined, and an edge whose endpoint never
+   * initializes renders NOTHING (observed live: body-frame edges missing
+   * until a collapse/expand cycle remounted the frame). Forcing one batched
+   * internals refresh whenever the node ID SET changes (mount, add, remove,
+   * expand, collapse — exactly the moments elements appear or disappear)
+   * makes measurement deterministic instead of observer-dependent.
+   */
+  const updateNodeInternals = useUpdateNodeInternals();
+  const nodeIdKey = nodes.map((node) => node.id).join(',');
+  useEffect(() => {
+    if (nodeIdKey) updateNodeInternals(nodeIdKey.split(','));
+  }, [nodeIdKey, updateNodeInternals]);
 
   function onDrop(event: DragEvent) {
     event.preventDefault();
@@ -2204,6 +3489,11 @@ function CanvasFlow({
   }
 
   return (
+    // Box-select is pinned to Shift+drag explicitly (canvas-multi-selection
+    // design D4) so the interaction contract is visible in code instead of
+    // relying on the library default; multiSelectionKeyCode stays at its
+    // platform-aware default (Control on Windows/Linux, Command on macOS)
+    // and selectionOnDrag stays false, preserving plain-drag panning.
     <ReactFlow
       nodes={nodes}
       edges={edges}
@@ -2214,13 +3504,14 @@ function CanvasFlow({
       nodesConnectable={!editable ? false : undefined}
       edgesFocusable={editable}
       elementsSelectable
+      selectionKeyCode="Shift"
+      selectionMode={SelectionMode.Partial}
       deleteKeyCode={editable ? ['Backspace', 'Delete'] : null}
       onNodesChange={editable ? onNodesChange : undefined}
       onEdgesChange={editable ? onEdgesChange : undefined}
       onConnect={editable ? onConnect : undefined}
-      onNodeClick={onNodeClick}
-      onEdgeClick={onEdgeClick}
-      onPaneClick={onPaneClick}
+      onSelectionChange={editable ? onSelectionChange : undefined}
+      onPaneClick={editable ? onPaneClick : undefined}
       onDrop={editable ? onDrop : undefined}
       onDragOver={editable ? onDragOver : undefined}
     >

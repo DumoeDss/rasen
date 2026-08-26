@@ -32,7 +32,8 @@
 - `profile.ts` / `profile-editor.ts` — `registerProfileCommand`：profile 选择与编辑（哪些 workflow 启用）。
 
 **Store / Bootstrap**：
-- `store.ts`（~53KB）— `registerStoreCommands`：setup/list/remove/add-project/doctor。管理 Rasen stores。
+- `store.ts`（~53KB）— `registerStoreCommands`：setup/list/remove/add-project/doctor + `attention` 子命令（issue-needs-attention：跨 Issue needs-attention 扫描，store 级 fleet 读；per-Issue 组合复用 store-issue.ts 导出的 show 组合缝，只读）。管理 Rasen stores。
+- `store-issue.ts` — `registerStoreIssueCommand`：`store issue new/list/show/state/plan/start/acceptance/accept`（Issue CRUD + 状态面 + 验收面；加子命令须三面同步：commander 树 + en/ja/zh-cn locale + completions `COMMAND_REGISTRY`，CLI 测试跑 dist/）。
 - `bootstrap.ts` — `registerBootstrapCommand`：初始项目 setup。
 - `store-migration.ts` — store 迁移工具（`registerArchiveRelocateSubcommand`/`registerHomeCommand`）。
 

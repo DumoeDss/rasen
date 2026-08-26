@@ -5,9 +5,12 @@ import {
   addFinishNode,
   addParallelFrontier,
   createParallelPair,
+  declareDefinitionOutcome,
   definitionIssuePathTarget,
   duplicateV2Definition,
   gateForStage,
+  groupPaletteSkills,
+  CORE_PALETTE_SKILL_IDS,
   insertCompositeRef,
   removeParallelPair,
   removeV2Node,
@@ -32,6 +35,7 @@ import {
 } from '../../src/canvas/draft.js';
 import * as draftModule from '../../src/canvas/draft.js';
 import type {
+  PipelineCatalogSkill,
   WireAtomicStageNode,
   WireBoundedLoopNode,
   WireChoiceNode,
@@ -192,6 +196,146 @@ describe('closed v2 Canvas wire vocabulary', () => {
       goalCycleVariant: 'research',
       lifecycle: { version: 1 },
     });
+  });
+});
+
+describe('groupPaletteSkills (canvas-palette-grouping design D2)', () => {
+  function skill(
+    id: string,
+    kind: PipelineCatalogSkill['kind'] | undefined,
+    extra: Partial<PipelineCatalogSkill> = {}
+  ): PipelineCatalogSkill {
+    return { id, description: `${id} description`, enabled: true, kind, ...extra };
+  }
+
+  function ids(section: { skills: PipelineCatalogSkill[] }): string[] {
+    return section.skills.map((entry) => entry.id);
+  }
+
+  it('is the five verified core ids in pipeline order', () => {
+    // The constant IS the contract: exact template names, pipeline order. A
+    // drift here shows up as a failing core-order test below and as a missing
+    // core entry in the real-browser gate.
+    expect(CORE_PALETTE_SKILL_IDS).toEqual([
+      'rasen-propose',
+      'rasen-apply-change',
+      'rasen-review-cycle',
+      'rasen-ship',
+      'rasen-archive-change',
+    ]);
+  });
+
+  it('puts the core five first in PIPELINE order even when the catalog delivers them scattered', () => {
+    const catalog = [
+      skill('rasen-explore', 'task'),
+      skill('rasen-ship', 'task'),
+      skill('rasen-cso', 'expert'),
+      skill('rasen-propose', 'task'),
+      skill('rasen-archive-change', 'task'),
+      skill('rasen-review-fix', 'internal'),
+      skill('rasen-review-cycle', 'task'),
+      skill('rasen-apply-change', 'task'),
+    ];
+    const sections = groupPaletteSkills(catalog);
+    expect(sections.map((section) => section.id)).toEqual([
+      'core',
+      'workflows',
+      'experts',
+      'internal',
+    ]);
+    expect(sections[0].id).toBe('core');
+    expect(ids(sections[0])).toEqual([
+      'rasen-propose',
+      'rasen-apply-change',
+      'rasen-review-cycle',
+      'rasen-ship',
+      'rasen-archive-change',
+    ]);
+  });
+
+  it('buckets task and driver into workflows, expert and internal into their own sections, preserving catalog order within each', () => {
+    const catalog = [
+      skill('rasen-auto', 'driver'),
+      skill('rasen-explore', 'task'),
+      skill('rasen-cso', 'expert'),
+      skill('rasen-goal', 'driver'),
+      skill('rasen-task-loop', 'internal'),
+      skill('rasen-review', 'expert'),
+      skill('rasen-review-fix', 'internal'),
+      skill('rasen-help', 'task'),
+    ];
+    const sections = groupPaletteSkills(catalog);
+    expect(sections.map((section) => section.id)).toEqual(['workflows', 'experts', 'internal']);
+    expect(ids(sections[0])).toEqual(['rasen-auto', 'rasen-explore', 'rasen-goal', 'rasen-help']);
+    expect(ids(sections[1])).toEqual(['rasen-cso', 'rasen-review']);
+    expect(ids(sections[2])).toEqual(['rasen-task-loop', 'rasen-review-fix']);
+  });
+
+  it('is deterministic under repeated calls, and a reordered catalog keeps every section a same-set bucket with the core order constant-driven', () => {
+    const catalog = [
+      skill('rasen-propose', 'task'),
+      skill('rasen-verify-change', 'task'),
+      skill('rasen-cso', 'expert'),
+      skill('rasen-review-fix', 'internal'),
+      skill('rasen-auto', 'driver'),
+      skill('rasen-review-cycle', 'task'),
+    ];
+    const first = groupPaletteSkills(catalog);
+    const second = groupPaletteSkills(catalog);
+    expect(second).toEqual(first);
+    expect(JSON.stringify(second)).toBe(JSON.stringify(first));
+
+    // Reordered-but-same-set input: section MEMBERSHIP is identical as sets,
+    // core stays in the constant's pipeline order, and the non-core sections
+    // follow the new catalog order within each section (the spec's stable-
+    // order scenario: same members, catalog's own order inside the section).
+    const reordered = groupPaletteSkills([...catalog].reverse());
+    expect(reordered.map((section) => section.id)).toEqual(first.map((section) => section.id));
+    expect(ids(reordered[0])).toEqual(ids(first[0]));
+    for (let i = 1; i < first.length; i++) {
+      const before = [...ids(first[i])].sort();
+      const after = [...ids(reordered[i])].sort();
+      expect(after).toEqual(before);
+    }
+    // The reversed catalog's workflows render in the reversed catalog order.
+    expect(ids(reordered[1])).toEqual(['rasen-auto', 'rasen-verify-change']);
+  });
+
+  it('lands a kind-less skill (older server) in workflows without error, and every kind-less catalog groups without an experts or internal section', () => {
+    const legacy = [
+      skill('rasen-propose', undefined),
+      skill('rasen-cso', undefined),
+      skill('rasen-review-fix', undefined),
+    ];
+    const sections = groupPaletteSkills(legacy);
+    expect(sections.map((section) => section.id)).toEqual(['core', 'workflows']);
+    expect(ids(sections[1])).toEqual(['rasen-cso', 'rasen-review-fix']);
+  });
+
+  it('renders nothing for a core id the catalog does not deliver, and omits the core section entirely when no core id is present', () => {
+    const partial = [
+      skill('rasen-propose', 'task'),
+      skill('rasen-ship', 'task'),
+      skill('rasen-explore', 'task'),
+    ];
+    expect(ids(groupPaletteSkills(partial)[0])).toEqual(['rasen-propose', 'rasen-ship']);
+
+    const none = [skill('rasen-explore', 'task'), skill('rasen-cso', 'expert')];
+    expect(groupPaletteSkills(none).map((section) => section.id)).toEqual(['workflows', 'experts']);
+  });
+
+  it('keeps a disabled skill inside its group (grouping never touches bindability)', () => {
+    const catalog = [
+      skill('rasen-propose', 'task'),
+      skill('rasen-cso', 'expert', { enabled: false }),
+      skill('rasen-review-fix', 'internal', { enabled: false }),
+    ];
+    const sections = groupPaletteSkills(catalog);
+    const byId = new Map(sections.map((section) => [section.id, section]));
+    // The expert and internal entries are still present, still carrying their
+    // disabled state — `isBindableSkill` decides greying, grouping only moves.
+    expect(byId.get('experts')!.skills[0]).toMatchObject({ id: 'rasen-cso', enabled: false });
+    expect(byId.get('internal')!.skills[0]).toMatchObject({ id: 'rasen-review-fix', enabled: false });
   });
 });
 
@@ -432,6 +576,58 @@ describe('lossless nested v2 patches', () => {
       base.root.nodes.find((node) => node.id === 'work')
     );
     expect(next.root.connections).toBe(base.root.connections);
+  });
+});
+
+describe('declareDefinitionOutcome (the thin declare-one-more wrapper)', () => {
+  it('appends to an empty and a non-empty outcome list, trimming the name, order preserved', () => {
+    // The fresh-draft corner the loop review's inline declare lives on: an
+    // empty contract gains its first outcome.
+    const blank = {
+      ...definition(),
+      outcomes: [],
+    } as WirePipelineDefinitionV2;
+    expect(declareDefinitionOutcome(blank, 'done').outcomes).toEqual(['done']);
+    expect(declareDefinitionOutcome(blank, '  done  ').outcomes).toEqual(['done']);
+
+    const next = declareDefinitionOutcome(definition(), 'archived');
+    expect(next.outcomes).toEqual(['done', 'failed', 'archived']);
+  });
+
+  it('refuses blank and duplicate names through the rule site without mutating the input', () => {
+    const base = definition();
+    expect(() => declareDefinitionOutcome(base, '   ')).toThrow(
+      'A definition outcome cannot be blank.'
+    );
+    expect(() => declareDefinitionOutcome(base, 'done')).toThrow(
+      'definition outcomes must be unique.'
+    );
+    // Refusal left the input untouched (the wrapper never writes in place).
+    expect(base.outcomes).toEqual(['done', 'failed']);
+
+    // Declaring onto an empty contract refuses a blank the same way.
+    expect(() =>
+      declareDefinitionOutcome({ ...base, outcomes: [] } as WirePipelineDefinitionV2, ' ')
+    ).toThrow('A definition outcome cannot be blank.');
+  });
+
+  it('preserves every other definition field and the input object itself', () => {
+    const base = definition();
+    const next = declareDefinitionOutcome(base, 'archived');
+    expect(next).not.toBe(base);
+    expect(next.outcomes).toEqual(['done', 'failed', 'archived']);
+    expect(base.outcomes).toEqual(['done', 'failed']);
+    // Same-references for untouched owners — the updateDefinitionContracts
+    // spread, verified here so a future in-place regression cannot hide
+    // behind the wrapper.
+    expect(next.inputs).toBe(base.inputs);
+    expect(next.artifacts).toBe(base.artifacts);
+    expect(next.declarations).toBe(base.declarations);
+    expect(next.root).toBe(base.root);
+    expect(next.limits).toBe(base.limits);
+    expect(next.name).toBe(base.name);
+    expect(next.id).toBe(base.id);
+    expect(next.sourceId).toBe(base.sourceId);
   });
 });
 

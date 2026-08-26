@@ -23,8 +23,17 @@ import {
 export const NODE_WIDTH = 200;
 export const NODE_HEIGHT = 92;
 
-const GROUP_PADDING = 24;
-const GROUP_LABEL_HEIGHT = 28;
+/**
+ * An author-dragged placement for a stage node, keyed by node id
+ * (canvas-durable-node-positioning design D2). Edit-session state only: the
+ * page's cache, never the definition payload.
+ */
+export type AuthorPosition = { x: number; y: number };
+
+/** Frame/group box insets — exported for the CSS pin: `.stage-node__frame-body` insets and the frame header height mirror these numbers. */
+export const GROUP_PADDING = 24;
+/** The header strip a frame card renders where a v1 group carries its label. */
+export const GROUP_LABEL_HEIGHT = 28;
 /** Rank separation grows when groups exist so a group box has room to breathe between ranks. */
 const RANK_SEP_UNGROUPED = 90;
 const RANK_SEP_GROUPED = 140;
@@ -45,6 +54,21 @@ export interface StageCardData extends Record<string, unknown> {
   outputPorts?: DefinitionHandleDescriptor[];
   /** Set in edit mode from the latest validation response (pipeline-canvas-edit design D5); absent in view mode. */
   issueSeverity?: 'error' | 'warning';
+  /**
+   * The loop/composite expand affordance (canvas-loop-body-visibility design
+   * D1/D2). Set by `draftToGraph` for a BoundedLoop/CompositeRef whose
+   * declaration resolves — the STATE half only (whether the card renders as
+   * an expanded frame); the page injects the `onToggleExpand` callback, so
+   * this projection stays serializable/pure.
+   */
+  frameToggle?: { expanded: boolean; onToggleExpand?: (frameId: string) => void };
+  /**
+   * Marks this card as a body stage rendered INSIDE its expanded frame
+   * (canvas-loop-body-visibility design D3). State half only — the page
+   * injects `onSelectBody`; body cards are otherwise inert in React Flow
+   * terms (not selectable/draggable/connectable — group-node parity).
+   */
+  bodyStage?: { frameId: string; declarationId: string; onSelectBody?: () => void };
 }
 
 export interface DefinitionHandleDescriptor {
@@ -69,6 +93,16 @@ export interface UnpositionedStage {
   draggable?: boolean;
   connectable?: boolean;
   deletable?: boolean;
+  /**
+   * Optional per-node dimensions for the dagre pass (canvas-loop-body-
+   * visibility design D1): an expanded frame reserves its real box in the
+   * root layout. When set, the same numbers become the flow node's explicit
+   * `style` width/height so the frame card renders at exactly that size.
+   * Absent → `NODE_WIDTH`/`NODE_HEIGHT` and no style key, byte-identical to
+   * every pre-existing caller.
+   */
+  width?: number;
+  height?: number;
 }
 
 /**
@@ -522,6 +556,125 @@ export function definitionToGraph(
   return { nodes, edges };
 }
 
+/** One declaration body projected into an expanded frame (see `declarationBodyFrame`). */
+export interface DeclarationBodyFrame {
+  /** The frame box's explicit size — body bounding box + header strip + padding. */
+  width: number;
+  height: number;
+  /** Body nodes as React Flow children of the frame (relative positions, inert flags). */
+  children: StageFlowNode[];
+  /** The body's internal connections, endpoints on the namespaced child ids. */
+  edges: Edge[];
+}
+
+/**
+ * Projects one declaration body into an expanded frame
+ * (canvas-loop-body-visibility design D1): a dagre pass over the body's
+ * nodes/connections with the same constants as the root ungrouped pass, the
+ * v1 group-sizing arithmetic for the frame box (body bounding box + padding
+ * + the header strip the frame card renders where a group carries its
+ * label), body nodes as CHILDREN of the frame — flow ids namespaced
+ * `<frameId>::<bodyNodeId>` because declaration-scoped body ids may collide
+ * with root ids and two expanded frames may share ONE declaration; positions
+ * RELATIVE to the frame origin (React Flow's parent-relative contract);
+ * `extent: 'parent'`; the inert flags group members carry — and the body's
+ * internal connections as edges with prefixed ids. `BoundedLoop.body` and
+ * `CompositeRef.declarationId` share this helper by each resolving their
+ * declaration id before the call. Pure/stateless — every rebuild re-derives
+ * the box from the current declaration graph. Null when the declaration or
+ * its body does not resolve: nothing to show, the card stays compact.
+ */
+export function declarationBodyFrame(
+  def: WirePipelineDefinition,
+  declarationId: unknown,
+  frameId: string,
+  catalog?: PipelineCatalogResponse | null
+): DeclarationBodyFrame | null {
+  if (typeof declarationId !== 'string') return null;
+  const declarations =
+    def.version === 2 ? (def.declarations as unknown[] | undefined) : undefined;
+  const decl = declarations?.find(
+    (candidate) =>
+      candidate !== null &&
+      typeof candidate === 'object' &&
+      !Array.isArray(candidate) &&
+      (candidate as Record<string, unknown>).id === declarationId
+  ) as Record<string, unknown> | undefined;
+  if (!decl) return null;
+  const graph =
+    decl.graph !== null && typeof decl.graph === 'object' && !Array.isArray(decl.graph)
+      ? (decl.graph as Record<string, unknown>)
+      : {};
+  const rawNodes = Array.isArray(graph.nodes) ? graph.nodes : [];
+  const rawConnections = Array.isArray(graph.connections)
+    ? graph.connections
+    : [];
+  if (rawNodes.length === 0) return null;
+  const projectedNodes = rawNodes.map((node, index) => projectedV2Node(node, index));
+  const projectedEdges = rawConnections
+    .map((connection, index) => projectedV2Connection(connection, index))
+    .filter((edge): edge is Edge => edge !== null);
+
+  const g = new dagre.graphlib.Graph();
+  g.setDefaultEdgeLabel(() => ({}));
+  g.setGraph({ rankdir: 'LR', nodesep: 48, ranksep: RANK_SEP_UNGROUPED });
+  for (const node of projectedNodes) {
+    g.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+  }
+  for (const edge of projectedEdges) {
+    g.setEdge(edge.source, edge.target);
+  }
+  dagre.layout(g);
+
+  // Frame box — the group-sizing arithmetic (layoutGraph's group branch).
+  const left = (id: string) => g.node(id).x - NODE_WIDTH / 2;
+  const top = (id: string) => g.node(id).y - NODE_HEIGHT / 2;
+  const minX = Math.min(...projectedNodes.map((node) => left(node.id)));
+  const minY = Math.min(...projectedNodes.map((node) => top(node.id)));
+  const maxX = Math.max(...projectedNodes.map((node) => left(node.id) + NODE_WIDTH));
+  const maxY = Math.max(...projectedNodes.map((node) => top(node.id) + NODE_HEIGHT));
+  const box = {
+    x: minX - GROUP_PADDING,
+    y: minY - GROUP_PADDING - GROUP_LABEL_HEIGHT,
+    width: maxX - minX + GROUP_PADDING * 2,
+    height: maxY - minY + GROUP_PADDING * 2 + GROUP_LABEL_HEIGHT,
+  };
+
+  const children: StageFlowNode[] = projectedNodes.map((projected) => ({
+    id: `${frameId}::${projected.id}`,
+    type: 'stage',
+    position: {
+      x: left(projected.id) - box.x,
+      y: top(projected.id) - box.y,
+    },
+    data: {
+      ...v2NodeCardData(projected.value, graph, catalog, declarations),
+      bodyStage: { frameId, declarationId },
+    },
+    parentId: frameId,
+    extent: 'parent',
+    selectable: false,
+    draggable: false,
+    connectable: false,
+    deletable: false,
+  }));
+
+  // Defensive: a connection whose endpoint left the body would dangle on
+  // namespaced ids that resolve to no node.
+  const bodyNodeIds = new Set(projectedNodes.map((node) => node.id));
+  const edges = projectedEdges
+    .filter((edge) => bodyNodeIds.has(edge.source) && bodyNodeIds.has(edge.target))
+    .map((edge) => ({
+      id: `body:${frameId}:${edge.id}`,
+      source: `${frameId}::${edge.source}`,
+      target: `${frameId}::${edge.target}`,
+      ...(edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {}),
+      ...(edge.targetHandle ? { targetHandle: edge.targetHandle } : {}),
+    }));
+
+  return { width: box.width, height: box.height, children, edges };
+}
+
 /**
  * Derives the graph's nodes and edges from a DRAFT definition alone (no
  * resolved `pipeline.stages` view exists for an unsaved draft) — the canvas
@@ -532,21 +685,71 @@ export function definitionToGraph(
  */
 export function draftToGraph(
   def: WirePipelineDefinition,
-  catalog?: PipelineCatalogResponse | null
-): { nodes: UnpositionedStage[]; edges: Edge[] } {
+  catalog?: PipelineCatalogResponse | null,
+  /**
+   * Edit-session expansion state (canvas-loop-body-visibility design D2):
+   * root node ids currently rendered as expanded frames. Undefined (the
+   * default) = the pre-change projection byte-for-byte — no frame affordance
+   * data, no body nodes, no body edges — so every existing caller and view
+   * mode are unchanged.
+   */
+  expandedFrames?: ReadonlySet<string>
+): {
+  nodes: UnpositionedStage[];
+  edges: Edge[];
+  frameChildren: ReadonlyMap<string, StageFlowNode[]>;
+} {
   if (def.version === 2) {
     const { graph, nodes: rawNodes, connections: rawConnections } =
       v2GraphParts(def);
+    const declarations = (def as { declarations?: unknown[] }).declarations;
+    // Body children of expanded frames, keyed by their frame (root node) id —
+    // NEVER mixed into `nodes`: the placement cache and every root-keyed rule
+    // downstream consume that array, and body positions live in the frame's
+    // own coordinate contract.
+    const frameChildren = new Map<string, StageFlowNode[]>();
+    const bodyEdges: Edge[] = [];
     return {
       nodes: rawNodes.map((node, index) => {
         const projected = projectedV2Node(node, index);
         const safelyEditable = isSafelyEditableV2Node(projected.value);
         const pairedStructuralNode =
           projected.kind === 'FanOut' || projected.kind === 'Join';
+        // Frame affordance: present only when the caller passed expansion
+        // state (the editor) AND the node's declaration body resolves. An id
+        // in the set additionally takes the frame projection — explicit
+        // dimensions for the root dagre pass (and the flow node's style) and
+        // its body children/edges collected above.
+        let frameToggle: { expanded: boolean } | undefined;
+        let width: number | undefined;
+        let height: number | undefined;
+        if (
+          expandedFrames &&
+          (projected.kind === 'BoundedLoop' || projected.kind === 'CompositeRef')
+        ) {
+          const record = projected.value as Record<string, unknown>;
+          const declarationId =
+            projected.kind === 'CompositeRef' ? record.declarationId : record.body;
+          const frame = declarationBodyFrame(
+            def,
+            declarationId,
+            projected.id,
+            catalog
+          );
+          if (frame && expandedFrames.has(projected.id)) {
+            frameToggle = { expanded: true };
+            width = frame.width;
+            height = frame.height;
+            frameChildren.set(projected.id, frame.children);
+            bodyEdges.push(...frame.edges);
+          } else if (frame) {
+            frameToggle = { expanded: false };
+          }
+        }
         return {
         id: projected.id,
         data: {
-          ...v2NodeCardData(projected.value, graph, catalog, (def as { declarations?: unknown[] }).declarations),
+          ...v2NodeCardData(projected.value, graph, catalog, declarations),
           effectiveGate: {
             value: projected.kind === 'Gate',
             source: 'draft',
@@ -554,15 +757,21 @@ export function draftToGraph(
           effectiveModel: { value: null, source: 'draft' },
           effectiveHandoff: { value: 0.5, source: 'draft' },
           effectiveRuntime: { value: 'claude', source: 'draft' },
+          ...(frameToggle ? { frameToggle } : {}),
         },
         draggable: safelyEditable,
         connectable: safelyEditable,
         deletable: safelyEditable && !pairedStructuralNode,
+        ...(width !== undefined && height !== undefined ? { width, height } : {}),
       };
       }),
-      edges: rawConnections
-        .map(projectedV2Connection)
-        .filter((edge): edge is Edge => edge !== null),
+      edges: [
+        ...rawConnections
+          .map(projectedV2Connection)
+          .filter((edge): edge is Edge => edge !== null),
+        ...bodyEdges,
+      ],
+      frameChildren,
     };
   }
   const nodes: UnpositionedStage[] = def.stages.map((stage) => {
@@ -586,7 +795,7 @@ export function draftToGraph(
     }))
   );
 
-  return { nodes, edges };
+  return { nodes, edges, frameChildren: new Map() };
 }
 
 /**
@@ -597,22 +806,59 @@ export function draftToGraph(
  * top-left corner (React Flow's contract for child-of-group positioning).
  * Group nodes are returned before their members — required order for React
  * Flow to resolve `parentId` on first render.
+ *
+ * `authorPositions` (canvas-durable-node-positioning design D2), when given,
+ * overrides the dagre position of a stage node whose id has a cached
+ * placement — the author's drag survives the rebuild. Optional so view-mode
+ * callers (no cache) are unchanged.
+ *
+ * `frameChildren` (canvas-loop-body-visibility design D1), when given, maps a
+ * root node id to its expanded frame's body children — already-positioned
+ * flow nodes in the frame's own coordinate contract. Each frame's children
+ * are spliced into the output immediately after the frame itself (the v1
+ * parent-before-children order React Flow needs to resolve `parentId` on
+ * first render); absent frames and an absent map change nothing.
  */
-export function layoutGraph(nodes: UnpositionedStage[], edges: Edge[]): PipelineFlowNode[] {
+export function layoutGraph(
+  nodes: UnpositionedStage[],
+  edges: Edge[],
+  authorPositions?: ReadonlyMap<string, AuthorPosition>,
+  frameChildren?: ReadonlyMap<string, StageFlowNode[]>
+): PipelineFlowNode[] {
   const hasGroups = nodes.some((node) => node.parallelGroup !== undefined);
 
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
   g.setGraph({ rankdir: 'LR', nodesep: 48, ranksep: hasGroups ? RANK_SEP_GROUPED : RANK_SEP_UNGROUPED });
-  nodes.forEach((node) => g.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT }));
+  nodes.forEach((node) =>
+    g.setNode(node.id, {
+      // Per-node dimensions (canvas-loop-body-visibility design D1): an
+      // expanded frame reserves its real box; every other node defaults to
+      // the constants, so callers that omit them are byte-identical.
+      width: node.width ?? NODE_WIDTH,
+      height: node.height ?? NODE_HEIGHT,
+    })
+  );
   edges.forEach((edge) => g.setEdge(edge.source, edge.target));
   dagre.layout(g);
 
   const absolute = nodes.map((node) => {
     const { x, y } = g.node(node.id);
+    const width = node.width ?? NODE_WIDTH;
+    const height = node.height ?? NODE_HEIGHT;
+    // Author placement (canvas-durable-node-positioning design D2): a stage
+    // node whose id has a cached position renders where the author dragged
+    // it, replacing the dagre position; absent ids change nothing. Group
+    // members are skipped — their rendered position is RELATIVE to the
+    // group's box (a different coordinate contract), and the cache is only
+    // ever populated for v2 sessions, which have no groups.
+    const cached =
+      node.parallelGroup === undefined
+        ? authorPositions?.get(node.id)
+        : undefined;
     return {
       ...node,
-      absPosition: { x: x - NODE_WIDTH / 2, y: y - NODE_HEIGHT / 2 },
+      absPosition: cached ?? { x: x - width / 2, y: y - height / 2 },
     };
   });
 
@@ -649,7 +895,8 @@ export function layoutGraph(nodes: UnpositionedStage[], edges: Edge[]): Pipeline
     });
   }
 
-  const stageNodes: StageFlowNode[] = absolute.map((node) => {
+  const stageNodes: PipelineFlowNode[] = [];
+  for (const node of absolute) {
     const box = node.parallelGroup ? groupBoxes.get(node.parallelGroup) : undefined;
     const position = box
       ? { x: node.absPosition.x - box.x, y: node.absPosition.y - box.y }
@@ -662,13 +909,43 @@ export function layoutGraph(nodes: UnpositionedStage[], edges: Edge[]): Pipeline
       draggable: node.draggable ?? false,
       connectable: node.connectable ?? false,
       deletable: node.deletable,
+      // Explicit dimensions double as the render style (design D1): React
+      // Flow applies these as the node wrapper's inline size, so the frame
+      // card renders at exactly the box the body was laid out into.
+      ...(node.width !== undefined && node.height !== undefined
+        ? { style: { width: node.width, height: node.height } }
+        : {}),
     };
     if (node.parallelGroup) {
       stageNode.parentId = `group:${node.parallelGroup}`;
       stageNode.extent = 'parent';
     }
-    return stageNode;
-  });
+    stageNodes.push(stageNode);
+    // Frame children follow their frame immediately (parentId resolution
+    // order). Their positions are already frame-relative — the dagre pass
+    // above never sees them.
+    const children = frameChildren?.get(node.id);
+    if (children) stageNodes.push(...children);
+  }
 
   return [...groupNodes, ...stageNodes];
+}
+
+/**
+ * Rebuilds a placement cache keyed to exactly the given stage-node ids
+ * (canvas-durable-node-positioning design D3): entries whose owner left the
+ * root graph are dropped, so a node later re-added under the same id lays
+ * out afresh instead of resurrecting a departed placement. Pure — returns a
+ * new Map, never mutates the input.
+ */
+export function pruneAuthorPositions(
+  positions: ReadonlyMap<string, AuthorPosition>,
+  presentStageIds: Iterable<string>
+): Map<string, AuthorPosition> {
+  const pruned = new Map<string, AuthorPosition>();
+  for (const id of presentStageIds) {
+    const cached = positions.get(id);
+    if (cached) pruned.set(id, cached);
+  }
+  return pruned;
 }

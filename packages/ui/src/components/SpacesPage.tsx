@@ -2,7 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
 import type { ProjectSpaceEntry, SpaceEntry, StoreSpaceEntry } from '../api/types.js';
-import { parseSpacePath, spaceHref, type Space } from '../store/use-space.js';
+import { parseSpacePath, spaceHomeHref, type Space } from '../store/use-space.js';
 import { useLocation } from 'preact-iso';
 import { CreateSpaceDialog } from './CreateSpaceDialog.js';
 import { useT } from '../i18n/store.js';
@@ -209,7 +209,7 @@ export function SpacesPage() {
               <li key={space.root} class="space-row" data-testid="space-row" data-selector={selector}>
                 <a
                   class={`space-row__link${isActive ? ' space-row__link--active' : ''}`}
-                  href={spaceHref(spaceOf(space), 'board')}
+                  href={spaceHomeHref(spaceOf(space))}
                 >
                   <span class="space-row__name">{space.name}</span>
                   <span class="space-row__type">{space.type === 'store' ? t('spaces.page.type_store') : t('spaces.page.type_project')}</span>

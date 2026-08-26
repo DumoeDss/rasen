@@ -52,6 +52,12 @@ rasen 项目用 rasen 管理自己的开发。spec-driven 工作区：
 
 - 轻量运行时/隔离工作区（仅 `changes/add-gauntlet-loop`/`add-task-loop-pipeline` 等少数活跃 change）。rasen CLI 按 root 优先级链解析（见 `docs/agent-contract.md`）。`rasen/` 是主提交工作区；`.rasen/` 是次级/并行/scratch 根。
 
+## `packages/ui/` — management Web app
+
+- Project 的 canonical home 是 `/p/:projectId/board`，`BoardPage.tsx` 与 Task Detail 只拥有 project Change/Run 面；Store 的 canonical home 是 `/s/:storeId/issues`，并以 Store-only Issue Detail、Operations、Unlinked Changes 分别拥有读面、执行与关联。
+- `store/use-space.ts` 的 `spaceHomeHref`/`spaceSwitchHref` 集中维护类型感知 home/switch；common Config/Archive/Pipelines 可跨 namespace 保留，Issues/Operations/Unlinked 只在 Store→Store 保留，其他情况回 destination home。
+- Issue provenance 是 `components/issue-provenance.ts` 对既有 projection/attention payload 的 render-time 映射，不是缓存或第二真相。旧 `StoreIssuesView`、`StoreAggregateBoard`、`RunningSessionsMenu` 及其专属 presentation/test assets 已删除。
+
 ## `docs/` — 文档（关键架构/概念文档）
 
 | 文档 | 覆盖 |

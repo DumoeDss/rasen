@@ -1,0 +1,7 @@
+Issue ready-issue — ready set (revision 0001)
+  ready: 1
+    g-down change app-a fresh-down
+  not ready: 1
+    g-legacy: complete — finalized on a legacy archive record (no v2 outcome was ever recorded)
+  run-state: none visible from this directory
+  wrote nothing — ready derives; starting a node remains a per-node act.

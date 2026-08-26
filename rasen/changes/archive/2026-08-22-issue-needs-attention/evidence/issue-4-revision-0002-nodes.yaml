@@ -1,0 +1,46 @@
+# Revision 0002 of Issue #4 (issue-cross-project-replanning) — the reviewable
+# binding revision, authored 2026-08-22 by the issue-needs-attention
+# implementer leg through --from-file, superseding revision 0001 (the
+# decomposition's intent proposal). Both shipped children are promoted from
+# intent to Change against their seeded Store instances (archived evidence,
+# committed store-side in the seed commit — their work shipped as repo ships
+# 3f065496 and c0ace35e and archived, so both nodes read terminal); the finale
+# is bound to its active seeded instance and reads honestly in flight in the
+# worktree that is executing it right now.
+nodes:
+  - nodeId: issue-ready-set-scheduling
+    kind: change
+    projectId: e2ee72ed-04a1-4395-86aa-7e77d2b83ec7
+    targetLineId: line-0.2
+    changeInstanceId: ci_720f005056ac205062fe6df97795ce8c34df19bfdbb1bb6b79251e9dc406108a
+    changeAlias: issue-ready-set-scheduling
+    dependsOn: []
+    suggestedPipeline: small-feature
+    rationale: promoted from intent to Change against its seeded archived
+      Store instance; the work shipped as repo ship 3f065496 and the node
+      reads terminal on the committed archive evidence, so no dependent waits
+  - nodeId: issue-revision-history-preservation
+    kind: change
+    projectId: e2ee72ed-04a1-4395-86aa-7e77d2b83ec7
+    targetLineId: line-0.2
+    changeInstanceId: ci_f1f9efb27efa440f4e927cbf54aca67aabbcc4f7ea7738839346992aae758342
+    changeAlias: issue-revision-history-preservation
+    dependsOn:
+      - issue-ready-set-scheduling
+    suggestedPipeline: small-feature
+    rationale: promoted from intent to Change against its seeded archived
+      Store instance; the work shipped as repo ship c0ace35e and the node
+      reads terminal on the committed archive evidence
+  - nodeId: issue-needs-attention
+    kind: change
+    projectId: e2ee72ed-04a1-4395-86aa-7e77d2b83ec7
+    targetLineId: line-0.2
+    changeInstanceId: ci_6680a8bfed77fe5b5225e6203580165e768e73a43f3ecc3d72bb06beccad26e5
+    changeAlias: issue-needs-attention
+    dependsOn:
+      - issue-ready-set-scheduling
+      - issue-revision-history-preservation
+    suggestedPipeline: small-feature
+    rationale: the finale, bound to its active seeded instance and honestly in
+      flight in the repo worktree executing it (this very change's apply
+      stage); it becomes the Issue's last un-terminal node until it ships

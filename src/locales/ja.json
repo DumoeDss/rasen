@@ -1613,6 +1613,9 @@
                 "remote": {
                   "description": "store.yamlに記録する正式なclone元です"
                 },
+                "layout": {
+                  "description": "明示的なレイアウトバージョン指定です。2 のみサポートします（layout-2 宣言を持ち、フラットなplanningツリーなしのstoreを作成します）"
+                },
                 "json": {
                   "description": "JSONで出力します"
                 }
@@ -2052,6 +2055,82 @@
                     "from-file": {
                       "description": "計画のノードを列挙したYAMLファイルへのパス"
                     },
+                    "from-portfolio": {
+                      "description": "YAML ノード一覧の代わりに、親 Change の portfolio run-state から発行します"
+                    },
+                    "from-decomposition": {
+                      "description": "YAML ノード一覧の代わりに、機械提案された分解ドキュメントから発行します"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "acceptance": {
+                  "description": "YAMLの条件リストから、Issueの不変な受け入れ条件リビジョンを新規公開します",
+                  "options": {
+                    "store": {
+                      "description": "Issueを保持するストア"
+                    },
+                    "from-file": {
+                      "description": "受け入れ条件を列挙したYAMLファイルのパス"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "accept": {
+                  "description": "Issueを明示的に受け入れます。受け入れゲートを評価し、成立した場合のみ受け入れを記録してIssueをクローズします",
+                  "options": {
+                    "store": {
+                      "description": "Issueを保持するストア"
+                    },
+                    "note": {
+                      "description": "受け入れとともに記録するメモ"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "start": {
+                  "description": "次に実行する計画ノードのバインド済み実行コンテキストを解決し、起動契約を出力します。起動は解決と検証であり、プロセスを生成しません",
+                  "options": {
+                    "store": {
+                      "description": "Issueを保持するストア"
+                    },
+                    "node": {
+                      "description": "対象とする計画ノード。省略時は実行可能なフロンティアノードを一意に導出します"
+                    },
+                    "pipeline": {
+                      "description": "起動契約に記録するパイプライン。パイプラインレジストリに対して検証されます"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "confirm": {
+                  "description": "指定したリビジョン（省略時は最新の読み取り可能なリビジョン）の確認レポートを構成します。検証済みの起動契約一式と未作成の Change を報告します。confirm は構成のみで何も書き込まず、起動はノードごとの操作のままです",
+                  "options": {
+                    "store": {
+                      "description": "Issueを保持するストア"
+                    },
+                    "revision": {
+                      "description": "確認するリビジョン。省略時は最新の読み取り可能なリビジョン"
+                    },
+                    "json": {
+                      "description": "JSON で出力"
+                    }
+                  }
+                },
+                "ready": {
+                  "description": "Issue の最新公開リビジョンの決定的な実行可能セットを報告します。実行可能な Change ノードごとに、非メンバーの退出理由・実行状態の可視ラベル・状態問題を併記します。読み取り専用で最新リビジョンのみ。スケジューラが扱うのは最新です",
+                  "options": {
+                    "store": {
+                      "description": "Issueを保持するストア"
+                    },
                     "json": {
                       "description": "JSON で出力"
                     }
@@ -2087,6 +2166,20 @@
               "options": {
                 "store": {
                   "description": "プロジェクトを一覧表示する対象のストア"
+                },
+                "json": {
+                  "description": "JSON で出力"
+                }
+              }
+            },
+            "attention": {
+              "description": "ストアの全 Issue を走査し、今すぐ人間に必要なもの(失敗・トラブル後ろのブロック・駐留ステージ・レビュー段階の受け入れ・ステータス問題)を失敗優先で報告します。走査した Issue はすべて要約に可視のまま。読み取り専用",
+              "options": {
+                "store": {
+                  "description": "走査するストア"
+                },
+                "issue": {
+                  "description": "走査を 1 つの Issue id に絞る。未知の id は拒否されます"
                 },
                 "json": {
                   "description": "JSON で出力"

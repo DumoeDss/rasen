@@ -67,9 +67,9 @@ describe('SpaceBootstrap', () => {
     expect(client.health).not.toHaveBeenCalled();
   });
 
-  it('redirects a store launch query to a store board route', async () => {
+  it('redirects a store launch query to its Issue Board home', async () => {
     await mountAt(container, '/?space=store:my-store');
-    expect(window.location.pathname).toBe('/s/my-store/board');
+    expect(window.location.pathname).toBe('/s/my-store/issues');
   });
 
   it('lands on the space board with the token retained after token scrubbing (bootstrap ordering)', async () => {
@@ -115,7 +115,7 @@ describe('SpaceBootstrap', () => {
       spaces: [{ type: 'store', id: 'store_first', name: 'store_first', root: '/s', members: [] }],
     });
     await mountAt(container, '/');
-    expect(window.location.pathname).toBe('/s/store_first/board');
+    expect(window.location.pathname).toBe('/s/store_first/issues');
   });
 
   it('shows an explicit empty state when nothing resolves, not a blank page or spinner', async () => {
