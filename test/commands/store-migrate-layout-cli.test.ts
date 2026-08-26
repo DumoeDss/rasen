@@ -298,22 +298,35 @@ describe('rasen store migrate-layout (CLI)', () => {
       { env, cwd: storeRoot }
     );
     expect(json.exitCode).toBe(1);
+    // `--apply` on a plan that cannot be applied refuses with a NAMED reason
+    // instead of reprinting the preview. Reprinting it was the defect: it
+    // announced readiness the token could not back, then exited 1 with no
+    // code, no message and no fix anywhere in the output. The structured
+    // per-item blocker list stays on the preview path (no `--apply`), which
+    // the item-table tests above cover; this path owes the operator a reason.
     const payload = parseJson(json);
-    expect(payload.applicable).toBe(false);
-    expect(payload.blockers.map((item: { name: string }) => item.name)).toEqual([
-      'mystery-change',
-    ]);
-    expect(payload.blockers[0].code).toBe('migration_classification_unresolved');
-    expect(payload.blockers[0].repair).toContain('changes.mystery-change.project');
+    expect(payload.status).toHaveLength(1);
+    const diagnostic = payload.status[0];
+    expect(diagnostic.code).toBe('migration_plan_blocked');
+    // The blocked item is still named, with its state, its reason and the
+    // repair that actually works -- the point of the original assertion.
+    expect(diagnostic.message).toContain('mystery-change');
+    expect(diagnostic.message).toContain('unresolved:unknown-owner');
+    expect(diagnostic.message).toContain('changes.mystery-change.project');
+    expect(diagnostic.fix).toContain('no --force');
 
     const human = await runCLI(
       ['store', 'migrate-layout', STORE_ID, '--mapping', MAPPING, '--apply'],
       { env, cwd: storeRoot }
     );
     expect(human.exitCode).toBe(1);
-    expect(`${human.stdout}${human.stderr}`).toContain('mystery-change');
-    expect(`${human.stdout}${human.stderr}`).toContain('migration_classification_unresolved');
-    expect(`${human.stdout}${human.stderr}`).toContain('no --force');
+    const humanOut = `${human.stdout}${human.stderr}`;
+    expect(humanOut).toContain('mystery-change');
+    expect(humanOut).toContain('migration_plan_blocked');
+    expect(humanOut).toContain('changes.mystery-change.project');
+    expect(humanOut).toContain('no --force');
+    // The preview is not reprinted on the refusal path.
+    expect(humanOut).not.toContain('Ready to apply');
 
     // Nothing was published, and the Store is still flat.
     expect(git('status', '--porcelain').trim()).toBe('');

@@ -1,0 +1,47 @@
+### Published partitions byte-match their flat sources
+
+MATCH   rasen/specs/alpha-only-capability/spec.md
+        -> rasen/projects/11111111-1111-4111-8111-111111111111/specs/alpha-only-capability/spec.md
+        sha256 db2bcc5ab13068c847fbe020163252231a36ac63f74fb83dbc0cab37fcefed55 / db2bcc5ab13068c847fbe020163252231a36ac63f74fb83dbc0cab37fcefed55
+MATCH   rasen/specs/shared-capability/spec.md
+        -> rasen/projects/11111111-1111-4111-8111-111111111111/specs/shared-capability/spec.md
+        sha256 c00ae60d60d8cefb6cae1ec553090f45728259602c99755850f7d1ab95eee921 / c00ae60d60d8cefb6cae1ec553090f45728259602c99755850f7d1ab95eee921
+MATCH   rasen/specs/中文能力/spec.md
+        -> rasen/projects/11111111-1111-4111-8111-111111111111/specs/中文能力/spec.md
+        sha256 2240d3009414b952eed9518151cce02f412cc7252300cc143cae88aac5d183fb / 2240d3009414b952eed9518151cce02f412cc7252300cc143cae88aac5d183fb
+MATCH   rasen/changes/change-zh-renamed/中文文档.md
+        -> rasen/projects/11111111-1111-4111-8111-111111111111/changes/change-zh-renamed/中文文档.md
+        sha256 065f5eb3c4d8677c92ef91cb3f07fd8f70837a68e86db91795d39a52fa3a4f68 / 065f5eb3c4d8677c92ef91cb3f07fd8f70837a68e86db91795d39a52fa3a4f68
+MATCH   rasen/changes/change-alpha-recorded/proposal.md
+        -> rasen/projects/11111111-1111-4111-8111-111111111111/changes/change-alpha-recorded/proposal.md
+        sha256 b16d4242406bf38404c8e35406a05ff8840e64f97f015e3bed6907a7e0b5bdba / b16d4242406bf38404c8e35406a05ff8840e64f97f015e3bed6907a7e0b5bdba
+MATCH   rasen/changes/archive/2026-02-02-beta-shared/archive.json
+        -> rasen/projects/22222222-2222-4222-8222-222222222222/changes/archive/main/2026-02-02-beta-shared/archive.json
+        sha256 8583140fb5f93f1d48449fa1484412e2f1f10c8c8644bbd1b3441df574df3f86 / 8583140fb5f93f1d48449fa1484412e2f1f10c8c8644bbd1b3441df574df3f86
+
+ALL BYTE-IDENTICAL: True
+
+### UTF-8 names survived to the partition destinations
+specs/: ['alpha-only-capability', 'shared-capability', '中文能力']
+changes/change-zh-renamed/: ['.openspec.yaml', 'proposal.md', 'tasks.md', '中文文档.md']
+codepoints of the published capability dir: ['0x4e2d', '0x6587', '0x80fd', '0x529b']
+
+### The layout declaration, flipped LAST
+$ cat .rasen-store/store.yaml
+version: 2
+uid: f35acc7d-e088-4186-9ad6-b4b770649b0b
+id: rasen-store
+layoutVersion: 2
+
+### The recovery manifest is MACHINE-LOCAL (never inside either repo)
+manifest path: <temp>/rasen-home-enriched\store-layout-migration\f35acc7d-e088-4186-9ad6-b4b770649b0b\refs_heads_master-49c8f7d5c745\manifest.json
+version: 2  phase: published
+planId: 18a49eb7bdf237ad6e2861a43d48bb9305f304a6f35997a69f67bf9b593832e0
+runId:  0a60d6ec3166f56c673ce55ae3dac7ab01edaa42ca117ffa71febb32df803c4f
+runId != planId: True
+createdPaths: 15   replacedFiles: 4   operations: 15
+replacedFiles keys: ['<temp>\\copy-enriched\\.rasen-store\\projects\\11111111-1111-4111-8111-111111111111.yaml', '<temp>\\copy-enriched\\.rasen-store\\projects\\22222222-2222-4222-8222-222222222222.yaml', '<temp>\\copy-enriched\\.rasen-store\\projects\\33333333-3333-4333-8333-333333333333.yaml', '<temp>\\copy-enriched\\.rasen-store\\store.yaml']
+phases: ['verified', 'published']
+
+### Nothing was written into the Store's git index
+(the command printed a pathspec-scoped commit suggestion and stopped; see 12-apply.txt)

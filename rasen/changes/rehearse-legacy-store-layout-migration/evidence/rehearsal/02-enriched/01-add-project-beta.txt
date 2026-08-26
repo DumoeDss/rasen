@@ -1,0 +1,59 @@
+$ (cd <temp>/project-beta) rasen store add-project <temp>/project-beta --to rasen-store --json
+{
+  "project": {
+    "id": "project-beta",
+    "root": "<temp>\\project-beta",
+    "metadata_created": true,
+    "already_registered": false
+  },
+  "target": {
+    "id": "rasen-store",
+    "root": "<temp>\\copy-enriched",
+    "config_path": "<temp>\\copy-enriched\\rasen\\config.yaml",
+    "reference_added": true,
+    "reference_already_present": false
+  },
+  "membership": {
+    "project_id": "22222222-2222-4222-8222-222222222222",
+    "roles": {
+      "planning": false,
+      "knowledge": true
+    },
+    "project_base_commit": "25aafd7fdc1b4649b67518d4ba6d02ab743345db",
+    "store_base_commit": "3aebe342a8f0a091568689dd9e34c82013c32f26",
+    "project_writes": [
+      "<temp>\\project-beta\\rasen\\config.yaml"
+    ],
+    "store_writes": [],
+    "record_written": false,
+    "hint_written": true,
+    "repair_needed": [],
+    "suggested_commits": [
+      {
+        "repo_root": "<temp>\\copy-enriched",
+        "command": "git -C <temp>\\copy-enriched add .rasen-store\\projects\\22222222-2222-4222-8222-222222222222.yaml && git -C <temp>\\copy-enriched commit -m \"chore: record project-beta as a member\"",
+        "purpose": "Store repo: record the membership authority record."
+      },
+      {
+        "repo_root": "<temp>\\project-beta",
+        "command": "git -C <temp>\\project-beta add rasen\\config.yaml && git -C <temp>\\project-beta commit -m \"chore: record membership of store rasen-store\"",
+        "purpose": "Project repo: record the membership locator hint."
+      }
+    ]
+  },
+  "planning_binding": {
+    "requested": false,
+    "changed": false,
+    "refused": false,
+    "already_bound": false,
+    "bound_to": null,
+    "bound_to_uid": null,
+    "requested_store": "rasen-store",
+    "requested_store_uid": "f35acc7d-e088-4186-9ad6-b4b770649b0b",
+    "rebind_command": null
+  },
+  "dry_run": false,
+  "status": []
+}
+
+[exit code: 0]

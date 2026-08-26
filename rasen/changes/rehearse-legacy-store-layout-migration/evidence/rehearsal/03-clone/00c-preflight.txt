@@ -1,0 +1,26 @@
+### MANDATORY PRE-FLIGHT (tasks.md 1.4) — stage 3 clone
+$ rasen store list --json
+{
+  "stores": [
+    {
+      "id": "rasen-store",
+      "root": "<temp>\\copy-clone",
+      "type": "store"
+    }
+  ],
+  "status": []
+}
+$ h_preflight
+PREFLIGHT-OK: 1 registered entr(ies), all inside <temp>
+  rasen-store [no uid recorded] -> <temp>\copy-clone
+[preflight exit code: 0]
+
+$ cat <temp>/rasen-home-clone/stores/registry.yaml
+version: 1
+stores:
+  rasen-store:
+    backend:
+      type: git
+      local_path: <temp>\copy-clone
+      remote: <real-store>
+# NOTE: keyed by DISPLAY NAME, not uid — the clone carries no permanent identity.

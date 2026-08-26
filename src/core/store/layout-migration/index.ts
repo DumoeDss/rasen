@@ -10,6 +10,9 @@ export {
   StoreLayoutMigrationModuleInstance as StoreLayoutMigrationModuleImpl,
   type StoreLayoutMigrationOptions,
 } from './module.js';
+// The apply gate's refusal builder. The command adapter formats it; it never
+// re-derives why a plan cannot be applied.
+export { planGateError } from './plan.js';
 export {
   productionStoreLayoutMigrationDependencies,
   withDeterministicIdentity,

@@ -1,0 +1,29 @@
+### The unrecordable-identity item: following the only repair that works
+#
+# The reason text says 'the named project id fails the v2 portable identifier
+# contract', but the project id (11111111-...) IS portable. What fails is the
+# CHANGE DIRECTORY NAME: parseChangeId requires a lowercase kebab id
+# (planning-validation.ts:158-163) and safeLayoutPath returns null for anything
+# else (plan.ts:1535-1545). Half the offered repair -- 'declare a portable owner
+# in the mapping file' -- cannot work at all; only the rename can.
+#
+# UTF-8 coverage on the PUBLICATION path is preserved by a Chinese-named FILE
+# inside the renamed Change and by the Chinese-named canonical capability.
+
+$ (rename rasen/changes/<zh-change> -> rasen/changes/change-zh-renamed, add <zh-file>.md inside)
+$ git -C <temp>/copy-enriched -c core.quotepath=false status --porcelain
+ D rasen/changes/变更-中文名称/.openspec.yaml
+ D rasen/changes/变更-中文名称/proposal.md
+ D rasen/changes/变更-中文名称/tasks.md
+?? rasen/changes/change-zh-renamed/
+warning: in the working copy of 'rasen/changes/change-zh-renamed/.openspec.yaml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'rasen/changes/change-zh-renamed/proposal.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'rasen/changes/change-zh-renamed/tasks.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'rasen/changes/change-zh-renamed/中文文档.md', LF will be replaced by CRLF the next time Git touches it
+$ git -C <temp>/copy-enriched -c core.quotepath=false show --stat --name-status HEAD
+Rename the non-kebab Change; keep UTF-8 content inside it
+
+R100	rasen/changes/变更-中文名称/.openspec.yaml	rasen/changes/change-zh-renamed/.openspec.yaml
+R100	rasen/changes/变更-中文名称/proposal.md	rasen/changes/change-zh-renamed/proposal.md
+R100	rasen/changes/变更-中文名称/tasks.md	rasen/changes/change-zh-renamed/tasks.md
+A	rasen/changes/change-zh-renamed/中文文档.md

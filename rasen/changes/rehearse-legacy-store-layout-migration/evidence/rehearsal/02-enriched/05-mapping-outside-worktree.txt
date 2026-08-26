@@ -1,0 +1,5 @@
+$ (cd <temp>/copy-enriched) rasen store migrate-layout rasen-store --mapping <temp>/mapping-outside.yaml
+migration_mapping_outside_store: Mapping file <temp>\mapping-outside.yaml is outside the Store worktree <temp>\copy-enriched.
+  fix: Move the mapping file into the Store worktree so it can be committed with the receipt.
+
+[exit code: 1]

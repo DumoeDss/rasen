@@ -1,0 +1,430 @@
+$ (cd <temp>/copy-enriched) rasen store migrate-layout rasen-store --json
+{
+  "planId": "c7ea6d5af39b7466ddcf7f10570cf5562ef9d58332f0a6cde8b92f950ddfe3a8",
+  "schemaVersion": 1,
+  "storeId": "rasen-store",
+  "ref": "refs/heads/master",
+  "applicable": false,
+  "items": [
+    {
+      "kind": "archive-entry",
+      "name": "2026-01-01-archive-recorded",
+      "state": "unresolved:missing-target-line",
+      "code": "migration_target_line_missing",
+      "reason": "no target line is declared for an item that needs one",
+      "repair": "Declare defaultTargetLine, or archive.2026-01-01-archive-recorded.targetLine, in the mapping file.",
+      "source": "rasen/changes/archive/2026-01-01-archive-recorded",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "evidence": [
+        {
+          "class": "E1-recorded-identity",
+          "source": "rasen/changes/archive/2026-01-01-archive-recorded/archive.json",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived",
+          "detail": "projectId recorded in the Archive v2 record"
+        }
+      ],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "archive-entry",
+      "name": "2026-01-02-archive-bare",
+      "state": "unresolved:unknown-owner",
+      "code": "migration_classification_unresolved",
+      "reason": "no ownership evidence exists in any class",
+      "repair": "Declare archive.2026-01-02-archive-bare.project in the mapping file.",
+      "source": "rasen/changes/archive/2026-01-02-archive-bare",
+      "evidence": [],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "archive-entry",
+      "name": "2026-02-01-alpha-shared",
+      "state": "unresolved:missing-target-line",
+      "code": "migration_target_line_missing",
+      "reason": "no target line is declared for an item that needs one",
+      "repair": "Declare defaultTargetLine, or archive.2026-02-01-alpha-shared.targetLine, in the mapping file.",
+      "source": "rasen/changes/archive/2026-02-01-alpha-shared",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "evidence": [
+        {
+          "class": "E1-recorded-identity",
+          "source": "rasen/changes/archive/2026-02-01-alpha-shared/archive.json",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived",
+          "detail": "projectId recorded in the Archive v2 record"
+        }
+      ],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "archive-entry",
+      "name": "2026-02-02-beta-shared",
+      "state": "unresolved:missing-target-line",
+      "code": "migration_target_line_missing",
+      "reason": "no target line is declared for an item that needs one",
+      "repair": "Declare defaultTargetLine, or archive.2026-02-02-beta-shared.targetLine, in the mapping file.",
+      "source": "rasen/changes/archive/2026-02-02-beta-shared",
+      "owner": "22222222-2222-4222-8222-222222222222",
+      "evidence": [
+        {
+          "class": "E1-recorded-identity",
+          "source": "rasen/changes/archive/2026-02-02-beta-shared/archive.json",
+          "projectId": "22222222-2222-4222-8222-222222222222",
+          "nature": "derived",
+          "detail": "projectId recorded in the Archive v2 record"
+        }
+      ],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "change",
+      "name": "变更-中文名称",
+      "state": "unresolved:missing-target-line",
+      "code": "migration_target_line_missing",
+      "reason": "no target line is declared for an item that needs one",
+      "repair": "Declare defaultTargetLine, or changes.变更-中文名称.targetLine, in the mapping file.",
+      "source": "rasen/changes/变更-中文名称",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "evidence": [
+        {
+          "class": "E1-recorded-identity",
+          "source": "rasen/changes/变更-中文名称/.openspec.yaml",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived",
+          "detail": "identity.projectId recorded by the Change itself"
+        }
+      ],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "change",
+      "name": "change-alpha-recorded",
+      "state": "unresolved:missing-target-line",
+      "code": "migration_target_line_missing",
+      "reason": "no target line is declared for an item that needs one",
+      "repair": "Declare defaultTargetLine, or changes.change-alpha-recorded.targetLine, in the mapping file.",
+      "source": "rasen/changes/change-alpha-recorded",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "evidence": [
+        {
+          "class": "E1-recorded-identity",
+          "source": "rasen/changes/change-alpha-recorded/.openspec.yaml",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived",
+          "detail": "identity.projectId recorded by the Change itself"
+        }
+      ],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "change",
+      "name": "change-conflict",
+      "state": "unresolved:evidence-conflict",
+      "code": "migration_classification_unresolved",
+      "reason": "two lower-priority evidence sources name different projects",
+      "repair": "Declare changes.change-conflict.project in the mapping file.",
+      "source": "rasen/changes/change-conflict",
+      "evidence": [
+        {
+          "class": "E2-store-records",
+          "source": ".rasen-store/projects/11111111-1111-4111-8111-111111111111.yaml",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived",
+          "detail": "adoption.changes name list"
+        },
+        {
+          "class": "E3-association",
+          "source": "machine-home:project-beta-e3home/changes/change-conflict",
+          "projectId": "22222222-2222-4222-8222-222222222222",
+          "nature": "derived",
+          "detail": "machine association record for this Change alias"
+        }
+      ],
+      "supersededEvidence": [],
+      "contributors": [
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222"
+      ]
+    },
+    {
+      "kind": "change",
+      "name": "change-dirty",
+      "state": "blocked:dirty-source",
+      "code": "migration_source_unsafe",
+      "reason": "the source path has tracked modifications or staged changes: rasen/changes/change-dirty/proposal.md",
+      "repair": "Commit or discard rasen/changes/change-dirty/proposal.md in the Store worktree, then re-plan.",
+      "source": "rasen/changes/change-dirty",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "evidence": [
+        {
+          "class": "E1-recorded-identity",
+          "source": "rasen/changes/change-dirty/.openspec.yaml",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived",
+          "detail": "identity.projectId recorded by the Change itself"
+        }
+      ],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "change",
+      "name": "change-no-evidence",
+      "state": "unresolved:unknown-owner",
+      "code": "migration_classification_unresolved",
+      "reason": "no ownership evidence exists in any class",
+      "repair": "Declare changes.change-no-evidence.project in the mapping file.",
+      "source": "rasen/changes/change-no-evidence",
+      "evidence": [],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "change",
+      "name": "change-non-member",
+      "state": "unresolved:non-member-owner",
+      "code": "migration_classification_unresolved",
+      "reason": "the evidence names a project that is not a member of this Store",
+      "repair": "Declare changes.change-non-member.project in the mapping file.",
+      "source": "rasen/changes/change-non-member",
+      "evidence": [
+        {
+          "class": "E1-recorded-identity",
+          "source": "rasen/changes/change-non-member/.openspec.yaml",
+          "projectId": "33333333-3333-4333-8333-333333333333",
+          "nature": "derived",
+          "detail": "identity.projectId recorded by the Change itself"
+        }
+      ],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "design-doc",
+      "name": "store-overview.md",
+      "state": "resolved",
+      "reason": "retained at the Store-level design-doc address; a design document carries no ownership evidence",
+      "repair": "Assign it with designDocs.store-overview.md in the mapping file if it belongs to one project.",
+      "source": "rasen/design-docs/store-overview.md",
+      "destination": "rasen/design-docs/store-overview.md",
+      "evidence": [],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "membership-record",
+      "name": "11111111-1111-4111-8111-111111111111.yaml",
+      "state": "resolved",
+      "reason": "upgraded in place to a v2 project catalog with a bound planning binding",
+      "repair": "",
+      "source": ".rasen-store/projects/11111111-1111-4111-8111-111111111111.yaml",
+      "destination": ".rasen-store/projects/11111111-1111-4111-8111-111111111111.yaml",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "evidence": [],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "membership-record",
+      "name": "22222222-2222-4222-8222-222222222222.yaml",
+      "state": "resolved",
+      "reason": "upgraded in place to a v2 project catalog with a unbound planning binding",
+      "repair": "",
+      "source": ".rasen-store/projects/22222222-2222-4222-8222-222222222222.yaml",
+      "destination": ".rasen-store/projects/22222222-2222-4222-8222-222222222222.yaml",
+      "owner": "22222222-2222-4222-8222-222222222222",
+      "evidence": [],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "spec",
+      "name": "中文能力",
+      "state": "resolved",
+      "reason": "owner determined and destination computed",
+      "repair": "",
+      "source": "rasen/specs/中文能力",
+      "destination": "rasen/projects/11111111-1111-4111-8111-111111111111/specs/中文能力",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "evidence": [
+        {
+          "class": "E2-store-records",
+          "source": ".rasen-store/projects/11111111-1111-4111-8111-111111111111.yaml",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived",
+          "detail": "adoption.specs name list"
+        }
+      ],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "spec",
+      "name": "alpha-only-capability",
+      "state": "resolved",
+      "reason": "owner determined and destination computed",
+      "repair": "",
+      "source": "rasen/specs/alpha-only-capability",
+      "destination": "rasen/projects/11111111-1111-4111-8111-111111111111/specs/alpha-only-capability",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "evidence": [
+        {
+          "class": "spec-provenance",
+          "source": "provenance:alpha-only-capability",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived",
+          "detail": "single contributing project across 1 delta(s)"
+        }
+      ],
+      "supersededEvidence": [],
+      "contributors": [
+        "11111111-1111-4111-8111-111111111111"
+      ]
+    },
+    {
+      "kind": "spec",
+      "name": "shared-capability",
+      "state": "unresolved:shared-spec",
+      "code": "migration_provenance_unresolved",
+      "reason": "two or more projects contributed deltas and no resolution is declared",
+      "repair": "Declare specs.shared-capability.owner <projectId> or specs.shared-capability.split [<projectId>, …] in the mapping file.",
+      "source": "rasen/specs/shared-capability",
+      "evidence": [],
+      "supersededEvidence": [],
+      "contributors": [
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222"
+      ]
+    }
+  ],
+  "blockers": [
+    {
+      "name": "2026-01-01-archive-recorded",
+      "state": "unresolved:missing-target-line",
+      "code": "migration_target_line_missing",
+      "reason": "no target line is declared for an item that needs one",
+      "repair": "Declare defaultTargetLine, or archive.2026-01-01-archive-recorded.targetLine, in the mapping file."
+    },
+    {
+      "name": "2026-01-02-archive-bare",
+      "state": "unresolved:unknown-owner",
+      "code": "migration_classification_unresolved",
+      "reason": "no ownership evidence exists in any class",
+      "repair": "Declare archive.2026-01-02-archive-bare.project in the mapping file."
+    },
+    {
+      "name": "2026-02-01-alpha-shared",
+      "state": "unresolved:missing-target-line",
+      "code": "migration_target_line_missing",
+      "reason": "no target line is declared for an item that needs one",
+      "repair": "Declare defaultTargetLine, or archive.2026-02-01-alpha-shared.targetLine, in the mapping file."
+    },
+    {
+      "name": "2026-02-02-beta-shared",
+      "state": "unresolved:missing-target-line",
+      "code": "migration_target_line_missing",
+      "reason": "no target line is declared for an item that needs one",
+      "repair": "Declare defaultTargetLine, or archive.2026-02-02-beta-shared.targetLine, in the mapping file."
+    },
+    {
+      "name": "变更-中文名称",
+      "state": "unresolved:missing-target-line",
+      "code": "migration_target_line_missing",
+      "reason": "no target line is declared for an item that needs one",
+      "repair": "Declare defaultTargetLine, or changes.变更-中文名称.targetLine, in the mapping file."
+    },
+    {
+      "name": "change-alpha-recorded",
+      "state": "unresolved:missing-target-line",
+      "code": "migration_target_line_missing",
+      "reason": "no target line is declared for an item that needs one",
+      "repair": "Declare defaultTargetLine, or changes.change-alpha-recorded.targetLine, in the mapping file."
+    },
+    {
+      "name": "change-conflict",
+      "state": "unresolved:evidence-conflict",
+      "code": "migration_classification_unresolved",
+      "reason": "two lower-priority evidence sources name different projects",
+      "repair": "Declare changes.change-conflict.project in the mapping file."
+    },
+    {
+      "name": "change-dirty",
+      "state": "blocked:dirty-source",
+      "code": "migration_source_unsafe",
+      "reason": "the source path has tracked modifications or staged changes: rasen/changes/change-dirty/proposal.md",
+      "repair": "Commit or discard rasen/changes/change-dirty/proposal.md in the Store worktree, then re-plan."
+    },
+    {
+      "name": "change-no-evidence",
+      "state": "unresolved:unknown-owner",
+      "code": "migration_classification_unresolved",
+      "reason": "no ownership evidence exists in any class",
+      "repair": "Declare changes.change-no-evidence.project in the mapping file."
+    },
+    {
+      "name": "change-non-member",
+      "state": "unresolved:non-member-owner",
+      "code": "migration_classification_unresolved",
+      "reason": "the evidence names a project that is not a member of this Store",
+      "repair": "Declare changes.change-non-member.project in the mapping file."
+    },
+    {
+      "name": "shared-capability",
+      "state": "unresolved:shared-spec",
+      "code": "migration_provenance_unresolved",
+      "reason": "two or more projects contributed deltas and no resolution is declared",
+      "repair": "Declare specs.shared-capability.owner <projectId> or specs.shared-capability.split [<projectId>, …] in the mapping file."
+    }
+  ],
+  "retainedDesignDocs": [
+    "rasen/design-docs/store-overview.md"
+  ],
+  "sharedSpecResolutions": [],
+  "catalogUpgrades": [
+    {
+      "projectId": "11111111-1111-4111-8111-111111111111",
+      "record": ".rasen-store/projects/11111111-1111-4111-8111-111111111111.yaml",
+      "binding": "bound",
+      "droppedAdoption": {
+        "specs": [
+          "中文能力"
+        ],
+        "changes": [
+          "change-conflict"
+        ],
+        "adoptedAt": "2026-01-15T00:00:00.000Z"
+      }
+    },
+    {
+      "projectId": "22222222-2222-4222-8222-222222222222",
+      "record": ".rasen-store/projects/22222222-2222-4222-8222-222222222222.yaml",
+      "binding": "unbound"
+    }
+  ],
+  "targetLineCatalogs": [],
+  "changeInstances": [],
+  "retirementSet": [],
+  "otherFlatRefs": [
+    {
+      "ref": "refs/heads/legacy-feature",
+      "kind": "local-branch",
+      "classification": "flat",
+      "checkedOut": false,
+      "notCandidateReason": "migration only ever touches the ref checked out in the invoking Store worktree",
+      "migrateFrom": "rasen store migrate-layout rasen-store --apply  # from a worktree with refs/heads/legacy-feature checked out"
+    }
+  ],
+  "refs": [
+    {
+      "ref": "refs/heads/legacy-feature",
+      "kind": "local-branch",
+      "classification": "flat",
+      "checkedOut": false,
+      "notCandidateReason": "migration only ever touches the ref checked out in the invoking Store worktree",
+      "migrateFrom": "rasen store migrate-layout rasen-store --apply  # from a worktree with refs/heads/legacy-feature checked out"
+    },
+    {
+      "ref": "refs/heads/master",
+      "kind": "local-branch",
+      "classification": "flat",
+      "checkedOut": true
+    }
+  ],
+  "inventoryFailures": []
+}
+
+[exit code: 1]

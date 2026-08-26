@@ -1,0 +1,450 @@
+### The Store after retirement
+$ find . -not -path './.git/*' -type d   (store-relative)
+  .
+  .rasen
+  .rasen/migration
+  .rasen/migration/staging
+  .rasen-store
+  .rasen-store/migration
+  .rasen-store/migration/receipts
+  .rasen-store/projects
+  .rasen-store/target-lines
+  rasen
+  rasen/design-docs
+  rasen/projects
+  rasen/projects/11111111-1111-4111-8111-111111111111
+  rasen/projects/11111111-1111-4111-8111-111111111111/changes
+  rasen/projects/11111111-1111-4111-8111-111111111111/changes/archive
+  rasen/projects/11111111-1111-4111-8111-111111111111/changes/archive/main
+  rasen/projects/11111111-1111-4111-8111-111111111111/changes/archive/main/2026-01-01-archive-recorded
+  rasen/projects/11111111-1111-4111-8111-111111111111/changes/archive/main/2026-01-01-archive-recorded/specs
+  rasen/projects/11111111-1111-4111-8111-111111111111/changes/archive/main/2026-01-01-archive-recorded/specs/alpha-only-capability
+  rasen/projects/11111111-1111-4111-8111-111111111111/changes/archive/main/2026-02-01-alpha-shared
+  rasen/projects/11111111-1111-4111-8111-111111111111/changes/archive/main/2026-02-01-alpha-shared/specs
+  rasen/projects/11111111-1111-4111-8111-111111111111/changes/archive/main/2026-02-01-alpha-shared/specs/shared-capability
+  rasen/projects/11111111-1111-4111-8111-111111111111/changes/change-alpha-recorded
+  rasen/projects/11111111-1111-4111-8111-111111111111/changes/change-dirty
+  rasen/projects/11111111-1111-4111-8111-111111111111/changes/change-no-evidence
+  rasen/projects/11111111-1111-4111-8111-111111111111/changes/change-zh-renamed
+  rasen/projects/11111111-1111-4111-8111-111111111111/specs
+  rasen/projects/11111111-1111-4111-8111-111111111111/specs/alpha-only-capability
+  rasen/projects/11111111-1111-4111-8111-111111111111/specs/shared-capability
+  rasen/projects/11111111-1111-4111-8111-111111111111/specs/中文能力
+  rasen/projects/22222222-2222-4222-8222-222222222222
+  rasen/projects/22222222-2222-4222-8222-222222222222/changes
+  rasen/projects/22222222-2222-4222-8222-222222222222/changes/archive
+  rasen/projects/22222222-2222-4222-8222-222222222222/changes/archive/main
+  rasen/projects/22222222-2222-4222-8222-222222222222/changes/archive/main/2026-01-02-archive-bare
+  rasen/projects/22222222-2222-4222-8222-222222222222/changes/archive/main/2026-02-02-beta-shared
+  rasen/projects/22222222-2222-4222-8222-222222222222/changes/archive/main/2026-02-02-beta-shared/specs
+  rasen/projects/22222222-2222-4222-8222-222222222222/changes/archive/main/2026-02-02-beta-shared/specs/shared-capability
+  rasen/projects/22222222-2222-4222-8222-222222222222/changes/change-conflict
+  rasen/projects/33333333-3333-4333-8333-333333333333
+  rasen/projects/33333333-3333-4333-8333-333333333333/changes
+  rasen/projects/33333333-3333-4333-8333-333333333333/changes/change-non-member
+
+### The migration receipt (committed inside the Store)
+$ cat .rasen-store/migration/receipts/18a49eb7bdf237ad6e2861a43d48bb9305f304a6f35997a69f67bf9b593832e0.json
+{
+  "schemaVersion": 1,
+  "planId": "18a49eb7bdf237ad6e2861a43d48bb9305f304a6f35997a69f67bf9b593832e0",
+  "storeId": "rasen-store",
+  "storeUid": "f35acc7d-e088-4186-9ad6-b4b770649b0b",
+  "ref": "refs/heads/master",
+  "headOid": "f72241fd32081a155400337b0026aca8f1898a16",
+  "inventoryFingerprint": "78cceac736212b41719fea7d9294aa20df9b77373de7c68dff5e2de04e8e1e0b",
+  "items": [
+    {
+      "kind": "archive-entry",
+      "name": "2026-01-01-archive-recorded",
+      "state": "resolved",
+      "source": "rasen/changes/archive/2026-01-01-archive-recorded",
+      "destination": "rasen/projects/11111111-1111-4111-8111-111111111111/changes/archive/main/2026-01-01-archive-recorded",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "targetLineId": "main",
+      "digest": "5b0d99414a1bf1ed7e36cefe661d5ee850b8e416b6da5e10796f22de921c5c72",
+      "evidence": [
+        {
+          "class": "E1-recorded-identity",
+          "source": "rasen/changes/archive/2026-01-01-archive-recorded/archive.json",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived"
+        }
+      ],
+      "recordSchema": "legacy"
+    },
+    {
+      "kind": "archive-entry",
+      "name": "2026-01-02-archive-bare",
+      "state": "resolved",
+      "source": "rasen/changes/archive/2026-01-02-archive-bare",
+      "destination": "rasen/projects/22222222-2222-4222-8222-222222222222/changes/archive/main/2026-01-02-archive-bare",
+      "owner": "22222222-2222-4222-8222-222222222222",
+      "targetLineId": "main",
+      "digest": "69c5a8b6a3940ab753191be9cad932369fb61e65d12fcb166f7a4c314db88fb6",
+      "evidence": [
+        {
+          "class": "E4-explicit-mapping",
+          "source": "migration-mapping.yaml",
+          "projectId": "22222222-2222-4222-8222-222222222222",
+          "nature": "asserted"
+        }
+      ],
+      "recordSchema": "legacy"
+    },
+    {
+      "kind": "archive-entry",
+      "name": "2026-02-01-alpha-shared",
+      "state": "resolved",
+      "source": "rasen/changes/archive/2026-02-01-alpha-shared",
+      "destination": "rasen/projects/11111111-1111-4111-8111-111111111111/changes/archive/main/2026-02-01-alpha-shared",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "targetLineId": "main",
+      "digest": "96604ecfca04aa9e57ae39a708a4862e07f26d4c8b9fd31a46e3dbd037140dca",
+      "evidence": [
+        {
+          "class": "E1-recorded-identity",
+          "source": "rasen/changes/archive/2026-02-01-alpha-shared/archive.json",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived"
+        }
+      ],
+      "recordSchema": "legacy"
+    },
+    {
+      "kind": "archive-entry",
+      "name": "2026-02-02-beta-shared",
+      "state": "resolved",
+      "source": "rasen/changes/archive/2026-02-02-beta-shared",
+      "destination": "rasen/projects/22222222-2222-4222-8222-222222222222/changes/archive/main/2026-02-02-beta-shared",
+      "owner": "22222222-2222-4222-8222-222222222222",
+      "targetLineId": "main",
+      "digest": "632cad9b80f1946d97aeed1c6a344fa7df01519b0ee75fdaafbfb1baa9e83b0c",
+      "evidence": [
+        {
+          "class": "E1-recorded-identity",
+          "source": "rasen/changes/archive/2026-02-02-beta-shared/archive.json",
+          "projectId": "22222222-2222-4222-8222-222222222222",
+          "nature": "derived"
+        }
+      ],
+      "recordSchema": "legacy"
+    },
+    {
+      "kind": "change",
+      "name": "change-alpha-recorded",
+      "state": "resolved",
+      "source": "rasen/changes/change-alpha-recorded",
+      "destination": "rasen/projects/11111111-1111-4111-8111-111111111111/changes/change-alpha-recorded",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "targetLineId": "main",
+      "digest": "daec1b6e85cca8c5dff627c264f24cf450cd27e9b3602a795683d20ec640c194",
+      "evidence": [
+        {
+          "class": "E1-recorded-identity",
+          "source": "rasen/changes/change-alpha-recorded/.openspec.yaml",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived"
+        }
+      ]
+    },
+    {
+      "kind": "change",
+      "name": "change-conflict",
+      "state": "resolved",
+      "source": "rasen/changes/change-conflict",
+      "destination": "rasen/projects/22222222-2222-4222-8222-222222222222/changes/change-conflict",
+      "owner": "22222222-2222-4222-8222-222222222222",
+      "targetLineId": "main",
+      "digest": "c190b81d9dd1f69225bb40eef6da735181449b71da812ad36a2be292439de8d6",
+      "evidence": [
+        {
+          "class": "E2-store-records",
+          "source": ".rasen-store/projects/11111111-1111-4111-8111-111111111111.yaml",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived"
+        },
+        {
+          "class": "E3-association",
+          "source": "machine-home:project-beta-e3home/changes/change-conflict",
+          "projectId": "22222222-2222-4222-8222-222222222222",
+          "nature": "derived"
+        },
+        {
+          "class": "E4-explicit-mapping",
+          "source": "migration-mapping.yaml",
+          "projectId": "22222222-2222-4222-8222-222222222222",
+          "nature": "asserted"
+        }
+      ]
+    },
+    {
+      "kind": "change",
+      "name": "change-dirty",
+      "state": "resolved",
+      "source": "rasen/changes/change-dirty",
+      "destination": "rasen/projects/11111111-1111-4111-8111-111111111111/changes/change-dirty",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "targetLineId": "main",
+      "digest": "a57a5faa19433951c4a25eef548ae612af39a79cfa88f1aa420100c15ba5c201",
+      "evidence": [
+        {
+          "class": "E1-recorded-identity",
+          "source": "rasen/changes/change-dirty/.openspec.yaml",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived"
+        }
+      ]
+    },
+    {
+      "kind": "change",
+      "name": "change-no-evidence",
+      "state": "resolved",
+      "source": "rasen/changes/change-no-evidence",
+      "destination": "rasen/projects/11111111-1111-4111-8111-111111111111/changes/change-no-evidence",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "targetLineId": "main",
+      "digest": "b126388750dbfdccab2d7639d6cb1ceb239137875a8583ce9c73c915c790fe24",
+      "evidence": [
+        {
+          "class": "E4-explicit-mapping",
+          "source": "migration-mapping.yaml",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "asserted"
+        }
+      ]
+    },
+    {
+      "kind": "change",
+      "name": "change-non-member",
+      "state": "resolved",
+      "source": "rasen/changes/change-non-member",
+      "destination": "rasen/projects/33333333-3333-4333-8333-333333333333/changes/change-non-member",
+      "owner": "33333333-3333-4333-8333-333333333333",
+      "targetLineId": "main",
+      "digest": "18383e46334d00a3241deccf27449014693110c750ca7be0d0a463edb41fe915",
+      "evidence": [
+        {
+          "class": "E1-recorded-identity",
+          "source": "rasen/changes/change-non-member/.openspec.yaml",
+          "projectId": "33333333-3333-4333-8333-333333333333",
+          "nature": "derived"
+        }
+      ]
+    },
+    {
+      "kind": "change",
+      "name": "change-zh-renamed",
+      "state": "resolved",
+      "source": "rasen/changes/change-zh-renamed",
+      "destination": "rasen/projects/11111111-1111-4111-8111-111111111111/changes/change-zh-renamed",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "targetLineId": "main",
+      "digest": "e9c20e1f637b0be973957f34bdcf96cf569e17bf01cc36fb9e7ffd5faa79e384",
+      "evidence": [
+        {
+          "class": "E1-recorded-identity",
+          "source": "rasen/changes/change-zh-renamed/.openspec.yaml",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived"
+        }
+      ]
+    },
+    {
+      "kind": "design-doc",
+      "name": "store-overview.md",
+      "state": "resolved",
+      "source": "rasen/design-docs/store-overview.md",
+      "destination": "rasen/design-docs/store-overview.md",
+      "digest": "aeb12895c407fdf198e3d058f349f236f0cd42763c46a4ab636d77508f5779f4",
+      "evidence": []
+    },
+    {
+      "kind": "membership-record",
+      "name": "11111111-1111-4111-8111-111111111111.yaml",
+      "state": "resolved",
+      "source": ".rasen-store/projects/11111111-1111-4111-8111-111111111111.yaml",
+      "destination": ".rasen-store/projects/11111111-1111-4111-8111-111111111111.yaml",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "digest": "93249e051c4652b69fc282bdc199518a86f6606c9564199a5284e5f7ea6094e9",
+      "evidence": []
+    },
+    {
+      "kind": "membership-record",
+      "name": "22222222-2222-4222-8222-222222222222.yaml",
+      "state": "resolved",
+      "source": ".rasen-store/projects/22222222-2222-4222-8222-222222222222.yaml",
+      "destination": ".rasen-store/projects/22222222-2222-4222-8222-222222222222.yaml",
+      "owner": "22222222-2222-4222-8222-222222222222",
+      "digest": "4f3a73750656c8ea64b139233ccc18f318c5bd850ad6966da8587a1fee15bf25",
+      "evidence": []
+    },
+    {
+      "kind": "membership-record",
+      "name": "33333333-3333-4333-8333-333333333333.yaml",
+      "state": "resolved",
+      "source": ".rasen-store/projects/33333333-3333-4333-8333-333333333333.yaml",
+      "destination": ".rasen-store/projects/33333333-3333-4333-8333-333333333333.yaml",
+      "owner": "33333333-3333-4333-8333-333333333333",
+      "digest": "ded4a06da8032907ffc99e0ebcb924b141584a1294a19c776798d4a997b9a8e4",
+      "evidence": []
+    },
+    {
+      "kind": "spec",
+      "name": "中文能力",
+      "state": "resolved",
+      "source": "rasen/specs/中文能力",
+      "destination": "rasen/projects/11111111-1111-4111-8111-111111111111/specs/中文能力",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "digest": "190f9fad9d295ab92071999c5425b5d8effaa4103a556394361158066e368972",
+      "evidence": [
+        {
+          "class": "E2-store-records",
+          "source": ".rasen-store/projects/11111111-1111-4111-8111-111111111111.yaml",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived"
+        }
+      ]
+    },
+    {
+      "kind": "spec",
+      "name": "alpha-only-capability",
+      "state": "resolved",
+      "source": "rasen/specs/alpha-only-capability",
+      "destination": "rasen/projects/11111111-1111-4111-8111-111111111111/specs/alpha-only-capability",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "digest": "4a58542a830af80915f3421d43743e348d120dfc62eecc0c05471a0d4e3bcaac",
+      "evidence": [
+        {
+          "class": "spec-provenance",
+          "source": "provenance:alpha-only-capability",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived"
+        }
+      ]
+    },
+    {
+      "kind": "spec",
+      "name": "shared-capability",
+      "state": "resolved",
+      "source": "rasen/specs/shared-capability",
+      "destination": "rasen/projects/11111111-1111-4111-8111-111111111111/specs/shared-capability",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "digest": "a5a2e77a7b55359dbb2b2f7a3d2147386ccbf1460178fbbf91f74edf1ed1ee04",
+      "evidence": [
+        {
+          "class": "E4-explicit-mapping",
+          "source": "mapping",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "asserted"
+        }
+      ]
+    }
+  ],
+  "changeInstances": [
+    {
+      "oldAlias": "change-alpha-recorded",
+      "changeId": "change-alpha-recorded",
+      "projectId": "11111111-1111-4111-8111-111111111111",
+      "targetLineId": "main",
+      "planningScopeId": "ps_84759f26a1d2a521d23d7b40769407be4847af1ffd11002de289ded98133399f",
+      "changeInstanceId": "ci_7f514eee87cea3ace0fb3b46c68e9e2bfe0eaaeacabfd4b3aa825f93a3e01ff5",
+      "minted": true
+    },
+    {
+      "oldAlias": "change-conflict",
+      "changeId": "change-conflict",
+      "projectId": "22222222-2222-4222-8222-222222222222",
+      "targetLineId": "main",
+      "planningScopeId": "ps_6aaf37574b943cb9d0b71f7e5b718fc1041d449edfa2de28c553a83e0c558def",
+      "changeInstanceId": "ci_d3c5c395ede79828ba117cb443d124184c6c3f831891c484736eb14fc1a7934d",
+      "minted": true
+    },
+    {
+      "oldAlias": "change-dirty",
+      "changeId": "change-dirty",
+      "projectId": "11111111-1111-4111-8111-111111111111",
+      "targetLineId": "main",
+      "planningScopeId": "ps_84759f26a1d2a521d23d7b40769407be4847af1ffd11002de289ded98133399f",
+      "changeInstanceId": "ci_f7abc2ddde374595cdbd97d788e5eac4b3915677a132201e2ed63ceef1506b27",
+      "minted": true
+    },
+    {
+      "oldAlias": "change-no-evidence",
+      "changeId": "change-no-evidence",
+      "projectId": "11111111-1111-4111-8111-111111111111",
+      "targetLineId": "main",
+      "planningScopeId": "ps_84759f26a1d2a521d23d7b40769407be4847af1ffd11002de289ded98133399f",
+      "changeInstanceId": "ci_480b045ee1687ddb86da3e4932e3cf5d713de292695ec3bcde1d0c969ab0967f",
+      "minted": true
+    },
+    {
+      "oldAlias": "change-non-member",
+      "changeId": "change-non-member",
+      "projectId": "33333333-3333-4333-8333-333333333333",
+      "targetLineId": "main",
+      "planningScopeId": "ps_a77a165b2182af748ad12f1d3789b17c14a52094bb8eeeefd6c3fe07158f5ae5",
+      "changeInstanceId": "ci_a49c2d8aa29ceb80f66a6d354a3be1eb714840be611237ac14fcd7fd6dbdd772",
+      "minted": true
+    },
+    {
+      "oldAlias": "change-zh-renamed",
+      "changeId": "change-zh-renamed",
+      "projectId": "11111111-1111-4111-8111-111111111111",
+      "targetLineId": "main",
+      "planningScopeId": "ps_84759f26a1d2a521d23d7b40769407be4847af1ffd11002de289ded98133399f",
+      "changeInstanceId": "ci_0d98b9fbd9ab444d5f31d62cc3a520aaefac3ea2973f2846f8caa95e59423c18",
+      "minted": true
+    }
+  ],
+  "droppedAdoption": [
+    {
+      "projectId": "11111111-1111-4111-8111-111111111111",
+      "specs": [
+        "中文能力"
+      ],
+      "changes": [
+        "change-conflict"
+      ],
+      "adoptedAt": "2026-01-15T00:00:00.000Z"
+    }
+  ],
+  "sharedSpecResolutions": [
+    {
+      "capability": "shared-capability",
+      "mode": "owner",
+      "projects": [
+        "11111111-1111-4111-8111-111111111111"
+      ],
+      "contributors": [
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222"
+      ]
+    }
+  ],
+  "retainedDesignDocs": [
+    "rasen/design-docs/store-overview.md"
+  ],
+  "supersededEvidence": [],
+  "targetLineCatalogs": [
+    ".rasen-store/target-lines/main.yaml"
+  ],
+  "phases": [
+    {
+      "phase": "staged",
+      "at": "2026-08-26T05:57:01.502Z"
+    },
+    {
+      "phase": "published",
+      "at": "2026-08-26T05:57:05.082Z"
+    },
+    {
+      "phase": "retired",
+      "at": "2026-08-26T05:58:13.987Z"
+    }
+  ],
+  "mapping": {
+    "path": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-g2\\copy-enriched\\migration-mapping.yaml",
+    "digest": "c6c720bf2db9051f418039c092e6c1d045a728adb1a20f6554925fff630feef4"
+  }
+}

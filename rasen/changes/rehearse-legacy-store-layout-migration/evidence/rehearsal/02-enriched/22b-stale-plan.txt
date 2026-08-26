@@ -1,0 +1,513 @@
+$ (cd <temp>/copy-stale) rasen store migrate-layout rasen-store --mapping migration-mapping.yaml --json
+{
+  "planId": "6ce9db906bfe08eb4e85a710c83e9ae90240c3fa6ecb3b551f4b7969ce298f46",
+  "schemaVersion": 1,
+  "storeId": "rasen-store",
+  "ref": "refs/heads/master",
+  "applicable": true,
+  "token": {
+    "planId": "6ce9db906bfe08eb4e85a710c83e9ae90240c3fa6ecb3b551f4b7969ce298f46",
+    "storeUid": "f35acc7d-e088-4186-9ad6-b4b770649b0b",
+    "ref": "refs/heads/master",
+    "headOid": "f72241fd32081a155400337b0026aca8f1898a16",
+    "inventoryFingerprint": "1629ee2b422f789efae04c87c97455adedbb8ab71b54d3bc864b5aa1a532898e"
+  },
+  "items": [
+    {
+      "kind": "archive-entry",
+      "name": "2026-01-01-archive-recorded",
+      "state": "resolved",
+      "reason": "owner determined and destination computed",
+      "repair": "",
+      "source": "rasen/changes/archive/2026-01-01-archive-recorded",
+      "destination": "rasen/projects/11111111-1111-4111-8111-111111111111/changes/archive/main/2026-01-01-archive-recorded",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "targetLine": "main",
+      "evidence": [
+        {
+          "class": "E1-recorded-identity",
+          "source": "rasen/changes/archive/2026-01-01-archive-recorded/archive.json",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived",
+          "detail": "projectId recorded in the Archive v2 record"
+        }
+      ],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "archive-entry",
+      "name": "2026-01-02-archive-bare",
+      "state": "resolved",
+      "reason": "owner determined and destination computed",
+      "repair": "",
+      "source": "rasen/changes/archive/2026-01-02-archive-bare",
+      "destination": "rasen/projects/22222222-2222-4222-8222-222222222222/changes/archive/main/2026-01-02-archive-bare",
+      "owner": "22222222-2222-4222-8222-222222222222",
+      "targetLine": "main",
+      "evidence": [
+        {
+          "class": "E4-explicit-mapping",
+          "source": "migration-mapping.yaml",
+          "projectId": "22222222-2222-4222-8222-222222222222",
+          "nature": "asserted",
+          "detail": "operator declaration for archive-entry '2026-01-02-archive-bare'"
+        }
+      ],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "archive-entry",
+      "name": "2026-02-01-alpha-shared",
+      "state": "resolved",
+      "reason": "owner determined and destination computed",
+      "repair": "",
+      "source": "rasen/changes/archive/2026-02-01-alpha-shared",
+      "destination": "rasen/projects/11111111-1111-4111-8111-111111111111/changes/archive/main/2026-02-01-alpha-shared",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "targetLine": "main",
+      "evidence": [
+        {
+          "class": "E1-recorded-identity",
+          "source": "rasen/changes/archive/2026-02-01-alpha-shared/archive.json",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived",
+          "detail": "projectId recorded in the Archive v2 record"
+        }
+      ],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "archive-entry",
+      "name": "2026-02-02-beta-shared",
+      "state": "resolved",
+      "reason": "owner determined and destination computed",
+      "repair": "",
+      "source": "rasen/changes/archive/2026-02-02-beta-shared",
+      "destination": "rasen/projects/22222222-2222-4222-8222-222222222222/changes/archive/main/2026-02-02-beta-shared",
+      "owner": "22222222-2222-4222-8222-222222222222",
+      "targetLine": "main",
+      "evidence": [
+        {
+          "class": "E1-recorded-identity",
+          "source": "rasen/changes/archive/2026-02-02-beta-shared/archive.json",
+          "projectId": "22222222-2222-4222-8222-222222222222",
+          "nature": "derived",
+          "detail": "projectId recorded in the Archive v2 record"
+        }
+      ],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "change",
+      "name": "change-alpha-recorded",
+      "state": "resolved",
+      "reason": "owner determined and destination computed",
+      "repair": "",
+      "source": "rasen/changes/change-alpha-recorded",
+      "destination": "rasen/projects/11111111-1111-4111-8111-111111111111/changes/change-alpha-recorded",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "targetLine": "main",
+      "evidence": [
+        {
+          "class": "E1-recorded-identity",
+          "source": "rasen/changes/change-alpha-recorded/.openspec.yaml",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived",
+          "detail": "identity.projectId recorded by the Change itself"
+        }
+      ],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "change",
+      "name": "change-conflict",
+      "state": "resolved",
+      "reason": "owner determined and destination computed",
+      "repair": "",
+      "source": "rasen/changes/change-conflict",
+      "destination": "rasen/projects/22222222-2222-4222-8222-222222222222/changes/change-conflict",
+      "owner": "22222222-2222-4222-8222-222222222222",
+      "targetLine": "main",
+      "evidence": [
+        {
+          "class": "E2-store-records",
+          "source": ".rasen-store/projects/11111111-1111-4111-8111-111111111111.yaml",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived",
+          "detail": "adoption.changes name list"
+        },
+        {
+          "class": "E3-association",
+          "source": "machine-home:project-beta-e3home/changes/change-conflict",
+          "projectId": "22222222-2222-4222-8222-222222222222",
+          "nature": "derived",
+          "detail": "machine association record for this Change alias"
+        },
+        {
+          "class": "E4-explicit-mapping",
+          "source": "migration-mapping.yaml",
+          "projectId": "22222222-2222-4222-8222-222222222222",
+          "nature": "asserted",
+          "detail": "operator declaration for change 'change-conflict'"
+        }
+      ],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "change",
+      "name": "change-dirty",
+      "state": "resolved",
+      "reason": "owner determined and destination computed",
+      "repair": "",
+      "source": "rasen/changes/change-dirty",
+      "destination": "rasen/projects/11111111-1111-4111-8111-111111111111/changes/change-dirty",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "targetLine": "main",
+      "evidence": [
+        {
+          "class": "E1-recorded-identity",
+          "source": "rasen/changes/change-dirty/.openspec.yaml",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived",
+          "detail": "identity.projectId recorded by the Change itself"
+        }
+      ],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "change",
+      "name": "change-no-evidence",
+      "state": "resolved",
+      "reason": "owner determined and destination computed",
+      "repair": "",
+      "source": "rasen/changes/change-no-evidence",
+      "destination": "rasen/projects/11111111-1111-4111-8111-111111111111/changes/change-no-evidence",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "targetLine": "main",
+      "evidence": [
+        {
+          "class": "E4-explicit-mapping",
+          "source": "migration-mapping.yaml",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "asserted",
+          "detail": "operator declaration for change 'change-no-evidence'"
+        }
+      ],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "change",
+      "name": "change-non-member",
+      "state": "resolved",
+      "reason": "owner determined and destination computed",
+      "repair": "",
+      "source": "rasen/changes/change-non-member",
+      "destination": "rasen/projects/33333333-3333-4333-8333-333333333333/changes/change-non-member",
+      "owner": "33333333-3333-4333-8333-333333333333",
+      "targetLine": "main",
+      "evidence": [
+        {
+          "class": "E1-recorded-identity",
+          "source": "rasen/changes/change-non-member/.openspec.yaml",
+          "projectId": "33333333-3333-4333-8333-333333333333",
+          "nature": "derived",
+          "detail": "identity.projectId recorded by the Change itself"
+        }
+      ],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "change",
+      "name": "change-zh-renamed",
+      "state": "resolved",
+      "reason": "owner determined and destination computed",
+      "repair": "",
+      "source": "rasen/changes/change-zh-renamed",
+      "destination": "rasen/projects/11111111-1111-4111-8111-111111111111/changes/change-zh-renamed",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "targetLine": "main",
+      "evidence": [
+        {
+          "class": "E1-recorded-identity",
+          "source": "rasen/changes/change-zh-renamed/.openspec.yaml",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived",
+          "detail": "identity.projectId recorded by the Change itself"
+        }
+      ],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "design-doc",
+      "name": "store-overview.md",
+      "state": "resolved",
+      "reason": "retained at the Store-level design-doc address; a design document carries no ownership evidence",
+      "repair": "Assign it with designDocs.store-overview.md in the mapping file if it belongs to one project.",
+      "source": "rasen/design-docs/store-overview.md",
+      "destination": "rasen/design-docs/store-overview.md",
+      "evidence": [],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "membership-record",
+      "name": "11111111-1111-4111-8111-111111111111.yaml",
+      "state": "resolved",
+      "reason": "upgraded in place to a v2 project catalog with a bound planning binding",
+      "repair": "",
+      "source": ".rasen-store/projects/11111111-1111-4111-8111-111111111111.yaml",
+      "destination": ".rasen-store/projects/11111111-1111-4111-8111-111111111111.yaml",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "evidence": [],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "membership-record",
+      "name": "22222222-2222-4222-8222-222222222222.yaml",
+      "state": "resolved",
+      "reason": "upgraded in place to a v2 project catalog with a unbound planning binding",
+      "repair": "",
+      "source": ".rasen-store/projects/22222222-2222-4222-8222-222222222222.yaml",
+      "destination": ".rasen-store/projects/22222222-2222-4222-8222-222222222222.yaml",
+      "owner": "22222222-2222-4222-8222-222222222222",
+      "evidence": [],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "membership-record",
+      "name": "33333333-3333-4333-8333-333333333333.yaml",
+      "state": "resolved",
+      "reason": "upgraded in place to a v2 project catalog with a unbound planning binding",
+      "repair": "",
+      "source": ".rasen-store/projects/33333333-3333-4333-8333-333333333333.yaml",
+      "destination": ".rasen-store/projects/33333333-3333-4333-8333-333333333333.yaml",
+      "owner": "33333333-3333-4333-8333-333333333333",
+      "evidence": [],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "spec",
+      "name": "中文能力",
+      "state": "resolved",
+      "reason": "owner determined and destination computed",
+      "repair": "",
+      "source": "rasen/specs/中文能力",
+      "destination": "rasen/projects/11111111-1111-4111-8111-111111111111/specs/中文能力",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "evidence": [
+        {
+          "class": "E2-store-records",
+          "source": ".rasen-store/projects/11111111-1111-4111-8111-111111111111.yaml",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived",
+          "detail": "adoption.specs name list"
+        }
+      ],
+      "supersededEvidence": []
+    },
+    {
+      "kind": "spec",
+      "name": "alpha-only-capability",
+      "state": "resolved",
+      "reason": "owner determined and destination computed",
+      "repair": "",
+      "source": "rasen/specs/alpha-only-capability",
+      "destination": "rasen/projects/11111111-1111-4111-8111-111111111111/specs/alpha-only-capability",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "evidence": [
+        {
+          "class": "spec-provenance",
+          "source": "provenance:alpha-only-capability",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "derived",
+          "detail": "single contributing project across 1 delta(s)"
+        }
+      ],
+      "supersededEvidence": [],
+      "contributors": [
+        "11111111-1111-4111-8111-111111111111"
+      ]
+    },
+    {
+      "kind": "spec",
+      "name": "shared-capability",
+      "state": "resolved",
+      "reason": "owner determined and destination computed",
+      "repair": "",
+      "source": "rasen/specs/shared-capability",
+      "destination": "rasen/projects/11111111-1111-4111-8111-111111111111/specs/shared-capability",
+      "owner": "11111111-1111-4111-8111-111111111111",
+      "evidence": [
+        {
+          "class": "E4-explicit-mapping",
+          "source": "mapping",
+          "projectId": "11111111-1111-4111-8111-111111111111",
+          "nature": "asserted",
+          "detail": "operator resolution for capability 'shared-capability'"
+        }
+      ],
+      "supersededEvidence": [],
+      "contributors": [
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222"
+      ]
+    }
+  ],
+  "blockers": [],
+  "retainedDesignDocs": [
+    "rasen/design-docs/store-overview.md"
+  ],
+  "sharedSpecResolutions": [
+    {
+      "capability": "shared-capability",
+      "mode": "owner",
+      "projects": [
+        "11111111-1111-4111-8111-111111111111"
+      ],
+      "contributors": [
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222"
+      ]
+    }
+  ],
+  "catalogUpgrades": [
+    {
+      "projectId": "11111111-1111-4111-8111-111111111111",
+      "record": ".rasen-store/projects/11111111-1111-4111-8111-111111111111.yaml",
+      "binding": "bound",
+      "droppedAdoption": {
+        "specs": [
+          "中文能力"
+        ],
+        "changes": [
+          "change-conflict"
+        ],
+        "adoptedAt": "2026-01-15T00:00:00.000Z"
+      }
+    },
+    {
+      "projectId": "22222222-2222-4222-8222-222222222222",
+      "record": ".rasen-store/projects/22222222-2222-4222-8222-222222222222.yaml",
+      "binding": "unbound"
+    },
+    {
+      "projectId": "33333333-3333-4333-8333-333333333333",
+      "record": ".rasen-store/projects/33333333-3333-4333-8333-333333333333.yaml",
+      "binding": "unbound"
+    }
+  ],
+  "targetLineCatalogs": [
+    ".rasen-store/target-lines/main.yaml"
+  ],
+  "changeInstances": [
+    {
+      "changeId": "change-alpha-recorded",
+      "projectId": "11111111-1111-4111-8111-111111111111",
+      "targetLineId": "main",
+      "instanceSeed": "487cb90def4eb0c2ebc079876e339418",
+      "planningScopeId": "ps_84759f26a1d2a521d23d7b40769407be4847af1ffd11002de289ded98133399f",
+      "changeInstanceId": "ci_3cdc0ddb89f1a4c9375d5eab96216d9e7b33f1218a23120c7ec39b7584276420",
+      "oldAlias": "change-alpha-recorded",
+      "minted": true
+    },
+    {
+      "changeId": "change-conflict",
+      "projectId": "22222222-2222-4222-8222-222222222222",
+      "targetLineId": "main",
+      "instanceSeed": "1849612361d57bf5fbfdc424342389a1",
+      "planningScopeId": "ps_6aaf37574b943cb9d0b71f7e5b718fc1041d449edfa2de28c553a83e0c558def",
+      "changeInstanceId": "ci_446579d21437cbfeda53cfb949d6ae23dd0a6ab0ef16b442b81172993627d4ff",
+      "oldAlias": "change-conflict",
+      "minted": true
+    },
+    {
+      "changeId": "change-dirty",
+      "projectId": "11111111-1111-4111-8111-111111111111",
+      "targetLineId": "main",
+      "instanceSeed": "8deb9e691f0639e7c5d770a5e525cddb",
+      "planningScopeId": "ps_84759f26a1d2a521d23d7b40769407be4847af1ffd11002de289ded98133399f",
+      "changeInstanceId": "ci_987a6679985fbd0365a7c42dc7cab896f911a9102649f6195fc7ce8a14a0156d",
+      "oldAlias": "change-dirty",
+      "minted": true
+    },
+    {
+      "changeId": "change-no-evidence",
+      "projectId": "11111111-1111-4111-8111-111111111111",
+      "targetLineId": "main",
+      "instanceSeed": "dd728794ad56d68fe8fab5f68f40669e",
+      "planningScopeId": "ps_84759f26a1d2a521d23d7b40769407be4847af1ffd11002de289ded98133399f",
+      "changeInstanceId": "ci_d2beb9fbe4ff6e9a02662faddbe46cd85081be78a19124bbec2d4740da8b56dc",
+      "oldAlias": "change-no-evidence",
+      "minted": true
+    },
+    {
+      "changeId": "change-non-member",
+      "projectId": "33333333-3333-4333-8333-333333333333",
+      "targetLineId": "main",
+      "instanceSeed": "a9490a2d5133974e614d38e56e8b07f8",
+      "planningScopeId": "ps_a77a165b2182af748ad12f1d3789b17c14a52094bb8eeeefd6c3fe07158f5ae5",
+      "changeInstanceId": "ci_3e6f8388dcb56526013f4e69e0ba876e71e0e24c98925d429d8f17b9a8d9e64e",
+      "oldAlias": "change-non-member",
+      "minted": true
+    },
+    {
+      "changeId": "change-zh-renamed",
+      "projectId": "11111111-1111-4111-8111-111111111111",
+      "targetLineId": "main",
+      "instanceSeed": "0beec90faa197fbc9321b424bd1d2c19",
+      "planningScopeId": "ps_84759f26a1d2a521d23d7b40769407be4847af1ffd11002de289ded98133399f",
+      "changeInstanceId": "ci_43f0eb0b6302d0f01a44c3f72ecc99438756cfbe5149fdcdc60e801365776781",
+      "oldAlias": "change-zh-renamed",
+      "minted": true
+    }
+  ],
+  "retirementSet": [
+    "rasen/changes",
+    "rasen/changes/archive/2026-01-01-archive-recorded",
+    "rasen/changes/archive/2026-01-02-archive-bare",
+    "rasen/changes/archive/2026-02-01-alpha-shared",
+    "rasen/changes/archive/2026-02-02-beta-shared",
+    "rasen/changes/change-alpha-recorded",
+    "rasen/changes/change-conflict",
+    "rasen/changes/change-dirty",
+    "rasen/changes/change-no-evidence",
+    "rasen/changes/change-non-member",
+    "rasen/changes/change-zh-renamed",
+    "rasen/specs",
+    "rasen/specs/alpha-only-capability",
+    "rasen/specs/shared-capability",
+    "rasen/specs/中文能力"
+  ],
+  "otherFlatRefs": [],
+  "refs": [
+    {
+      "ref": "refs/heads/master",
+      "kind": "local-branch",
+      "classification": "flat",
+      "checkedOut": true
+    },
+    {
+      "ref": "refs/remotes/origin/HEAD",
+      "kind": "remote-tracking",
+      "classification": "flat",
+      "checkedOut": false,
+      "notCandidateReason": "remote-tracking refs are reported for completeness and are never migration candidates"
+    },
+    {
+      "ref": "refs/remotes/origin/legacy-feature",
+      "kind": "remote-tracking",
+      "classification": "flat",
+      "checkedOut": false,
+      "notCandidateReason": "remote-tracking refs are reported for completeness and are never migration candidates"
+    },
+    {
+      "ref": "refs/remotes/origin/master",
+      "kind": "remote-tracking",
+      "classification": "flat",
+      "checkedOut": false,
+      "notCandidateReason": "remote-tracking refs are reported for completeness and are never migration candidates"
+    }
+  ],
+  "inventoryFailures": []
+}
+
+[exit code: 0]

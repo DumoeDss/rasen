@@ -1,0 +1,6 @@
+$ (cd <temp>/copy-enriched) rasen store migrate-layout rasen-store --mapping migration-mapping-bad.yaml
+migration_mapping_invalid: Mapping file migration-mapping-bad.yaml cannot be applied:
+  - changes.change-alpha-recorded assigns '22222222-2222-4222-8222-222222222222' but the Change records identity '11111111-1111-4111-8111-111111111111' (mapping-contradicts-recorded-identity)
+  fix: Correct the mapping file inside the Store worktree and re-run the plan.
+
+[exit code: 1]

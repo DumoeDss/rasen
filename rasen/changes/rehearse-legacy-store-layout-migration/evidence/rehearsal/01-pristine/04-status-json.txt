@@ -1,0 +1,10 @@
+$ (cd <temp>/copy-pristine) rasen store migrate-layout rasen-store --status --json
+{
+  "storeId": "rasen-store",
+  "storeUid": "f35acc7d-e088-4186-9ad6-b4b770649b0b",
+  "ref": "refs/heads/master",
+  "createdPaths": [],
+  "publicationComplete": false
+}
+
+[exit code: 0]

@@ -1,0 +1,22 @@
+$ (cd <temp>/copy-pristine) rasen store register <temp>/copy-pristine --json
+{
+  "store": {
+    "id": "rasen-store",
+    "root": "<temp>\\copy-pristine",
+    "metadata_path": "<temp>\\copy-pristine\\.rasen-store\\store.yaml"
+  },
+  "registry": {
+    "path": "<temp>\\rasen-home\\stores\\registry.yaml",
+    "registered": true,
+    "already_registered": false
+  },
+  "git": {
+    "is_repository": true,
+    "initialized": false,
+    "committed": false
+  },
+  "created_files": [],
+  "status": []
+}
+
+[exit code: 0]

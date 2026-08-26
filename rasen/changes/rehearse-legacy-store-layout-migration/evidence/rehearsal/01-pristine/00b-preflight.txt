@@ -1,0 +1,28 @@
+### MANDATORY PRE-FLIGHT (tasks.md 1.4) — stage 1 pristine
+$ rasen store list --json   # under redirection
+{
+  "stores": [
+    {
+      "id": "rasen-store",
+      "root": "<temp>\\copy-pristine",
+      "uid": "f35acc7d-e088-4186-9ad6-b4b770649b0b",
+      "type": "store"
+    }
+  ],
+  "status": []
+}
+
+$ h_preflight
+PREFLIGHT-OK: 1 registered entr(ies), all inside <temp>
+  rasen-store [uid f35acc7d-e088-4186-9ad6-b4b770649b0b] -> <temp>\copy-pristine
+[preflight exit code: 0]
+
+### The redirected registry file itself
+$ cat <temp>/rasen-home/stores/registry.yaml
+version: 2
+stores:
+  f35acc7d-e088-4186-9ad6-b4b770649b0b:
+    backend:
+      type: git
+      local_path: <temp>\copy-pristine
+    id: rasen-store

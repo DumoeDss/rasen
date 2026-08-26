@@ -1,0 +1,42 @@
+### Post-fix GREEN run of the complete guard suite (corrected test)
+#
+# Tree: <temp>/pinned-fixed -- git archive HEAD (9f9f68cf) + ONLY this
+# change's five src files, own dist/, node_modules junctioned. No sibling work.
+#
+# Command (from <temp>/pinned-fixed):
+#   VITEST_MAX_WORKERS=1 npx vitest run test/core/store/layout-migration-empty-store.test.ts --reporter=verbose
+#
+# Result: 19 passed (19) in 92.47s.
+#
+# This supersedes an earlier post-fix run whose invariant table carried a
+# fixture defect; see the correction in 05-stale-text-sweep.md.
+
+
+ RUN  v3.2.6 C:/Users/Sayo/AppData/Local/Temp/rasen-g2/pinned-fixed
+
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — an empty legacy flat Store is not a dead end > reproduces the dead end and then completes a trivial migration 4178ms
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — an empty legacy flat Store is not a dead end > retires the empty flat tree once published, idempotently 4203ms
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — an empty legacy flat Store is not a dead end > still refuses an empty-blocker gate it should refuse: one unresolved item blocks apply 3516ms
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — a Store with no permanent identity says so > refuses and names the identity repair when nothing but Changes could carry the block 3263ms
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — a Store with no permanent identity says so > does not offer the mapping file as the escape hatch for a blocked item 2968ms
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — a Store with no permanent identity says so > names the missing identity even when the Store is completely empty 2215ms
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — a Store with no permanent identity says so > keeps blocking every active Change when the Store has no identity 2650ms
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — through the registered-store command handler > drives preview -> apply -> status -> retire against a registered empty Store 6285ms
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — through the registered-store command handler > names the blocking precondition in the JSON payload, with no token 4504ms
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — through the registered-store command handler > reports a refusal instead of "Ready to apply" when the plan cannot be applied 5611ms
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — refusals name the real cause and a repair that works > sends a non-member RECORDED owner to membership, not to the mapping file that refuses it 2286ms
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — refusals name the real cause and a repair that works > blames the item name, not the project id, when the name cannot address a v2 destination 2248ms
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — every ref carrying the flat layout is reported > lists a remote-tracking ref that still carries the flat layout, and says it is migrated elsewhere 4905ms
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — the apply gate and the apply token agree > never reports readiness it cannot back — empty Store 4460ms
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — the apply gate and the apply token agree > never reports readiness it cannot back — Store with content and no active Changes 5546ms
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — the apply gate and the apply token agree > never reports readiness it cannot back — empty Store with no permanent identity 4429ms
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — the apply gate and the apply token agree > never reports readiness it cannot back — Store with content, no active Changes, and no permanent identity 4273ms
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — the apply gate and the apply token agree > never reports readiness it cannot back — Store with an unresolvable Change 5078ms
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store adopt — a refusal renders as a diagnostic on the human path too > names the legacy-layout refusal and its fix instead of throwing to the top level 969ms
+
+ Test Files  1 passed (1)
+      Tests  19 passed (19)
+   Start at  15:38:07
+   Duration  92.47s (transform 7.98s, setup 111ms, collect 17.68s, tests 73.59s, environment 0ms, prepare 345ms)
+
+EXIT=0

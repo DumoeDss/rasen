@@ -100,6 +100,12 @@ const KNOWN_SLOW_TEST_WEIGHTS_MS: Record<string, number> = {
   // whereas overestimating it only costs balance. Do not lower this to the
   // faster observation without re-measuring on a quiesced tree.
   'test/core/store/store-aggregate-query.test.ts': 314950,
+  // Eleven real-Git legacy flat Stores, several driven through the shipped
+  // `store migrate-layout` command handler rather than the Module directly
+  // (rehearse-legacy-store-layout-migration, task 4.3). Measured at 91760ms
+  // solo on Windows with VITEST_MAX_WORKERS=1; the source-size fallback would
+  // have guessed ~1600ms, which is the skew this table exists to prevent.
+  'test/core/store/layout-migration-empty-store.test.ts': 92000,
   // `runCLI` subprocess per case, same underestimated class as the two
   // `workspace-*` CLI entries above (store-issue-resources, task 8.5).
   'test/commands/store-issue-cli.test.ts': 76790,

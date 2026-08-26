@@ -1,0 +1,31 @@
+$ (cd <temp>/copy-postfix) rasen store adopt <temp>/probe-project --to rasen-store --target-line main --dry-run --json
+{
+  "adopt": {
+    "project_id": "(unassigned)",
+    "store": "rasen-store",
+    "store_root": "<temp>\\copy-postfix",
+    "source": "<temp>\\probe-project",
+    "specs": [],
+    "changes": [],
+    "archive_mode": "move",
+    "archive_moves": [],
+    "uncommitted": [],
+    "suggested_commits": [
+      {
+        "repoRoot": "<temp>\\probe-project",
+        "command": "git -C <temp>\\probe-project add rasen && git -C <temp>\\probe-project commit -m \"chore: adopt planning into store rasen-store\"",
+        "purpose": "Source repo: record the removed planning dirs and the new store: pointer."
+      },
+      {
+        "repoRoot": "<temp>\\copy-postfix",
+        "command": "git -C <temp>\\copy-postfix add rasen .rasen-store && git -C <temp>\\copy-postfix commit -m \"chore: adopt probe-project planning\"",
+        "purpose": "Store repo: record the adopted specs/changes and the ownership manifest."
+      }
+    ],
+    "dry_run": true,
+    "resumed": false
+  },
+  "status": []
+}
+
+[exit code: 0]

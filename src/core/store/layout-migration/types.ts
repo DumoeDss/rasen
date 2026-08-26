@@ -68,7 +68,14 @@ export type MigrationItemKind =
   | 'archive-entry'
   | 'design-doc'
   | 'membership-record'
-  | 'adoptions-manifest';
+  | 'adoptions-manifest'
+  /**
+   * The Store's own metadata, carried as a plan item so a STORE-LEVEL refusal
+   * has something to attach to when the Store holds no content item that could
+   * carry it. Only ever emitted `blocked`, so it never reaches staging,
+   * publication, or the retirement set.
+   */
+  | 'store-metadata';
 
 export type EvidenceClass =
   | 'E1-recorded-identity'
@@ -104,7 +111,11 @@ export type BlockedReason =
   | 'store-identity-missing'
   | 'unrecordable-catalog-field'
   | 'target-line-catalog-conflict'
-  | 'dirty-source';
+  | 'dirty-source'
+  /** No ref is checked out in the invoking Store worktree. */
+  | 'ref-not-checked-out'
+  /** The checked-out ref has no commit, so there is no state to verify against. */
+  | 'ref-unborn';
 
 export type SourceLifecycle = 'active-change' | 'archive-entry';
 

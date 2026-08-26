@@ -1,0 +1,9 @@
+$ (cd <temp>/copy-clone) rasen store upgrade-identity rasen-store
+Store identity plan (preview, nothing written): rasen-store
+Permanent identity: 40ff165f-37dc-4bf6-86f3-0e6ef12bd62a
+Location: ~\AppData\Local\Temp\rasen-g2\copy-clone
+
+  - <temp>\copy-clone\.rasen-store\store.yaml: Record permanent identity 40ff165f-37dc-4bf6-86f3-0e6ef12bd62a in the store's own metadata.
+  - the machine store registry: Re-key the machine store registry by permanent identity.
+
+[exit code: 0]
