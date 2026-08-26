@@ -1,0 +1,43 @@
+# Post-fix verification against the REAL store (2026-08-27)
+# Store: issue-registry f76edc31-229a-42bc-a5c7-848021eeb2da
+# Pair:  planning worktree E:/rasen-pairs/dmpi on
+#        change/line-0.2/6ca78b98-.../document-multi-project-issues
+# CLI:   node bin/rasen.js at dev/0.2.0 f8ce860f, REAL machine registry (not the harness)
+
+==========================================================================
+REFUSAL 1 (was: planning_selection_conflict -- project-binding projectId
+'<store-root-config-id>' conflicts with planning-worktree-marker '<partition-id>')
+$ cd E:/rasen-pairs/dmpi && rasen list
+--------------------------------------------------------------------------
+Using Rasen root: issue-registry (E:\rasen-pairs\dmpi)
+Changes:
+  document-multi-project-issues     0/3 tasks     6d ago
+EXIT=0
+
+==========================================================================
+REFUSAL 2 (was: Project '<store-root-config-id>' is not in the selected
+Store's v2 catalog -- the init-minted root projectId admitted as a fact)
+$ cd <store main checkout> && rasen list
+--------------------------------------------------------------------------
+✖ Error: This operation requires one project; --store alone selects only the Store aggregate.
+Fix: Add --project <project-id>.
+EXIT=1
+NOTE: this is now the CORRECT refusal. The Store checkout no longer
+contributes a project-binding projectId fact (a Store aggregate is not a
+project), so the command asks for a project instead of inventing one.
+
+==========================================================================
+REFUSAL 3 (was: Project '<partition-id>' is not planning-bound in the
+selected Store -- the gate read planningBinding.state, which the pair flow
+never writes)
+$ cd <store main checkout> && rasen list --project 6ca78b98-777f-45bc-8d9b-b84c34e1a531
+--------------------------------------------------------------------------
+Using Rasen root: project 6ca78b98-777f-45bc-8d9b-b84c34e1a531 (E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-issue-store)
+Changes:
+  document-multi-project-issues     0/3 tasks     6d ago
+EXIT=0
+
+==========================================================================
+All three refusals reproduced on 2026-08-26 against this same pair are
+gone. Scope now resolves from a real Store-v2 planning worktree, which is
+the capability the retention waiver was forced by.
