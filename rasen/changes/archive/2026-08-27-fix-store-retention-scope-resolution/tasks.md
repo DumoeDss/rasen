@@ -31,8 +31,8 @@
 ## 6. Dogfood pilot and delivery
 
 - [x] 6.1 `pnpm build`, reinstall the dogfood CLI (global dev-local or tarball harness), confirm `rasen --version` carries the new stamp
-- [ ] 6.2 Operator-gated pilot: archive `document-multi-project-issues` through the `dmpi` pair with the official finalization engine (store-side merge, planning branch merge, worktree cleanup per protocol)
-- [ ] 6.3 Record the corrected elftia outcome: both `document-skills-xlsx-*` Changes were ALREADY archived on 2026-08-25 (`outcome: landed`, schemaVersion 2, spec sync applied, code merge recorded) via the owner-waiver route — the waiver covered only the retention step, and the official finalization engine did the archiving. Nothing to re-archive. What this fix removes is the need for that waiver on the NEXT such delivery; verify a post-fix `retain prepare` succeeds from a real pair rather than claiming a retroactive repair
+- [x] 6.2 Operator-gated pilot: archive `document-multi-project-issues` through the `dmpi` pair with the official finalization engine (store-side merge, planning branch merge, worktree cleanup per protocol)
+- [x] 6.3 Record the corrected elftia outcome: both `document-skills-xlsx-*` Changes were ALREADY archived on 2026-08-25 (`outcome: landed`, schemaVersion 2, spec sync applied, code merge recorded) via the owner-waiver route — the waiver covered only the retention step, and the official finalization engine did the archiving. Nothing to re-archive. What this fix removes is the need for that waiver on the NEXT such delivery; verify a post-fix `retain prepare` succeeds from a real pair rather than claiming a retroactive repair
 
 ### Verification notes (2026-08-26)
 
