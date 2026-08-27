@@ -511,6 +511,43 @@ function followupSelection(ref: StablePlanningRef): PlanningSelection {
   });
 }
 
+/**
+ * `split_planning_truth` is a correct refusal that was still unactionable: it named
+ * neither the command that resolves it nor the directory that caused it, so an
+ * operator meeting it had to read this file to get unstuck (measured on a real
+ * dogfood archive, 2026-08-27).
+ *
+ * The root reported is the one the resolver TESTED, which is not necessarily the
+ * working directory. A linked worktree can still carry planning content after the
+ * main checkout has been adopted, and with no path in the message that reads as the
+ * identical refusal repeating for no reason.
+ *
+ * Both directions are named because either is a legitimate resolution and this seam
+ * cannot know which one is intended. Naming them adds no force and no partial write;
+ * the gate itself is unchanged.
+ */
+function splitPlanningTruthError(
+  action: 'finalization' | 'creation',
+  splitRoot: string | null,
+  ref: StablePlanningRef
+): PlanningScopeError {
+  const storeId = 'storeId' in ref ? ref.storeId : '<store-id>';
+  const projectId = 'projectId' in ref ? ref.projectId : '<project-id>';
+  const where = splitRoot === null ? '' : ` Local planning content is at ${splitRoot}.`;
+  const from = splitRoot === null ? '' : ` from ${splitRoot}`;
+  return new PlanningScopeError(
+    'split_planning_truth',
+    `Store and project-local planning both exist; Change ${action} is blocked.${where}`,
+    {
+      target: 'project.planning',
+      fix:
+        `Consolidate on one truth, then retry: run 'rasen store adopt --to ${storeId}'${from} ` +
+        `to move that planning into the Store, or 'rasen store eject ${projectId} --from ${storeId}' ` +
+        `to resolve the split the other way.`,
+    }
+  );
+}
+
 export class StorePlanningResolver implements StorePlanning {
   constructor(private readonly dependencies: StorePlanningDependencies) {}
 
@@ -2218,10 +2255,10 @@ export class StorePlanningResolver implements StorePlanning {
       // their existing flat archive location through the same intent, so they
       // deliberately fall through this block without minting any v2 identity.
       if (splitTruth) {
-        throw new PlanningScopeError(
-          'split_planning_truth',
-          'Store and project-local planning both exist; Change finalization is blocked.',
-          { target: 'project.planning' }
+        throw splitPlanningTruthError(
+          'finalization',
+          discoveredProjectRoot ?? selectedProjectRoot,
+          ref
         );
       }
       if (!ref.targetLineId) {
@@ -2265,10 +2302,10 @@ export class StorePlanningResolver implements StorePlanning {
         );
       }
       if (splitTruth) {
-        throw new PlanningScopeError(
-          'split_planning_truth',
-          'Store and project-local planning both exist; Change creation is blocked.',
-          { target: 'project.planning' }
+        throw splitPlanningTruthError(
+          'creation',
+          discoveredProjectRoot ?? selectedProjectRoot,
+          ref
         );
       }
       if (ref.mode === 'store-project') {
