@@ -1,0 +1,53 @@
+{
+  "change": "fix-store-workspace-pair-transactions",
+  "archivedAt": "2026-08-26T13:49:38.933Z",
+  "codeCommit": "f8ce860f9d8301d6b1098a6975d815c265d5e918",
+  "planningBranch": "chore/archive-store-v2-retention-tranche",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/baseline-red-parallel-store-suite.txt",
+      "sha256": "e12924e6c2a1ac319505e111bc1c72347b4ca7b02c6fd138546e29d65710d370"
+    },
+    {
+      "path": "evidence/baseline-red-solo.txt",
+      "sha256": "c97279ada36db9b35a4a5590aa06bc89a500b9c787d5f28805fea79e7a285e30"
+    },
+    {
+      "path": "evidence/dogfood-real-cli.txt",
+      "sha256": "1ad2fd41b6df8e3cdd267f61eb74552d382fe4789d4bca7334fbf1dc99b6a92b"
+    },
+    {
+      "path": "evidence/mutation-proof-2.3.txt",
+      "sha256": "e5d54a43d23683074f4200a13de6ffc9f348d93608229899058359406e1a5828"
+    },
+    {
+      "path": "evidence/postfix-cli-surface.txt",
+      "sha256": "4af54e906d6f798f02a265933bf930b7916e3cbc81fe705e6518e13dc96070b2"
+    },
+    {
+      "path": "evidence/postfix-inversion-defect-pins-red.txt",
+      "sha256": "772e5869fdafb39a6ead88ae753b9431f17ee014fad9693111cb7a2413dcc917"
+    },
+    {
+      "path": "evidence/postfix-store-suite.txt",
+      "sha256": "3693195702f60533658ae650969629d1e95d6a722ce005180c8ce060912200e4"
+    },
+    {
+      "path": "evidence/postfix-workspace-neighbours.txt",
+      "sha256": "444afd51543bc6ffa3dd852bbdd82af0004020fcaa0fdd7b6737896b988f2c0b"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "7b659a41b7a211426cd01df2dbeb5ca4332cae4f29b0c4bcde4041f7a3cee277"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

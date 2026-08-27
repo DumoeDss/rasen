@@ -1,0 +1,89 @@
+{
+  "change": "fix-store-retention-scope-resolution",
+  "archivedAt": "2026-08-27T04:11:28.666Z",
+  "codeCommit": "120203a9df79443fc40286cca4b1e978f4b2b4c7",
+  "planningBranch": "chore/archive-store-v2-retention-tranche",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/fixer-1/a1-green-after.txt",
+      "sha256": "e746f8b8f72ecf3c6fa31c3492c40e34f6612ba61ff02d60cba8f0d998515c08"
+    },
+    {
+      "path": "evidence/fixer-1/a1-red-before.txt",
+      "sha256": "b716d0a1040c9cd995fb62f93fb484497f7501a76e6aa2273ab63d8faee630c3"
+    },
+    {
+      "path": "evidence/fixer-1/a2-01-against-shipped-code.txt",
+      "sha256": "29bff28f0a79a5ee57e786489942ae3c6a637550820e77cffa07266337b8ff25"
+    },
+    {
+      "path": "evidence/fixer-1/a2-02-after-restructure.txt",
+      "sha256": "813637d41be6a2444e9dba7543fdb94f4c08061d3b09441b2ede4c3643223261"
+    },
+    {
+      "path": "evidence/fixer-1/a2-03-mutation-option-a-red.txt",
+      "sha256": "15ec9374a0c48c191ee0c1b9fefd6d0f3597b072cafc90daa4d8321f7bfad227"
+    },
+    {
+      "path": "evidence/fixer-1/a2-04-after-revert-green.txt",
+      "sha256": "5e89ee1524de639c9c933c4e806237fe6fc4c7dc81b86e23b53136c342e40dd8"
+    },
+    {
+      "path": "evidence/fixer-1/eslint.txt",
+      "sha256": "cc258d839e50d5e0cf220528399d5c29a6bcc5c3a9ee2616a915627e0363d91d"
+    },
+    {
+      "path": "evidence/fixer-1/mutation-proof-a2.txt",
+      "sha256": "972b1e38d4b50c7aea9130cf7a53e861615a5ee85945e5c67846ebb4773d4fcb"
+    },
+    {
+      "path": "evidence/fixer-1/post-fix-store-suites.txt",
+      "sha256": "d857e9f9647dcaba1260cf573c85a865f5c2a410254977ac32bcb0b5baf81189"
+    },
+    {
+      "path": "evidence/fixer-1/rasen-validate-strict.txt",
+      "sha256": "c4b30aa8ae85cc3ec540b20b9a21497356ba5b8908a4c2a95da15afa49ac8603"
+    },
+    {
+      "path": "evidence/fixer-1/rasen-validate.txt",
+      "sha256": "c4b30aa8ae85cc3ec540b20b9a21497356ba5b8908a4c2a95da15afa49ac8603"
+    },
+    {
+      "path": "evidence/fixer-1/tsc-noemit.txt",
+      "sha256": "cc258d839e50d5e0cf220528399d5c29a6bcc5c3a9ee2616a915627e0363d91d"
+    },
+    {
+      "path": "evidence/group-6/6.1-cli-reinstall.txt",
+      "sha256": "9d23f3f7a71fed081585a52bb97ac59a2c3906a8f064698c7119546e88e31861"
+    },
+    {
+      "path": "evidence/group-6/6.2-pilot-completed.md",
+      "sha256": "572df24a1ee2a620f7b6f074f4b710a686d0359a61818805607c1c7750f74bfa"
+    },
+    {
+      "path": "evidence/group-6/6.3-elftia-outcome-and-post-fix-verification.md",
+      "sha256": "7875b5a80804447b55122c05c090fcbe074360b50fd07c27c2943453c41c8d20"
+    },
+    {
+      "path": "evidence/group-6/6.3-three-refusals-post-fix.txt",
+      "sha256": "35808e66f6f4aad06e9897a732f617fb8a7a4ffe1ab097996a6e5c6653497168"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "74d8c9b093ffcadc7f118331820b1bc696c4e9df96fb1be607f123b147d2aa54"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "3a94babe6c22f0919ad84d9461647dc1a0ff013227f1e4e8fe6b7e46952e1185"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

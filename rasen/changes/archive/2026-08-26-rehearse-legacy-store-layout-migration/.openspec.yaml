@@ -1,0 +1,7 @@
+schema: spec-driven
+created: 2026-08-26
+quality:
+  files:
+    - evidence/guards/08-build-and-scope-audit.md
+  metrics:
+    evidence/guards/08-build-and-scope-audit.md: 0
