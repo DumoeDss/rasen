@@ -827,6 +827,38 @@ describe('StorePlanning.open', () => {
     ).rejects.toMatchObject({ diagnostic: { code: 'split_planning_truth' } });
   });
 
+  // A refusal that names the problem and not the repair costs an operator a
+  // source dive: this exact message stopped a real dogfood archive on 2026-08-27,
+  // and the repair (`rasen store adopt`) was not guessable from it. The root it
+  // names matters just as much -- the blocked directory is the one the resolver
+  // TESTED, which is not necessarily the cwd, so following the repair on one root
+  // and meeting the same refusal on a linked worktree stays diagnosable.
+  it('names the offending root and a workable repair when split truth blocks a mutation', async () => {
+    const roots = storeFixture({ localPlanning: true });
+    const planning = resolver(roots);
+    const selection = { project: 'project-a', targetLine: 'line-0.2' } as const;
+
+    for (const intent of ['create-change', 'finalize-change'] as const) {
+      const error = await planning
+        .open({ intent, startPath: roots.projectRoot, selection })
+        .then(
+          () => {
+            throw new Error(`${intent} was admitted; split truth must stay fail-closed`);
+          },
+          (caught: { diagnostic?: { code?: string; message?: string; fix?: string } }) => caught
+        );
+
+      expect(error.diagnostic?.code).toBe('split_planning_truth');
+      // The root holding the local planning content is named.
+      expect(error.diagnostic?.message).toContain(roots.projectRoot);
+      // And a repair that actually resolves it, in both directions.
+      expect(error.diagnostic?.fix).toBeTruthy();
+      expect(error.diagnostic?.fix).toContain('store adopt');
+      expect(error.diagnostic?.fix).toContain('store eject');
+      // Fail-closed is not traded away for legibility.
+      expect(error.diagnostic?.fix).not.toMatch(/--force/);
+    }
+  });
   it('reports every project claimant and actionable pruning for duplicate identities', async () => {
     const roots = storeFixture();
     const missingRoot = path.join(
