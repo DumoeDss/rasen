@@ -78,6 +78,18 @@ const KNOWN_SLOW_TEST_WEIGHTS_MS: Record<string, number> = {
   // on a quiesced tree -- under-entering a heavy file skews the whole shard,
   // over-entering only costs balance.
   'test/core/store/workspace-repreparation.test.ts': 169000,
+  // Neither of the next two had an entry at all, so both were weighted from
+  // source size -- the exact skew this table exists to prevent. Recorded after
+  // investigating windows-pwsh-shard-2 (2026-08-27): 19KB of source implied
+  // ~1.9s for a suite measured at 67.3s solo (~35x under), and 74KB implied
+  // ~7.4s for one CI measured at 37.1s (~5x under). Entered as measured.
+  //
+  // Recorded honestly: shard imbalance was NOT the defect behind that
+  // investigation. The three shards measured balanced (231 files each,
+  // 25/24/23 min), and the failures were Windows teardown/FS races. These
+  // entries remove latent skew; they do not fix those races.
+  'test/core/archive-consumer-integration.test.ts': 67280,
+  'test/core/session-host/host.test.ts': 37130,
   // Real Git fixture (`createStoreWorkspaceFixture`) driven through both the
   // in-process handlers and a `runCLI` subprocess per test (store-issue-resources).
   'test/core/management-api/stores.test.ts': 199980,
