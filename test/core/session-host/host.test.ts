@@ -15,6 +15,7 @@ import type {
 } from '../../../src/core/session-host/backend.js';
 import { asProcessRef } from '../../../src/core/session-host/process-scope.js';
 import type { ProcessScope } from '../../../src/core/session-host/process-scope.js';
+import { cleanupTempPathAsync } from '../../helpers/temp-cleanup.js';
 import { createSessionHost } from '../../../src/core/session-host/host.js';
 import {
   createSessionHostRegistry,
@@ -31,8 +32,15 @@ function tempRoot(): { root: string; cwd: string; stateDir: string } {
   return { root, cwd, stateDir: path.join(root, 'state') };
 }
 
-afterEach(() => {
-  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
+// A bare `fs.rmSync` here failed CI with
+// `ENOTEMPTY: directory not empty, rmdir '...\state\session-host'`: this suite
+// starts real session hosts, and a still-dying child can hold or repopulate the
+// tree for a moment after the test returns. `cleanupTempPathAsync` drives its own
+// awaited backoff over exactly that transient set (EPERM/EBUSY/ENOTEMPTY/EMFILE/
+// ENFILE) because `fs.rmSync`'s own maxRetries does not reliably back off on
+// Windows. A genuinely stuck handle still throws rather than hanging.
+afterEach(async () => {
+  for (const root of roots.splice(0)) await cleanupTempPathAsync(root);
 });
 
 function prepareTestTransport(

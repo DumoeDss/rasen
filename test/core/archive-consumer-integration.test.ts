@@ -51,6 +51,49 @@ interface ConsumerSnapshot {
   accounting: Record<string, unknown>;
 }
 
+/**
+ * `expect(plan.complete).toBe(true)` renders as `expected false to be true` and
+ * names nothing, which is what made a CI-only failure of this suite impossible to
+ * root-cause from the log (windows-pwsh-shard-2, 2026-08-27). `complete` is a
+ * conjunction of four inputs and the plan carries all of them -- including a
+ * blocker list with an operation, a path and an errno -- in the very payload that
+ * was already parsed. This reports the failing input(s) instead of a bare boolean,
+ * so the next occurrence identifies itself.
+ */
+interface ArchivePlanCompletionView {
+  complete?: boolean;
+  preconditions?: { source?: string; target?: string };
+  cleaner?: { classification?: { complete?: boolean } };
+  blockers?: Array<{
+    operation?: string;
+    path?: string;
+    code?: string;
+    message?: string;
+  }>;
+}
+
+function planCompletion(plan: ArchivePlanCompletionView | undefined): string {
+  if (plan?.complete) return 'complete';
+  const reasons: string[] = [];
+  const source = plan?.preconditions?.source;
+  const target = plan?.preconditions?.target;
+  if (source !== 'directory') reasons.push(`preconditions.source=${String(source)}`);
+  if (target !== 'absent') reasons.push(`preconditions.target=${String(target)}`);
+  if (plan?.cleaner?.classification?.complete === false) {
+    reasons.push('cleaner.classification.complete=false');
+  }
+  for (const blocker of plan?.blockers ?? []) {
+    reasons.push(
+      `blocker[${String(blocker.operation)}]${
+        blocker.code ? ` ${blocker.code}` : ''
+      } ${String(blocker.path)}: ${String(blocker.message)}`
+    );
+  }
+  return reasons.length > 0
+    ? reasons.join('; ')
+    : 'incomplete, but the plan reported no failing precondition or blocker';
+}
+
 describe('direct and generated archive consumers share one engine transaction', () => {
   let root: string;
   let originalCwd: string;
@@ -234,9 +277,9 @@ describe('direct and generated archive consumers share one engine transaction', 
         ...generatedArgv.savedPreview,
       ]);
       const previewPayload = JSON.parse(logs.at(-1) ?? '{}') as {
-        archive: { planToken: string; plan: { complete: boolean } };
+        archive: { planToken: string; plan: ArchivePlanCompletionView };
       };
-      expect(previewPayload.archive.plan.complete).toBe(true);
+      expect(planCompletion(previewPayload.archive.plan)).toBe('complete');
       token = previewPayload.archive.planToken;
       logs.length = 0;
       generatedArgv = createGeneratedArchiveConsumerArgv(consumer, {
@@ -503,14 +546,13 @@ describe('direct and generated archive consumers share one engine transaction', 
       const preview = JSON.parse(logs.at(-1) ?? '{}') as {
         archive: {
           planToken: string;
-          plan: {
-            complete: boolean;
+          plan: ArchivePlanCompletionView & {
             sidecar: { status: string };
             specActions: unknown[];
           };
         };
       };
-      expect(preview.archive.plan.complete).toBe(true);
+      expect(planCompletion(preview.archive.plan)).toBe('complete');
       expect(preview.archive.plan.sidecar.status).toBe(
         variant.absentIntent ? 'absent' : 'valid'
       );
