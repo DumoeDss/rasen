@@ -43,7 +43,7 @@ function storeSpace(
   return { type: 'store', id, name: id, root, members };
 }
 
-function scriptedListings(...snapshots: SpaceEntry[][]) {
+function scriptedListings(...snapshots: Array<SpaceEntry[] | Error>) {
   let calls = 0;
   return {
     get calls() {
@@ -52,9 +52,26 @@ function scriptedListings(...snapshots: SpaceEntry[][]) {
     list: async () => {
       const snapshot = snapshots[Math.min(calls, snapshots.length - 1)] ?? [];
       calls += 1;
+      if (snapshot instanceof Error) throw snapshot;
       return { spaces: snapshot };
     },
   };
+}
+
+function writeMembershipResultCli(
+  entry: string,
+  result: { projectId: string; projectRoot: string; storeId: string; storeRoot: string }
+): void {
+  const payload = JSON.stringify({
+    project: { id: result.projectId, root: result.projectRoot },
+    target: { id: result.storeId, root: result.storeRoot },
+    membership: { project_id: result.projectId },
+  });
+  fs.writeFileSync(
+    entry,
+    `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(payload)});\n`,
+    'utf8'
+  );
 }
 
 describe('createSpaceCreator explicit operations', () => {
@@ -259,6 +276,42 @@ describe('createSpaceCreator explicit operations', () => {
     expect(readArgvLog(argvLog)).toEqual([]);
   });
 
+  it('fails closed on a rejected membership pre-read and restores the shared slot', async () => {
+    const projectRoot = path.join(dir, 'pre-read-project');
+    const storeRoot = path.join(dir, 'pre-read-store');
+    fs.mkdirSync(projectRoot, { recursive: true });
+    fs.mkdirSync(storeRoot, { recursive: true });
+    process.env.RASEN_FAKE_PROJECT_ID = 'project-id';
+    process.env.RASEN_FAKE_STORE_ROOT = storeRoot;
+    const pre = [projectSpace('project-id', projectRoot), storeSpace('team', storeRoot)];
+    const post = [
+      projectSpace('project-id', projectRoot),
+      storeSpace('team', storeRoot, [
+        { projectId: 'project-id', name: 'Project', root: projectRoot },
+      ]),
+    ];
+    const catalog = scriptedListings(new Error('pre-read unavailable'), pre, post);
+    const create = createSpaceCreator({
+      cliEntryOverride: fakeCliEntry,
+      listSpacesOverride: catalog.list,
+    });
+    const body = { op: 'add-project-to-store', projectId: 'project-id', storeId: 'team' };
+
+    const rejected = await create(body);
+    expect(rejected.ok).toBe(false);
+    if (!rejected.ok) {
+      expect(rejected.status).toBe(500);
+      expect(rejected.code).toBe('cli_protocol_error');
+    }
+    expect(catalog.calls).toBe(1);
+    expect(readArgvLog(argvLog)).toEqual([]);
+
+    const recovered = await create(body);
+    expect(recovered.ok && recovered.status).toBe(200);
+    expect(catalog.calls).toBe(3);
+    expect(readArgvLog(argvLog)).toHaveLength(1);
+  });
+
   it('uses exact inert argv, fresh pre/post reads, normalized Project identity, and a typed 200 Store result', async () => {
     const projectRoot = path.join(dir, 'Project & [one]');
     const storeRoot = path.join(dir, 'Store (team)');
@@ -348,6 +401,56 @@ describe('createSpaceCreator explicit operations', () => {
 
   });
 
+  it.each(['Project', 'Store'] as const)(
+    'fails closed on a mismatched %s root and restores the shared slot',
+    async (mismatchedRoot) => {
+      const projectRoot = path.join(dir, 'root-correlation-project');
+      const storeRoot = path.join(dir, 'root-correlation-store');
+      const wrongProjectRoot = path.join(dir, 'wrong-project-root');
+      const wrongStoreRoot = path.join(dir, 'wrong-store-root');
+      fs.mkdirSync(projectRoot, { recursive: true });
+      fs.mkdirSync(storeRoot, { recursive: true });
+      const pre = [projectSpace('project-id', projectRoot), storeSpace('team', storeRoot)];
+      const post = [
+        projectSpace('project-id', projectRoot),
+        storeSpace('team', storeRoot, [
+          { projectId: 'project-id', name: 'Project', root: projectRoot },
+        ]),
+      ];
+      const catalog = scriptedListings(pre, pre, post);
+      const resultCli = path.join(dir, 'membership-result-cli.mjs');
+      const correctResult = {
+        projectId: 'project-id',
+        projectRoot,
+        storeId: 'team',
+        storeRoot,
+      };
+      writeMembershipResultCli(resultCli, {
+        ...correctResult,
+        projectRoot: mismatchedRoot === 'Project' ? wrongProjectRoot : projectRoot,
+        storeRoot: mismatchedRoot === 'Store' ? wrongStoreRoot : storeRoot,
+      });
+      const create = createSpaceCreator({
+        cliEntryOverride: resultCli,
+        listSpacesOverride: catalog.list,
+      });
+      const body = { op: 'add-project-to-store', projectId: 'project-id', storeId: 'team' };
+
+      const mismatch = await create(body);
+      expect(mismatch.ok).toBe(false);
+      if (!mismatch.ok) {
+        expect(mismatch.status).toBe(500);
+        expect(mismatch.code).toBe('cli_protocol_error');
+      }
+      expect(catalog.calls).toBe(1);
+
+      writeMembershipResultCli(resultCli, correctResult);
+      const recovered = await create(body);
+      expect(recovered.ok && recovered.status).toBe(200);
+      expect(catalog.calls).toBe(3);
+    }
+  );
+
   it('fails closed when the fresh post-read shows zero or multiple normalized member identities', async () => {
     const projectRoot = path.join(dir, 'postcondition-project');
     const storeRoot = path.join(dir, 'postcondition-store');
@@ -387,6 +490,42 @@ describe('createSpaceCreator explicit operations', () => {
       expect(duplicate.code).toBe('cli_protocol_error');
     }
     expect(duplicatedCatalog.calls).toBe(2);
+  });
+
+  it('fails closed on a rejected membership post-read and restores the shared slot', async () => {
+    const projectRoot = path.join(dir, 'post-read-project');
+    const storeRoot = path.join(dir, 'post-read-store');
+    fs.mkdirSync(projectRoot, { recursive: true });
+    fs.mkdirSync(storeRoot, { recursive: true });
+    process.env.RASEN_FAKE_PROJECT_ID = 'project-id';
+    process.env.RASEN_FAKE_STORE_ROOT = storeRoot;
+    const pre = [projectSpace('project-id', projectRoot), storeSpace('team', storeRoot)];
+    const post = [
+      projectSpace('project-id', projectRoot),
+      storeSpace('team', storeRoot, [
+        { projectId: 'project-id', name: 'Project', root: projectRoot },
+      ]),
+    ];
+    const catalog = scriptedListings(pre, new Error('post-read unavailable'), pre, post);
+    const create = createSpaceCreator({
+      cliEntryOverride: fakeCliEntry,
+      listSpacesOverride: catalog.list,
+    });
+    const body = { op: 'add-project-to-store', projectId: 'project-id', storeId: 'team' };
+
+    const rejected = await create(body);
+    expect(rejected.ok).toBe(false);
+    if (!rejected.ok) {
+      expect(rejected.status).toBe(500);
+      expect(rejected.code).toBe('cli_protocol_error');
+    }
+    expect(catalog.calls).toBe(2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const recovered = await create(body);
+    expect(recovered.ok && recovered.status).toBe(200);
+    expect(catalog.calls).toBe(4);
+    expect(readArgvLog(argvLog)).toHaveLength(2);
   });
 
   it('passes membership CLI refusals through and does not perform a post-read', async () => {
