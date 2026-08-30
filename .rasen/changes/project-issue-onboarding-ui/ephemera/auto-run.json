@@ -41,7 +41,13 @@
       }
     },
     "ship": {
-      "status": "pending"
+      "status": "done",
+      "gateDecision": "auto-approved (global)",
+      "worker": {
+        "role": "shipper",
+        "runtime": "codex",
+        "dispatchMode": "native"
+      }
     },
     "verify": {
       "status": "done",

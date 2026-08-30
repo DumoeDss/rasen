@@ -25,7 +25,7 @@
       "dependsOn": [
         "project-store-membership-api"
       ],
-      "status": "in_progress",
+      "status": "done",
       "node": "ui"
     }
   ],
