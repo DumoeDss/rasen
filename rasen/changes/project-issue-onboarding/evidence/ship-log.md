@@ -35,6 +35,20 @@
 - Evidence tree: `2b8550ca6e949a829bfc866f823da3f199e0459f`
 - Pre-delivery tree: `02030a12b4c761b42b6f75904861772bdc833b46`
 
+## CI Fix Follow-Up
+
+- Recorded: 2026-08-31T06:07:26+08:00
+- Fix commit: `cad3f469dd74910dd1e0d6d9a0f2cfff339415e9` (`test: make store setup fixture hermetic`)
+- Fix tree: `08201ef65a5e6ebcbb9bbce23b3b609d1872bf6e`
+- Failed run superseded: `https://github.com/DumoeDss/rasen/actions/runs/33335930067` — the Linux Node 20, Linux Node 24, and Windows shard 1 jobs each failed only `test/core/management-api/create-space.integration.test.ts` because its real Store setup relied on ambient Git author/committer identity that GitHub-hosted runners did not provide. The aggregate `Test` and `All checks passed` gates consequently failed. This run is permanently ineligible as green delivery evidence.
+- Remediation: the integration fixture now supplies disposable `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`, and `GIT_COMMITTER_EMAIL` values inside the existing per-test environment snapshot/restoration boundary. Product behavior is unchanged.
+- Independent review: PASS — `CI-GIT-IDENTITY: RESOLVED`; Blocker:0 Major:0 Minor:0 Trivial:0.
+- `pnpm exec vitest run test/core/management-api/create-space.integration.test.ts` — PASS, 1/1 file and 3/3 tests in the normal environment.
+- The same full-file command with system/global Git configuration disabled and all four ambient identity variables absent — PASS, 1/1 file and 3/3 tests.
+- Environment restoration probe, strict UTF-8/no-BOM scan, and `git diff --check` — PASS.
+- Base synchronization: PASS — refreshed `origin/dev/0.2.0` remained an ancestor of the pre-fix HEAD, 0 behind; no base merge was required.
+- Replacement CI: Pending — only a workflow/check suite for the new pushed PR head may authorize merge.
+
 ## Deployment
 
 Status: Pending (run `rasen-ship --deploy` to continue)
