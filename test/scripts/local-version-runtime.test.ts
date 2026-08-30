@@ -71,7 +71,16 @@ function createPackableSource(sourceRoot: string, version = '0.2.0-fixture.1'): 
     path.join(sourceRoot, 'bin', 'rasen.js'),
     [
       '#!/usr/bin/env node',
-      `if (process.argv.includes('--version')) console.log('${version}');`,
+      "import fs from 'node:fs';",
+      "import path from 'node:path';",
+      "import { fileURLToPath } from 'node:url';",
+      "const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');",
+      "let localSuffix = '';",
+      'try {',
+      "  const info = JSON.parse(fs.readFileSync(path.join(packageRoot, 'dist', 'build-info.json'), 'utf8'));",
+      "  localSuffix = info.commit ? ` (${info.channel} ${info.commit})` : ` (${info.channel})`;",
+      '} catch {}',
+      `if (process.argv.includes('--version')) console.log('${version}' + localSuffix);`,
       "if (process.argv.includes('--fail-fixture')) process.exit(17);",
       '',
     ].join('\n'),
@@ -355,7 +364,7 @@ describe('local version prepare command', () => {
     expect(cold.status, cold.stderr).toBe(0);
     const coldResult = JSON.parse(cold.stdout);
     expect(coldResult).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       version: '0.2.0-fixture.1',
       cache: 'built',
       sourceRoot: fs.realpathSync.native(sourceRoot),
@@ -363,6 +372,29 @@ describe('local version prepare command', () => {
     });
     expect(fs.existsSync(coldResult.rasenExecutable)).toBe(true);
     expect(fs.existsSync(coldResult.uiAssetsDir)).toBe(true);
+    const installedBuildInfo = path.join(
+      coldResult.runtimeRoot,
+      'node_modules',
+      '@atelierai',
+      'rasen',
+      'dist',
+      'build-info.json',
+    );
+    expect(JSON.parse(fs.readFileSync(installedBuildInfo, 'utf8'))).toEqual({
+      channel: 'dev.local',
+    });
+    expect(JSON.parse(fs.readFileSync(
+      path.join(coldResult.uiAssetsDir, 'build-info.json'),
+      'utf8',
+    ))).toEqual({ channel: 'dev.local' });
+    expect(fs.existsSync(path.join(sourceRoot, 'dist', 'build-info.json'))).toBe(false);
+    const installedVersion = spawnSync(
+      process.execPath,
+      [path.join(coldResult.runtimeRoot, 'node_modules', '@atelierai', 'rasen', 'bin', 'rasen.js'), '--version'],
+      { encoding: 'utf8' },
+    );
+    expect(installedVersion.status, installedVersion.stderr).toBe(0);
+    expect(installedVersion.stdout.trim()).toBe('0.2.0-fixture.1 (dev.local)');
     expect(coldResult.rasenHome.startsWith(cacheRoot)).toBe(true);
     expect(coldResult.daemonPort).toBeGreaterThanOrEqual(20000);
     expect(coldResult.daemonPort).toBeLessThanOrEqual(59999);
@@ -421,7 +453,7 @@ describe('local version prepare command', () => {
       runtimeRoot: rebuiltResult.runtimeRoot,
     });
     expect(fs.existsSync(path.join(rebuiltResult.uiAssetsDir, 'index.html'))).toBe(true);
-  }, 30_000);
+  }, 60_000);
 
   test('converges concurrent cold callers on one published runtime', async () => {
     const root = makeTemporaryRoot();
@@ -472,7 +504,7 @@ describe('local version prepare command', () => {
 
       const version = spawnSync('powershell.exe', [...baseArguments, '--version'], options);
       expect(version.status, version.stderr).toBe(0);
-      expect(version.stdout.trim()).toBe('0.2.0-fixture.1');
+      expect(version.stdout.trim()).toBe('0.2.0-fixture.1 (dev.local)');
 
       const failure = spawnSync('powershell.exe', [...baseArguments, '--fail-fixture'], options);
       expect(failure.status).toBe(17);
@@ -481,7 +513,7 @@ describe('local version prepare command', () => {
   );
 
   test.runIf(process.platform === 'win32')(
-    'launches profile-defined Codex and Claude with local bare rasen and restores parent scope',
+    'launches profile-defined Codex and Claude with provenance-marked local rasen and restores parent scope',
     () => {
       const root = makeTemporaryRoot();
       const sourceRoot = path.join(root, 'source with spaces');
@@ -567,7 +599,7 @@ describe('local version prepare command', () => {
           LocationRestored: true,
           Child: {
             Arguments: ['alpha', '--flag=value'],
-            Version: '0.2.0-fixture.1',
+            Version: '0.2.0-fixture.1 (dev.local)',
             Telemetry: '0',
             WorkingDirectory: fs.realpathSync.native(projectRoot),
           },

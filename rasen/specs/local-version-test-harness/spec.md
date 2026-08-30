@@ -16,11 +16,17 @@ The local-version harness SHALL accept a Rasen source worktree and a target proj
 - **THEN** the harness resolves their canonical identities and prepares that exact source for that exact project
 
 ### Requirement: Paired release-shaped local runtime
-The harness SHALL build and package the local CLI and UI as independent dependency graphs, require their declared and installed versions to match exactly, install both local packages beside each other in an isolated runtime, and verify the installed CLI version, UI assets, and the CLI's actual UI package resolution before launching a target.
+The harness SHALL build and package the local CLI and UI as independent dependency graphs, require their declared and installed versions to match exactly, stamp both local packages with identical `dev.local` build provenance without changing either manifest version, install both packages beside each other in an isolated runtime, and verify the rendered CLI version, UI assets, and the CLI's actual UI package resolution before launching a target.
 
 #### Scenario: Successful paired preparation
 - **WHEN** the selected source produces matching CLI and UI packages with a usable UI entry asset
-- **THEN** the harness returns a verified runtime whose `rasen --version` matches both package manifests and whose UI resolver returns the installed UI assets
+- **THEN** the harness returns a verified runtime whose `rasen --version` starts with the shared canonical manifest version, appends `(dev.local <commit>)` when a Git commit is available (or `(dev.local)` otherwise), and whose UI resolver returns the installed UI assets
+- **AND** the installed CLI and UI carry identical local build provenance
+
+#### Scenario: Local provenance does not mutate source or canonical versions
+- **WHEN** the harness packs a local CLI/UI pair
+- **THEN** both packed packages contain matching `dist/build-info.json` provenance while their manifest versions remain unchanged
+- **AND** the temporary source-tree provenance files are removed after packing on success or failure
 
 #### Scenario: Mismatched package versions
 - **WHEN** the source CLI and UI manifests or installed artifacts report different versions

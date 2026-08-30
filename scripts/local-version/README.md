@@ -3,8 +3,9 @@
 This directory prepares a release-shaped local Rasen runtime without changing
 the target project's `package.json`, lockfiles, or `node_modules`. It builds and
 packs both `@atelierai/rasen` and `@atelierai/rasen-ui`, installs the tarballs
-beside each other in a private cache, validates the CLI version and UI resolver,
-then launches Rasen, Codex, or Claude with isolated Rasen state.
+beside each other in a private cache, stamps both packages with matching local
+build provenance, validates the CLI version and UI resolver, then launches
+Rasen, Codex, or Claude with isolated Rasen state.
 
 ## Quick start
 
@@ -37,6 +38,12 @@ $harness = 'E:\tools\rasen-local-version'
 `-Project` defaults to the current PowerShell directory. Arguments that are not
 harness options are forwarded unchanged. Use `-Refresh` before the forwarded
 arguments to force a rebuild of the selected cache entry.
+
+The package manifests keep their canonical version for machine comparisons,
+while `rasen --version` identifies the local runtime as
+`<version> (dev.local <commit>)` (or `(dev.local)` outside a Git checkout).
+The exact content/toolchain identity remains available as the preparation
+result's `fingerprint`.
 
 ## Copying the harness
 
@@ -93,6 +100,8 @@ code and phase. Common fixes:
 - `COMMAND_FAILED` in `build`, `pack`, or `install`: run the printed command in
   the named source package and fix that dependency/build failure.
 - `UI_RESOLVER_*`: rebuild the UI and check that `dist/index.html` is packaged.
+- `LOCAL_BUILD_INFO_*`: rebuild the runtime; the installed CLI and UI must
+  carry identical `dev.local` provenance.
 - `LOCK_TIMEOUT`: another cold preparation is still running, or a machine-local
   cache lock cannot be accessed.
 - PowerShell execution-policy errors: invoke with
