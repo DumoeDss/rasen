@@ -1,0 +1,23 @@
+{
+  "pipeline": "small-feature",
+  "stages": {
+    "apply": {
+      "status": "pending"
+    },
+    "archive": {
+      "status": "pending"
+    },
+    "propose": {
+      "status": "pending"
+    },
+    "review-loop": {
+      "status": "pending"
+    },
+    "ship": {
+      "status": "pending"
+    },
+    "verify": {
+      "status": "pending"
+    }
+  }
+}

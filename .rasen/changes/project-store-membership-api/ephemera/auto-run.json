@@ -1,0 +1,44 @@
+{
+  "pipeline": "small-feature",
+  "classification": "small-feature",
+  "tier": "A",
+  "engine": {
+    "effective": "legacy",
+    "source": "default"
+  },
+  "gatePolicy": {
+    "effective": "off",
+    "source": "global"
+  },
+  "stages": {
+    "apply": {
+      "status": "done",
+      "worker": {
+        "role": "implementer",
+        "runtime": "codex",
+        "dispatchMode": "native"
+      }
+    },
+    "archive": {
+      "status": "pending"
+    },
+    "propose": {
+      "status": "done",
+      "gateDecision": "auto-approved (global)",
+      "worker": {
+        "role": "planner",
+        "runtime": "codex",
+        "dispatchMode": "native"
+      }
+    },
+    "review-loop": {
+      "status": "pending"
+    },
+    "ship": {
+      "status": "pending"
+    },
+    "verify": {
+      "status": "in_progress"
+    }
+  }
+}

@@ -11,7 +11,7 @@ import {
  * (change-submission delta: "Whitelisted operations only, across the change,
  * space, workflow, and pipeline bounded-CLI operations").
  *
- * COUNT: the bounded tier is exactly EIGHTEEN ops (create-change + three
+ * COUNT: the bounded tier is exactly NINETEEN ops (create-change + four
  * space ops + four workflow ops + five pipeline ops (incl. `save-pipeline`,
  * pipeline-definition-api) + the per-space workflow-enablement apply op
  * (space-workflow-enablement design D5) + `finalize-change`, the Store
@@ -55,13 +55,14 @@ describe('workflow-library bounded-cli whitelist ops', () => {
     }
   });
 
-  it('pins the merged bounded-cli tier to exactly the eighteen enumerated ops', () => {
+  it('pins the merged bounded-cli tier to exactly the nineteen enumerated ops', () => {
     expect([...boundedOps].sort()).toEqual(
       [
         'create-change',
         'create-project-space',
         'register-store-space',
         'setup-store-space',
+        'add-project-to-store-space',
         'import-workflow',
         'init-workflow',
         'export-workflow',

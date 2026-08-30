@@ -5,8 +5,13 @@ import * as os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 import { createSpaceCreator } from '../../../src/core/management-api/create-space.js';
+import { handleSpaces } from '../../../src/core/management-api/spaces.js';
+import { getGlobalDataDir, registerStore } from '../../../src/core/index.js';
+import { registerProject } from '../../../src/core/project-registry.js';
+import { readStorePointer, updateProjectConfigKey } from '../../../src/core/project-config.js';
 import { FileSystemUtils } from '../../../src/utils/file-system.js';
 import { cleanupTempPathAsync } from '../../helpers/temp-cleanup.js';
+import { createOpenSpecRoot } from '../../helpers/rasen-fixtures.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const realCliEntry = path.resolve(__dirname, '..', '..', '..', 'dist', 'cli', 'index.js');
@@ -76,4 +81,54 @@ describe('createSpaceCreator against the real CLI (integration, slow)', () => {
       expect(result.cliExitCode).toBeGreaterThan(0);
     }
   }, 90_000);
+
+  it('establishes and replays real membership once without changing the Project planning Store', async () => {
+    if (!fs.existsSync(realCliEntry)) {
+      throw new Error(`Build the CLI first (node build.js): missing ${realCliEntry}`);
+    }
+
+    const globalDataDir = getGlobalDataDir({ env: process.env });
+    const projectId = '8A8B8C8D-1111-4222-8333-444455556666';
+    const projectRoot = path.join(dataHome, 'membership-project');
+    const storeRoot = path.join(dataHome, 'membership-team');
+    createOpenSpecRoot(projectRoot);
+    updateProjectConfigKey(projectRoot, 'projectId', projectId);
+    createOpenSpecRoot(storeRoot);
+    await registerProject({ projectRoot, projectId, mode: 'in-repo' }, { globalDataDir });
+    await registerStore({ id: 'membership-team', localPath: storeRoot, globalDataDir });
+    const planningBefore = readStorePointer(projectRoot);
+    const create = createSpaceCreator({ cliEntryOverride: realCliEntry, timeoutMs: 60_000 });
+    const request = { op: 'add-project-to-store', projectId, storeId: 'membership-team' };
+
+    const first = await create(request);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const second = await create(request);
+
+    for (const result of [first, second]) {
+      expect(result.ok, JSON.stringify(result)).toBe(true);
+      if (!result.ok) continue;
+      expect(result.status).toBe(200);
+      expect(result.response.operation).toBe('store-add-project');
+      expect(result.response.space.type).toBe('store');
+      if (result.response.space.type === 'store') {
+        expect(
+          result.response.space.members.filter(
+            (member) => member.projectId.toLowerCase() === projectId.toLowerCase()
+          )
+        ).toHaveLength(1);
+      }
+    }
+
+    const fresh = await handleSpaces();
+    const store = fresh.spaces.find(
+      (space) => space.type === 'store' && space.id === 'membership-team'
+    );
+    expect(store?.type).toBe('store');
+    if (store?.type === 'store') {
+      expect(
+        store.members.filter((member) => member.projectId.toLowerCase() === projectId.toLowerCase())
+      ).toHaveLength(1);
+    }
+    expect(readStorePointer(projectRoot)).toEqual(planningBefore);
+  }, 120_000);
 });

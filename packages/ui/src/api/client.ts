@@ -5,6 +5,7 @@
  */
 import { getToken, markUnauthorized } from './token.js';
 import type {
+  AddProjectToStoreResponse,
   ApiErrorBody,
   AuditReportDetailResponse,
   AuditReportsResponse,
@@ -484,6 +485,15 @@ export function createSpace(body: CreateSpaceRequest): Promise<CreateSpaceRespon
     method: 'POST',
     json: true,
     body: JSON.stringify(body),
+  });
+}
+
+/** Establishes Store membership without supplying a path or changing the Project's planning Store. */
+export function addProjectToStore(projectId: string, storeId: string): Promise<AddProjectToStoreResponse> {
+  return request<AddProjectToStoreResponse>('/api/v1/spaces', {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify({ op: 'add-project-to-store', projectId, storeId }),
   });
 }
 

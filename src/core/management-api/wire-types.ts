@@ -692,20 +692,25 @@ export type ChooseLocalPathResponse =
 // -----------------------------------------------------------------------
 // Space creation (space-creation design D4/D5) — `POST /api/v1/spaces`.
 // The server never writes workspace files: it spawns the CLI (init / store
-// register / store setup), passing the CLI's own errors through verbatim.
+// register / store setup / store add-project), passing the CLI's own errors
+// through verbatim. Membership success is HTTP 200; creation remains 201.
 // -----------------------------------------------------------------------
 
 /** `POST /api/v1/spaces` request body (design D4). */
 export type CreateSpaceRequest =
   | { op: 'create-project'; path: string }
   | { op: 'create-store'; parent: string; id: string }
-  | { op: 'register-store'; path: string; id?: string };
+  | { op: 'register-store'; path: string; id?: string }
+  | { op: 'add-project-to-store'; projectId: string; storeId: string };
 
-/** `POST /api/v1/spaces` success response (design D4): the operation performed plus the new space's listing entry. */
-export interface CreateSpaceResponse {
-  operation: 'init' | 'store-register' | 'store-setup';
-  space: SpaceEntry;
-}
+/** `POST /api/v1/spaces` success response: fresh catalog truth after the requested mutation. */
+export type CreateSpaceResponse =
+  | { operation: 'init'; space: ProjectSpaceEntry }
+  | { operation: 'store-register' | 'store-setup'; space: StoreSpaceEntry }
+  | { operation: 'store-add-project'; space: StoreSpaceEntry };
+
+/** The precise HTTP 200 member returned by `add-project-to-store`. */
+export type AddProjectToStoreResponse = Extract<CreateSpaceResponse, { operation: 'store-add-project' }>;
 
 // -----------------------------------------------------------------------
 // Sessions (session-supervision design D2/D4) — sibling-stable wire shapes

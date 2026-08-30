@@ -1,0 +1,39 @@
+{
+  "pipeline": "auto-decompose",
+  "classification": "explicit:auto-decompose",
+  "tier": "A",
+  "gatePolicy": {
+    "effective": "off",
+    "source": "global"
+  },
+  "engine": {
+    "effective": "legacy",
+    "source": "default"
+  },
+  "stages": {
+    "decompose": {
+      "status": "done"
+    },
+    "propose": {
+      "status": "delegated",
+      "gateDecision": "auto-approved (global)"
+    },
+    "apply": {
+      "status": "delegated",
+      "gateDecision": "auto-approved (global)"
+    },
+    "verify": {
+      "status": "delegated"
+    },
+    "review-loop": {
+      "status": "delegated"
+    },
+    "ship": {
+      "status": "delegated",
+      "gateDecision": "auto-approved (global)"
+    },
+    "archive": {
+      "status": "delegated"
+    }
+  }
+}
