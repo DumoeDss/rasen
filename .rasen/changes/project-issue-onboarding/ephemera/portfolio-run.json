@@ -30,6 +30,8 @@
     }
   ],
   "delivery": {
-    "status": "pending"
+    "status": "in_progress",
+    "mode": "pr",
+    "base": "dev/0.2.0"
   }
 }
