@@ -30,8 +30,10 @@
     }
   ],
   "delivery": {
-    "status": "in_progress",
+    "status": "done",
     "mode": "pr",
-    "base": "dev/0.2.0"
+    "base": "dev/0.2.0",
+    "branch": "feat/project-issue-onboarding",
+    "prUrl": "https://github.com/DumoeDss/rasen/pull/183"
   }
 }
