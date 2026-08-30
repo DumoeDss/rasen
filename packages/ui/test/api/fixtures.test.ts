@@ -17,6 +17,10 @@ import { errorsFixture } from '../fixtures/errors.js';
 import { sessionDetailFixture, sessionsListFixture } from '../fixtures/sessions-list.js';
 import { archiveFixture } from '../fixtures/archive.js';
 import {
+  addProjectToStoreRequestFixture,
+  addProjectToStoreResponseFixture,
+} from '../fixtures/space-creation.js';
+import {
   pipelinesFixture,
   thresholdSchemeCatalogFixture,
 } from '../fixtures/pipelines.js';
@@ -167,5 +171,16 @@ describe('fixture ↔ mirror-type drift tripwire', () => {
     // At least one change is under a portfolio container and at least one is not.
     expect(archiveFixture.changes.some((c) => c.portfolio !== undefined)).toBe(true);
     expect(archiveFixture.changes.some((c) => c.portfolio === undefined)).toBe(true);
+  });
+
+  it('space membership fixtures pin the explicit intent and precise Store response mirror', () => {
+    expect(addProjectToStoreRequestFixture).toEqual({
+      op: 'add-project-to-store',
+      projectId: 'project-123',
+      storeId: 'team-store',
+    });
+    expect(addProjectToStoreResponseFixture.operation).toBe('store-add-project');
+    expect(addProjectToStoreResponseFixture.space.type).toBe('store');
+    expect(addProjectToStoreResponseFixture.space.members).toHaveLength(1);
   });
 });

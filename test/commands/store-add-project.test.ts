@@ -4,6 +4,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { getGlobalDataDir, registerStore } from '../../src/core/index.js';
+import {
+  registerProject,
+  writeProjectRegistryState,
+} from '../../src/core/project-registry.js';
 import { runCLI, type RunCLIResult } from '../helpers/run-cli.js';
 import { snapshotDirectory as snapshot } from '../helpers/fs-snapshot.js';
 import {
@@ -77,6 +81,195 @@ describe('store add-project', () => {
     const targetConfig = fs.readFileSync(path.join(targetStoreRoot, 'rasen', 'config.yaml'), 'utf-8');
     expect(targetConfig).toContain('my-project');
   });
+
+  it('reuses the registered Project identity when the root basename is not a valid Store id', async () => {
+    await registerTargetStore();
+    const projectRoot = makeProject('rasen-2.0-test');
+    const projectId = '8943c3a4-9b59-401a-aea2-4d72b45e98b8';
+    await registerProject(
+      { projectRoot, projectId, mode: 'in-repo' },
+      { globalDataDir }
+    );
+
+    const result = await runCLI(
+      ['store', 'add-project', projectRoot, '--to', 'team-context', '--json'],
+      { cwd: tempDir, env }
+    );
+
+    expect(result.exitCode, result.stdout || result.stderr).toBe(0);
+    const payload = parseJson(result);
+    expect(payload.project.id).toBe(projectId);
+    expect(payload.membership.project_id).toBe(projectId);
+    expect(
+      fs.readFileSync(path.join(projectRoot, '.rasen-store', 'store.yaml'), 'utf-8')
+    ).toContain(`id: ${projectId}`);
+    expect(
+      fs.readFileSync(path.join(targetStoreRoot, 'rasen', 'config.yaml'), 'utf-8')
+    ).toContain(`project:${projectId}`);
+  });
+
+  it('keeps explicit --as ahead of the registered Project identity', async () => {
+    await registerTargetStore();
+    const projectRoot = makeProject('rasen-2.0-explicit');
+    const projectId = '3046e616-fddb-4e08-9722-1d60ac940159';
+    await registerProject(
+      { projectRoot, projectId, mode: 'in-repo' },
+      { globalDataDir }
+    );
+
+    const result = await runCLI(
+      [
+        'store',
+        'add-project',
+        projectRoot,
+        '--to',
+        'team-context',
+        '--as',
+        'explicit-project',
+        '--json',
+      ],
+      { cwd: tempDir, env }
+    );
+
+    expect(result.exitCode, result.stdout || result.stderr).toBe(0);
+    const payload = parseJson(result);
+    expect(payload.project.id).toBe('explicit-project');
+    expect(payload.membership.project_id).toBe(projectId);
+  });
+
+  it('preserves the existing metadata-vs---as mismatch refusal ahead of registry fallback', async () => {
+    await registerTargetStore();
+    const projectRoot = makeProject('rasen-2.0-metadata');
+    const projectId = '333371fc-a9a3-41c4-be32-6b5b6efc4338';
+    await registerProject(
+      { projectRoot, projectId, mode: 'in-repo' },
+      { globalDataDir }
+    );
+    const first = await runCLI(
+      [
+        'store',
+        'add-project',
+        projectRoot,
+        '--to',
+        'team-context',
+        '--as',
+        'metadata-project',
+        '--json',
+      ],
+      { cwd: tempDir, env }
+    );
+    expect(first.exitCode, first.stdout || first.stderr).toBe(0);
+
+    const conflicting = await runCLI(
+      [
+        'store',
+        'add-project',
+        projectRoot,
+        '--to',
+        'team-context',
+        '--as',
+        'different-project',
+        '--json',
+      ],
+      { cwd: tempDir, env }
+    );
+
+    expect(conflicting.exitCode).not.toBe(0);
+    expect(parseJson(conflicting).status[0].code).toBe('store_metadata_id_mismatch');
+    expect(
+      fs.readFileSync(path.join(projectRoot, '.rasen-store', 'store.yaml'), 'utf-8')
+    ).toContain('id: metadata-project');
+  });
+
+  it('fails closed when canonical Project registry aliases disagree on identity', async () => {
+    await registerTargetStore();
+    const projectRoot = makeProject('rasen-2.0-ambiguous');
+    const canonicalRoot = fs.realpathSync.native(projectRoot);
+    const aliasRoot = `${canonicalRoot}${path.sep}.`;
+    await writeProjectRegistryState(
+      {
+        version: 1,
+        projects: {
+          [canonicalRoot]: {
+            projectId: '8943c3a4-9b59-401a-aea2-4d72b45e98b8',
+            name: 'rasen-2-0-ambiguous',
+            mode: 'in-repo',
+            home: 'project-home-a',
+            lastSeen: '2026-08-30T00:00:00.000Z',
+          },
+          [aliasRoot]: {
+            projectId: '3046e616-fddb-4e08-9722-1d60ac940159',
+            name: 'rasen-2-0-ambiguous',
+            mode: 'in-repo',
+            home: 'project-home-b',
+            lastSeen: '2026-08-30T00:00:00.000Z',
+          },
+        },
+      },
+      { globalDataDir }
+    );
+
+    const result = await runCLI(
+      ['store', 'add-project', projectRoot, '--to', 'team-context', '--json'],
+      { cwd: tempDir, env }
+    );
+
+    expect(result.exitCode).not.toBe(0);
+    expect(parseJson(result).status[0].code).toBe('project_registry_alias_conflict');
+    expect(fs.existsSync(path.join(projectRoot, '.rasen-store', 'store.yaml'))).toBe(false);
+    expect(
+      fs.readFileSync(path.join(targetStoreRoot, 'rasen', 'config.yaml'), 'utf-8')
+    ).not.toContain('references:');
+  });
+
+  it('previews the registered Project identity without writing either repository', async () => {
+    await registerTargetStore();
+    const projectRoot = makeProject('rasen-2.0-preview');
+    const projectId = '80e4add1-291c-474e-a746-42cf9dc494c0';
+    await registerProject(
+      { projectRoot, projectId, mode: 'in-repo' },
+      { globalDataDir }
+    );
+    const before = snapshot(tempDir);
+
+    const result = await runCLI(
+      [
+        'store',
+        'add-project',
+        projectRoot,
+        '--to',
+        'team-context',
+        '--dry-run',
+        '--json',
+      ],
+      { cwd: tempDir, env }
+    );
+
+    expect(result.exitCode, result.stdout || result.stderr).toBe(0);
+    expect(parseJson(result).project.id).toBe(projectId);
+    expect(snapshot(tempDir)).toEqual(before);
+  });
+
+  it.runIf(process.platform === 'win32')(
+    'matches a registered Project root through Windows path case normalization',
+    async () => {
+      await registerTargetStore();
+      const projectRoot = makeProject('Rasen-2.0-Windows');
+      const projectId = '0873678a-0362-4469-b237-fd52ab24812b';
+      await registerProject(
+        { projectRoot, projectId, mode: 'in-repo' },
+        { globalDataDir }
+      );
+
+      const result = await runCLI(
+        ['store', 'add-project', projectRoot.toLowerCase(), '--to', 'team-context', '--json'],
+        { cwd: tempDir, env }
+      );
+
+      expect(result.exitCode, result.stdout || result.stderr).toBe(0);
+      expect(parseJson(result).project.id).toBe(projectId);
+    }
+  );
 
   it('touches nothing under the project rasen/ except the appended membership hint', async () => {
     await registerTargetStore();

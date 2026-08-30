@@ -916,13 +916,17 @@ export type ChooseLocalPathResponse =
 export type CreateSpaceRequest =
   | { op: 'create-project'; path: string }
   | { op: 'create-store'; parent: string; id: string }
-  | { op: 'register-store'; path: string; id?: string };
+  | { op: 'register-store'; path: string; id?: string }
+  | { op: 'add-project-to-store'; projectId: string; storeId: string };
 
-/** `POST /api/v1/spaces` success response (design D4): the operation performed plus the new space's listing entry. */
-export interface CreateSpaceResponse {
-  operation: 'init' | 'store-register' | 'store-setup';
-  space: SpaceEntry;
-}
+/** `POST /api/v1/spaces` success response: fresh catalog truth after the requested mutation. */
+export type CreateSpaceResponse =
+  | { operation: 'init'; space: ProjectSpaceEntry }
+  | { operation: 'store-register' | 'store-setup'; space: StoreSpaceEntry }
+  | { operation: 'store-add-project'; space: StoreSpaceEntry };
+
+/** The precise HTTP 200 member returned by `add-project-to-store`. */
+export type AddProjectToStoreResponse = Extract<CreateSpaceResponse, { operation: 'store-add-project' }>;
 
 // ---- Workflow library (workflow-http-api design D3/D4) ----
 // Source of truth: `src/core/management-api/wire-types.ts` in the root package.

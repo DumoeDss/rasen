@@ -16,6 +16,7 @@
  *                   `init` prints nothing (it has no --json)
  */
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 const args = process.argv.slice(2);
 const joined = args.join(' ');
@@ -57,6 +58,19 @@ async function main() {
     const idIdx = args.indexOf('--id');
     const id = idIdx >= 0 ? args[idIdx + 1] : 'registered-store';
     printJson({ store: { id, root: '/fake/store' } });
+    return;
+  }
+  if (args[0] === 'store' && args[1] === 'add-project') {
+    const projectRoot = args[2];
+    const toIdx = args.indexOf('--to');
+    const storeId = toIdx >= 0 ? args[toIdx + 1] : '';
+    printJson({
+      project: { id: path.basename(projectRoot), root: projectRoot },
+      target: { id: storeId, root: process.env.RASEN_FAKE_STORE_ROOT ?? `/fake/${storeId}` },
+      membership: {
+        project_id: process.env.RASEN_FAKE_PROJECT_ID ?? path.basename(projectRoot),
+      },
+    });
     return;
   }
   // init: succeed silently (no --json).

@@ -45,6 +45,9 @@ vi.mock('../src/components/IssueDetailPage.js', async () => {
     },
   };
 });
+vi.mock('../src/components/ProjectIssueOnboardingPage.js', () => ({
+  ProjectIssueOnboardingPage: () => <div data-testid="project-issues-onboarding">onboarding</div>,
+}));
 vi.mock('../src/components/OperationsPage.js', () => ({
   OperationsPage: () => <div data-testid="operations-page">operations</div>,
 }));
@@ -275,14 +278,12 @@ describe('App routing', () => {
     expect(container.querySelector('nav a[href="/s/store_y/board"]')).toBeNull();
   });
 
-  it('offers no Issues section in a project space — Issues live in Stores', async () => {
+  it('offers Project Issues onboarding while Store Issues remains the read surface', async () => {
     await mountAt(container, '/p/proj_x/board');
-    expect(container.querySelector('[data-testid="nav-issues"]')).toBeNull();
-    expect(container.querySelector('nav a[href="/p/proj_x/issues"]')).toBeNull();
-    // The store-space nav DOES offer it, so the absence above is the space
-    // type's doing rather than the entry being missing everywhere. Mounted into
-    // its own container: `LocationProvider` reads the location once at mount,
-    // so re-rendering into the same node would keep the first route.
+    const projectIssues = container.querySelector('nav a[href="/p/proj_x/issues"]');
+    expect(projectIssues).not.toBeNull();
+    expect(projectIssues?.getAttribute('aria-current')).toBeNull();
+
     const storeContainer = document.createElement('div');
     document.body.appendChild(storeContainer);
     try {
@@ -291,6 +292,15 @@ describe('App routing', () => {
     } finally {
       document.body.removeChild(storeContainer);
     }
+  });
+
+  it('mounts only onboarding at the exact Project Issues route and marks it current', async () => {
+    await mountAt(container, '/p/proj_x/issues');
+    expect(container.querySelector('[data-testid="project-issues-onboarding"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="issue-board-page"]')).toBeNull();
+    expect(container.querySelector('[data-testid="issue-detail-page"]')).toBeNull();
+    expect(container.querySelector('nav a[href="/p/proj_x/issues"]')?.getAttribute('aria-current')).toBe('page');
+    expect(container.querySelector('nav a[href="/p/proj_x/board"]')?.getAttribute('aria-current')).toBeNull();
   });
 
   it.each([
@@ -311,7 +321,7 @@ describe('App routing', () => {
     expect(container.querySelector('nav a[href="/p/proj_x/unlinked-changes"]')).toBeNull();
   });
 
-  it.each(['/p/proj_x/issues', '/p/proj_x/operations', '/p/proj_x/unlinked-changes'])(
+  it.each(['/p/proj_x/operations', '/p/proj_x/unlinked-changes'])(
     'does not expose a project mirror at %s',
     async (path) => {
       (client.health as any).mockResolvedValue({
@@ -326,6 +336,19 @@ describe('App routing', () => {
       expect(container.querySelector('[data-testid="unlinked-changes-page"]')).toBeNull();
     }
   );
+
+  it('refuses a Project-prefixed Issue Detail deep URL', async () => {
+    (client.health as any).mockResolvedValue({
+      ok: true,
+      version: '0',
+      project: { projectId: 'proj_x', name: 'x', root: '/x' },
+    });
+    await mountAt(container, '/p/proj_x/issues/specific-issue');
+    expect(window.location.pathname).toBe('/p/proj_x/board');
+    expect(container.querySelector('[data-testid="project-issues-onboarding"]')).toBeNull();
+    expect(container.querySelector('[data-testid="issue-board-page"]')).toBeNull();
+    expect(container.querySelector('[data-testid="issue-detail-page"]')).toBeNull();
+  });
 
   it('renders no independently polling running-session menu in the shell', async () => {
     await mountAt(container, '/p/proj_x/board');

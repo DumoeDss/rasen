@@ -43,9 +43,11 @@ export function Layout({ children }: { children: ComponentChildren }) {
   // the current route, so `section` is null and Board/Archive/Config/Pipelines
   // get no aria-current — only Workflows/Profiles highlight themselves.
   const section = routeSpace ? spaceSection(path) : null;
-  const onIssues =
-    routeSpace?.type === 'store' &&
-    (path === spaceHref(routeSpace, 'issues') || path.startsWith(`${spaceHref(routeSpace, 'issues')}/`));
+  const onIssues = routeSpace
+    ? routeSpace.type === 'store'
+      ? path === spaceHref(routeSpace, 'issues') || path.startsWith(`${spaceHref(routeSpace, 'issues')}/`)
+      : path === spaceHref(routeSpace, 'issues')
+    : false;
   const onOperations =
     routeSpace?.type === 'store' && path === spaceHref(routeSpace, 'operations');
   const onUnlinkedChanges =
@@ -70,13 +72,22 @@ export function Layout({ children }: { children: ComponentChildren }) {
             {space && (
               <>
                 {space.type === 'project' ? (
-                  <a
-                    href={spaceHref(space, 'board')}
-                    data-testid="nav-board"
-                    aria-current={section === 'board' ? 'page' : undefined}
-                  >
-                    {t('nav.board')}
-                  </a>
+                  <>
+                    <a
+                      href={spaceHref(space, 'board')}
+                      data-testid="nav-board"
+                      aria-current={section === 'board' && !onIssues ? 'page' : undefined}
+                    >
+                      {t('nav.board')}
+                    </a>
+                    <a
+                      href={spaceHref(space, 'issues')}
+                      data-testid="nav-issues"
+                      aria-current={onIssues ? 'page' : undefined}
+                    >
+                      {t('nav.issues')}
+                    </a>
+                  </>
                 ) : (
                   <>
                     <a

@@ -8,6 +8,7 @@ import { SpaceBootstrap } from './components/SpaceBootstrap.js';
 import { ArchivePage } from './components/ArchivePage.js';
 import { IssueBoardPage } from './components/IssueBoardPage.js';
 import { IssueDetailPage } from './components/IssueDetailPage.js';
+import { ProjectIssueOnboardingPage } from './components/ProjectIssueOnboardingPage.js';
 import { OperationsPage } from './components/OperationsPage.js';
 import { UnlinkedChangesPage } from './components/UnlinkedChangesPage.js';
 import { TaskDetailPage } from './components/TaskDetailPage.js';
@@ -110,9 +111,9 @@ export function App() {
           <Route path="/s/:storeId/pipelines" component={PipelinesPage} />
           <Route path="/p/:projectId/pipelines/:name" component={PipelineCanvasPage} />
           <Route path="/s/:storeId/pipelines/:name" component={PipelineCanvasPage} />
-          {/* The Issue read surface (issue-board-ui spec) is STORE-ONLY: an
-              Issue is Store-level cross-project intent, so there is no `/p/`
-              pair — a project space offers no Issues section at all. */}
+          {/* Project Issues is onboarding only. The read surface remains
+              Store-owned under the two routes below. */}
+          <Route path="/p/:projectId/issues" component={ProjectIssueOnboardingPage} />
           <Route path="/s/:storeId/issues" component={IssueBoardPage} />
           <Route path="/s/:storeId/issues/:issueId" component={IssueDetailPage} />
           <Route path="/s/:storeId/operations" component={OperationsPage} />

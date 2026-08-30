@@ -36,9 +36,10 @@ export type WhitelistEntry = BoundedCliEntry | SupervisedLongRunnerEntry;
  * The whitelist table, enumerated by tier (change-submission spec's
  * requirement-level exactness rules):
  *
- * - `bounded-cli`: exactly fourteen entries — change submission
- *   (`create-change`), the three space-creation ops
- *   (`create-project-space`, `register-store-space`, `setup-store-space`),
+ * - `bounded-cli`: exactly nineteen entries — change submission
+ *   (`create-change`), the four space mutation ops
+ *   (`create-project-space`, `register-store-space`, `setup-store-space`,
+ *   `add-project-to-store-space`),
  *   the four workflow-library mutations (`import-workflow`, `init-workflow`,
  *   `export-workflow`, `delete-workflow`), the five pipeline-library
  *   mutations (`import-pipeline`, `init-pipeline`, `export-pipeline`,
@@ -49,7 +50,7 @@ export type WhitelistEntry = BoundedCliEntry | SupervisedLongRunnerEntry;
  * - `supervised-long-runner`: exactly `auto` and `goal`.
  *
  * Each mutation endpoint admits only entries of its own operation set (the
- * space bridge serves only the three space ops, the workflow bridge only the
+ * space bridge serves only the four space ops, the workflow bridge only the
  * four workflow ops, the pipeline bridge only the five pipeline ops, the change
  * bridge only `create-change`).
  */
@@ -63,6 +64,7 @@ export const WHITELIST: Readonly<Record<string, WhitelistEntry>> = Object.freeze
   'create-project-space': { tier: 'bounded-cli', op: 'create-project-space' },
   'register-store-space': { tier: 'bounded-cli', op: 'register-store-space' },
   'setup-store-space': { tier: 'bounded-cli', op: 'setup-store-space' },
+  'add-project-to-store-space': { tier: 'bounded-cli', op: 'add-project-to-store-space' },
   'import-workflow': { tier: 'bounded-cli', op: 'import-workflow' },
   'init-workflow': { tier: 'bounded-cli', op: 'init-workflow' },
   'export-workflow': { tier: 'bounded-cli', op: 'export-workflow' },

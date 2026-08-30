@@ -20,6 +20,7 @@ import {
   storePointerProblem,
   updateProjectConfigKey,
 } from '../project-config.js';
+import { findAdoptableProjectIdentity } from '../project-registry.js';
 import { storeBindingDeclarationFrom } from '../effective-config.js';
 import {
   ANCHORED_WORKSPACE_DIRS,
@@ -82,6 +83,7 @@ import {
 } from './membership.js';
 import {
   getStoreProjectRecordsDir,
+  normalizeProjectIdentity,
   type StoreProjectRoles,
 } from './project-records.js';
 import type { SuggestedGitCommand } from './migration.js';
@@ -577,6 +579,46 @@ function resolveRegisterRoot(inputPath: string | undefined): string {
 
 function inferStoreIdFromPath(storeRoot: string): string {
   return validateStoreId(path.basename(storeRoot));
+}
+
+/**
+ * Resolves the project-namespace display id for `store add-project` without
+ * writing. Existing Store metadata remains authoritative, and an explicit
+ * `--as` remains the next-highest-priority operator choice. Only when both are
+ * absent do we reuse the machine Project registry's identity for this
+ * canonical root; this lets a registered Project whose folder name is not a
+ * valid Store id (for example `rasen-2.0-test`) enter a Store without making
+ * the HTTP bridge invent an alias.
+ *
+ * `findAdoptableProjectIdentity` owns worktree piercing, Windows path
+ * normalization, and canonical-alias conflict detection. A conflicted root is
+ * therefore refused here rather than falling through to the basename and
+ * silently choosing a different identity.
+ */
+async function resolveAddProjectDisplayId(input: {
+  projectRoot: string;
+  metadataId?: string;
+  explicitId?: string;
+}): Promise<string> {
+  if (input.metadataId !== undefined) return input.metadataId;
+  if (input.explicitId !== undefined) return input.explicitId;
+
+  const registered = await findAdoptableProjectIdentity(input.projectRoot);
+  if (registered.adoptable) {
+    return validateStoreId(normalizeProjectIdentity(registered.projectId));
+  }
+  if (registered.reason === 'fixedMetadataConflict') {
+    throw new StoreError(
+      `The registered Project identity for '${input.projectRoot}' is ambiguous because canonical registry aliases disagree on fixed ownership metadata.`,
+      'project_registry_alias_conflict',
+      {
+        target: 'project.registry',
+        fix: 'Repair the conflicting projectId or home metadata explicitly, then retry; Rasen refuses to choose an identity.',
+      }
+    );
+  }
+
+  return inferStoreIdFromPath(input.projectRoot);
 }
 
 function normalizeRegistryPathForComparison(targetPath: string): string {
@@ -1172,14 +1214,16 @@ export async function storeAddProject(
   const projectRoot = resolveRegisterRoot(input.projectPath);
   const canonicalProjectRoot = normalizeRegistryPathForComparison(projectRoot);
 
-  // Peek existing identity to resolve the id per D2 (existing metadata ->
-  // explicit id -> folder basename) without writing anything yet; a
-  // not-yet-existing or not-yet-a-project project path resolves via the
-  // same inference registerExistingStore uses internally.
+  // Peek existing identity to resolve the id per D2 without writing anything:
+  // existing metadata -> explicit --as -> registered Project identity for the
+  // canonical root -> folder basename.
   const existingMetadata = await readStoreMetadataForOperation(projectRoot);
   const explicitId = input.id !== undefined ? validateStoreId(input.id) : undefined;
-  const resolvedProjectId =
-    existingMetadata?.id ?? explicitId ?? inferStoreIdFromPath(projectRoot);
+  const resolvedProjectId = await resolveAddProjectDisplayId({
+    projectRoot,
+    ...(existingMetadata?.id !== undefined ? { metadataId: existingMetadata.id } : {}),
+    ...(explicitId !== undefined ? { explicitId } : {}),
+  });
 
   let targetStore;
   try {
@@ -1249,7 +1293,11 @@ export async function storeAddProject(
 
   const registration = await registerExistingStore({
     path: projectRoot,
-    ...(input.id !== undefined ? { id: input.id } : {}),
+    // Preserve registerExistingStore's existing metadata-vs---as mismatch
+    // check. The resolved fallback is injected only when the operator did not
+    // provide --as; otherwise the explicit value reaches the established
+    // validator unchanged.
+    id: input.id ?? resolvedProjectId,
     allowCreateIdentity: true,
     type: 'project',
   });

@@ -1,0 +1,39 @@
+{
+  "parent": "project-issue-onboarding",
+  "mode": "decomposed",
+  "tier": "A",
+  "gatePolicy": {
+    "effective": "off",
+    "source": "global"
+  },
+  "engine": {
+    "effective": "legacy",
+    "source": "default",
+    "reason": "unsupported_pipeline_semantics"
+  },
+  "children": [
+    {
+      "id": "project-store-membership-api",
+      "pipeline": "small-feature",
+      "dependsOn": [],
+      "status": "done",
+      "node": "api"
+    },
+    {
+      "id": "project-issue-onboarding-ui",
+      "pipeline": "small-feature",
+      "dependsOn": [
+        "project-store-membership-api"
+      ],
+      "status": "done",
+      "node": "ui"
+    }
+  ],
+  "delivery": {
+    "status": "done",
+    "mode": "pr",
+    "base": "dev/0.2.0",
+    "branch": "feat/project-issue-onboarding",
+    "prUrl": "https://github.com/DumoeDss/rasen/pull/183"
+  }
+}

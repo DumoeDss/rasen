@@ -372,6 +372,25 @@ describe('management-api router (integration, via real http server)', () => {
       expect((res.json() as any).error.code).toBe('invalid_input');
     });
 
+    it.each(['/api/v1/spaces', '/api/v1/spaces/'])(
+      'admits an explicit membership payload on %s and reaches typed catalog resolution',
+      async (route) => {
+        const h = await startServer();
+        const res = await req(h.port, {
+          method: 'POST',
+          path: route,
+          headers: { ...authed(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            op: 'add-project-to-store',
+            projectId: 'missing-project',
+            storeId: 'missing-store',
+          }),
+        });
+        expect(res.status).toBe(404);
+        expect((res.json() as any).error.code).toBe('space_not_found');
+      }
+    );
+
     it('401s an unauthenticated POST and spawns nothing', async () => {
       const h = await startServer();
       const res = await req(h.port, {
@@ -382,13 +401,33 @@ describe('management-api router (integration, via real http server)', () => {
       expect(res.status).toBe(401);
     });
 
-    it('405s PUT and DELETE on /api/v1/spaces', async () => {
+    it('401s an unauthenticated membership POST before catalog resolution', async () => {
+      const h = await startServer();
+      const res = await req(h.port, {
+        method: 'POST',
+        path: '/api/v1/spaces/',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          op: 'add-project-to-store',
+          projectId: 'missing-project',
+          storeId: 'missing-store',
+        }),
+      });
+      expect(res.status).toBe(401);
+      expect((res.json() as any).error.code).toBe('unauthorized');
+    });
+
+    it.each(['/api/v1/spaces', '/api/v1/spaces/'])(
+      '405s PUT and DELETE on %s',
+      async (route) => {
       const h = await startServer();
       for (const method of ['PUT', 'DELETE']) {
-        const res = await req(h.port, { method, path: '/api/v1/spaces', headers: authed() });
+        const res = await req(h.port, { method, path: route, headers: authed() });
         expect(res.status, method).toBe(405);
+        expect((res.json() as any).error.code).toBe('method_not_allowed');
       }
-    });
+      }
+    );
   });
 
   describe('identity headers (design D3)', () => {

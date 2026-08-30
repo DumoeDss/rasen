@@ -147,6 +147,11 @@ describe('canonical homes and switch matrix', () => {
     }
   );
 
+  it('treats Project Issues as transitional when switching spaces', () => {
+    expect(spaceSwitchHref('/p/source/issues', STORE)).toBe('/s/Store%3AB%2Fc/issues');
+    expect(spaceSwitchHref('/p/source/issues', PROJECT)).toBe('/p/Proj%3AA%20b/board');
+  });
+
   it('falls back to the destination home for Board, Task Detail, and unknown sections', () => {
     expect(spaceSwitchHref('/p/source/board', STORE)).toBe('/s/Store%3AB%2Fc/issues');
     expect(spaceSwitchHref('/s/source/task/change', PROJECT)).toBe('/p/Proj%3AA%20b/board');

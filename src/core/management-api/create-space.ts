@@ -8,11 +8,12 @@
  * `submit.ts` (the established change-submission machinery) — its own cap-1
  * concurrency, 60s timeout with SIGTERM→SIGKILL escalation, and
  * slot-release-on-child-close discipline, admitted through the shared
- * bounded-CLI whitelist tier. The request discriminant selects the verb
- * without inspecting filesystem state:
+ * bounded-CLI whitelist tier. The request discriminant selects the verb;
+ * membership resolves identifiers only through a fresh server catalog read:
  *  - `create-project` → `init <path>`
  *  - `register-store` → `store register <path> --yes [--id <id>] --json`
- *  - `create-store` → `store setup <id> --path <joined-parent-and-id> --json`
+ *  - `create-store` → `store setup <id> --path <joined-parent-and-id> --layout 2 --json`
+ *  - `add-project-to-store` → `store add-project <resolved-project-root> --to <store-id> --json`
  */
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -20,15 +21,24 @@ import * as path from 'node:path';
 
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { validateStoreId } from '../store/foundation.js';
+import { sameProjectIdentity } from '../store/project-records.js';
 import { PATH_CONTROL_CHAR_PATTERN } from './local-path-resolver.js';
 import { handleSpaces } from './spaces.js';
 import { getBoundedCliEntry } from './whitelist.js';
-import type { CreateSpaceResponse, SpaceEntry } from './wire-types.js';
+import type {
+  CreateSpaceResponse,
+  ProjectSpaceEntry,
+  SpaceEntry,
+  StoreSpaceEntry,
+} from './wire-types.js';
 
 const require = createRequire(import.meta.url);
 
 /** Length cap on the submitted path (design D5). */
 const MAX_PATH_LENGTH = 4096;
+
+/** Length cap on catalog identifiers accepted by the membership intent. */
+const MAX_SPACE_IDENTIFIER_LENGTH = 512;
 
 /** Hard timeout on the subprocess (design D5): init writes many files; store ops share the ceiling. */
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -37,11 +47,8 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_KILL_GRACE_MS = 2_000;
 
 export type CreateSpaceResult =
-  | { ok: true; status: 201; response: CreateSpaceResponse }
+  | { ok: true; status: 200 | 201; response: CreateSpaceResponse }
   | { ok: false; status: number; code: string; message: string; cliExitCode?: number; stderr?: string };
-
-/** The three bounded-CLI operations this bridge admits (design D5). */
-type SpaceOp = 'create-project-space' | 'register-store-space' | 'setup-store-space';
 
 interface CreateSpaceOptions {
   timeoutMs?: number;
@@ -81,6 +88,33 @@ function parseStoreId(stdout: string): string | null {
   }
 }
 
+interface MembershipCliCorrelation {
+  projectId: string;
+  projectRoot: string;
+  storeRoot: string;
+}
+
+/** Reads only the identities/roots required to correlate an add-project result. */
+function parseMembershipCorrelation(stdout: string): MembershipCliCorrelation | null {
+  try {
+    const parsed = JSON.parse(stdout) as {
+      project?: { root?: unknown };
+      target?: { root?: unknown };
+      membership?: { project_id?: unknown };
+    };
+    const projectId = parsed.membership?.project_id;
+    const projectRoot = parsed.project?.root;
+    const storeRoot = parsed.target?.root;
+    return typeof projectId === 'string' && projectId.length > 0
+      && typeof projectRoot === 'string' && projectRoot.length > 0
+      && typeof storeRoot === 'string' && storeRoot.length > 0
+      ? { projectId, projectRoot, storeRoot }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Parses the CLI's failure message: the store commands emit a JSON
  * `{ status: [{ message }] }` on stdout even on non-zero exit; `init` has no
@@ -97,14 +131,42 @@ function parseErrorMessage(stdout: string, stderr: string): string {
   return stderr.trim().length > 0 ? stderr : 'The CLI exited with an error and produced no message.';
 }
 
-interface Validated {
-  kind: 'project' | 'store';
+interface ProjectCreationPlan {
+  kind: 'project';
   targetPath: string;
-  id: string | undefined;
-  op: SpaceOp;
-  operation: CreateSpaceResponse['operation'];
+  id: undefined;
+  op: 'create-project-space';
+  operation: 'init';
   argv: string[];
 }
+
+interface StoreCreationPlan {
+  kind: 'store';
+  targetPath: string;
+  id: string | undefined;
+  op: 'register-store-space' | 'setup-store-space';
+  operation: 'store-register' | 'store-setup';
+  argv: string[];
+}
+
+type CreationPlan = ProjectCreationPlan | StoreCreationPlan;
+
+interface MembershipIntent {
+  kind: 'membership';
+  projectId: string;
+  storeId: string;
+  op: 'add-project-to-store-space';
+  operation: 'store-add-project';
+}
+
+interface MembershipPlan extends MembershipIntent {
+  projectRoot: string;
+  storeRoot: string;
+  argv: string[];
+}
+
+type Validated = CreationPlan | MembershipIntent;
+type ExecutionPlan = CreationPlan | MembershipPlan;
 
 type ValidationFailure = { ok: false; status: number; code: string; message: string };
 
@@ -157,6 +219,29 @@ function validateId(value: unknown, required: boolean): string | undefined | Val
   }
 }
 
+function validateSpaceIdentifier(value: unknown, field: 'projectId' | 'storeId'): string | ValidationFailure {
+  if (typeof value !== 'string' || value.length === 0) {
+    return { ok: false, status: 400, code: 'invalid_input', message: `${field} must be a non-empty string.` };
+  }
+  if (value.length > MAX_SPACE_IDENTIFIER_LENGTH) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'invalid_input',
+      message: `${field} must be at most ${MAX_SPACE_IDENTIFIER_LENGTH} characters.`,
+    };
+  }
+  if (PATH_CONTROL_CHAR_PATTERN.test(value)) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'invalid_input',
+      message: `${field} must not contain control characters.`,
+    };
+  }
+  return value;
+}
+
 /** All validation before any subprocess. The operation and allowed fields are explicit. */
 function validate(body: unknown): Validated | ValidationFailure {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
@@ -166,13 +251,14 @@ function validate(body: unknown): Validated | ValidationFailure {
   if (
     request.op !== 'create-project' &&
     request.op !== 'create-store' &&
-    request.op !== 'register-store'
+    request.op !== 'register-store' &&
+    request.op !== 'add-project-to-store'
   ) {
     return {
       ok: false,
       status: 400,
       code: 'invalid_input',
-      message: "op must be 'create-project', 'create-store', or 'register-store'.",
+      message: "op must be 'create-project', 'create-store', 'register-store', or 'add-project-to-store'.",
     };
   }
 
@@ -181,7 +267,9 @@ function validate(body: unknown): Validated | ValidationFailure {
       ? new Set(['op', 'path'])
       : request.op === 'create-store'
         ? new Set(['op', 'parent', 'id'])
-        : new Set(['op', 'path', 'id']);
+        : request.op === 'register-store'
+          ? new Set(['op', 'path', 'id'])
+          : new Set(['op', 'projectId', 'storeId']);
   if (Object.keys(request).some((key) => !allowed.has(key))) {
     return {
       ok: false,
@@ -201,6 +289,20 @@ function validate(body: unknown): Validated | ValidationFailure {
       op: 'create-project-space',
       operation: 'init',
       argv: ['init', targetPath],
+    };
+  }
+
+  if (request.op === 'add-project-to-store') {
+    const projectId = validateSpaceIdentifier(request.projectId, 'projectId');
+    if (typeof projectId !== 'string') return projectId;
+    const storeId = validateSpaceIdentifier(request.storeId, 'storeId');
+    if (typeof storeId !== 'string') return storeId;
+    return {
+      kind: 'membership',
+      projectId,
+      storeId,
+      op: 'add-project-to-store-space',
+      operation: 'store-add-project',
     };
   }
 
@@ -230,7 +332,7 @@ function validate(body: unknown): Validated | ValidationFailure {
     id,
     op: 'setup-store-space',
     operation: 'store-setup',
-    argv: ['store', 'setup', id as string, '--path', targetPath, '--json'],
+    argv: ['store', 'setup', id as string, '--path', targetPath, '--layout', '2', '--json'],
   };
 }
 
@@ -242,7 +344,7 @@ function validate(body: unknown): Validated | ValidationFailure {
  */
 function findSpace(
   spaces: SpaceEntry[],
-  validated: Validated,
+  validated: CreationPlan,
   storeIdFromStdout: string | null
 ): SpaceEntry | undefined {
   if (validated.kind === 'project') {
@@ -265,9 +367,87 @@ function findSpace(
   return spaces.find((s) => s.type === 'store' && s.root !== undefined && canonicalizeOrResolve(s.root) === canonicalTarget);
 }
 
+type LiveProjectSpace = ProjectSpaceEntry & { root: string };
+type LiveStoreSpace = StoreSpaceEntry & { root: string };
+
+function isLiveProjectWithId(space: SpaceEntry, id: string): space is LiveProjectSpace {
+  return space.type === 'project' && space.id === id && typeof space.root === 'string' && space.root.length > 0;
+}
+
+function isLiveStoreWithId(space: SpaceEntry, id: string): space is LiveStoreSpace {
+  return space.type === 'store' && space.id === id && typeof space.root === 'string' && space.root.length > 0;
+}
+
+function resolveMembershipPlan(
+  spaces: SpaceEntry[],
+  intent: MembershipIntent
+): MembershipPlan | ValidationFailure {
+  const projects = spaces.filter((space) => isLiveProjectWithId(space, intent.projectId));
+  if (projects.length === 0) {
+    return {
+      ok: false,
+      status: 404,
+      code: 'space_not_found',
+      message: `Project ${intent.projectId} was not found in the current spaces catalog.`,
+    };
+  }
+  if (projects.length > 1) {
+    return {
+      ok: false,
+      status: 409,
+      code: 'space_ambiguous',
+      message: `Project ${intent.projectId} resolves to multiple live spaces.`,
+    };
+  }
+
+  const stores = spaces.filter((space) => isLiveStoreWithId(space, intent.storeId));
+  if (stores.length === 0) {
+    return {
+      ok: false,
+      status: 404,
+      code: 'space_not_found',
+      message: `Store ${intent.storeId} was not found in the current spaces catalog.`,
+    };
+  }
+  if (stores.length > 1) {
+    return {
+      ok: false,
+      status: 409,
+      code: 'space_ambiguous',
+      message: `Store ${intent.storeId} resolves to multiple live spaces.`,
+    };
+  }
+
+  const project = projects[0]!;
+  const store = stores[0]!;
+  return {
+    ...intent,
+    projectRoot: project.root,
+    storeRoot: store.root,
+    argv: ['store', 'add-project', project.root, '--to', intent.storeId, '--json'],
+  };
+}
+
+function samePath(left: string, right: string): boolean {
+  const a = canonicalizeOrResolve(left);
+  const b = canonicalizeOrResolve(right);
+  return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
+function findMembershipStore(spaces: SpaceEntry[], plan: MembershipPlan): StoreSpaceEntry | undefined {
+  const matchingStores = spaces.filter(
+    (space): space is StoreSpaceEntry =>
+      space.type === 'store' && typeof space.root === 'string' && samePath(space.root, plan.storeRoot)
+  );
+  if (matchingStores.length !== 1) return undefined;
+  const store = matchingStores[0]!;
+  const memberCount = store.members.filter((member) => sameProjectIdentity(member.projectId, plan.projectId)).length;
+  return memberCount === 1 ? store : undefined;
+}
+
 /**
  * Builds the create-space creator closed over one server's concurrency state
- * (design D5: at most one space-creation subprocess in flight per server,
+ * (design D5: at most one space mutation subprocess in flight per server,
  * independent of change-submission's cap). Call once per server instance.
  */
 export function createSpaceCreator(
@@ -286,26 +466,50 @@ export function createSpaceCreator(
     if (!('op' in validated)) {
       return validated;
     }
-    const plan = validated;
-
     // Admission gate through the shared whitelist table (design D5): each
     // handler admits only its own operation set. This can only fail if the
     // table itself is edited to drop the row — the "single admission source"
     // contract the spec promises (the table is load-bearing).
-    if (!getBoundedCliEntry(plan.op)) {
+    if (!getBoundedCliEntry(validated.op)) {
       return {
         ok: false,
         status: 500,
         code: 'internal_error',
-        message: `${plan.op} is not present in the admission whitelist.`,
+        message: `${validated.op} is not present in the admission whitelist.`,
       };
     }
 
     if (inFlight) {
-      return { ok: false, status: 409, code: 'busy', message: 'Another space creation is already in flight.' };
+      return { ok: false, status: 409, code: 'busy', message: 'Another space mutation is already in flight.' };
     }
 
     inFlight = true;
+    let plan: ExecutionPlan;
+    if (validated.kind === 'membership') {
+      let catalog: { spaces: SpaceEntry[] };
+      try {
+        catalog = await listSpaces();
+      } catch (error) {
+        inFlight = false;
+        return {
+          ok: false,
+          status: 500,
+          code: 'cli_protocol_error',
+          message: `Failed to read the spaces listing before membership: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        };
+      }
+      const resolved = resolveMembershipPlan(catalog.spaces, validated);
+      if (!('argv' in resolved)) {
+        inFlight = false;
+        return resolved;
+      }
+      plan = resolved;
+    } else {
+      plan = validated;
+    }
+
     return runCreation(cliEntry, plan, listSpaces, timeoutMs, killGraceMs, () => {
       inFlight = false;
     });
@@ -314,7 +518,7 @@ export function createSpaceCreator(
 
 function runCreation(
   cliEntry: string,
-  plan: Validated,
+  plan: ExecutionPlan,
   listSpaces: () => Promise<{ spaces: SpaceEntry[] }>,
   timeoutMs: number,
   killGraceMs: number,
@@ -396,22 +600,69 @@ function runCreation(
         return;
       }
 
+      if (plan.kind === 'membership') {
+        const correlation = parseMembershipCorrelation(stdout);
+        if (
+          !correlation
+          || !sameProjectIdentity(correlation.projectId, plan.projectId)
+          || !samePath(correlation.projectRoot, plan.projectRoot)
+          || !samePath(correlation.storeRoot, plan.storeRoot)
+        ) {
+          respond({
+            ok: false,
+            status: 500,
+            code: 'cli_protocol_error',
+            message: 'The CLI reported success but its membership result did not match the requested Project and Store.',
+          });
+          releaseSlot();
+          return;
+        }
+      }
+
       // Zero exit: re-read the listing and locate the new space. `init` has no
       // `--json`, so success is exit-0 + a listing re-read — never a parse of
       // its human output.
       const storeIdFromStdout = plan.kind === 'store' ? parseStoreId(stdout) : null;
       listSpaces()
         .then(({ spaces }) => {
-          const space = findSpace(spaces, plan, storeIdFromStdout);
+          const space = plan.kind === 'membership'
+            ? findMembershipStore(spaces, plan)
+            : findSpace(spaces, plan, storeIdFromStdout);
           if (!space) {
             respond({
               ok: false,
               status: 500,
               code: 'cli_protocol_error',
-              message: 'The CLI reported success but the new space could not be found in the spaces listing.',
+              message: plan.kind === 'membership'
+                ? 'The CLI reported success but the exact Project membership was not visible once in the target Store.'
+                : 'The CLI reported success but the new space could not be found in the spaces listing.',
             });
+          } else if (plan.kind === 'project') {
+            if (space.type !== 'project') {
+              respond({
+                ok: false,
+                status: 500,
+                code: 'cli_protocol_error',
+                message: 'The CLI reported success but the project result had the wrong catalog type.',
+              });
+              return;
+            }
+            respond({ ok: true, status: 201, response: { operation: 'init', space } });
           } else {
-            respond({ ok: true, status: 201, response: { operation: plan.operation, space } });
+            if (space.type !== 'store') {
+              respond({
+                ok: false,
+                status: 500,
+                code: 'cli_protocol_error',
+                message: 'The CLI reported success but the Store result had the wrong catalog type.',
+              });
+              return;
+            }
+            respond({
+              ok: true,
+              status: plan.kind === 'membership' ? 200 : 201,
+              response: { operation: plan.operation, space },
+            });
           }
         })
         .catch((error: unknown) => {
@@ -419,7 +670,7 @@ function runCreation(
             ok: false,
             status: 500,
             code: 'cli_protocol_error',
-            message: `Failed to re-read the spaces listing after creation: ${
+            message: `Failed to re-read the spaces listing after mutation: ${
               error instanceof Error ? error.message : String(error)
             }`,
           });
