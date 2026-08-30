@@ -32,13 +32,13 @@
       }
     },
     "review-loop": {
-      "status": "pending"
+      "status": "done"
     },
     "ship": {
       "status": "pending"
     },
     "verify": {
-      "status": "in_progress"
+      "status": "done"
     }
   }
 }

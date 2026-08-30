@@ -1,4 +1,4 @@
-import { useRef, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 
 import * as client from '../api/client.js';
@@ -15,6 +15,12 @@ import { useT } from '../i18n/store.js';
 
 type SpaceOperation = 'create-project' | 'create-store' | 'register-store';
 
+interface CreateSpaceDialogProps {
+  onCancel: () => void;
+  fixedOperation?: 'create-store';
+  onSuccess?: (result: CreateSpaceResponse) => void;
+}
+
 function joinPreview(parent: string, separator: string, id: string): string {
   if (!parent || !id) return '';
   return parent.endsWith(separator)
@@ -23,27 +29,44 @@ function joinPreview(parent: string, separator: string, id: string): string {
 }
 
 /** Explicit project creation, Store setup, and Store registration flow. */
-export function CreateSpaceDialog({ onCancel }: { onCancel: () => void }) {
+export function CreateSpaceDialog({
+  onCancel,
+  fixedOperation,
+  onSuccess,
+}: CreateSpaceDialogProps) {
   const t = useT();
   const { route } = useLocation();
-  const [operation, setOperation] = useState<SpaceOperation>('create-project');
+  const [selectedOperation, setSelectedOperation] = useState<SpaceOperation>('create-project');
   const [storeId, setStoreId] = useState('');
   const [visiblePath, setVisiblePath] = useState('');
   const [separator, setSeparator] = useState('/');
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const pathController = useRef<LocalPathSelectionController | null>(null);
+  const mountedRef = useRef(true);
+  const submitAttemptRef = useRef(0);
+  const operation = fixedOperation ?? selectedOperation;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      submitAttemptRef.current += 1;
+    };
+  }, []);
 
   async function handleSubmit(event: Event) {
     event.preventDefault();
     if (submitting) return;
     if (operation === 'create-store' && !storeId) {
-      setSubmitError('Store id is required.');
+      setSubmitError('spaces.create.store_id_required');
       return;
     }
+    const attempt = ++submitAttemptRef.current;
     setSubmitting(true);
     setSubmitError(null);
     const selected = await pathController.current?.resolveForSubmit();
+    if (!mountedRef.current || attempt !== submitAttemptRef.current) return;
     if (!selected) {
       setSubmitting(false);
       return;
@@ -61,10 +84,15 @@ export function CreateSpaceDialog({ onCancel }: { onCancel: () => void }) {
             };
     try {
       const result: CreateSpaceResponse = await client.createSpace(request);
+      if (!mountedRef.current || attempt !== submitAttemptRef.current) return;
       // Publish before routing so both mounted consumers can render it in the
       // same SPA turn; this refresh started after publication is authoritative.
       publishSpace(result.space);
       void refreshSpaceCatalog();
+      if (onSuccess) {
+        onSuccess(result);
+        return;
+      }
       const space: Space = {
         type: result.space.type,
         id: result.space.id,
@@ -72,6 +100,7 @@ export function CreateSpaceDialog({ onCancel }: { onCancel: () => void }) {
       };
       route(spaceHomeHref(space));
     } catch (caught) {
+      if (!mountedRef.current || attempt !== submitAttemptRef.current) return;
       if (caught instanceof ApiError && caught.status === 401) return;
       setSubmitting(false);
       setSubmitError(
@@ -95,43 +124,46 @@ export function CreateSpaceDialog({ onCancel }: { onCancel: () => void }) {
       >
         <h2 class="create-space-dialog__title">{t('spaces.create.title')}</h2>
 
-        <div
-          class="create-space-dialog__kind"
-          role="group"
-          aria-label="Space operation"
-        >
-          {(
-            [
-              ['create-project', 'Project'],
-              ['create-store', 'Create new Store'],
-              ['register-store', 'Register existing Store'],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              type="button"
-              class={`create-space-dialog__kind-btn${
-                operation === value
-                  ? ' create-space-dialog__kind-btn--selected'
-                  : ''
-              }`}
-              aria-pressed={operation === value}
-              disabled={submitting}
-              onClick={() => {
-                setOperation(value);
-                setSubmitError(null);
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {!fixedOperation && (
+          <div
+            class="create-space-dialog__kind"
+            role="group"
+            aria-label={t('spaces.create.operation_aria')}
+            data-testid="space-operation-chooser"
+          >
+            {(
+              [
+                ['create-project', t('spaces.create.project')],
+                ['create-store', t('spaces.create.create_store_operation')],
+                ['register-store', t('spaces.create.register_store_operation')],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                type="button"
+                class={`create-space-dialog__kind-btn${
+                  operation === value
+                    ? ' create-space-dialog__kind-btn--selected'
+                    : ''
+                }`}
+                aria-pressed={operation === value}
+                disabled={submitting}
+                onClick={() => {
+                  setSelectedOperation(value);
+                  setSubmitError(null);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
 
         <p class="create-space-dialog__current">
           {operation === 'create-store'
-            ? 'Select the parent directory for the new Store.'
+            ? t('spaces.create.instructions.create_store')
             : operation === 'register-store'
-              ? 'Select the existing Store root.'
-              : 'Select the Project root.'}
+              ? t('spaces.create.instructions.register_store')
+              : t('spaces.create.instructions.project')}
         </p>
 
         <LocalPathPicker
@@ -140,10 +172,10 @@ export function CreateSpaceDialog({ onCancel }: { onCancel: () => void }) {
           controllerRef={pathController}
           currentLabel={
             operation === 'create-store'
-              ? 'Parent directory'
+              ? t('spaces.create.path_label.parent_directory')
               : operation === 'register-store'
-                ? 'Existing Store root'
-                : 'Project root'
+                ? t('spaces.create.path_label.existing_store_root')
+                : t('spaces.create.path_label.project_root')
           }
           onValueChange={(value, nextSeparator) => {
             setVisiblePath(value);
@@ -154,7 +186,9 @@ export function CreateSpaceDialog({ onCancel }: { onCancel: () => void }) {
         {isStore && (
           <label class="create-space-dialog__field">
             <span>
-              Store id {operation === 'register-store' ? '(optional override)' : ''}
+              {operation === 'register-store'
+                ? t('spaces.create.store_id_optional')
+                : t('spaces.create.store_id')}
             </span>
             <input
               type="text"
@@ -172,7 +206,7 @@ export function CreateSpaceDialog({ onCancel }: { onCancel: () => void }) {
 
         {preview && (
           <p class="create-space-dialog__current" data-testid="derived-store-root">
-            New Store root: <code>{preview}</code>
+            {t('spaces.create.new_store_root')}: <code>{preview}</code>
           </p>
         )}
 
@@ -205,10 +239,10 @@ export function CreateSpaceDialog({ onCancel }: { onCancel: () => void }) {
             {submitting
               ? t('spaces.create.creating')
               : operation === 'create-project'
-                ? 'Create Project'
+                ? t('spaces.create.action.create_project')
                 : operation === 'create-store'
-                  ? 'Create Store'
-                  : 'Register Store'}
+                  ? t('spaces.create.action.create_store')
+                  : t('spaces.create.action.register_store')}
           </button>
         </div>
       </form>

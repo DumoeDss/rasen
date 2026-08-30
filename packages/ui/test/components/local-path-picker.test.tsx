@@ -98,6 +98,12 @@ describe('LocalPathPicker authoritative selection', () => {
 
   it('handles native selected, cancelled, and unavailable results without erasing selection', async () => {
     await mount();
+    const input = container.querySelector('input') as HTMLInputElement;
+    expect(container.querySelector('[data-testid="choose-directory"]')?.textContent).toBe('Choose directory');
+    expect(container.querySelector('[data-testid="choose-file"]')?.textContent).toBe('Choose package file');
+    expect(input.getAttribute('aria-label')).toBe('Server-local path');
+    expect(input.getAttribute('placeholder')).toBe('Type an absolute server-local path');
+    expect(container.querySelector('[data-testid="path-resolved"]')?.textContent?.trim()).toBe('resolved');
     (client.chooseLocalPath as any)
       .mockResolvedValueOnce({
         status: 'selected',

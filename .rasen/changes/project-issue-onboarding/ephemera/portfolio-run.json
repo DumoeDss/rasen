@@ -16,7 +16,7 @@
       "id": "project-store-membership-api",
       "pipeline": "small-feature",
       "dependsOn": [],
-      "status": "in_progress",
+      "status": "done",
       "node": "api"
     },
     {
@@ -25,7 +25,7 @@
       "dependsOn": [
         "project-store-membership-api"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "node": "ui"
     }
   ],
