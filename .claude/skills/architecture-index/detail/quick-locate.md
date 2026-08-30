@@ -91,6 +91,7 @@
 | 动态补全（change/spec/schema ID） | `src/core/completions/completion-provider.ts` |
 | **Daemon / Management API / Web UI** | |
 | `rasen daemon` / `rasen ui` 启动 management server | `src/core/management-api/server.ts`（`startManagementServer`）+ `src/commands/daemon.ts` |
+| Web UI 自动浏览器会话 / `/p/config` 启动项目短入口 / 过期续签 | `src/core/management-api/server.ts`（HttpOnly cookie、loopback Host 门、`GET /api/v1/auth/session`、短入口重定向）+ `packages/ui/src/{app.tsx,api/client.ts}`（无 fragment 启动、401 单次续签）+ `src/commands/ui-launch.ts`（token-free URL） |
 | 管理路由（runs/sessions/spaces/pipelines） | `src/core/management-api/router.ts` + `sessions.ts`/`runs.ts`/`supervisor.ts` |
 | 配置键 HTTP API | `src/core/config-api/router.ts` |
 | 暖会话池（reusable session） | `src/core/management-api/reusable-session-api.ts`（`ReusableSessionService`） |

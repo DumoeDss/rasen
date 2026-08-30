@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { LocationProvider, Router, Route, lazy, useLocation } from 'preact-iso';
-import { hasToken, isUnauthorized, onUnauthorized } from './api/token.js';
+import { isUnauthorized, onUnauthorized } from './api/token.js';
 import { Layout } from './components/Layout.js';
 import { ConfigPage } from './components/ConfigPage.js';
 import { BoardPage } from './components/BoardPage.js';
@@ -68,8 +68,10 @@ function LegacyStoreTaskRedirect() {
 }
 
 /**
- * Root shell: boots with the full-screen re-launch notice when there is no
- * token, and switches to it on any subsequent 401. Otherwise the URL is the
+ * Root shell: the server establishes an HttpOnly browser session while
+ * serving the page, so a fragment token is optional. The shell switches to
+ * the full-screen re-launch notice only after session refresh and retry both
+ * fail with 401. Otherwise the URL is the
  * source of truth for the selected planning space (management-ui-shell design
  * D1): `/` bootstraps and redirects to a resolved space route; every
  * space-scoped view lives under a `/p/:projectId/…` or `/s/:storeId/…` prefix
@@ -81,7 +83,7 @@ function LegacyStoreTaskRedirect() {
  * user-wide, so it carries no space prefix, exactly like `/spaces`.
  */
 export function App() {
-  const [unauthorized, setUnauthorized] = useState(!hasToken() || isUnauthorized());
+  const [unauthorized, setUnauthorized] = useState(isUnauthorized());
 
   useEffect(() => onUnauthorized(() => setUnauthorized(true)), []);
 

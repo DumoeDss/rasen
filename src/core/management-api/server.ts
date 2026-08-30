@@ -75,6 +75,41 @@ const SESSION_SHUTDOWN_GUARD_MS = 8000;
 
 const LOOPBACK_HOST = '127.0.0.1';
 export const AUDIT_VIEWER_ASSET_PATH = '/assets/audit-viewer.html';
+export const BROWSER_SESSION_PATH = '/api/v1/auth/session';
+const BROWSER_SESSION_COOKIE = 'rasen_session';
+
+function hasLoopbackHost(req: http.IncomingMessage): boolean {
+  const rawHost = req.headers.host;
+  if (!rawHost || Array.isArray(rawHost)) return false;
+  try {
+    const hostname = new URL(`http://${rawHost}`).hostname.toLowerCase();
+    return hostname === LOOPBACK_HOST || hostname === 'localhost' || hostname === '[::1]';
+  } catch {
+    return false;
+  }
+}
+
+function browserSessionCookie(req: http.IncomingMessage): string | null {
+  const rawCookie = req.headers.cookie;
+  if (!rawCookie) return null;
+  for (const part of rawCookie.split(';')) {
+    const separator = part.indexOf('=');
+    if (separator < 0 || part.slice(0, separator).trim() !== BROWSER_SESSION_COOKIE) continue;
+    try {
+      return decodeURIComponent(part.slice(separator + 1).trim());
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function issueBrowserSession(res: http.ServerResponse, token: string): void {
+  res.setHeader(
+    'Set-Cookie',
+    `${BROWSER_SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/`
+  );
+}
 
 function auditViewerFile(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../viewer/audit.html');
@@ -152,6 +187,59 @@ export function startManagementServer(
 
   const handler = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
     const pathname = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;
+
+    // A cookie bootstrap is safe only for an explicitly loopback Host. The
+    // socket bind alone does not stop DNS rebinding: a hostile hostname can
+    // resolve to 127.0.0.1 while retaining its attacker-controlled origin.
+    if (!hasLoopbackHost(req)) {
+      res.writeHead(403, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ error: { code: 'forbidden_host', message: 'Loopback Host required.' } }));
+      return;
+    }
+
+    if (pathname === BROWSER_SESSION_PATH) {
+      if (req.method !== 'GET') {
+        res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8', Allow: 'GET' });
+        res.end('Method not allowed');
+        return;
+      }
+      issueBrowserSession(res, context.token);
+      res.writeHead(204, { 'Cache-Control': 'no-store' });
+      res.end();
+      return;
+    }
+
+    // Route handlers retain their existing Bearer-token contract. A valid
+    // HttpOnly browser session is translated at this composition boundary so
+    // browser and CLI callers share one authorization decision downstream.
+    if (browserSessionCookie(req) === context.token) {
+      req.headers.authorization = `Bearer ${context.token}`;
+    }
+
+    // Stable single-project entry point. The daemon's launch project is the
+    // only unambiguous meaning of a project-less path; canonical multi-project
+    // routes remain unchanged after this one redirect.
+    if (pathname === '/p/config' && req.method === 'GET') {
+      issueBrowserSession(res, context.token);
+      if (!context.launchProjectRef) {
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.end('No launch project is available for /p/config.');
+        return;
+      }
+      res.writeHead(302, {
+        Location: `/p/${encodeURIComponent(context.launchProjectRef.projectId)}/config`,
+        'Cache-Control': 'no-store',
+      });
+      res.end();
+      return;
+    }
+
+    // The initial HTML navigation establishes a session before the SPA makes
+    // its first API request. Static assets are harmlessly covered as well.
+    if (req.method === 'GET' && !pathname.startsWith('/api/')) {
+      issueBrowserSession(res, context.token);
+    }
+
     if (pathname === AUDIT_VIEWER_ASSET_PATH) {
       if (req.method !== 'GET') {
         res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8', Allow: 'GET' });

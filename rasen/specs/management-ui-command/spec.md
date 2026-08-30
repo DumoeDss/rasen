@@ -1,25 +1,30 @@
 # management-ui-command Specification
 
 ## Purpose
-Provide the public `rasen ui` CLI command — the sole management platform entry point — that launches a combined management API + config API + UI-asset server on loopback with a per-session bearer token, and shuts down cleanly.
+Provide the public `rasen ui` CLI command — the sole management platform entry point — that launches a combined management API + config API + UI-asset server on loopback with automatic browser-session authentication, and shuts down cleanly.
 ## Requirements
 ### Requirement: Combined serving of management API, config API, and UI assets
-The server started by `rasen ui` SHALL serve the management endpoints, the existing config API endpoints, and the UI package's static assets from a single origin under a single session token, so the board page and the config page can both operate against it. When the UI package is not installed, the server SHALL still expose all API endpoints and serve an install-hint page for non-API paths.
+The server started by `rasen ui` SHALL serve the management endpoints, the existing config API endpoints, and the UI package's static assets from a single origin under one daemon session, so the board page and the config page can both operate against it. Browser navigation SHALL establish the daemon session automatically; bearer authentication SHALL remain available for non-browser clients. When the UI package is not installed, the server SHALL still expose all API endpoints and serve an install-hint page for non-API paths.
 
-#### Scenario: One origin, one token
+#### Scenario: One origin, one browser session
 - **WHEN** the board page fetches management endpoints and the config page fetches config endpoints on a server started by `rasen ui`
-- **THEN** both succeed against the same origin using the same bearer token
+- **THEN** both succeed against the same origin using the automatically established browser session
+
+#### Scenario: Stable launch-project config entry
+- **WHEN** the user opens `http://127.0.0.1:<port>/p/config` on a daemon launched inside a project
+- **THEN** the response establishes the browser session and redirects to that launch project's canonical `/p/<projectId>/config` route
+- **AND** the user never has to know the project id or enter a token
 
 #### Scenario: UI package missing
 - **WHEN** `rasen ui` is run without the UI package installed
 - **THEN** the command prints the install hint, API endpoints remain fully usable, and non-API paths serve the install-hint page
 
 ### Requirement: Public management platform launch command (adopt-or-spawn)
-The CLI SHALL provide a public top-level `rasen ui` command, listed in `rasen --help`, that reaches the management platform by adopting or spawning the resident daemon (per the daemon-residency capability's classification rules): it probes the daemon port, adopts a same-version daemon, replaces a stale one, spawns a fresh daemon when nothing listens, and fails with a clear reason — touching nothing — when a foreign process owns the port. On success it SHALL print a URL of the form `http://127.0.0.1:<port>/#token=<token>` (the daemon's port and token) landing on the board, and open it in the default browser unless `--no-open` is given. `rasen ui --no-daemon` SHALL instead start a self-hosted foreground server exactly as before residency existed: loopback, ephemeral port by default, `--port <n>` to pin it, per-invocation token, sessions supervised by this foreground process. `--port` SHALL apply to the self-hosted form; invalid values are rejected with a clear error and no server or daemon action.
+The CLI SHALL provide a public top-level `rasen ui` command, listed in `rasen --help`, that reaches the management platform by adopting or spawning the resident daemon (per the daemon-residency capability's classification rules): it probes the daemon port, adopts a same-version daemon, replaces a stale one, spawns a fresh daemon when nothing listens, and fails with a clear reason — touching nothing — when a foreign process owns the port. On success it SHALL print a token-free URL of the form `http://127.0.0.1:<port>/` (optionally carrying the cwd `space` query) landing on the board, and open it in the default browser unless `--no-open` is given. `rasen ui --no-daemon` SHALL instead start a self-hosted foreground server: loopback, ephemeral port by default, `--port <n>` to pin it, per-invocation server secret, sessions supervised by this foreground process, and the same automatic browser-session bootstrap. `--port` SHALL apply to the self-hosted form; invalid values are rejected with a clear error and no server or daemon action.
 
 #### Scenario: Launch adopts a running daemon
 - **WHEN** a user runs `rasen ui` while a same-version daemon is running
-- **THEN** no new server process starts, and the printed URL carries the running daemon's port and token, landing on the board
+- **THEN** no new server process starts, and the printed token-free URL carries the running daemon's port, landing on the board
 
 #### Scenario: Launch spawns the daemon when absent
 - **WHEN** a user runs `rasen ui` with nothing listening on the daemon port
@@ -31,7 +36,7 @@ The CLI SHALL provide a public top-level `rasen ui` command, listed in `rasen --
 
 #### Scenario: Self-hosted fallback preserved
 - **WHEN** a user runs `rasen ui --no-daemon`
-- **THEN** a foreground server starts on a loopback ephemeral port with a fresh token, exactly as the pre-residency command behaved
+- **THEN** a foreground server starts on a loopback ephemeral port with a fresh internal secret and a token-free browser URL
 
 #### Scenario: Listed in help
 - **WHEN** a user runs `rasen --help`
@@ -53,11 +58,11 @@ Exiting `rasen ui` SHALL leave an adopted or spawned daemon — and every sessio
 - **THEN** the process exits within the shutdown guard window without hanging on open sockets
 
 ### Requirement: The launch URL carries the cwd-resolved planning space
-`rasen ui` SHALL resolve the planning space of the directory it is run in — using the shared cwd→space derivation of the planning-space-addressing capability — and include it in the opened URL as a `space` query parameter (`?space=project:<id>` or `?space=store:<id>`, placed before the token fragment), on both the daemon-adopting and self-hosted launch forms. Before emitting a `project:` selector, the command SHALL ensure the project is registered with a usable project id (the same registration any root-resolving CLI command performs), so the emitted selector always resolves against the server. When the working directory yields no derivable space, the URL SHALL carry no `space` parameter and the launch proceeds exactly as before.
+`rasen ui` SHALL resolve the planning space of the directory it is run in — using the shared cwd→space derivation of the planning-space-addressing capability — and include it in the opened token-free URL as a `space` query parameter (`?space=project:<id>` or `?space=store:<id>`), on both the daemon-adopting and self-hosted launch forms. Before emitting a `project:` selector, the command SHALL ensure the project is registered with a usable project id (the same registration any root-resolving CLI command performs), so the emitted selector always resolves against the server. When the working directory yields no derivable space, the URL SHALL carry no `space` parameter and the launch proceeds exactly as before.
 
 #### Scenario: Launch inside a project emits the project space
 - **WHEN** a user runs `rasen ui` inside a Rasen project while a daemon launched elsewhere is adopted
-- **THEN** the opened URL contains `?space=project:<that project's id>` ahead of the `#token=` fragment
+- **THEN** the opened token-free URL contains `?space=project:<that project's id>`
 
 #### Scenario: Launch inside a pointer repo emits the store space
 - **WHEN** a user runs `rasen ui` inside a repo whose planning is externalized to registered store `team-store`

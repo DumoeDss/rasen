@@ -127,7 +127,26 @@ async function request<T>(
   if (token) finalHeaders['Authorization'] = `Bearer ${token}`;
   if (json) finalHeaders['Content-Type'] = 'application/json';
 
-  const res = await fetch(path, { ...rest, headers: finalHeaders });
+  const fetchInit: RequestInit = { ...rest, headers: finalHeaders };
+  let res = await fetch(path, fetchInit);
+
+  if (res.status === 401) {
+    // The daemon token rotates when the daemon restarts. Refresh the opaque
+    // HttpOnly cookie once, then replay the original request exactly once;
+    // only a second 401 becomes a user-visible re-launch state.
+    try {
+      const refreshed = await fetch('/api/v1/auth/session', {
+        method: 'GET',
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      if (refreshed.ok) {
+        res = await fetch(path, fetchInit);
+      }
+    } catch {
+      // Preserve the original 401 below when the daemon cannot be reached.
+    }
+  }
 
   if (res.status === 401) {
     markUnauthorized();

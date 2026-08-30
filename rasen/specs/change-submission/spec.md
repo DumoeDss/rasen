@@ -87,10 +87,10 @@ When the subprocess exits non-zero, the server SHALL respond 422 with an error e
 - **THEN** the response envelope includes that stderr content
 
 ### Requirement: Write authentication and CSRF posture
-`POST /api/v1/changes` SHALL require the same per-session bearer token as the read endpoints, presented in the `Authorization` header. Authentication SHALL never be cookie-based, so a cross-site form post cannot carry credentials and a cross-origin scripted request fails the CORS preflight (the server sets no CORS headers); no separate CSRF token is required under this model.
+`POST /api/v1/changes` SHALL require the same daemon-session credential as the read endpoints: either the bearer token in the `Authorization` header or the matching server-issued HttpOnly browser-session cookie. Cookie-authenticated writes SHALL remain CSRF-resistant through the combined boundary: the cookie is `SameSite=Strict`, the server rejects non-loopback Host headers, mutation bodies require `application/json`, and the server emits no CORS headers, so cross-site forms fail the content-type gate and cross-origin scripted writes fail preflight. No separate CSRF token is required under this combined model.
 
 #### Scenario: Unauthenticated write rejected
-- **WHEN** a client sends `POST /api/v1/changes` without a valid bearer token
+- **WHEN** a client sends `POST /api/v1/changes` without a valid bearer token or browser-session cookie
 - **THEN** the server responds 401 with the `unauthorized` error envelope and spawns nothing
 
 #### Scenario: No CORS relaxation on the write path

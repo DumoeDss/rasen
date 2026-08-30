@@ -50,8 +50,14 @@ space is resolvable at all, it SHALL render an explicit empty state directing th
 
 #### Scenario: Launch query becomes a clean space route
 
-- **WHEN** the browser opens `…/?space=project:<id>#token=<t>` as printed by `rasen ui`
-- **THEN** the app authenticates, lands on `/p/<id>/board`, and removes the `?space=` query
+- **WHEN** the browser opens the token-free `…/?space=project:<id>` URL printed by `rasen ui`
+- **THEN** the server establishes the browser session, the app lands on `/p/<id>/board`, and removes the `?space=` query
+
+#### Scenario: Expired daemon session renews automatically
+
+- **WHEN** an open UI tab receives 401 because the daemon restarted and rotated its internal token
+- **THEN** the client refreshes its HttpOnly browser session once and retries the original request
+- **AND** it shows the re-launch notice only if the refreshed request is still unauthorized
 
 #### Scenario: Store launch query resolves to a store route
 

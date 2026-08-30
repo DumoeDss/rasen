@@ -1,11 +1,9 @@
 /**
- * Session token handling (design.md D4). `rasen config ui` mints a fresh
- * token per run and delivers it in the URL fragment:
- * `http://127.0.0.1:<port>/#token=<hex>`. On boot the app reads
- * `location.hash`, holds the token in module-scope memory only (never
- * localStorage/sessionStorage/cookies), and scrubs the fragment via
- * `history.replaceState` so it never lingers in the address bar or gets
- * copied with the URL.
+ * Legacy fragment-token compatibility. Current servers establish an opaque
+ * HttpOnly browser session while serving the page, so normal launches carry
+ * no token in the URL. Older launch links may still include `#token=<hex>`;
+ * on boot the app reads that value into module-scope memory and scrubs the
+ * fragment so it never lingers in the address bar or gets copied.
  */
 
 let currentToken: string | null = null;
@@ -56,7 +54,7 @@ export function isUnauthorized(): boolean {
   return unauthorized;
 }
 
-/** Marks the session unauthorized (a 401 response) — triggers the re-launch notice. */
+/** Marks the session unauthorized after automatic refresh also returned 401. */
 export function markUnauthorized(): void {
   unauthorized = true;
   for (const listener of unauthorizedListeners) listener();

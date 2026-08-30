@@ -57,9 +57,9 @@ vi.mock('../src/components/AuditPage.js', () => ({
 vi.mock('../src/components/SpaceSwitcher.js', () => ({
   SpaceSwitcher: () => <div data-testid="space-switcher" />,
 }));
+const authState = vi.hoisted(() => ({ unauthorized: false }));
 vi.mock('../src/api/token.js', () => ({
-  hasToken: () => true,
-  isUnauthorized: () => false,
+  isUnauthorized: () => authState.unauthorized,
   onUnauthorized: () => () => {},
 }));
 vi.mock('../src/api/client.js', () => ({
@@ -90,6 +90,7 @@ describe('App routing', () => {
   let container: HTMLElement;
 
   beforeEach(() => {
+    authState.unauthorized = false;
     container = document.createElement('div');
     document.body.appendChild(container);
     (client.health as any).mockResolvedValue({ ok: true, version: '0', project: null });
@@ -131,6 +132,12 @@ describe('App routing', () => {
   it('renders the config page at a project space config route', async () => {
     await mountAt(container, '/p/proj_x/config');
     expect(container.querySelector('[data-testid="config-page"]')).not.toBeNull();
+  });
+
+  it('renders through the cookie-authenticated browser session when no fragment token exists', async () => {
+    await mountAt(container, '/p/proj_x/config');
+    expect(container.querySelector('[data-testid="config-page"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="relaunch-notice"]')).toBeNull();
   });
 
   it('redirects a bare project root to its Board', async () => {

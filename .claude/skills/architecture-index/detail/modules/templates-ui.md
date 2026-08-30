@@ -32,9 +32,9 @@
 
 ## `packages/ui/` — `@atelierai/rasen-ui`（本地管理 Web App）
 
-独立 npm 包。Preact SPA，由 `rasen ui` 服务（loopback + per-session token + same-origin API）。
+独立 npm 包。Preact SPA，由 `rasen ui` 服务（loopback + 自动 HttpOnly browser session + same-origin API；旧 fragment token 仅兼容）。
 
-- **关键文件**：`main.tsx`（DOM bootstrap）、`app.tsx`（`preact-iso` Router 路由壳，懒加载重 pipeline canvas）、`theme/runtime.ts`（**浏览器侧主题运行时**：`ThemeManifest` token → CSS custom properties on `document.documentElement`，自适应 light/dark，`activateTheme()`/`subscribeTheme()`/`initializeTheme()`）、`theme/manifest.ts`（自包含浏览器侧 schema/校验副本）、`api/client.ts`（同源 config API HTTP 客户端）、`canvas/PipelineCanvasPage.tsx`（`@xyflow/react` + `dagre` 的 pipeline DAG 编辑器）。
+- **关键文件**：`main.tsx`（DOM bootstrap + 旧 fragment token 擦除）、`app.tsx`（无需 URL token 即启动的 `preact-iso` Router 壳，懒加载重 pipeline canvas）、`api/client.ts`（同源 HTTP 客户端；401 时调用 `/api/v1/auth/session` 单次续签再重放）、`theme/runtime.ts`（**浏览器侧主题运行时**：`ThemeManifest` token → CSS custom properties on `document.documentElement`，自适应 light/dark，`activateTheme()`/`subscribeTheme()`/`initializeTheme()`）、`theme/manifest.ts`（自包含浏览器侧 schema/校验副本）、`canvas/PipelineCanvasPage.tsx`（`@xyflow/react` + `dagre` 的 pipeline DAG 编辑器）。
 - **子目录**：`canvas/`（7 文件，pipeline 图编辑：`StageNode`/`PalettePanel`/`StagePanel`/`IssuesDrawer`/`DeclarationsPanel`/`EngineSupportPanel`/`V2NodePanel`/dagre `layout.ts`）、`components/`（~30 页面/widget）、`config/`、`i18n/`（6 文件）、`store/`（5 文件，Zustand）、`api/`。
 - **App 路由 / canonical home**：`/p/:projectId/board` + `/p/:projectId/task/:change` 是 project-only Change/Task 面；Store canonical home 是 `/s/:storeId/issues[/:issueId]`，另有 Store-only `/operations|unlinked-changes`，均无 `/p/` 对且不进 `SWITCHABLE_SECTIONS`。`/s/:storeId/board` replace-redirect 到 Issues，Store Task URL replace-redirect 到 Operations。类型感知 home/switch 矩阵集中在 `store/use-space.ts` 的 `spaceHomeHref`/`spaceSwitchHref`，由 bootstrap/switcher/space rows/create success 共用。
 - **Issue read/provenance**：`IssueBoardPage.tsx` 与 `IssueDetailPage.tsx` 用 selector（Detail 再加 Issue id）keyed state child 隔离同组件路由切换；`IssueCard.tsx` 的轴/attention evidence link 进入 Detail 稳定 fragment；`issue-provenance.ts` 把既有 payload 分成 record、plan/projection、acceptance/review、runtime、delivery、attention 六个展示族，只复制 `git|runtime` locator，不派生状态。闭词汇→label 查表仍在 `components/issue-vocabulary.ts`。

@@ -918,7 +918,7 @@ export function registerConfigCommand(program: Command): void {
     .option('--port <n>', '')
     .action(async (options: { open?: boolean; port?: string }) => {
       await runUiLaunch(options, {
-        entryPath: '/config',
+        entryPath: '/p/config',
         label: 'Config UI',
         serverLabel: 'management server',
         notice: 'Notice: `rasen config ui` is deprecated — use `rasen ui` instead.',
