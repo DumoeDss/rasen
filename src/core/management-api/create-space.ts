@@ -12,7 +12,7 @@
  * membership resolves identifiers only through a fresh server catalog read:
  *  - `create-project` → `init <path>`
  *  - `register-store` → `store register <path> --yes [--id <id>] --json`
- *  - `create-store` → `store setup <id> --path <joined-parent-and-id> --json`
+ *  - `create-store` → `store setup <id> --path <joined-parent-and-id> --layout 2 --json`
  *  - `add-project-to-store` → `store add-project <resolved-project-root> --to <store-id> --json`
  */
 import { spawn } from 'node:child_process';
@@ -332,7 +332,7 @@ function validate(body: unknown): Validated | ValidationFailure {
     id,
     op: 'setup-store-space',
     operation: 'store-setup',
-    argv: ['store', 'setup', id as string, '--path', targetPath, '--json'],
+    argv: ['store', 'setup', id as string, '--path', targetPath, '--layout', '2', '--json'],
   };
 }
 

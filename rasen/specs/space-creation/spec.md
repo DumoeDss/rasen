@@ -9,7 +9,7 @@ Define the management platform's space-creation write path: the CLI-backed subpr
 
 The management server SHALL accept `POST /api/v1/spaces` with exactly one explicit JSON operation: `{ op: "create-project", path }`, `{ op: "create-store", parent, id }`, or `{ op: "register-store", path, id? }`. It SHALL fulfil the request exclusively by spawning the existing `rasen` CLI as a subprocess with an argv array and `shell: false`, resolved from the running server's own installation (never PATH). The server SHALL NOT write workspace files, mint identity, or modify any registry in-process.
 
-The operation SHALL deterministically select the CLI verb: `create-project` spawns `rasen init <path>`; `create-store` validates the id, joins it beneath the selected parent using the server platform's path semantics, and spawns `rasen store setup <id> --path <joined-root>`; `register-store` spawns `rasen store register <path> --yes` with `--id <id>` when provided. The server SHALL never inspect a create request's target and silently convert it to registration, or convert registration to setup. On success it SHALL respond 201 with the operation performed and the new space's listing entry, re-read from the same enumeration `GET /api/v1/spaces` uses.
+The operation SHALL deterministically select the CLI verb: `create-project` spawns `rasen init <path>`; `create-store` validates the id, joins it beneath the selected parent using the server platform's path semantics, and spawns `rasen store setup <id> --path <joined-root> --layout 2`; `register-store` spawns `rasen store register <path> --yes` with `--id <id>` when provided. A freshly created Store SHALL therefore carry both a permanent Store identity and the layout version 2 declaration required by Store aggregate Issue reads. The server SHALL never inspect a create request's target and silently convert it to registration, or convert registration to setup. On success it SHALL respond 201 with the operation performed and the new space's listing entry, re-read from the same enumeration `GET /api/v1/spaces` uses.
 
 #### Scenario: Initialise a project space
 
@@ -25,7 +25,8 @@ The operation SHALL deterministically select the CLI verb: `create-project` spaw
 #### Scenario: Create a fresh store beneath its selected parent
 
 - **WHEN** a client sends `{ op: "create-store", parent: <absolute parent>, id: "team-store" }`
-- **THEN** the server spawns `store setup team-store --path <parent joined with team-store>`, initializes the Store at that child root, and responds 201 with its listing entry
+- **THEN** the server spawns `store setup team-store --path <parent joined with team-store> --layout 2`, initializes the Store at that child root with a permanent identity and layout version 2, and responds 201 with its listing entry
+- **AND** an empty Store aggregate Issue read is usable rather than refused with `issue_scope_required`
 
 #### Scenario: Create never turns into registration
 

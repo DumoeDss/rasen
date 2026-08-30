@@ -150,7 +150,7 @@ describe('createSpaceCreator explicit operations', () => {
     expect(result.response.operation).toBe('store-setup');
     expect(result.response.space.root).toBe(child);
     expect(readArgvLog(argvLog)).toEqual([
-      ['store', 'setup', 'team-store', '--path', child, '--json'],
+      ['store', 'setup', 'team-store', '--path', child, '--layout', '2', '--json'],
     ]);
   });
 
