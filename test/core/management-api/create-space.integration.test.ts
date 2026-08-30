@@ -49,6 +49,12 @@ describe('createSpaceCreator against the real CLI (integration, slow)', () => {
     process.env.XDG_DATA_HOME = dataHome;
     // Keep the subprocess from doing network work at exit.
     process.env.RASEN_TELEMETRY = '0';
+    // The real Store setup creates a Git commit. Keep that integration hermetic
+    // on runners without a global Git identity; afterEach restores the snapshot.
+    process.env.GIT_AUTHOR_NAME = 'Rasen Test';
+    process.env.GIT_AUTHOR_EMAIL = 'rasen-test@example.invalid';
+    process.env.GIT_COMMITTER_NAME = 'Rasen Test';
+    process.env.GIT_COMMITTER_EMAIL = 'rasen-test@example.invalid';
   });
 
   afterEach(async () => {
