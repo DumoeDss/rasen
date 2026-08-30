@@ -582,6 +582,47 @@ describe('store root selection for normal commands', () => {
       expect(json.root.store_id).toBeUndefined();
     });
 
+    it('serializes standalone scope paths for list, status, and context JSON', async () => {
+      const localRepo = path.join(tempDir, 'standalone-scope-output');
+      createOpenSpecRoot(localRepo);
+      createChange(localRepo, 'local-change');
+      const expectedPaths = {
+        'active-changes': path.join(localRepo, 'rasen', 'changes'),
+        'archive-line': path.join(localRepo, 'rasen', 'changes', 'archive'),
+        specs: path.join(localRepo, 'rasen', 'specs'),
+      };
+      const cases = [
+        {
+          name: 'list',
+          args: ['list', '--json'],
+          rootOf: (payload: any) => payload.root,
+        },
+        {
+          name: 'status',
+          args: ['status', '--change', 'local-change', '--json'],
+          rootOf: (payload: any) => payload.root,
+        },
+        {
+          name: 'context',
+          args: ['context', '--json'],
+          rootOf: (payload: any) => payload.root,
+        },
+      ];
+
+      for (const testCase of cases) {
+        const result = await runCLI(testCase.args, { cwd: localRepo, env });
+        expect(result.exitCode, `${testCase.name}: ${result.stdout || result.stderr}`).toBe(0);
+        expect(testCase.rootOf(parseJson(result))).toMatchObject({
+          path: localRepo,
+          source: 'nearest',
+          scope: {
+            kind: 'standalone',
+            paths: expectedPaths,
+          },
+        });
+      }
+    });
+
     it('works inside the standalone repo itself without a flag', async () => {
       createChange(storeRoot, 'store-change');
 

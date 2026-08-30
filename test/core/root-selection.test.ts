@@ -12,6 +12,7 @@ import {
   resolveOpenSpecRoot,
   resolveRootForCommand,
   RootSelectionError,
+  toRootOutput,
   withStoreFlag,
 } from '../../src/core/root-selection.js';
 import {
@@ -180,6 +181,45 @@ describe('resolveOpenSpecRoot', () => {
     expect(root.specsDir).toBe(path.join(storeRoot, 'rasen', 'specs'));
     expect(root.archiveDir).toBe(path.join(storeRoot, 'rasen', 'changes', 'archive'));
     expect(root.defaultSchema).toBe('spec-driven');
+  });
+
+  it('keeps the validated planning description on a nearest standalone root', async () => {
+    const projectRoot = mkdir('standalone-project');
+    createOpenSpecRoot(projectRoot);
+
+    const root = await resolveOpenSpecRoot({
+      startPath: projectRoot,
+      globalDataDir,
+      reporter: false,
+    });
+
+    expect(root).toMatchObject({
+      path: projectRoot,
+      source: 'nearest',
+      changesDir: path.join(projectRoot, 'rasen', 'changes'),
+      specsDir: path.join(projectRoot, 'rasen', 'specs'),
+      archiveDir: path.join(projectRoot, 'rasen', 'changes', 'archive'),
+      planningScope: {
+        kind: 'standalone',
+        paths: {
+          'active-changes': path.join(projectRoot, 'rasen', 'changes'),
+          'archive-line': path.join(projectRoot, 'rasen', 'changes', 'archive'),
+          specs: path.join(projectRoot, 'rasen', 'specs'),
+        },
+      },
+    });
+    expect(toRootOutput(root)).toMatchObject({
+      path: projectRoot,
+      source: 'nearest',
+      scope: {
+        kind: 'standalone',
+        paths: {
+          'active-changes': path.join(projectRoot, 'rasen', 'changes'),
+          'archive-line': path.join(projectRoot, 'rasen', 'changes', 'archive'),
+          specs: path.join(projectRoot, 'rasen', 'specs'),
+        },
+      },
+    });
   });
 
   it('rejects an unknown store id and lists registered ids', async () => {
