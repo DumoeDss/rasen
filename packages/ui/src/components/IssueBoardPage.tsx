@@ -18,7 +18,9 @@ import { ISSUE_PHASE_LABEL_KEYS, ISSUE_PHASE_ORDER } from './issue-vocabulary.js
 
 /**
  * The Issue Board (issue-board-ui spec / roadmap §9.1): one card per Issue in
- * the five phase lanes, read-only.
+ * the five phase lanes. Creation is the one Board mutation: after the server
+ * writes the record, the Board refetches every read payload and renders only
+ * that committed truth.
  *
  * Zero second state, structurally. All three read payloads are fetched on navigation and
  * on explicit refresh, keyed on `[selector, refreshNonce]`; nothing is cached
@@ -49,6 +51,7 @@ function IssueBoardState({ space, selector }: { space: Space | null; selector: s
   const [pageError, setPageError] = useState<{ message: string; fix?: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshNonce, setRefreshNonce] = useState(0);
+  const [dialogOpen, setDialogOpen] = useState(false);
   // The selected member chip (a member's projectId), or null for "All". State
   // of THIS mount only — never persisted, never restored (spec: "the filter
   // does not persist").
@@ -88,6 +91,11 @@ function IssueBoardState({ space, selector }: { space: Space | null; selector: s
 
   function refresh() {
     setRefreshNonce((n) => n + 1);
+  }
+
+  function handleIssueCreated() {
+    setDialogOpen(false);
+    refresh();
   }
 
   if (loading) {
@@ -208,11 +216,28 @@ function IssueBoardState({ space, selector }: { space: Space | null; selector: s
       <PageHeader
         title={t('issues.title')}
         actions={
-          <button type="button" class="btn--ghost" data-testid="issue-board-refresh" onClick={refresh}>
-            {t('issues.refresh')}
-          </button>
+          <>
+            <button
+              type="button"
+              class="btn--primary"
+              data-testid="issue-board-create"
+              onClick={() => setDialogOpen(true)}
+            >
+              {t('unlinked.create')}
+            </button>
+            <button type="button" class="btn--ghost" data-testid="issue-board-refresh" onClick={refresh}>
+              {t('issues.refresh')}
+            </button>
+          </>
         }
       />
+      {dialogOpen && (
+        <NewIssueDialog
+          selector={selector}
+          onCancel={() => setDialogOpen(false)}
+          onCreated={handleIssueCreated}
+        />
+      )}
       {notices.length > 0 && (
         <ul class="issue-board__notices" data-testid="issue-board-notices">
           {notices.map((notice, index) => (
@@ -258,6 +283,86 @@ function IssueBoardState({ space, selector }: { space: Space | null; selector: s
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function NewIssueDialog({
+  selector,
+  onCancel,
+  onCreated,
+}: {
+  selector: string | undefined;
+  onCancel: () => void;
+  onCreated: () => void;
+}) {
+  const t = useT();
+  const [issueId, setIssueId] = useState('');
+  const [title, setTitle] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  async function handleSubmit(event: Event) {
+    event.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      await client.createStoreIssue({ issueId, title }, selector);
+      onCreated();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) return;
+      setSubmitting(false);
+      setErrorMessage(err instanceof ApiError ? err.message : 'unlinked.dialog.create_error');
+    }
+  }
+
+  return (
+    <div class="new-change-dialog__overlay">
+      <form
+        class="new-change-dialog"
+        data-testid="new-issue-dialog"
+        aria-label={t('unlinked.create')}
+        onSubmit={handleSubmit}
+      >
+        <h2 class="new-change-dialog__title">{t('unlinked.create')}</h2>
+        <label class="new-change-dialog__field">
+          <span>{t('unlinked.dialog.issue_id')}</span>
+          <input
+            type="text"
+            name="issueId"
+            value={issueId}
+            disabled={submitting}
+            required
+            onInput={(event) => setIssueId((event.target as HTMLInputElement).value)}
+          />
+        </label>
+        <label class="new-change-dialog__field">
+          <span>{t('unlinked.dialog.issue_title')}</span>
+          <input
+            type="text"
+            name="title"
+            value={title}
+            disabled={submitting}
+            required
+            maxLength={200}
+            onInput={(event) => setTitle((event.target as HTMLInputElement).value)}
+          />
+        </label>
+        {errorMessage && (
+          <p class="new-change-dialog__error" role="alert">
+            {t(errorMessage)}
+          </p>
+        )}
+        <div class="new-change-dialog__actions">
+          <button type="button" class="btn--ghost" onClick={onCancel} disabled={submitting}>
+            {t('dialog.new_change.cancel')}
+          </button>
+          <button type="submit" class="btn--primary" disabled={submitting}>
+            {submitting ? t('unlinked.dialog.submitting') : t('dialog.new_change.create')}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
