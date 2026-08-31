@@ -8,6 +8,7 @@ import { diagnoseLayoutMigration } from './layout-migration/diagnostics.js';
 import { diagnoseConsistency } from './consistency-gates.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { WORKSPACE_DIR_NAME } from '../config.js';
+import { isKebabId, KEBAB_ID_DESCRIPTION, KEBAB_ID_FIX } from '../id.js';
 import {
   appendStoreReference,
   classifyOpenSpecDir,
@@ -621,6 +622,20 @@ async function resolveAddProjectDisplayId(input: {
   return inferStoreIdFromPath(input.projectRoot);
 }
 
+function validateProjectNamespaceId(id: string): string {
+  if (!isKebabId(id)) {
+    throw new StoreError(
+      `Project id '${id}' ${KEBAB_ID_DESCRIPTION}.`,
+      'invalid_store_id',
+      {
+        target: 'store.id',
+        fix: KEBAB_ID_FIX,
+      }
+    );
+  }
+  return id;
+}
+
 function normalizeRegistryPathForComparison(targetPath: string): string {
   try {
     return FileSystemUtils.canonicalizeExistingPath(targetPath);
@@ -645,6 +660,7 @@ function isRegisteredAtPath(
 function mutationPayload(
   id: string,
   storeRoot: string,
+  uid: string | undefined,
   git: { isRepository: boolean; initialized: boolean; committed: boolean },
   createdFiles: string[],
   registry: { registered: boolean; alreadyRegistered: boolean },
@@ -657,6 +673,7 @@ function mutationPayload(
       id,
       root: storeRoot,
       metadataPath: getStoreMetadataPath(storeRoot),
+      ...(uid !== undefined ? { uid } : {}),
     },
     ...(remotes && (remotes.canonical || remotes.observed) ? { remotes } : {}),
     registryCommit: {
@@ -989,7 +1006,7 @@ export async function setupPreparedStore(
     }
 
     const canonical = prepared.remote ?? existingMetadata?.remote;
-    return mutationPayload(id, registered.storeRoot, {
+    return mutationPayload(id, registered.storeRoot, registered.uid, {
       isRepository,
       initialized: gitInitialized,
       committed,
@@ -1185,7 +1202,7 @@ export async function registerExistingStore(
   }
 
   // Register never commits; converted roots are the user's repo to commit.
-  return mutationPayload(id, registered.storeRoot, {
+  return mutationPayload(id, registered.storeRoot, registered.uid, {
     isRepository,
     initialized: false,
     committed: false,
@@ -1218,12 +1235,14 @@ export async function storeAddProject(
   // existing metadata -> explicit --as -> registered Project identity for the
   // canonical root -> folder basename.
   const existingMetadata = await readStoreMetadataForOperation(projectRoot);
-  const explicitId = input.id !== undefined ? validateStoreId(input.id) : undefined;
-  const resolvedProjectId = await resolveAddProjectDisplayId({
-    projectRoot,
-    ...(existingMetadata?.id !== undefined ? { metadataId: existingMetadata.id } : {}),
-    ...(explicitId !== undefined ? { explicitId } : {}),
-  });
+  const explicitId = input.id !== undefined ? validateProjectNamespaceId(input.id) : undefined;
+  const resolvedProjectId = validateProjectNamespaceId(
+    await resolveAddProjectDisplayId({
+      projectRoot,
+      ...(existingMetadata?.id !== undefined ? { metadataId: existingMetadata.id } : {}),
+      ...(explicitId !== undefined ? { explicitId } : {}),
+    })
+  );
 
   let targetStore;
   try {

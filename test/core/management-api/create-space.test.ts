@@ -38,9 +38,10 @@ function projectSpace(id: string, root: string): SpaceEntry {
 function storeSpace(
   id: string,
   root: string,
-  members: Array<{ projectId: string; name: string; root?: string }> = []
+  members: Array<{ projectId: string; name: string; root?: string }> = [],
+  uid?: string
 ): SpaceEntry {
-  return { type: 'store', id, name: id, root, members };
+  return { type: 'store', id, ...(uid !== undefined ? { uid } : {}), name: id, root, members };
 }
 
 function scriptedListings(...snapshots: Array<SpaceEntry[] | Error>) {
@@ -90,6 +91,7 @@ describe('createSpaceCreator explicit operations', () => {
     delete process.env.RASEN_FAKE_ARGV_LOG;
     delete process.env.RASEN_FAKE_PROJECT_ID;
     delete process.env.RASEN_FAKE_STORE_ROOT;
+    delete process.env.RASEN_FAKE_STORE_UID;
     await cleanupTempPathAsync(dir);
   });
 
@@ -111,7 +113,7 @@ describe('createSpaceCreator explicit operations', () => {
     [{ op: 'create-store', parent: `${dir}\nparent`, id: 'team' }, 'newline in parent'],
     [{ op: 'create-project', path: dir, id: 'extra' }, 'cross-operation field'],
     [{ op: 'create-store', parent: dir }, 'missing id'],
-    [{ op: 'create-store', parent: dir, id: '--evil Id' }, 'invalid id'],
+    [{ op: 'create-store', parent: dir, id: 'bad/name' }, 'invalid name'],
     [{ op: 'register-store', path: dir, parent: dir }, 'ambiguous fields'],
     [{ op: 'add-project-to-store', storeId: 'team' }, 'missing project id'],
     [{ op: 'add-project-to-store', projectId: 'project-id' }, 'missing store id'],
@@ -134,25 +136,43 @@ describe('createSpaceCreator explicit operations', () => {
     expect(readArgvLog(argvLog)).toEqual([['init', dir]]);
   });
 
-  it('joins parent plus validated id and locates setup success by child root', async () => {
-    const child = path.join(dir, 'team-store');
+  it('joins parent plus a display name and locates setup success by child root', async () => {
+    const child = path.join(dir, '研发计划.v2');
     const result = await creator([
       {
         type: 'store',
-        id: 'team-store',
-        name: 'team-store',
+        id: '研发计划.v2',
+        uid: '11111111-2222-4333-8444-555555555555',
+        name: '研发计划.v2',
         root: child,
         members: [],
       },
-    ])({ op: 'create-store', parent: dir, id: 'team-store' });
+    ])({ op: 'create-store', parent: dir, id: '研发计划.v2' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.response.operation).toBe('store-setup');
     expect(result.response.space.root).toBe(child);
     expect(readArgvLog(argvLog)).toEqual([
-      ['store', 'setup', 'team-store', '--path', child, '--layout', '2', '--json'],
+      ['store', 'setup', '--path', child, '--layout', '2', '--json', '--', '研发计划.v2'],
     ]);
   });
+
+  it.each(['Acme Store', 'acme_context.v2', '-team'])(
+    'passes the valid Store name %s as one inert positional argv token',
+    async (name) => {
+      const child = path.join(dir, name);
+      const result = await creator([storeSpace(name, child)])({
+        op: 'create-store',
+        parent: dir,
+        id: name,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(readArgvLog(argvLog)).toEqual([
+        ['store', 'setup', '--path', child, '--layout', '2', '--json', '--', name],
+      ]);
+    }
+  );
 
   it('create never infers registration from Store-like child state', async () => {
     const child = path.join(dir, 'existing-child');
@@ -182,8 +202,59 @@ describe('createSpaceCreator explicit operations', () => {
     ])({ op: 'register-store', path: existing, id: 'team-store' });
     expect(result.ok).toBe(true);
     expect(readArgvLog(argvLog)).toEqual([
-      ['store', 'register', existing, '--yes', '--id', 'team-store', '--json'],
+      ['store', 'register', existing, '--yes', '--id=team-store', '--json'],
     ]);
+  });
+
+  it('locates a registered Store by canonical root when display names are duplicated', async () => {
+    const firstRoot = path.join(dir, 'first-store');
+    const registeredRoot = path.join(dir, 'second-store');
+    const first = storeSpace(
+      'Shared Name',
+      firstRoot,
+      [],
+      '11111111-2222-4333-8444-555555555555'
+    );
+    const registered = storeSpace(
+      'Shared Name',
+      registeredRoot,
+      [],
+      '66666666-7777-4888-8999-aaaaaaaaaaaa'
+    );
+
+    const result = await creator([first, registered])({
+      op: 'register-store',
+      path: registeredRoot,
+      id: 'Shared Name',
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.response.space).toEqual(registered);
+  });
+
+  it('falls back to the stdout Store uid when a registration listing omits roots', async () => {
+    const firstUid = '11111111-2222-4333-8444-555555555555';
+    const registeredUid = '66666666-7777-4888-8999-aaaaaaaaaaaa';
+    process.env.RASEN_FAKE_STORE_UID = registeredUid;
+    const first = storeSpace('Shared Name', path.join(dir, 'first-store'), [], firstUid);
+    const registered: SpaceEntry = {
+      type: 'store',
+      id: 'Shared Name',
+      uid: registeredUid,
+      name: 'Shared Name',
+      members: [],
+    };
+
+    const result = await creator([first, registered])({
+      op: 'register-store',
+      path: path.join(dir, 'second-store'),
+      id: 'Shared Name',
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.response.space).toEqual(registered);
   });
 
   it('registration never invokes setup when the CLI refuses it', async () => {
@@ -354,6 +425,39 @@ describe('createSpaceCreator explicit operations', () => {
     expect(argv.flat()).not.toContain('--as');
     expect(argv.flat()).not.toContain('--dry-run');
     expect(argv.flat()).not.toContain('adopt');
+  });
+
+  it('addresses Store membership by uid while preserving the display name in the response', async () => {
+    const projectRoot = path.join(dir, 'uid-project');
+    const storeRoot = path.join(dir, 'Shared Name');
+    const uid = '11111111-2222-4333-8444-555555555555';
+    fs.mkdirSync(projectRoot, { recursive: true });
+    fs.mkdirSync(storeRoot, { recursive: true });
+    process.env.RASEN_FAKE_PROJECT_ID = 'project-id';
+    process.env.RASEN_FAKE_STORE_ROOT = storeRoot;
+    const store = storeSpace('Shared Name', storeRoot, [], uid);
+    const joined = storeSpace(
+      'Shared Name',
+      storeRoot,
+      [{ projectId: 'project-id', name: 'project-id', root: projectRoot }],
+      uid
+    );
+    const catalog = scriptedListings(
+      [projectSpace('project-id', projectRoot), store],
+      [projectSpace('project-id', projectRoot), joined]
+    );
+
+    const result = await createSpaceCreator({
+      cliEntryOverride: fakeCliEntry,
+      listSpacesOverride: catalog.list,
+    })({ op: 'add-project-to-store', projectId: 'project-id', storeId: uid });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.response.space).toEqual(joined);
+    expect(readArgvLog(argvLog)).toEqual([
+      ['store', 'add-project', projectRoot, '--to', uid, '--json'],
+    ]);
   });
 
   it('replays an established membership without duplicate members', async () => {

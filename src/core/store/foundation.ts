@@ -6,7 +6,6 @@ import {
   folderStyleNameProblem,
   isKebabId,
   KEBAB_ID_DESCRIPTION,
-  KEBAB_ID_FIX,
 } from '../id.js';
 
 import { getGlobalDataDir } from '../global-config.js';
@@ -221,27 +220,40 @@ export async function resolveReadableStoreMetadataPath(
   return canonical;
 }
 
-export function validateStoreId(id: string): string {
-  const folderProblem = folderStyleNameProblem(id, 'Store id');
-  if (folderProblem !== null) {
-    throw new StoreError(folderProblem, 'invalid_store_id', {
+const STORE_ALIAS_FIX =
+  'Use a non-empty Store name without leading or trailing whitespace, path separators, or control characters.';
+
+function storeAliasProblem(alias: string): string | null {
+  const folderProblem = folderStyleNameProblem(alias, 'Store name');
+  if (folderProblem !== null) return folderProblem;
+  if (alias !== alias.trim()) {
+    return 'Store name must not start or end with whitespace';
+  }
+  if (/[\u0000-\u001f\u007f]/u.test(alias)) {
+    return 'Store name must not contain control characters';
+  }
+  return null;
+}
+
+/**
+ * Validates the human-facing Store alias. The alias is also used as a new
+ * Store's directory name, so only values that cannot be one safe path segment
+ * are refused. Machine identity is the independently minted Store uid.
+ */
+export function validateStoreAlias(alias: string): string {
+  const problem = storeAliasProblem(alias);
+  if (problem !== null) {
+    throw new StoreError(problem, 'invalid_store_id', {
       target: 'store.id',
-      fix: KEBAB_ID_FIX,
+      fix: STORE_ALIAS_FIX,
     });
   }
+  return alias;
+}
 
-  if (!isKebabId(id)) {
-    throw new StoreError(
-      `Store id ${KEBAB_ID_DESCRIPTION}`,
-      'invalid_store_id',
-      {
-        target: 'store.id',
-        fix: KEBAB_ID_FIX,
-      }
-    );
-  }
-
-  return id;
+/** Compatibility wrapper for callers written before alias and uid were split. */
+export function validateStoreId(id: string): string {
+  return validateStoreAlias(id);
 }
 
 /**
@@ -352,9 +364,9 @@ function parseYamlObject(content: string, label: string): unknown {
 
 /**
  * Validates each registry key against the grammar its own version declares
- * (design D2/D7): a `project:` key's id portion and a v1 store key are kebab
- * ids; a v2 store key MUST parse as a permanent identity. A v2 store entry
- * carries its display alias in the entry body, and a v1 entry never does.
+ * (design D2/D7): a `project:` key's id portion remains kebab-case; Store
+ * aliases use the display-name grammar in both versions. A v2 store key MUST
+ * parse as a permanent identity and carries its alias in the entry body.
  */
 function assertValidRegistryKeys(
   stores: Record<string, StoreRegistryEntryState>,
@@ -377,8 +389,9 @@ function assertValidRegistryKeys(
           `'${key}': a version 2 store entry must carry its display alias as 'id'.`
         );
       }
-      if (!isKebabId(entry.id)) {
-        throw invalidStoreStateError('store id', `'${entry.id}': ${KEBAB_ID_DESCRIPTION}`);
+      const aliasProblem = storeAliasProblem(entry.id);
+      if (aliasProblem !== null) {
+        throw invalidStoreStateError('store name', `'${entry.id}': ${aliasProblem}`);
       }
       continue;
     }
@@ -389,8 +402,17 @@ function assertValidRegistryKeys(
         `'${key}': an 'id' field is only valid on a version 2 store entry.`
       );
     }
-    if (parsed.id === undefined || !isKebabId(parsed.id)) {
-      throw invalidStoreStateError('store id', `'${key}': ${KEBAB_ID_DESCRIPTION}`);
+    if (parsed.id === undefined) {
+      throw invalidStoreStateError(label, `'${key}': missing registry id.`);
+    }
+    if (parsed.type === 'project' && !isKebabId(parsed.id)) {
+      throw invalidStoreStateError('project id', `'${key}': ${KEBAB_ID_DESCRIPTION}`);
+    }
+    if (parsed.type === 'store') {
+      const aliasProblem = storeAliasProblem(parsed.id);
+      if (aliasProblem !== null) {
+        throw invalidStoreStateError('store name', `'${key}': ${aliasProblem}`);
+      }
     }
   }
 }

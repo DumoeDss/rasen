@@ -162,7 +162,11 @@ describe('ConfigEntryRow', () => {
   });
 
   it('inherited-from-store row is read-only, names the store, and links to edit in the store', () => {
-    const storeRef = { id: 'shared-store', root: '/Users/dev/shared-store' };
+    const storeRef = {
+      id: 'Shared Store',
+      uid: '11111111-2222-4333-8444-555555555555',
+      root: '/Users/dev/shared-store',
+    };
     mount(inheritedByKey('autopilot.gates'), container, {
       mode: 'local',
       spaceType: 'project',
@@ -172,12 +176,12 @@ describe('ConfigEntryRow', () => {
     // Read-only: no enum select, a readonly value span instead.
     expect(container.querySelector('select')).toBeNull();
     expect(container.querySelector('.control--readonly')?.textContent).toContain('off');
-    expect(container.textContent).toContain('Inherited from store shared-store: off');
+    expect(container.textContent).toContain('Inherited from store Shared Store: off');
 
     const link = container.querySelector('a.config-entry__store-edit') as HTMLAnchorElement;
     expect(link).not.toBeNull();
-    expect(link.getAttribute('href')).toBe('/s/shared-store/config');
-    expect(link.textContent).toContain('Edit in store shared-store');
+    expect(link.getAttribute('href')).toBe('/s/11111111-2222-4333-8444-555555555555/config');
+    expect(link.textContent).toContain('Edit in store Shared Store');
   });
 
   it('inherited-from-global row shows the global value and remains editable', () => {

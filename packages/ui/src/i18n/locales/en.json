@@ -27,6 +27,7 @@
 
   "spaces.bootstrap.empty_pre": "No planning space registered — run ",
   "spaces.bootstrap.empty_post": " inside a Rasen project.",
+  "spaces.bootstrap.unresolved_store": "Store ‘{selector}’ is missing or ambiguous. Open it by permanent UID from the Spaces page.",
   "spaces.bootstrap.resolving": "Resolving planning space…",
 
   "spaces.page.loading": "Loading spaces…",
@@ -56,10 +57,11 @@
   "spaces.create.path_label.project_root": "Project root",
   "spaces.create.path_label.parent_directory": "Parent directory",
   "spaces.create.path_label.existing_store_root": "Existing Store root",
-  "spaces.create.store_id": "Store id",
-  "spaces.create.store_id_optional": "Store id (optional override)",
-  "spaces.create.store_id_placeholder": "required for a fresh store",
-  "spaces.create.store_id_required": "Store id is required.",
+  "spaces.create.store_id": "Store name",
+  "spaces.create.store_id_optional": "Store name (optional override)",
+  "spaces.create.store_id_placeholder": "e.g. Team Planning",
+  "spaces.create.store_id_required": "Store name is required.",
+  "spaces.create.store_identity_hint": "The name becomes the folder and display label. Rasen generates the permanent UID automatically.",
   "spaces.create.new_store_root": "New Store root",
   "spaces.create.cancel": "Cancel",
   "spaces.create.creating": "Creating…",

@@ -18,6 +18,7 @@ vi.mock('../../src/api/client.js', () => ({
 import { SpaceSwitcher } from '../../src/components/SpaceSwitcher.js';
 import * as client from '../../src/api/client.js';
 import { resetSpaceCatalogForTests } from '../../src/store/space-catalog.js';
+import { getRecentSpaces } from '../../src/store/recent-spaces.js';
 
 const SPACES = {
   spaces: [
@@ -92,6 +93,33 @@ describe('SpaceSwitcher', () => {
     expect(optionTexts).not.toContain('No project (global only)');
     // At a resolved space there is no empty-value placeholder either.
     expect(container.querySelector('option[value=""]')).toBeNull();
+  });
+
+  it('selects a legacy alias route by uid and records the canonical uid as recent', async () => {
+    const uid = '11111111-2222-4333-8444-555555555555';
+    (client.listSpaces as any).mockResolvedValue({
+      spaces: [
+        ...SPACES.spaces.slice(0, 2),
+        {
+          type: 'store',
+          id: 'Shared Name',
+          uid,
+          name: 'Shared Name',
+          root: '/shared',
+          members: [],
+        },
+      ],
+    });
+    (client.getKey as any).mockResolvedValue({
+      entry: { value: ['store:Shared Name'] },
+    });
+
+    await mountAt(container, '/s/Shared%20Name/config');
+
+    const select = container.querySelector('select') as HTMLSelectElement;
+    expect(select.value).toBe(`store:${uid}`);
+    expect(spaceOptions(select).map((option) => option.value)).toContain(`store:${uid}`);
+    expect(getRecentSpaces()[0]).toBe(`store:${uid}`);
   });
 
   it('selecting a space navigates to that space route for the current section (its only effect)', async () => {

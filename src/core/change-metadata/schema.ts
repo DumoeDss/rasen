@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { isKebabId } from '../id.js';
+import { isValidStoreId } from '../store/foundation.js';
 import { isValidStoreUid, normalizeStoreUid } from '../store/identity-types.js';
 import {
   derivePlanningScopeId,
@@ -28,7 +29,14 @@ const KebabIdentifierSchema = (label: string): z.ZodString =>
   });
 
 export const InitiativeLinkSchema = z.object({
-  store: KebabIdentifierSchema('Store id'),
+  store: z.string().superRefine((value, ctx) => {
+    if (!isValidStoreId(value)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Store name must be one non-empty directory segment without surrounding whitespace or control characters',
+      });
+    }
+  }),
   id: KebabIdentifierSchema('Initiative id'),
 }).strict();
 

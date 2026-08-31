@@ -4,15 +4,25 @@
 Define the planning-space addressing model — two explicitly-prefixed namespaces (project and store), a single working-directory derivation rule, read-only fallback to the launch project, and a space-agnostic daemon — so every API read resolves the same space the same way, including live worktree inventory.
 ## Requirements
 ### Requirement: Planning spaces span two explicitly-prefixed namespaces
-The management platform SHALL address planning spaces through a single selector string with a mandatory namespace prefix: `project:<selector>` addresses the machine project registry (the selector portion accepted as a project id or an absolute root path, resolved exactly like the config API's existing project addressing), and `store:<id>` addresses a registered store by id in the store namespace. A `project:` selector carrying an absolute path that is not itself a registered root but is a linked git worktree of a registered project SHALL resolve to that project's identity (its registered `projectId` and name) with the requested worktree path as the answering root, so a worktree's branch-local planning state is addressable without the worktree becoming a separate space; this resolution SHALL remain read-only (no registration, identity minting, or directory creation). A selector without a recognized prefix SHALL be rejected with 400 `invalid_space` — never guessed into a namespace — because a project and a store may legitimately share an id. A selector whose namespace lookup finds nothing SHALL yield 404 `space_not_found` naming the namespace searched; a `store:` selector whose registration exists but fails read-only health inspection (missing or mismatched identity metadata, unhealthy planning root) SHALL yield 409 `space_unavailable` carrying the inspection reason.
+The management platform SHALL address planning spaces through a single selector string with a mandatory namespace prefix: `project:<selector>` addresses the machine project registry (the selector portion accepted as a project id or an absolute root path, resolved exactly like the config API's existing project addressing), and `store:<selector>` addresses a registered Store in the Store namespace. A permanent Store uid SHALL be the canonical selector for every upgraded Store and every newly produced route, API request, pin, and recent-space record. For backward compatibility a display alias SHALL remain accepted when it matches exactly one registered Store; two Stores sharing that alias SHALL be reported as ambiguous and SHALL never be guessed between. Permanent identity lookup SHALL be exact and independent of the alias index. A `project:` selector carrying an absolute path that is not itself a registered root but is a linked git worktree of a registered project SHALL resolve to that project's identity (its registered `projectId` and name) with the requested worktree path as the answering root, so a worktree's branch-local planning state is addressable without the worktree becoming a separate space; this resolution SHALL remain read-only (no registration, identity minting, or directory creation). A selector without a recognized prefix SHALL be rejected with 400 `invalid_space` — never guessed into a namespace — because a project and a Store may legitimately share a display id. A selector whose namespace lookup finds nothing SHALL yield 404 `space_not_found` naming the namespace searched; a `store:` selector whose registration exists but fails read-only health inspection (missing or mismatched identity metadata, unhealthy planning root) SHALL yield 409 `space_unavailable` carrying the inspection reason.
 
 #### Scenario: Project space addressed by id
 - **WHEN** a management request carries `space=project:<projectId>` for a project present in the machine project registry
 - **THEN** the request answers for that project's planning root
 
-#### Scenario: Store space addressed by id
-- **WHEN** a management request carries `space=store:<id>` for a healthy registered store
-- **THEN** the request answers for that store's planning root
+#### Scenario: Store space addressed by permanent identity
+- **WHEN** a management request carries `space=store:<uid>` for a healthy registered Store
+- **THEN** the request answers for that Store's planning root without consulting display aliases
+
+#### Scenario: Legacy Store alias remains compatible
+- **WHEN** a management request carries `space=store:<alias>` and exactly one registered Store has that display alias
+- **THEN** the request answers for that Store's planning root
+- **AND** newly generated selectors for that Store use its permanent identity
+
+#### Scenario: Ambiguous Store alias is never guessed
+- **WHEN** a management request carries `space=store:<alias>` and two Stores share that display alias
+- **THEN** resolution fails with an ambiguity diagnostic naming both permanent identities
+- **AND** neither Store is selected
 
 #### Scenario: Prefix is mandatory
 - **WHEN** a request carries a space selector with no `project:` or `store:` prefix
@@ -64,9 +74,13 @@ The resident daemon SHALL serve any addressable planning space regardless of the
 ### Requirement: A working directory derives its planning space one way, everywhere
 The platform SHALL derive the planning space of a directory by one shared rule: the nearest qualifying `rasen/` root wins; a root with planning shape is a project space (identified by its registered project id); a config-only root whose `store:` pointer names a registered store is that store's space; a malformed pointer or an unregistered store yields no space, degrading gracefully (no error, no space attribution). `rasen ui` URL emission and session space attribution SHALL both use this rule, so a session launched from a directory and a UI opened from that directory always agree on the space.
 
-#### Scenario: Pointer repo derives its store's space
-- **WHEN** the derivation runs in a repo whose `rasen/` holds only a config with `store: team-store` and `team-store` is registered
-- **THEN** the derived space is `store:team-store` with the store's planning root
+#### Scenario: Pointer repo derives its Store's permanent selector
+- **WHEN** the derivation runs in a repo whose `rasen/` holds only a config with `store: team-store` and the uniquely matching registered Store has permanent identity `<uid>`
+- **THEN** the derived space is `store:<uid>` with the Store's planning root
+
+#### Scenario: Legacy identityless Store still derives by alias
+- **WHEN** the uniquely matching Store predates permanent identities
+- **THEN** the derived space remains `store:<alias>` until the explicit identity upgrade
 
 #### Scenario: Planning-shaped repo derives its own project space
 - **WHEN** the derivation runs in a repo whose `rasen/` has specs or changes directories
@@ -77,11 +91,16 @@ The platform SHALL derive the planning space of a directory by one shared rule: 
 - **THEN** no space is derived and the caller proceeds without space attribution rather than failing
 
 ### Requirement: Space listing returns both namespaces with type tags, dead entries filtered, store members included
-The management API SHALL provide `GET /api/v1/spaces` returning every addressable planning space: in-repo projects from the machine project registry as `{ type: "project", id, name, root }`, and registered stores as `{ type: "store", id, name, root, members }`. The listing SHALL present ONE project entry per project identity: legacy registry entries that are worktree duplicates of one project (same `projectId`, same shared home) SHALL collapse into a single entry presented at the main checkout's root when that can be determined live from git, without modifying the registry. A project entry SHALL carry a live worktree count (`worktreeCount`) when its root is a git repository with more than one worktree; the count is derived from git at read time and never persisted. Entries whose root no longer exists on disk SHALL be filtered out (read-only filtering; registry pruning remains `rasen doctor --gc`'s job). A registry entry for a repo whose planning is externalized to a store SHALL appear as that store's member — never as a top-level space — and a project-registry entry whose canonical root is a registered store's own root SHALL be presented as the store space only, not duplicated as a project. Each store's `members` SHALL be the union of two sources, presented once per project identity: the store's own membership records (see `store-project-membership`), and the machine registry's pointer-repo entries validated at read time against each member repo's own current `store:` declaration. Members whose root no longer exists SHALL be filtered out, and a member recorded by the store but with no live checkout on this machine SHALL be listed without a root rather than omitted. Answering the request SHALL write nothing.
+The management API SHALL provide `GET /api/v1/spaces` returning every addressable planning space: in-repo projects from the machine project registry as `{ type: "project", id, name, root }`, and registered Stores as `{ type: "store", id, uid?, name, root, members }`. For a Store, `id` and `name` SHALL retain the display alias for compatibility and display, while `uid` SHALL expose the permanent identity whenever the Store carries one; new clients SHALL use that uid as the canonical selector. The listing SHALL present ONE project entry per project identity: legacy registry entries that are worktree duplicates of one project (same `projectId`, same shared home) SHALL collapse into a single entry presented at the main checkout's root when that can be determined live from git, without modifying the registry. A project entry SHALL carry a live worktree count (`worktreeCount`) when its root is a git repository with more than one worktree; the count is derived from git at read time and never persisted. Entries whose root no longer exists on disk SHALL be filtered out (read-only filtering; registry pruning remains `rasen doctor --gc`'s job). A registry entry for a repo whose planning is externalized to a Store SHALL appear as that Store's member — never as a top-level space — and a project-registry entry whose canonical root is a registered Store's own root SHALL be presented as the Store space only, not duplicated as a project. Each Store's `members` SHALL be the union of two sources, presented once per project identity: the Store's own membership records (see `store-project-membership`), and the machine registry's pointer-repo entries validated at read time against each member repo's own current `store:` declaration. Members whose root no longer exists SHALL be filtered out, and a member recorded by the Store but with no live checkout on this machine SHALL be listed without a root rather than omitted. Answering the request SHALL write nothing.
 
 #### Scenario: Both namespaces listed with type tags
 - **WHEN** the machine has registered in-repo projects and registered stores
 - **THEN** `GET /api/v1/spaces` lists each live project with `type: "project"` and each live store with `type: "store"` in one response
+
+#### Scenario: Store listing separates display name from canonical selector
+- **WHEN** an upgraded Store named `研发计划.v2` has permanent identity `<uid>`
+- **THEN** its listing entry carries `id: "研发计划.v2"`, `name: "研发计划.v2"`, and `uid: <uid>`
+- **AND** clients can display the readable name while addressing the Store as `store:<uid>`
 
 #### Scenario: Dead roots are hidden in both namespaces
 - **WHEN** a registered project's or store's root directory has been deleted from disk

@@ -194,6 +194,7 @@ export async function handleSpaces(): Promise<SpacesResponse> {
     spaces.push({
       type: 'store',
       id: store.id,
+      ...(store.uid !== undefined ? { uid: store.uid } : {}),
       name: store.id,
       root: storeRef.root,
       members: [...byProjectId.values()],

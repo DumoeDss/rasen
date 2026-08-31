@@ -12,7 +12,7 @@
  * membership resolves identifiers only through a fresh server catalog read:
  *  - `create-project` → `init <path>`
  *  - `register-store` → `store register <path> --yes [--id <id>] --json`
- *  - `create-store` → `store setup <id> --path <joined-parent-and-id> --layout 2 --json`
+ *  - `create-store` → `store setup --path <joined-parent-and-name> --layout 2 --json -- <name>`
  *  - `add-project-to-store` → `store add-project <resolved-project-root> --to <store-id> --json`
  */
 import { spawn } from 'node:child_process';
@@ -74,13 +74,15 @@ function canonicalizeOrResolve(target: string): string {
 
 /**
  * Parses the store CLI's `--json` success stdout for the created/registered
- * store id (`toMutationOutput` emits `{ store: { id, root }, ... }`). Returns
- * null when the payload is absent or unparseable — the caller falls back to a
- * canonical-root match against the listing.
+ * Store selector. A UID is authoritative when present; `id` remains a legacy
+ * fallback for older mutation payloads. Returns null when the payload is
+ * absent or unparseable.
  */
-function parseStoreId(stdout: string): string | null {
+function parseStoreSelector(stdout: string): string | null {
   try {
-    const parsed = JSON.parse(stdout) as { store?: { id?: unknown } };
+    const parsed = JSON.parse(stdout) as { store?: { id?: unknown; uid?: unknown } };
+    const uid = parsed.store?.uid;
+    if (typeof uid === 'string' && uid.length > 0) return uid;
     const id = parsed.store?.id;
     return typeof id === 'string' && id.length > 0 ? id : null;
   } catch {
@@ -204,7 +206,7 @@ function validateAbsolutePath(value: unknown, field: 'path' | 'parent'): string 
 function validateId(value: unknown, required: boolean): string | undefined | ValidationFailure {
   if (value === undefined && !required) return undefined;
   if (typeof value !== 'string' || value.length === 0) {
-    return { ok: false, status: 400, code: 'invalid_input', message: 'id must be a non-empty string.' };
+    return { ok: false, status: 400, code: 'invalid_input', message: 'Store name must be a non-empty string.' };
   }
   try {
     validateStoreId(value);
@@ -214,7 +216,7 @@ function validateId(value: unknown, required: boolean): string | undefined | Val
       ok: false,
       status: 400,
       code: 'invalid_input',
-      message: error instanceof Error ? error.message : 'Invalid store id.',
+      message: error instanceof Error ? error.message : 'Invalid Store name.',
     };
   }
 }
@@ -306,7 +308,8 @@ function validate(body: unknown): Validated | ValidationFailure {
     };
   }
 
-  // Store ids are validated before any path join.
+  // Store display names are validated before any path join. Permanent
+  // identity is minted by `store setup`, never accepted from the request.
   const id = validateId(request.id, request.op === 'create-store');
   if (id !== undefined && typeof id !== 'string') return id;
 
@@ -319,7 +322,7 @@ function validate(body: unknown): Validated | ValidationFailure {
       id,
       op: 'register-store-space',
       operation: 'store-register',
-      argv: ['store', 'register', targetPath, '--yes', ...(id ? ['--id', id] : []), '--json'],
+      argv: ['store', 'register', targetPath, '--yes', ...(id ? [`--id=${id}`] : []), '--json'],
     };
   }
 
@@ -332,20 +335,22 @@ function validate(body: unknown): Validated | ValidationFailure {
     id,
     op: 'setup-store-space',
     operation: 'store-setup',
-    argv: ['store', 'setup', id as string, '--path', targetPath, '--layout', '2', '--json'],
+    // `--` makes option-like but valid directory names (for example `-team`)
+    // unambiguously positional to Commander.
+    argv: ['store', 'setup', '--path', targetPath, '--layout', '2', '--json', '--', id as string],
   };
 }
 
 /**
  * Locates the newly created space in the freshly re-read listing (design D4):
- * a project by canonical-root match against its target path; a store by id
- * (parsed from `--json` stdout when present — `register` may derive it from
- * metadata/folder), falling back to a canonical-root match.
+ * a project or store by canonical-root match against its target path. Store
+ * registration may fall back to the selector parsed from `--json` stdout when
+ * a catalog entry omits its root. Alias fallback succeeds only when unique.
  */
 function findSpace(
   spaces: SpaceEntry[],
   validated: CreationPlan,
-  storeIdFromStdout: string | null
+  storeSelectorFromStdout: string | null
 ): SpaceEntry | undefined {
   if (validated.kind === 'project') {
     const canonicalTarget = canonicalizeOrResolve(validated.targetPath);
@@ -354,17 +359,17 @@ function findSpace(
     );
   }
   const canonicalTarget = canonicalizeOrResolve(validated.targetPath);
-  if (validated.operation === 'store-setup') {
-    return spaces.find(
-      (s) => s.type === 'store' && s.root !== undefined && canonicalizeOrResolve(s.root) === canonicalTarget
-    );
-  }
-  const wantedId = storeIdFromStdout ?? validated.id;
-  if (wantedId) {
-    const byId = spaces.find((s) => s.type === 'store' && s.id === wantedId);
-    if (byId) return byId;
-  }
-  return spaces.find((s) => s.type === 'store' && s.root !== undefined && canonicalizeOrResolve(s.root) === canonicalTarget);
+  const byRoot = spaces.find(
+    (s) => s.type === 'store' && s.root !== undefined && canonicalizeOrResolve(s.root) === canonicalTarget
+  );
+  if (byRoot || validated.operation === 'store-setup') return byRoot;
+
+  const wantedSelector = storeSelectorFromStdout ?? validated.id;
+  if (!wantedSelector) return undefined;
+  const matches = spaces.filter(
+    (s) => s.type === 'store' && (s.uid === wantedSelector || s.id === wantedSelector)
+  );
+  return matches.length === 1 ? matches[0] : undefined;
 }
 
 type LiveProjectSpace = ProjectSpaceEntry & { root: string };
@@ -375,7 +380,10 @@ function isLiveProjectWithId(space: SpaceEntry, id: string): space is LiveProjec
 }
 
 function isLiveStoreWithId(space: SpaceEntry, id: string): space is LiveStoreSpace {
-  return space.type === 'store' && space.id === id && typeof space.root === 'string' && space.root.length > 0;
+  return space.type === 'store'
+    && (space.uid === id || space.id === id)
+    && typeof space.root === 'string'
+    && space.root.length > 0;
 }
 
 function resolveMembershipPlan(
@@ -420,11 +428,12 @@ function resolveMembershipPlan(
 
   const project = projects[0]!;
   const store = stores[0]!;
+  const storeSelector = store.uid ?? store.id;
   return {
     ...intent,
     projectRoot: project.root,
     storeRoot: store.root,
-    argv: ['store', 'add-project', project.root, '--to', intent.storeId, '--json'],
+    argv: ['store', 'add-project', project.root, '--to', storeSelector, '--json'],
   };
 }
 
@@ -622,12 +631,12 @@ function runCreation(
       // Zero exit: re-read the listing and locate the new space. `init` has no
       // `--json`, so success is exit-0 + a listing re-read — never a parse of
       // its human output.
-      const storeIdFromStdout = plan.kind === 'store' ? parseStoreId(stdout) : null;
+      const storeSelectorFromStdout = plan.kind === 'store' ? parseStoreSelector(stdout) : null;
       listSpaces()
         .then(({ spaces }) => {
           const space = plan.kind === 'membership'
             ? findMembershipStore(spaces, plan)
-            : findSpace(spaces, plan, storeIdFromStdout);
+            : findSpace(spaces, plan, storeSelectorFromStdout);
           if (!space) {
             respond({
               ok: false,

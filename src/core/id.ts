@@ -1,6 +1,7 @@
 /**
- * The one kebab id grammar. Store ids, change ids, and legacy initiative ids
- * all share it.
+ * The shared kebab id grammar for Project ids, Change ids, and legacy
+ * initiative ids. Store display aliases intentionally use the looser
+ * folder-segment grammar below; permanent Store identity is a UUID.
  */
 export const KEBAB_ID_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
@@ -31,8 +32,9 @@ export function toKebabCase(value: string): string {
 }
 
 /**
- * The folder-safe-name grammar (store ids layer the kebab grammar on
- * top of it; workset member labels use it alone). Returns a problem
+ * The minimal folder-segment grammar shared by Store display aliases and
+ * workset member labels. Callers may layer their own grammar on top (Project,
+ * Change, and legacy initiative ids use kebab-case). Returns a problem
  * description, or null when valid.
  */
 export function folderStyleNameProblem(

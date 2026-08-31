@@ -10,7 +10,7 @@ import type {
   StoreProjectsResponse,
 } from '../api/types.js';
 import { useT } from '../i18n/store.js';
-import { useSpace } from '../store/use-space.js';
+import { spaceEntryForSelector, useSpace } from '../store/use-space.js';
 import { MemberChips } from './MemberChips.js';
 import {
   RunOperationsPanel,
@@ -210,8 +210,9 @@ function ScopedOperationsPage({ selector }: { selector?: string }) {
       } else {
         setProjects(projectRead.value);
         const storeSpace = spacesRead.status === 'fulfilled'
-          ? spacesRead.value.spaces.find(
-              entry => entry.type === 'store' && entry.id === projectRead.value.storeId
+          ? spaceEntryForSelector(
+              spacesRead.value.spaces,
+              `store:${projectRead.value.storeUid}`
             )
           : null;
         const roots = new Map(

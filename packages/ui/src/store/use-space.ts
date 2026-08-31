@@ -14,6 +14,7 @@
  * `useRoute()` params are not available).
  */
 import { useLocation } from 'preact-iso';
+import type { SpaceEntry } from '../api/types.js';
 
 export type SpaceType = 'project' | 'store';
 
@@ -23,6 +24,86 @@ export interface Space {
   id: string;
   /** The `<type>:<id>` selector every space-scoped API call is built from. */
   selector: string;
+}
+
+// Mirrors the core Store identity boundary: any RFC 4122 textual UUID shape
+// is an identity selector and must never fall through to the alias index.
+const STORE_UID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
+/** True when a route token is shaped as a permanent Store identity. */
+export function isStoreUid(value: string): boolean {
+  return STORE_UID_PATTERN.test(value.trim());
+}
+
+/** Canonical route/API id for a listing entry: Store uid when available. */
+export function spaceIdOfEntry(entry: SpaceEntry): string {
+  return entry.type === 'store' ? entry.uid ?? entry.id : entry.id;
+}
+
+/** Canonical `<type>:<id>` selector for a listing entry. */
+export function spaceSelectorOfEntry(entry: SpaceEntry): string {
+  return `${entry.type}:${spaceIdOfEntry(entry)}`;
+}
+
+/** Converts one catalog entry into the route-derived Space shape. */
+export function spaceFromEntry(entry: SpaceEntry): Space {
+  const id = spaceIdOfEntry(entry);
+  return { type: entry.type, id, selector: `${entry.type}:${id}` };
+}
+
+/** Builds a Store Space from any wire reference carrying alias + optional uid. */
+export function storeSpaceFromRef(ref: { id: string; uid?: string }): Space {
+  const id = ref.uid ?? ref.id;
+  return { type: 'store', id, selector: `store:${id}` };
+}
+
+/**
+ * Matches both the canonical selector and a legacy Store-alias selector.
+ * Alias comparison stays exact; permanent identities are case-insensitive.
+ */
+export function spaceEntryMatchesSelector(
+  entry: SpaceEntry,
+  selector: string | Space | null | undefined
+): boolean {
+  const selected = typeof selector === 'string' ? parseSelector(selector) : selector;
+  if (!selected || selected.type !== entry.type) return false;
+  if (entry.type === 'project') return selected.id === entry.id;
+  if (isStoreUid(selected.id)) {
+    return entry.uid !== undefined
+      && selected.id.trim().toLowerCase() === entry.uid.trim().toLowerCase();
+  }
+  return selected.id === entry.id;
+}
+
+/**
+ * Resolves a catalog selector without guessing between Stores that share an
+ * alias. Project worktree rows may share one canonical selector and are safe.
+ */
+export function spaceEntryForSelector(
+  entries: SpaceEntry[],
+  selector: string | Space | null | undefined
+): SpaceEntry | null {
+  const matches = entries.filter((entry) => spaceEntryMatchesSelector(entry, selector));
+  if (matches.length === 0) return null;
+  return new Set(matches.map(spaceSelectorOfEntry)).size === 1 ? matches[0]! : null;
+}
+
+/**
+ * Migrates selectors for known entries to their canonical uid form while
+ * retaining dead or ambiguous legacy selectors byte-for-byte.
+ */
+export function canonicalizeSpaceSelectors(
+  selectors: string[],
+  entries: SpaceEntry[]
+): string[] {
+  const output: string[] = [];
+  for (const selector of selectors) {
+    const entry = spaceEntryForSelector(entries, selector);
+    const canonical = entry ? spaceSelectorOfEntry(entry) : selector;
+    if (!output.includes(canonical)) output.push(canonical);
+  }
+  return output;
 }
 
 /** Common sections that remain valid across either planning-space namespace. */

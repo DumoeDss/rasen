@@ -51,13 +51,36 @@ async function main() {
   }
 
   if (args[0] === 'store' && args[1] === 'setup') {
-    printJson({ store: { id: args[2], root: '/fake/store' } });
+    const separator = args.indexOf('--');
+    const id = separator >= 0 ? args[separator + 1] : args[2];
+    printJson({
+      store: {
+        id,
+        ...(process.env.RASEN_FAKE_STORE_UID
+          ? { uid: process.env.RASEN_FAKE_STORE_UID }
+          : {}),
+        root: '/fake/store',
+      },
+    });
     return;
   }
   if (args[0] === 'store' && args[1] === 'register') {
     const idIdx = args.indexOf('--id');
-    const id = idIdx >= 0 ? args[idIdx + 1] : 'registered-store';
-    printJson({ store: { id, root: '/fake/store' } });
+    const equalsId = args.find((arg) => arg.startsWith('--id='));
+    const id = idIdx >= 0
+      ? args[idIdx + 1]
+      : equalsId !== undefined
+        ? equalsId.slice('--id='.length)
+        : 'registered-store';
+    printJson({
+      store: {
+        id,
+        ...(process.env.RASEN_FAKE_STORE_UID
+          ? { uid: process.env.RASEN_FAKE_STORE_UID }
+          : {}),
+        root: '/fake/store',
+      },
+    });
     return;
   }
   if (args[0] === 'store' && args[1] === 'add-project') {

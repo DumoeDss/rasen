@@ -15,6 +15,7 @@ import {
   listStoreMembers,
   membershipHintFor,
   planMembershipMutation,
+  projectStoreCandidateKey,
   resolveProjectMembership,
   unambiguousStoreSelector,
   writeMembershipRecord,
@@ -333,6 +334,31 @@ describe('store membership provider', () => {
       const candidate = listing.candidates.find((entry) => entry.id === 'team-store');
       expect(candidate?.sources).toEqual(['hint']);
       expect(candidate?.membership).toBeUndefined();
+    });
+
+    it('keeps unavailable identityless Store aliases distinct by case', async () => {
+      const projectRoot = makeProject('elftia', PROJECT_A);
+      await appendStoreMembershipHint(projectRoot, { id: 'Acme' });
+      await appendStoreMembershipHint(projectRoot, { id: 'acme' });
+
+      const listing = await listProjectStoreCandidates(projectRoot, { globalDataDir });
+
+      expect(listing.candidates).toHaveLength(2);
+      expect(listing.candidates.map((candidate) => candidate.id)).toEqual(
+        expect.arrayContaining(['Acme', 'acme'])
+      );
+      expect(listing.candidates.every((candidate) => candidate.unavailable !== undefined)).toBe(true);
+    });
+
+    it('compares resolved Store roots with the host platform casing rules', () => {
+      const upper = projectStoreCandidateKey({
+        store: { type: 'store', id: 'Acme', root: 'C:\\Stores\\Acme' },
+      });
+      const lower = projectStoreCandidateKey({
+        store: { type: 'store', id: 'acme', root: 'c:\\stores\\acme' },
+      });
+
+      expect(upper === lower).toBe(process.platform === 'win32');
     });
 
     it('reports both sources when the hint and the record agree', async () => {

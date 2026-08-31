@@ -27,6 +27,7 @@
 
   "spaces.bootstrap.empty_pre": "計画スペースが登録されていません — Rasenプロジェクトで ",
   "spaces.bootstrap.empty_post": " を実行してください。",
+  "spaces.bootstrap.unresolved_store": "Store「{selector}」が見つからないか曖昧です。スペースページから永続UIDで開いてください。",
   "spaces.bootstrap.resolving": "計画スペースを解決中…",
 
   "spaces.page.loading": "スペースを読み込み中…",
@@ -56,10 +57,11 @@
   "spaces.create.path_label.project_root": "プロジェクトのルート",
   "spaces.create.path_label.parent_directory": "親ディレクトリ",
   "spaces.create.path_label.existing_store_root": "既存のStoreルート",
-  "spaces.create.store_id": "ストアID",
-  "spaces.create.store_id_optional": "ストアID（任意の上書き）",
-  "spaces.create.store_id_placeholder": "新規ストアには必須",
-  "spaces.create.store_id_required": "ストアIDは必須です。",
+  "spaces.create.store_id": "Store名",
+  "spaces.create.store_id_optional": "Store名（任意の上書き）",
+  "spaces.create.store_id_placeholder": "例：チーム計画",
+  "spaces.create.store_id_required": "Store名は必須です。",
+  "spaces.create.store_identity_hint": "名前は新しいフォルダー名と表示名に使われ、永続UIDはRasenが自動生成します。",
   "spaces.create.new_store_root": "新しいStoreルート",
   "spaces.create.cancel": "キャンセル",
   "spaces.create.creating": "作成中…",

@@ -54,6 +54,18 @@ describe('ChangeMetadataSchema', () => {
         });
       }
     });
+
+    it('should accept a readable Store alias in a portable initiative link', () => {
+      const result = ChangeMetadataSchema.safeParse({
+        schema: 'spec-driven',
+        initiative: {
+          store: '研发 Platform.v2',
+          id: 'billing-launch',
+        },
+      });
+
+      expect(result.success).toBe(true);
+    });
   });
 
   describe('invalid metadata', () => {
@@ -113,7 +125,6 @@ describe('ChangeMetadataSchema', () => {
       for (const initiative of [
         { store: '/tmp/platform', id: 'billing-launch' },
         { store: 'platform', id: 'billing/launch' },
-        { store: 'Platform', id: 'billing-launch' },
         { store: 'platform', id: 'billing launch' },
       ]) {
         const result = ChangeMetadataSchema.safeParse({

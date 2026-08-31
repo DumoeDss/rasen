@@ -52,7 +52,7 @@ rasen CLI（`rasen`）提供了用于项目初始化、校验、状态检查和�
 | `rasen instructions` | 获取下一步操作 | `--json` 获取 agent 指令 |
 | `rasen templates` | 查找模板路径 | `--json` 用于路径解析 |
 | `rasen schemas` | 列出可用 schema | `--json` 用于 schema 发现 |
-| `rasen store setup <id>` | 创建并注册本地 store | `--json` 配合显式输入，获取结构化的 setup 输出 |
+| `rasen store setup <name>` | 创建并注册本地 store；永久 UID 由 Rasen 自动生成 | `--json` 配合显式输入，获取结构化的 setup 输出 |
 | `rasen store register <path>` | 注册已存在的 store | `--json` 获取结构化的注册输出 |
 | `rasen store unregister <id>` | 忘记本地 store 注册 | `--json` 获取结构化的清理输出 |
 | `rasen store remove <id>` | 删除已注册的本地 store 文件夹 | `--yes --json` 非交互式删除 |
@@ -191,20 +191,20 @@ Store 是你在这台机器上注册过的独立 rasen 仓库——例如一个�
 创建并注册一个本地 store。在终端中无参数运行时，Rasen 会引导用户完成 setup。Agent 和脚本应传入显式输入并使用 `--json`。
 
 ```bash
-rasen store setup [id] [options]
+rasen store setup [name] [options]
 ```
 
 **选项：**
 
 | 选项 | 说明 |
 |--------|-------------|
-| `--path <path>` | store 所在文件夹（例如 `~/rasen/<id>`） |
+| `--path <path>` | store 所在文件夹（例如 `~/rasen/<name>`） |
 | `--remote <url>` | 将权威 remote 记录到新 store 的 `store.yaml` |
 | `--init-git` | 初始化 Git 仓库并创建初始提交（默认） |
 | `--no-init-git` | 跳过所有 Git 操作：不 init、无初始提交 |
 | `--json` | 输出 JSON |
 
-非交互式运行（`--json`、脚本、agent）必须同时传入 store id 和 `--path`。在交互式终端中，setup 会在一个可见的、用户拥有的位置（例如 `~/rasen/<id>`）通过可编辑的建议来提示位置；它绝不默认使用 rasen 的托管数据目录。
+非交互式运行（`--json`、脚本、agent）必须同时传入 Store 名称和 `--path`。名称只是可读的显示别名和目录片段；永久 Store UID 由 Rasen 自动生成。在交互式终端中，setup 会在一个可见的、用户拥有的位置（例如 `~/rasen/<name>`）通过可编辑的建议来提示位置；它绝不默认使用 rasen 的托管数据目录。
 
 示例：
 
@@ -227,7 +227,7 @@ rasen store register [path] [options]
 
 | 选项 | 说明 |
 |--------|-------------|
-| `--id <id>` | store id；默认取 store 元数据或文件夹名 |
+| `--id <name>` | Store 显示名称覆盖值；默认取 Store 元数据或文件夹名。flag 名称为兼容旧用法而保留。 |
 | `--yes` | 确认为健康的 Rasen 根创建 store 身份元数据 |
 | `--json` | 输出 JSON |
 

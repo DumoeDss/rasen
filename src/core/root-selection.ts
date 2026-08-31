@@ -529,7 +529,11 @@ export async function deriveSpaceFromCwd(
     ...pathOptions,
   });
   if (binding.kind === 'resolved') {
-    return { type: 'store', id: binding.store.id, root: binding.store.root };
+    return {
+      type: 'store',
+      id: binding.store.uid ?? binding.store.id,
+      root: binding.store.root,
+    };
   }
   return null;
 }

@@ -20,6 +20,7 @@ import {
   withOwnerAwareFileLock,
 } from './file-state.js';
 import { isKebabId } from './id.js';
+import { isValidStoreId } from './store/foundation.js';
 import {
   LEAF_EFFORTS,
   LeafEffortSchema,
@@ -446,7 +447,7 @@ export interface StoreMembershipHint {
 export function storeMembershipHintKey(hint: StoreMembershipHint): string {
   return hint.uid !== undefined
     ? `uid:${hint.uid.trim().toLowerCase()}`
-    : `id:${(hint.id ?? '').trim().toLowerCase()}`;
+    : `id:${hint.id ?? ''}`;
 }
 
 /** The alias, else the identity — never an empty string. */
@@ -609,7 +610,7 @@ function parseStoreMembershipList(
       const value = entry.trim();
       if (isValidStoreUid(value)) {
         hint = { uid: value };
-      } else if (isKebabId(value)) {
+      } else if (isValidStoreId(value)) {
         hint = { id: value };
       }
     } else if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
@@ -619,7 +620,7 @@ function parseStoreMembershipList(
           ? candidate.uid.trim()
           : undefined;
       const id =
-        typeof candidate.id === 'string' && candidate.id.length > 0 && isKebabId(candidate.id)
+        typeof candidate.id === 'string' && isValidStoreId(candidate.id)
           ? candidate.id
           : undefined;
       const remote =

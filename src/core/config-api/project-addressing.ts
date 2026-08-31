@@ -61,6 +61,7 @@ export interface ResolvedProjectSpace extends ResolvedSpaceBase {
 
 export interface ResolvedStoreSpace extends ResolvedSpaceBase {
   type: 'store';
+  uid?: string;
   planningScope: StoreAggregateReadScope;
 }
 
@@ -263,6 +264,9 @@ export async function resolveSpaceSelector(raw: string): Promise<SpaceSelectorRe
       space: {
         type: 'store',
         id: planningScope.ref.storeId,
+        ...(planningScope.ref.storeUid !== undefined
+          ? { uid: planningScope.ref.storeUid }
+          : {}),
         name: planningScope.ref.storeId,
         root: description.paths['planning-checkout'] as string,
         planningScope,

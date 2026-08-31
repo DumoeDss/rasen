@@ -16,6 +16,7 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
 import * as client from '../../src/api/client.js';
 import { ApiError } from '../../src/api/client.js';
 import type {
+  StoreLayerRef,
   ThresholdSchemeCatalogResponse,
   WireConfigEntry,
 } from '../../src/api/types.js';
@@ -114,7 +115,7 @@ describe('ThresholdPolicyWorkbench', () => {
     entries?: WireConfigEntry[];
     mode?: 'global' | 'local';
     spaceType?: 'project' | 'store';
-    storeRef?: { id: string; root: string } | null;
+    storeRef?: StoreLayerRef | null;
   } = {}): void {
     render(
       <ThresholdPolicyWorkbench
@@ -375,7 +376,11 @@ describe('ThresholdPolicyWorkbench', () => {
       entries: [
         bindingEntry('claude', 'balanced', 'store', { store: 'balanced' }),
       ],
-      storeRef: { id: 'team-store', root: '/stores/team-store' },
+      storeRef: {
+        id: 'Team Store',
+        uid: '11111111-2222-4333-8444-555555555555',
+        root: '/stores/team-store',
+      },
     });
     const row = container.querySelector(
       '[data-testid="threshold-binding-row"][data-row="claude"]'
@@ -384,7 +389,9 @@ describe('ThresholdPolicyWorkbench', () => {
       (row.querySelector('[data-testid="threshold-binding-select"]') as HTMLSelectElement)
         .disabled
     ).toBe(true);
-    expect(row.querySelector('a')!.getAttribute('href')).toContain('/s/team-store/pipelines');
+    expect(row.querySelector('a')!.getAttribute('href')).toContain(
+      '/s/11111111-2222-4333-8444-555555555555/pipelines'
+    );
   });
 
   it('shows dangling and server fallback diagnostics without performing a binding write', () => {

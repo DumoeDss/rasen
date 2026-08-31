@@ -688,7 +688,7 @@ async function resolveSetupInput(
       'store_setup_id_required',
       {
         target: 'store.id',
-        fix: `rasen store setup <id> --path ~/${WORKSPACE_DIR_NAME}/<id> --json`,
+        fix: `rasen store setup <name> --path ~/${WORKSPACE_DIR_NAME}/<name> --json`,
       }
     );
   }
@@ -699,7 +699,7 @@ async function resolveSetupInput(
       'store_setup_path_required',
       {
         target: 'store.root',
-        fix: `rasen store setup ${id ?? '<id>'} --path ~/${WORKSPACE_DIR_NAME}/${id ?? '<id>'}`,
+        fix: `rasen store setup ${id ?? '<name>'} --path ~/${WORKSPACE_DIR_NAME}/${id ?? '<name>'}`,
       }
     );
   }
@@ -1548,7 +1548,7 @@ export function registerStoreCommand(program: Command): void {
   const store = program.command('store').description('');
 
   store
-    .command('setup [id]')
+    .command('setup [name]')
     .description('')
     .option('--path <path>', '')
     .option('--init-git', '')

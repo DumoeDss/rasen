@@ -27,6 +27,7 @@
 
   "spaces.bootstrap.empty_pre": "尚未注册规划空间——请在 Rasen 项目中运行 ",
   "spaces.bootstrap.empty_post": "。",
+  "spaces.bootstrap.unresolved_store": "Store“{selector}”不存在或有歧义。请从空间页使用永久 UID 打开。",
   "spaces.bootstrap.resolving": "正在解析规划空间…",
 
   "spaces.page.loading": "正在加载空间…",
@@ -56,10 +57,11 @@
   "spaces.create.path_label.project_root": "项目根目录",
   "spaces.create.path_label.parent_directory": "父目录",
   "spaces.create.path_label.existing_store_root": "已有 Store 根目录",
-  "spaces.create.store_id": "Store ID",
-  "spaces.create.store_id_optional": "Store ID（可选覆盖值）",
-  "spaces.create.store_id_placeholder": "新建 store 时必填",
-  "spaces.create.store_id_required": "必须填写 Store ID。",
+  "spaces.create.store_id": "Store 名称",
+  "spaces.create.store_id_optional": "Store 名称（可选覆盖值）",
+  "spaces.create.store_id_placeholder": "例如：团队规划",
+  "spaces.create.store_id_required": "必须填写 Store 名称。",
+  "spaces.create.store_identity_hint": "名称用于新目录和显示；永久 UID 由 Rasen 自动生成。",
   "spaces.create.new_store_root": "新 Store 根目录",
   "spaces.create.cancel": "取消",
   "spaces.create.creating": "创建中…",
