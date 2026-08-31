@@ -1,11 +1,11 @@
 # store-project-namespace Specification
 
 ## Purpose
-Splits the machine registry into two namespaces — stores and projects — sharing one id grammar: entries carry a `type` with `(type, id)` uniqueness, `--project` flags and `project:` references target the project namespace, and pre-type registry files keep parsing with absent type meaning store.
+Splits the machine registry into two namespaces — stores and projects — with namespace-specific naming rules: entries carry a `type`, `--project` flags and `project:` references target the project namespace, and pre-type registry files keep parsing with absent type meaning store.
 ## Requirements
-### Requirement: Registry entries carry a type and are unique per (type, id)
+### Requirement: Project entries use namespace ids and Store entries use permanent identities
 
-Each store-registry entry SHALL carry a `type` of `store` or `project`. An entry with no `type` SHALL be treated as `store`. In the project namespace, registry uniqueness SHALL remain the `(type, id)` pair. In the store namespace, an entry SHALL be identified by the Store's permanent identity, with the display alias kept as a lookup index that MAY match more than one entry — so a store and a project MAY share the same id (for example a store `elftia` and a project `elftia` coexist), and two stores MAY also share a display alias, resolved by the arity rules in `store-identity`. The id grammar SHALL be identical in both namespaces (the existing kebab-case store-id rule). Registry reads and writes SHALL preserve absent-type-as-store: an existing registry file that predates the type field SHALL parse with every entry meaning a store, and re-serializing it SHALL NOT inject a `type` key onto an entry that did not have one. The form of an entry's key SHALL be determined by the registry file's own declared version rather than inferred from the key's text.
+Each store-registry entry SHALL carry a `type` of `store` or `project`. An entry with no `type` SHALL be treated as `store`. In the project namespace, registry uniqueness SHALL remain the `(type, id)` pair and ids SHALL retain the lowercase kebab-case project grammar. In the store namespace, an entry SHALL be identified by the Store's permanent identity, with the human-facing Store name retained as a display alias and lookup index that MAY match more than one entry. That Store alias SHALL use the readable directory-segment grammar defined by `store-identity`, not the project-id grammar. A store and a project MAY therefore share the same displayed text (for example a store `elftia` and a project `elftia` coexist), and two stores MAY also share a display alias, resolved by the arity rules in `store-identity`. Registry reads and writes SHALL preserve absent-type-as-store: an existing registry file that predates the type field SHALL parse with every entry meaning a store, and re-serializing it SHALL NOT inject a `type` key onto an entry that did not have one. The form of an entry's key SHALL be determined by the registry file's own declared version rather than inferred from the key's text.
 
 #### Scenario: Store and project of the same id coexist
 
@@ -25,7 +25,7 @@ Each store-registry entry SHALL carry a `type` of `store` or `project`. An entry
 - **THEN** registry parsing raises an `invalid_store_registry` diagnostic naming the registry file
 - **AND** the ambiguous entry is never silently coerced to a namespace
 
-### Requirement: Conflict detection is per (type, id) and (type, canonical path)
+### Requirement: Conflict detection uses namespace identity and canonical path
 
 Registration conflict checks SHALL key on the pair, not the id alone. In the project namespace an id conflict SHALL fire when an entry of that namespace already holds that id; a store and a project sharing an id SHALL NOT conflict. In the store namespace an id conflict SHALL NOT fire on a repeated display alias, because a Store is identified by its permanent identity and a repeated alias is resolved by the arity rules in `store-identity`; registering a second Store under an already-used alias SHALL succeed and SHALL warn that the alias is now ambiguous. A path conflict SHALL fire when the same canonical path is already registered under the same type, on every platform, with paths compared canonically so drive-letter case and separator form do not create or hide a conflict. When a conflict is reported on the add-project path, the message SHALL name the taken id and its fix SHALL suggest choosing a different id with `--as <id>`, including a concrete example id.
 

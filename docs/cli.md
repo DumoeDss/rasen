@@ -53,7 +53,7 @@ These commands support `--json` output for programmatic use by AI agents and scr
 | `rasen instructions` | Get next steps | `--json` for agent instructions |
 | `rasen templates` | Find template paths | `--json` for path resolution |
 | `rasen schemas` | List available schemas | `--json` for schema discovery |
-| `rasen store setup <id>` | Create and register a local store | `--json` with explicit inputs for structured setup output |
+| `rasen store setup <name>` | Create and register a local store; its permanent UID is generated automatically | `--json` with explicit inputs for structured setup output |
 | `rasen store register <path>` | Register an existing store | `--json` for structured registration output |
 | `rasen store upgrade-identity <id>` | Give a store a permanent identity | `--apply --json`; previews by default |
 | `rasen store unregister <id>` | Forget a local store registration | `--json` for structured cleanup output |
@@ -203,20 +203,20 @@ Rasen guides the user through setup. Agents and scripts should pass explicit
 inputs and use `--json`.
 
 ```bash
-rasen store setup [id] [options]
+rasen store setup [name] [options]
 ```
 
 **Options:**
 
 | Option | Description |
 |--------|-------------|
-| `--path <path>` | Folder where the store should live (for example `~/rasen/<id>`) |
+| `--path <path>` | Folder where the store should live (for example `~/rasen/<name>`) |
 | `--remote <url>` | Record the canonical remote in the new store's `store.yaml` |
 | `--init-git` | Initialize a Git repository with an initial commit (default) |
 | `--no-init-git` | Skip every Git action: no init, no initial commit |
 | `--json` | Output JSON |
 
-Non-interactive runs (`--json`, scripts, agents) must pass both the store id and `--path`. In an interactive terminal, setup prompts for the location with an editable suggestion in a visible, user-owned place (for example `~/rasen/<id>`); it never defaults to rasen's managed data directory.
+Non-interactive runs (`--json`, scripts, agents) must pass both the Store name and `--path`. The name is a readable display alias and directory segment; Rasen generates the permanent Store UID automatically. In an interactive terminal, setup prompts for the location with an editable suggestion in a visible, user-owned place (for example `~/rasen/<name>`); it never defaults to rasen's managed data directory.
 
 Examples:
 
@@ -239,7 +239,7 @@ rasen store register [path] [options]
 
 | Option | Description |
 |--------|-------------|
-| `--id <id>` | Store id; defaults to store metadata or folder name |
+| `--id <name>` | Store display-name override; defaults to store metadata or folder name. The flag name is retained for compatibility. |
 | `--yes` | Confirm creating store identity metadata for a healthy Rasen root |
 | `--json` | Output JSON |
 

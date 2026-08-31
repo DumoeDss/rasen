@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import * as client from '../api/client.js';
-import { spaceHomeHref, spaceRouteFromSelector } from '../store/use-space.js';
+import {
+  isStoreUid,
+  parseSelector,
+  spaceEntryForSelector,
+  spaceFromEntry,
+  spaceHomeHref,
+  spaceRouteFromSelector,
+} from '../store/use-space.js';
 import { useT } from '../i18n/store.js';
 
 /**
@@ -11,8 +18,9 @@ import { useT } from '../i18n/store.js';
  *
  *   1. `?space=<selector>` from the launch URL `rasen ui` prints (which
  *      survives `token.ts`'s scrub — it preserves `location.search`). Parsed
- *      verbatim as an opaque token (D5) and replaced into a clean route so
- *      the query never lingers or becomes a back-button entry.
+ *      as an opaque project id or Store uid (D5). A legacy Store alias first
+ *      resolves through the catalog and is replaced by its uid only when the
+ *      match is unique.
  *   2. else `GET /api/v1/health`'s launch project → `/p/<id>/board`.
  *   3. else the first `GET /api/v1/spaces` entry.
  *   4. else an explicit empty state — never a blank page or a spinner.
@@ -23,6 +31,7 @@ export function SpaceBootstrap() {
   const t = useT();
   const { route } = useLocation();
   const [empty, setEmpty] = useState(false);
+  const [unresolvedStore, setUnresolvedStore] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -30,10 +39,29 @@ export function SpaceBootstrap() {
     async function resolveSpace() {
       const selector = new URLSearchParams(location.search).get('space');
       if (selector) {
-        const target = spaceRouteFromSelector(selector);
-        if (target) {
-          route(target, true);
-          return;
+        const parsed = parseSelector(selector);
+        if (parsed) {
+          if (parsed.type === 'project' || isStoreUid(parsed.id)) {
+            const target = spaceRouteFromSelector(selector);
+            if (target) {
+              route(target, true);
+              return;
+            }
+          } else {
+            try {
+              const { spaces } = await client.listSpaces();
+              if (cancelled) return;
+              const entry = spaceEntryForSelector(spaces, parsed);
+              if (entry?.type === 'store') {
+                route(spaceHomeHref(spaceFromEntry(entry)), true);
+                return;
+              }
+            } catch {
+              // A legacy alias cannot be trusted without a fresh catalog.
+            }
+            if (!cancelled) setUnresolvedStore(parsed.id);
+            return;
+          }
         }
       }
 
@@ -55,14 +83,7 @@ export function SpaceBootstrap() {
         if (cancelled) return;
         const first = spaces[0];
         if (first) {
-          route(
-            spaceHomeHref({
-              type: first.type,
-              id: first.id,
-              selector: `${first.type}:${first.id}`,
-            }),
-            true
-          );
+          route(spaceHomeHref(spaceFromEntry(first)), true);
           return;
         }
       } catch {
@@ -77,6 +98,14 @@ export function SpaceBootstrap() {
       cancelled = true;
     };
   }, []);
+
+  if (unresolvedStore !== null) {
+    return (
+      <div class="space-bootstrap__empty" data-testid="unresolved-space-state">
+        <p>{t('spaces.bootstrap.unresolved_store', { selector: unresolvedStore })}</p>
+      </div>
+    );
+  }
 
   if (empty) {
     return (

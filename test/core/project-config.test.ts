@@ -340,7 +340,7 @@ rules:
 
       it('keeps entries deduplicated and order-preserving, including invalid grammar', () => {
         writeConfig(
-          'schema: spec-driven\nreferences:\n  - team-context\n  - team-context\n  - "BAD ID"\n  - other-context\n  - 7\n'
+          'schema: spec-driven\nreferences:\n  - team-context\n  - team-context\n  - "Bad/Id"\n  - other-context\n  - 7\n'
         );
 
         const config = readProjectConfig(tempDir);
@@ -349,7 +349,7 @@ rules:
         // keeps raw ids so bad ids surface as diagnostics.
         expect(config?.references).toEqual([
           { id: 'team-context' },
-          { id: 'BAD ID' },
+          { id: 'Bad/Id' },
           { id: 'other-context' },
         ]);
         expect(consoleWarnSpy).toHaveBeenCalledWith(

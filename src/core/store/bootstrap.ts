@@ -92,7 +92,12 @@ import {
   type StoreUnavailableReason,
 } from './identity.js';
 import { storeProjectRecordMissing, storeUidMismatch } from './identity-diagnostics.js';
-import { storeUidsMatch, type ResolvedStoreRef } from './identity-types.js';
+import {
+  isValidStoreUid,
+  normalizeStoreUid,
+  storeUidsMatch,
+  type ResolvedStoreRef,
+} from './identity-types.js';
 import { inspectRegisteredStore } from './inspection.js';
 import { registerExistingStore } from './operations.js';
 import { cloneRepository } from './git.js';
@@ -1101,7 +1106,8 @@ function suppliedPathFor(
   if (!paths || paths.size === 0) return undefined;
   for (const key of keys) {
     if (key === undefined) continue;
-    const hit = paths.get(key) ?? paths.get(key.toLowerCase());
+    const hit = paths.get(key)
+      ?? (isValidStoreUid(key) ? paths.get(normalizeStoreUid(key)) : undefined);
     if (hit !== undefined) return hit;
   }
   return undefined;
@@ -2474,14 +2480,14 @@ function findExpectedStore(
   const direct = expected.get(key);
   if (direct) return direct;
 
-  const normalize = (value: string | undefined): string | undefined =>
+  const normalizeUid = (value: string | undefined): string | undefined =>
     value === undefined ? undefined : value.trim().toLowerCase();
-  const uid = normalize(declared.uid);
-  const id = normalize(declared.id);
+  const uid = normalizeUid(declared.uid);
+  const id = declared.id;
 
   for (const item of expected.values()) {
-    if (uid !== undefined && normalize(item.uid) === uid) return item;
-    if (id !== undefined && normalize(item.id) === id) return item;
+    if (uid !== undefined && normalizeUid(item.uid) === uid) return item;
+    if (id !== undefined && item.id === id) return item;
   }
   return undefined;
 }

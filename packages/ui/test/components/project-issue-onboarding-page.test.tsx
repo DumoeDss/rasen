@@ -333,12 +333,21 @@ describe('ProjectIssueOnboardingPage', () => {
     expect(window.location.pathname).toBe('/s/store-a/issues');
   });
 
-  it('publishes and navigates with the API-returned Store id instead of the selected row id', async () => {
+  it('joins and navigates with permanent Store identities while preserving returned display data', async () => {
+    const selectedUid = '11111111-2222-4333-8444-555555555555';
+    const returnedUid = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
     const returned = memberStore(
-      { ...STORE_B, id: 'server-returned-store', name: 'Server Returned Store' },
+      {
+        ...STORE_B,
+        id: 'server-returned-store',
+        uid: returnedUid,
+        name: 'Server Returned Store',
+      },
       'project-a'
     );
-    (client.listSpaces as any).mockResolvedValue({ spaces: [STORE_A] });
+    (client.listSpaces as any).mockResolvedValue({
+      spaces: [{ ...STORE_A, uid: selectedUid }],
+    });
     (client.addProjectToStore as any).mockImplementation(async (projectId: string, storeId: string) => {
       events.push(`join:${projectId}:${storeId}`);
       return { operation: 'store-add-project', space: returned };
@@ -357,19 +366,26 @@ describe('ProjectIssueOnboardingPage', () => {
 
     await click(container.querySelector('.project-issues-onboarding__actions .btn--primary'));
 
-    expect(client.addProjectToStore).toHaveBeenCalledWith('project-a', 'store-a');
+    expect(client.addProjectToStore).toHaveBeenCalledWith('project-a', selectedUid);
     expect(events.slice(0, 4)).toEqual([
-      'join:project-a:store-a',
+      `join:project-a:${selectedUid}`,
       'publish:server-returned-store',
       'refresh',
-      'replace:/s/server-returned-store/issues',
+      `replace:/s/${returnedUid}/issues`,
     ]);
-    expect(window.location.pathname).toBe('/s/server-returned-store/issues');
+    expect(window.location.pathname).toBe(`/s/${returnedUid}/issues`);
     replace.mockRestore();
   });
 
   it('keeps a created Store after membership failure and retries without recreating it', async () => {
-    const created = { ...STORE_A, id: 'created-store', name: 'Created Store', root: '/home/user/created-store' };
+    const uid = '11111111-2222-4333-8444-555555555555';
+    const created = {
+      ...STORE_A,
+      id: 'Created Store',
+      uid,
+      name: 'Created Store',
+      root: '/home/user/Created Store',
+    };
     const joined = memberStore(created, 'project-a');
     (client.listSpaces as any)
       .mockResolvedValueOnce({ spaces: [] })
@@ -381,8 +397,8 @@ describe('ProjectIssueOnboardingPage', () => {
     await mount(container);
     await click(Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Create Store') ?? null);
     await act(async () => {
-      const input = container.querySelector('input[name="storeId"]') as HTMLInputElement;
-      input.value = 'created-store';
+      const input = container.querySelector('input[name="storeName"]') as HTMLInputElement;
+      input.value = 'Created Store';
       input.dispatchEvent(new Event('input', { bubbles: true }));
       await flushMicrotasks();
     });
@@ -391,12 +407,12 @@ describe('ProjectIssueOnboardingPage', () => {
     expect(container.querySelector('[data-testid="onboarding-partial-success"]')?.textContent).toContain('Created Store');
     expect(container.querySelector('[data-testid="onboarding-join-error"]')?.textContent).toContain('membership pending');
     expect(client.createSpace).toHaveBeenCalledTimes(1);
-    expect(client.addProjectToStore).toHaveBeenCalledWith('project-a', 'created-store');
+    expect(client.addProjectToStore).toHaveBeenCalledWith('project-a', uid);
 
     await click(container.querySelector('.project-issues-onboarding__actions .btn--primary'));
     expect(client.createSpace).toHaveBeenCalledTimes(1);
     expect(client.addProjectToStore).toHaveBeenCalledTimes(2);
-    expect(window.location.pathname).toBe('/s/created-store/issues');
+    expect(window.location.pathname).toBe(`/s/${uid}/issues`);
   });
 
   it('drops a late catalog result after a Project transition', async () => {
@@ -443,7 +459,7 @@ describe('ProjectIssueOnboardingPage', () => {
     await mount(container);
     await click(Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Create Store') ?? null);
     await act(async () => {
-      const input = container.querySelector('input[name="storeId"]') as HTMLInputElement;
+      const input = container.querySelector('input[name="storeName"]') as HTMLInputElement;
       input.value = 'store-a';
       input.dispatchEvent(new Event('input', { bubbles: true }));
       await flushMicrotasks();

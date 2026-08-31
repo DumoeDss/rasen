@@ -33,6 +33,7 @@ export interface ProjectRef {
  */
 export interface StoreLayerRef {
   id: string;
+  uid?: string;
   root: string;
 }
 
@@ -829,7 +830,10 @@ export interface ProjectSpaceEntry {
 /** A registered store space (design D6): its members inline (reverse-enumerated per D4). */
 export interface StoreSpaceEntry {
   type: 'store';
+  /** Display alias retained as `id` for compatibility with older daemons. */
   id: string;
+  /** Permanent identity and canonical UI selector for an upgraded Store. */
+  uid?: string;
   name: string;
   root: string;
   members: SpaceMember[];

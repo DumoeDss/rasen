@@ -21,7 +21,10 @@ export interface ProjectRef {
  * for a store context. `null` in a response when no store layer is active.
  */
 export interface StoreLayerRef {
+  /** Display alias retained for compatibility and labels. */
   id: string;
+  /** Permanent identity; canonical selector when present. */
+  uid?: string;
   root: string;
 }
 

@@ -137,6 +137,58 @@ describe('store add-project', () => {
     expect(payload.membership.project_id).toBe(projectId);
   });
 
+  it('does not relax project-namespace ids when Store display names are widened', async () => {
+    await registerTargetStore();
+    const projectRoot = makeProject('project-with-invalid-override');
+
+    const result = await runCLI(
+      [
+        'store',
+        'add-project',
+        projectRoot,
+        '--to',
+        'team-context',
+        '--as',
+        'Project Name',
+        '--json',
+      ],
+      { cwd: tempDir, env }
+    );
+
+    expect(result.exitCode).toBe(1);
+    const payload = parseJson(result);
+    expect(payload.status[0].message).toMatch(/project id/iu);
+    expect(payload.status[0].message).toContain('kebab-case');
+    expect(fs.existsSync(path.join(projectRoot, '.rasen-store', 'store.yaml'))).toBe(false);
+  });
+
+  it('rejects a non-kebab Project id during dry-run with no writes', async () => {
+    await registerTargetStore();
+    const projectRoot = makeProject('project-with-invalid-dry-run-override');
+    const before = snapshot(tempDir);
+
+    const result = await runCLI(
+      [
+        'store',
+        'add-project',
+        projectRoot,
+        '--to',
+        'team-context',
+        '--as',
+        'Project Name',
+        '--dry-run',
+        '--json',
+      ],
+      { cwd: tempDir, env }
+    );
+
+    expect(result.exitCode).toBe(1);
+    const payload = parseJson(result);
+    expect(payload.status[0].message).toMatch(/project id/iu);
+    expect(payload.status[0].message).toContain('kebab-case');
+    expect(snapshot(tempDir)).toEqual(before);
+  });
+
   it('preserves the existing metadata-vs---as mismatch refusal ahead of registry fallback', async () => {
     await registerTargetStore();
     const projectRoot = makeProject('rasen-2.0-metadata');

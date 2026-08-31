@@ -9,7 +9,7 @@ import {
   refreshSpaceCatalog,
 } from '../store/space-catalog.js';
 import type { LocalPathSelectionController } from '../store/use-local-path-selection.js';
-import { spaceHomeHref, type Space } from '../store/use-space.js';
+import { spaceFromEntry, spaceHomeHref } from '../store/use-space.js';
 import { LocalPathPicker } from './LocalPathPicker.js';
 import { useT } from '../i18n/store.js';
 
@@ -37,7 +37,7 @@ export function CreateSpaceDialog({
   const t = useT();
   const { route } = useLocation();
   const [selectedOperation, setSelectedOperation] = useState<SpaceOperation>('create-project');
-  const [storeId, setStoreId] = useState('');
+  const [storeName, setStoreName] = useState('');
   const [visiblePath, setVisiblePath] = useState('');
   const [separator, setSeparator] = useState('/');
   const [submitting, setSubmitting] = useState(false);
@@ -58,7 +58,8 @@ export function CreateSpaceDialog({
   async function handleSubmit(event: Event) {
     event.preventDefault();
     if (submitting) return;
-    if (operation === 'create-store' && !storeId) {
+    const hasStoreName = storeName.trim().length > 0;
+    if (operation === 'create-store' && !hasStoreName) {
       setSubmitError('spaces.create.store_id_required');
       return;
     }
@@ -76,11 +77,11 @@ export function CreateSpaceDialog({
       operation === 'create-project'
         ? { op: 'create-project', path: selected }
         : operation === 'create-store'
-          ? { op: 'create-store', parent: selected, id: storeId }
+          ? { op: 'create-store', parent: selected, id: storeName }
           : {
               op: 'register-store',
               path: selected,
-              ...(storeId ? { id: storeId } : {}),
+              ...(hasStoreName ? { id: storeName } : {}),
             };
     try {
       const result: CreateSpaceResponse = await client.createSpace(request);
@@ -93,12 +94,7 @@ export function CreateSpaceDialog({
         onSuccess(result);
         return;
       }
-      const space: Space = {
-        type: result.space.type,
-        id: result.space.id,
-        selector: `${result.space.type}:${result.space.id}`,
-      };
-      route(spaceHomeHref(space));
+      route(spaceHomeHref(spaceFromEntry(result.space)));
     } catch (caught) {
       if (!mountedRef.current || attempt !== submitAttemptRef.current) return;
       if (caught instanceof ApiError && caught.status === 401) return;
@@ -112,7 +108,7 @@ export function CreateSpaceDialog({
   const isStore = operation !== 'create-project';
   const preview =
     operation === 'create-store'
-      ? joinPreview(visiblePath, separator, storeId)
+      ? joinPreview(visiblePath, separator, storeName)
       : '';
 
   return (
@@ -192,15 +188,17 @@ export function CreateSpaceDialog({
             </span>
             <input
               type="text"
-              name="storeId"
-              value={storeId}
+              name="storeName"
+              value={storeName}
               disabled={submitting}
               required={operation === 'create-store'}
               placeholder={t('spaces.create.store_id_placeholder')}
-              onInput={(event) =>
-                setStoreId((event.target as HTMLInputElement).value)
-              }
+              onInput={(event) => {
+                setStoreName((event.target as HTMLInputElement).value);
+                setSubmitError(null);
+              }}
             />
+            <small>{t('spaces.create.store_identity_hint')}</small>
           </label>
         )}
 
@@ -233,7 +231,7 @@ export function CreateSpaceDialog({
             type="submit"
             class="btn--primary"
             disabled={
-              submitting || (operation === 'create-store' && !storeId)
+              submitting || (operation === 'create-store' && !storeName.trim())
             }
           >
             {submitting

@@ -7,9 +7,9 @@ Define the management platform's space-creation write path: the CLI-backed subpr
 
 ### Requirement: Spaces are created through the CLI only
 
-The management server SHALL accept `POST /api/v1/spaces` with exactly one explicit JSON operation: `{ op: "create-project", path }`, `{ op: "create-store", parent, id }`, or `{ op: "register-store", path, id? }`. It SHALL fulfil the request exclusively by spawning the existing `rasen` CLI as a subprocess with an argv array and `shell: false`, resolved from the running server's own installation (never PATH). The server SHALL NOT write workspace files, mint identity, or modify any registry in-process.
+The management server SHALL accept `POST /api/v1/spaces` with exactly one explicit JSON operation: `{ op: "create-project", path }`, `{ op: "create-store", parent, id }`, or `{ op: "register-store", path, id? }`. For compatibility the wire field remains named `id`, but on Store creation and registration it carries the human-facing Store name/display alias, never the Store's permanent identity. It SHALL fulfil the request exclusively by spawning the existing `rasen` CLI as a subprocess with an argv array and `shell: false`, resolved from the running server's own installation (never PATH). The server SHALL NOT write workspace files, mint identity, or modify any registry in-process.
 
-The operation SHALL deterministically select the CLI verb: `create-project` spawns `rasen init <path>`; `create-store` validates the id, joins it beneath the selected parent using the server platform's path semantics, and spawns `rasen store setup <id> --path <joined-root> --layout 2`; `register-store` spawns `rasen store register <path> --yes` with `--id <id>` when provided. A freshly created Store SHALL therefore carry both a permanent Store identity and the layout version 2 declaration required by Store aggregate Issue reads. The server SHALL never inspect a create request's target and silently convert it to registration, or convert registration to setup. On success it SHALL respond 201 with the operation performed and the new space's listing entry, re-read from the same enumeration `GET /api/v1/spaces` uses.
+The operation SHALL deterministically select the CLI verb: `create-project` spawns `rasen init <path>`; `create-store` validates the Store name as one safe directory segment, joins it beneath the selected parent using the server platform's path semantics, and spawns `rasen store setup --path <joined-root> --layout 2 -- <name>`; `register-store` spawns `rasen store register <path> --yes` with `--id=<name>` when provided. The `--`/single-token forms SHALL keep an otherwise valid option-like name such as `-team` inert rather than parsing it as a CLI flag. A freshly created Store SHALL therefore carry the supplied name as its display alias and directory name, an automatically minted permanent Store identity, and the layout version 2 declaration required by Store aggregate Issue reads. The server SHALL never accept a permanent identity in the create request, inspect a create request's target and silently convert it to registration, or convert registration to setup. On success it SHALL respond 201 with the operation performed and the new space's listing entry, including its minted permanent identity, re-read from the same enumeration `GET /api/v1/spaces` uses.
 
 #### Scenario: Initialise a project space
 
@@ -24,9 +24,15 @@ The operation SHALL deterministically select the CLI verb: `create-project` spaw
 
 #### Scenario: Create a fresh store beneath its selected parent
 
-- **WHEN** a client sends `{ op: "create-store", parent: <absolute parent>, id: "team-store" }`
-- **THEN** the server spawns `store setup team-store --path <parent joined with team-store> --layout 2`, initializes the Store at that child root with a permanent identity and layout version 2, and responds 201 with its listing entry
+- **WHEN** a client sends `{ op: "create-store", parent: <absolute parent>, id: "Team Planning" }`
+- **THEN** the server spawns `store setup --path <parent joined with Team Planning> --layout 2 -- "Team Planning"`, initializes the Store at that child root with the display name unchanged, a permanent identity, and layout version 2, and responds 201 with its listing entry including that identity
 - **AND** an empty Store aggregate Issue read is usable rather than refused with `issue_scope_required`
+
+#### Scenario: Option-like Store name remains positional
+
+- **WHEN** a client creates a Store named `-team`
+- **THEN** `-team` is passed as one positional name after the CLI option terminator
+- **AND** no part of it is interpreted as a flag
 
 #### Scenario: Create never turns into registration
 
@@ -50,7 +56,7 @@ The operation SHALL deterministically select the CLI verb: `create-project` spaw
 
 ### Requirement: Space creation validates input before spawning and passes CLI errors through
 
-The server SHALL validate before any subprocess: `op` MUST be one of `create-project`, `create-store`, or `register-store`; each `path` or `parent` MUST be an absolute, control-character-free, length-capped path; and each supplied `id` MUST satisfy the CLI's own Store-id validation. `create-store` SHALL require both parent and id, validate the id before deriving the child root, and derive that root with the platform path join operation. Fields from a different operation or an ambiguous legacy `{ kind, path, id? }` body SHALL be rejected with 400 rather than inferred. Invalid input SHALL spawn nothing.
+The server SHALL validate before any subprocess: `op` MUST be one of `create-project`, `create-store`, or `register-store`; each `path` or `parent` MUST be an absolute, control-character-free, length-capped path; and each supplied Store-name `id` MUST satisfy the CLI's Store alias validation. That validation SHALL accept readable non-kebab names and reject only values that cannot serve as the one directory segment defined by `store-identity`. `create-store` SHALL require both parent and the Store-name `id`, validate the name before deriving the child root, and derive that root with the platform path join operation. Fields from a different operation or an ambiguous legacy `{ kind, path, id? }` body SHALL be rejected with 400 rather than inferred. Invalid input SHALL spawn nothing.
 
 All values SHALL be passed as discrete argv elements with `shell: false`; the subprocess working directory SHALL never derive from client input. When the subprocess exits non-zero the server SHALL respond 422 with the CLI's own error message (parsed from JSON output when available, otherwise stderr), the exit code, and captured stderr, never swallowed or paraphrased. A zero-exit subprocess whose resulting space cannot be found in the spaces listing SHALL produce a 500 protocol error rather than a fabricated success.
 
@@ -59,10 +65,15 @@ All values SHALL be passed as discrete argv elements with `shell: false`; the su
 - **WHEN** a client submits `path: "repo"`, `parent: "../stores"`, or an option-like path
 - **THEN** the response is 400 and no subprocess is spawned
 
-#### Scenario: Invalid store id rejected before joining
+#### Scenario: Invalid Store name rejected before joining
 
-- **WHEN** a client submits a `create-store` id that fails the CLI Store-id validation
-- **THEN** the response is 400 naming the id constraint, no target root is accepted, and no subprocess is spawned
+- **WHEN** a client submits a `create-store` name containing a path separator or surrounding whitespace
+- **THEN** the response is 400 naming the directory-segment constraint, no target root is accepted, and no subprocess is spawned
+
+#### Scenario: Non-kebab Store name is accepted
+
+- **WHEN** a client submits `Acme Store`, `研发计划.v2`, or `acme_context` as the Store-name `id`
+- **THEN** validation accepts the value unchanged and the subprocess receives it as one argv token
 
 #### Scenario: Ambiguous legacy body is rejected
 

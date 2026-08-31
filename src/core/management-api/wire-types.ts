@@ -836,7 +836,10 @@ export interface ProjectSpaceEntry {
 /** A registered store space (design D6): its members inline (reverse-enumerated per D4). */
 export interface StoreSpaceEntry {
   type: 'store';
+  /** Display alias retained as `id` for wire compatibility. */
   id: string;
+  /** Permanent machine identity; absent only for a legacy Store. */
+  uid?: string;
   name: string;
   root?: string;
   members: SpaceMember[];

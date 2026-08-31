@@ -67,9 +67,55 @@ describe('SpaceBootstrap', () => {
     expect(client.health).not.toHaveBeenCalled();
   });
 
-  it('redirects a store launch query to its Issue Board home', async () => {
-    await mountAt(container, '/?space=store:my-store');
-    expect(window.location.pathname).toBe('/s/my-store/issues');
+  it('redirects a canonical Store uid launch query without a catalog read', async () => {
+    const uid = '11111111-2222-4333-8444-555555555555';
+    await mountAt(container, `/?space=store:${uid}`);
+    expect(window.location.pathname).toBe(`/s/${uid}/issues`);
+    expect(client.listSpaces).not.toHaveBeenCalled();
+  });
+
+  it('resolves a unique legacy Store alias and redirects by permanent uid', async () => {
+    const uid = '11111111-2222-4333-8444-555555555555';
+    (client.listSpaces as any).mockResolvedValue({
+      spaces: [
+        { type: 'store', id: 'Shared Name', uid, name: 'Shared Name', root: '/s', members: [] },
+      ],
+    });
+
+    await mountAt(container, '/?space=store:Shared%20Name');
+
+    expect(window.location.pathname).toBe(`/s/${uid}/issues`);
+    expect(client.listSpaces).toHaveBeenCalledOnce();
+    expect(client.health).not.toHaveBeenCalled();
+  });
+
+  it('does not guess between Stores that share a legacy alias', async () => {
+    (client.listSpaces as any).mockResolvedValue({
+      spaces: [
+        {
+          type: 'store',
+          id: 'Shared Name',
+          uid: '11111111-2222-4333-8444-555555555555',
+          name: 'Shared Name',
+          root: '/a',
+          members: [],
+        },
+        {
+          type: 'store',
+          id: 'Shared Name',
+          uid: '66666666-7777-4888-8999-aaaaaaaaaaaa',
+          name: 'Shared Name',
+          root: '/b',
+          members: [],
+        },
+      ],
+    });
+
+    await mountAt(container, '/?space=store:Shared%20Name');
+
+    expect(window.location.pathname).toBe('/');
+    expect(container.querySelector('[data-testid="unresolved-space-state"]')).not.toBeNull();
+    expect(client.health).not.toHaveBeenCalled();
   });
 
   it('lands on the space board with the token retained after token scrubbing (bootstrap ordering)', async () => {
@@ -111,11 +157,12 @@ describe('SpaceBootstrap', () => {
 
   it('falls back to the first space when health reports no launch project', async () => {
     (client.health as any).mockResolvedValue({ ok: true, version: '0', project: null });
+    const uid = '11111111-2222-4333-8444-555555555555';
     (client.listSpaces as any).mockResolvedValue({
-      spaces: [{ type: 'store', id: 'store_first', name: 'store_first', root: '/s', members: [] }],
+      spaces: [{ type: 'store', id: 'Store First', uid, name: 'Store First', root: '/s', members: [] }],
     });
     await mountAt(container, '/');
-    expect(window.location.pathname).toBe('/s/store_first/issues');
+    expect(window.location.pathname).toBe(`/s/${uid}/issues`);
   });
 
   it('shows an explicit empty state when nothing resolves, not a blank page or spinner', async () => {

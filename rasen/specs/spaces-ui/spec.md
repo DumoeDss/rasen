@@ -5,7 +5,7 @@ Define the web UI's Spaces page and the header space switcher's cap-and-escape b
 ## Requirements
 ### Requirement: A Spaces page lists, searches, and pins every addressable space
 
-The web UI SHALL provide a `/spaces` route — space-agnostic, carrying no space prefix — that lists every addressable planning space from the spaces listing endpoint: projects and stores type-tagged, with each store's member projects visible on its row. A project row whose listing entry reports a live worktree count greater than one SHALL display that count as a worktree badge, so a multi-worktree project is recognizable as one space with several working areas rather than several spaces. The page SHALL offer client-side search filtering entries by id, name, or root path (case-insensitive, no server round-trip), and pinning: pinned spaces sort before unpinned ones, and pins persist in the `ui.pinnedSpaces` global configuration key (an array of `<type>:<id>` space selectors) written through the existing config write path, so pins survive a browser change and remain visible to the CLI. Selecting a space navigates to that space's route exactly like the header switcher does. A pinned selector that matches no listed space SHALL be retained in configuration but not rendered.
+The web UI SHALL provide a `/spaces` route — space-agnostic, carrying no space prefix — that lists every addressable planning space from the spaces listing endpoint: projects and Stores type-tagged, with each Store's member projects visible on its row. A Store row SHALL display its readable name while using its permanent uid as the row's canonical route/API identity whenever present. A project row whose listing entry reports a live worktree count greater than one SHALL display that count as a worktree badge, so a multi-worktree project is recognizable as one space with several working areas rather than several spaces. The page SHALL offer client-side search filtering entries by id, name, uid, or root path (case-insensitive, no server round-trip), and pinning: pinned spaces sort before unpinned ones, and pins persist in the `ui.pinnedSpaces` global configuration key (an array of `<type>:<selector>` space selectors) written through the existing config write path, so pins survive a browser change and remain visible to the CLI. New Store pins SHALL use `store:<uid>`. A legacy Store-alias pin SHALL continue to match when exactly one listed Store has that alias and SHALL migrate to its uid form on the next pin write; an unknown or ambiguous legacy pin SHALL be retained byte-for-byte and SHALL never choose a Store. Selecting a space navigates to that space's route exactly like the header switcher does. A pinned selector that matches no listed space SHALL be retained in configuration but not rendered.
 
 #### Scenario: Search narrows the listing client-side
 
@@ -26,6 +26,19 @@ The web UI SHALL provide a `/spaces` route — space-agnostic, carrying no space
 
 - **WHEN** `ui.pinnedSpaces` contains a selector matching no listed space
 - **THEN** the page renders normally without that entry and the pin value is not modified
+
+#### Scenario: Unique legacy Store pin migrates on the next write
+
+- **WHEN** `ui.pinnedSpaces` contains `store:<alias>` and exactly one listed Store has that alias and uid `<uid>`
+- **AND** the user performs a pin or unpin write
+- **THEN** the persisted known Store selector is `store:<uid>`
+- **AND** dead selectors remain present
+
+#### Scenario: Ambiguous legacy Store pin is not guessed
+
+- **WHEN** two Stores share the alias named by a legacy pin
+- **THEN** neither Store is selected or rendered as pinned from that alias
+- **AND** the legacy selector is retained unchanged until the user resolves it
 
 #### Scenario: Worktree badge on a multi-worktree project
 
@@ -59,7 +72,9 @@ registering an existing Store. Each flow SHALL acquire its server-local director
 shared chooser-style path control, starting from home in its fallback browser, accepting an
 explicit absolute path, and visibly marking Git repositories. Project creation SHALL select its
 target root. New-Store creation SHALL label the selection as a parent directory, require a Store
-id, and state that the Store will be initialized at the child named by that id. Existing-Store
+name, and state that the name becomes both the child directory and the display label while Rasen
+generates the permanent uid automatically. The name input SHALL accept readable names under the
+Store alias grammar rather than requiring kebab-case. Existing-Store
 registration SHALL label the selection as an existing Store root and SHALL be a distinct user
 choice, never an inferred result of Create Store.
 
@@ -73,12 +88,18 @@ entirely by the server-spawned CLI.
 - **WHEN** the user selects a project directory and activates Create Project
 - **THEN** on success the UI routes to `/p/<projectId>/board` without returning to a terminal
 
-#### Scenario: Create a Store from parent plus id
+#### Scenario: Create a Store from parent plus readable name
 
-- **WHEN** the user chooses Create new Store, selects a parent directory, enters `team-store`, and
+- **WHEN** the user chooses Create new Store, selects a parent directory, enters `研发计划.v2`, and
   submits
-- **THEN** the request creates the `team-store` child of that parent and the UI routes to
-  `/s/team-store/issues`
+- **THEN** the request creates the `研发计划.v2` child of that parent, displays that name unchanged,
+  and the UI routes to `/s/<uid>/issues` using the returned permanent identity
+
+#### Scenario: The user never supplies the permanent identity
+
+- **WHEN** the new-Store form is displayed
+- **THEN** it asks only for the Store name and parent directory
+- **AND** it explains that Rasen generates the permanent uid automatically
 
 #### Scenario: Register an existing Store explicitly
 
@@ -107,7 +128,7 @@ entirely by the server-spawned CLI.
 #### Scenario: CLI failure is shown verbatim
 
 - **WHEN** the creation or registration subprocess fails
-- **THEN** the flow surfaces the CLI's own error message and the user can correct the action, id, or
+- **THEN** the flow surfaces the CLI's own error message and the user can correct the action, name, or
   path
 
 ### Requirement: A created space appears consistently across the SPA immediately
@@ -126,7 +147,7 @@ Board for a project and Issue Board for a Store.
 
 #### Scenario: New Store is immediately available in the switcher
 
-- **WHEN** Store creation succeeds and the SPA routes to `/s/<storeId>/issues`
+- **WHEN** Store creation succeeds and the SPA routes to `/s/<storeUid>/issues`
 - **THEN** the header switcher already contains and selects that Store without requiring a reload
   or a visit to All Spaces
 

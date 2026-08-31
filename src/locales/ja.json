@@ -1602,7 +1602,7 @@
               "description": "ローカルstoreを作成または登録します",
               "options": {
                 "path": {
-                  "description": "ストアを配置するフォルダー（例: ~/{workspaceDir}/<id>）"
+                  "description": "ストアを配置するフォルダー（例: ~/{workspaceDir}/<name>）"
                 },
                 "init-git": {
                   "description": "store内にGitリポジトリを初期化します"
@@ -1625,7 +1625,7 @@
               "description": "既存のstoreディレクトリを登録します",
               "options": {
                 "id": {
-                  "description": "store IDです"
+                  "description": "store名の上書きです（既定値はメタデータまたはフォルダー名）"
                 },
                 "yes": {
                   "description": "store識別メタデータの作成を確認します"
@@ -1642,7 +1642,7 @@
                   "description": "projectを追加する対象storeです"
                 },
                 "as": {
-                  "description": "projectのstore IDを上書きします"
+                  "description": "project IDを小文字kebab-caseで上書きします（登録済みprojectでは無視されます）"
                 },
                 "set-primary": {
                   "description": "対象 store をプロジェクトの計画 store としても記録します"

@@ -6,13 +6,25 @@ Give a Store a permanent identity that survives renames and cannot collide acros
 ## Requirements
 ### Requirement: A Store has a permanent identity distinct from its display name
 
-Every Store SHALL carry an immutable identity that is created once, recorded in the Store's own metadata, and travels with the Store's repository. The Store's `id` SHALL be a display alias only: it MAY be renamed, it MAY be shared by two different Stores, and it SHALL NOT decide which Store is meant when a permanent identity is available. Creating a Store SHALL mint that identity automatically; no command SHALL accept it as user input, and no command SHALL change it once written.
+Every Store SHALL carry an immutable identity that is created once, recorded in the Store's own metadata, and travels with the Store's repository. The Store's `id` SHALL be a display alias only: it MAY be renamed, it MAY be shared by two different Stores, and it SHALL NOT decide which Store is meant when a permanent identity is available. For a newly created Store the alias SHALL also be the new directory's final path segment. It SHALL NOT be restricted to a machine-oriented kebab-case grammar: readable values such as `Acme Store`, `研发计划.v2`, `acme_context`, and `-team` SHALL be valid. Only an empty or whitespace-only value, `.`, `..`, a path separator, a control character, or leading/trailing whitespace SHALL be rejected at the alias boundary. Creating a Store SHALL mint the permanent identity automatically; no command SHALL accept it as user input, and no command SHALL change it once written.
 
 #### Scenario: Creating a Store mints a permanent identity
 
 - **WHEN** a user creates a new Store
 - **THEN** the Store's metadata records a newly minted permanent identity alongside the display alias
 - **AND** the same identity is reported by every command that names that Store afterwards
+
+#### Scenario: A readable Store name is not forced into a slug
+
+- **WHEN** a user creates Stores named `Acme Store`, `研发计划.v2`, `acme_context`, or `-team`
+- **THEN** each name is accepted unchanged as the Store's display alias and new directory name
+- **AND** each Store receives a separate automatically minted permanent identity
+
+#### Scenario: A value that is not one safe directory segment is rejected
+
+- **WHEN** a user supplies an empty or whitespace-only Store name, `.`, `..`, a path separator, a control character, or leading/trailing whitespace
+- **THEN** the Store name is rejected before metadata or registry state is written
+- **AND** the diagnostic explains the directory-segment constraint rather than asking for kebab-case
 
 #### Scenario: Renaming the display alias keeps the identity
 

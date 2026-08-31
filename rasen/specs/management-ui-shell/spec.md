@@ -6,12 +6,15 @@ Make the management UI shell space-aware: the URL is the source of truth for the
 ### Requirement: The URL is the source of truth for the selected planning space
 
 The management UI SHALL carry the selected planning space in the URL path — `/p/<projectId>/…`
-for a project space and `/s/<storeId>/…` for a Store space — and SHALL derive the active space from
+for a project space and `/s/<storeUid>/…` for a Store space — and SHALL derive the active space from
 the current route, not from any in-memory store. A refresh, a deep link, or a second browser tab
 SHALL each resolve their own space from their own URL independently, with no shared mutable space
 state between them. Project Board and Task Detail SHALL live only under project prefixes; Issue
 Board/Detail, Store Operations, and Unlinked Changes SHALL live only under Store prefixes; common
-Config, Archive, and Pipelines views SHALL remain addressable in either namespace.
+Config, Archive, and Pipelines views SHALL remain addressable in either namespace. New Store routes
+SHALL use the permanent uid returned by the spaces catalog. A legacy `/s/<alias>/…` deep link SHALL
+remain accepted when the alias identifies exactly one Store, but the shell SHALL never guess when
+several Stores share it.
 
 #### Scenario: Deep link resolves its own space
 
@@ -21,9 +24,20 @@ Config, Archive, and Pipelines views SHALL remain addressable in either namespac
 
 #### Scenario: Store deep link resolves its own space
 
-- **WHEN** the user opens `/s/<storeId>/issues/<issueId>`, `/operations`, or
+- **WHEN** the user opens `/s/<storeUid>/issues/<issueId>`, `/operations`, or
   `/unlinked-changes` directly
 - **THEN** the requested Store surface renders for that Store without a project-space mirror
+
+#### Scenario: Unique legacy Store alias deep link remains compatible
+
+- **WHEN** the user opens `/s/<alias>/issues` and exactly one listed Store carries that alias
+- **THEN** that Store's Issue Board renders
+- **AND** subsequent generated navigation for it uses `/s/<uid>/…`
+
+#### Scenario: Ambiguous legacy alias deep link is not guessed
+
+- **WHEN** two Stores share the alias in `/s/<alias>/issues`
+- **THEN** the shell does not select either Store and presents the unresolved-space state
 
 #### Scenario: Two tabs hold independent spaces
 
@@ -38,12 +52,13 @@ Config, Archive, and Pipelines views SHALL remain addressable in either namespac
 ### Requirement: The launch URL's space query bootstraps to a canonical space route
 
 On load the shell SHALL read the `space` query parameter emitted by `rasen ui`
-(`?space=project:<id>` or `?space=store:<id>`), translate a project to
-`/p/<id>/board` and a Store to `/s/<id>/issues`, and navigate there by replacing history so the
-launch query does not remain in the address bar or become a back-button entry. The id portion after
-the namespace prefix SHALL be used verbatim as an opaque token — the shell SHALL NOT normalize,
-re-case, or path-canonicalize it — so it round-trips unchanged into the route and back into every
-API call. When the URL carries no `space` query, the shell SHALL use the server's launch project
+(`?space=project:<id>` or `?space=store:<uid>` for an upgraded Store), translate a project to
+`/p/<id>/board` and a Store to `/s/<uid>/issues`, and navigate there by replacing history so the
+launch query does not remain in the address bar or become a back-button entry. A project id or
+canonical Store uid after the namespace prefix SHALL be used verbatim as an opaque token — the shell
+SHALL NOT normalize, re-case, or path-canonicalize it — so it round-trips unchanged into the route
+and back into every API call. A legacy alias-valued Store query SHALL instead be resolved through
+the catalog only when it is unique, after which generated navigation SHALL use the uid. When the URL carries no `space` query, the shell SHALL use the server's launch project
 when available, otherwise the first listed space and that space type's canonical home. When no
 space is resolvable at all, it SHALL render an explicit empty state directing the user to run
 `rasen ui` inside a Rasen project.
@@ -59,16 +74,15 @@ space is resolvable at all, it SHALL render an explicit empty state directing th
 - **THEN** the client refreshes its HttpOnly browser session once and retries the original request
 - **AND** it shows the re-launch notice only if the refreshed request is still unauthorized
 
-#### Scenario: Store launch query resolves to a store route
+#### Scenario: Store launch query resolves to a uid route
 
-- **WHEN** the launch URL carries `?space=store:<id>`
-- **THEN** the app lands on `/s/<id>/issues` and never renders the superseded Store Task board
+- **WHEN** the launch URL carries `?space=store:<uid>`
+- **THEN** the app lands on `/s/<uid>/issues` and never renders the superseded Store Task board
 
-#### Scenario: Opaque id round-trips unchanged
+#### Scenario: Canonical opaque id round-trips unchanged
 
-- **WHEN** the launch query's id differs from a normalized form only by case, separators, or a
-  colon inside the id
-- **THEN** the id appears byte-for-byte identical after route escaping/decoding and in the selector
+- **WHEN** a launch query carries an already-canonical project id or Store uid
+- **THEN** that token appears byte-for-byte identical after route escaping/decoding and in the selector
   sent to the API
 
 #### Scenario: No space query falls back to the launch project
@@ -80,7 +94,7 @@ space is resolvable at all, it SHALL render an explicit empty state directing th
 #### Scenario: First listed Store uses its Issue home
 
 - **WHEN** there is no launch project and the first listed space is a Store
-- **THEN** the app redirects to that Store's `/s/<id>/issues`
+- **THEN** the app redirects to that Store's `/s/<uid>/issues`
 
 #### Scenario: No resolvable space shows an explicit empty state
 
@@ -95,7 +109,8 @@ in two type-tagged groups — projects and Stores — with the current route's s
 a space SHALL navigate to a route valid for the destination namespace: Config, Archive, and
 Pipelines SHALL be preserved across namespaces; Issues, Operations, and Unlinked Changes SHALL be
 preserved only for Store-to-Store switches; every other switch SHALL fall back to the destination's
-canonical home. Navigation SHALL be the switcher's only effect. The switcher SHALL NOT offer a
+canonical home. Store options SHALL display `name`/the alias but navigate and issue selectors with
+the permanent uid whenever it is present. Navigation SHALL be the switcher's only effect. The switcher SHALL NOT offer a
 no-space option; an empty listing SHALL show an explicit registration hint.
 
 #### Scenario: Both namespaces grouped and tagged
@@ -138,7 +153,7 @@ no-space option; an empty listing SHALL show an explicit registration hint.
 
 ### Requirement: Space-scoped API calls thread the current route's selector through the shared client seam
 
-Every space-scoped management read and write the UI issues (active changes, run state, session listing, session launch) SHALL carry the current route's space selector, built as `<type>:<id>` from the route and passed through the UI package's single API client seam. Omitting the selector SHALL remain valid and SHALL preserve the server's launch-project fallback, so a call made before a space is resolved behaves exactly as it did before this capability. The selector SHALL be URL-encoded once at the client seam and SHALL NOT be re-derived from anything other than the route.
+Every space-scoped management read and write the UI issues (active changes, run state, session listing, session launch) SHALL carry the current route's space selector, built as `<type>:<id>` from the route and passed through the UI package's single API client seam. For a newly generated Store route that id SHALL be the permanent uid; a uniquely resolved legacy alias route remains a compatibility input only. Omitting the selector SHALL remain valid and SHALL preserve the server's launch-project fallback, so a call made before a space is resolved behaves exactly as it did before this capability. The selector SHALL be URL-encoded once at the client seam and SHALL NOT be re-derived from anything other than the route.
 
 #### Scenario: Board reads scope to the route's space
 
@@ -148,7 +163,7 @@ Every space-scoped management read and write the UI issues (active changes, run 
 #### Scenario: Session launch targets the current space
 
 - **WHEN** a session is launched from a view scoped to store `<id>`
-- **THEN** the launch request carries the `store:<id>` selector so the run starts in that space
+- **THEN** the launch request carries the `store:<uid>` selector so the run starts in that space
 
 #### Scenario: Selector-less call keeps the fallback
 

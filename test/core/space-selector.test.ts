@@ -170,6 +170,7 @@ describe('planning-space selector (planning-space-addressing design D1/D2/D5)', 
         // The identity addresses it; the space still reports the store's own
         // display name, never the selector that was used.
         expect(result.space.id).toBe('identified');
+        expect(result.space.uid).toBe(uid);
         expect(result.space.root).toBe(FileSystemUtils.canonicalizeExistingPath(storeRoot));
       }
     });
@@ -257,14 +258,16 @@ describe('planning-space selector (planning-space-addressing design D1/D2/D5)', 
       expect(space).toBeNull();
     });
 
-    it('derives a store space from a pointer repo whose store is registered', async () => {
+    it('derives a Store space by permanent uid from a legacy-alias pointer', async () => {
       const storeRoot = makePlanningRoot(tempDir, 'pointer-target-store');
+      const uid = '11111111-2222-4333-8444-555555555555';
+      await writeStoreMetadataState(storeRoot, { version: 2, uid, id: 'team' });
       await registerStore({ id: 'team', localPath: storeRoot, globalDataDir: dataDir });
       const pointerRepo = makePointerRepo(tempDir, 'pointer-repo', 'team');
 
       const space = await deriveSpaceFromCwd(pointerRepo, { globalDataDir: dataDir });
       expect(space?.type).toBe('store');
-      expect(space?.id).toBe('team');
+      expect(space?.id).toBe(uid);
       expect(space?.root).toBe(FileSystemUtils.canonicalizeExistingPath(storeRoot));
     });
 

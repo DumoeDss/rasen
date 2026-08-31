@@ -332,7 +332,7 @@ const COMMANDS: readonly CommandDefinition[] = [
       {
         name: 'setup',
         acceptsPositional: true,
-        positionals: [{ name: 'id', optional: true }],
+        positionals: [{ name: 'name', optional: true }],
         flags: [
           {
             name: 'path',

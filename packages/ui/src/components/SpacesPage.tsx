@@ -2,18 +2,20 @@ import { useEffect, useState } from 'preact/hooks';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
 import type { ProjectSpaceEntry, SpaceEntry, StoreSpaceEntry } from '../api/types.js';
-import { parseSpacePath, spaceHomeHref, type Space } from '../store/use-space.js';
+import {
+  canonicalizeSpaceSelectors,
+  parseSpacePath,
+  spaceEntryForSelector,
+  spaceFromEntry,
+  spaceHomeHref,
+  spaceSelectorOfEntry,
+} from '../store/use-space.js';
 import { useLocation } from 'preact-iso';
 import { CreateSpaceDialog } from './CreateSpaceDialog.js';
 import { useT } from '../i18n/store.js';
 import { ensureSpaceCatalog, useSpaceCatalog } from '../store/space-catalog.js';
 
 const PINNED_KEY = 'ui.pinnedSpaces';
-
-/** The `<type>:<id>` selector for a listed space. */
-function selectorOf(space: SpaceEntry): string {
-  return `${space.type}:${space.id}`;
-}
 
 /** Coerces the `ui.pinnedSpaces` config value into a string[]; anything else → []. */
 function coercePins(value: unknown): string[] {
@@ -24,14 +26,10 @@ function matchesQuery(space: SpaceEntry, needle: string): boolean {
   if (!needle) return true;
   return (
     space.id.toLowerCase().includes(needle) ||
+    (space.type === 'store' && (space.uid ?? '').toLowerCase().includes(needle)) ||
     space.name.toLowerCase().includes(needle) ||
     space.root.toLowerCase().includes(needle)
   );
-}
-
-/** A Space (for spaceHref) built from a listed entry — the opaque id used verbatim. */
-function spaceOf(entry: SpaceEntry): Space {
-  return { type: entry.type, id: entry.id, selector: selectorOf(entry) };
 }
 
 /**
@@ -83,9 +81,14 @@ export function SpacesPage() {
     void refreshCatalog();
   }
 
-  async function togglePin(selector: string) {
-    const isPinned = pins.includes(selector);
-    const next = isPinned ? pins.filter((s) => s !== selector) : [...pins, selector];
+  async function togglePin(entry: SpaceEntry) {
+    const catalog = spaces ?? [];
+    const canonicalPins = canonicalizeSpaceSelectors(pins, catalog);
+    const selector = spaceSelectorOfEntry(entry);
+    const isPinned = canonicalPins.includes(selector);
+    const next = isPinned
+      ? canonicalPins.filter((candidate) => candidate !== selector)
+      : [...canonicalPins, selector];
     const previous = pins;
     // Optimistic: reorder immediately, revert on write failure.
     setPins(next);
@@ -119,8 +122,9 @@ export function SpacesPage() {
 
   const needle = query.trim().toLowerCase();
   const all = spaces ?? [];
-  const pinnedSet = new Set(pins);
-  const pinRank = new Map(pins.map((sel, i) => [sel, i] as const));
+  const canonicalPins = canonicalizeSpaceSelectors(pins, all);
+  const pinnedSet = new Set(canonicalPins);
+  const pinRank = new Map(canonicalPins.map((sel, i) => [sel, i] as const));
 
   // Order: pinned first (config order), then non-pinned projects A-Z, then
   // non-pinned stores A-Z. Grouping is BY SELECTOR (for the pin flag and pin
@@ -131,18 +135,20 @@ export function SpacesPage() {
   // never by the selector, so a re-render (pin/search) cannot merge them.
   const filtered = all.filter((s) => matchesQuery(s, needle));
   const pinnedRows = filtered
-    .filter((s) => pinnedSet.has(selectorOf(s)))
-    .sort((a, b) => (pinRank.get(selectorOf(a)) ?? 0) - (pinRank.get(selectorOf(b)) ?? 0));
+    .filter((s) => pinnedSet.has(spaceSelectorOfEntry(s)))
+    .sort((a, b) => (pinRank.get(spaceSelectorOfEntry(a)) ?? 0) - (pinRank.get(spaceSelectorOfEntry(b)) ?? 0));
   const projectsRest = filtered
-    .filter((s): s is ProjectSpaceEntry => s.type === 'project' && !pinnedSet.has(selectorOf(s)))
+    .filter((s): s is ProjectSpaceEntry => s.type === 'project' && !pinnedSet.has(spaceSelectorOfEntry(s)))
     .sort((a, b) => a.name.localeCompare(b.name));
   const storesRest = filtered
-    .filter((s): s is StoreSpaceEntry => s.type === 'store' && !pinnedSet.has(selectorOf(s)))
+    .filter((s): s is StoreSpaceEntry => s.type === 'store' && !pinnedSet.has(spaceSelectorOfEntry(s)))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const ordered: SpaceEntry[] = [...pinnedRows, ...projectsRest, ...storesRest];
 
   const activeSpace = parseSpacePath(currentPath);
+  const activeEntry = spaceEntryForSelector(all, activeSpace);
+  const activeSelector = activeEntry ? spaceSelectorOfEntry(activeEntry) : activeSpace?.selector;
 
   return (
     <div class="spaces-page" data-testid="spaces-page">
@@ -197,9 +203,9 @@ export function SpacesPage() {
       ) : (
         <ul class="spaces-page__list" data-testid="spaces-list">
           {ordered.map((space) => {
-            const selector = selectorOf(space);
+            const selector = spaceSelectorOfEntry(space);
             const pinned = pinnedSet.has(selector);
-            const isActive = activeSpace?.selector === selector;
+            const isActive = activeSelector === selector;
             // Key by the row-unique root, NEVER the selector: git worktrees of
             // one repo share a selector, and a selector key collapses them into
             // one row on any re-render (MAJOR-1). Pin/active state stay
@@ -209,7 +215,7 @@ export function SpacesPage() {
               <li key={space.root} class="space-row" data-testid="space-row" data-selector={selector}>
                 <a
                   class={`space-row__link${isActive ? ' space-row__link--active' : ''}`}
-                  href={spaceHomeHref(spaceOf(space))}
+                  href={spaceHomeHref(spaceFromEntry(space))}
                 >
                   <span class="space-row__name">{space.name}</span>
                   <span class="space-row__type">{space.type === 'store' ? t('spaces.page.type_store') : t('spaces.page.type_project')}</span>
@@ -235,7 +241,7 @@ export function SpacesPage() {
                   aria-pressed={pinned}
                   aria-label={pinned ? t('spaces.page.unpin', { name: space.name }) : t('spaces.page.pin', { name: space.name })}
                   data-testid="pin-toggle"
-                  onClick={() => togglePin(selector)}
+                  onClick={() => togglePin(space)}
                 >
                   {pinned ? '★' : '☆'}
                 </button>

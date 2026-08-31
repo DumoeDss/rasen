@@ -1602,7 +1602,7 @@
               "description": "Create and register a local store",
               "options": {
                 "path": {
-                  "description": "Folder where the store should live (for example ~/{workspaceDir}/<id>)"
+                  "description": "Folder where the store should live (for example ~/{workspaceDir}/<name>)"
                 },
                 "init-git": {
                   "description": "Initialize a Git repository with an initial commit (default)"
@@ -1625,7 +1625,7 @@
               "description": "Register an existing local store",
               "options": {
                 "id": {
-                  "description": "Store id; defaults to metadata or folder name"
+                  "description": "Store name override; defaults to metadata or folder name"
                 },
                 "yes": {
                   "description": "Confirm creating store identity metadata for a healthy Rasen root"
@@ -1642,7 +1642,7 @@
                   "description": "Target store to add the project to (must already be registered)"
                 },
                 "as": {
-                  "description": "Project store id override (ignored if the project is already a store)"
+                  "description": "Project id override, in lowercase kebab-case (ignored if the project is already registered)"
                 },
                 "set-primary": {
                   "description": "Also record the target store as the project's planning store; refuses when a different store is already bound"

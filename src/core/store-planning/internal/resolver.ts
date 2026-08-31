@@ -1931,7 +1931,10 @@ export class StorePlanningResolver implements StorePlanning {
     if (sessionFact) candidates.push(sessionFact);
     if (association) candidates.push(association.candidate);
     if (marker) candidates.push(marker.candidate);
-    if (bindingStoreEntry || selectedProjectConfig?.projectId || selectedProjectRegistry) {
+    // Use the admitted Store, not the raw config lookup: the inheritance-only
+    // branch above deliberately clears `store`, and that pointer must not mint
+    // project-binding execution provenance of its own.
+    if (store || selectedProjectConfig?.projectId || selectedProjectRegistry) {
       // `store-scope-resolution` D1: a Store aggregate is not a project.
       //
       // The projectId `store setup` mints into a Store checkout's own

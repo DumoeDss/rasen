@@ -242,13 +242,13 @@ describe('resolveOpenSpecRoot', () => {
     expect(error.diagnostic.fix).not.toContain('--store-path');
   });
 
-  it('rejects an invalid store id format before registry lookup', async () => {
+  it('rejects an invalid Store name before registry lookup', async () => {
     // No registry exists at all; format validation must win.
     const error = await expectRootSelectionError(
       resolveOpenSpecRoot({ store: 'Bad/Id', globalDataDir }),
       'invalid_store_id'
     );
-    expect(error.message).toContain('Store id');
+    expect(error.message).toContain('Store name');
   });
 
   it('rejects an unhealthy store root without repairing it', async () => {
@@ -440,6 +440,11 @@ describe('resolveOpenSpecRoot', () => {
         expect(root.source).toBe('nearest');
         expect(root.path).toBe(repo);
         expect(root.storeId).toBeUndefined();
+        expect(root.planningScope?.source).toBe('nearest-standalone');
+        expect(root.planningScope?.evidence).not.toContainEqual(
+          expect.objectContaining({ source: 'project-binding' })
+        );
+        expect(root.planningScope?.notices).toEqual([]);
       } finally {
         console.error = original;
       }
@@ -604,7 +609,7 @@ describe('resolveOpenSpecRoot', () => {
         () => resolveOpenSpecRoot({ startPath: unknownDir, globalDataDir }),
       ]);
 
-      const invalidDir = createPointerDir('invalid-pointer', 'store: "BAD ID"\n');
+      const invalidDir = createPointerDir('invalid-pointer', 'store: "Bad/Id"\n');
       cases.push([
         'invalid_store_id',
         path.join(invalidDir, 'rasen', 'config.yaml'),

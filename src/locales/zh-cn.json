@@ -1602,7 +1602,7 @@
               "description": "创建或注册本地 Store",
               "options": {
                 "path": {
-                  "description": "Store 所在的文件夹（例如 ~/{workspaceDir}/<id>）"
+                  "description": "Store 所在的文件夹（例如 ~/{workspaceDir}/<name>）"
                 },
                 "init-git": {
                   "description": "在 Store 中初始化 Git 仓库"
@@ -1625,7 +1625,7 @@
               "description": "注册现有 Store 目录",
               "options": {
                 "id": {
-                  "description": "Store ID"
+                  "description": "覆盖 Store 名称（默认使用元数据或文件夹名）"
                 },
                 "yes": {
                   "description": "确认创建 Store 身份元数据"
@@ -1642,7 +1642,7 @@
                   "description": "要添加项目的目标 Store"
                 },
                 "as": {
-                  "description": "覆盖项目 Store ID"
+                  "description": "覆盖项目 ID（小写 kebab-case；项目已注册时忽略）"
                 },
                 "set-primary": {
                   "description": "同时把目标 Store 记录为该项目的规划 Store"

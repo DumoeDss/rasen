@@ -50,10 +50,12 @@ import type {
 import { OperationsPage } from '../../src/components/OperationsPage.js';
 
 const PROJECT_A_ROOT = 'C:\\checkouts\\project-a';
+const STORE_X_UID = '11111111-2222-4333-8444-555555555555';
+const STORE_B_UID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 
 const projects = {
   storeId: 'store_x',
-  storeUid: 'store-uid',
+  storeUid: STORE_X_UID,
   complete: true,
   unsearchedRefs: [],
   problems: [],
@@ -81,6 +83,7 @@ const spaces = {
   spaces: [{
     type: 'store',
     id: 'store_x',
+    uid: STORE_X_UID,
     name: 'Store X',
     root: 'C:\\planning\\store-x',
     members: [
@@ -427,13 +430,18 @@ describe('OperationsPage', () => {
 
   it('discards late Store A retry and load-more results after a same-component route to Store B with overlapping project ids', async () => {
     const projectBRoot = 'D:\\checkouts\\project-a';
-    const projectsB: StoreProjectsResponse = { ...projects, storeId: 'store_b' };
+    const projectsB: StoreProjectsResponse = {
+      ...projects,
+      storeId: 'store_b',
+      storeUid: STORE_B_UID,
+    };
     const spacesAB: SpacesResponse = {
       spaces: [
         spaces.spaces[0]!,
         {
           type: 'store',
           id: 'store_b',
+          uid: STORE_B_UID,
           name: 'Store B',
           root: 'D:\\planning\\store-b',
           members: [{ projectId: 'project-a', name: 'App B/A', root: projectBRoot }],

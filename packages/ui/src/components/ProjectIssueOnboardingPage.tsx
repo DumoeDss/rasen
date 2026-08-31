@@ -10,18 +10,21 @@ import {
   refreshSpaceCatalog,
   useSpaceCatalog,
 } from '../store/space-catalog.js';
-import { parseSpacePath, spaceHref, type Space } from '../store/use-space.js';
+import {
+  parseSpacePath,
+  spaceFromEntry,
+  spaceHref,
+  spaceIdOfEntry,
+  type Space,
+} from '../store/use-space.js';
 import { CreateSpaceDialog } from './CreateSpaceDialog.js';
 import { PageHeader } from './ui/PageHeader.js';
 
-function storeSpace(store: StoreSpaceEntry): Space {
-  return { type: 'store', id: store.id, selector: `store:${store.id}` };
-}
-
 /**
  * Project identity equality mirrors the Store membership authority: trim and
- * lowercase only Project ids. Route tokens and Store ids remain opaque and are
- * passed to navigation and mutations exactly as received.
+ * lowercase only Project ids. Route tokens and Store selectors remain opaque;
+ * catalog helpers bridge legacy aliases to permanent UIDs for navigation and
+ * mutations.
  */
 function sameProjectIdentity(left: string, right: string): boolean {
   return left.trim().toLowerCase() === right.trim().toLowerCase();
@@ -111,7 +114,7 @@ function ProjectIssueOnboardingProject({ project }: { project: Space }) {
   );
   const catalogReady = catalogSettled && !catalogFailure;
   const soleMembershipId = catalogReady && memberships.length === 1
-    ? memberships[0]!.id
+    ? spaceIdOfEntry(memberships[0]!)
     : null;
 
   useEffect(() => {
@@ -127,11 +130,11 @@ function ProjectIssueOnboardingProject({ project }: { project: Space }) {
     setJoining(true);
     setJoinError(null);
     try {
-      const result = await client.addProjectToStore(project.id, store.id);
+      const result = await client.addProjectToStore(project.id, spaceIdOfEntry(store));
       if (!mountedRef.current || attempt !== membershipAttemptRef.current) return;
       publishSpace(result.space);
       void refreshSpaceCatalog();
-      route(spaceHref(storeSpace(result.space), 'issues'), true);
+      route(spaceHref(spaceFromEntry(result.space), 'issues'), true);
     } catch (caught) {
       if (!mountedRef.current || attempt !== membershipAttemptRef.current) return;
       membershipInFlightRef.current = false;
@@ -244,7 +247,7 @@ function ProjectIssueOnboardingProject({ project }: { project: Space }) {
                 <button
                   type="button"
                   class="project-issues-onboarding__store-action"
-                  onClick={() => route(spaceHref(storeSpace(store), 'issues'), true)}
+                  onClick={() => route(spaceHref(spaceFromEntry(store), 'issues'), true)}
                   aria-label={t('issues.onboarding.open_store_aria', { store: store.name })}
                 >
                   <span>

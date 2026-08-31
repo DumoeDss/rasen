@@ -15,7 +15,7 @@ import { SessionRow } from './SessionRow.js';
 import { LaunchSessionDialog } from './LaunchSessionDialog.js';
 import { OperationsSection } from './OperationsSection.js';
 import { renderInlineCode } from './ui/inline-code.js';
-import { spaceHref, useSpace } from '../store/use-space.js';
+import { spaceEntryForSelector, spaceHref, useSpace } from '../store/use-space.js';
 import { useT } from '../i18n/store.js';
 
 /**
@@ -245,9 +245,7 @@ export function TaskDetailPage() {
       client.listSpaces()
         .then((response) => {
           if (cancelled) return;
-          const activeStore = response.spaces.find(
-            (entry) => entry.type === 'store' && entry.id === storeId
-          );
+          const activeStore = spaceEntryForSelector(response.spaces, `store:${storeId}`);
           setStoreMemberInventory({
             storeId,
             status: 'loaded',

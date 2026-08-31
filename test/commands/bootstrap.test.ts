@@ -112,6 +112,17 @@ describe('rasen bootstrap command surface', () => {
       expect(parsed.get('other')).toBe('/srv/other');
     });
 
+    it.each([
+      ['lower then upper', ['acme=/stores/lower', 'Acme=/stores/upper']],
+      ['upper then lower', ['Acme=/stores/upper', 'acme=/stores/lower']],
+    ])('keeps case-distinct Store alias paths independent (%s)', (_label, values) => {
+      const parsed = parseSuppliedPaths(values, getBootstrapMessages('en'));
+
+      expect(parsed.size).toBe(2);
+      expect(parsed.get('acme')).toBe('/stores/lower');
+      expect(parsed.get('Acme')).toBe('/stores/upper');
+    });
+
     it('rejects a location that does not name what it is for', () => {
       const messages = getBootstrapMessages('en');
       expect(() => parseSuppliedPaths(['/srv/team-store'], messages)).toThrow(

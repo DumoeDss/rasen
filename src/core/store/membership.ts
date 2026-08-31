@@ -496,10 +496,11 @@ export function projectStoreCandidateKey(candidate: {
   store?: ResolvedStoreRef;
 }): string {
   if (candidate.store) {
-    return `root:${FileSystemUtils.toPosixPath(candidate.store.root).toLowerCase()}`;
+    const root = FileSystemUtils.toPosixPath(candidate.store.root);
+    return `root:${process.platform === 'win32' ? root.toLowerCase() : root}`;
   }
   if (candidate.uid) return `uid:${candidate.uid.trim().toLowerCase()}`;
-  return `id:${(candidate.id ?? '').trim().toLowerCase()}`;
+  return `id:${candidate.id ?? ''}`;
 }
 
 /**

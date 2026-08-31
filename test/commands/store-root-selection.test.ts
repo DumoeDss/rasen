@@ -482,10 +482,10 @@ describe('store root selection for normal commands', () => {
       expect(list.stdout + list.stderr).toContain(expected);
     });
 
-    it('rejects an invalid store id format before registry lookup', async () => {
-      const result = await runCLI(['list', '--store', 'Bad_Id'], { cwd: appRepo, env });
+    it('rejects an invalid Store name before registry lookup', async () => {
+      const result = await runCLI(['list', '--store', 'Bad/Id'], { cwd: appRepo, env });
       expect(result.exitCode).toBe(1);
-      expect(result.stdout + result.stderr).toContain('kebab-case');
+      expect(result.stdout + result.stderr).toContain('path separators');
     });
 
     it('emits machine-readable resolver failures in JSON mode', async () => {

@@ -139,6 +139,9 @@ describe('store command', () => {
     const payload = parseJson(result);
     expect(payload.store).toEqual({
       id: 'team-context',
+      uid: expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      ),
       root: storeRoot,
       metadata_path: getStoreMetadataPath(storeRoot),
     });
@@ -176,6 +179,7 @@ describe('store command', () => {
     expect(createdUid).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
     );
+    expect(payload.store.uid).toBe(createdUid);
     await expect(readStoreRegistryState({ globalDataDir })).resolves.toEqual({
       version: 2,
       stores: {
@@ -682,6 +686,7 @@ describe('store command', () => {
       { cwd: tempDir, env }
     );
     expect(firstSetup.exitCode).toBe(0);
+    const permanentUid = (await readStoreMetadataState(storeRoot) as { uid: string }).uid;
 
     const secondSetup = await runCLI(
       ['store', 'setup', 'team-context', '--path', storeRoot, '--no-init-git', '--json'],
@@ -689,6 +694,7 @@ describe('store command', () => {
     );
     expect(secondSetup.exitCode).toBe(0);
     const setupPayload = parseJson(secondSetup);
+    expect(setupPayload.store.uid).toBe(permanentUid);
     expect(setupPayload.created_files).toEqual([]);
     expect(setupPayload.status[0]).toEqual(
       expect.objectContaining({
@@ -718,6 +724,7 @@ describe('store command', () => {
     );
     expect(secondRegister.exitCode).toBe(0);
     const registerPayload = parseJson(secondRegister);
+    expect(registerPayload.store.uid).toBe(permanentUid);
     expect(registerPayload.created_files).toEqual([]);
     expect(registerPayload.status[0]).toEqual(
       expect.objectContaining({

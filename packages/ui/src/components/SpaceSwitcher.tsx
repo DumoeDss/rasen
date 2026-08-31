@@ -2,7 +2,13 @@ import { useEffect, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import * as client from '../api/client.js';
 import type { ProjectSpaceEntry, SpaceEntry, StoreSpaceEntry } from '../api/types.js';
-import { parseSelector, parseSpacePath, spaceSwitchHref } from '../store/use-space.js';
+import {
+  parseSelector,
+  parseSpacePath,
+  spaceEntryForSelector,
+  spaceSelectorOfEntry,
+  spaceSwitchHref,
+} from '../store/use-space.js';
 import { getRecentSpaces, recordSpaceVisit } from '../store/recent-spaces.js';
 import { guardedRoute } from '../store/use-navigation-guard.js';
 import { useT } from '../i18n/store.js';
@@ -16,11 +22,6 @@ const ALL_SPACES = '__all__';
 
 const PINNED_KEY = 'ui.pinnedSpaces';
 
-/** The `<type>:<id>` selector for a listed space. */
-function selectorOf(space: SpaceEntry): string {
-  return `${space.type}:${space.id}`;
-}
-
 function coercePins(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 }
@@ -33,12 +34,13 @@ function coercePins(value: unknown): string[] {
  * exists.
  */
 function buildVisible(spaces: SpaceEntry[], pins: string[], recents: string[], currentSelector?: string): SpaceEntry[] {
-  const bySelector = new Map(spaces.map((s) => [selectorOf(s), s]));
   const chosen = new Map<string, SpaceEntry>();
 
   const add = (sel: string) => {
-    const space = bySelector.get(sel);
-    if (space && !chosen.has(sel)) chosen.set(sel, space);
+    const space = spaceEntryForSelector(spaces, sel);
+    if (!space) return;
+    const canonical = spaceSelectorOfEntry(space);
+    if (!chosen.has(canonical)) chosen.set(canonical, space);
   };
 
   for (const sel of pins) {
@@ -52,7 +54,7 @@ function buildVisible(spaces: SpaceEntry[], pins: string[], recents: string[], c
   const alpha = [...spaces].sort((a, b) => a.name.localeCompare(b.name));
   for (const space of alpha) {
     if (chosen.size >= SWITCHER_CAP) break;
-    add(selectorOf(space));
+    add(spaceSelectorOfEntry(space));
   }
 
   // The active space is always present, even beyond the cap (selected value must exist).
@@ -78,6 +80,8 @@ export function SpaceSwitcher() {
 
   const { spaces, error: catalogError } = useSpaceCatalog();
   const [pins, setPins] = useState<string[]>([]);
+  const currentEntry = spaces ? spaceEntryForSelector(spaces, space) : null;
+  const currentSelector = currentEntry ? spaceSelectorOfEntry(currentEntry) : space?.selector;
 
   useEffect(() => {
     let cancelled = false;
@@ -103,8 +107,8 @@ export function SpaceSwitcher() {
   // Record the current space as a recent visit (design D2). Keyed on the
   // selector so a re-render on the same space does not re-record needlessly.
   useEffect(() => {
-    if (space) recordSpaceVisit(space.selector);
-  }, [space?.selector]);
+    if (currentSelector) recordSpaceVisit(currentSelector);
+  }, [currentSelector]);
 
   if (spaces === null && !catalogError) {
     return <div class="space-switcher space-switcher--loading">{t('spaces.switcher.loading')}</div>;
@@ -118,7 +122,7 @@ export function SpaceSwitcher() {
     );
   }
 
-  const visible = buildVisible(spaces!, pins, getRecentSpaces(), space?.selector);
+  const visible = buildVisible(spaces!, pins, getRecentSpaces(), currentSelector);
   const projects = visible.filter((s): s is ProjectSpaceEntry => s.type === 'project');
   const stores = visible.filter((s): s is StoreSpaceEntry => s.type === 'store');
 
@@ -138,7 +142,7 @@ export function SpaceSwitcher() {
     <div class="space-switcher">
       <label>
         {t('spaces.switcher.label')}
-        <select value={space?.selector ?? ''} onChange={onChange} data-testid="space-switcher-select">
+        <select value={currentSelector ?? ''} onChange={onChange} data-testid="space-switcher-select">
           {!space && (
             <option value="" disabled>
               {t('spaces.switcher.placeholder')}
@@ -152,7 +156,7 @@ export function SpaceSwitcher() {
                 // options by selector, so a selector key is never row-unique
                 // (MAJOR-1). `value` stays the selector — navigation is
                 // selector-based.
-                <option key={p.root} value={`project:${p.id}`}>
+                <option key={p.root} value={spaceSelectorOfEntry(p)}>
                   {p.name}
                 </option>
               ))}
@@ -161,7 +165,7 @@ export function SpaceSwitcher() {
           {stores.length > 0 && (
             <optgroup label={t('spaces.switcher.group.stores')}>
               {stores.map((s) => (
-                <option key={s.root} value={`store:${s.id}`}>
+                <option key={s.root} value={spaceSelectorOfEntry(s)}>
                   {s.name}
                 </option>
               ))}
