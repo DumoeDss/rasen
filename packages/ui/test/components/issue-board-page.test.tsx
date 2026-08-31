@@ -18,6 +18,7 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/client.js')>();
   return {
     ...actual,
+    createStoreIssue: vi.fn(),
     getStoreIssueProjections: vi.fn(),
     getStoreIssueAttention: vi.fn(),
     getStoreProjects: vi.fn(),
@@ -141,6 +142,41 @@ describe('IssueBoardPage', () => {
     await mountAtSpace(container, '/s/store_x/issues');
     expect(container.querySelector('.new-change-dialog')).toBeNull();
     expect([...container.querySelectorAll('button')].some((button) => button.textContent === 'New change')).toBe(false);
+  });
+
+  it('creates a Store Issue from the Board and refreshes from server truth', async () => {
+    await mountAtSpace(container, '/s/store_x/issues');
+
+    const create = container.querySelector('[data-testid="issue-board-create"]') as HTMLButtonElement;
+    expect(create).not.toBeNull();
+    await act(async () => {
+      create.click();
+    });
+
+    const dialog = container.querySelector('[data-testid="new-issue-dialog"]') as HTMLFormElement;
+    expect(dialog).not.toBeNull();
+    const issueId = dialog.querySelector('input[name="issueId"]') as HTMLInputElement;
+    const title = dialog.querySelector('input[name="title"]') as HTMLInputElement;
+    await act(async () => {
+      issueId.value = 'ui-created-issue';
+      issueId.dispatchEvent(new Event('input', { bubbles: true }));
+      title.value = 'Created from the Issue Board';
+      title.dispatchEvent(new Event('input', { bubbles: true }));
+      await flushMicrotasks();
+    });
+    await act(async () => {
+      dialog.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await flushMicrotasks(20);
+    });
+
+    expect(client.createStoreIssue).toHaveBeenCalledWith(
+      { issueId: 'ui-created-issue', title: 'Created from the Issue Board' },
+      'store:store_x'
+    );
+    expect(container.querySelector('[data-testid="new-issue-dialog"]')).toBeNull();
+    expect(client.getStoreIssueProjections).toHaveBeenCalledTimes(2);
+    expect(client.getStoreIssueAttention).toHaveBeenCalledTimes(2);
+    expect(client.getStoreProjects).toHaveBeenCalledTimes(2);
   });
 
   it('renders all five empty lanes when the Store has no Issues', async () => {
