@@ -440,6 +440,11 @@ describe('resolveOpenSpecRoot', () => {
         expect(root.source).toBe('nearest');
         expect(root.path).toBe(repo);
         expect(root.storeId).toBeUndefined();
+        expect(root.planningScope?.source).toBe('nearest-standalone');
+        expect(root.planningScope?.evidence).not.toContainEqual(
+          expect.objectContaining({ source: 'project-binding' })
+        );
+        expect(root.planningScope?.notices).toEqual([]);
       } finally {
         console.error = original;
       }

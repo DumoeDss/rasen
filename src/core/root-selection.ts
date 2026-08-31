@@ -1061,13 +1061,24 @@ export async function resolveOpenSpecRoot(
       const scoped = await resolveOpenSpecRootThroughPlanning(options);
       const kind = scoped.planningScope?.kind;
       if (kind === 'store-project' || kind === 'store-aggregate') return scoped;
-      if (kind === 'standalone') {
+      if (scoped.planningScope?.kind === 'standalone') {
         // The compatibility adapter remains authoritative for the established
         // standalone path and diagnostic projection, while StorePlanning owns
         // the typed, machine-readable description. Preserve both instead of
         // discarding the already-validated scope on the compatibility return.
+        // Its configuration-inheritance notice is already emitted through the
+        // compatibility reporter, so keep that notice out of the serialized
+        // root description: adding a Store pointer must not change stdout.
         const compatibility = await resolveStandaloneOrLegacyRoot(options);
-        return { ...compatibility, planningScope: scoped.planningScope };
+        return {
+          ...compatibility,
+          planningScope: {
+            ...scoped.planningScope,
+            notices: scoped.planningScope.notices.filter(
+              notice => notice.code !== 'configuration_store_inheritance'
+            ),
+          },
+        };
       }
       // `legacy-store` is a POSITIVE answer, and the frozen compatibility
       // adapter below owns its established notices and diagnostics; falling

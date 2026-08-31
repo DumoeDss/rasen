@@ -754,6 +754,10 @@ describe('StorePlanning.open', () => {
 
   it('returns configuration inheritance as a standalone scope, not as a thrown diagnostic', async () => {
     const roots = storeFixture({ localPlanning: true });
+    write(
+      path.join(roots.projectRoot, 'rasen', 'config.yaml'),
+      `schema: spec-driven\nstore:\n  uid: ${STORE_UID}\n  id: team-store\n`
+    );
     // The Store knows the project but does not claim its planning.
     write(
       path.join(roots.storeRoot, '.rasen-store', 'projects', 'project-a.yaml'),
@@ -768,6 +772,10 @@ describe('StorePlanning.open', () => {
 
     const description = scope.describe();
     expect(description.kind).toBe('standalone');
+    expect(description.source).toBe('nearest-standalone');
+    expect(description.evidence).not.toContainEqual(
+      expect.objectContaining({ source: 'project-binding' })
+    );
     expect(description.notices.map((notice) => notice.code)).toContain(
       'configuration_store_inheritance'
     );
