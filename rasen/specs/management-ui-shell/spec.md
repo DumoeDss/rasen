@@ -12,21 +12,21 @@ SHALL each resolve their own space from their own URL independently, with no sha
 state between them. Project Board and Task Detail SHALL live only under project prefixes; Issue
 Board/Detail, Store Operations, and Unlinked Changes SHALL live only under Store prefixes; common
 Config, Archive, and Pipelines views SHALL remain addressable in either namespace. New Store routes
-SHALL use the permanent uid returned by the spaces catalog. A legacy `/s/<alias>/…` deep link SHALL
-remain accepted when the alias identifies exactly one Store, but the shell SHALL never guess when
-several Stores share it.
+SHALL use the permanent Store uid returned by the spaces catalog, and canonical Issue Detail routes
+SHALL use the permanent Issue UID returned by the Issue catalog. A compatible Store alias or Issue
+key/slug/legacy-id deep link SHALL remain accepted when it resolves exactly one resource, but the
+shell SHALL never guess among several matches.
 
 #### Scenario: Deep link resolves its own space
 
 - **WHEN** the user opens `/p/<projectId>/board` or `/p/<projectId>/task/<change>` directly
-- **THEN** the project Board or Task Detail renders scoped to that project without depending on any
-  prior selection
+- **THEN** the project Board or Task Detail renders scoped to that project without depending on any prior selection
 
 #### Scenario: Store deep link resolves its own space
 
-- **WHEN** the user opens `/s/<storeUid>/issues/<issueId>`, `/operations`, or
-  `/unlinked-changes` directly
-- **THEN** the requested Store surface renders for that Store without a project-space mirror
+- **WHEN** the user opens `/s/<storeUid>/issues/<issueUid>` directly
+- **THEN** the requested Issue Detail renders for those exact authoritative identities
+- **AND** no project-space mirror or filesystem locator is used
 
 #### Scenario: Unique legacy Store alias deep link remains compatible
 
@@ -34,10 +34,16 @@ several Stores share it.
 - **THEN** that Store's Issue Board renders
 - **AND** subsequent generated navigation for it uses `/s/<uid>/…`
 
+#### Scenario: Compatible Issue selector canonicalizes after resolution
+
+- **WHEN** the user opens an Issue detail link with a generated key, unique slug, or legacy identifier
+- **THEN** the matching Issue renders when exactly one UID resolves
+- **AND** subsequent generated navigation uses `/s/<storeUid>/issues/<issueUid>`
+
 #### Scenario: Ambiguous legacy alias deep link is not guessed
 
-- **WHEN** two Stores share the alias in `/s/<alias>/issues`
-- **THEN** the shell does not select either Store and presents the unresolved-space state
+- **WHEN** a Store alias or Issue convenience selector in a deep link matches more than one resource
+- **THEN** the shell does not select a candidate and presents the unresolved or ambiguous state
 
 #### Scenario: Two tabs hold independent spaces
 
@@ -46,8 +52,8 @@ several Stores share it.
 
 #### Scenario: Refresh preserves the space
 
-- **WHEN** the user reloads while on a space-prefixed route
-- **THEN** the same space and surface render from the unchanged URL
+- **WHEN** the user reloads while on a canonical space-prefixed Issue route
+- **THEN** the same Store, Issue UID, and surface render from the unchanged URL
 
 ### Requirement: The launch URL's space query bootstraps to a canonical space route
 
