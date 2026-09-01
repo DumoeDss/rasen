@@ -1,7 +1,11 @@
 # system-assigned-issue-identity Specification
 
 ## Purpose
-TBD - created by archiving change system-assigned-issue-identity. Update Purpose after archive.
+
+Define system-assigned, immutable Issue identity across Store persistence, CLI, HTTP, and UI
+surfaces, including title-only creation, stable human references, locator privacy, and retry-safe
+recovery when publication cannot be observed conclusively.
+
 ## Requirements
 ### Requirement: Issue creation assigns identity before publishing content
 
