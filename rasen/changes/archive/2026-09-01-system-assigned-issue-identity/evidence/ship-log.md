@@ -24,3 +24,9 @@
 ## Deployment
 
 Status: Pending merge after required CI passes.
+
+## Archive
+**Date:** 2026-09-01T02:18:15.614Z
+**Ship commit:** 80388b49745c222ad632fb4a3952989bd77487fe
+**Outcome:** archived at E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code-wt-issue-identity\rasen\changes\archive\2026-09-01-system-assigned-issue-identity
+**Transaction:** 548b6d0e-be24-4bef-b561-b7160c68b7ef

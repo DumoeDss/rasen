@@ -1,0 +1,23 @@
+{
+  "change": "system-assigned-issue-identity",
+  "archivedAt": "2026-09-01T02:18:15.614Z",
+  "codeCommit": "8b530aedbcbfa6cfa5b2e8fc5396edca1ff2f85c",
+  "planningBranch": "chore/archive-system-assigned-issue-identity",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "c4b600c271b7144fe4928443ecb1fd579803d960c2e6389a24a0fb2f31eca5f2"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "1fd9a5c855c6c6444e1720b07291fde327f8a243fa846cc9855303b3fddbf0ca"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [],
+  "missing": [
+    "verification-report"
+  ]
+}
