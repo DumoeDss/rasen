@@ -142,7 +142,10 @@ describe('rasen store issue plan --from-portfolio (CLI)', () => {
       statePath,
       childCount: 2,
     });
-    expect(result.suggestedCommits).toHaveLength(1);
+    expect(result).not.toHaveProperty('written');
+    expect(result).not.toHaveProperty('suggestedCommits');
+    expect(result).not.toHaveProperty('checkoutRoot');
+    expect(result).not.toHaveProperty('checkoutRef');
     expect(fs.existsSync(f.at('rasen', 'issues', issueUid, 'plans', '0001.yaml'))).toBe(true);
   });
 
