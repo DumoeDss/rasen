@@ -58,11 +58,13 @@ describe('publishPlanFromPortfolio (orchestration)', () => {
   let f: StoreWorkspaceFixture;
   let changeDir: string;
   let ephemera: string;
+  let issueUids: Map<string, string>;
 
   beforeEach(async () => {
     f = await createStoreWorkspaceFixture({
       prefix: 'rasen-plan-pub-orch-',
       projects: [PROJECT],
+      storeBranches: ['release/0.2'],
       lines: [
         { id: 'main', storeRef: 'refs/heads/main' },
         { id: LINE, storeRef: 'refs/heads/release/0.2' },
@@ -70,6 +72,7 @@ describe('publishPlanFromPortfolio (orchestration)', () => {
     });
     changeDir = f.at('rasen', 'projects', PROJECT, 'changes', PARENT);
     ephemera = ephemeraDir(f.projectRoot(PROJECT), PARENT);
+    issueUids = new Map();
   });
 
   afterEach(() => {
@@ -83,14 +86,18 @@ describe('publishPlanFromPortfolio (orchestration)', () => {
   }
 
   async function createIssue(issueId: string): Promise<void> {
-    await issues().create({
+    const created = await issues().create({
       store: f.storeId,
       startPath: f.storeRoot,
       globalDataDir: f.globalDataDir,
       issueId,
       title: 'orchestration test',
     });
+    issueUids.set(issueId, created.identity.uid);
   }
+
+  const issueAt = (issueSelector: string, ...segments: string[]): string =>
+    f.at('rasen', 'issues', issueUids.get(issueSelector)!, ...segments);
 
   async function publish(
     issueId: string,
@@ -177,7 +184,7 @@ describe('publishPlanFromPortfolio (orchestration)', () => {
     expect(refusal.message).toContain(
       path.join(changeDir, 'portfolio-run.json')
     );
-    expect(fs.existsSync(f.at('rasen', 'issues', 'absent-portfolio', 'plans', '0001.yaml'))).toBe(false);
+    expect(fs.existsSync(issueAt('absent-portfolio', 'plans', '0001.yaml'))).toBe(false);
   });
 
   it('refuses an unreadable run-state as invalid, never as absent', async () => {
@@ -189,7 +196,7 @@ describe('publishPlanFromPortfolio (orchestration)', () => {
     expect(refusal.message).toContain('does not read back');
     // The refusal does not present the portfolio as missing.
     expect(refusal.code).not.toBe('issue_plan_portfolio_absent');
-    expect(fs.existsSync(f.at('rasen', 'issues', 'invalid-portfolio', 'plans', '0001.yaml'))).toBe(false);
+    expect(fs.existsSync(issueAt('invalid-portfolio', 'plans', '0001.yaml'))).toBe(false);
   });
 
   it('refuses a record whose own parent disagrees with the requested parent', async () => {
@@ -201,7 +208,7 @@ describe('publishPlanFromPortfolio (orchestration)', () => {
     expect(refusal.code).toBe('issue_plan_portfolio_parent_mismatch');
     expect(refusal.message).toContain(PARENT);
     expect(refusal.message).toContain('someone-else');
-    expect(fs.existsSync(f.at('rasen', 'issues', 'mismatched-portfolio', 'plans', '0001.yaml'))).toBe(false);
+    expect(fs.existsSync(issueAt('mismatched-portfolio', 'plans', '0001.yaml'))).toBe(false);
   });
 
   it('refuses a portfolio with no children — no empty revision is created', async () => {
@@ -209,7 +216,7 @@ describe('publishPlanFromPortfolio (orchestration)', () => {
     f.write(path.join(changeDir, 'portfolio-run.json'), portfolioJson(PARENT, []));
     const refusal = await refusalCode(() => publish('empty-portfolio'));
     expect(refusal.code).toBe('issue_plan_portfolio_children_empty');
-    expect(fs.existsSync(f.at('rasen', 'issues', 'empty-portfolio', 'plans', '0001.yaml'))).toBe(false);
+    expect(fs.existsSync(issueAt('empty-portfolio', 'plans', '0001.yaml'))).toBe(false);
   });
 
   it('locates the ephemera placement without any change directory existing', async () => {
@@ -282,7 +289,7 @@ describe('publishPlanFromPortfolio (orchestration)', () => {
     ]);
     expect(nodes[1]?.dependsOn).toEqual(['alpha-child']);
     expect(result.source.childCount).toBe(2);
-    expect(fs.existsSync(f.at('rasen', 'issues', 'happy', 'plans', '0001.yaml'))).toBe(true);
+    expect(fs.existsSync(issueAt('happy', 'plans', '0001.yaml'))).toBe(true);
 
     // The run-state was read, never written: identical bytes.
     expect(fs.readFileSync(statePath)).toEqual(stateBytes);
@@ -308,7 +315,7 @@ describe('publishPlanFromPortfolio (orchestration)', () => {
     const first = await publish('republish');
     expect(first.revision.revisionId).toBe('0001');
     const firstBytes = fs.readFileSync(
-      f.at('rasen', 'issues', 'republish', 'plans', '0001.yaml')
+      issueAt('republish', 'plans', '0001.yaml')
     );
     const firstStateBytes = fs.readFileSync(statePath);
 
@@ -321,10 +328,10 @@ describe('publishPlanFromPortfolio (orchestration)', () => {
     const second = await publish('republish');
     expect(second.revision.revisionId).toBe('0002');
     expect(second.revision.supersedes).toBe('0001');
-    expect(fs.existsSync(f.at('rasen', 'issues', 'republish', 'plans', '0002.yaml'))).toBe(true);
+    expect(fs.existsSync(issueAt('republish', 'plans', '0002.yaml'))).toBe(true);
     // The earlier revision's bytes are unchanged.
     expect(
-      fs.readFileSync(f.at('rasen', 'issues', 'republish', 'plans', '0001.yaml'))
+      fs.readFileSync(issueAt('republish', 'plans', '0001.yaml'))
     ).toEqual(firstBytes);
     // And the run-state bytes changed ONLY by the transition the pipeline
     // itself wrote — publication did not touch them between reads.

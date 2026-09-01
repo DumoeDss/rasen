@@ -22,7 +22,7 @@ import type {
   StoreChangeIssueLinksResponse,
 } from '../../src/api/types.js';
 import { UnlinkedChangesPage } from '../../src/components/UnlinkedChangesPage.js';
-import { issueProjectionsFixture } from '../fixtures/issue-projection.js';
+import { ISSUE_IDENTITIES, issueProjectionsFixture } from '../fixtures/issue-projection.js';
 
 function activeEntry(input: {
   changeId: string;
@@ -47,7 +47,7 @@ function activeEntry(input: {
     association: input.association,
     eligibility: input.eligibility,
     issues: input.association === 'linked'
-      ? [{ issueId: 'issue-ready', title: 'Ready Issue', state: 'open', revisionId: '0001', nodeIds: ['node-a'] }]
+      ? [{ identity: ISSUE_IDENTITIES.ready, issueId: ISSUE_IDENTITIES.ready.uid, title: 'Ready Issue', state: 'open', revisionId: '0001', nodeIds: ['node-a'] }]
       : [],
   };
 }
@@ -250,8 +250,8 @@ describe('UnlinkedChangesPage', () => {
       .find(button => button.textContent === 'Create Issue')!;
     await click(create);
     const authored = [...container.querySelectorAll('.link-change-dialog__form input')] as HTMLInputElement[];
-    await inputValue(authored[0]!, 'store-a-issue');
-    await inputValue(authored[1]!, 'Store A intent');
+    expect(authored).toHaveLength(1);
+    await inputValue(authored[0]!, 'Store A intent');
     await click([...container.querySelectorAll('button')].find(button => button.textContent === 'Preview')!);
     expect(container.querySelector('[data-testid="unlinked-confirmation"]')).not.toBeNull();
 

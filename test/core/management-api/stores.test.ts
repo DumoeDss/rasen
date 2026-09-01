@@ -217,15 +217,72 @@ describe('Store aggregate HTTP bridge (stores.ts)', () => {
       space = resolved.space;
     });
 
-    it('creates an Issue, refusing a missing title', async () => {
+    it('creates title-only Issues with server-assigned identity, refusing a missing title', async () => {
       const missingTitle = await handleStoreIssueCreate(space, { issueId: 'no-title' });
       expect(missingTitle.ok).toBe(false);
       if (missingTitle.ok) return;
       expect(missingTitle.status).toBe(400);
+      expect(missingTitle.code).toBe('issue_title_required');
 
-      const created = unwrap(await handleStoreIssueCreate(space, { issueId: 'ok-issue', title: 'OK Issue' }));
-      expect(created.record.state).toBe('open');
-      expect(created.record.title).toBe('OK Issue');
+      const overlongTitle = await handleStoreIssueCreate(space, {
+        title: 'x'.repeat(201),
+      });
+      expect(overlongTitle).toMatchObject({
+        ok: false,
+        status: 400,
+        code: 'issue_title_required',
+      });
+      expect(unwrap(await handleStoreIssues(space)).issues).toEqual([]);
+
+      const first = unwrap(await handleStoreIssueCreate(space, { title: '修复登录超时' }));
+      const second = unwrap(await handleStoreIssueCreate(space, { title: '修复登录超时' }));
+      expect(first.record).toMatchObject({ version: 2, identity: first.identity, state: 'open' });
+      expect(first.issueId).toBe(first.identity.uid);
+      expect(first.identity.key).toMatch(/^ISS-[0-9A-HJKMNP-TV-Z]{16}$/u);
+      expect(second.identity.uid).not.toBe(first.identity.uid);
+      expect(second.identity.key).not.toBe(first.identity.key);
+      for (const locator of ['checkoutRoot', 'checkoutRef', 'written', 'suggestedCommits']) {
+        expect(first).not.toHaveProperty(locator);
+      }
+
+      const compatible = unwrap(
+        await handleStoreIssueCreate(space, { issueId: 'ok-issue', title: 'OK Issue' })
+      );
+      expect(compatible.identity.aliases).toContainEqual({ kind: 'legacy-id', value: 'ok-issue' });
+      for (const selector of [compatible.identity.uid, compatible.identity.key, 'ok-issue']) {
+        const detail = unwrap(await handleStoreIssue(space, selector));
+        expect(detail.issue.identity).toEqual(compatible.identity);
+        expect(detail.issue.issueId).toBe(compatible.identity.uid);
+      }
+    });
+
+    it('uses issue_selector_required for every Issue route that needs a selector', async () => {
+      const results = [
+        await handleStoreIssue(space, undefined),
+        await handleStoreExecutionPlan(space, undefined, undefined),
+        await handleStoreIssueSetState(space, { state: 'resolved' }),
+        await handleStorePublishPlan(space, { nodes: [] }),
+      ];
+      for (const result of results) {
+        expect(result).toMatchObject({
+          ok: false,
+          status: 400,
+          code: 'issue_selector_required',
+        });
+      }
+    });
+
+    it('returns issue_not_found for absent detail and execution-plan selectors', async () => {
+      for (const result of [
+        await handleStoreIssue(space, 'absent-issue'),
+        await handleStoreExecutionPlan(space, 'absent-issue', undefined),
+      ]) {
+        expect(result).toMatchObject({
+          ok: false,
+          status: 404,
+          code: 'issue_not_found',
+        });
+      }
     });
 
     it('transitions Issue state, refusing an invalid state name', async () => {

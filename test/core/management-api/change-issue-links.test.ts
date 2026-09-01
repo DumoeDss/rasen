@@ -93,6 +93,8 @@ describe('Change-to-Issue link composition and route', { timeout: 240_000 }, () 
   let linkedInstance: string;
   let unlinkedInstance: string;
   let archivedInstance: string;
+  let issueAUid: string;
+  let issueBUid: string;
 
   const commit = (message: string): void => {
     f.git(f.storeRoot, ['add', '-A']);
@@ -124,12 +126,16 @@ describe('Change-to-Issue link composition and route', { timeout: 240_000 }, () 
     if (!resolved.ok) throw new Error(`${resolved.code}: ${resolved.message}`);
     space = resolved.space;
 
-    unwrap(await handleStoreIssueCreate(space, { issueId: 'issue-a', title: 'Issue A' }));
+    issueAUid = unwrap(
+      await handleStoreIssueCreate(space, { issueId: 'issue-a', title: 'Issue A' })
+    ).identity.uid;
     await publish('issue-a', [
       { nodeId: 'linked-a', kind: 'change', projectId: PROJECT, targetLineId: LINE, changeInstanceId: linkedInstance, dependsOn: [] },
       { nodeId: 'historical', kind: 'change', projectId: PROJECT, targetLineId: LINE, changeInstanceId: archivedInstance, dependsOn: [] },
     ]);
-    unwrap(await handleStoreIssueCreate(space, { issueId: 'issue-b', title: 'Issue B' }));
+    issueBUid = unwrap(
+      await handleStoreIssueCreate(space, { issueId: 'issue-b', title: 'Issue B' })
+    ).identity.uid;
     await publish('issue-b', [
       { nodeId: 'linked-b', kind: 'change', projectId: PROJECT, targetLineId: LINE, changeInstanceId: linkedInstance, dependsOn: [] },
     ]);
@@ -158,9 +164,15 @@ describe('Change-to-Issue link composition and route', { timeout: 240_000 }, () 
 
     const byId = (changeId: string) => payload.entries.find(entry => entry.occurrence.change.changeId === changeId)!;
     expect(byId('linked-change')).toMatchObject({ association: 'linked', eligibility: 'already-linked' });
-    expect(byId('linked-change').issues.map(issue => [issue.issueId, issue.nodeIds])).toEqual([
-      ['issue-a', ['linked-a']], ['issue-b', ['linked-b']],
-    ]);
+    expect(byId('linked-change').issues.map(issue => [issue.issueId, issue.nodeIds])).toEqual(
+      [
+        [issueAUid, ['linked-a']],
+        [issueBUid, ['linked-b']],
+      ].sort((left, right) => String(left[0]).localeCompare(String(right[0])))
+    );
+    expect(byId('linked-change').issues.map(issue => issue.identity.uid)).toEqual(
+      [issueAUid, issueBUid].sort()
+    );
     expect(byId('unlinked-change')).toMatchObject({ association: 'unlinked', eligibility: 'attachable', issues: [] });
     expect(byId('historical-change')).toMatchObject({ occurrence: { kind: 'archived' }, association: 'linked' });
     expect(byId('duplicate-a')).toMatchObject({ association: 'unknown', eligibility: 'identity-ambiguous' });
@@ -204,7 +216,7 @@ describe('Change-to-Issue link composition and route', { timeout: 240_000 }, () 
   });
 
   it('lowers zero-link candidates to unknown for an unreadable latest plan while preserving an unrelated proven link', async () => {
-    const damaged = f.at('rasen', 'issues', 'issue-a', 'plans', '0001.yaml');
+    const damaged = f.at('rasen', 'issues', issueAUid, 'plans', '0001.yaml');
     fs.writeFileSync(damaged, fs.readFileSync(damaged, 'utf8').replace('contentSha256:', 'contentSha256X:'), 'utf8');
     commit('damage one latest plan');
 
@@ -212,9 +224,56 @@ describe('Change-to-Issue link composition and route', { timeout: 240_000 }, () 
     expect(payload.complete).toBe(false);
     const byId = (changeId: string) => payload.entries.find(entry => entry.occurrence.change.changeId === changeId)!;
     expect(byId('linked-change')).toMatchObject({ association: 'linked', eligibility: 'already-linked' });
-    expect(byId('linked-change').issues.map(issue => issue.issueId)).toEqual(['issue-b']);
+    expect(byId('linked-change').issues.map(issue => issue.issueId)).toEqual([issueBUid]);
     expect(byId('unlinked-change')).toMatchObject({ association: 'unknown', eligibility: 'evidence-incomplete' });
     expect(byId('historical-change')).toMatchObject({ association: 'unknown', eligibility: 'evidence-incomplete' });
+  });
+
+  it('fails closed when a plan-bearing Issue record diverges across declared refs', async () => {
+    const releaseCatalog = f.at('.rasen-store', 'target-lines', 'release.yaml');
+    fs.writeFileSync(
+      releaseCatalog,
+      [
+        'version: 1',
+        'id: release',
+        'storeRef: refs/heads/release',
+        'projects:',
+        `  ${PROJECT}:`,
+        '    codeRef: refs/heads/main',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+    commit('declare release ref');
+    f.git(f.storeRoot, ['branch', 'release']);
+    f.git(f.storeRoot, ['checkout', 'release']);
+    const recordPath = f.at('rasen', 'issues', issueAUid, 'issue.yaml');
+    fs.writeFileSync(
+      recordPath,
+      fs.readFileSync(recordPath, 'utf8').replace('title: Issue A', 'title: Divergent Issue A'),
+      'utf8'
+    );
+    commit('diverge Issue A on release');
+    f.git(f.storeRoot, ['checkout', 'main']);
+
+    const payload = await composeChangeIssueLinks(createStoreQueryByUid(), {
+      store: f.storeUid,
+      startPath: '',
+    });
+    expect(payload.complete).toBe(false);
+    expect(payload.problems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'issue', itemId: issueAUid, reason: expect.stringMatching(/diverge/iu) }),
+      ])
+    );
+    const historical = payload.entries.find(
+      entry => entry.occurrence.change.changeId === 'historical-change'
+    );
+    expect(historical).toMatchObject({
+      association: 'unknown',
+      eligibility: 'evidence-incomplete',
+      issues: [],
+    });
   });
 
   it('is fresh between identical reads and repeated reads write no Store byte', async () => {
@@ -263,10 +322,15 @@ describe('Change-to-Issue link composition and route', { timeout: 240_000 }, () 
       issueId,
       title: 'Partial create receipt',
     }));
-    expect(created.record).toMatchObject({ id: issueId, state: 'open' });
+    expect(created.record).toMatchObject({
+      version: 2,
+      identity: created.identity,
+      state: 'open',
+    });
+    expect(created.issueId).toBe(created.identity.uid);
 
     const refused = await handleStorePublishPlan(space, {
-      issueId,
+      issueId: created.identity.uid,
       expectedRevisionId: null,
       nodes: [{
         nodeId: 'unlinked-change',
@@ -279,15 +343,15 @@ describe('Change-to-Issue link composition and route', { timeout: 240_000 }, () 
       }],
     });
     expect(refused).toMatchObject({ ok: false, code: 'issue_reference_unresolved' });
-    expect(fs.existsSync(f.at('rasen', 'issues', issueId, 'issue.yaml'))).toBe(true);
-    const plansDir = f.at('rasen', 'issues', issueId, 'plans');
+    expect(fs.existsSync(f.at('rasen', 'issues', created.identity.uid, 'issue.yaml'))).toBe(true);
+    const plansDir = f.at('rasen', 'issues', created.identity.uid, 'plans');
     expect(fs.existsSync(plansDir) ? fs.readdirSync(plansDir) : []).toEqual([]);
     expect(unwrap(await handleStoreChangeIssueLinks(space)).entries.find(
       entry => entry.occurrence.change.changeInstanceId === unlinkedInstance
     )).toMatchObject({ association: 'unlinked', eligibility: 'attachable' });
 
     const recovered = unwrap(await handleStorePublishPlan(space, {
-      issueId,
+      issueId: created.identity.uid,
       expectedRevisionId: null,
       nodes: [{
         nodeId: 'unlinked-change',
@@ -305,7 +369,7 @@ describe('Change-to-Issue link composition and route', { timeout: 240_000 }, () 
     )).toMatchObject({
       association: 'linked',
       eligibility: 'already-linked',
-      issues: [{ issueId, revisionId: '0001', nodeIds: ['unlinked-change'] }],
+      issues: [{ issueId: created.identity.uid, revisionId: '0001', nodeIds: ['unlinked-change'] }],
     });
   });
 
@@ -319,7 +383,9 @@ describe('Change-to-Issue link composition and route', { timeout: 240_000 }, () 
     };
     server = await startManagementServer({ context });
     const pathWithSpace = `/api/v1/stores/execution-plan?space=store:${encodeURIComponent(f.storeUid)}`;
-    unwrap(await handleStoreIssueCreate(space, { issueId: 'api-plan', title: 'API plan' }));
+    const created = unwrap(
+      await handleStoreIssueCreate(space, { issueId: 'api-plan', title: 'API plan' })
+    );
     const node = {
       nodeId: 'preserved',
       kind: 'change',
@@ -355,13 +421,14 @@ describe('Change-to-Issue link composition and route', { timeout: 240_000 }, () 
     expect(second.json.revision).toMatchObject({ revisionId: '0002', supersedes: '0001' });
     expect(second.json.revision.nodes[0]).toEqual(node);
 
-    const before = fs.readdirSync(f.at('rasen', 'issues', 'api-plan', 'plans')).sort();
+    const plansDir = f.at('rasen', 'issues', created.identity.uid, 'plans');
+    const before = fs.readdirSync(plansDir).sort();
     const stale = await request(server.port, pathWithSpace, true, 'POST', {
       issueId: 'api-plan', expectedRevisionId: '0001', nodes: [node],
     });
     expect(stale.status).toBe(409);
     expect(stale.json.error.code).toBe('execution_plan_revision_conflict');
-    expect(fs.readdirSync(f.at('rasen', 'issues', 'api-plan', 'plans')).sort()).toEqual(before);
+    expect(fs.readdirSync(plansDir).sort()).toEqual(before);
 
     const omitted = await request(server.port, pathWithSpace, true, 'POST', {
       issueId: 'api-plan', nodes: [node],

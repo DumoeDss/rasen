@@ -22,6 +22,7 @@ import {
   StoreIssuesModuleInstance,
   issueAddresses,
   issueError,
+  issueResourceOwnerMatches,
   parseAcceptedRecord,
   parseAcceptanceConditionsRevision,
   productionStoreIssueDependencies,
@@ -30,8 +31,9 @@ import {
   type AcceptIssueResult,
   type StoreIssues,
   type StoreIssueDependencies,
+  type ResolvedIssueIdentity,
 } from '../store/issues/index.js';
-import { StoreAggregateQuery } from '../store/query/index.js';
+import { StoreAggregateQuery, type IssueDetail } from '../store/query/index.js';
 import { projectIssueStatus } from '../issue-status/index.js';
 import { acceptanceRefusalFix, evaluateIssueAcceptanceGate } from './gate.js';
 import type {
@@ -41,7 +43,10 @@ import type {
 } from './types.js';
 import type { WorkspaceIndexEntry } from '../store/workspace/registry.js';
 import type { ExecutionPlanRevisionId } from '../store/planning-validation.js';
-import { parseExecutionPlanRevisionId } from '../store/planning-validation.js';
+import {
+  parseExecutionPlanRevisionId,
+  parseIssueStorageKey,
+} from '../store/planning-validation.js';
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -56,6 +61,21 @@ export interface ReadAcceptanceFactsInput {
 
 export interface ReadAcceptanceFactsOptions {
   readonly dependencies?: StoreIssueDependencies;
+  /** Reuse a selector-resolved query result so no downstream reader reparses it. */
+  readonly detail?: IssueDetail;
+}
+
+function resolvedDetailIdentity(detail: IssueDetail): ResolvedIssueIdentity | null {
+  if (detail.issue.identity === null || detail.issue.record === null) return null;
+  return {
+    identity: detail.issue.identity,
+    storageKey: parseIssueStorageKey(
+      detail.issue.record.version === 1
+        ? detail.issue.record.id
+        : detail.issue.record.identity.uid
+    ),
+    sourceVersion: detail.issue.record.version,
+  };
 }
 
 /**
@@ -68,9 +88,9 @@ export interface ReadAcceptanceFactsOptions {
 async function readLatestConditions(
   dependencies: StoreIssueDependencies,
   checkoutRoot: string,
-  issueId: string
+  owner: ResolvedIssueIdentity
 ): Promise<IssueAcceptanceConditionsRead> {
-  const addresses = issueAddresses(checkoutRoot, issueId);
+  const addresses = issueAddresses(checkoutRoot, owner.storageKey);
   const ordinals: ExecutionPlanRevisionId[] = [];
   for (const name of await dependencies.fs.listNames(addresses.acceptance)) {
     if (!name.endsWith('.yaml')) continue;
@@ -85,7 +105,7 @@ async function readLatestConditions(
   if (latest === undefined) {
     return { revision: null, revisionId: null, diagnostic: null, path: null };
   }
-  const revisionPath = acceptanceRevisionAddress(checkoutRoot, issueId, latest);
+  const revisionPath = acceptanceRevisionAddress(checkoutRoot, owner.storageKey, latest);
   const text = await dependencies.fs.readText(revisionPath);
   if (text === null) {
     return {
@@ -96,8 +116,15 @@ async function readLatestConditions(
     };
   }
   try {
+    const revision = parseAcceptanceConditionsRevision(text, { verifyDigest: true });
+    if (!issueResourceOwnerMatches(owner, revision)) {
+      const actualOwner = revision.version === 2 ? revision.issueUid : revision.issueId;
+      throw new Error(
+        `issue_resource_identity_mismatch: acceptance conditions owner '${actualOwner}' does not match Issue '${owner.identity.uid}'`
+      );
+    }
     return {
-      revision: parseAcceptanceConditionsRevision(text, { verifyDigest: true }),
+      revision,
       revisionId: latest,
       diagnostic: null,
       path: revisionPath,
@@ -121,17 +148,24 @@ async function readLatestConditions(
 async function readAcceptedRecord(
   dependencies: StoreIssueDependencies,
   checkoutRoot: string,
-  issueId: string
+  owner: ResolvedIssueIdentity
 ): Promise<IssueAcceptanceRecordRead> {
-  const addresses = issueAddresses(checkoutRoot, issueId);
+  const addresses = issueAddresses(checkoutRoot, owner.storageKey);
   const text = await dependencies.fs.readText(addresses.accepted);
   if (text === null) {
     return { present: false, record: null, diagnostic: null, path: null };
   }
   try {
+    const record = parseAcceptedRecord(text, { verifyDigest: true });
+  if (!issueResourceOwnerMatches(owner, record)) {
+      const actualOwner = record.version === 2 ? record.issueUid : record.issueId;
+      throw new Error(
+        `issue_resource_identity_mismatch: accepted-record owner '${actualOwner}' does not match Issue '${owner.identity.uid}'`
+      );
+    }
     return {
       present: true,
-      record: parseAcceptedRecord(text, { verifyDigest: true }),
+      record,
       diagnostic: null,
       path: addresses.accepted,
     };
@@ -156,9 +190,24 @@ export async function readIssueAcceptanceFacts(
 ): Promise<IssueAcceptanceFacts> {
   const dependencies = options.dependencies ?? productionStoreIssueDependencies;
   const scope = await resolveIssueScope(dependencies, input);
+  const detail =
+    options.detail ??
+    (await StoreAggregateQuery.showIssue({
+      ...(input.store === undefined ? {} : { store: input.store }),
+      startPath: input.startPath,
+      ...(input.globalDataDir === undefined ? {} : { globalDataDir: input.globalDataDir }),
+      issueId: input.issueId,
+    }));
+  const owner = resolvedDetailIdentity(detail);
+  if (owner === null) {
+    return {
+      conditions: { revision: null, revisionId: null, diagnostic: null, path: null },
+      acceptedRecord: { present: false, record: null, diagnostic: null, path: null },
+    };
+  }
   return {
-    conditions: await readLatestConditions(dependencies, scope.checkoutRoot, input.issueId),
-    acceptedRecord: await readAcceptedRecord(dependencies, scope.checkoutRoot, input.issueId),
+    conditions: await readLatestConditions(dependencies, scope.checkoutRoot, owner),
+    acceptedRecord: await readAcceptedRecord(dependencies, scope.checkoutRoot, owner),
   };
 }
 
@@ -200,6 +249,7 @@ export async function acceptIssue(
   });
   const facts = await readIssueAcceptanceFacts(input, {
     ...(input.dependencies === undefined ? {} : { dependencies: input.dependencies }),
+    detail,
   });
   const projection = input.projection ?? {};
   const status = await projectIssueStatus({

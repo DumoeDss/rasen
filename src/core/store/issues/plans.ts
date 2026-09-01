@@ -31,11 +31,13 @@ import {
   parseChangeId,
   parseExecutionPlanRevisionId,
   parseIssueId,
+  parseIssueUid,
   parseProjectId,
   parseSha256Digest,
   parseTargetLineId,
   type ExecutionPlanRevisionId,
   type IssueId,
+  type IssueUid,
   type Sha256Digest,
 } from '../planning-validation.js';
 import { parseChangeInstanceId } from '../planning-identity.js';
@@ -45,6 +47,8 @@ import type {
   ExecutionPlanNodeInput,
   ExecutionPlanNodeLifecycle,
   ExecutionPlanRevisionV1,
+  ExecutionPlanRevisionV2,
+  StoredExecutionPlanRevision,
 } from './types.js';
 
 function planError(
@@ -127,7 +131,7 @@ const IntentNodeSchema = z
 
 const NodeSchema = z.discriminatedUnion('kind', [ChangeNodeSchema, IntentNodeSchema]);
 
-const RevisionSchema = z
+const RevisionSchemaV1 = z
   .object({
     version: z.literal(1),
     issueId: z.string(),
@@ -140,6 +144,22 @@ const RevisionSchema = z
     nodes: z.array(NodeSchema),
   })
   .strict();
+
+const RevisionSchemaV2 = z
+  .object({
+    version: z.literal(2),
+    issueUid: z.string(),
+    revisionId: z.string(),
+    supersedes: z.string().nullable(),
+    createdAt: z.string().refine(isCanonicalIsoTimestamp, {
+      message: 'createdAt must be a canonical ISO-8601 UTC timestamp',
+    }),
+    contentSha256: z.string(),
+    nodes: z.array(NodeSchema),
+  })
+  .strict();
+
+const RevisionSchema = z.discriminatedUnion('version', [RevisionSchemaV1, RevisionSchemaV2]);
 
 /** A node identifier is a path-free canonical kebab id, like a Change alias. */
 function validateNodeId(value: string, index: number): string {
@@ -423,11 +443,15 @@ function findCycle(nodes: readonly ExecutionPlanNode[]): readonly string[] | nul
 
 /** The canonical body a revision's digest covers: every field except the digest. */
 export function executionPlanDigestBody(
-  revision: Omit<ExecutionPlanRevisionV1, 'contentSha256'>
+  revision:
+    | Omit<ExecutionPlanRevisionV1, 'contentSha256'>
+    | Omit<ExecutionPlanRevisionV2, 'contentSha256'>
 ): unknown {
   return {
     version: revision.version,
-    issueId: revision.issueId,
+    ...(revision.version === 1
+      ? { issueId: revision.issueId }
+      : { issueUid: revision.issueUid }),
     revisionId: revision.revisionId,
     supersedes: revision.supersedes,
     createdAt: revision.createdAt,
@@ -468,7 +492,9 @@ export function executionPlanDigestBody(
 }
 
 export function executionPlanDigest(
-  revision: Omit<ExecutionPlanRevisionV1, 'contentSha256'>
+  revision:
+    | Omit<ExecutionPlanRevisionV1, 'contentSha256'>
+    | Omit<ExecutionPlanRevisionV2, 'contentSha256'>
 ): Sha256Digest {
   return createHash('sha256')
     .update(canonicalJson(executionPlanDigestBody(revision)), 'utf8')
@@ -487,13 +513,24 @@ export interface ValidateExecutionPlanOptions {
 export function validateExecutionPlanRevision(
   value: unknown,
   options: ValidateExecutionPlanOptions = {}
-): ExecutionPlanRevisionV1 {
+): StoredExecutionPlanRevision {
   const result = RevisionSchema.safeParse(value);
   if (!result.success) {
     throw planError('revision', formatZodIssues(result.error), result.error);
   }
 
-  const issueId: IssueId = rethrow('issueId', () => parseIssueId(result.data.issueId));
+  const owner: { readonly issueId: IssueId } | { readonly issueUid: IssueUid } =
+    result.data.version === 1
+      ? {
+          issueId: rethrow('issueId', () =>
+            parseIssueId((result.data as z.output<typeof RevisionSchemaV1>).issueId)
+          ),
+        }
+      : {
+          issueUid: rethrow('issueUid', () =>
+            parseIssueUid((result.data as z.output<typeof RevisionSchemaV2>).issueUid)
+          ),
+        };
   const revisionId: ExecutionPlanRevisionId = rethrow('revisionId', () =>
     parseExecutionPlanRevisionId(result.data.revisionId)
   );
@@ -516,15 +553,26 @@ export function validateExecutionPlanRevision(
     throw planError('nodes', violations.map(violation => violation.message).join('; '));
   }
 
-  const revision: ExecutionPlanRevisionV1 = Object.freeze({
-    version: 1 as const,
-    issueId,
-    revisionId,
-    supersedes,
-    createdAt: result.data.createdAt,
-    contentSha256,
-    nodes: Object.freeze(nodes),
-  });
+  const revision: StoredExecutionPlanRevision =
+    result.data.version === 1
+      ? Object.freeze({
+          version: 1 as const,
+          issueId: (owner as { readonly issueId: IssueId }).issueId,
+          revisionId,
+          supersedes,
+          createdAt: result.data.createdAt,
+          contentSha256,
+          nodes: Object.freeze(nodes),
+        })
+      : Object.freeze({
+          version: 2 as const,
+          issueUid: (owner as { readonly issueUid: IssueUid }).issueUid,
+          revisionId,
+          supersedes,
+          createdAt: result.data.createdAt,
+          contentSha256,
+          nodes: Object.freeze(nodes),
+        });
 
   if (options.verifyDigest === true) {
     const expected = executionPlanDigest(revision);
@@ -541,7 +589,7 @@ export function validateExecutionPlanRevision(
 export function parseExecutionPlanRevision(
   content: string,
   options: ValidateExecutionPlanOptions = {}
-): ExecutionPlanRevisionV1 {
+): StoredExecutionPlanRevision {
   let raw: unknown;
   try {
     raw = parseYaml(content);
@@ -551,11 +599,13 @@ export function parseExecutionPlanRevision(
   return validateExecutionPlanRevision(raw, options);
 }
 
-export function serializeExecutionPlanRevision(value: ExecutionPlanRevisionV1): string {
+export function serializeExecutionPlanRevision(value: StoredExecutionPlanRevision): string {
   const revision = validateExecutionPlanRevision(value, { verifyDigest: true });
   return stringifyYaml({
-    version: 1,
-    issueId: revision.issueId,
+    version: revision.version,
+    ...(revision.version === 1
+      ? { issueId: revision.issueId }
+      : { issueUid: revision.issueUid }),
     revisionId: revision.revisionId,
     supersedes: revision.supersedes,
     createdAt: revision.createdAt,

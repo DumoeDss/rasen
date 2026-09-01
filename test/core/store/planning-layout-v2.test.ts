@@ -12,6 +12,7 @@ import {
   serializeStoreProjectCatalogV2,
   serializeStoreTargetLineCatalogV1,
   parseStoreMetadataState,
+  parseIssueStorageKey,
   StorePlanningValidationError,
 } from '../../../src/core/store/index.js';
 import {
@@ -570,34 +571,35 @@ describe('pure Store planning layout v2', () => {
     'resolves every Store-level Issue address under $flavor semantics, rooted below rasen/issues',
     ({ flavor, api, root }) => {
       const issueId = 'refresh-cache';
+      const issueStorageKey = parseIssueStorageKey(issueId);
       expect(
-        resolveStorePlanningLayoutV2Path(root, { kind: 'issue', issueId }, flavor)
+        resolveStorePlanningLayoutV2Path(root, { kind: 'issue', issueStorageKey }, flavor)
       ).toBe(api.resolve(root, 'rasen', 'issues', issueId));
       expect(
-        resolveStorePlanningLayoutV2Path(root, { kind: 'issue-record', issueId }, flavor)
+        resolveStorePlanningLayoutV2Path(root, { kind: 'issue-record', issueStorageKey }, flavor)
       ).toBe(api.resolve(root, 'rasen', 'issues', issueId, 'issue.yaml'));
       expect(
-        resolveStorePlanningLayoutV2Path(root, { kind: 'execution-plans', issueId }, flavor)
+        resolveStorePlanningLayoutV2Path(root, { kind: 'execution-plans', issueStorageKey }, flavor)
       ).toBe(api.resolve(root, 'rasen', 'issues', issueId, 'plans'));
       expect(
         resolveStorePlanningLayoutV2Path(
           root,
-          { kind: 'execution-plan', issueId, revisionId: '0007' },
+          { kind: 'execution-plan', issueStorageKey, revisionId: '0007' },
           flavor
         )
       ).toBe(api.resolve(root, 'rasen', 'issues', issueId, 'plans', '0007.yaml'));
       expect(
-        resolveStorePlanningLayoutV2Path(root, { kind: 'acceptance-conditions', issueId }, flavor)
+        resolveStorePlanningLayoutV2Path(root, { kind: 'acceptance-conditions', issueStorageKey }, flavor)
       ).toBe(api.resolve(root, 'rasen', 'issues', issueId, 'acceptance'));
       expect(
         resolveStorePlanningLayoutV2Path(
           root,
-          { kind: 'acceptance-condition', issueId, revisionId: '0007' },
+          { kind: 'acceptance-condition', issueStorageKey, revisionId: '0007' },
           flavor
         )
       ).toBe(api.resolve(root, 'rasen', 'issues', issueId, 'acceptance', '0007.yaml'));
       expect(
-        resolveStorePlanningLayoutV2Path(root, { kind: 'issue-accepted-record', issueId }, flavor)
+        resolveStorePlanningLayoutV2Path(root, { kind: 'issue-accepted-record', issueStorageKey }, flavor)
       ).toBe(api.resolve(root, 'rasen', 'issues', issueId, 'accepted.yaml'));
     }
   );
@@ -605,18 +607,18 @@ describe('pure Store planning layout v2', () => {
   it('rejects a case-alias, traversal, or Windows-reserved Issue id on every Issue address kind', () => {
     for (const issueId of ['Refresh-Cache', '../escape', 'con', 'nul.plan']) {
       const addresses = [
-        { kind: 'issue' as const, issueId },
-        { kind: 'issue-record' as const, issueId },
-        { kind: 'execution-plans' as const, issueId },
-        { kind: 'execution-plan' as const, issueId, revisionId: '0001' },
-        { kind: 'acceptance-conditions' as const, issueId },
-        { kind: 'acceptance-condition' as const, issueId, revisionId: '0001' },
-        { kind: 'issue-accepted-record' as const, issueId },
+        { kind: 'issue' as const, issueStorageKey: issueId as never },
+        { kind: 'issue-record' as const, issueStorageKey: issueId as never },
+        { kind: 'execution-plans' as const, issueStorageKey: issueId as never },
+        { kind: 'execution-plan' as const, issueStorageKey: issueId as never, revisionId: '0001' },
+        { kind: 'acceptance-conditions' as const, issueStorageKey: issueId as never },
+        { kind: 'acceptance-condition' as const, issueStorageKey: issueId as never, revisionId: '0001' },
+        { kind: 'issue-accepted-record' as const, issueStorageKey: issueId as never },
       ];
       for (const address of addresses) {
         expect(
           () => resolveStorePlanningLayoutV2Path('/store', address, 'posix'),
-          `${address.kind} with issueId ${JSON.stringify(issueId)}`
+          `${address.kind} with storage key ${JSON.stringify(issueId)}`
         ).toThrow(StorePlanningValidationError);
       }
     }
@@ -628,7 +630,11 @@ describe('pure Store planning layout v2', () => {
       expect(() =>
         resolveStorePlanningLayoutV2Path(
           '/store',
-          { kind: 'execution-plan', issueId: 'refresh-cache', revisionId },
+          {
+            kind: 'execution-plan',
+            issueStorageKey: parseIssueStorageKey('refresh-cache'),
+            revisionId,
+          },
           'posix'
         )
       ).toThrow(StorePlanningValidationError);
@@ -636,7 +642,11 @@ describe('pure Store planning layout v2', () => {
       expect(() =>
         resolveStorePlanningLayoutV2Path(
           '/store',
-          { kind: 'acceptance-condition', issueId: 'refresh-cache', revisionId },
+          {
+            kind: 'acceptance-condition',
+            issueStorageKey: parseIssueStorageKey('refresh-cache'),
+            revisionId,
+          },
           'posix'
         )
       ).toThrow(StorePlanningValidationError);
@@ -646,9 +656,12 @@ describe('pure Store planning layout v2', () => {
   it('resolves an Issue address the same way regardless of a project or target line elsewhere in scope', () => {
     // The address type takes no `projectId`/`targetLineId` for these kinds.
     // Casting past that proves the RUNTIME behaviour, not just the type: the
-    // switch case above destructures only `issueId`, so extra fields already
+    // switch case above destructures only `issueStorageKey`, so extra fields already
     // in scope when a caller assembles the address cannot change the result.
-    const bareAddress = { kind: 'issue-record' as const, issueId: 'refresh-cache' };
+    const bareAddress = {
+      kind: 'issue-record' as const,
+      issueStorageKey: parseIssueStorageKey('refresh-cache'),
+    };
     const addressWithExtraFields = {
       ...bareAddress,
       projectId: PROJECT_ID,

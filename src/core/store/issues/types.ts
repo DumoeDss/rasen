@@ -23,10 +23,12 @@ import type {
   ChangeInstanceId,
   ExecutionPlanRevisionId,
   IssueId,
+  IssueUid,
   ProjectId,
   Sha256Digest,
   TargetLineId,
 } from '../planning-foundation.js';
+import type { IssueIdentityV2 } from './identity.js';
 
 // -----------------------------------------------------------------------------
 // Diagnostics
@@ -41,6 +43,17 @@ import type {
 export type StoreIssueErrorCode =
   /** A Store-level Issue operation resolved no Store. */
   | 'issue_scope_required'
+  | 'issue_title_required'
+  | 'issue_selector_required'
+  | 'issue_selector_invalid'
+  | 'issue_selector_ambiguous'
+  | 'issue_identity_conflict'
+  | 'issue_key_conflict'
+  | 'issue_alias_conflict'
+  | 'issue_storage_identity_mismatch'
+  | 'issue_resource_identity_mismatch'
+  | 'issue_identity_allocation_failed'
+  | 'issue_publication_indeterminate'
   /** The resolved Store checkout is a planning worktree bound to a Change. */
   | 'issue_write_requires_store_checkout'
   | 'issue_not_found'
@@ -135,6 +148,18 @@ export interface IssueRecordV1 {
   readonly reason: string | null;
   readonly createdAt: string;
 }
+
+/** New Issues separate machine identity from human selectors and storage. */
+export interface IssueRecordV2 {
+  readonly version: 2;
+  readonly identity: IssueIdentityV2;
+  readonly title: string;
+  readonly state: IssueState;
+  readonly reason: string | null;
+  readonly createdAt: string;
+}
+
+export type StoredIssueRecord = IssueRecordV1 | IssueRecordV2;
 
 // -----------------------------------------------------------------------------
 // Execution Plan revisions
@@ -255,6 +280,21 @@ export interface ExecutionPlanRevisionV1 {
   readonly nodes: readonly ExecutionPlanNode[];
 }
 
+/** New revisions bind their durable owner by authoritative Issue UID. */
+export interface ExecutionPlanRevisionV2 {
+  readonly version: 2;
+  readonly issueUid: IssueUid;
+  readonly revisionId: ExecutionPlanRevisionId;
+  readonly supersedes: ExecutionPlanRevisionId | null;
+  readonly createdAt: string;
+  readonly contentSha256: Sha256Digest;
+  readonly nodes: readonly ExecutionPlanNode[];
+}
+
+export type StoredExecutionPlanRevision =
+  | ExecutionPlanRevisionV1
+  | ExecutionPlanRevisionV2;
+
 /** A revision as authored, before an ordinal and a digest are allocated. */
 export interface ExecutionPlanDraft {
   readonly nodes: readonly ExecutionPlanNodeInput[];
@@ -297,6 +337,21 @@ export interface AcceptanceConditionsRevisionV1 {
   readonly contentSha256: Sha256Digest;
   readonly conditions: readonly AcceptanceCondition[];
 }
+
+/** New acceptance revisions bind their durable owner by authoritative UID. */
+export interface AcceptanceConditionsRevisionV2 {
+  readonly version: 2;
+  readonly issueUid: IssueUid;
+  readonly revisionId: ExecutionPlanRevisionId;
+  readonly supersedes: ExecutionPlanRevisionId | null;
+  readonly createdAt: string;
+  readonly contentSha256: Sha256Digest;
+  readonly conditions: readonly AcceptanceCondition[];
+}
+
+export type StoredAcceptanceConditionsRevision =
+  | AcceptanceConditionsRevisionV1
+  | AcceptanceConditionsRevisionV2;
 
 /**
  * The gate facts an acceptance freezes: counts, the health value, and that no
@@ -354,6 +409,21 @@ export interface IssueAcceptedRecordV1 {
   readonly contentSha256: Sha256Digest;
 }
 
+/** New acceptance records bind their durable owner by authoritative UID. */
+export interface IssueAcceptedRecordV2 {
+  readonly version: 2;
+  readonly issueUid: IssueUid;
+  readonly acceptedAt: string;
+  readonly conditionsRevisionId: ExecutionPlanRevisionId;
+  readonly conditionsSha256: Sha256Digest;
+  readonly gate: AcceptanceGateSnapshot;
+  readonly exclusions?: readonly AcceptanceRecordExclusion[];
+  readonly note: string | null;
+  readonly contentSha256: Sha256Digest;
+}
+
+export type StoredIssueAcceptedRecord = IssueAcceptedRecordV1 | IssueAcceptedRecordV2;
+
 export interface ExecutionPlanChangeNodeInput {
   readonly nodeId: string;
   readonly kind: 'change';
@@ -405,8 +475,10 @@ export interface StoreIssueSelector extends StoreIssueQuery {
   readonly issueId: string;
 }
 
-export interface CreateIssueInput extends StoreIssueSelector {
+export interface CreateIssueInput extends StoreIssueQuery {
   readonly title: string;
+  /** Deprecated compatibility input; retained only as a non-authoritative alias. */
+  readonly issueId?: string;
   /** Writes an optional narrative scaffold. Never parsed for facts. */
   readonly readme?: boolean;
 }
@@ -477,7 +549,28 @@ export interface SuggestedIssueCommit {
   readonly rationale: string;
 }
 
+export interface IssueWriteWarning {
+  readonly code: 'issue_readme_write_failed' | 'issue_record_post_publish_warning';
+  readonly message: string;
+  /** Internal failure evidence. Public projections deliberately omit it. */
+  readonly cause?: unknown;
+}
+
+/**
+ * Public recovery facts for a create whose durable commit point cannot be
+ * observed. The assigned UID/key remain the only identity to inspect; a fresh
+ * create could mint a duplicate and is therefore explicitly not retry-safe.
+ */
+export interface IssuePublicationRecovery {
+  readonly kind: 'issue-publication-indeterminate';
+  readonly identity: Pick<IssueIdentityV2, 'uid' | 'key'>;
+  readonly retrySafe: false;
+}
+
 export interface IssueWriteReport {
+  /** Public durable identity. Internal storage locators never enter a write result. */
+  readonly identity: IssueIdentityV2;
+  /** @deprecated Use `identity.uid` for durable references. */
   readonly issueId: IssueId;
   readonly storeId: string;
   readonly storeUid: string;
@@ -488,22 +581,24 @@ export interface IssueWriteReport {
   /** Absolute paths written, as local locators. */
   readonly written: readonly string[];
   readonly suggestedCommits: readonly SuggestedIssueCommit[];
+  /** Non-authoritative secondary output that failed after the durable write committed. */
+  readonly warnings?: readonly IssueWriteWarning[];
 }
 
 export interface IssueRecordResult extends IssueWriteReport {
-  readonly record: IssueRecordV1;
+  readonly record: StoredIssueRecord;
 }
 
 export interface ExecutionPlanResult extends IssueWriteReport {
-  readonly revision: ExecutionPlanRevisionV1;
+  readonly revision: StoredExecutionPlanRevision;
 }
 
 export interface AcceptanceConditionsResult extends IssueWriteReport {
-  readonly revision: AcceptanceConditionsRevisionV1;
+  readonly revision: StoredAcceptanceConditionsRevision;
 }
 
 export interface AcceptIssueResult extends IssueWriteReport {
-  readonly record: IssueAcceptedRecordV1;
+  readonly record: StoredIssueAcceptedRecord;
   /** The Issue's state after the mutation: `resolved` on both D5 write rows. */
   readonly state: IssueState;
 }

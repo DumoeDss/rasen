@@ -12,6 +12,8 @@
  * Module's implementations rather than second copies: they are the same machine
  * facilities, and a second copy would drift.
  */
+import { randomUUID } from 'node:crypto';
+
 import {
   nodeWorkspaceFileSystem,
   createNodeWorkspaceCoordination,
@@ -39,6 +41,8 @@ export interface StoreIssueDependencies {
   readonly checkout: IssueCheckoutGit;
   coordination(globalDataDir?: string): WorkspaceCoordination;
   now(): Date;
+  /** System entropy for a new immutable Issue UID. Tests inject a fixed sequence. */
+  mintIssueUid(): string;
 }
 
 export const nodeIssueCheckoutGit: IssueCheckoutGit = {
@@ -55,6 +59,7 @@ export const productionStoreIssueDependencies: StoreIssueDependencies = {
   checkout: nodeIssueCheckoutGit,
   coordination: globalDataDir => createNodeWorkspaceCoordination(globalDataDir),
   now: () => new Date(),
+  mintIssueUid: () => randomUUID(),
 };
 
 /** A fixed clock, so a published revision is reproducible byte for byte. */

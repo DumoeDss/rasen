@@ -17,13 +17,26 @@ import {
   withOwnerAwareFileLock,
 } from '../../file-state.js';
 import { StoreError } from '../errors.js';
+import { parseStoreTargetLineCatalogV1 } from '../planning-catalogs.js';
+import { listTargetLineEntries } from '../query/refs.js';
 import { productionStoreIssueDependencies } from '../issues/dependencies.js';
 import {
   heldIssueLockKeys,
+  issueAllocationLockHeld,
+  issueAllocationLockKey,
   issueLockCanonicalBytes,
   issueLockKey,
+  withIssueAllocationLock,
   withIssueLockBatch,
 } from '../issues/locks.js';
+import {
+  deriveLegacyIssueUid,
+  projectStoredIssueIdentity,
+  resolveIssueSelector,
+  type IssueIdentityCandidate,
+} from '../issues/identity.js';
+import { isStoreIssueError } from '../issues/diagnostics.js';
+import { parseStoredIssueRecord } from '../issues/records.js';
 import { resolveRegisteredStore } from '../registry.js';
 import {
   consumeDestinationOwnedStagingCopies,
@@ -188,9 +201,19 @@ export class StoreLayoutMigration implements StoreLayoutMigrationModule {
         ? [item.disposition.issueId]
         : []
     );
-    const keys = issueIds.map((issueId) => issueLockKey({ storeUid: token.storeUid, issueId }));
+    const keys = issueIds.map(issueId =>
+      issueLockKey({
+        storeUid: token.storeUid,
+        issueUid: deriveLegacyIssueUid(token.storeUid, issueId),
+      })
+    );
     const run = async (): Promise<T> => {
       if (keys.length > 0) {
+        if (!issueAllocationLockHeld()) {
+          throw new Error(
+            'generated layout publication entered its Issue batch without the Store allocation lock'
+          );
+        }
         const expected = keys
           .map((key) => issueLockCanonicalBytes(key).toString('hex'))
           .filter((value, index, all) => all.indexOf(value) === index)
@@ -225,21 +248,204 @@ export class StoreLayoutMigration implements StoreLayoutMigrationModule {
       );
     };
     if (keys.length === 0) return run();
-    return withIssueLockBatch(
-      productionStoreIssueDependencies.coordination(globalDataDir),
-      keys,
-      run,
-      {
-        onAcquired: async (key, index, total) => {
-          await this.dependencies.checkpoint({
-            kind: 'issue-lock-acquired',
-            issueId: key.material.issueId ?? key.label,
-            index,
-            total,
-          });
-        },
-      }
+    const coordination = productionStoreIssueDependencies.coordination(globalDataDir);
+    return withIssueAllocationLock(
+      coordination,
+      issueAllocationLockKey({ storeUid: token.storeUid }),
+      () =>
+        withIssueLockBatch(coordination, keys, run, {
+          onAcquired: async (key, index, total) => {
+            await this.dependencies.checkpoint({
+              kind: 'issue-lock-acquired',
+              issueId: key.material.issueUid ?? key.label,
+              index,
+              total,
+            });
+          },
+        })
     );
+  }
+
+  /**
+   * Rebuild the complete declared-ref selector catalog while the Store
+   * allocation lock is held. The immutable migration plan chose legacy aliases
+   * before publication; a V2 create that acquired allocation first may now own
+   * one of those aliases from a UID directory. Checking only the planned
+   * physical destination would miss that semantic collision.
+   *
+   * A recovery-owned V1 destination is allowed: its projected UID and storage
+   * key are exactly the values this migration is resuming. Every other match,
+   * ambiguity, or unreadable durable record makes the frozen plan stale.
+   */
+  private async revalidateGeneratedIssueSelectors(
+    plan: ImmutableMigrationPlan,
+    storeUid: string
+  ): Promise<void> {
+    const issueIds = plan.items.flatMap((item) =>
+      item.materialization?.kind === 'generated-tree' &&
+      item.disposition?.kind === 'store-issue'
+        ? [item.disposition.issueId]
+        : []
+    );
+    if (issueIds.length === 0) return;
+    if (!issueAllocationLockHeld()) {
+      throw new Error(
+        'generated Issue selector revalidation requires the Store allocation lock'
+      );
+    }
+
+    const issuesRoot = path.join(plan.storeRoot, 'rasen', 'issues');
+    const candidates: IssueIdentityCandidate[] = [];
+    for (const entry of await this.dependencies.fs.listEntries(issuesRoot)) {
+      if (entry.kind !== 'directory') continue;
+      const recordPath = path.join(issuesRoot, entry.name, 'issue.yaml');
+      const content = await this.dependencies.fs.readText(recordPath);
+      if (content === null) continue;
+      try {
+        const record = parseStoredIssueRecord(content, recordPath);
+        candidates.push({
+          ...projectStoredIssueIdentity({
+            storeUid,
+            record,
+            storageKey: entry.name,
+          }),
+          title: record.title,
+        });
+      } catch (error) {
+        throw migrationError(
+          'migration_plan_stale',
+          `The generated Issue selector catalog is stale because ${recordPath} is no longer readable: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          'Repair the Issue record, then re-run the migration plan; nothing was written, moved, or deleted.'
+        );
+      }
+    }
+
+    const declaredRefs = new Set<string>();
+    for (const entry of await listTargetLineEntries(
+      this.dependencies.referenceEvidence,
+      plan.storeRoot
+    )) {
+      if (entry.catalog === null) {
+        throw migrationError(
+          'migration_plan_stale',
+          `The generated Issue selector catalog is incomplete because target-line catalog ${entry.path} is unreadable.`,
+          'Repair the target-line catalog, then re-run the migration plan; nothing was written, moved, or deleted.'
+        );
+      }
+      declaredRefs.add(entry.catalog.storeRef);
+    }
+    for (const output of plan.targetLineCatalogs) {
+      try {
+        declaredRefs.add(
+          parseStoreTargetLineCatalogV1(output.catalogYaml, output.destination).storeRef
+        );
+      } catch (error) {
+        throw migrationError(
+          'migration_plan_stale',
+          `The frozen target-line catalog ${output.destinationRelative} no longer validates: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          'Re-plan the migration; nothing was written, moved, or deleted.'
+        );
+      }
+    }
+
+    for (const storeRef of [...declaredRefs].sort()) {
+      const oid = await this.dependencies.referenceEvidence.git.resolveCommit(
+        plan.storeRoot,
+        storeRef
+      );
+      if (oid === null) {
+        throw migrationError(
+          'migration_plan_stale',
+          `The generated Issue selector catalog is incomplete because declared Store ref '${storeRef}' does not resolve to a commit.`,
+          'Restore the declared ref or update the target-line catalog, then re-plan; nothing was written, moved, or deleted.'
+        );
+      }
+      const entries =
+        (await this.dependencies.referenceEvidence.git.showTree(
+          plan.storeRoot,
+          oid,
+          'rasen/issues'
+        )) ?? [];
+      for (const entry of entries) {
+        if (!entry.endsWith('/')) continue;
+        const storageKey = entry.slice(0, -1);
+        const recordPath = `rasen/issues/${storageKey}/issue.yaml`;
+        const content = await this.dependencies.referenceEvidence.git.showBlob(
+          plan.storeRoot,
+          oid,
+          recordPath
+        );
+        if (content === null) continue;
+        try {
+          const record = parseStoredIssueRecord(content, `${storeRef}:${recordPath}`);
+          candidates.push({
+            ...projectStoredIssueIdentity({ storeUid, record, storageKey }),
+            title: record.title,
+          });
+        } catch (error) {
+          throw migrationError(
+            'migration_plan_stale',
+            `The generated Issue selector catalog is incomplete because ${storeRef}:${recordPath} is unreadable: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+            'Repair the Issue record, then re-run the migration plan; nothing was written, moved, or deleted.'
+          );
+        }
+      }
+    }
+
+    for (const issueId of issueIds) {
+      const expectedUid = deriveLegacyIssueUid(storeUid, issueId);
+      const conflictingUidOwner = candidates.find(
+        candidate =>
+          candidate.identity.uid === expectedUid &&
+          !(
+            candidate.sourceVersion === 1 &&
+            String(candidate.storageKey) === issueId
+          )
+      );
+      if (conflictingUidOwner !== undefined) {
+        throw migrationError(
+          'migration_plan_stale',
+          `Generated Issue '${issueId}' projects to UID '${expectedUid}', but that UID already belongs to ${conflictingUidOwner.identity.key} at '${conflictingUidOwner.storageKey}'.`,
+          'Resolve the UID collision, then re-run the migration plan; nothing was written, moved, or deleted.'
+        );
+      }
+      try {
+        const selected = resolveIssueSelector({
+          selector: issueId,
+          candidates,
+          complete: true,
+        });
+        if (
+          selected.identity.uid === expectedUid &&
+          String(selected.storageKey) === issueId
+        ) {
+          continue;
+        }
+        throw migrationError(
+          'migration_plan_stale',
+          `Generated Issue selector '${issueId}' now identifies ${selected.identity.key} (${selected.identity.uid}) at '${selected.storageKey}', so the frozen migration destination is stale.`,
+          'Choose a different legacy Issue alias or remove the conflict, then re-run the migration plan; nothing was written, moved, or deleted.'
+        );
+      } catch (error) {
+        if (isStoreIssueError(error) && error.issueCode === 'issue_not_found') continue;
+        if (error instanceof StoreError && error.diagnostic.code === 'migration_plan_stale') {
+          throw error;
+        }
+        throw migrationError(
+          'migration_plan_stale',
+          `Generated Issue selector '${issueId}' is no longer unique: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          'Resolve the selector conflict, then re-run the migration plan; nothing was written, moved, or deleted.'
+        );
+      }
+    }
   }
 
   private async applyLocked(
@@ -248,6 +454,7 @@ export class StoreLayoutMigration implements StoreLayoutMigrationModule {
     globalDataDir: string | undefined
   ): Promise<MigrationResult> {
     await revalidatePlan(this.dependencies, plan);
+    await this.revalidateGeneratedIssueSelectors(plan, token.storeUid);
     const issueIds = plan.items.flatMap((item) =>
       item.materialization?.kind === 'generated-tree' &&
       item.disposition?.kind === 'store-issue'
@@ -484,6 +691,7 @@ export class StoreLayoutMigration implements StoreLayoutMigrationModule {
       await verifyRecoveryOperationOwnership(this.dependencies, manifest, plan);
     }
     await revalidatePlan(this.dependencies, plan, manifest);
+    await this.revalidateGeneratedIssueSelectors(plan, token.storeUid);
     const issueIds = plan.items.flatMap((item) =>
       item.materialization?.kind === 'generated-tree' &&
       item.disposition?.kind === 'store-issue'

@@ -26,6 +26,11 @@ import {
   type ManagementServerHandle,
 } from '../../../src/core/management-api/server.js';
 import type { ManagementApiContext } from '../../../src/core/management-api/router.js';
+import {
+  deriveIssueKey,
+  serializeIssueRecordV2,
+} from '../../../src/core/store/issues/index.js';
+import { parseIssueUid } from '../../../src/core/store/planning-validation.js';
 import { runCLI, type RunCLIResult } from '../../helpers/run-cli.js';
 import {
   createStoreWorkspaceFixture,
@@ -176,7 +181,7 @@ describe('the Store aggregate route family', () => {
       method: 'POST',
       path: `/api/v1/stores/${f.storeUid}/issues`,
       headers: authed(),
-      body: JSON.stringify({ issueId: 'test-issue', title: 'Test' }),
+      body: JSON.stringify({ title: 'Test' }),
     });
     expect(issuesPost.status).not.toBe(405);
 
@@ -248,18 +253,70 @@ describe('the Store aggregate route family', () => {
     expect(body.complete).toBe(true);
   });
 
-  it('GET issue detail requires only the Store', async () => {
-    // No Issue exists yet; the read returns a 200 with an empty/null detail
-    // rather than requiring a project scope.
+  it('GET issue detail requires only the Store and 404s an absent selector', async () => {
     const server = await startServer();
     const res = await req(server.port, {
       method: 'GET',
       path: `/api/v1/stores/${f.storeUid}/issues/nonexistent-issue`,
       headers: authed(),
     });
-    // The read succeeds — it reports the Issue as not found without requiring
-    // a project scope.
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(404);
+    expect(res.json().error.code).toBe('issue_not_found');
+  });
+
+  it('keeps real unreadable Issue selectors fail-closed and path-free on both execution-plan endpoints', async () => {
+    const locator = 'private-plan-storage-locator';
+    const uid = parseIssueUid('11111111-1111-4111-8111-111111111111');
+    f.write(path.join(f.storeRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+    const recordPath = f.at('rasen', 'issues', locator, 'issue.yaml');
+    f.write(
+      recordPath,
+      serializeIssueRecordV2({
+        version: 2,
+        identity: {
+          uid,
+          key: deriveIssueKey(uid),
+          slug: 'unreadable-plan-owner',
+          aliases: [],
+        },
+        title: 'Unreadable plan owner',
+        state: 'open',
+        reason: null,
+        createdAt: '2026-08-01T00:00:00.000Z',
+      })
+    );
+
+    const server = await startServer();
+    const responses = [
+      await req(server.port, {
+        method: 'GET',
+        path:
+          `/api/v1/stores/execution-plan?space=store:${encodeURIComponent(f.storeUid)}` +
+          `&issueId=${encodeURIComponent(locator)}`,
+        headers: authed(),
+      }),
+      await req(server.port, {
+        method: 'GET',
+        path: `/api/v1/stores/${encodeURIComponent(f.storeUid)}/issues/${encodeURIComponent(locator)}/plans`,
+        headers: authed(),
+      }),
+    ];
+
+    for (const response of responses) {
+      // A real storage mismatch makes the selector catalog incomplete, so the
+      // endpoint must preserve the existing refusal instead of fabricating a
+      // successful plan response solely to exercise the defensive projector.
+      expect(response.status).toBe(502);
+      expect(response.json()).toMatchObject({
+        error: {
+          code: 'store_query_ref_unreadable',
+          message: expect.stringContaining('inspect the Store locally'),
+        },
+      });
+      expect(response.body).not.toContain(locator);
+      expect(response.body).not.toContain(recordPath);
+      expect(response.body).not.toContain(f.tempDir);
+    }
   });
 
   it('GET projects requires only the Store', async () => {

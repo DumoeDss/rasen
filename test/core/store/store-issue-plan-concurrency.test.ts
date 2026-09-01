@@ -17,6 +17,7 @@ const ISSUE = 'conditional-plan';
 
 describe('conditional Execution Plan publication', { timeout: 180_000 }, () => {
   let f: StoreWorkspaceFixture;
+  let issueUid: string;
 
   const scope = () => ({
     store: f.storeId,
@@ -41,7 +42,10 @@ describe('conditional Execution Plan publication', { timeout: 180_000 }, () => {
       projects: [PROJECT],
       lines: [{ id: LINE, storeRef: 'refs/heads/main', codeRefs: { [PROJECT]: 'refs/heads/main' } }],
     });
-    await StoreIssuesModuleInstance.create({ ...scope(), issueId: ISSUE, title: 'Conditional plan' });
+    const created = await StoreIssuesModuleInstance.create({
+      ...scope(), issueId: ISSUE, title: 'Conditional plan',
+    });
+    issueUid = created.identity.uid;
   });
 
   afterEach(() => f.cleanup());
@@ -82,7 +86,7 @@ describe('conditional Execution Plan publication', { timeout: 180_000 }, () => {
       ...scope(), issueId: ISSUE, nodes: nodes('winner'),
       expectedRevisionId: parseExecutionPlanRevisionId('0001'),
     });
-    const plansDir = path.join(f.storeRoot, 'rasen', 'issues', ISSUE, 'plans');
+    const plansDir = path.join(f.storeRoot, 'rasen', 'issues', issueUid, 'plans');
     const before = fs.readdirSync(plansDir).map(name => [name, fs.readFileSync(path.join(plansDir, name), 'utf8')]);
 
     let refusal: unknown;
@@ -126,7 +130,7 @@ describe('conditional Execution Plan publication', { timeout: 180_000 }, () => {
         expect(rejected.reason.issueCode).toBe('execution_plan_revision_conflict');
       }
     }
-    expect(fs.readdirSync(path.join(f.storeRoot, 'rasen', 'issues', ISSUE, 'plans')).sort()).toEqual([
+    expect(fs.readdirSync(path.join(f.storeRoot, 'rasen', 'issues', issueUid, 'plans')).sort()).toEqual([
       '0001.yaml',
       '0002.yaml',
     ]);

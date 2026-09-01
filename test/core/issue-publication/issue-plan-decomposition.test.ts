@@ -145,6 +145,7 @@ describe('parseDecompositionDocument (pure reader)', () => {
 describe('publishPlanFromDecomposition (orchestration)', () => {
   let f: StoreWorkspaceFixture;
   let documentPath: string;
+  let issueUids: Map<string, string>;
   const KNOWN = (name: string): boolean => name === 'small-feature';
 
   beforeEach(async () => {
@@ -152,6 +153,7 @@ describe('publishPlanFromDecomposition (orchestration)', () => {
       prefix: 'rasen-plan-decomp-',
       projects: [PROJECT, KNOWLEDGE_ONLY],
       knowledgeOnlyProjects: [KNOWLEDGE_ONLY],
+      storeBranches: ['release/0.2'],
       lines: [
         { id: 'main', storeRef: 'refs/heads/main' },
         { id: LINE, storeRef: 'refs/heads/release/0.2' },
@@ -159,6 +161,7 @@ describe('publishPlanFromDecomposition (orchestration)', () => {
     });
     documentPath = f.beside('decomposition.yaml');
     f.write(documentPath, decompositionYaml());
+    issueUids = new Map();
   });
 
   afterEach(() => {
@@ -172,14 +175,18 @@ describe('publishPlanFromDecomposition (orchestration)', () => {
   }
 
   async function createIssue(issueId: string): Promise<void> {
-    await issues().create({
+    const created = await issues().create({
       store: f.storeId,
       startPath: f.storeRoot,
       globalDataDir: f.globalDataDir,
       issueId,
       title: 'decomposition test',
     });
+    issueUids.set(issueId, created.identity.uid);
   }
+
+  const issueAt = (issueSelector: string, ...segments: string[]): string =>
+    f.at('rasen', 'issues', issueUids.get(issueSelector)!, ...segments);
 
   async function refusalCode(run: () => Promise<unknown>): Promise<{ code: string; message: string }> {
     let thrown: unknown;
@@ -237,7 +244,7 @@ describe('publishPlanFromDecomposition (orchestration)', () => {
       { issues: issues() }
     );
     const firstBytes = fs.readFileSync(
-      f.at('rasen', 'issues', 'decomp-2', 'plans', '0001.yaml'),
+      issueAt('decomp-2', 'plans', '0001.yaml'),
       'utf8'
     );
     const second = await publishPlanFromDecomposition(
@@ -255,7 +262,7 @@ describe('publishPlanFromDecomposition (orchestration)', () => {
     expect(second.revision.supersedes).toBe('0001');
     // The earlier revision's bytes never change.
     expect(
-      fs.readFileSync(f.at('rasen', 'issues', 'decomp-2', 'plans', '0001.yaml'), 'utf8')
+      fs.readFileSync(issueAt('decomp-2', 'plans', '0001.yaml'), 'utf8')
     ).toBe(firstBytes);
   });
 
@@ -277,7 +284,7 @@ describe('publishPlanFromDecomposition (orchestration)', () => {
     expect(refusal.code).toBe('issue_plan_decomposition_unreadable');
     expect(refusal.message).toContain('no-such-decomposition.yaml');
     expect(
-      fs.existsSync(f.at('rasen', 'issues', 'decomp-3', 'plans', '0001.yaml'))
+      fs.existsSync(issueAt('decomp-3', 'plans', '0001.yaml'))
     ).toBe(false);
   });
 
@@ -303,7 +310,7 @@ describe('publishPlanFromDecomposition (orchestration)', () => {
     expect(refusal.code).toBe('issue_reference_target_not_planning_member');
     expect(refusal.message).toContain(KNOWLEDGE_ONLY);
     expect(
-      fs.existsSync(f.at('rasen', 'issues', 'decomp-4', 'plans', '0001.yaml'))
+      fs.existsSync(issueAt('decomp-4', 'plans', '0001.yaml'))
     ).toBe(false);
   });
 
@@ -339,7 +346,7 @@ describe('publishPlanFromDecomposition (orchestration)', () => {
     ).toBe(true);
     expect(message).toContain('no-such-pipeline');
     expect(
-      fs.existsSync(f.at('rasen', 'issues', 'decomp-5', 'plans', '0001.yaml'))
+      fs.existsSync(issueAt('decomp-5', 'plans', '0001.yaml'))
     ).toBe(false);
   });
 });

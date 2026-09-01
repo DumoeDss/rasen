@@ -77,7 +77,7 @@ function AttributionFacts({ attribution }: { attribution: ChangeAttribution }) {
         {attribution.entry.issues.length === 0
           ? t('operations.page.issue_unavailable')
           : t('operations.page.issues', {
-              issues: attribution.entry.issues.map(issue => issue.issueId).join(', '),
+              issues: attribution.entry.issues.map(issue => issue.identity.key).join(', '),
             })}
       </span>
     </div>

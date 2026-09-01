@@ -281,7 +281,7 @@ describe('publishing a revision preserves other nodes\' observations', () => {
   });
 
   it('writes nothing when publishing: run-state, the Issue record, and prior revisions are byte-identical', async () => {
-    await issues().create({ ...scope(), issueId: ISSUE, title: 'Continuity' });
+    const created = await issues().create({ ...scope(), issueId: ISSUE, title: 'Continuity' });
     const [a, b, c] = [
       seedAndCommit('child-a', 'a1'.repeat(16)),
       seedAndCommit('child-b', 'b2'.repeat(16)),
@@ -290,11 +290,14 @@ describe('publishing a revision preserves other nodes\' observations', () => {
     await publish([node('g-001', a, 'child-a'), node('g-002', b, 'child-b')]);
     const runStateFile = writeRunStateFor('child-a', TERMINAL());
 
-    const addresses = issueAddresses(f.storeRoot, ISSUE);
+    const addresses = issueAddresses(f.storeRoot, created.identity.uid);
     const before = new Map<string, string>([
       [runStateFile, sha256OfFile(runStateFile)],
       [addresses.record, sha256OfFile(addresses.record)],
-      [revisionAddress(f.storeRoot, ISSUE, '0001'), sha256OfFile(revisionAddress(f.storeRoot, ISSUE, '0001'))],
+      [
+        revisionAddress(f.storeRoot, created.identity.uid, '0001'),
+        sha256OfFile(revisionAddress(f.storeRoot, created.identity.uid, '0001')),
+      ],
     ]);
 
     await publish([

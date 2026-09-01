@@ -17,6 +17,7 @@
 import type { IssueStatus } from '../issue-status/index.js';
 import type { SessionLaunchContextResult } from '../management-api/session-launch-context.js';
 import type { IssueDetail } from '../store/query/index.js';
+import type { IssueIdentityV2 } from '../store/issues/identity.js';
 import type { WorkspaceIndexEntry } from '../store/workspace/registry.js';
 
 /** How the launch working directory was composed (design D4's two routes). */
@@ -44,6 +45,8 @@ export type IssueLaunchMode = 'fresh' | 'already-running' | 'already-complete';
 
 /** The resolved launch contract for one Issue node. */
 export interface IssueLaunchBinding {
+  readonly identity?: IssueIdentityV2;
+  /** @deprecated Use `identity.uid` when structured identity is present. */
   readonly issueId: string;
   readonly nodeId: string;
   readonly changeInstanceId: string;
@@ -226,6 +229,8 @@ export interface IssueConfirmUnpreparedNode {
  * remains the operator's per-node act.
  */
 export interface IssueConfirmReport {
+  readonly identity?: IssueIdentityV2;
+  /** @deprecated Use `identity.uid` when structured identity is present. */
   readonly issueId: string;
   readonly revisionId: string;
   /**

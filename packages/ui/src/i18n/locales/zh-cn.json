@@ -631,6 +631,8 @@
   "unlinked.dialog.plan_error": "Issue 已创建，但无法发布首个计划。",
   "unlinked.dialog.partial": "Issue {issue} 已创建，但变更仍未关联：{error}",
   "unlinked.dialog.recover_attach": "关联到该 Issue 以恢复",
+  "unlinked.dialog.indeterminate": "Issue {issue} 的发布结果不确定。请勿在此对话框中创建另一个 Issue；关联前请按规范 UID {uid} 检查：{error}",
+  "unlinked.dialog.recover_indeterminate": "按规范 UID 检查并恢复",
   "unlinked.dialog.no_plan": "无计划",
   "unlinked.dialog.confirm_scope": "确认 Issue {issue}、基础版本 {revision}、节点 {node}，并保留 {preserved} 个既有节点。",
   "unlinked.dialog.submitting": "正在提交…",

@@ -18,9 +18,14 @@ import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 
 import { resolveStorePlanningLayoutV2Path } from '../planning-foundation.js';
-import { parseIssueRecord } from '../issues/records.js';
+import { parseStoredIssueRecord } from '../issues/records.js';
 import { parseExecutionPlanRevision } from '../issues/plans.js';
-import type { ExecutionPlanRevisionV1, IssueRecordV1 } from '../issues/types.js';
+import {
+  projectStoredIssueIdentity,
+  type ResolvedIssueIdentity,
+} from '../issues/identity.js';
+import { parseIssueStorageKey, type IssueStorageKey } from '../planning-validation.js';
+import type { StoredIssueRecord, StoredExecutionPlanRevision } from '../issues/types.js';
 import type { StoreQueryDependencies } from './dependencies.js';
 import { issuesTreePath, type RefReader, type StoreRefTarget } from './refs.js';
 import type { IssueDivergence, IssueRecordCopy } from './types.js';
@@ -37,20 +42,36 @@ function copyFrom(
   text: string,
   storeRef: string | null,
   targetLineId: string | null,
-  filePath: string
+  filePath: string,
+  storeUid: string,
+  storageKeyValue: string
 ): IssueRecordCopy {
-  let record: IssueRecordV1 | null = null;
+  const storageKey = parseIssueStorageKey(storageKeyValue);
+  let record: StoredIssueRecord | null = null;
+  let identity: IssueRecordCopy['identity'] = null;
   let diagnostic: string | null = null;
   try {
-    record = parseIssueRecord(text, filePath);
+    const parsed = parseStoredIssueRecord(text, filePath);
+    identity = projectStoredIssueIdentity({ storeUid, record: parsed, storageKey });
+    record = parsed;
   } catch (error) {
     diagnostic = messageOf(error);
   }
-  return { storeRef, targetLineId, sha256: digestOf(text), record, diagnostic };
+  return {
+    storeRef,
+    targetLineId,
+    storageKey,
+    identity,
+    sha256: digestOf(text),
+    record,
+    diagnostic,
+  };
 }
 
 export interface IssueContent {
+  readonly issueUid: string | null;
   readonly issueId: string;
+  readonly storageKeys: readonly IssueStorageKey[];
   readonly copies: readonly IssueRecordCopy[];
   /** Revision ids seen anywhere, ascending. */
   readonly revisionIds: readonly string[];
@@ -80,9 +101,17 @@ export async function collectIssues(
   dependencies: StoreQueryDependencies,
   reader: RefReader,
   refs: readonly StoreRefTarget[],
-  storeCheckoutRoot: string
+  storeCheckoutRoot: string,
+  storeUid: string
 ): Promise<readonly IssueContent[]> {
-  const byId = new Map<string, { copies: IssueRecordCopy[]; revisions: Set<string> }>();
+  interface IssueBucket {
+    readonly issueUid: string | null;
+    readonly storageKeys: Set<IssueStorageKey>;
+    readonly copies: IssueRecordCopy[];
+    readonly revisions: Set<string>;
+  }
+  const byUid = new Map<string, IssueBucket>();
+  const invalidByStorage = new Map<string, IssueBucket>();
   /**
    * A copy that does not parse is an item that WAS read and cannot be
    * understood, so it is reported on the reader alongside the unsearched refs:
@@ -106,31 +135,50 @@ export async function collectIssues(
     }
     return copy;
   };
-  const bucket = (issueId: string) => {
-    const existing = byId.get(issueId);
+  const bucket = (storageKeyValue: string, copy: IssueRecordCopy | null) => {
+    const storageKey = parseIssueStorageKey(storageKeyValue);
+    const issueUid = copy?.identity?.identity.uid ?? null;
+    const collection = issueUid === null ? invalidByStorage : byUid;
+    const key = issueUid ?? String(storageKey);
+    const existing = collection.get(key);
     if (existing !== undefined) return existing;
-    const created = { copies: [] as IssueRecordCopy[], revisions: new Set<string>() };
-    byId.set(issueId, created);
+    const created: IssueBucket = {
+      issueUid,
+      storageKeys: new Set<IssueStorageKey>(),
+      copies: [],
+      revisions: new Set<string>(),
+    };
+    collection.set(key, created);
     return created;
   };
 
   for (const target of refs) {
     if (!(await reader.openRef(target))) continue;
-    for (const issueId of await reader.childDirectories(target.storeRef, issuesTreePath())) {
-      const text = await reader.blob(target.storeRef, issueRecordBlobPath(issueId));
-      const entry = bucket(issueId);
+    for (const storageKey of await reader.childDirectories(target.storeRef, issuesTreePath())) {
+      const text = await reader.blob(target.storeRef, issueRecordBlobPath(storageKey));
+      const copy =
+        text === null
+          ? null
+          : noteIfUnreadable(
+              storageKey,
+              copyFrom(
+                text,
+                target.storeRef,
+                target.targetLineId,
+                issueRecordBlobPath(storageKey),
+                storeUid,
+                storageKey
+              ),
+              issueRecordBlobPath(storageKey)
+            );
+      const entry = bucket(storageKey, copy);
+      entry.storageKeys.add(parseIssueStorageKey(storageKey));
       if (text !== null) {
-        entry.copies.push(
-          noteIfUnreadable(
-            issueId,
-            copyFrom(text, target.storeRef, target.targetLineId, issueRecordBlobPath(issueId)),
-            issueRecordBlobPath(issueId)
-          )
-        );
+        entry.copies.push(copy as IssueRecordCopy);
       }
       for (const name of await reader.childBlobs(
         target.storeRef,
-        issuePlansTreePath(issueId)
+        issuePlansTreePath(storageKey)
       )) {
         if (name.endsWith('.yaml')) entry.revisions.add(name.slice(0, -'.yaml'.length));
       }
@@ -142,31 +190,48 @@ export async function collectIssues(
   // from the ONE contract path of a probe member rather than a hand-joined
   // `rasen/issues`, the same way the catalog families are addressed.
   const issuesRoot = path.dirname(
-    resolveStorePlanningLayoutV2Path(storeCheckoutRoot, { kind: 'issue', issueId: 'probe' })
+    resolveStorePlanningLayoutV2Path(storeCheckoutRoot, {
+      kind: 'issue',
+      issueStorageKey: parseIssueStorageKey('probe'),
+    })
   );
-  for (const issueId of await dependencies.fs.listNames(issuesRoot)) {
-    const recordPath = safeIssueRecordPath(storeCheckoutRoot, issueId);
+  for (const storageKey of await dependencies.fs.listNames(issuesRoot)) {
+    const recordPath = safeIssueRecordPath(storeCheckoutRoot, storageKey);
     if (recordPath === null) continue;
     const text = await dependencies.fs.readText(recordPath);
-    const entry = bucket(issueId);
+    const copy =
+      text === null
+        ? null
+        : noteIfUnreadable(
+            storageKey,
+            copyFrom(text, null, null, recordPath, storeUid, storageKey),
+            recordPath
+          );
+    const entry = bucket(storageKey, copy);
+    entry.storageKeys.add(parseIssueStorageKey(storageKey));
     if (text !== null) {
-      entry.copies.push(
-        noteIfUnreadable(issueId, copyFrom(text, null, null, recordPath), recordPath)
-      );
+      entry.copies.push(copy as IssueRecordCopy);
     }
-    const plansDir = safeIssuePlansPath(storeCheckoutRoot, issueId);
+    const plansDir = safeIssuePlansPath(storeCheckoutRoot, storageKey);
     if (plansDir === null) continue;
     for (const name of await dependencies.fs.listNames(plansDir)) {
       if (name.endsWith('.yaml')) entry.revisions.add(name.slice(0, -'.yaml'.length));
     }
   }
 
-  return [...byId.entries()]
-    .map(([issueId, entry]) => ({
+  return [...byUid.values(), ...invalidByStorage.values()]
+    .map(entry => {
+      const issueId =
+        entry.issueUid === null
+          ? String([...entry.storageKeys][0] ?? '')
+          : entry.issueUid;
+      return {
+      issueUid: entry.issueUid,
       issueId,
+      storageKeys: [...entry.storageKeys],
       copies: entry.copies,
       revisionIds: [...entry.revisions].sort(),
-    }))
+    };})
     .filter(entry => entry.copies.length > 0 || entry.revisionIds.length > 0)
     .sort((left, right) => left.issueId.localeCompare(right.issueId));
 }
@@ -178,7 +243,10 @@ export async function collectIssues(
  */
 function safeIssueRecordPath(storeRoot: string, issueId: string): string | null {
   try {
-    return resolveStorePlanningLayoutV2Path(storeRoot, { kind: 'issue-record', issueId });
+    return resolveStorePlanningLayoutV2Path(storeRoot, {
+      kind: 'issue-record',
+      issueStorageKey: parseIssueStorageKey(issueId),
+    });
   } catch {
     return null;
   }
@@ -186,21 +254,26 @@ function safeIssueRecordPath(storeRoot: string, issueId: string): string | null 
 
 function safeIssuePlansPath(storeRoot: string, issueId: string): string | null {
   try {
-    return resolveStorePlanningLayoutV2Path(storeRoot, { kind: 'execution-plans', issueId });
+    return resolveStorePlanningLayoutV2Path(storeRoot, {
+      kind: 'execution-plans',
+      issueStorageKey: parseIssueStorageKey(issueId),
+    });
   } catch {
     return null;
   }
 }
 
 /**
- * Divergence over COMMITTED copies only: two Store refs carrying byte-differing
- * records for one Issue id. Every copy is listed with its ref and none is
- * presented as the record.
+ * Divergence over COMMITTED bytes, plus an identity/storage collision in any
+ * visible source. A working-tree edit of one physical Issue remains a normal
+ * uncommitted copy, but two storage locations claiming one UID can never be
+ * collapsed to whichever directory happened to enumerate first.
  */
 export function divergenceOf(copies: readonly IssueRecordCopy[]): IssueDivergence | null {
+  const storageKeys = new Set(copies.map(copy => String(copy.storageKey)));
   const committed = copies.filter(copy => copy.storeRef !== null);
   const digests = new Set(committed.map(copy => copy.sha256));
-  if (digests.size <= 1) return null;
+  if (storageKeys.size <= 1 && digests.size <= 1) return null;
   return {
     copies: [...copies].sort((left, right) =>
       `${left.storeRef ?? ''}`.localeCompare(`${right.storeRef ?? ''}`)
@@ -213,11 +286,31 @@ export function divergenceOf(copies: readonly IssueRecordCopy[]): IssueDivergenc
  * copy is preferred over the working-tree one, because committed content is the
  * portable evidence.
  */
-export function presentedRecord(copies: readonly IssueRecordCopy[]): IssueRecordV1 | null {
+export function presentedRecord(copies: readonly IssueRecordCopy[]): StoredIssueRecord | null {
+  return presentedCopy(copies)?.record ?? null;
+}
+
+/** The same chosen copy as `presentedRecord`, projected without its storage locator. */
+export function presentedIdentity(
+  copies: readonly IssueRecordCopy[]
+): NonNullable<IssueRecordCopy['identity']>['identity'] | null {
+  return presentedCopy(copies)?.identity?.identity ?? null;
+}
+
+/** Internal selected-copy view. Consumers must project `.identity` before serialization. */
+export function presentedResolution(
+  copies: readonly IssueRecordCopy[]
+): NonNullable<IssueRecordCopy['identity']> | null {
+  return presentedCopy(copies)?.identity ?? null;
+}
+
+function presentedCopy(copies: readonly IssueRecordCopy[]): IssueRecordCopy | null {
   if (divergenceOf(copies) !== null) return null;
-  const committed = copies.find(copy => copy.storeRef !== null && copy.record !== null);
-  if (committed?.record != null) return committed.record;
-  return copies.find(copy => copy.record !== null)?.record ?? null;
+  const committed = copies.find(
+    copy => copy.storeRef !== null && copy.record !== null && copy.identity !== null
+  );
+  if (committed !== undefined) return committed;
+  return copies.find(copy => copy.record !== null && copy.identity !== null) ?? null;
 }
 
 /**
@@ -236,7 +329,7 @@ export function presentedDiagnostic(copies: readonly IssueRecordCopy[]): string 
 }
 
 export interface RevisionRead {
-  readonly revision: ExecutionPlanRevisionV1 | null;
+  readonly revision: StoredExecutionPlanRevision | null;
   readonly diagnostic: string | null;
   readonly foundAt: string | null;
 }
@@ -252,13 +345,24 @@ export async function readRevision(
   reader: RefReader,
   refs: readonly StoreRefTarget[],
   storeCheckoutRoot: string,
-  issueId: string,
+  owner: ResolvedIssueIdentity,
   revisionId: string
 ): Promise<RevisionRead> {
   const parseInto = (text: string, foundAt: string): RevisionRead => {
     try {
+      const revision = parseExecutionPlanRevision(text, { verifyDigest: true });
+      const ownerMatches =
+        revision.version === 2
+          ? revision.issueUid === owner.identity.uid
+          : owner.sourceVersion === 1 && String(revision.issueId) === String(owner.storageKey);
+      if (!ownerMatches) {
+        const actualOwner = revision.version === 2 ? revision.issueUid : revision.issueId;
+        throw new Error(
+          `issue_resource_identity_mismatch: Execution Plan owner '${actualOwner}' does not match Issue '${owner.identity.uid}'.`
+        );
+      }
       return {
-        revision: parseExecutionPlanRevision(text, { verifyDigest: true }),
+        revision,
         diagnostic: null,
         foundAt,
       };
@@ -269,14 +373,17 @@ export async function readRevision(
 
   for (const target of refs) {
     if (!(await reader.openRef(target))) continue;
-    const text = await reader.blob(target.storeRef, revisionBlobPath(issueId, revisionId));
+    const text = await reader.blob(
+      target.storeRef,
+      revisionBlobPath(String(owner.storageKey), revisionId)
+    );
     if (text !== null) return parseInto(text, target.storeRef);
   }
   let localPath: string;
   try {
     localPath = resolveStorePlanningLayoutV2Path(storeCheckoutRoot, {
       kind: 'execution-plan',
-      issueId,
+      issueStorageKey: owner.storageKey,
       revisionId,
     });
   } catch (error) {

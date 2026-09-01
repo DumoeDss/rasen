@@ -7,7 +7,7 @@
  * both of which are inspectable.
  */
 import { StoreError } from '../errors.js';
-import type { StoreIssueErrorCode } from './types.js';
+import type { IssuePublicationRecovery, StoreIssueErrorCode } from './types.js';
 
 export interface IssueDisagreement {
   /** What the record/declaration says. */
@@ -17,12 +17,14 @@ export interface IssueDisagreement {
   readonly target?: string;
   readonly fix?: string;
   readonly cause?: unknown;
+  readonly recovery?: IssuePublicationRecovery;
 }
 
 export class StoreIssueError extends StoreError {
   readonly issueCode: StoreIssueErrorCode;
   readonly expected?: string;
   readonly actual?: string;
+  readonly recovery?: IssuePublicationRecovery;
 
   constructor(
     code: StoreIssueErrorCode,
@@ -32,11 +34,13 @@ export class StoreIssueError extends StoreError {
     super(message, code, {
       ...(disagreement.target === undefined ? {} : { target: disagreement.target }),
       ...(disagreement.fix === undefined ? {} : { fix: disagreement.fix }),
+      ...(disagreement.recovery === undefined ? {} : { recovery: disagreement.recovery }),
     });
     this.name = 'StoreIssueError';
     this.issueCode = code;
     if (disagreement.expected !== undefined) this.expected = disagreement.expected;
     if (disagreement.actual !== undefined) this.actual = disagreement.actual;
+    if (disagreement.recovery !== undefined) this.recovery = disagreement.recovery;
     if (disagreement.cause !== undefined) {
       (this as { cause?: unknown }).cause = disagreement.cause;
     }

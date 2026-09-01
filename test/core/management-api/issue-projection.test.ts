@@ -149,6 +149,8 @@ function parseCliJson(result: RunCLIResult): any {
 describe('the Issue projection reads', { timeout: 180_000 }, () => {
   let f: StoreWorkspaceFixture;
   let space: ResolvedStoreSpace;
+  let deltaUid: string;
+  let brokenUid: string;
   let handle: ManagementServerHandle | undefined;
   let originalEnv: NodeJS.ProcessEnv;
 
@@ -208,7 +210,9 @@ describe('the Issue projection reads', { timeout: 180_000 }, () => {
     // names a predecessor and the delta derives.
     const first = seedAndCommit('delta-one', 'a1'.repeat(16));
     const second = seedAndCommit('delta-two', 'b2'.repeat(16));
-    unwrap(await handleStoreIssueCreate(space, { issueId: DELTA_ISSUE, title: 'Delta Issue' }));
+    deltaUid = unwrap(
+      await handleStoreIssueCreate(space, { issueId: DELTA_ISSUE, title: 'Delta Issue' })
+    ).identity.uid;
     unwrap(
       await handleStorePublishPlan(space, {
         issueId: DELTA_ISSUE,
@@ -255,7 +259,9 @@ describe('the Issue projection reads', { timeout: 180_000 }, () => {
     // recorded digest key is damaged in place and re-committed, so BOTH the
     // committed blob and the checkout copy fail to read back.
     const third = seedAndCommit('broken-one', 'c3'.repeat(16));
-    unwrap(await handleStoreIssueCreate(space, { issueId: BROKEN_ISSUE, title: 'Broken Issue' }));
+    brokenUid = unwrap(
+      await handleStoreIssueCreate(space, { issueId: BROKEN_ISSUE, title: 'Broken Issue' })
+    ).identity.uid;
     unwrap(
       await handleStorePublishPlan(space, {
         issueId: BROKEN_ISSUE,
@@ -274,7 +280,7 @@ describe('the Issue projection reads', { timeout: 180_000 }, () => {
     );
     commitStore('publish issue plans');
 
-    const brokenRevision = f.at('rasen', 'issues', BROKEN_ISSUE, 'plans', '0001.yaml');
+    const brokenRevision = f.at('rasen', 'issues', brokenUid, 'plans', '0001.yaml');
     fs.writeFileSync(
       brokenRevision,
       fs.readFileSync(brokenRevision, 'utf8').replace('contentSha256:', 'contentSha256X:'),
@@ -299,7 +305,11 @@ describe('the Issue projection reads', { timeout: 180_000 }, () => {
   it('the list carries each Issue`s status beside its summary', async () => {
     const payload = unwrap(await handleStoreIssueProjections(space, await runState()));
 
-    expect(payload.issues.map(entry => entry.issueId).sort()).toEqual([BROKEN_ISSUE, DELTA_ISSUE]);
+    expect(payload.issues.map(entry => entry.issueId).sort()).toEqual([brokenUid, deltaUid].sort());
+    expect(payload.issues.map(entry => entry.identity?.uid).sort()).toEqual(
+      [brokenUid, deltaUid].sort()
+    );
+    expect(JSON.stringify(payload)).not.toContain('"storageKey"');
     for (const entry of payload.issues) {
       // The three axes, present and separate — never blended.
       expect(typeof entry.status.phase).toBe('string');
@@ -317,10 +327,10 @@ describe('the Issue projection reads', { timeout: 180_000 }, () => {
     commitStore('resolve the broken issue');
 
     const open = unwrap(await handleStoreIssueProjections(space, await runState(), 'open'));
-    expect(open.issues.map(entry => entry.issueId)).toEqual([DELTA_ISSUE]);
+    expect(open.issues.map(entry => entry.issueId)).toEqual([deltaUid]);
 
     const resolved = unwrap(await handleStoreIssueProjections(space, await runState(), 'resolved'));
-    expect(resolved.issues.map(entry => entry.issueId)).toEqual([BROKEN_ISSUE]);
+    expect(resolved.issues.map(entry => entry.issueId)).toEqual([brokenUid]);
   });
 
   it('the single-Issue read carries status, delivery, and review together, with the revision delta', async () => {
@@ -336,7 +346,8 @@ describe('the Issue projection reads', { timeout: 180_000 }, () => {
       'unsearchedRefs',
       'problems',
     ]);
-    expect(payload.issue.issueId).toBe(DELTA_ISSUE);
+    expect(payload.issue.issueId).toBe(deltaUid);
+    expect(payload.issue.identity?.uid).toBe(deltaUid);
     expect(payload.plan?.revisionId).toBe('0002');
     // The predecessor input reached the projection: a composition that dropped
     // it would report `delta: null` here with no error anywhere.
@@ -344,7 +355,7 @@ describe('the Issue projection reads', { timeout: 180_000 }, () => {
     expect(payload.status.delta?.supersedes).toBe('0001');
     expect(payload.status.delta?.added).toEqual(['g-two']);
     // Review rides the detail — no fourth path, derived from the same status.
-    expect(payload.review.issueId).toBe(DELTA_ISSUE);
+    expect(payload.review.issueId).toBe(deltaUid);
     expect(payload.review.revisionId).toBe('0002');
     expect(payload.review.determination.kind).toBeTruthy();
     // Delivery is the rollup over the same status's nodes.
@@ -368,15 +379,51 @@ describe('the Issue projection reads', { timeout: 180_000 }, () => {
     expect(scan.narrowed).toBe(false);
     expect(scan.issueId).toBeNull();
     expect(scan.scannedCount).toBe(2);
-    expect(scan.scanned.map(entry => entry.issueId).sort()).toEqual([BROKEN_ISSUE, DELTA_ISSUE]);
+    expect(scan.scanned.map(entry => entry.issueId).sort()).toEqual([brokenUid, deltaUid].sort());
     // The damaged plan is an attention item, not a dropped Issue.
-    expect(scan.items.some(item => item.issueId === BROKEN_ISSUE && item.kind === 'problem')).toBe(true);
+    expect(scan.items.some(item => item.issueId === brokenUid && item.kind === 'problem')).toBe(true);
 
     const narrowed = unwrap(await handleStoreIssueAttention(space, await runState(), DELTA_ISSUE));
     expect(narrowed.narrowed).toBe(true);
-    expect(narrowed.issueId).toBe(DELTA_ISSUE);
+    expect(narrowed.issueId).toBe(deltaUid);
     expect(narrowed.scannedCount).toBe(1);
-    expect(narrowed.items.every(item => item.issueId === DELTA_ISSUE)).toBe(true);
+    expect(narrowed.items.every(item => item.issueId === deltaUid)).toBe(true);
+  });
+
+  it('narrows a divergent Issue by its compatible alias instead of reporting it unknown', async () => {
+    const releaseCatalog = f.at('.rasen-store', 'target-lines', 'release.yaml');
+    fs.writeFileSync(
+      releaseCatalog,
+      [
+        'version: 1',
+        'id: release',
+        'storeRef: refs/heads/release',
+        'projects:',
+        `  ${PROJECT}:`,
+        '    codeRef: refs/heads/main',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+    commitStore('declare release ref for divergent attention');
+    f.git(f.storeRoot, ['branch', 'release']);
+    f.git(f.storeRoot, ['checkout', 'release']);
+    const recordPath = f.at('rasen', 'issues', deltaUid, 'issue.yaml');
+    fs.writeFileSync(
+      recordPath,
+      fs.readFileSync(recordPath, 'utf8').replace('title: Delta Issue', 'title: Divergent Delta Issue'),
+      'utf8'
+    );
+    commitStore('diverge delta Issue on release');
+    f.git(f.storeRoot, ['checkout', 'main']);
+
+    const narrowed = unwrap(
+      await handleStoreIssueAttention(space, await runState(), DELTA_ISSUE)
+    );
+    expect(narrowed.narrowed).toBe(true);
+    expect(narrowed.issueId).toBe(deltaUid);
+    expect(narrowed.scannedCount).toBe(1);
+    expect(narrowed.scanned[0]?.issueId).toBe(deltaUid);
   });
 
   it('refuses attention narrowing to an unknown Issue with 404 and the store`s own code', async () => {
@@ -389,25 +436,20 @@ describe('the Issue projection reads', { timeout: 180_000 }, () => {
     );
   });
 
-  it('answers an unknown Issue exactly as the command line does — an empty read, not a refusal', async () => {
-    // `StoreQueryModule.showIssue` never throws on an Issue it cannot find: it
-    // answers with an empty-record read (`query/index.ts`: "A query never
-    // asserts a state it cannot prove and never throws on one"), and the CLI
-    // prints that payload with exit 0. A server-side 404 here would be the
-    // server maintaining its OWN translation of a read the command line
-    // reports differently — precisely the parity the requirement forbids
-    // breaking. The unknown-Issue REFUSAL on this surface is the attention
-    // narrowing above, which is a refusal on both sides.
-    const payload = unwrap(await handleStoreIssueProjection(space, await runState(), 'no-such-issue'));
-    expect(payload.issue.issueId).toBe('no-such-issue');
-    expect(payload.issue.record).toBeNull();
-    expect(payload.plan).toBeNull();
-    expect(payload.status.nodes).toEqual([]);
-    expect(payload.review.determination.kind).toBe('no-plan');
+  it('maps an unknown single-Issue projection to issue_not_found', async () => {
+    expectRefused(
+      await handleStoreIssueProjection(space, await runState(), 'no-such-issue'),
+      404,
+      'issue_not_found'
+    );
   });
 
   it('refuses a single-Issue read with no issueId rather than answering for some Issue', async () => {
-    expectRefused(await handleStoreIssueProjection(space, await runState(), undefined), 400, 'issue_id_required');
+    expectRefused(
+      await handleStoreIssueProjection(space, await runState(), undefined),
+      400,
+      'issue_selector_required'
+    );
   });
 
   it('refuses an absent space selector — no launch-store fallback', async () => {
@@ -427,11 +469,11 @@ describe('the Issue projection reads', { timeout: 180_000 }, () => {
     expect(detail.status.problems.some(problem => problem.kind === 'unreadable-plan')).toBe(true);
     expect(detail.status.complete).toBe(false);
     // The Issue is still answered in full: what derived, derived.
-    expect(detail.issue.issueId).toBe(BROKEN_ISSUE);
+    expect(detail.issue.issueId).toBe(brokenUid);
     expect(detail.review.determination.kind).toBeTruthy();
 
     const list = unwrap(await handleStoreIssueProjections(space, await runState()));
-    const broken = list.issues.find(entry => entry.issueId === BROKEN_ISSUE);
+    const broken = list.issues.find(entry => entry.issueId === brokenUid);
     expect(broken, 'the unreadable Issue is reported, never dropped from the list').toBeDefined();
     expect(broken?.status.problems.some(problem => problem.kind === 'unreadable-plan')).toBe(true);
   });
@@ -533,16 +575,6 @@ describe('the Issue projection reads', { timeout: 180_000 }, () => {
           label: 'issue-attention (narrowed)',
           apiPath: `/api/v1/stores/issue-attention?${selector}&issueId=${DELTA_ISSUE}`,
           cliArgs: ['store', 'attention', '--store', f.storeId, '--issue', DELTA_ISSUE, '--json'],
-        },
-        {
-          // The unknown-Issue read: both surfaces answer it, and they answer
-          // it the same way. Pinned as a PAIR rather than as a status code, so
-          // the property under test stays "the two agree" — if the query ever
-          // starts refusing here, this pair keeps passing only while both
-          // sides move together.
-          label: 'issue-projection (unknown Issue)',
-          apiPath: `/api/v1/stores/issue-projection?${selector}&issueId=no-such-issue`,
-          cliArgs: ['store', 'issue', 'show', 'no-such-issue', '--store', f.storeId, '--json'],
         },
       ];
 

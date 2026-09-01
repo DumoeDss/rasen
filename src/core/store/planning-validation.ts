@@ -4,6 +4,10 @@ declare const projectIdBrand: unique symbol;
 declare const targetLineIdBrand: unique symbol;
 declare const changeIdBrand: unique symbol;
 declare const issueIdBrand: unique symbol;
+declare const issueUidBrand: unique symbol;
+declare const issueKeyBrand: unique symbol;
+declare const issueSelectorBrand: unique symbol;
+declare const issueStorageKeyBrand: unique symbol;
 declare const executionPlanRevisionIdBrand: unique symbol;
 declare const gitRefBrand: unique symbol;
 declare const gitOidBrand: unique symbol;
@@ -14,6 +18,10 @@ export type ProjectId = string & { readonly [projectIdBrand]: true };
 export type TargetLineId = string & { readonly [targetLineIdBrand]: true };
 export type ChangeId = string & { readonly [changeIdBrand]: true };
 export type IssueId = string & { readonly [issueIdBrand]: true };
+export type IssueUid = string & { readonly [issueUidBrand]: true };
+export type IssueKey = string & { readonly [issueKeyBrand]: true };
+export type IssueSelector = string & { readonly [issueSelectorBrand]: true };
+export type IssueStorageKey = string & { readonly [issueStorageKeyBrand]: true };
 export type ExecutionPlanRevisionId = string & {
   readonly [executionPlanRevisionIdBrand]: true;
 };
@@ -80,6 +88,7 @@ export const WINDOWS_RESERVED_DEVICE_NAMES: readonly string[] = Object.freeze([
 const RESERVED_DEVICE_NAME_SET = new Set(WINDOWS_RESERVED_DEVICE_NAMES);
 const LOWERCASE_UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+const ISSUE_KEY_PATTERN = /^ISS-[0-9A-HJKMNP-TV-Z]{16}$/u;
 const TARGET_LINE_PATTERN = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/u;
 const LOWERCASE_HEX_40_OR_64 = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
 const LOWERCASE_HEX_64 = /^[0-9a-f]{64}$/u;
@@ -197,6 +206,47 @@ export function isIssueId(value: unknown): value is IssueId {
   } catch {
     return false;
   }
+}
+
+/** An immutable machine identity. It is never inferred from a selector or title. */
+export function parseIssueUid(value: string, field = 'issueUid'): IssueUid {
+  if (!LOWERCASE_UUID_PATTERN.test(value)) {
+    throw invalid(field, 'must be a canonical lowercase UUID');
+  }
+  return value as IssueUid;
+}
+
+export function isIssueUid(value: unknown): value is IssueUid {
+  if (typeof value !== 'string') return false;
+  try {
+    parseIssueUid(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The immutable human reference projected from an Issue UID. */
+export function parseIssueKey(value: string, field = 'issueKey'): IssueKey {
+  if (!ISSUE_KEY_PATTERN.test(value)) {
+    throw invalid(field, 'must be ISS- followed by 16 uppercase Crockford Base32 characters');
+  }
+  return value as IssueKey;
+}
+
+/**
+ * An internal physical locator. V2 uses a UUID; V1 keeps its portable kebab
+ * directory. This type never crosses a wire boundary.
+ */
+export function parseIssueStorageKey(
+  value: string,
+  field = 'issueStorageKey'
+): IssueStorageKey {
+  assertPortableSegment(value, field);
+  if (!LOWERCASE_UUID_PATTERN.test(value) && !isKebabId(value)) {
+    throw invalid(field, 'must be a canonical lowercase UUID or lowercase kebab id');
+  }
+  return value as IssueStorageKey;
 }
 
 /** The fixed width of an Execution Plan revision ordinal. */

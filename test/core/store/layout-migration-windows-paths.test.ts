@@ -20,6 +20,7 @@ import {
   resolveStorePlanningLayoutV2Path,
   type StorePlanningPathFlavor,
 } from '../../../src/core/store/planning-layout-v2.js';
+import { parseIssueStorageKey } from '../../../src/core/store/planning-validation.js';
 import {
   migrationItemStateLabel,
   type ImmutableMigrationPlan,
@@ -83,21 +84,21 @@ describe('store layout v2 migration — Windows and POSIX destination constructi
     expect(
       resolveStorePlanningLayoutV2Path(
         'c:/Stores/Team',
-        { kind: 'issue-record', issueId: 'release-coordinator' },
+        { kind: 'issue-record', issueStorageKey: parseIssueStorageKey('release-coordinator') },
         'win32'
       )
     ).toBe('c:\\Stores\\Team\\rasen\\issues\\release-coordinator\\issue.yaml');
     expect(
       resolveStorePlanningLayoutV2Path(
         '\\\\server\\share\\Team',
-        { kind: 'issue', issueId: 'release-coordinator' },
+        { kind: 'issue', issueStorageKey: parseIssueStorageKey('release-coordinator') },
         'win32'
       )
     ).toBe('\\\\server\\share\\Team\\rasen\\issues\\release-coordinator');
     const longRoot = `\\\\?\\C:\\stores\\${'deep\\'.repeat(40)}team`;
     const destination = resolveStorePlanningLayoutV2Path(
       longRoot,
-      { kind: 'issue', issueId: 'release-coordinator' },
+      { kind: 'issue', issueStorageKey: parseIssueStorageKey('release-coordinator') },
       'win32'
     );
     expect(destination.startsWith('\\\\?\\C:\\stores\\')).toBe(true);
@@ -107,12 +108,12 @@ describe('store layout v2 migration — Windows and POSIX destination constructi
   it('keeps POSIX case-sensitive siblings distinct while exposing their case-fold collision', () => {
     const lower = resolveStorePlanningLayoutV2Path(
       '/stores/team',
-      { kind: 'issue', issueId: 'release-coordinator' },
+      { kind: 'issue', issueStorageKey: parseIssueStorageKey('release-coordinator') },
       'posix'
     );
     const upper = resolveStorePlanningLayoutV2Path(
       '/stores/Team',
-      { kind: 'issue', issueId: 'release-coordinator' },
+      { kind: 'issue', issueStorageKey: parseIssueStorageKey('release-coordinator') },
       'posix'
     );
     expect(lower).not.toBe(upper);

@@ -53,6 +53,7 @@ function expectOk(result: RunCLIResult): RunCLIResult {
 describe('rasen store issue show — the review view', () => {
   let f: StoreWorkspaceFixture;
   let execRoot: string;
+  let issueIdentities: Map<string, { readonly uid: string; readonly key: string }>;
 
   beforeEach(async () => {
     f = await createStoreWorkspaceFixture({
@@ -62,6 +63,7 @@ describe('rasen store issue show — the review view', () => {
     });
     execRoot = f.beside('exec');
     f.write(path.join(execRoot, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+    issueIdentities = new Map();
   });
 
   afterEach(() => {
@@ -98,10 +100,15 @@ describe('rasen store issue show — the review view', () => {
    * revision — the gate holds while every node-scoped thread kind stands.
    */
   async function createReadyIssue(): Promise<void> {
-    await run(
-      ['store', 'issue', 'new', ISSUE_READY, '--store', f.storeId, '--title', 'Review CLI ready', '--json'],
-      f.storeRoot
+    const created = parseJson(
+      expectOk(
+        await run(
+          ['store', 'issue', 'new', ISSUE_READY, '--store', f.storeId, '--title', 'Review CLI ready', '--json'],
+          f.storeRoot
+        )
+      )
     );
+    issueIdentities.set(ISSUE_READY, created.identity);
     const archived = f.seedChange({
       root: f.storeRoot,
       projectId: PROJECT,
@@ -221,7 +228,7 @@ describe('rasen store issue show — the review view', () => {
       )
     );
     // The review key rides beside status and delivery, same derivation.
-    expect(json.review.issueId).toBe(ISSUE_READY);
+    expect(json.review.issueId).toBe(issueIdentities.get(ISSUE_READY)?.uid);
     expect(json.review.revisionId).toBe('0001');
     expect(json.review.determination).toEqual({
       kind: 'review-ready',
@@ -374,9 +381,13 @@ describe('rasen store issue show — the review view', () => {
 
   it('maps a present-but-unverifiable record to accepted with the absence named', { timeout: 120_000 }, async () => {
     const ISSUE = 'review-cli-tampered';
-    await run(
-      ['store', 'issue', 'new', ISSUE, '--store', f.storeId, '--title', 'Review CLI tampered', '--json'],
-      f.storeRoot
+    const created = parseJson(
+      expectOk(
+        await run(
+          ['store', 'issue', 'new', ISSUE, '--store', f.storeId, '--title', 'Review CLI tampered', '--json'],
+          f.storeRoot
+        )
+      )
     );
     const active = f.seedChange({
       root: f.storeRoot,
@@ -413,7 +424,7 @@ describe('rasen store issue show — the review view', () => {
     // The record's bytes are tampered AFTER acceptance: one field no longer
     // matches the digest the record froze, so the read finds the record
     // present but unverifiable — the standing unreadable-acceptance problem.
-    const recordPath = f.at('rasen', 'issues', ISSUE, 'accepted.yaml');
+    const recordPath = f.at('rasen', 'issues', created.identity.uid, 'accepted.yaml');
     const tampered = fs
       .readFileSync(recordPath, 'utf8')
       .replace('acceptedAt: 2026-', 'acceptedAt: 1999-');
@@ -474,7 +485,9 @@ describe('rasen store issue show — the review view', () => {
     expect(human.stdout).not.toContain('optional-open');
     expect(human.stdout).not.toContain('archive-pending');
     expect(human.stdout).not.toContain('evidence-missing');
-    expect(human.stdout).toMatch(new RegExp(`${ISSUE_READY}  \\[open\\]`, 'u'));
+    expect(human.stdout).toMatch(
+      new RegExp(`${issueIdentities.get(ISSUE_READY)?.key}  \\[open\\]`, 'u')
+    );
 
     const json = parseJson(
       expectOk(await run(['store', 'issue', 'list', '--store', f.storeId, '--json'], execRoot))

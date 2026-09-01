@@ -27,6 +27,7 @@ import {
 } from '../../../src/core/index.js';
 import { writeStoreMetadataState } from '../../../src/core/store/foundation.js';
 import { productionStoreIssueDependencies } from '../../../src/core/store/issues/dependencies.js';
+import { deriveLegacyIssueUid } from '../../../src/core/store/issues/identity.js';
 import { issueLockKey, withIssueLock } from '../../../src/core/store/issues/locks.js';
 import { StoreIssuesModule } from '../../../src/core/store/issues/module.js';
 import { StoreQueryModuleImpl } from '../../../src/core/store/query/module.js';
@@ -452,9 +453,10 @@ describe('store layout v2 migration — apply, recovery, and retirement', () => 
 
     const query = new StoreQueryModuleImpl();
     const queryInput = { store: STORE_ID, startPath: storeRoot, globalDataDir };
+    const legacyUid = deriveLegacyIssueUid(STORE_UID, 'release-coordinator');
     expect((await query.listIssues(queryInput)).issues).toEqual([
       expect.objectContaining({
-        issueId: 'release-coordinator',
+        issueId: legacyUid,
         record: expect.objectContaining({ state: 'open' }),
         latestRevisionId: null,
         uncommitted: true,
@@ -723,7 +725,7 @@ describe('store layout v2 migration — apply, recovery, and retirement', () => 
         })));
 
       await expect(issues.create({ ...scope, title: 'late create' })).rejects.toMatchObject({
-        issueCode: 'issue_already_exists',
+        issueCode: 'issue_alias_conflict',
       });
       await issues.publishPlan({
         ...scope,
@@ -752,15 +754,16 @@ describe('store layout v2 migration — apply, recovery, and retirement', () => 
     // Model another writer observing an already-published Store view before
     // this stale migration gets the key. The plan was frozen while flat; the
     // create is now a legal ordinary Issue command and must win unchanged.
+    const legacyMetadata = declaredLayoutVersion();
     await writeStoreMetadataState(storeRoot, {
       version: 2,
       uid: STORE_UID,
       id: STORE_ID,
       layoutVersion: 2,
     });
-    const metadataBefore = declaredLayoutVersion();
     const issueId = 'release-coordinator';
-    const recordPath = path.join(storeRoot, 'rasen', 'issues', issueId, 'issue.yaml');
+    const createUid = '22222222-2222-4222-8222-222222222222';
+    const recordPath = path.join(storeRoot, 'rasen', 'issues', createUid, 'issue.yaml');
     let announce!: () => void;
     let release!: () => void;
     const writeReached = new Promise<void>((resolve) => {
@@ -773,15 +776,20 @@ describe('store layout v2 migration — apply, recovery, and retirement', () => 
     const creator = new StoreIssuesModule({
       dependencies: {
         ...productionStoreIssueDependencies,
+        mintIssueUid: () => createUid,
         fs: {
           ...productionStoreIssueDependencies.fs,
-          async writeText(target, content) {
+          async writeTextAtomic(target, content, expectedBefore) {
+            await productionStoreIssueDependencies.fs.writeTextAtomic!(
+              target,
+              content,
+              expectedBefore
+            );
             if (!paused && path.resolve(target) === path.resolve(recordPath)) {
               paused = true;
               announce();
               await held;
             }
-            await productionStoreIssueDependencies.fs.writeText(target, content);
           },
         },
       },
@@ -789,15 +797,120 @@ describe('store layout v2 migration — apply, recovery, and retirement', () => 
     const scope = { store: STORE_ID, startPath: storeRoot, globalDataDir, issueId };
     const createPromise = creator.create({ ...scope, title: 'Created before migration' });
     await writeReached;
+    // Restore the exact flat metadata while the creator still owns allocation.
+    // The migration must reject the newly claimed alias, not merely the
+    // temporary layout flip that made the ordinary create legal.
+    fs.writeFileSync(at.metadata(), legacyMetadata, 'utf8');
     const applyPromise = instance.apply(token);
     release();
     await createPromise;
     const before = snapshotDirectory(path.dirname(recordPath));
 
-    await expect(applyPromise).rejects.toThrow(/now exists|no longer matches|stale/iu);
+    await expect(applyPromise).rejects.toThrow(/now identifies/iu);
     expect(snapshotDirectory(path.dirname(recordPath))).toEqual(before);
     expect(fs.readFileSync(recordPath, 'utf8')).toContain('Created before migration');
-    expect(declaredLayoutVersion()).toBe(metadataBefore);
+    expect(declaredLayoutVersion()).toBe(legacyMetadata);
+  }, 120_000);
+
+  it('refuses migration when another V2 Issue already owns the projected legacy UID', async () => {
+    const instance = migration();
+    const { token } = await coordinatorPlan(instance);
+    const legacyMetadata = declaredLayoutVersion();
+    await writeStoreMetadataState(storeRoot, {
+      version: 2,
+      uid: STORE_UID,
+      id: STORE_ID,
+      layoutVersion: 2,
+    });
+
+    const issueId = 'release-coordinator';
+    const projectedUid = deriveLegacyIssueUid(STORE_UID, issueId);
+    const creator = new StoreIssuesModule({
+      dependencies: {
+        ...productionStoreIssueDependencies,
+        mintIssueUid: () => projectedUid,
+      },
+    });
+    await creator.create({
+      store: STORE_ID,
+      startPath: storeRoot,
+      globalDataDir,
+      title: 'Allocated under another presentation',
+    });
+    fs.writeFileSync(at.metadata(), legacyMetadata, 'utf8');
+
+    const ownerRoot = path.join(storeRoot, 'rasen', 'issues', projectedUid);
+    const before = snapshotDirectory(ownerRoot);
+    await expect(instance.apply(token)).rejects.toThrow(/UID already belongs/iu);
+
+    expect(snapshotDirectory(ownerRoot)).toEqual(before);
+    expect(
+      fs.existsSync(path.join(storeRoot, 'rasen', 'issues', issueId))
+    ).toBe(false);
+    expect(declaredLayoutVersion()).toBe(legacyMetadata);
+  }, 120_000);
+
+  it('refuses migration when a declared Store ref already owns the generated alias', async () => {
+    const issueId = 'release-coordinator';
+    const otherUid = '33333333-3333-4333-8333-333333333333';
+    const legacyMetadata = declaredLayoutVersion();
+    git('switch', '-c', 'release');
+    await writeStoreMetadataState(storeRoot, {
+      version: 2,
+      uid: STORE_UID,
+      id: STORE_ID,
+      layoutVersion: 2,
+    });
+    await new StoreIssuesModule({
+      dependencies: {
+        ...productionStoreIssueDependencies,
+        mintIssueUid: () => otherUid,
+      },
+    }).create({
+      store: STORE_ID,
+      startPath: storeRoot,
+      globalDataDir,
+      issueId,
+      title: 'Already owned on the release ref',
+    });
+    fs.writeFileSync(at.metadata(), legacyMetadata, 'utf8');
+    git('add', '-A');
+    git('commit', '-m', 'claim migration alias on release ref');
+    git('switch', 'main');
+
+    const coordinator = path.join(storeRoot, 'rasen', 'changes', issueId);
+    fs.mkdirSync(coordinator, { recursive: true });
+    fs.writeFileSync(path.join(coordinator, 'proposal.md'), '# legacy coordinator\n', 'utf8');
+    fs.writeFileSync(
+      path.join(storeRoot, 'rasen', 'mapping.yaml'),
+      [
+        'version: 2',
+        `defaultTargetLine: ${TARGET_LINE}`,
+        'targetLines:',
+        `  ${TARGET_LINE}:`,
+        '    storeRef: refs/heads/release',
+        '    projects:',
+        `      ${PROJECT_ID}:`,
+        '        codeRef: refs/heads/main',
+        'changes:',
+        `  ${issueId}:`,
+        '    kind: store-issue',
+        `    issueId: ${issueId}`,
+        '    title: Coordinate the release',
+        '',
+      ].join('\n'),
+      'utf8'
+    );
+    git('add', '-A');
+    git('commit', '-m', 'plan coordinator conversion against release ref');
+
+    const instance = migration();
+    const plan = await instance.plan(input({ mappingPath: 'rasen/mapping.yaml' }));
+    expect(plan.applicable).toBe(true);
+    const before = snapshotDirectory(path.join(storeRoot, 'rasen'));
+    await expect(instance.apply(plan.token!)).rejects.toThrow(/no longer unique|now identifies/iu);
+    expect(snapshotDirectory(path.join(storeRoot, 'rasen'))).toEqual(before);
+    expect(fs.existsSync(path.join(storeRoot, 'rasen', 'issues', issueId))).toBe(false);
   }, 120_000);
 
   it('bounds a second same-ref migration with overlapping Issues and completes the first without deadlock', async () => {
@@ -895,7 +1008,7 @@ describe('store layout v2 migration — apply, recovery, and retirement', () => 
     let paused = false;
     const mainMigration = migration({
       checkpoint: async (event) => {
-        if (paused || event.kind !== 'generated-destination-precondition') return;
+        if (paused || event.kind !== 'layout-flip' || event.phase !== 'after') return;
         paused = true;
         announce();
         await held;
@@ -912,24 +1025,10 @@ describe('store layout v2 migration — apply, recovery, and retirement', () => 
       input({ startPath: disjointRoot, mappingPath: 'rasen/mapping.yaml' })
     );
     expect(disjointPlan.applicable).toBe(true);
-    await expect(disjointMigration.apply(disjointPlan.token!)).resolves.toMatchObject({
-      phase: 'published',
-      ref: 'refs/heads/disjoint-ref',
-    });
-    const disjointIssues = new StoreIssuesModule();
-    await disjointIssues.setState({
-      store: STORE_ID,
-      startPath: disjointRoot,
-      globalDataDir,
-      issueId: 'other-coordinator',
-      state: 'resolved',
-    });
+    await expect(disjointMigration.apply(disjointPlan.token!)).rejects.toThrow(/held by|lock/iu);
     expect(
-      fs.readFileSync(
-        path.join(disjointRoot, 'rasen', 'issues', 'other-coordinator', 'issue.yaml'),
-        'utf8'
-      )
-    ).toContain('state: resolved');
+      fs.existsSync(path.join(disjointRoot, 'rasen', 'issues', 'other-coordinator'))
+    ).toBe(false);
 
     await registerAt(storeRoot);
     await expect(
@@ -959,6 +1058,25 @@ describe('store layout v2 migration — apply, recovery, and retirement', () => 
     expect(
       fs.existsSync(path.join(storeRoot, 'rasen', 'issues', 'release-coordinator', 'issue.yaml'))
     ).toBe(true);
+    await registerAt(disjointRoot);
+    await expect(disjointMigration.apply(disjointPlan.token!)).resolves.toMatchObject({
+      phase: 'published',
+      ref: 'refs/heads/disjoint-ref',
+    });
+    const disjointIssues = new StoreIssuesModule();
+    await disjointIssues.setState({
+      store: STORE_ID,
+      startPath: disjointRoot,
+      globalDataDir,
+      issueId: 'other-coordinator',
+      state: 'resolved',
+    });
+    expect(
+      fs.readFileSync(
+        path.join(disjointRoot, 'rasen', 'issues', 'other-coordinator', 'issue.yaml'),
+        'utf8'
+      )
+    ).toContain('state: resolved');
     await registerAt(storeRoot);
   }, 180_000);
 
@@ -1019,7 +1137,10 @@ describe('store layout v2 migration — apply, recovery, and retirement', () => 
       let reacquired = false;
       await withIssueLock(
         productionStoreIssueDependencies.coordination(globalDataDir),
-        issueLockKey({ storeUid: STORE_UID, issueId }),
+        issueLockKey({
+          storeUid: STORE_UID,
+          issueUid: deriveLegacyIssueUid(STORE_UID, issueId),
+        }),
         async () => {
           reacquired = true;
         },
@@ -1151,7 +1272,10 @@ describe('store layout v2 migration — apply, recovery, and retirement', () => 
         {}
       )
     );
-    const key = issueLockKey({ storeUid: STORE_UID, issueId: 'release-coordinator' });
+    const key = issueLockKey({
+      storeUid: STORE_UID,
+      issueUid: deriveLegacyIssueUid(STORE_UID, 'release-coordinator'),
+    });
     await withIssueLock(
       productionStoreIssueDependencies.coordination(globalDataDir),
       key,

@@ -1991,7 +1991,12 @@
               "description": "ストアレベルのIssue（1つの変更よりも長く続く、プロジェクト横断の意図）を作成・参照します",
               "commands": {
                 "new": {
-                  "description": "新しいIssueを作成します。タイトルは推測されず、明示的に指定する必要があります",
+                  "description": "タイトルから新しいIssueを作成します。UIDと人間向けキーはシステムが割り当てます",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "非推奨の互換エイリアス。新しいIssueに保持されますが、UID・キー・ディレクトリは決定しません"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "Issueを追加するストア"
@@ -2023,6 +2028,11 @@
                 },
                 "show": {
                   "description": "1件のIssueと、存在する場合はその最新のExecution Planリビジョンを表示します",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID、生成キー、一意なslug、または互換性のある旧識別子"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "Issueを保持するストア"
@@ -2034,6 +2044,11 @@
                 },
                 "state": {
                   "description": "Issueの状態を遷移します。終端状態からは再遷移できません",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID、生成キー、一意なslug、または互換性のある旧識別子"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "Issueを保持するストア"
@@ -2051,6 +2066,11 @@
                 },
                 "plan": {
                   "description": "YAMLのノード一覧から、Issueの新しい不変のExecution Planリビジョンを発行します",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID、生成キー、一意なslug、または互換性のある旧識別子"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "Issueを保持するストア"
@@ -2071,6 +2091,11 @@
                 },
                 "acceptance": {
                   "description": "YAMLの条件リストから、Issueの不変な受け入れ条件リビジョンを新規公開します",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID、生成キー、一意なslug、または互換性のある旧識別子"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "Issueを保持するストア"
@@ -2085,6 +2110,11 @@
                 },
                 "accept": {
                   "description": "Issueを明示的に受け入れます。受け入れゲートを評価し、成立した場合のみ受け入れを記録してIssueをクローズします",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID、生成キー、一意なslug、または互換性のある旧識別子"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "Issueを保持するストア"
@@ -2099,6 +2129,11 @@
                 },
                 "start": {
                   "description": "次に実行する計画ノードのバインド済み実行コンテキストを解決し、起動契約を出力します。起動は解決と検証であり、プロセスを生成しません",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID、生成キー、一意なslug、または互換性のある旧識別子"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "Issueを保持するストア"
@@ -2116,6 +2151,11 @@
                 },
                 "confirm": {
                   "description": "指定したリビジョン（省略時は最新の読み取り可能なリビジョン）の確認レポートを構成します。検証済みの起動契約一式と未作成の Change を報告します。confirm は構成のみで何も書き込まず、起動はノードごとの操作のままです",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID、生成キー、一意なslug、または互換性のある旧識別子"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "Issueを保持するストア"
@@ -2130,6 +2170,11 @@
                 },
                 "ready": {
                   "description": "Issue の最新公開リビジョンの決定的な実行可能セットを報告します。実行可能な Change ノードごとに、非メンバーの退出理由・実行状態の可視ラベル・状態問題を併記します。読み取り専用で最新リビジョンのみ。スケジューラが扱うのは最新です",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID、生成キー、一意なslug、または互換性のある旧識別子"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "Issueを保持するストア"

@@ -78,6 +78,7 @@ describe('the acceptance gate', () => {
   });
   let execRoot: string;
   let changesDir: string;
+  let issueUid: string;
   const NO_WORK_DIR = async (): Promise<null> => null;
 
   beforeEach(async () => {
@@ -129,7 +130,8 @@ describe('the acceptance gate', () => {
   async function setupPlannedAndConditioned(
     ids: readonly string[]
   ): Promise<void> {
-    await issues().create({ ...scope(), issueId: ISSUE, title: 'Gate target' });
+    const created = await issues().create({ ...scope(), issueId: ISSUE, title: 'Gate target' });
+    issueUid = created.identity.uid;
     const nodes: readonly ExecutionPlanNodeInput[] = [
       {
         nodeId: 'g-001',
@@ -425,7 +427,7 @@ describe('the acceptance gate', () => {
 
   it('names an unreadable latest conditions revision when that is why none reads back', async () => {
     const ids = [seedAndCommit('child-a', 'a1'.repeat(16))];
-    await issues().create({ ...scope(), issueId: ISSUE, title: 'Gate target' });
+    const created = await issues().create({ ...scope(), issueId: ISSUE, title: 'Gate target' });
     await issues().publishPlan({
       ...scope(),
       issueId: ISSUE,
@@ -447,7 +449,13 @@ describe('the acceptance gate', () => {
       conditions: [{ id: 'cond-1', requirement: 'Shipped' }],
     });
     // Tamper the revision without re-digesting.
-    const revisionPath = f.at('rasen', 'issues', ISSUE, 'acceptance', '0001.yaml');
+    const revisionPath = f.at(
+      'rasen',
+      'issues',
+      created.identity.uid,
+      'acceptance',
+      '0001.yaml'
+    );
     fs.writeFileSync(
       revisionPath,
       fs.readFileSync(revisionPath, 'utf8').replace('Shipped', 'SHIPPED'),
@@ -496,10 +504,12 @@ describe('the acceptance gate', () => {
     });
     f.git(f.storeRoot, ['add', '-A']);
     f.git(f.storeRoot, ['commit', '-m', 'resolve + accept']);
-    const acceptedPath = f.at('rasen', 'issues', ISSUE, 'accepted.yaml');
+    const acceptedPath = f.at('rasen', 'issues', issueUid, 'accepted.yaml');
     fs.writeFileSync(
       acceptedPath,
-      fs.readFileSync(acceptedPath, 'utf8').replace('issueId: ' + ISSUE, 'issueId: tampered'),
+      fs
+        .readFileSync(acceptedPath, 'utf8')
+        .replace('issueUid: ' + issueUid, 'issueUid: 00000000-0000-4000-8000-000000000000'),
       'utf8'
     );
 

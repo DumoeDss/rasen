@@ -24,7 +24,9 @@ import {
 import {
   StoreIssueError,
   StoreIssuesModule,
+  acceptanceConditionsDigest,
   productionStoreIssueDependencies,
+  serializeAcceptanceConditionsRevision,
   withDeterministicIssueClock,
   type AcceptanceGateSnapshot,
 } from '../../../src/core/store/issues/index.js';
@@ -49,6 +51,7 @@ const CONDITIONS = [
 
 describe('the acceptance mutations', () => {
   let f: StoreWorkspaceFixture;
+  let issueUid: string;
   const scope = () => ({
     store: f.storeId,
     startPath: f.storeRoot,
@@ -61,6 +64,7 @@ describe('the acceptance mutations', () => {
       projects: [PROJECT],
       lines: [{ id: LINE, storeRef: 'refs/heads/main', codeRefs: { [PROJECT]: 'refs/heads/main' } }],
     });
+    issueUid = '';
   });
 
   afterEach(() => {
@@ -73,13 +77,16 @@ describe('the acceptance mutations', () => {
     });
   }
 
-  const acceptedPath = () => f.at('rasen', 'issues', ISSUE, 'accepted.yaml');
+  const acceptedPath = () => f.at('rasen', 'issues', issueUid, 'accepted.yaml');
   const conditionsPath = (revision: string) =>
-    f.at('rasen', 'issues', ISSUE, 'acceptance', `${revision}.yaml`);
+    f.at('rasen', 'issues', issueUid, 'acceptance', `${revision}.yaml`);
 
   /** Creates the Issue and publishes one conditions revision. */
   async function setup(publishConditions = true) {
-    await issues().create({ ...scope(), issueId: ISSUE, title: 'Acceptance target' });
+    const created = await issues().create({
+      ...scope(), issueId: ISSUE, title: 'Acceptance target',
+    });
+    issueUid = created.identity.uid;
     if (!publishConditions) return null;
     const published = await issues().publishAcceptance({
       ...scope(),
@@ -108,7 +115,7 @@ describe('the acceptance mutations', () => {
     // The write report names the checkout, the pathspec, and stages nothing.
     expect(published?.written).toEqual([conditionsPath('0001')]);
     expect(published?.suggestedCommits[0].pathspecs).toEqual([
-      `rasen/issues/${ISSUE}/acceptance/0001.yaml`,
+      `rasen/issues/${issueUid}/acceptance/0001.yaml`,
     ]);
     // `-uall` so the untracked `rasen/issues/` tree lists per file rather
     // than collapsing to its directory — the fixture seeds no Issue content.
@@ -175,20 +182,59 @@ describe('the acceptance mutations', () => {
     expect(result.record.note).toBe('Closing after dogfood');
     expect(result.record.gate).toEqual(SNAPSHOT);
     // Both files moved and both pathspecs are named, in one suggestion.
-    expect(result.written).toEqual([acceptedPath(), f.at('rasen', 'issues', ISSUE, 'issue.yaml')]);
+    expect(result.written).toEqual([
+      acceptedPath(),
+      f.at('rasen', 'issues', issueUid, 'issue.yaml'),
+    ]);
     expect(result.suggestedCommits[0].pathspecs).toEqual([
-      `rasen/issues/${ISSUE}/accepted.yaml`,
-      `rasen/issues/${ISSUE}/issue.yaml`,
+      `rasen/issues/${issueUid}/accepted.yaml`,
+      `rasen/issues/${issueUid}/issue.yaml`,
     ]);
     expect(fs.existsSync(acceptedPath())).toBe(true);
-    const record = fs.readFileSync(f.at('rasen', 'issues', ISSUE, 'issue.yaml'), 'utf8');
+    const record = fs.readFileSync(f.at('rasen', 'issues', issueUid, 'issue.yaml'), 'utf8');
     expect(record).toContain('state: resolved');
+  });
+
+  it('refuses foreign V1 conditions copied below a V2 Issue', async () => {
+    await setup(false);
+    const draft = {
+      version: 1 as const,
+      issueId: 'foreign-legacy-issue' as never,
+      revisionId: '0001' as never,
+      supersedes: null,
+      createdAt: NOW,
+      conditions: [{ id: 'foreign', requirement: 'Belongs to another legacy Issue' }],
+    };
+    const foreign = {
+      ...draft,
+      contentSha256: acceptanceConditionsDigest(draft),
+    };
+    fs.mkdirSync(path.dirname(conditionsPath('0001')), { recursive: true });
+    fs.writeFileSync(
+      conditionsPath('0001'),
+      serializeAcceptanceConditionsRevision(foreign),
+      'utf8'
+    );
+
+    await expect(
+      issues().accept({
+        ...scope(),
+        issueId: issueUid,
+        conditionsRevisionId: foreign.revisionId,
+        conditionsSha256: foreign.contentSha256,
+        gate: SNAPSHOT,
+      })
+    ).rejects.toMatchObject({ issueCode: 'issue_resource_identity_mismatch' });
+    expect(fs.existsSync(acceptedPath())).toBe(false);
+    expect(fs.readFileSync(f.at('rasen', 'issues', issueUid, 'issue.yaml'), 'utf8')).toContain(
+      'state: open'
+    );
   });
 
   it('upgrades a legacy resolved close in place: record only, no transition', async () => {
     const published = await setup();
     await issues().setState({ ...scope(), issueId: ISSUE, state: 'resolved' });
-    const recordBefore = fs.readFileSync(f.at('rasen', 'issues', ISSUE, 'issue.yaml'), 'utf8');
+    const recordBefore = fs.readFileSync(f.at('rasen', 'issues', issueUid, 'issue.yaml'), 'utf8');
     const result = await issues().accept({
       ...scope(),
       issueId: ISSUE,
@@ -199,7 +245,7 @@ describe('the acceptance mutations', () => {
     expect(result.state).toBe('resolved');
     // The record is the ONLY write; the Issue record's bytes are untouched.
     expect(result.written).toEqual([acceptedPath()]);
-    expect(fs.readFileSync(f.at('rasen', 'issues', ISSUE, 'issue.yaml'), 'utf8')).toBe(
+    expect(fs.readFileSync(f.at('rasen', 'issues', issueUid, 'issue.yaml'), 'utf8')).toBe(
       recordBefore
     );
   });
@@ -231,7 +277,10 @@ describe('the acceptance mutations', () => {
     expect(fs.existsSync(acceptedPath())).toBe(false);
 
     // A fresh open Issue that gets accepted, then re-accepted.
-    await issues().create({ ...scope(), issueId: 'iss-two', title: 'Second' });
+    const secondCreated = await issues().create({
+      ...scope(), issueId: 'iss-two', title: 'Second',
+    });
+    const secondUid = secondCreated.identity.uid;
     const twoPublished = await issues().publishAcceptance({
       ...scope(),
       issueId: 'iss-two',
@@ -244,7 +293,8 @@ describe('the acceptance mutations', () => {
       conditionsSha256: twoPublished.revision.contentSha256,
       gate: SNAPSHOT,
     });
-    const recordBytes = fs.readFileSync(f.at('rasen', 'issues', 'iss-two', 'accepted.yaml'), 'utf8');
+    const secondAcceptedPath = f.at('rasen', 'issues', secondUid, 'accepted.yaml');
+    const recordBytes = fs.readFileSync(secondAcceptedPath, 'utf8');
     thrown = undefined;
     try {
       await issues().accept({
@@ -260,14 +310,14 @@ describe('the acceptance mutations', () => {
     const refusal = expectRefusal(thrown, 'issue_accept_already_accepted');
     expect(refusal.message).toContain('already carries an acceptance record');
     expect(refusal.diagnostic.fix).toContain('never rewritten');
-    expect(fs.readFileSync(f.at('rasen', 'issues', 'iss-two', 'accepted.yaml'), 'utf8')).toBe(
+    expect(fs.readFileSync(secondAcceptedPath, 'utf8')).toBe(
       recordBytes
     );
 
     // An existing record that no longer verifies is STILL an existing record.
     fs.writeFileSync(
-      f.at('rasen', 'issues', 'iss-two', 'accepted.yaml'),
-      recordBytes.replace('issueId: iss-two', 'issueId: iss-TWO'),
+      secondAcceptedPath,
+      recordBytes.replace(`issueUid: ${secondUid}`, `issueUid: ${secondUid.toUpperCase()}`),
       'utf8'
     );
     thrown = undefined;
@@ -394,7 +444,7 @@ describe('the acceptance mutations', () => {
     // Exactly one accepted.yaml, and one resolved record — the loser wrote
     // nothing at all.
     expect(fs.existsSync(acceptedPath())).toBe(true);
-    expect(fs.readFileSync(f.at('rasen', 'issues', ISSUE, 'issue.yaml'), 'utf8')).toContain(
+    expect(fs.readFileSync(f.at('rasen', 'issues', issueUid, 'issue.yaml'), 'utf8')).toContain(
       'state: resolved'
     );
   });

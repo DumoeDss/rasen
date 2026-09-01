@@ -38,6 +38,11 @@ import {
 import { listPipelines } from '../core/pipeline-registry/resolver.js';
 import { resolveSessionLaunchContext } from '../core/management-api/session-launch-context.js';
 import {
+  projectIssueDiagnosticPayloadForWire,
+  projectIssueDetailForWire,
+  projectIssuePageForWire,
+} from '../core/management-api/stores.js';
+import {
   deriveIssueDeliveryEvidence,
   deriveIssueReadySet,
   deriveIssueReview,
@@ -100,55 +105,53 @@ export interface StoreIssueOptions {
 
 function issuePayload(result: IssueRecordResult): unknown {
   return {
+    identity: result.identity,
     issueId: result.issueId,
     record: result.record,
     storeId: result.storeId,
     storeUid: result.storeUid,
-    checkoutRoot: result.checkoutRoot,
-    checkoutRef: result.checkoutRef,
-    written: result.written,
-    suggestedCommits: result.suggestedCommits,
+    ...(result.warnings === undefined ? {} : { warnings: publicWarnings(result.warnings) }),
   };
 }
 
 function planPayload(result: ExecutionPlanResult): unknown {
   return {
+    identity: result.identity,
     issueId: result.issueId,
     revision: result.revision,
     storeId: result.storeId,
     storeUid: result.storeUid,
-    checkoutRoot: result.checkoutRoot,
-    checkoutRef: result.checkoutRef,
-    written: result.written,
-    suggestedCommits: result.suggestedCommits,
+    ...(result.warnings === undefined ? {} : { warnings: publicWarnings(result.warnings) }),
   };
 }
 
 function acceptancePayload(result: AcceptanceConditionsResult): unknown {
   return {
+    identity: result.identity,
     issueId: result.issueId,
     revision: result.revision,
     storeId: result.storeId,
     storeUid: result.storeUid,
-    checkoutRoot: result.checkoutRoot,
-    checkoutRef: result.checkoutRef,
-    written: result.written,
-    suggestedCommits: result.suggestedCommits,
+    ...(result.warnings === undefined ? {} : { warnings: publicWarnings(result.warnings) }),
   };
 }
 
 function acceptPayload(result: AcceptIssueResult): unknown {
   return {
+    identity: result.identity,
     issueId: result.issueId,
     record: result.record,
     state: result.state,
     storeId: result.storeId,
     storeUid: result.storeUid,
-    checkoutRoot: result.checkoutRoot,
-    checkoutRef: result.checkoutRef,
-    written: result.written,
-    suggestedCommits: result.suggestedCommits,
+    ...(result.warnings === undefined ? {} : { warnings: publicWarnings(result.warnings) }),
   };
+}
+
+function publicWarnings(
+  warnings: NonNullable<IssueRecordResult['warnings']>
+): readonly { code: string; message: string }[] {
+  return warnings.map(({ code, message }) => ({ code, message }));
 }
 
 function renderCommitSuggestions(suggestions: readonly SuggestedIssueCommit[]): void {
@@ -161,10 +164,12 @@ function renderCommitSuggestions(suggestions: readonly SuggestedIssueCommit[]): 
 }
 
 function renderIssueWrite(result: IssueRecordResult): void {
-  console.log(`Issue ${result.issueId} (${result.record.state})`);
+  console.log(`Issue ${result.identity.key} (${result.record.state})`);
+  console.log(`  uid: ${result.identity.uid}`);
   console.log(`  title: ${result.record.title}`);
   if (result.record.reason !== null) console.log(`  reason: ${result.record.reason}`);
   console.log(`  checkout: ${result.checkoutRoot}`);
+  for (const warning of result.warnings ?? []) console.warn(`  warning: ${warning.message}`);
   renderCommitSuggestions(result.suggestedCommits);
 }
 
@@ -172,7 +177,8 @@ function renderPlanWrite(
   result: ExecutionPlanResult,
   sourceLine?: string
 ): void {
-  console.log(`Issue ${result.issueId}: Execution Plan revision ${result.revision.revisionId}`);
+  console.log(`Issue ${result.identity.key}: Execution Plan revision ${result.revision.revisionId}`);
+  console.log(`  uid: ${result.identity.uid}`);
   console.log(`  supersedes: ${result.revision.supersedes ?? '(none)'}`);
   console.log(`  nodes: ${result.revision.nodes.length}`);
   // The same source facts the JSON form carries in its `source` block, on one
@@ -205,15 +211,17 @@ function decompositionSourceLine(result: IssuePlanPublicationResult): string {
 
 function renderAcceptanceWrite(result: AcceptanceConditionsResult): void {
   console.log(
-    `Issue ${result.issueId}: acceptance conditions revision ${result.revision.revisionId}`
+    `Issue ${result.identity.key}: acceptance conditions revision ${result.revision.revisionId}`
   );
+  console.log(`  uid: ${result.identity.uid}`);
   console.log(`  supersedes: ${result.revision.supersedes ?? '(none)'}`);
   console.log(`  conditions: ${result.revision.conditions.length}`);
   renderCommitSuggestions(result.suggestedCommits);
 }
 
 function renderAcceptWrite(result: AcceptIssueResult): void {
-  console.log(`Issue ${result.issueId} accepted (${result.state})`);
+  console.log(`Issue ${result.identity.key} accepted (${result.state})`);
+  console.log(`  uid: ${result.identity.uid}`);
   console.log(
     `  conditions: revision ${result.record.conditionsRevisionId} (${result.record.conditionsSha256})`
   );
@@ -797,7 +805,8 @@ function renderIssueList(page: IssueSummaryPage, statuses: readonly IssueStatus[
       status === undefined
         ? ''
         : `  ${status.phase}/${status.health} ${renderProgress(status)}${laneSegment}`;
-    console.log(`${summary.issueId}  [${state}]${statusSegment}  ${title}`);
+    const reference = summary.identity?.key ?? summary.issueId;
+    console.log(`${reference}  [${state}]${statusSegment}  ${title}`);
     // The reason there is no record, on the item's own line. `(unknown)` names
     // the fact and hides the cause; the machine form carries the cause, so the
     // human form does too.
@@ -846,7 +855,8 @@ function renderIssueDetail(
   projectAliases?: Readonly<Record<string, string>>
 ): void {
   const summary = detail.issue;
-  console.log(`Issue ${summary.issueId}`);
+  console.log(`Issue ${summary.identity?.key ?? summary.issueId}`);
+  if (summary.identity !== null) console.log(`  uid: ${summary.identity.uid}`);
   if (summary.record) {
     console.log(`  state: ${summary.record.state}`);
     console.log(`  title: ${summary.record.title}`);
@@ -931,7 +941,8 @@ function renderLaunchBinding(binding: IssueLaunchBinding): void {
       : binding.mode === 'already-running'
         ? 'already running (resume-oriented)'
         : 'already complete';
-  console.log(`Issue ${binding.issueId} node ${binding.nodeId} — ${modeHead}`);
+  console.log(`Issue ${binding.identity?.key ?? binding.issueId} node ${binding.nodeId} — ${modeHead}`);
+  if (binding.identity !== undefined) console.log(`  uid: ${binding.identity.uid}`);
   console.log(`  change: ${binding.alias ?? '(no alias)'} (${binding.changeInstanceId})`);
   console.log(`  project: ${binding.projectId}  target-line: ${binding.targetLineId}`);
   if (binding.launch !== null) {
@@ -977,7 +988,10 @@ function refusalError(refusal: IssueStartRefusal): StoreError {
  * writes nothing; starting a node remains the operator's per-node act.
  */
 function renderConfirmReport(report: IssueConfirmReport): void {
-  console.log(`Issue ${report.issueId} — confirm report (revision ${report.revisionId})`);
+  console.log(
+    `Issue ${report.identity?.key ?? report.issueId} — confirm report (revision ${report.revisionId})`
+  );
+  if (report.identity !== undefined) console.log(`  uid: ${report.identity.uid}`);
   console.log(`  launchable: ${report.contracts.length}`);
   for (const binding of report.contracts) {
     console.log('');
@@ -1081,17 +1095,17 @@ export function registerStoreIssueCommand(store: Command): void {
   const issue = store.command('issue').description('');
 
   issue
-    .command('new <issue-id>')
+    .command('new [issue-selector]')
     .description('')
     .option('--store <id>', '')
     .option('--title <title>', '')
     .option('--readme', '')
     .option('--json', '')
-    .action(async (issueId: string, options: StoreIssueOptions) => {
+    .action(async (issueId: string | undefined, options: StoreIssueOptions) => {
       try {
         if (options.title === undefined) {
           throw issueError(
-            'issue_scope_required',
+            'issue_title_required',
             "Creating an Issue requires --title; an Issue's title is never inferred.",
             { fix: 'Add --title "<short description>".' }
           );
@@ -1099,8 +1113,8 @@ export function registerStoreIssueCommand(store: Command): void {
         const result = await StoreIssuesModuleInstance.create({
           ...(options.store === undefined ? {} : { store: options.store }),
           startPath: process.cwd(),
-          issueId,
           title: options.title,
+          ...(issueId === undefined ? {} : { issueId }),
           ...(options.readme === true ? { readme: true } : {}),
         });
         if (options.json) printJson(issuePayload(result));
@@ -1142,7 +1156,21 @@ export function registerStoreIssueCommand(store: Command): void {
           options.state === undefined ? undefined : (options.state as IssueState)
         );
         if (options.json) {
-          printJson(payload);
+          const publicPage = projectIssuePageForWire(payload);
+          printJson({
+            ...payload,
+            issues: publicPage.issues.map((entry, index) => ({
+              ...entry,
+              status:
+                payload.issues[index] === undefined
+                  ? undefined
+                  : projectIssueDiagnosticPayloadForWire(
+                      payload.issues[index].status,
+                      [payload.issues[index]]
+                    ),
+            })),
+            problems: publicPage.problems,
+          });
           return;
         }
         renderIssueList(
@@ -1155,7 +1183,7 @@ export function registerStoreIssueCommand(store: Command): void {
     });
 
   issue
-    .command('show <issue-id>')
+    .command('show <issue-selector>')
     .description('')
     .option('--store <id>', '')
     .option('--json', '')
@@ -1176,7 +1204,19 @@ export function registerStoreIssueCommand(store: Command): void {
           issueId
         );
         if (options.json) {
-          printJson(payload);
+          const publicDetail = projectIssueDetailForWire({
+            issue: payload.issue,
+            plan: payload.plan,
+            complete: payload.complete,
+            unsearchedRefs: payload.unsearchedRefs,
+            problems: payload.problems,
+          });
+          printJson(projectIssueDiagnosticPayloadForWire({
+            ...payload,
+            issue: publicDetail.issue,
+            plan: publicDetail.plan,
+            problems: publicDetail.problems,
+          }, [payload.issue]));
           return;
         }
         renderIssueDetail(
@@ -1198,7 +1238,7 @@ export function registerStoreIssueCommand(store: Command): void {
     });
 
   issue
-    .command('state <issue-id>')
+    .command('state <issue-selector>')
     .description('')
     .option('--store <id>', '')
     .option('--state <state>', '')
@@ -1228,7 +1268,7 @@ export function registerStoreIssueCommand(store: Command): void {
     });
 
   issue
-    .command('plan <issue-id>')
+    .command('plan <issue-selector>')
     .description('')
     .option('--store <id>', '')
     .option('--from-file <path>', '')
@@ -1325,7 +1365,7 @@ export function registerStoreIssueCommand(store: Command): void {
     });
 
   issue
-    .command('acceptance <issue-id>')
+    .command('acceptance <issue-selector>')
     .description('')
     .option('--store <id>', '')
     .option('--from-file <path>', '')
@@ -1363,7 +1403,7 @@ export function registerStoreIssueCommand(store: Command): void {
     });
 
   issue
-    .command('accept <issue-id>')
+    .command('accept <issue-selector>')
     .description('')
     .option('--store <id>', '')
     .option('--note <note>', '')
@@ -1390,7 +1430,7 @@ export function registerStoreIssueCommand(store: Command): void {
     });
 
   issue
-    .command('start <issue-id>')
+    .command('start <issue-selector>')
     .description('')
     .option('--store <id>', '')
     .option('--node <nodeId>', '')
@@ -1432,7 +1472,13 @@ export function registerStoreIssueCommand(store: Command): void {
           ...(widening.storeId === undefined ? {} : { storeId: widening.storeId }),
         });
         if (!result.ok) throw refusalError(result.refusal);
-        if (options.json) printJson({ issueId, binding: result.binding });
+        if (options.json) {
+          printJson({
+            ...(result.binding.identity === undefined ? {} : { identity: result.binding.identity }),
+            issueId: result.binding.issueId,
+            binding: result.binding,
+          });
+        }
         else renderLaunchBinding(result.binding);
       } catch (error) {
         emitFailure(options.json, { issue: null, binding: null }, error, 'store_issue_start_failed');
@@ -1440,7 +1486,7 @@ export function registerStoreIssueCommand(store: Command): void {
     });
 
   issue
-    .command('confirm <issue-id>')
+    .command('confirm <issue-selector>')
     .description('')
     .option('--store <id>', '')
     .option('--revision <id>', '')
@@ -1500,7 +1546,12 @@ export function registerStoreIssueCommand(store: Command): void {
           );
         }
         if (options.json) {
-          printJson({ issueId, revisionId: result.report.revisionId, report: result.report });
+          printJson({
+            ...(result.report.identity === undefined ? {} : { identity: result.report.identity }),
+            issueId: result.report.issueId,
+            revisionId: result.report.revisionId,
+            report: result.report,
+          });
         } else {
           renderConfirmReport(result.report);
         }
@@ -1510,7 +1561,7 @@ export function registerStoreIssueCommand(store: Command): void {
     });
 
   issue
-    .command('ready <issue-id>')
+    .command('ready <issue-selector>')
     .description('')
     .option('--store <id>', '')
     .option('--json', '')
@@ -1548,7 +1599,8 @@ export function registerStoreIssueCommand(store: Command): void {
         const revisionId = detail.plan?.revisionId ?? null;
         if (options.json) {
           printJson({
-            issueId,
+            ...(detail.issue.identity === null ? {} : { identity: detail.issue.identity }),
+            issueId: detail.issue.identity?.uid ?? detail.issue.issueId,
             revisionId,
             ready,
             runStateVisibility: status.runStateVisibility,
@@ -1556,7 +1608,12 @@ export function registerStoreIssueCommand(store: Command): void {
           });
           return;
         }
-        renderReadyAnswer(issueId, revisionId ?? '(none)', ready, status);
+        renderReadyAnswer(
+          detail.issue.identity?.key ?? detail.issue.issueId,
+          revisionId ?? '(none)',
+          ready,
+          status
+        );
       } catch (error) {
         emitFailure(options.json, { ready: null }, error, 'store_issue_ready_failed');
       }

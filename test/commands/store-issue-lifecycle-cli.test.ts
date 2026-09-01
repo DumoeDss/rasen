@@ -61,6 +61,7 @@ describe('rasen store issue lifecycle surface', () => {
   let f: StoreWorkspaceFixture;
   let execProject: string;
   let ids: string[] = [];
+  let issueIdentities: Map<string, { readonly uid: string; readonly key: string }>;
 
   async function run(args: readonly string[], cwd: string): Promise<RunCLIResult> {
     return runCLI([...args], { cwd, env: f.env });
@@ -119,13 +120,17 @@ describe('rasen store issue lifecycle surface', () => {
       seedAndCommit('child-opt', 'b2'.repeat(16)),
       seedAndCommit('child-cut', 'c3'.repeat(16)),
     ];
+    issueIdentities = new Map();
     for (const issueId of [ISSUE, ZERO_ISSUE]) {
-      expectOk(
-        await run(
-          ['store', 'issue', 'new', issueId, '--store', f.storeId, '--title', `Lifecycle ${issueId}`, '--json'],
-          f.storeRoot
+      const created = parseJson(
+        expectOk(
+          await run(
+            ['store', 'issue', 'new', issueId, '--store', f.storeId, '--title', `Lifecycle ${issueId}`, '--json'],
+            f.storeRoot
+          )
         )
       );
+      issueIdentities.set(issueId, created.identity);
     }
   });
 
@@ -226,7 +231,9 @@ describe('rasen store issue lifecycle surface', () => {
     const listJson = parseJson(
       expectOk(await run(['store', 'issue', 'list', '--store', f.storeId, '--json'], execProject))
     );
-    const listed = listJson.issues.find((issue: { issueId: string }) => issue.issueId === ISSUE);
+    const listed = listJson.issues.find(
+      (issue: { issueId: string }) => issue.issueId === issueIdentities.get(ISSUE)?.uid
+    );
     expect(listed.status.progress).toEqual({ completed: 1, total: 1 });
   }, 90_000);
 
@@ -334,7 +341,8 @@ describe('rasen store issue lifecycle surface', () => {
         '',
       ].join('\n')
     );
-    const revision1Path = f.at('rasen', 'issues', ISSUE, 'plans', '0001.yaml');
+    const issueUid = issueIdentities.get(ISSUE)?.uid as string;
+    const revision1Path = f.at('rasen', 'issues', issueUid, 'plans', '0001.yaml');
     const bytes1 = fs.readFileSync(revision1Path, 'utf8');
     await publishPlanFile(
       ISSUE,
@@ -349,7 +357,10 @@ describe('rasen store issue lifecycle surface', () => {
       ].join('\n')
     );
     expect(fs.readFileSync(revision1Path, 'utf8')).toBe(bytes1);
-    const revision2 = fs.readFileSync(f.at('rasen', 'issues', ISSUE, 'plans', '0002.yaml'), 'utf8');
+    const revision2 = fs.readFileSync(
+      f.at('rasen', 'issues', issueUid, 'plans', '0002.yaml'),
+      'utf8'
+    );
     expect(revision2).toContain('lifecycle: cancelled');
     expect(revision2).toContain(CANCELLED_REASON);
     // The stored canonical form omits lifecycle for required nodes.

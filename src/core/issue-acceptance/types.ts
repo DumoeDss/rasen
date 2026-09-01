@@ -15,9 +15,9 @@
  * module cycle exists at load time.
  */
 import type {
-  AcceptanceConditionsRevisionV1,
+  StoredAcceptanceConditionsRevision,
   AcceptanceGateSnapshot,
-  IssueAcceptedRecordV1,
+  StoredIssueAcceptedRecord,
   IssueState,
 } from '../store/issues/types.js';
 import type {
@@ -36,7 +36,7 @@ import type { ExecutionPlanRevisionId } from '../store/planning-validation.js';
 /** The latest acceptance-conditions revision read back, or why it could not be. */
 export interface IssueAcceptanceConditionsRead {
   /** The parsed, digest-verified revision; null when none reads back. */
-  readonly revision: AcceptanceConditionsRevisionV1 | null;
+  readonly revision: StoredAcceptanceConditionsRevision | null;
   /** The latest ordinal seen, even when its content did not read back. */
   readonly revisionId: ExecutionPlanRevisionId | null;
   readonly diagnostic: string | null;
@@ -53,7 +53,7 @@ export interface IssueAcceptanceConditionsRead {
 export interface IssueAcceptanceRecordRead {
   readonly present: boolean;
   /** The parsed, digest-verified record; null when absent or unverifiable. */
-  readonly record: IssueAcceptedRecordV1 | null;
+  readonly record: StoredIssueAcceptedRecord | null;
   readonly diagnostic: string | null;
   /** The absolute file the bytes came from, when one was reached. */
   readonly path: string | null;
@@ -176,5 +176,5 @@ export type IssueAcceptanceGateEvaluation =
 export interface IssueAcceptanceStatusBlock {
   readonly conditions: IssueAcceptanceConditionsRead;
   readonly gate: IssueAcceptanceGateEvaluation;
-  readonly record: IssueAcceptedRecordV1 | null;
+  readonly record: StoredIssueAcceptedRecord | null;
 }

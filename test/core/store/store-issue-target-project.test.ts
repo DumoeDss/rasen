@@ -48,6 +48,7 @@ const KNOWLEDGE_ONLY_MEMBERS = [KNOWLEDGE_ONLY];
 describe('a plan node targets a planning member of the Store', () => {
   let f: StoreWorkspaceFixture;
   let scope: { store: string; startPath: string; globalDataDir: string };
+  let issueUid: string;
 
   beforeEach(async () => {
     f = await createStoreWorkspaceFixture({
@@ -57,7 +58,8 @@ describe('a plan node targets a planning member of the Store', () => {
       lines: [{ id: LINE, storeRef: 'refs/heads/main' }],
     });
     scope = { store: f.storeId, startPath: f.storeRoot, globalDataDir: f.globalDataDir };
-    await issues().create({ ...scope, issueId: 'targeting', title: 'x' });
+    const created = await issues().create({ ...scope, issueId: 'targeting', title: 'x' });
+    issueUid = created.identity.uid;
   });
 
   afterEach(() => {
@@ -71,7 +73,7 @@ describe('a plan node targets a planning member of the Store', () => {
   }
 
   function planPath(ordinal: string): string {
-    return f.at('rasen', 'issues', 'targeting', 'plans', `${ordinal}.yaml`);
+    return f.at('rasen', 'issues', issueUid, 'plans', `${ordinal}.yaml`);
   }
 
   const intentNode = (nodeId: string, projectId: string) => ({

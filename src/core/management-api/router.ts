@@ -749,8 +749,22 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
   res.end(JSON.stringify(body));
 }
 
-function sendError(res: http.ServerResponse, status: number, code: string, message: string, fix?: string): void {
-  sendJson(res, status, { error: { code, message, ...(fix ? { fix } : {}) } });
+function sendError(
+  res: http.ServerResponse,
+  status: number,
+  code: string,
+  message: string,
+  fix?: string,
+  recovery?: unknown
+): void {
+  sendJson(res, status, {
+    error: {
+      code,
+      message,
+      ...(fix ? { fix } : {}),
+      ...(recovery === undefined ? {} : { recovery }),
+    },
+  });
 }
 
 function sendReusableSessionError(
@@ -1201,6 +1215,7 @@ export function createManagementRouter(
                 ...(result.fix === undefined ? {} : { fix: result.fix }),
                 ...(result.cliExitCode === undefined ? {} : { cliExitCode: result.cliExitCode }),
                 ...(result.stderr === undefined ? {} : { stderr: result.stderr }),
+                ...(result.recovery === undefined ? {} : { recovery: result.recovery }),
               },
             })
           );
@@ -1539,7 +1554,7 @@ export function createManagementRouter(
         (body.value ?? {}) as { issueId?: unknown; title?: unknown; readme?: unknown }
       );
       if (!result.ok) {
-        sendError(res, result.status, result.code, result.message);
+        sendError(res, result.status, result.code, result.message, undefined, result.recovery);
         return;
       }
       sendJson(res, 200, result.response);

@@ -39,20 +39,22 @@ export function IssueCard({
 }) {
   const t = useT();
   const status = entry.status;
-  const title = entry.record?.title ?? entry.issueId;
+  const uid = entry.identity?.uid ?? entry.issueId;
+  const key = entry.identity?.key ?? entry.issueId;
+  const title = entry.record?.title ?? key;
   const detail = attentionItem === null ? null : attentionItemDetail(attentionItem, t);
 
   return (
     <article
       class="issue-card"
       data-testid="issue-card"
-      data-issue={entry.issueId}
+      data-issue={uid}
       data-phase={status.phase}
       data-health={status.health}
     >
       <a class="issue-card__main" data-testid="issue-card-main" href={href}>
         <span class="issue-card__title">{title}</span>
-        <span class="issue-card__id">{entry.issueId}</span>
+        <span class="issue-card__id">{key}</span>
       </a>
       <span class="issue-card__axes">
         <a

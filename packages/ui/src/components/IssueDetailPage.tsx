@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { useRoute } from 'preact-iso';
+import { useLocation, useRoute } from 'preact-iso';
 import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
 import type {
@@ -9,6 +9,7 @@ import type {
   StoreIssueNodeDelivery,
   StoreIssueNodeStatus,
   StoreIssueProjectionResponse,
+  StoreIssueRecordWire,
 } from '../api/types.js';
 import { PageHeader } from './ui/PageHeader.js';
 import { spaceHref, useSpace, type Space } from '../store/use-space.js';
@@ -33,6 +34,12 @@ import {
   issueHealthProvenanceFamily,
   issuePhaseProvenanceFamily,
 } from './issue-provenance.js';
+
+function issueRecordReference(record: StoreIssueRecordWire): string {
+  return record.version === 1
+    ? record.id
+    : `${record.identity.key} (${record.identity.uid})`;
+}
 
 /**
  * The Issue Detail (issue-board-ui spec / roadmap §9.2): one Issue's whole
@@ -255,6 +262,7 @@ function IssueDetailState({
   issueId: string;
 }) {
   const t = useT();
+  const { route } = useLocation();
   const [projection, setProjection] = useState<StoreIssueProjectionResponse | null>(null);
   const [attention, setAttention] = useState<StoreIssueAttentionResponse | null>(null);
   const [pageError, setPageError] = useState<{ message: string; fix?: string } | null>(null);
@@ -273,6 +281,10 @@ function IssueDetailState({
         if (cancelled) return;
         setProjection(projectionRes);
         setAttention(attentionRes);
+        const canonicalUid = projectionRes.issue.identity?.uid;
+        if (canonicalUid !== undefined && canonicalUid !== issueId && space !== null) {
+          route(spaceHref(space, 'issues', canonicalUid), true);
+        }
       })
       .catch((err) => {
         if (cancelled) return;
@@ -325,7 +337,7 @@ function IssueDetailState({
   return (
     <div class="issue-detail" data-testid="issue-detail">
       <PageHeader
-        title={issue.record?.title ?? issue.issueId}
+        title={issue.record?.title ?? issue.identity?.key ?? issue.issueId}
         actions={
           <>
             <a class="btn--ghost" href={space ? spaceHref(space, 'issues') : '/'}>
@@ -354,7 +366,12 @@ function IssueDetailState({
 
       {/* The three axes, side by side and separately labelled — never blended. */}
       <section class="issue-detail__axes" data-testid="issue-detail-axes">
-        <span class="issue-detail__id">{issue.issueId}</span>
+        <span class="issue-detail__id" data-testid="issue-detail-key">
+          {issue.identity?.key ?? issue.issueId}
+        </span>
+        {issue.identity !== null && (
+          <code class="issue-detail__uid" data-testid="issue-detail-uid">{issue.identity.uid}</code>
+        )}
         <a href={`#${ISSUE_PROVENANCE['issue-record'].anchor}`} data-testid="issue-detail-state">
           {t('issues.detail.state', { state: issue.record?.state ?? t('issues.state_unknown') })}
         </a>
@@ -445,7 +462,7 @@ function IssueDetailState({
             <dd data-testid="issue-detail-record-identity">
               {t('issues.detail.record_identity', {
                 version: issue.record.version,
-                id: issue.record.id,
+                id: issueRecordReference(issue.record),
                 title: issue.record.title,
                 state: issue.record.state,
               })}
@@ -479,7 +496,7 @@ function IssueDetailState({
                   diagnostic: copy.diagnostic ?? '-',
                   record: copy.record === null
                     ? '-'
-                    : `${copy.record.id} · ${copy.record.title} · ${copy.record.state} · ${copy.record.createdAt}`,
+                    : `${issueRecordReference(copy.record)} · ${copy.record.title} · ${copy.record.state} · ${copy.record.createdAt}`,
                 })}
               </li>
             ))}

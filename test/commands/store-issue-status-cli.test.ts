@@ -48,6 +48,7 @@ describe('rasen store issue status surface', () => {
   let f: StoreWorkspaceFixture;
   let execProject: string;
   let nowhere: string;
+  let issueKey: string;
   const scope = () => ({ store: f.storeId, cwd: execProject, env: f.env });
 
   /** Seeds a Change into the store checkout and commits it on `main`. */
@@ -69,7 +70,15 @@ describe('rasen store issue status surface', () => {
   }
 
   async function createStoreIssue(): Promise<readonly string[]> {
-    await run(['store', 'issue', 'new', ISSUE, '--store', f.storeId, '--title', 'Issue layer', '--json'], f.storeRoot);
+    const created = parseJson(
+      expectOk(
+        await run(
+          ['store', 'issue', 'new', ISSUE, '--store', f.storeId, '--title', 'Issue layer', '--json'],
+          f.storeRoot
+        )
+      )
+    );
+    issueKey = created.identity.key;
     const ids = [
       seedAndCommit('child-a', 'a1'.repeat(16)),
       seedAndCommit('child-b', 'b2'.repeat(16)),
@@ -141,7 +150,7 @@ describe('rasen store issue status surface', () => {
     });
 
     const listHuman = expectOk(await run(['store', 'issue', 'list', '--store', f.storeId], execProject));
-    expect(listHuman.stdout).toContain(ISSUE);
+    expect(listHuman.stdout).toContain(issueKey);
     expect(listHuman.stdout).toContain('active/healthy 0/3');
     // The visibility label names the execution root it consulted.
     expect(listHuman.stdout).toContain(execProject);

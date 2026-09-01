@@ -190,11 +190,16 @@ describe('the issue status projection', () => {
   }
 
   /** Creates the Issue and publishes a three-child serial plan (g-001..g-003). */
-  async function publishPlan(nodeInputs: readonly ExecutionPlanNodeInput[]): Promise<void> {
-    await issues().create({ ...scope(), issueId: ISSUE, title: 'Issue layer phase 1' });
+  async function publishPlan(nodeInputs: readonly ExecutionPlanNodeInput[]): Promise<string> {
+    const created = await issues().create({
+      ...scope(),
+      issueId: ISSUE,
+      title: 'Issue layer phase 1',
+    });
     await issues().publishPlan({ ...scope(), issueId: ISSUE, nodes: nodeInputs });
     f.git(f.storeRoot, ['add', '-A']);
     f.git(f.storeRoot, ['commit', '-m', 'issue + plan']);
+    return created.identity.uid;
   }
 
   function threeChangeNodes(
@@ -965,7 +970,7 @@ describe('the issue status projection', () => {
   it('reports a scope-conflicted archived reference as unknown, never finalized', async () => {
     const instanceSeed = 'c3'.repeat(16);
     const instanceId = seedAndArchive('child-c', instanceSeed);
-    await issues().create({ ...scope(), issueId: ISSUE, title: 'Scope conflict' });
+    const created = await issues().create({ ...scope(), issueId: ISSUE, title: 'Scope conflict' });
     // A node whose declared line disagrees with the committed identity is
     // REFUSED by publishPlan (`issue_reference_scope_conflict`) — but such a
     // revision can still become Store content by hand (identity moved after
@@ -974,8 +979,8 @@ describe('the issue status projection', () => {
     // publication uses, so the revision itself is perfectly readable and only
     // the reference conflicts.
     const body = {
-      version: 1 as const,
-      issueId: ISSUE,
+      version: 2 as const,
+      issueUid: created.identity.uid,
       revisionId: '0001',
       supersedes: null,
       createdAt: NOW,
@@ -991,8 +996,16 @@ describe('the issue status projection', () => {
         },
       ],
     };
+    const revisionPath = f.at(
+      'rasen',
+      'issues',
+      created.identity.uid,
+      'plans',
+      '0001.yaml'
+    );
+    fs.mkdirSync(path.dirname(revisionPath), { recursive: true });
     fs.writeFileSync(
-      f.at('rasen', 'issues', ISSUE, 'plans', '0001.yaml'),
+      revisionPath,
       serializeExecutionPlanRevision({ ...body, contentSha256: executionPlanDigest(body) }),
       'utf8'
     );
@@ -1023,7 +1036,7 @@ describe('the issue status projection', () => {
 
   it('reports no progress for an unreadable latest revision, with the reason', async () => {
     const ids = [seedAndCommit('child-a', 'a1'.repeat(16))];
-    await issues().create({ ...scope(), issueId: ISSUE, title: 'Digest broken' });
+    const created = await issues().create({ ...scope(), issueId: ISSUE, title: 'Digest broken' });
     await issues().publishPlan({
       ...scope(),
       issueId: ISSUE,
@@ -1041,7 +1054,13 @@ describe('the issue status projection', () => {
     });
     // Break the working-tree copy's recorded digest: 0/0 would read "nothing
     // required", so the honest answer is no progress pair at all.
-    const revisionPath = f.at('rasen', 'issues', ISSUE, 'plans', '0001.yaml');
+    const revisionPath = f.at(
+      'rasen',
+      'issues',
+      created.identity.uid,
+      'plans',
+      '0001.yaml'
+    );
     const corrupted = fs
       .readFileSync(revisionPath, 'utf8')
       .replace('contentSha256:', 'contentSha256X:');
@@ -1056,7 +1075,7 @@ describe('the issue status projection', () => {
 
   it('carries unsearched refs as problems that lower completeness', async () => {
     const ids = [seedAndCommit('child-a', 'a1'.repeat(16))];
-    await publishPlan([
+    const issueUid = await publishPlan([
       {
         nodeId: 'g-001',
         kind: 'change',
@@ -1070,7 +1089,7 @@ describe('the issue status projection', () => {
     f.writeTargetLine({ id: 'broken-line', storeRef: 'refs/heads/does-not-exist' });
     f.git(f.storeRoot, ['add', '-A']);
     f.git(f.storeRoot, ['commit', '-m', 'add broken line']);
-    const detail = await showIssue();
+    const detail = await query().showIssue({ ...scope(), issueId: issueUid });
     expect(detail.complete).toBe(false);
     const status = await projectIssueStatus({
       detail,

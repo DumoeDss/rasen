@@ -1,24 +1,27 @@
 /**
- * The fifth semantic lock key, and why prepending it leaves the existing
+ * The two Issue semantic lock keys, and why prepending them leaves the existing
  * deadlock argument valid.
  *
  * | key         | material                            | taken by                       |
- * | issue       | (storeUid, issueId)                 | Issue and revision writes      |
+ * | issue-allocation | (storeUid)                     | Issue identity allocation and generated migration publication |
+ * | issue       | (storeUid, issueUid)                | Issue and revision writes      |
  * | scope       | (storeUid, projectId, targetLineId) | target-line writes, plan/apply |
  * | workspace   | (workspacePairId) or provisional    | apply, cleanup                 |
  * | change      | (changeInstanceId)                  | finalization                   |
  * | integration | (storeUid, targetLineId)            | finalization                   |
  *
- * The full order is `issue -> scope -> workspace -> change -> integration`.
+ * The full order is
+ * `issue-allocation -> issue -> scope -> workspace -> change -> integration`.
  * `store-planning-worktree-bindings` asserts that no path reaches back for an
  * earlier key while holding a later one, with its order starting at `scope`.
- * PREPENDING a key that no path of that Module ever takes leaves that assertion
+ * PREPENDING keys that no path of that Module ever takes leaves that assertion
  * true exactly as written, which is why this file extends it rather than
- * editing it — and this Module asserts the extended five-key order itself, so
+ * editing it — and this Module asserts the extended six-key order itself, so
  * the extension is proven rather than assumed harmless.
  *
- * An Issue write takes ONLY the issue key: it touches no project partition, no
- * worktree, and no canonical spec. A READ takes no lock at all, because a read
+ * Every Issue mutation takes allocation then UID Issue so selector resolution
+ * cannot race identity publication. Neither touches a project partition,
+ * worktree, or canonical spec. A READ takes no lock at all, because a read
  * that blocked on a writer would make an aggregate board hostage to one stuck
  * command.
  *
@@ -48,7 +51,7 @@ import {
 } from '../workspace/locks.js';
 import { issueError } from './diagnostics.js';
 
-export type StoreLockKind = 'issue' | WorkspaceLockKind;
+export type StoreLockKind = 'issue-allocation' | 'issue' | WorkspaceLockKind;
 
 /**
  * The full acquisition order across both Modules. Index = precedence.
@@ -61,7 +64,9 @@ export type StoreLockKind = 'issue' | WorkspaceLockKind;
  * change on child 4's side into a loud failure instead of a silent absorption.
  */
 export const STORE_LOCK_ORDER: readonly StoreLockKind[] = Object.freeze([
-  // Taken by an Issue or Execution Plan write, keyed (storeUid, issueId).
+  // One per Store while a new UID/key is checked and its record is published.
+  'issue-allocation',
+  // Taken by an Issue or Execution Plan write, keyed (storeUid, issueUid).
   // FIRST because an Issue is Store-level and touches no project partition, no
   // worktree, and no canonical spec: nothing it holds is ever wanted by a
   // holder of a later key, so prepending it cannot create a cycle.
@@ -78,25 +83,25 @@ export const STORE_LOCK_ORDER: readonly StoreLockKind[] = Object.freeze([
 
 /**
  * The four workspace keys must appear in `STORE_LOCK_ORDER`, in child 4's own
- * order, immediately after `issue`. Called at module load so a divergence is a
+ * order, immediately after the two Issue keys. Called at module load so a divergence is a
  * startup failure rather than a lock acquired in the wrong order at run time.
  */
 export function assertStoreLockOrderAgreesWithWorkspace(): void {
-  const tail = STORE_LOCK_ORDER.slice(1);
+  const tail = STORE_LOCK_ORDER.slice(2);
   const expected = WORKSPACE_LOCK_ORDER;
   const agrees =
     tail.length === expected.length &&
     tail.every((kind, index) => kind === expected[index]);
   if (!agrees) {
     throw new Error(
-      `store lock order disagrees with the workspace Module: expected issue -> ${expected.join(
+      `store lock order disagrees with the workspace Module: expected issue-allocation -> issue -> ${expected.join(
         ' -> '
       )}, found ${STORE_LOCK_ORDER.join(' -> ')}. Extend STORE_LOCK_ORDER by enumerating the new key with its reason and deciding where it sits relative to 'issue'.`
     );
   }
-  if (STORE_LOCK_ORDER[0] !== 'issue') {
+  if (STORE_LOCK_ORDER[0] !== 'issue-allocation' || STORE_LOCK_ORDER[1] !== 'issue') {
     throw new Error(
-      "store lock order must begin with 'issue'; a later position would let an Issue write reach back for it while holding a workspace key."
+      "store lock order must begin with 'issue-allocation' -> 'issue'; a later position would let Issue creation reach back while holding a later key."
     );
   }
 }
@@ -109,6 +114,24 @@ export interface IssueLockKey {
   readonly label: string;
 }
 
+export interface IssueAllocationLockKey {
+  readonly kind: 'issue-allocation';
+  readonly material: Readonly<Record<string, string>>;
+  readonly label: string;
+}
+
+type IssueCoordinationLockKey = IssueAllocationLockKey | IssueLockKey;
+
+export function issueAllocationLockKey(input: {
+  readonly storeUid: string;
+}): IssueAllocationLockKey {
+  return {
+    kind: 'issue-allocation',
+    material: { storeUid: input.storeUid },
+    label: `Issue allocation in Store ${input.storeUid}`,
+  };
+}
+
 /**
  * Keyed by SEMANTIC identity — the permanent Store identity and the Issue
  * identifier — never by a title, a directory spelling, or a branch. The
@@ -117,16 +140,16 @@ export interface IssueLockKey {
  */
 export function issueLockKey(input: {
   readonly storeUid: string;
-  readonly issueId: string;
+  readonly issueUid: string;
 }): IssueLockKey {
   return {
     kind: 'issue',
-    material: { storeUid: input.storeUid, issueId: input.issueId },
-    label: `issue ${input.issueId}`,
+    material: { storeUid: input.storeUid, issueUid: input.issueUid },
+    label: `Issue ${input.issueUid}`,
   };
 }
 
-export function issueLockFileName(key: IssueLockKey): string {
+export function issueLockFileName(key: IssueCoordinationLockKey): string {
   const digest = createHash('sha256')
     .update(issueLockCanonicalBytes(key))
     .digest('hex');
@@ -135,7 +158,7 @@ export function issueLockFileName(key: IssueLockKey): string {
 
 export function issueLockPath(
   coordination: WorkspaceCoordination,
-  key: IssueLockKey
+  key: IssueCoordinationLockKey
 ): string {
   return coordination.resolve(path.join(LOCKS_DIR_NAME, issueLockFileName(key)));
 }
@@ -146,14 +169,19 @@ interface HeldIssueLocks {
 }
 
 const heldIssue = new AsyncLocalStorage<HeldIssueLocks>();
+const heldAllocation = new AsyncLocalStorage<boolean>();
 
 /** Whether this async context currently holds the issue lock. */
 export function issueLockHeld(): boolean {
   return heldIssue.getStore()?.held === true;
 }
 
+export function issueAllocationLockHeld(): boolean {
+  return heldAllocation.getStore() === true;
+}
+
 /** Canonical domain bytes used both for lock filenames and batch ordering. */
-export function issueLockCanonicalBytes(key: IssueLockKey): Buffer {
+export function issueLockCanonicalBytes(key: IssueCoordinationLockKey): Buffer {
   return canonicalBytes({ domain: 'issue-lock/v1', kind: key.kind, material: key.material });
 }
 
@@ -164,7 +192,23 @@ export function heldIssueLockKeys(): readonly IssueLockKey[] {
 
 /** Every lock kind this async context holds, in acquisition order. */
 export function heldStoreLockKinds(): readonly StoreLockKind[] {
-  return [...(issueLockHeld() ? (['issue'] as const) : []), ...heldLockKinds()];
+  return [
+    ...(issueAllocationLockHeld() ? (['issue-allocation'] as const) : []),
+    ...(issueLockHeld() ? (['issue'] as const) : []),
+    ...heldLockKinds(),
+  ];
+}
+
+export function assertIssueAllocationAcquisitionOrder(
+  held: readonly StoreLockKind[] = heldStoreLockKinds()
+): void {
+  if (held.length > 0) {
+    throw new Error(
+      `store lock ordering violated: cannot take the issue-allocation lock while holding ${held.join(
+        ', '
+      )}; the order is ${STORE_LOCK_ORDER.join(' -> ')}`
+    );
+  }
 }
 
 /**
@@ -175,7 +219,7 @@ export function heldStoreLockKinds(): readonly StoreLockKind[] {
 export function assertIssueAcquisitionOrder(
   held: readonly StoreLockKind[] = heldStoreLockKinds()
 ): void {
-  const later = held.filter(kind => STORE_LOCK_ORDER.indexOf(kind) > 0);
+  const later = held.filter(kind => STORE_LOCK_ORDER.indexOf(kind) > 1);
   if (later.length > 0) {
     throw new Error(
       `store lock ordering violated: cannot take the issue lock while holding ${later.join(
@@ -203,7 +247,7 @@ function readHolder(lockPath: string): string {
 }
 
 function lockErrorFor(
-  key: IssueLockKey
+  key: IssueCoordinationLockKey
 ): (kind: FileLockErrorKind, info: FileLockErrorInfo) => Error {
   return (kind, info) => {
     if (kind === 'create-failed') {
@@ -238,6 +282,32 @@ export interface IssueLockOptions {
     index: number,
     total: number
   ) => Promise<void>;
+}
+
+export interface IssueAllocationLockOptions {
+  readonly deadlineMs?: number;
+  readonly pollMs?: number;
+}
+
+export async function withIssueAllocationLock<T>(
+  coordination: WorkspaceCoordination,
+  key: IssueAllocationLockKey,
+  fn: () => Promise<T>,
+  options: IssueAllocationLockOptions = {}
+): Promise<T> {
+  assertIssueAllocationAcquisitionOrder();
+  const handle = await acquireOwnerAwareFileLock({
+    lockPath: issueLockPath(coordination, key),
+    errorFor: lockErrorFor(key),
+    holder: key.label,
+    ...(options.deadlineMs === undefined ? {} : { deadlineMs: options.deadlineMs }),
+    ...(options.pollMs === undefined ? {} : { pollMs: options.pollMs }),
+  });
+  try {
+    return await heldAllocation.run(true, fn);
+  } finally {
+    await releaseOwnerAwareFileLock(handle);
+  }
 }
 
 /** Takes the issue key and runs `fn` under it. Released even on failure. */

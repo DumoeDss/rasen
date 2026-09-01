@@ -178,7 +178,14 @@ const links = {
       },
       association: 'linked',
       eligibility: 'already-linked',
-      issues: [{ issueId: 'issue-a', title: 'Issue A', state: 'open', revisionId: '0001', nodeIds: ['node-a'] }],
+      issues: [{
+        identity: { uid: 'issue-a', key: 'ISS-ISSUEA0000000000', slug: null, aliases: [] },
+        issueId: 'issue-a',
+        title: 'Issue A',
+        state: 'open',
+        revisionId: '0001',
+        nodeIds: ['node-a'],
+      }],
     },
     ...['main', 'release'].map((targetLineId, index) => ({
       occurrence: {
@@ -298,7 +305,7 @@ describe('OperationsPage', () => {
     expect(groupOrder).toEqual(['active', 'abnormal']);
     expect(container.textContent).toContain('C:\\actual\\process-cwd');
     expect(container.textContent).toContain('project-a · D:\\frozen\\project-a');
-    expect(container.textContent).toContain('issue-a');
+    expect(container.textContent).toContain('ISS-ISSUEA0000000000');
     expect(container.textContent).toContain('Change attribution is ambiguous (2 candidates).');
 
     const panel = container.querySelector('[data-testid="run-operations-panel"]')!;
@@ -360,7 +367,7 @@ describe('OperationsPage', () => {
     await mount(container);
     expect(container.querySelector('.operations-page__session[data-session-id="session-exact"]')).not.toBeNull();
     expect(container.textContent).toContain('run-one');
-    expect(container.textContent).toContain('issue-a');
+    expect(container.textContent).toContain('ISS-ISSUEA0000000000');
 
     vi.mocked(client.getStoreChangeIssueLinks).mockRejectedValue(new Error('links unavailable'));
     vi.mocked(client.listSessions).mockRejectedValue(new Error('sessions unavailable'));
@@ -369,7 +376,7 @@ describe('OperationsPage', () => {
 
     expect(container.querySelector('.operations-page__session[data-session-id="session-exact"]')).not.toBeNull();
     expect(container.textContent).toContain('run-one');
-    expect(container.textContent).toContain('issue-a');
+    expect(container.textContent).toContain('ISS-ISSUEA0000000000');
     expect(container.textContent).toContain('sessions: Failed to load Sessions.');
     expect(container.textContent).toContain('runs: Failed to load Runs.');
     expect(container.textContent).toContain('Failed to load Change-to-Issue links.');
@@ -381,7 +388,7 @@ describe('OperationsPage', () => {
     expect(container.textContent).toContain('App A');
     expect(container.querySelector('.operations-page__session[data-session-id="session-exact"]')).not.toBeNull();
     expect(container.textContent).toContain('run-one');
-    expect(container.textContent).toContain('issue-a');
+    expect(container.textContent).toContain('ISS-ISSUEA0000000000');
   });
 
   it('does not poll for live work hidden by the selected project filter', async () => {

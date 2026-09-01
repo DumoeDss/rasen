@@ -2500,10 +2500,13 @@ export class StorePlanningResolver implements StorePlanning {
         address.kind === 'execution-plan'
           ? {
               kind: 'execution-plan',
-              issueId: address.issueId,
+              issueStorageKey: address.issueStorageKey,
               revisionId: address.revisionId,
             }
-          : { kind: address.kind, issueId: address.issueId },
+          : {
+              kind: address.kind,
+              issueStorageKey: address.issueStorageKey,
+            },
         resolved.flavor
       );
     } else {

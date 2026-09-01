@@ -104,10 +104,10 @@ function pinnedBrands(): Set<string> {
 describe('Store planning v2 branded vocabulary is pinned exhaustively', () => {
   it('finds the whole declared vocabulary', () => {
     const brands = declaredBrands();
-    // 16 from before this change, plus this change's own `IssueId` and
-    // `ExecutionPlanRevisionId` (task 1.1) — this count is the proof that the
-    // guard's counted vocabulary actually moved when the brands landed.
-    expect(brands.length).toBe(18);
+    // 18 from before system-assigned Issue identity, plus its four distinct
+    // UID/key/selector/storage-locator brands — this count proves the guard's
+    // vocabulary moved with the new identity seam.
+    expect(brands.length).toBe(22);
     expect(new Set(brands).size).toBe(brands.length);
   });
 

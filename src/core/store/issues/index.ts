@@ -6,6 +6,7 @@
  * location rule, and the lock protocol are internal.
  */
 export * from './types.js';
+export * from './identity.js';
 export {
   StoreIssueError,
   isStoreIssueError,
@@ -23,8 +24,12 @@ export {
   TERMINAL_ISSUE_STATES,
   isPermittedIssueTransition,
   parseIssueRecord,
+  parseStoredIssueRecord,
   serializeIssueRecord,
+  serializeIssueRecordV2,
+  serializeStoredIssueRecord,
   validateIssueRecord,
+  validateIssueRecordV2,
   validateIssueRecordLocation,
 } from './records.js';
 export {
@@ -60,9 +65,12 @@ export {
 } from './migration-compiler.js';
 export {
   STORE_LOCK_ORDER,
+  assertIssueAllocationAcquisitionOrder,
   assertIssueAcquisitionOrder,
   assertStoreLockOrderAgreesWithWorkspace,
   heldStoreLockKinds,
+  issueAllocationLockHeld,
+  issueAllocationLockKey,
   heldIssueLockKeys,
   issueLockCanonicalBytes,
   issueLockFileName,
@@ -70,7 +78,10 @@ export {
   issueLockKey,
   issueLockPath,
   withIssueLock,
+  withIssueAllocationLock,
   withIssueLockBatch,
+  type IssueAllocationLockKey,
+  type IssueAllocationLockOptions,
   type IssueLockKey,
   type StoreLockKind,
 } from './locks.js';

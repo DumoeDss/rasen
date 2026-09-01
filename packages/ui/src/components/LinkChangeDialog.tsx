@@ -6,6 +6,7 @@ import type {
   StoreChangeIssueLinkEntry,
   StoreExecutionPlanNode,
   StoreExecutionPlanNodeInput,
+  StoreIssueIdentity,
   StoreIssueProjectionEntry,
   StoreIssueProjectionResponse,
 } from '../api/types.js';
@@ -76,6 +77,20 @@ function readableBase(detail: StoreIssueProjectionResponse | null): {
   return { revisionId: detail.plan.revisionId, nodes: detail.plan.revision.nodes };
 }
 
+function canonicalIssueSelector(issue: StoreIssueProjectionEntry): string | null {
+  return issue.identity?.uid ?? null;
+}
+
+function issueOptionLabel(issue: StoreIssueProjectionEntry): string {
+  return `${issue.identity?.key ?? issue.issueId} — ${issue.record?.title ?? ''}`;
+}
+
+type CreateRecoveryOutcome = {
+  kind: 'created-plan-failed' | 'publication-indeterminate';
+  identity: Pick<StoreIssueIdentity, 'uid' | 'key'>;
+  message: string;
+};
+
 export function LinkChangeDialog({
   entry,
   issues,
@@ -98,7 +113,11 @@ export function LinkChangeDialog({
   liveScope.current = { entry, selector, initialMode };
   const change = owner.entry.occurrence.change;
   const [mode, setMode] = useState<LinkDialogMode>(owner.initialMode);
-  const [issueId, setIssueId] = useState(owner.initialMode === 'attach' ? issues[0]?.issueId ?? '' : '');
+  const [issueId, setIssueId] = useState(
+    owner.initialMode === 'attach'
+      ? issues.map(canonicalIssueSelector).find(value => value !== null) ?? ''
+      : ''
+  );
   const [title, setTitle] = useState('');
   const [detail, setDetail] = useState<StoreIssueProjectionResponse | null>(null);
   const [nodeId, setNodeId] = useState(change.changeId);
@@ -106,7 +125,10 @@ export function LinkChangeDialog({
   const [loadingIssue, setLoadingIssue] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [partial, setPartial] = useState<{ issueId: string; message: string } | null>(null);
+  const createInFlightRef = useRef(false);
+  const createLockedRef = useRef(false);
+  const [createLocked, setCreateLocked] = useState(false);
+  const [createOutcome, setCreateOutcome] = useState<CreateRecoveryOutcome | null>(null);
 
   useEffect(() => () => {
     active.current = false;
@@ -149,8 +171,8 @@ export function LinkChangeDialog({
 
   const duplicateNode = currentNodes().some(node => node.nodeId === nodeId);
   const validNode = isCanonicalLinkId(nodeId) && !duplicateNode;
-  const validCreate = isCanonicalLinkId(issueId) && title.trim().length > 0 && validNode;
-  const validAttach = detail !== null && validNode;
+  const validCreate = !createLocked && title.trim().length > 0 && validNode;
+  const validAttach = detail !== null && detail.issue.identity !== null && validNode;
 
   async function stillAttachable(): Promise<boolean> {
     if (!ownsScope()) return false;
@@ -166,8 +188,9 @@ export function LinkChangeDialog({
   }
 
   async function confirmAttach(): Promise<void> {
-    if (!detail || !validAttach || !ownsScope()) return;
+    if (!detail || detail.issue.identity === null || !validAttach || !ownsScope()) return;
     const detailSnapshot = detail;
+    const issueUidSnapshot = detail.issue.identity.uid;
     const nodeIdSnapshot = nodeId;
     setSubmitting(true);
     setError(null);
@@ -187,7 +210,7 @@ export function LinkChangeDialog({
         return;
       }
       await client.publishStoreExecutionPlan({
-        issueId: detailSnapshot.issue.issueId,
+        issueId: issueUidSnapshot,
         expectedRevisionId: base.revisionId,
         nodes: [...base.nodes.map(copyPlanNode), exactChangeNode(owner.entry, nodeIdSnapshot)],
       }, owner.selector);
@@ -201,7 +224,7 @@ export function LinkChangeDialog({
         setError(t('unlinked.dialog.revision_conflict'));
         setConfirming(false);
         await onRefresh();
-        if (ownsScope()) await loadIssue(detailSnapshot.issue.issueId, true);
+        if (ownsScope()) await loadIssue(issueUidSnapshot, true);
       } else {
         setError(caught instanceof ApiError ? caught.message : t('unlinked.dialog.attach_error'));
       }
@@ -211,13 +234,17 @@ export function LinkChangeDialog({
   }
 
   async function confirmCreate(): Promise<void> {
-    if (!validCreate || !ownsScope()) return;
-    const issueIdSnapshot = issueId;
+    if (
+      !validCreate ||
+      createInFlightRef.current ||
+      createLockedRef.current ||
+      !ownsScope()
+    ) return;
+    createInFlightRef.current = true;
     const titleSnapshot = title.trim();
     const nodeIdSnapshot = nodeId;
     setSubmitting(true);
     setError(null);
-    setPartial(null);
     try {
       if (!(await stillAttachable())) {
         if (!ownsScope()) return;
@@ -227,11 +254,13 @@ export function LinkChangeDialog({
         return;
       }
       if (!ownsScope()) return;
-      await client.createStoreIssue({ issueId: issueIdSnapshot, title: titleSnapshot }, owner.selector);
+      const created = await client.createStoreIssue({ title: titleSnapshot }, owner.selector);
       if (!ownsScope()) return;
+      createLockedRef.current = true;
+      setCreateLocked(true);
       try {
         await client.publishStoreExecutionPlan({
-          issueId: issueIdSnapshot,
+          issueId: created.identity.uid,
           expectedRevisionId: null,
           nodes: [exactChangeNode(owner.entry, nodeIdSnapshot)],
         }, owner.selector);
@@ -239,7 +268,11 @@ export function LinkChangeDialog({
       } catch (caught) {
         if (!ownsScope()) return;
         const message = caught instanceof ApiError ? caught.message : t('unlinked.dialog.plan_error');
-        setPartial({ issueId: issueIdSnapshot, message });
+        setCreateOutcome({
+          kind: 'created-plan-failed',
+          identity: created.identity,
+          message,
+        });
         setConfirming(false);
         await onRefresh();
         return;
@@ -249,19 +282,46 @@ export function LinkChangeDialog({
       onClose();
     } catch (caught) {
       if (!ownsScope()) return;
-      setError(caught instanceof ApiError ? caught.message : t('unlinked.dialog.create_error'));
+      if (caught instanceof ApiError && caught.code === 'issue_publication_indeterminate') {
+        createLockedRef.current = true;
+        setCreateLocked(true);
+        setConfirming(false);
+        const recovery = caught.recovery;
+        if (
+          recovery?.kind === 'issue-publication-indeterminate' &&
+          recovery.retrySafe === false &&
+          typeof recovery.identity?.uid === 'string' &&
+          typeof recovery.identity.key === 'string'
+        ) {
+          setCreateOutcome({
+            kind: 'publication-indeterminate',
+            identity: recovery.identity,
+            message: caught.message,
+          });
+          setError(null);
+        } else {
+          setError(caught.message);
+        }
+        await onRefresh();
+      } else {
+        setError(caught instanceof ApiError ? caught.message : t('unlinked.dialog.create_error'));
+      }
     } finally {
-      if (ownsScope()) setSubmitting(false);
+      if (ownsScope()) {
+        createInFlightRef.current = false;
+        setSubmitting(false);
+      }
     }
   }
 
-  async function recoverPartial(): Promise<void> {
-    if (!partial || !ownsScope()) return;
+  async function recoverCreateOutcome(): Promise<void> {
+    if (!createOutcome || !ownsScope()) return;
+    const outcome = createOutcome;
     setMode('attach');
-    setIssueId(partial.issueId);
-    setPartial(null);
+    setIssueId(outcome.identity.uid);
+    if (outcome.kind === 'created-plan-failed') setCreateOutcome(null);
     setConfirming(false);
-    await loadIssue(partial.issueId);
+    await loadIssue(outcome.identity.uid);
   }
 
   // If a caller ever reuses this component without a key, fail closed during
@@ -283,8 +343,8 @@ export function LinkChangeDialog({
         </dl>
 
         <div class="link-change-dialog__modes">
-          <button type="button" aria-pressed={mode === 'attach'} onClick={() => { setMode('attach'); setIssueId(issues[0]?.issueId ?? ''); setDetail(null); setConfirming(false); }}>{t('unlinked.attach')}</button>
-          <button type="button" aria-pressed={mode === 'create'} onClick={() => { setMode('create'); setIssueId(''); setTitle(''); setDetail(null); setConfirming(false); }}>{t('unlinked.create')}</button>
+          <button type="button" aria-pressed={mode === 'attach'} onClick={() => { setMode('attach'); setIssueId(issues.map(canonicalIssueSelector).find(value => value !== null) ?? ''); setDetail(null); setConfirming(false); }}>{t('unlinked.attach')}</button>
+          <button type="button" aria-pressed={mode === 'create'} disabled={createLocked} onClick={() => { setMode('create'); setIssueId(''); setTitle(''); setDetail(null); setConfirming(false); }}>{t('unlinked.create')}</button>
         </div>
 
         {mode === 'attach' ? (
@@ -293,10 +353,12 @@ export function LinkChangeDialog({
               {t('unlinked.dialog.issue')}
               <select value={issueId} onChange={event => { setIssueId((event.target as HTMLSelectElement).value); setDetail(null); setConfirming(false); }}>
                 <option value="">{t('unlinked.dialog.choose_issue')}</option>
-                {issueId && !issues.some(issue => issue.issueId === issueId) && (
+                {issueId && !issues.some(issue => canonicalIssueSelector(issue) === issueId) && (
                   <option value={issueId}>{issueId}</option>
                 )}
-                {issues.map(issue => <option key={issue.issueId} value={issue.issueId}>{issue.issueId} — {issue.record?.title}</option>)}
+                {issues.filter(issue => issue.identity !== null).map(issue => (
+                  <option key={issue.identity!.uid} value={issue.identity!.uid}>{issueOptionLabel(issue)}</option>
+                ))}
               </select>
             </label>
             <button type="button" disabled={!issueId || loadingIssue} onClick={() => void loadIssue()}>
@@ -305,7 +367,6 @@ export function LinkChangeDialog({
           </div>
         ) : (
           <div class="link-change-dialog__form">
-            <label>{t('unlinked.dialog.issue_id')}<input value={issueId} onInput={event => { setIssueId((event.target as HTMLInputElement).value); setConfirming(false); }} /></label>
             <label>{t('unlinked.dialog.issue_title')}<input value={title} onInput={event => { setTitle((event.target as HTMLInputElement).value); setConfirming(false); }} /></label>
           </div>
         )}
@@ -317,10 +378,21 @@ export function LinkChangeDialog({
         {!isCanonicalLinkId(nodeId) && <p role="alert">{t('unlinked.dialog.node_invalid')}</p>}
         {duplicateNode && <p role="alert">{t('unlinked.dialog.node_duplicate')}</p>}
 
-        {partial && (
+        {createOutcome?.kind === 'created-plan-failed' && (
           <div class="link-change-dialog__partial" role="alert" data-testid="unlinked-partial-outcome">
-            <p>{t('unlinked.dialog.partial', { issue: partial.issueId, error: partial.message })}</p>
-            <button type="button" onClick={() => void recoverPartial()}>{t('unlinked.dialog.recover_attach')}</button>
+            <p>{t('unlinked.dialog.partial', { issue: createOutcome.identity.key, error: createOutcome.message })}</p>
+            <button type="button" onClick={() => void recoverCreateOutcome()}>{t('unlinked.dialog.recover_attach')}</button>
+          </div>
+        )}
+
+        {createOutcome?.kind === 'publication-indeterminate' && (
+          <div class="link-change-dialog__partial" role="alert" data-testid="unlinked-indeterminate-outcome">
+            <p>{t('unlinked.dialog.indeterminate', {
+              issue: createOutcome.identity.key,
+              uid: createOutcome.identity.uid,
+              error: createOutcome.message,
+            })}</p>
+            <button type="button" onClick={() => void recoverCreateOutcome()}>{t('unlinked.dialog.recover_indeterminate')}</button>
           </div>
         )}
 
@@ -329,7 +401,9 @@ export function LinkChangeDialog({
         {confirming ? (
           <div class="link-change-dialog__confirmation" data-testid="unlinked-confirmation">
             <p>{t('unlinked.dialog.confirm_scope', {
-              issue: issueId,
+              issue: mode === 'attach'
+                ? (detail?.issue.identity?.key ?? issueId)
+                : title.trim(),
               revision: mode === 'attach' ? (readableBase(detail)?.revisionId ?? t('unlinked.dialog.no_plan')) : t('unlinked.dialog.no_plan'),
               node: nodeId,
               preserved: mode === 'attach' ? currentNodes().length : 0,

@@ -34,9 +34,11 @@ import {
   parseChangeId,
   parseExecutionPlanRevisionId,
   parseIssueId,
+  parseIssueUid,
   parseSha256Digest,
   type ExecutionPlanRevisionId,
   type IssueId,
+  type IssueUid,
   type Sha256Digest,
 } from '../planning-validation.js';
 import { assertPortableIssueText } from './records.js';
@@ -44,9 +46,13 @@ import type {
   AcceptanceCondition,
   AcceptanceConditionInput,
   AcceptanceConditionsRevisionV1,
+  AcceptanceConditionsRevisionV2,
   AcceptanceGateSnapshot,
   AcceptanceRecordExclusion,
   IssueAcceptedRecordV1,
+  IssueAcceptedRecordV2,
+  StoredAcceptanceConditionsRevision,
+  StoredIssueAcceptedRecord,
 } from './types.js';
 
 /**
@@ -94,7 +100,7 @@ const ConditionSchema = z
   })
   .strict();
 
-const ConditionsRevisionSchema = z
+const ConditionsRevisionSchemaV1 = z
   .object({
     version: z.literal(1),
     issueId: z.string(),
@@ -107,6 +113,25 @@ const ConditionsRevisionSchema = z
     conditions: z.array(ConditionSchema),
   })
   .strict();
+
+const ConditionsRevisionSchemaV2 = z
+  .object({
+    version: z.literal(2),
+    issueUid: z.string(),
+    revisionId: z.string(),
+    supersedes: z.string().nullable(),
+    createdAt: z.string().refine(isCanonicalIsoTimestamp, {
+      message: 'createdAt must be a canonical ISO-8601 UTC timestamp',
+    }),
+    contentSha256: z.string(),
+    conditions: z.array(ConditionSchema),
+  })
+  .strict();
+
+const ConditionsRevisionSchema = z.discriminatedUnion('version', [
+  ConditionsRevisionSchemaV1,
+  ConditionsRevisionSchemaV2,
+]);
 
 const GateSnapshotSchema = z
   .object({
@@ -127,7 +152,7 @@ const RecordExclusionSchema = z
   })
   .strict();
 
-const AcceptedRecordSchema = z
+const AcceptedRecordSchemaV1 = z
   .object({
     version: z.literal(1),
     issueId: z.string(),
@@ -145,6 +170,27 @@ const AcceptedRecordSchema = z
     contentSha256: z.string(),
   })
   .strict();
+
+const AcceptedRecordSchemaV2 = z
+  .object({
+    version: z.literal(2),
+    issueUid: z.string(),
+    acceptedAt: z.string().refine(isCanonicalIsoTimestamp, {
+      message: 'acceptedAt must be a canonical ISO-8601 UTC timestamp',
+    }),
+    conditionsRevisionId: z.string(),
+    conditionsSha256: z.string(),
+    gate: GateSnapshotSchema,
+    exclusions: z.array(RecordExclusionSchema).optional(),
+    note: z.string().max(4000).nullable(),
+    contentSha256: z.string(),
+  })
+  .strict();
+
+const AcceptedRecordSchema = z.discriminatedUnion('version', [
+  AcceptedRecordSchemaV1,
+  AcceptedRecordSchemaV2,
+]);
 
 /** One exclusion, validated field by field, portable text included. */
 function validateRecordExclusion(
@@ -178,11 +224,15 @@ function validateCondition(raw: z.output<typeof ConditionSchema>, index: number)
 
 /** The canonical body a conditions revision's digest covers: every field except the digest. */
 export function acceptanceConditionsDigestBody(
-  revision: Omit<AcceptanceConditionsRevisionV1, 'contentSha256'>
+  revision:
+    | Omit<AcceptanceConditionsRevisionV1, 'contentSha256'>
+    | Omit<AcceptanceConditionsRevisionV2, 'contentSha256'>
 ): unknown {
   return {
     version: revision.version,
-    issueId: revision.issueId,
+    ...(revision.version === 1
+      ? { issueId: revision.issueId }
+      : { issueUid: revision.issueUid }),
     revisionId: revision.revisionId,
     supersedes: revision.supersedes,
     createdAt: revision.createdAt,
@@ -195,7 +245,9 @@ export function acceptanceConditionsDigestBody(
 }
 
 export function acceptanceConditionsDigest(
-  revision: Omit<AcceptanceConditionsRevisionV1, 'contentSha256'>
+  revision:
+    | Omit<AcceptanceConditionsRevisionV1, 'contentSha256'>
+    | Omit<AcceptanceConditionsRevisionV2, 'contentSha256'>
 ): Sha256Digest {
   return createHash('sha256')
     .update(canonicalJson(acceptanceConditionsDigestBody(revision)), 'utf8')
@@ -210,12 +262,16 @@ export function acceptanceConditionsDigest(
  * serializes — the exact bytes the field's absence defined before it existed.
  */
 export function acceptedRecordDigestBody(
-  record: Omit<IssueAcceptedRecordV1, 'contentSha256'>
+  record:
+    | Omit<IssueAcceptedRecordV1, 'contentSha256'>
+    | Omit<IssueAcceptedRecordV2, 'contentSha256'>
 ): unknown {
   const exclusions = record.exclusions ?? [];
   return {
     version: record.version,
-    issueId: record.issueId,
+    ...(record.version === 1
+      ? { issueId: record.issueId }
+      : { issueUid: record.issueUid }),
     acceptedAt: record.acceptedAt,
     conditionsRevisionId: record.conditionsRevisionId,
     conditionsSha256: record.conditionsSha256,
@@ -239,7 +295,9 @@ export function acceptedRecordDigestBody(
 }
 
 export function acceptedRecordDigest(
-  record: Omit<IssueAcceptedRecordV1, 'contentSha256'>
+  record:
+    | Omit<IssueAcceptedRecordV1, 'contentSha256'>
+    | Omit<IssueAcceptedRecordV2, 'contentSha256'>
 ): Sha256Digest {
   return createHash('sha256')
     .update(canonicalJson(acceptedRecordDigestBody(record)), 'utf8')
@@ -258,13 +316,24 @@ export interface ValidateAcceptanceOptions {
 export function validateAcceptanceConditionsRevision(
   value: unknown,
   options: ValidateAcceptanceOptions = {}
-): AcceptanceConditionsRevisionV1 {
+): StoredAcceptanceConditionsRevision {
   const result = ConditionsRevisionSchema.safeParse(value);
   if (!result.success) {
     throw conditionsError('revision', formatZodIssues(result.error), result.error);
   }
 
-  const issueId: IssueId = rethrow('issueId', () => parseIssueId(result.data.issueId));
+  const owner: { readonly issueId: IssueId } | { readonly issueUid: IssueUid } =
+    result.data.version === 1
+      ? {
+          issueId: rethrow('issueId', () =>
+            parseIssueId((result.data as z.output<typeof ConditionsRevisionSchemaV1>).issueId)
+          ),
+        }
+      : {
+          issueUid: rethrow('issueUid', () =>
+            parseIssueUid((result.data as z.output<typeof ConditionsRevisionSchemaV2>).issueUid)
+          ),
+        };
   const revisionId: ExecutionPlanRevisionId = rethrow('revisionId', () =>
     parseExecutionPlanRevisionId(result.data.revisionId)
   );
@@ -298,15 +367,26 @@ export function validateAcceptanceConditionsRevision(
     seen.add(condition.id);
   }
 
-  const revision: AcceptanceConditionsRevisionV1 = Object.freeze({
-    version: 1 as const,
-    issueId,
-    revisionId,
-    supersedes,
-    createdAt: result.data.createdAt,
-    contentSha256,
-    conditions: Object.freeze(conditions),
-  });
+  const revision: StoredAcceptanceConditionsRevision =
+    result.data.version === 1
+      ? Object.freeze({
+          version: 1 as const,
+          issueId: (owner as { readonly issueId: IssueId }).issueId,
+          revisionId,
+          supersedes,
+          createdAt: result.data.createdAt,
+          contentSha256,
+          conditions: Object.freeze(conditions),
+        })
+      : Object.freeze({
+          version: 2 as const,
+          issueUid: (owner as { readonly issueUid: IssueUid }).issueUid,
+          revisionId,
+          supersedes,
+          createdAt: result.data.createdAt,
+          contentSha256,
+          conditions: Object.freeze(conditions),
+        });
 
   if (options.verifyDigest === true) {
     const expected = acceptanceConditionsDigest(revision);
@@ -323,7 +403,7 @@ export function validateAcceptanceConditionsRevision(
 export function parseAcceptanceConditionsRevision(
   content: string,
   options: ValidateAcceptanceOptions = {}
-): AcceptanceConditionsRevisionV1 {
+): StoredAcceptanceConditionsRevision {
   let raw: unknown;
   try {
     raw = parseYaml(content);
@@ -334,12 +414,14 @@ export function parseAcceptanceConditionsRevision(
 }
 
 export function serializeAcceptanceConditionsRevision(
-  value: AcceptanceConditionsRevisionV1
+  value: StoredAcceptanceConditionsRevision
 ): string {
   const revision = validateAcceptanceConditionsRevision(value, { verifyDigest: true });
   return stringifyYaml({
-    version: 1,
-    issueId: revision.issueId,
+    version: revision.version,
+    ...(revision.version === 1
+      ? { issueId: revision.issueId }
+      : { issueUid: revision.issueUid }),
     revisionId: revision.revisionId,
     supersedes: revision.supersedes,
     createdAt: revision.createdAt,
@@ -355,13 +437,24 @@ export function serializeAcceptanceConditionsRevision(
 export function validateAcceptedRecord(
   value: unknown,
   options: ValidateAcceptanceOptions = {}
-): IssueAcceptedRecordV1 {
+): StoredIssueAcceptedRecord {
   const result = AcceptedRecordSchema.safeParse(value);
   if (!result.success) {
     throw recordError('record', formatZodIssues(result.error), result.error);
   }
 
-  const issueId: IssueId = recordRethrow('issueId', () => parseIssueId(result.data.issueId));
+  const owner: { readonly issueId: IssueId } | { readonly issueUid: IssueUid } =
+    result.data.version === 1
+      ? {
+          issueId: recordRethrow('issueId', () =>
+            parseIssueId((result.data as z.output<typeof AcceptedRecordSchemaV1>).issueId)
+          ),
+        }
+      : {
+          issueUid: recordRethrow('issueUid', () =>
+            parseIssueUid((result.data as z.output<typeof AcceptedRecordSchemaV2>).issueUid)
+          ),
+        };
   const conditionsRevisionId: ExecutionPlanRevisionId = recordRethrow(
     'conditionsRevisionId',
     () => parseExecutionPlanRevisionId(result.data.conditionsRevisionId)
@@ -400,22 +493,32 @@ export function validateAcceptedRecord(
   const canonicalExclusions =
     exclusions === undefined || exclusions.length === 0 ? undefined : Object.freeze(exclusions);
 
-  const record: IssueAcceptedRecordV1 = Object.freeze({
-    version: 1 as const,
-    issueId,
+  const common = {
     acceptedAt: result.data.acceptedAt,
     conditionsRevisionId,
     conditionsSha256,
     gate: Object.freeze({
       completed: result.data.gate.completed,
       total: result.data.gate.total,
-      health: result.data.gate.health as IssueAcceptedRecordV1['gate']['health'],
+      health: result.data.gate.health,
       problemsStanding: result.data.gate.problemsStanding,
     }),
     ...(canonicalExclusions === undefined ? {} : { exclusions: canonicalExclusions }),
     note: result.data.note,
     contentSha256,
-  });
+  } as const;
+  const record: StoredIssueAcceptedRecord =
+    result.data.version === 1
+      ? Object.freeze({
+          version: 1 as const,
+          issueId: (owner as { readonly issueId: IssueId }).issueId,
+          ...common,
+        })
+      : Object.freeze({
+          version: 2 as const,
+          issueUid: (owner as { readonly issueUid: IssueUid }).issueUid,
+          ...common,
+        });
 
   // Close evidence is coherent by definition: the record's own body says the
   // counts add up, the health is a real vocabulary value, and no problem
@@ -446,7 +549,7 @@ function recordRethrow<T>(field: string, action: () => T): T {
 export function parseAcceptedRecord(
   content: string,
   options: ValidateAcceptanceOptions = {}
-): IssueAcceptedRecordV1 {
+): StoredIssueAcceptedRecord {
   let raw: unknown;
   try {
     raw = parseYaml(content);
@@ -456,11 +559,13 @@ export function parseAcceptedRecord(
   return validateAcceptedRecord(raw, options);
 }
 
-export function serializeAcceptedRecord(value: IssueAcceptedRecordV1): string {
+export function serializeAcceptedRecord(value: StoredIssueAcceptedRecord): string {
   const record = validateAcceptedRecord(value, { verifyDigest: true });
   return stringifyYaml({
-    version: 1,
-    issueId: record.issueId,
+    version: record.version,
+    ...(record.version === 1
+      ? { issueId: record.issueId }
+      : { issueUid: record.issueUid }),
     acceptedAt: record.acceptedAt,
     conditionsRevisionId: record.conditionsRevisionId,
     conditionsSha256: record.conditionsSha256,

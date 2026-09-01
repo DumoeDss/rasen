@@ -51,9 +51,17 @@ import type {
   GroupedChanges,
   IssueSummaryPage,
   IssueDetail,
+  IssueSummary,
+  IssueRecordCopy,
   ResolvedExecutionPlan,
 } from '../store/query/types.js';
-import type { IssueRecordResult, ExecutionPlanResult } from '../store/issues/types.js';
+import type {
+  IssueRecordResult,
+  ExecutionPlanResult,
+  IssuePublicationRecovery,
+  IssueWriteWarning,
+} from '../store/issues/types.js';
+import type { IssueIdentityV2 } from '../store/issues/identity.js';
 import type {
   ChangeIssueLinksPayload,
   IssueProjectionDetailPayload,
@@ -75,7 +83,14 @@ export interface ProjectRef {
  * verbatim rather than paraphrased.
  */
 export interface ApiErrorBody {
-  error: { code: string; message: string; fix?: string; cliExitCode?: number; stderr?: string };
+  error: {
+    code: string;
+    message: string;
+    fix?: string;
+    cliExitCode?: number;
+    stderr?: string;
+    recovery?: IssuePublicationRecovery;
+  };
 }
 
 // -----------------------------------------------------------------------
@@ -1466,17 +1481,36 @@ export type StoreTargetLinesResponse = TargetLineRollup;
 /** `GET /api/v1/stores/changes` response. */
 export type StoreChangesResponse = GroupedChanges;
 
+/** Public copy projection: the internal storage locator is intentionally unrepresentable. */
+export type StorePublicIssueRecordCopy = Omit<IssueRecordCopy, 'storageKey' | 'identity'> & {
+  readonly identity: IssueIdentityV2 | null;
+};
+
+export type StorePublicIssueSummary = Omit<IssueSummary, 'divergence'> & {
+  readonly divergence: {
+    readonly copies: readonly StorePublicIssueRecordCopy[];
+  } | null;
+};
+
 /** `GET /api/v1/stores/issues` response. */
-export type StoreIssuesResponse = IssueSummaryPage;
+export type StoreIssuesResponse = Omit<IssueSummaryPage, 'issues'> & {
+  readonly issues: readonly StorePublicIssueSummary[];
+};
 
 /** `GET /api/v1/stores/issue` response. */
-export type StoreIssueDetailResponse = IssueDetail;
+export type StoreIssueDetailResponse = Omit<IssueDetail, 'issue' | 'plan'> & {
+  readonly issue: StorePublicIssueSummary;
+  readonly plan: StoreExecutionPlanResponse | null;
+};
 
 /** `GET /api/v1/stores/issue-references` response. */
-export type StoreIssueReferencesResponse = IssueSummaryPage;
+export type StoreIssueReferencesResponse = StoreIssuesResponse;
 
 /** `GET /api/v1/stores/execution-plan` response. */
-export type StoreExecutionPlanResponse = ResolvedExecutionPlan;
+export type StoreExecutionPlanResponse = Omit<ResolvedExecutionPlan, 'issueId'> & {
+  /** Canonical public UID, or the explicit unavailable marker when identity is unverified. */
+  readonly issueId: string;
+};
 
 /**
  * The three Issue PROJECTION reads (`issue-read-surface` design D2), aliased
@@ -1489,10 +1523,17 @@ export type StoreExecutionPlanResponse = ResolvedExecutionPlan;
  */
 
 /** `GET /api/v1/stores/issue-projections` response. */
-export type StoreIssueProjectionsResponse = IssueProjectionListPayload;
+export type StoreIssueProjectionsResponse = Omit<IssueProjectionListPayload, 'issues'> & {
+  readonly issues: readonly (StorePublicIssueSummary & {
+    readonly status: IssueProjectionListPayload['issues'][number]['status'];
+  })[];
+};
 
 /** `GET /api/v1/stores/issue-projection` response. */
-export type StoreIssueProjectionResponse = IssueProjectionDetailPayload;
+export type StoreIssueProjectionResponse = Omit<IssueProjectionDetailPayload, 'issue' | 'plan'> & {
+  readonly issue: StorePublicIssueSummary;
+  readonly plan: StoreExecutionPlanResponse | null;
+};
 
 /** `GET /api/v1/stores/issue-attention` response. */
 export type StoreIssueAttentionResponse = StoreAttentionPayload;
@@ -1500,11 +1541,23 @@ export type StoreIssueAttentionResponse = StoreAttentionPayload;
 /** `GET /api/v1/stores/change-issue-links` response. */
 export type StoreChangeIssueLinksResponse = ChangeIssueLinksPayload;
 
-/** `POST /api/v1/stores/issues` and `POST /api/v1/stores/issue-state` response — both write one Issue record. */
-export type StoreIssueRecordResponse = IssueRecordResult;
+/** Public write facts. Physical checkout/storage locators remain core-only. */
+type StorePublicIssueWriteWarning = Pick<IssueWriteWarning, 'code' | 'message'>;
+
+export type StorePublicIssueWriteReport = Pick<
+  IssueRecordResult,
+  'identity' | 'issueId' | 'storeId' | 'storeUid'
+> & {
+  readonly warnings?: readonly StorePublicIssueWriteWarning[];
+};
+
+/** `POST /api/v1/stores/issues` and `POST /api/v1/stores/issue-state` response. */
+export type StoreIssueRecordResponse = StorePublicIssueWriteReport &
+  Pick<IssueRecordResult, 'record'>;
 
 /** `POST /api/v1/stores/execution-plan` response. */
-export type StoreExecutionPlanPublishResponse = ExecutionPlanResult;
+export type StoreExecutionPlanPublishResponse = StorePublicIssueWriteReport &
+  Pick<ExecutionPlanResult, 'revision'>;
 
 /** `POST /api/v1/stores/issues` request body. */
 export interface StoreIssueCreateRequest {
@@ -1695,11 +1748,13 @@ export type WireIssueState = 'open' | 'resolved' | 'dropped';
 export interface WireIssueRecordCopy {
   storeRef: string | null;
   targetLineId: string | null;
+  /** Public identity projection; the physical storage locator is omitted. */
+  identity: WireIssueIdentity | null;
   sha256: string;
   record: WireIssueRecord | null;
   diagnostic: string | null;
 }
-export interface WireIssueRecord {
+export interface WireIssueRecordV1 {
   version: 1;
   id: string;
   title: string;
@@ -1707,6 +1762,24 @@ export interface WireIssueRecord {
   reason: string | null;
   createdAt: string;
 }
+export interface WireIssueIdentity {
+  uid: string;
+  key: string;
+  slug: string | null;
+  aliases: readonly {
+    kind: 'legacy-id' | 'former-slug' | 'custom';
+    value: string;
+  }[];
+}
+export interface WireIssueRecordV2 {
+  version: 2;
+  identity: WireIssueIdentity;
+  title: string;
+  state: WireIssueState;
+  reason: string | null;
+  createdAt: string;
+}
+export type WireIssueRecord = WireIssueRecordV1 | WireIssueRecordV2;
 /** Every copy listed, none presented as the record. */
 export interface WireIssueDivergence {
   copies: readonly WireIssueRecordCopy[];
@@ -1717,9 +1790,12 @@ export interface WireIssueReadiness {
   readyToResolve: boolean;
 }
 export interface WireIssueSummary {
+  /** Public authoritative identity; null only for unreadable/divergent records. */
+  identity: WireIssueIdentity | null;
   issueId: string;
   /** Null exactly when the Issue is divergent. */
   record: WireIssueRecord | null;
+  diagnostic: string | null;
   divergence: WireIssueDivergence | null;
   revisionIds: readonly string[];
   latestRevisionId: string | null;
@@ -1737,7 +1813,8 @@ export interface StorePublishPlanRequest {
 }
 /** `POST /api/v1/stores/:storeUid/issues`. */
 export interface StoreCreateIssueRequest {
-  issueId: string;
+  /** Deprecated compatibility alias; canonical creation is title-only. */
+  issueId?: string;
   title: string;
 }
 export interface StoreCreateScopedChangeRequest {

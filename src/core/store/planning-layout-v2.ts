@@ -9,12 +9,12 @@ import {
   StorePlanningValidationError,
   parseChangeId,
   parseExecutionPlanRevisionId,
-  parseIssueId,
+  parseIssueStorageKey,
   parseProjectId,
   parseTargetLineId,
   type ChangeId,
   type ExecutionPlanRevisionId,
-  type IssueId,
+  type IssueStorageKey,
   type ProjectId,
   type TargetLineId,
 } from './planning-validation.js';
@@ -40,21 +40,21 @@ export type StorePlanningLayoutV2Address =
    * is its own address, so no caller appends a filename to a returned
    * directory.
    */
-  | { readonly kind: 'issue'; readonly issueId: string | IssueId }
-  | { readonly kind: 'issue-record'; readonly issueId: string | IssueId }
-  | { readonly kind: 'execution-plans'; readonly issueId: string | IssueId }
+  | { readonly kind: 'issue'; readonly issueStorageKey: IssueStorageKey }
+  | { readonly kind: 'issue-record'; readonly issueStorageKey: IssueStorageKey }
+  | { readonly kind: 'execution-plans'; readonly issueStorageKey: IssueStorageKey }
   | {
       readonly kind: 'execution-plan';
-      readonly issueId: string | IssueId;
+      readonly issueStorageKey: IssueStorageKey;
       readonly revisionId: string | ExecutionPlanRevisionId;
     }
-  | { readonly kind: 'acceptance-conditions'; readonly issueId: string | IssueId }
+  | { readonly kind: 'acceptance-conditions'; readonly issueStorageKey: IssueStorageKey }
   | {
       readonly kind: 'acceptance-condition';
-      readonly issueId: string | IssueId;
+      readonly issueStorageKey: IssueStorageKey;
       readonly revisionId: string | ExecutionPlanRevisionId;
     }
-  | { readonly kind: 'issue-accepted-record'; readonly issueId: string | IssueId }
+  | { readonly kind: 'issue-accepted-record'; readonly issueStorageKey: IssueStorageKey }
   | { readonly kind: 'project-design-docs'; readonly projectId: string | ProjectId }
   | {
       readonly kind: 'active-change';
@@ -207,57 +207,57 @@ export function resolveStorePlanningLayoutV2Path(
     case 'store-design-docs':
       return containedPath(api, root, ['rasen', 'design-docs'], address.kind);
     case 'issue': {
-      const issueId = parseIssueId(address.issueId);
-      return containedPath(api, root, ['rasen', 'issues', issueId], address.kind);
+      const storageKey = parseIssueStorageKey(address.issueStorageKey);
+      return containedPath(api, root, ['rasen', 'issues', storageKey], address.kind);
     }
     case 'issue-record': {
-      const issueId = parseIssueId(address.issueId);
+      const storageKey = parseIssueStorageKey(address.issueStorageKey);
       return containedPath(
         api,
         root,
-        ['rasen', 'issues', issueId, 'issue.yaml'],
+        ['rasen', 'issues', storageKey, 'issue.yaml'],
         address.kind
       );
     }
     case 'execution-plans': {
-      const issueId = parseIssueId(address.issueId);
-      return containedPath(api, root, ['rasen', 'issues', issueId, 'plans'], address.kind);
+      const storageKey = parseIssueStorageKey(address.issueStorageKey);
+      return containedPath(api, root, ['rasen', 'issues', storageKey, 'plans'], address.kind);
     }
     case 'execution-plan': {
-      const issueId = parseIssueId(address.issueId);
+      const storageKey = parseIssueStorageKey(address.issueStorageKey);
       const revisionId = parseExecutionPlanRevisionId(address.revisionId);
       return containedPath(
         api,
         root,
-        ['rasen', 'issues', issueId, 'plans', `${revisionId}.yaml`],
+        ['rasen', 'issues', storageKey, 'plans', `${revisionId}.yaml`],
         address.kind
       );
     }
     case 'acceptance-conditions': {
-      const issueId = parseIssueId(address.issueId);
+      const storageKey = parseIssueStorageKey(address.issueStorageKey);
       return containedPath(
         api,
         root,
-        ['rasen', 'issues', issueId, 'acceptance'],
+        ['rasen', 'issues', storageKey, 'acceptance'],
         address.kind
       );
     }
     case 'acceptance-condition': {
-      const issueId = parseIssueId(address.issueId);
+      const storageKey = parseIssueStorageKey(address.issueStorageKey);
       const revisionId = parseExecutionPlanRevisionId(address.revisionId);
       return containedPath(
         api,
         root,
-        ['rasen', 'issues', issueId, 'acceptance', `${revisionId}.yaml`],
+        ['rasen', 'issues', storageKey, 'acceptance', `${revisionId}.yaml`],
         address.kind
       );
     }
     case 'issue-accepted-record': {
-      const issueId = parseIssueId(address.issueId);
+      const storageKey = parseIssueStorageKey(address.issueStorageKey);
       return containedPath(
         api,
         root,
-        ['rasen', 'issues', issueId, 'accepted.yaml'],
+        ['rasen', 'issues', storageKey, 'accepted.yaml'],
         address.kind
       );
     }

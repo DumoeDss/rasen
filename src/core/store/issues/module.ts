@@ -15,8 +15,10 @@
  *     modified, or deleted here, and no Change records which Issues reference it.
  *   - **Nothing is staged.** Every write prints the pathspec that would commit
  *     it. The Git index is untouched; nothing is fetched or pushed.
- *   - **Only the issue key is taken.** An Issue write touches no project
- *     partition, no worktree, and no canonical spec, so it needs no other lock.
+ *   - **Only Issue-family keys are taken.** Every mutation takes Store
+ *     allocation before UID Issue so selector resolution and identity
+ *     publication share one linearization boundary. No Issue write touches a
+ *     project partition, worktree, or canonical spec.
  */
 import * as path from 'node:path';
 
@@ -24,16 +26,33 @@ import {
   formatExecutionPlanRevisionId,
   parseExecutionPlanRevisionId,
   parseIssueId,
+  parseIssueStorageKey,
   type ExecutionPlanRevisionId,
 } from '../planning-validation.js';
 import { listProjectEntries, listTargetLineEntries } from '../query/refs.js';
-import { resolveRegisteredStore } from '../registry.js';
+import {
+  StoreQueryModuleImpl,
+  productionStoreQueryDependencies,
+  type IssueSummaryPage,
+} from '../query/index.js';
 import {
   productionStoreIssueDependencies,
   type StoreIssueDependencies,
 } from './dependencies.js';
-import { issueError, issueRefusal } from './diagnostics.js';
-import { issueLockKey, withIssueLock } from './locks.js';
+import { issueError, issueRefusal, StoreIssueError } from './diagnostics.js';
+import {
+  allocateIssueIdentity,
+  issueResourceOwnerMatches,
+  projectStoredIssueIdentity,
+  resolveIssueSelector,
+  type IssueIdentityCandidate,
+} from './identity.js';
+import {
+  issueAllocationLockKey,
+  issueLockKey,
+  withIssueAllocationLock,
+  withIssueLock,
+} from './locks.js';
 import { verifyExecutionPlanReferences } from './reference-verification.js';
 import {
   assertPlanNodeSuggestions,
@@ -54,8 +73,9 @@ import {
 import {
   assertPortableIssueText,
   isPermittedIssueTransition,
-  parseIssueRecord,
-  serializeIssueRecord,
+  parseStoredIssueRecord,
+  serializeIssueRecordV2,
+  serializeStoredIssueRecord,
 } from './records.js';
 import {
   acceptanceRevisionAddress,
@@ -68,20 +88,24 @@ import {
 } from './scope.js';
 import type {
   AcceptanceConditionsResult,
-  AcceptanceConditionsRevisionV1,
+  AcceptanceConditionsRevisionV2,
+  StoredAcceptanceConditionsRevision,
   AcceptIssueInput,
   AcceptIssueResult,
   CreateIssueInput,
   ExecutionPlanNode,
   ExecutionPlanResult,
-  ExecutionPlanRevisionV1,
-  IssueAcceptedRecordV1,
+  ExecutionPlanRevisionV2,
+  IssueAcceptedRecordV2,
   IssueRecordResult,
-  IssueRecordV1,
+  IssueRecordV2,
+  IssueWriteWarning,
+  StoredIssueRecord,
   PublishAcceptanceConditionsInput,
   PublishExecutionPlanInput,
   SetIssueStateInput,
   StoreIssues,
+  StoreIssueSelector,
   SuggestedIssueCommit,
 } from './types.js';
 
@@ -89,12 +113,33 @@ export interface StoreIssuesOptions {
   readonly dependencies?: StoreIssueDependencies;
 }
 
+interface ResolvedMutationIssue extends IssueIdentityCandidate {
+  readonly record: StoredIssueRecord;
+}
+
+interface IssueIdentityCatalog {
+  readonly candidates: readonly IssueIdentityCandidate[];
+  readonly divergentUids: ReadonlySet<string>;
+}
+
+type IssueCreateAttempt =
+  | { readonly kind: 'published'; readonly result: IssueRecordResult }
+  | { readonly kind: 'collision'; readonly candidate: IssueIdentityCandidate };
+
 function canonicalTimestamp(now: Date): string {
   return now.toISOString();
 }
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function issueWriteWarning(
+  code: IssueWriteWarning['code'],
+  message: string,
+  cause: unknown
+): IssueWriteWarning {
+  return { code, message, cause };
 }
 
 const README_SCAFFOLD = [
@@ -113,54 +158,224 @@ export class StoreIssuesModule implements StoreIssues {
   }
 
   async create(input: CreateIssueInput): Promise<IssueRecordResult> {
-    const issueId = parseIssueId(input.issueId);
-    return this.withWriteLock(input, issueId, async (scope) => {
-      const addresses = issueAddresses(scope.checkoutRoot, issueId);
-      if ((await this.dependencies.fs.statKind(addresses.record)) !== 'absent') {
-        // Refused WITHOUT touching the existing record. A create that repaired
-        // a title would be an edit nobody asked for.
-        throw issueRefusal(
-          'issue_already_exists',
-          `Issue '${issueId}' already exists in Store '${scope.storeId}'.`,
-          {
-            expected: 'no Issue with this identifier',
-            actual: addresses.record,
-            target: addresses.record,
-            fix: `Choose another identifier, or change the existing Issue with 'rasen store issue state ${issueId}'.`,
+    if (input.title.length > 200) {
+      throw issueError(
+        'issue_title_required',
+        'Issue title is required and must be at most 200 characters.'
+      );
+    }
+    try {
+      assertPortableIssueText(input.title, 'title', 'invalid_issue_record');
+    } catch (error) {
+      throw issueError(
+        'issue_title_required',
+        `Issue title is required and must be portable durable text: ${messageOf(error)}`
+      );
+    }
+
+    const scope = await this.openWriteScope(input);
+    const coordination = this.dependencies.coordination(input.globalDataDir);
+    const allocationKey = issueAllocationLockKey({ storeUid: scope.storeUid });
+    return withIssueAllocationLock(coordination, allocationKey, async () => {
+      const catalog = await this.readIdentityCatalog(input, scope);
+      const existing = [...catalog.candidates];
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        let identity;
+        try {
+          identity = allocateIssueIdentity({
+            title: input.title,
+            existing,
+            mintIssueUid: this.dependencies.mintIssueUid,
+            ...(input.issueId === undefined ? {} : { compatibilityAlias: input.issueId }),
+            maxAttempts: 1,
+          });
+        } catch (error) {
+          if (
+            error instanceof StoreIssueError &&
+            error.issueCode === 'issue_identity_allocation_failed'
+          ) {
+            continue;
+          }
+          throw error;
+        }
+
+        const storageKey = parseIssueStorageKey(identity.uid);
+        const addresses = issueAddresses(scope.checkoutRoot, storageKey);
+        const result = await withIssueLock(
+          coordination,
+          issueLockKey({ storeUid: scope.storeUid, issueUid: identity.uid }),
+          async (): Promise<IssueCreateAttempt> => {
+            if ((await this.dependencies.fs.statKind(addresses.record)) !== 'absent') {
+              const occupied = await this.dependencies.fs.readText(addresses.record);
+              if (occupied === null) {
+                throw issueError(
+                  'issue_identity_allocation_failed',
+                  `Issue identity '${identity.uid}' is occupied by a non-readable record carrier.`
+                );
+              }
+              const occupiedRecord = parseStoredIssueRecord(occupied, addresses.record);
+              return {
+                kind: 'collision',
+                candidate: {
+                  ...projectStoredIssueIdentity({
+                    storeUid: scope.storeUid,
+                    record: occupiedRecord,
+                    storageKey,
+                  }),
+                  title: occupiedRecord.title,
+                },
+              };
+            }
+            const record: IssueRecordV2 = {
+              version: 2,
+              identity,
+              title: input.title,
+              state: 'open',
+              reason: null,
+              createdAt: canonicalTimestamp(this.dependencies.now()),
+            };
+            const serialized = serializeIssueRecordV2(record);
+            if (this.dependencies.fs.writeTextAtomic === undefined) {
+              throw issueError(
+                'issue_identity_allocation_failed',
+                'Issue creation requires the atomic expected-absent filesystem adapter.'
+              );
+            }
+            let published = false;
+            const warnings: IssueWriteWarning[] = [];
+            try {
+              await this.dependencies.fs.writeTextAtomic(addresses.record, serialized, {
+                content: null,
+                identity: null,
+              });
+              published = true;
+            } catch (error) {
+              let occupied: string | null;
+              try {
+                occupied = await this.dependencies.fs.readText(addresses.record);
+              } catch (readError) {
+                throw issueError(
+                  'issue_publication_indeterminate',
+                  'Issue record publication failed and its durable outcome could not be verified.',
+                  {
+                    fix: `Inspect Issue ${identity.key} (${identity.uid}) locally before any retry; a fresh create can mint a duplicate.`,
+                    recovery: {
+                      kind: 'issue-publication-indeterminate',
+                      identity: { uid: identity.uid, key: identity.key },
+                      retrySafe: false,
+                    },
+                    cause: { writeError: error, readError },
+                  }
+                );
+              }
+              if (occupied === serialized) {
+                // The record commit point landed and only a later durability,
+                // verification, or cleanup step failed. Retrying would create
+                // a second Issue, so return the committed identity with an
+                // explicit warning regardless of the thrown error's class.
+                published = true;
+                warnings.push(issueWriteWarning(
+                  'issue_record_post_publish_warning',
+                  'The Issue record was created, but a later atomic verification or cleanup step failed.',
+                  error
+                ));
+              } else if (occupied !== null) {
+                try {
+                  const occupiedRecord = parseStoredIssueRecord(occupied, addresses.record);
+                  return {
+                    kind: 'collision',
+                    candidate: {
+                      ...projectStoredIssueIdentity({
+                        storeUid: scope.storeUid,
+                        record: occupiedRecord,
+                        storageKey,
+                      }),
+                      title: occupiedRecord.title,
+                    },
+                  };
+                } catch (occupiedError) {
+                  // A corrupt carrier or retained atomic-write artifact is not
+                  // an allocation collision and must not mint another Issue.
+                  throw issueError(
+                    'issue_publication_indeterminate',
+                    'Issue record publication failed and left bytes whose ownership could not be verified.',
+                    {
+                      fix: `Inspect Issue ${identity.key} (${identity.uid}) locally before any retry; Rasen will not allocate around unreadable ownership evidence.`,
+                      recovery: {
+                        kind: 'issue-publication-indeterminate',
+                        identity: { uid: identity.uid, key: identity.key },
+                        retrySafe: false,
+                      },
+                      cause: { writeError: error, occupiedError },
+                    }
+                  );
+                }
+              } else {
+                throw issueError(
+                  'issue_publication_indeterminate',
+                  'Issue record publication failed before a committed record could be observed.',
+                  {
+                    fix: `Inspect Issue ${identity.key} (${identity.uid}) and any retained atomic-write carriers locally before retrying; a fresh create can mint a duplicate.`,
+                    recovery: {
+                      kind: 'issue-publication-indeterminate',
+                      identity: { uid: identity.uid, key: identity.key },
+                      retrySafe: false,
+                    },
+                    cause: error,
+                  }
+                );
+              }
+            }
+
+            const written = [addresses.record];
+            if (input.readme === true) {
+              try {
+                await this.dependencies.fs.writeText(addresses.readme, README_SCAFFOLD);
+                written.push(addresses.readme);
+              } catch (error) {
+                warnings.push(issueWriteWarning(
+                  'issue_readme_write_failed',
+                  'The Issue record was created, but its optional README could not be completed.',
+                  error
+                ));
+              }
+            }
+            if (!published) {
+              throw issueError(
+                'issue_identity_allocation_failed',
+                `Issue identity '${identity.uid}' was not published.`
+              );
+            }
+            return {
+              kind: 'published',
+              result: {
+                ...this.report(
+                  scope,
+                  identity,
+                  written,
+                  `chore(store): open issue ${identity.key}`
+                ),
+                ...(warnings.length === 0 ? {} : { warnings }),
+                record: parseStoredIssueRecord(serialized, addresses.record),
+              },
+            };
           }
         );
+        if (result.kind === 'published') return result.result;
+        existing.push(result.candidate);
       }
-
-      const record: IssueRecordV1 = {
-        version: 1,
-        id: issueId,
-        title: input.title,
-        state: 'open',
-        reason: null,
-        createdAt: canonicalTimestamp(this.dependencies.now()),
-      };
-      const serialized = serializeIssueRecord(record);
-
-      await this.dependencies.fs.mkdirp(addresses.plans);
-      await this.dependencies.fs.writeText(addresses.record, serialized);
-      const written = [addresses.record];
-      if (input.readme === true) {
-        await this.dependencies.fs.writeText(addresses.readme, README_SCAFFOLD);
-        written.push(addresses.readme);
-      }
-
-      return {
-        ...this.report(scope, issueId, written, `chore(store): open issue ${issueId}`),
-        record: parseIssueRecord(serialized, addresses.record),
-      };
+      throw issueError(
+        'issue_identity_allocation_failed',
+        'Unable to publish a non-conflicting Issue identity after 8 attempts.'
+      );
     });
   }
 
   async setState(input: SetIssueStateInput): Promise<IssueRecordResult> {
-    const issueId = parseIssueId(input.issueId);
-    return this.withWriteLock(input, issueId, async (scope) => {
-      const addresses = issueAddresses(scope.checkoutRoot, issueId);
-      const current = await this.requireRecord(addresses.record, issueId, scope);
+    return this.withResolvedIssueLock(input, async (scope, issue) => {
+      const issueId = input.issueId;
+      const addresses = issueAddresses(scope.checkoutRoot, issue.storageKey);
+      const current = issue.record;
 
       if (!isPermittedIssueTransition(current.state, input.state)) {
         throw issueRefusal(
@@ -190,7 +405,7 @@ export class StoreIssuesModule implements StoreIssues {
       // Only `state` and `reason` move. Every other field is carried through
       // from the record on disk, so a state change can never rewrite identity,
       // title, or creation time.
-      const next: IssueRecordV1 = {
+      const next: StoredIssueRecord = {
         ...current,
         state: input.state,
         reason:
@@ -200,26 +415,25 @@ export class StoreIssuesModule implements StoreIssues {
               ? current.reason
               : input.reason.trim(),
       };
-      const serialized = serializeIssueRecord(next);
+      const serialized = serializeStoredIssueRecord(next);
       await this.dependencies.fs.writeText(addresses.record, serialized);
 
       return {
         ...this.report(
           scope,
-          issueId,
+          issue.identity,
           [addresses.record],
           `chore(store): mark issue ${issueId} ${input.state}`
         ),
-        record: parseIssueRecord(serialized, addresses.record),
+        record: parseStoredIssueRecord(serialized, addresses.record),
       };
     });
   }
 
   async publishPlan(input: PublishExecutionPlanInput): Promise<ExecutionPlanResult> {
-    const issueId = parseIssueId(input.issueId);
-    return this.withWriteLock(input, issueId, async (scope) => {
-      const addresses = issueAddresses(scope.checkoutRoot, issueId);
-      await this.requireRecord(addresses.record, issueId, scope);
+    return this.withResolvedIssueLock(input, async (scope, issue) => {
+      const issueId = input.issueId;
+      const addresses = issueAddresses(scope.checkoutRoot, issue.storageKey);
 
       // Schema and graph first: they are pure, they need no Git, and refusing
       // here means an unverifiable reference never costs a ref read.
@@ -256,7 +470,7 @@ export class StoreIssuesModule implements StoreIssues {
       }
 
       const { previous, next } = ordinal;
-      const target = revisionAddress(scope.checkoutRoot, issueId, next);
+      const target = revisionAddress(scope.checkoutRoot, issue.storageKey, next);
       if ((await this.dependencies.fs.statKind(target)) !== 'absent') {
         throw issueRefusal(
           'execution_plan_revision_exists',
@@ -270,15 +484,15 @@ export class StoreIssuesModule implements StoreIssues {
         );
       }
 
-      const draft: Omit<ExecutionPlanRevisionV1, 'contentSha256'> = {
-        version: 1,
-        issueId,
+      const draft: Omit<ExecutionPlanRevisionV2, 'contentSha256'> = {
+        version: 2,
+        issueUid: issue.identity.uid,
         revisionId: next,
         supersedes: previous,
         createdAt: canonicalTimestamp(this.dependencies.now()),
         nodes,
       };
-      const revision: ExecutionPlanRevisionV1 = {
+      const revision: ExecutionPlanRevisionV2 = {
         ...draft,
         contentSha256: executionPlanDigest(draft),
       };
@@ -289,9 +503,9 @@ export class StoreIssuesModule implements StoreIssues {
       return {
         ...this.report(
           scope,
-          issueId,
+          issue.identity,
           [target],
-          `chore(store): publish execution plan ${issueId}/${next}`
+          `chore(store): publish execution plan ${issue.identity.key}/${next}`
         ),
         revision,
       };
@@ -301,10 +515,9 @@ export class StoreIssuesModule implements StoreIssues {
   async publishAcceptance(
     input: PublishAcceptanceConditionsInput
   ): Promise<AcceptanceConditionsResult> {
-    const issueId = parseIssueId(input.issueId);
-    return this.withWriteLock(input, issueId, async (scope) => {
-      const addresses = issueAddresses(scope.checkoutRoot, issueId);
-      await this.requireRecord(addresses.record, issueId, scope);
+    return this.withResolvedIssueLock(input, async (scope, issue) => {
+      const issueId = input.issueId;
+      const addresses = issueAddresses(scope.checkoutRoot, issue.storageKey);
 
       // Pure validation first, exactly like a plan publication: the schema,
       // the portable-text contract, and duplicate condition identifiers are
@@ -312,7 +525,11 @@ export class StoreIssuesModule implements StoreIssues {
       const conditions = normalizeAcceptanceConditions(input.conditions);
 
       const { previous, next } = await this.allocateOrdinal(addresses.acceptance);
-      const target = acceptanceRevisionAddress(scope.checkoutRoot, issueId, next);
+      const target = acceptanceRevisionAddress(
+        scope.checkoutRoot,
+        issue.storageKey,
+        next
+      );
       if ((await this.dependencies.fs.statKind(target)) !== 'absent') {
         throw issueRefusal(
           'acceptance_conditions_revision_exists',
@@ -326,15 +543,15 @@ export class StoreIssuesModule implements StoreIssues {
         );
       }
 
-      const draft: Omit<AcceptanceConditionsRevisionV1, 'contentSha256'> = {
-        version: 1,
-        issueId,
+      const draft: Omit<AcceptanceConditionsRevisionV2, 'contentSha256'> = {
+        version: 2,
+        issueUid: issue.identity.uid,
         revisionId: next,
         supersedes: previous,
         createdAt: canonicalTimestamp(this.dependencies.now()),
         conditions,
       };
-      const revision: AcceptanceConditionsRevisionV1 = {
+      const revision: AcceptanceConditionsRevisionV2 = {
         ...draft,
         contentSha256: acceptanceConditionsDigest(draft),
       };
@@ -345,9 +562,9 @@ export class StoreIssuesModule implements StoreIssues {
       return {
         ...this.report(
           scope,
-          issueId,
+          issue.identity,
           [target],
-          `chore(store): publish acceptance conditions ${issueId}/${next}`
+          `chore(store): publish acceptance conditions ${issue.identity.key}/${next}`
         ),
         revision,
       };
@@ -363,10 +580,11 @@ export class StoreIssuesModule implements StoreIssues {
    * revision that does not exist in this Store checkout.
    */
   async accept(input: AcceptIssueInput): Promise<AcceptIssueResult> {
-    const issueId = parseIssueId(input.issueId);
-    return this.withWriteLock(input, issueId, async (scope) => {
-      const addresses = issueAddresses(scope.checkoutRoot, issueId);
-      const current = await this.requireRecord(addresses.record, issueId, scope);
+    return this.withResolvedIssueLock(input, async (scope, issue) => {
+      const selector = input.issueId;
+      const issueId = parseIssueId(issue.identity.uid);
+      const addresses = issueAddresses(scope.checkoutRoot, issue.storageKey);
+      const current = issue.record;
 
       // One record per Issue, never rewritten — even a record that no longer
       // parses is an existing acceptance, and overwriting it would be exactly
@@ -382,7 +600,7 @@ export class StoreIssuesModule implements StoreIssues {
         }
         throw issueRefusal(
           'issue_accept_already_accepted',
-          `Issue '${issueId}' already carries an acceptance record: ${reason}.`,
+          `Issue '${selector}' already carries an acceptance record: ${reason}.`,
           {
             expected: 'no acceptance record for this Issue',
             actual: addresses.accepted,
@@ -395,7 +613,7 @@ export class StoreIssuesModule implements StoreIssues {
       if (current.state === 'dropped') {
         throw issueRefusal(
           'issue_accept_dropped',
-          `Issue '${issueId}' is dropped — abandoned, not acceptable.`,
+          `Issue '${selector}' is dropped — abandoned, not acceptable.`,
           {
             expected: 'an Issue whose state is open or resolved',
             actual: 'dropped',
@@ -415,7 +633,7 @@ export class StoreIssuesModule implements StoreIssues {
       if (current.state === 'open' && !isPermittedIssueTransition(current.state, 'resolved')) {
         throw issueRefusal(
           'issue_state_transition_refused',
-          `Issue '${issueId}' is '${current.state}', which does not permit 'resolved'.`,
+          `Issue '${selector}' is '${current.state}', which does not permit 'resolved'.`,
           {
             expected: "a transition permitted from 'open'",
             actual: 'resolved',
@@ -431,14 +649,14 @@ export class StoreIssuesModule implements StoreIssues {
       // read back under the lock and its digest verified against the input.
       const conditionsPath = acceptanceRevisionAddress(
         scope.checkoutRoot,
-        issueId,
+        issue.storageKey,
         input.conditionsRevisionId
       );
       const conditionsText = await this.dependencies.fs.readText(conditionsPath);
       if (conditionsText === null) {
         throw issueRefusal(
           'issue_accept_conditions_unreadable',
-          `Acceptance conditions revision '${input.conditionsRevisionId}' of Issue '${issueId}' does not exist in Store checkout ${scope.checkoutRoot}.`,
+          `Acceptance conditions revision '${input.conditionsRevisionId}' of Issue '${selector}' does not exist in Store checkout ${scope.checkoutRoot}.`,
           {
             expected: 'a published acceptance conditions revision',
             actual: '(absent)',
@@ -447,19 +665,27 @@ export class StoreIssuesModule implements StoreIssues {
           }
         );
       }
-      let conditions: AcceptanceConditionsRevisionV1;
+      let conditions: StoredAcceptanceConditionsRevision;
       try {
         conditions = parseAcceptanceConditionsRevision(conditionsText, { verifyDigest: true });
       } catch (error) {
         throw issueRefusal(
           'issue_accept_conditions_unreadable',
-          `Acceptance conditions revision '${input.conditionsRevisionId}' of Issue '${issueId}' does not read back: ${messageOf(error)}`,
+          `Acceptance conditions revision '${input.conditionsRevisionId}' of Issue '${selector}' does not read back: ${messageOf(error)}`,
           {
             expected: 'a readable acceptance conditions revision',
             actual: messageOf(error),
             target: conditionsPath,
             fix: 'The revision is Store content whose digest no longer matches. Re-publish conditions as a new revision rather than repairing the old one.',
           }
+        );
+      }
+      if (!issueResourceOwnerMatches(issue, conditions)) {
+        const actualOwner = conditions.version === 2 ? conditions.issueUid : conditions.issueId;
+        throw issueError(
+          'issue_resource_identity_mismatch',
+          `Acceptance conditions revision '${input.conditionsRevisionId}' belongs to Issue '${actualOwner}', not '${issue.identity.uid}'.`,
+          { target: conditionsPath }
         );
       }
       if (conditions.contentSha256 !== input.conditionsSha256) {
@@ -479,7 +705,7 @@ export class StoreIssuesModule implements StoreIssues {
       if (note === '') {
         throw issueRefusal(
           'issue_accept_note_invalid',
-          `Accepting Issue '${issueId}' with --note requires a non-empty note.`,
+          `Accepting Issue '${selector}' with --note requires a non-empty note.`,
           {
             expected: 'a non-empty note or no note at all',
             actual: '(blank)',
@@ -512,9 +738,9 @@ export class StoreIssuesModule implements StoreIssues {
         input.exclusions === undefined || input.exclusions.length === 0
           ? undefined
           : input.exclusions;
-      const draft: Omit<IssueAcceptedRecordV1, 'contentSha256'> = {
-        version: 1,
-        issueId,
+      const draft: Omit<IssueAcceptedRecordV2, 'contentSha256'> = {
+        version: 2,
+        issueUid: issue.identity.uid,
         acceptedAt: canonicalTimestamp(this.dependencies.now()),
         conditionsRevisionId: conditions.revisionId,
         conditionsSha256: conditions.contentSha256,
@@ -522,7 +748,7 @@ export class StoreIssuesModule implements StoreIssues {
         ...(exclusions === undefined ? {} : { exclusions }),
         note,
       };
-      const record: IssueAcceptedRecordV1 = {
+      const record: IssueAcceptedRecordV2 = {
         ...draft,
         contentSha256: acceptedRecordDigest(draft),
       };
@@ -537,10 +763,10 @@ export class StoreIssuesModule implements StoreIssues {
       if (current.state === 'open') {
         // The transition was already checked above, before any write, so the
         // state record and the acceptance record land as one durable pair.
-        const nextRecord: IssueRecordV1 = { ...current, state: 'resolved' };
+        const nextRecord: StoredIssueRecord = { ...current, state: 'resolved' };
         await this.dependencies.fs.writeText(
           addresses.record,
-          serializeIssueRecord(nextRecord)
+          serializeStoredIssueRecord(nextRecord)
         );
         written.push(addresses.record);
         state = 'resolved';
@@ -549,9 +775,9 @@ export class StoreIssuesModule implements StoreIssues {
       return {
         ...this.report(
           scope,
-          issueId,
+          issue.identity,
           written,
-          `chore(store): accept issue ${issueId}`
+          `chore(store): accept issue ${issue.identity.key}`
         ),
         record,
         state,
@@ -563,46 +789,130 @@ export class StoreIssuesModule implements StoreIssues {
   // Internals
   // ---------------------------------------------------------------------------
 
-  /**
-   * An explicit Store selector lets a writer derive the canonical Issue key
-   * from registry identity before layout-v2 scope validation. That ordering is
-   * essential during migration: once publication owns the batch, ordinary
-   * writes wait or return the existing bounded lock diagnostic at every
-   * pre-flip boundary instead of racing past the batch with a flat-layout
-   * scope refusal. The full scope/location validation still runs under the
-   * lock before any filesystem write.
-   */
-  private async withWriteLock<T>(
+  private async readIdentityCatalog(
     input: {
-      readonly store?: string;
-      readonly startPath: string;
       readonly globalDataDir?: string;
     },
-    issueId: string,
-    fn: (scope: ResolvedIssueScope) => Promise<T>
-  ): Promise<T> {
-    if (input.store !== undefined) {
-      const registered = await resolveRegisteredStore({
-        id: input.store,
-        ...(input.globalDataDir === undefined
-          ? {}
-          : { globalDataDir: input.globalDataDir }),
+    scope: ResolvedIssueScope
+  ): Promise<IssueIdentityCatalog> {
+    const query = new StoreQueryModuleImpl({
+      dependencies: {
+        ...productionStoreQueryDependencies,
+        fs: this.dependencies.fs,
+        git: this.dependencies.git,
+      },
+    });
+    const page: IssueSummaryPage = await query.listIssues({
+      store: scope.storeId,
+      startPath: scope.checkoutRoot,
+      ...(input.globalDataDir === undefined ? {} : { globalDataDir: input.globalDataDir }),
+    });
+    if (!page.complete) {
+      throw issueError(
+        'store_query_ref_unreadable',
+        `Issue identity catalog is incomplete (${page.unsearchedRefs.length} unsearched refs, ${page.problems.length} unreadable records); uniqueness cannot be proved.`
+      );
+    }
+
+    const byCopy = new Map<string, IssueIdentityCandidate>();
+    const divergentUids = new Set<string>();
+    const add = (candidate: IssueIdentityCandidate): void => {
+      byCopy.set(`${candidate.identity.uid}\0${candidate.storageKey}`, candidate);
+    };
+    for (const issue of page.issues) {
+      if (issue.divergence !== null) {
+        for (const copy of issue.divergence.copies) {
+          if (copy.identity !== null && copy.record !== null) {
+            divergentUids.add(copy.identity.identity.uid);
+            add({ ...copy.identity, title: copy.record.title });
+          }
+        }
+        continue;
+      }
+      if (issue.record === null) continue;
+      const storageKey =
+        issue.record.version === 1
+          ? parseIssueStorageKey(issue.record.id)
+          : parseIssueStorageKey(issue.record.identity.uid);
+      add({
+        ...projectStoredIssueIdentity({
+          storeUid: scope.storeUid,
+          record: issue.record,
+          storageKey,
+        }),
+        title: issue.record.title,
       });
-      if (registered.uid !== undefined) {
-        const key = issueLockKey({ storeUid: registered.uid, issueId });
+    }
+    return { candidates: [...byCopy.values()], divergentUids };
+  }
+
+  private async withResolvedIssueLock<T>(
+    input: StoreIssueSelector,
+    fn: (scope: ResolvedIssueScope, issue: ResolvedMutationIssue) => Promise<T>
+  ): Promise<T> {
+    const scope = await this.openWriteScope(input);
+    const coordination = this.dependencies.coordination(input.globalDataDir);
+    return withIssueAllocationLock(
+      coordination,
+      issueAllocationLockKey({ storeUid: scope.storeUid }),
+      async () => {
+        const catalog = await this.readIdentityCatalog(input, scope);
+        const selected = resolveIssueSelector({
+          selector: input.issueId,
+          candidates: catalog.candidates,
+          complete: true,
+        });
+        if (catalog.divergentUids.has(selected.identity.uid)) {
+          throw issueError(
+            'issue_record_divergent',
+            `Issue '${input.issueId}' resolves to '${selected.identity.uid}', whose records diverge across Store refs; no mutation winner can be chosen.`
+          );
+        }
         return withIssueLock(
-          this.dependencies.coordination(input.globalDataDir),
-          key,
-          async () => fn(await this.openWriteScope(input))
+          coordination,
+          issueLockKey({
+            storeUid: scope.storeUid,
+            issueUid: selected.identity.uid,
+          }),
+          async () => {
+            const addresses = issueAddresses(scope.checkoutRoot, selected.storageKey);
+            const text = await this.dependencies.fs.readText(addresses.record);
+            if (text === null) {
+              throw issueError(
+                'issue_not_found',
+                `Issue '${input.issueId}' resolves to '${selected.identity.uid}', but that record is absent from Store checkout ${scope.checkoutRoot}.`,
+                { target: addresses.record }
+              );
+            }
+            const record = parseStoredIssueRecord(text, addresses.record);
+            const projected = projectStoredIssueIdentity({
+              storeUid: scope.storeUid,
+              record,
+              storageKey: selected.storageKey,
+            });
+            if (projected.identity.uid !== selected.identity.uid) {
+              throw issueError(
+                'issue_storage_identity_mismatch',
+                `Issue selector '${input.issueId}' changed identity while its UID lock was being acquired.`
+              );
+            }
+            const current = { ...projected, title: record.title };
+            try {
+              resolveIssueSelector({
+                selector: input.issueId,
+                candidates: [current],
+                complete: true,
+              });
+            } catch {
+              throw issueError(
+                'issue_storage_identity_mismatch',
+                `Issue selector '${input.issueId}' no longer identifies the locked checkout record.`
+              );
+            }
+            return fn(scope, { ...current, record });
+          }
         );
       }
-    }
-    const scope = await this.openWriteScope(input);
-    const key = issueLockKey({ storeUid: scope.storeUid, issueId });
-    return withIssueLock(
-      this.dependencies.coordination(input.globalDataDir),
-      key,
-      async () => fn(scope)
     );
   }
 
@@ -614,25 +924,6 @@ export class StoreIssuesModule implements StoreIssues {
     const scope = await resolveIssueScope(this.dependencies, input);
     await assertIssueWriteLocation(this.dependencies, scope, input.globalDataDir);
     return scope;
-  }
-
-  private async requireRecord(
-    recordPath: string,
-    issueId: string,
-    scope: ResolvedIssueScope
-  ): Promise<IssueRecordV1> {
-    const text = await this.dependencies.fs.readText(recordPath);
-    if (text === null) {
-      throw issueError(
-        'issue_not_found',
-        `Issue '${issueId}' has no record in Store checkout ${scope.checkoutRoot}.`,
-        {
-          target: recordPath,
-          fix: `Create it with 'rasen store issue new ${issueId} --store ${scope.storeId} --title "<title>"', or run the command in the Store checkout that holds it.`,
-        }
-      );
-    }
-    return parseIssueRecord(text, recordPath);
   }
 
   /**
@@ -731,10 +1022,11 @@ export class StoreIssuesModule implements StoreIssues {
    */
   private report(
     scope: ResolvedIssueScope,
-    issueId: string,
+    identity: ResolvedMutationIssue['identity'],
     written: readonly string[],
     message: string
   ): {
+    readonly identity: ResolvedMutationIssue['identity'];
     readonly issueId: ReturnType<typeof parseIssueId>;
     readonly storeId: string;
     readonly storeUid: string;
@@ -752,7 +1044,8 @@ export class StoreIssuesModule implements StoreIssues {
         'Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing.',
     };
     return {
-      issueId: parseIssueId(issueId),
+      identity,
+      issueId: parseIssueId(identity.uid),
       storeId: scope.storeId,
       storeUid: scope.storeUid,
       checkoutRoot: scope.checkoutRoot,

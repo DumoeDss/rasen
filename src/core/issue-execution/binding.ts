@@ -493,7 +493,8 @@ export async function resolveIssueLaunchBinding(
   return {
     ok: true,
     binding: {
-      issueId: detail.issue.issueId,
+      ...(detail.issue.identity == null ? {} : { identity: detail.issue.identity }),
+      issueId: detail.issue.identity?.uid ?? detail.issue.issueId,
       nodeId: changeNode.nodeId,
       changeInstanceId: changeNode.changeInstanceId,
       alias,

@@ -164,6 +164,12 @@ export function buildIssueProvenance(
 ): IssueProvenanceEntry[] {
   const issueFacts: IssueProvenanceFact[] = [];
   add(issueFacts, 'issue.issueId', projection.issue.issueId);
+  add(issueFacts, 'issue.identity.uid', projection.issue.identity?.uid);
+  add(issueFacts, 'issue.identity.key', projection.issue.identity?.key);
+  add(issueFacts, 'issue.identity.slug', projection.issue.identity?.slug);
+  for (const alias of projection.issue.identity?.aliases ?? []) {
+    add(issueFacts, `issue.identity.alias.${alias.kind}`, alias.value);
+  }
   add(issueFacts, 'issue.record.state', projection.issue.record?.state);
   add(issueFacts, 'issue.record.reason', projection.issue.record?.reason);
   add(issueFacts, 'issue.record.createdAt', projection.issue.record?.createdAt);

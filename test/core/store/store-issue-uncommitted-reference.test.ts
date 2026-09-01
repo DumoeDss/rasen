@@ -168,7 +168,7 @@ describe('a plan node resolved only by the machine workspace index', () => {
 
   it('refuses publication, naming the Change, the reason, and the intent alternative', async () => {
     const local = seedLocalOnlyChange('telemetry-emit', 'e5'.repeat(16));
-    await issues().create({ ...scope, issueId: 'local-only', title: 'x' });
+    const created = await issues().create({ ...scope, issueId: 'local-only', title: 'x' });
 
     let thrown: unknown;
     try {
@@ -192,7 +192,7 @@ describe('a plan node resolved only by the machine workspace index', () => {
     expect(refusal.message).toContain(local.planningRoot);
     expect(refusal.diagnostic.fix).toContain('intent');
     // And no revision is created.
-    expect(fs.existsSync(f.at('rasen', 'issues', 'local-only', 'plans', '0001.yaml'))).toBe(
+    expect(fs.existsSync(f.at('rasen', 'issues', created.identity.uid, 'plans', '0001.yaml'))).toBe(
       false
     );
   });
@@ -213,7 +213,7 @@ describe('a plan node resolved only by the machine workspace index', () => {
     expect(committed.instanceId).toBe(local.instanceId);
     commitStore('land the Change on a Store ref');
 
-    await issues().create({ ...scope, issueId: 'committed-too', title: 'x' });
+    const created = await issues().create({ ...scope, issueId: 'committed-too', title: 'x' });
     const published = await issues().publishPlan({
       ...scope,
       issueId: 'committed-too',
@@ -223,7 +223,7 @@ describe('a plan node resolved only by the machine workspace index', () => {
     expect(published.revision.nodes[0]).toMatchObject({
       changeInstanceId: local.instanceId,
     });
-    expect(fs.existsSync(f.at('rasen', 'issues', 'committed-too', 'plans', '0001.yaml'))).toBe(
+    expect(fs.existsSync(f.at('rasen', 'issues', created.identity.uid, 'plans', '0001.yaml'))).toBe(
       true
     );
   });

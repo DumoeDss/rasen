@@ -194,6 +194,31 @@ describe('api client', () => {
     });
   });
 
+  it('preserves structured Issue publication recovery on ApiError', async () => {
+    const recovery = {
+      kind: 'issue-publication-indeterminate' as const,
+      identity: {
+        uid: '11111111-1111-4111-8111-111111111111',
+        key: 'ISS-2XSJ22FNSYD353XC',
+      },
+      retrySafe: false as const,
+    };
+    (fetch as any).mockResolvedValueOnce(jsonResponse(500, {
+      error: {
+        code: 'issue_publication_indeterminate',
+        message: 'Issue record publication outcome is indeterminate.',
+        recovery,
+      },
+    }));
+    await expect(client.createStoreIssue(
+      { title: 'Recovery facts' },
+      'store:11111111-1111-4111-8111-111111111111'
+    )).rejects.toMatchObject({
+      code: 'issue_publication_indeterminate',
+      recovery,
+    });
+  });
+
   it('narrows a non-2xx body to ApiError with code/message/fix', async () => {
     const { status, body } = errorsFixture.invalid_scope;
     (fetch as any).mockResolvedValueOnce(jsonResponse(status, body));

@@ -622,7 +622,7 @@ const COMMANDS: readonly CommandDefinition[] = [
           {
             name: 'new',
             acceptsPositional: true,
-            positionals: [{ name: 'issue-id' }],
+            positionals: [{ name: 'issue-selector', optional: true }],
             flags: [
               COMMON_FLAGS.store,
               { name: 'title', takesValue: true },
@@ -645,13 +645,13 @@ const COMMANDS: readonly CommandDefinition[] = [
           {
             name: 'show',
             acceptsPositional: true,
-            positionals: [{ name: 'issue-id' }],
+            positionals: [{ name: 'issue-selector' }],
             flags: [COMMON_FLAGS.store, COMMON_FLAGS.json],
           },
           {
             name: 'state',
             acceptsPositional: true,
-            positionals: [{ name: 'issue-id' }],
+            positionals: [{ name: 'issue-selector' }],
             flags: [
               COMMON_FLAGS.store,
               {
@@ -666,7 +666,7 @@ const COMMANDS: readonly CommandDefinition[] = [
           {
             name: 'plan',
             acceptsPositional: true,
-            positionals: [{ name: 'issue-id' }],
+            positionals: [{ name: 'issue-selector' }],
             flags: [
               COMMON_FLAGS.store,
               { name: 'from-file', takesValue: true },
@@ -686,7 +686,7 @@ const COMMANDS: readonly CommandDefinition[] = [
             // the checklist an Issue is accepted against.
             name: 'acceptance',
             acceptsPositional: true,
-            positionals: [{ name: 'issue-id' }],
+            positionals: [{ name: 'issue-selector' }],
             flags: [
               COMMON_FLAGS.store,
               { name: 'from-file', takesValue: true },
@@ -698,7 +698,7 @@ const COMMANDS: readonly CommandDefinition[] = [
             // the acceptance only when it holds.
             name: 'accept',
             acceptsPositional: true,
-            positionals: [{ name: 'issue-id' }],
+            positionals: [{ name: 'issue-selector' }],
             flags: [
               COMMON_FLAGS.store,
               { name: 'note', takesValue: true },
@@ -711,7 +711,7 @@ const COMMANDS: readonly CommandDefinition[] = [
             // receives it.
             name: 'start',
             acceptsPositional: true,
-            positionals: [{ name: 'issue-id' }],
+            positionals: [{ name: 'issue-selector' }],
             flags: [
               COMMON_FLAGS.store,
               { name: 'node', takesValue: true },
@@ -726,7 +726,7 @@ const COMMANDS: readonly CommandDefinition[] = [
             // per-node act.
             name: 'confirm',
             acceptsPositional: true,
-            positionals: [{ name: 'issue-id' }],
+            positionals: [{ name: 'issue-selector' }],
             flags: [
               COMMON_FLAGS.store,
               { name: 'revision', takesValue: true },
@@ -739,7 +739,7 @@ const COMMANDS: readonly CommandDefinition[] = [
             // Read-only; no --revision — the scheduler schedules the latest.
             name: 'ready',
             acceptsPositional: true,
-            positionals: [{ name: 'issue-id' }],
+            positionals: [{ name: 'issue-selector' }],
             flags: [COMMON_FLAGS.store, COMMON_FLAGS.json],
           },
         ],

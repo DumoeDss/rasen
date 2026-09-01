@@ -26,10 +26,28 @@ import type {
 const PROJECT_A = 'e2ee72ed-04a1-4395-86aa-7e77d2b83ec7';
 const PROJECT_B = '11111111-2222-3333-4444-555555555555';
 
+function legacyIdentity(uid: string, key: string, legacyId: string) {
+  return {
+    uid,
+    key,
+    slug: legacyId,
+    aliases: [{ kind: 'legacy-id' as const, value: legacyId }],
+  };
+}
+
+export const ISSUE_IDENTITIES = {
+  ready: legacyIdentity('10000000-0000-4000-8000-000000000001', 'ISS-0000000000000001', 'issue-ready'),
+  active: legacyIdentity('10000000-0000-4000-8000-000000000002', 'ISS-0000000000000002', 'issue-active'),
+  review: legacyIdentity('10000000-0000-4000-8000-000000000003', 'ISS-0000000000000003', 'issue-review'),
+  auto: legacyIdentity('10000000-0000-4000-8000-000000000004', 'ISS-0000000000000004', 'issue-autodecompose-uplift'),
+  broken: legacyIdentity('10000000-0000-4000-8000-000000000005', 'ISS-0000000000000005', 'broken-issue'),
+} as const;
+
 /** The one distilled real read — an accepted Issue, Done, with a revision delta. */
 export const realIssueProjectionFixture = {
   issue: {
-    issueId: 'issue-autodecompose-uplift',
+    identity: ISSUE_IDENTITIES.auto,
+    issueId: ISSUE_IDENTITIES.auto.uid,
     record: {
       version: 1,
       id: 'issue-autodecompose-uplift',
@@ -49,7 +67,7 @@ export const realIssueProjectionFixture = {
     unsearchedRefs: [],
     problems: [],
     complete: true,
-    issueId: 'issue-autodecompose-uplift',
+    issueId: ISSUE_IDENTITIES.auto.uid,
     revisionId: '0004',
     revision: {
       version: 1,
@@ -227,7 +245,7 @@ export const realIssueProjectionFixture = {
     counts: { record: 2, 'no-record': 0, 'not-archived': 0, unreadable: 0, unattributed: 0 },
   },
   review: {
-    issueId: 'issue-autodecompose-uplift',
+    issueId: ISSUE_IDENTITIES.auto.uid,
     revisionId: '0004',
     determination: {
       kind: 'accepted',
@@ -251,13 +269,70 @@ export const realIssueProjectionFixture = {
   problems: [],
 } satisfies StoreIssueProjectionResponse;
 
+/** A dual-reader projection whose Issue-owned durable resources use version 2. */
+export const v2IssueProjectionFixture = {
+  ...realIssueProjectionFixture,
+  issue: {
+    ...realIssueProjectionFixture.issue,
+    record: {
+      version: 2,
+      identity: ISSUE_IDENTITIES.auto,
+      title: realIssueProjectionFixture.issue.record.title,
+      state: realIssueProjectionFixture.issue.record.state,
+      reason: realIssueProjectionFixture.issue.record.reason,
+      createdAt: realIssueProjectionFixture.issue.record.createdAt,
+    },
+  },
+  plan: {
+    ...realIssueProjectionFixture.plan!,
+    revision: {
+      version: 2,
+      issueUid: ISSUE_IDENTITIES.auto.uid,
+      revisionId: realIssueProjectionFixture.plan!.revision!.revisionId,
+      supersedes: realIssueProjectionFixture.plan!.revision!.supersedes,
+      createdAt: realIssueProjectionFixture.plan!.revision!.createdAt,
+      contentSha256: realIssueProjectionFixture.plan!.revision!.contentSha256,
+      nodes: realIssueProjectionFixture.plan!.revision!.nodes,
+    },
+  },
+  status: {
+    ...realIssueProjectionFixture.status,
+    acceptance: {
+      ...realIssueProjectionFixture.status.acceptance!,
+      conditions: {
+        ...realIssueProjectionFixture.status.acceptance!.conditions,
+        revision: {
+          version: 2,
+          issueUid: ISSUE_IDENTITIES.auto.uid,
+          revisionId: realIssueProjectionFixture.status.acceptance!.conditions.revision!.revisionId,
+          supersedes: realIssueProjectionFixture.status.acceptance!.conditions.revision!.supersedes,
+          createdAt: realIssueProjectionFixture.status.acceptance!.conditions.revision!.createdAt,
+          contentSha256: realIssueProjectionFixture.status.acceptance!.conditions.revision!.contentSha256,
+          conditions: realIssueProjectionFixture.status.acceptance!.conditions.revision!.conditions,
+        },
+      },
+      record: {
+        version: 2,
+        issueUid: ISSUE_IDENTITIES.auto.uid,
+        acceptedAt: realIssueProjectionFixture.status.acceptance!.record!.acceptedAt,
+        conditionsRevisionId: realIssueProjectionFixture.status.acceptance!.record!.conditionsRevisionId,
+        conditionsSha256: realIssueProjectionFixture.status.acceptance!.record!.conditionsSha256,
+        gate: realIssueProjectionFixture.status.acceptance!.record!.gate,
+        note: realIssueProjectionFixture.status.acceptance!.record!.note,
+        contentSha256: realIssueProjectionFixture.status.acceptance!.record!.contentSha256,
+      },
+    },
+  },
+} satisfies StoreIssueProjectionResponse;
+
 /**
  * A second detail read: an Issue whose plan did not read back. The Detail must
  * still render what derived and present the problem beside it.
  */
 export const unreadableIssueProjectionFixture = {
   issue: {
-    issueId: 'broken-issue',
+    identity: ISSUE_IDENTITIES.broken,
+    issueId: ISSUE_IDENTITIES.broken.uid,
     record: {
       version: 1,
       id: 'broken-issue',
@@ -277,7 +352,7 @@ export const unreadableIssueProjectionFixture = {
     unsearchedRefs: [],
     problems: [],
     complete: false,
-    issueId: 'broken-issue',
+    issueId: ISSUE_IDENTITIES.broken.uid,
     revisionId: '0001',
     revision: null,
     diagnostic: "revision '0001' does not parse: contentSha256 is required",
@@ -304,7 +379,7 @@ export const unreadableIssueProjectionFixture = {
   },
   delivery: null,
   review: {
-    issueId: 'broken-issue',
+    issueId: ISSUE_IDENTITIES.broken.uid,
     revisionId: '0001',
     determination: { kind: 'no-plan' },
     threads: [],
@@ -335,6 +410,7 @@ export const issueProjectionsFixture = {
   complete: false,
   issues: [
     {
+      identity: null,
       issueId: 'issue-planning',
       record: null,
       diagnostic: 'record does not parse',
@@ -357,7 +433,8 @@ export const issueProjectionsFixture = {
       },
     },
     {
-      issueId: 'issue-ready',
+      identity: ISSUE_IDENTITIES.ready,
+      issueId: ISSUE_IDENTITIES.ready.uid,
       record: {
         version: 1,
         id: 'issue-ready',
@@ -388,7 +465,8 @@ export const issueProjectionsFixture = {
       },
     },
     {
-      issueId: 'issue-active',
+      identity: ISSUE_IDENTITIES.active,
+      issueId: ISSUE_IDENTITIES.active.uid,
       record: {
         version: 1,
         id: 'issue-active',
@@ -419,7 +497,8 @@ export const issueProjectionsFixture = {
       },
     },
     {
-      issueId: 'issue-review',
+      identity: null,
+      issueId: ISSUE_IDENTITIES.review.uid,
       record: {
         version: 1,
         id: 'issue-review',
@@ -450,7 +529,8 @@ export const issueProjectionsFixture = {
       },
     },
     {
-      issueId: 'issue-autodecompose-uplift',
+      identity: ISSUE_IDENTITIES.auto,
+      issueId: ISSUE_IDENTITIES.auto.uid,
       record: realIssueProjectionFixture.issue.record,
       diagnostic: null,
       divergence: null,
@@ -470,14 +550,14 @@ export const issueAttentionFixture = {
   scannedCount: 5,
   scanned: [
     { issueId: 'issue-planning', phase: 'planning', health: 'healthy', itemCount: 0, runStateVisibility: { kind: 'none' } },
-    { issueId: 'issue-ready', phase: 'ready', health: 'healthy', itemCount: 0, runStateVisibility: { kind: 'execution-root', executionRoot: 'E:\\repos\\rasen' } },
-    { issueId: 'issue-active', phase: 'active', health: 'failed', itemCount: 2, runStateVisibility: { kind: 'execution-root', executionRoot: 'E:\\repos\\rasen' } },
-    { issueId: 'issue-review', phase: 'review', health: 'waiting-human', itemCount: 1, runStateVisibility: { kind: 'execution-root', executionRoot: 'E:\\repos\\rasen' } },
-    { issueId: 'issue-autodecompose-uplift', phase: 'done', health: 'healthy', itemCount: 0, runStateVisibility: { kind: 'execution-root', executionRoot: 'E:\\repos\\rasen' } },
+    { issueId: ISSUE_IDENTITIES.ready.uid, phase: 'ready', health: 'healthy', itemCount: 0, runStateVisibility: { kind: 'execution-root', executionRoot: 'E:\\repos\\rasen' } },
+    { issueId: ISSUE_IDENTITIES.active.uid, phase: 'active', health: 'failed', itemCount: 2, runStateVisibility: { kind: 'execution-root', executionRoot: 'E:\\repos\\rasen' } },
+    { issueId: ISSUE_IDENTITIES.review.uid, phase: 'review', health: 'waiting-human', itemCount: 1, runStateVisibility: { kind: 'execution-root', executionRoot: 'E:\\repos\\rasen' } },
+    { issueId: ISSUE_IDENTITIES.auto.uid, phase: 'done', health: 'healthy', itemCount: 0, runStateVisibility: { kind: 'execution-root', executionRoot: 'E:\\repos\\rasen' } },
   ],
   items: [
     {
-      issueId: 'issue-active',
+      issueId: ISSUE_IDENTITIES.active.uid,
       phase: 'active',
       health: 'failed',
       nodeId: 'n2',
@@ -486,7 +566,7 @@ export const issueAttentionFixture = {
       diagnostic: 'stage apply escalated',
     },
     {
-      issueId: 'issue-active',
+      issueId: ISSUE_IDENTITIES.active.uid,
       phase: 'active',
       health: 'failed',
       nodeId: 'n2b',
@@ -495,7 +575,7 @@ export const issueAttentionFixture = {
       blockers: [{ nodeId: 'n2', projectId: PROJECT_B, state: 'failed' }],
     },
     {
-      issueId: 'issue-review',
+      issueId: ISSUE_IDENTITIES.review.uid,
       phase: 'review',
       health: 'waiting-human',
       nodeId: null,
@@ -513,11 +593,11 @@ export const issueAttentionFixture = {
 /** The narrowed scan the Detail fetches for one Issue. */
 export const issueAttentionNarrowedFixture = {
   narrowed: true,
-  issueId: 'issue-autodecompose-uplift',
+  issueId: ISSUE_IDENTITIES.auto.uid,
   scannedCount: 1,
   scanned: [
     {
-      issueId: 'issue-autodecompose-uplift',
+      issueId: ISSUE_IDENTITIES.auto.uid,
       phase: 'done',
       health: 'healthy',
       itemCount: 0,
@@ -534,11 +614,11 @@ export const issueAttentionNarrowedFixture = {
 /** The narrowed scan for the Issue whose plan did not read back. */
 export const issueAttentionUnreadableFixture = {
   narrowed: true,
-  issueId: 'broken-issue',
+  issueId: ISSUE_IDENTITIES.broken.uid,
   scannedCount: 1,
   scanned: [
     {
-      issueId: 'broken-issue',
+      issueId: ISSUE_IDENTITIES.broken.uid,
       phase: 'planning',
       health: 'healthy',
       itemCount: 1,
@@ -547,7 +627,7 @@ export const issueAttentionUnreadableFixture = {
   ],
   items: [
     {
-      issueId: 'broken-issue',
+      issueId: ISSUE_IDENTITIES.broken.uid,
       phase: 'planning',
       health: 'healthy',
       nodeId: null,

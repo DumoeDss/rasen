@@ -52,6 +52,7 @@ function expectOk(result: RunCLIResult): RunCLIResult {
 describe('rasen store issue acceptance exclusions surface', () => {
   let f: StoreWorkspaceFixture;
   let execProject: string;
+  let issueKeys: Map<string, string>;
 
   beforeEach(async () => {
     f = await createStoreWorkspaceFixture({
@@ -61,6 +62,7 @@ describe('rasen store issue acceptance exclusions surface', () => {
     });
     execProject = f.beside('exec-project');
     f.write(path.join(execProject, 'rasen', 'config.yaml'), 'schema: spec-driven\n');
+    issueKeys = new Map();
   });
 
   afterEach(() => {
@@ -91,10 +93,15 @@ describe('rasen store issue acceptance exclusions surface', () => {
    * and a re-seed of identical paths would have nothing to commit.
    */
   async function createSupersededIssue(issueId: string, suffix: string): Promise<void> {
-    await run(
-      ['store', 'issue', 'new', issueId, '--store', f.storeId, '--title', 'Carry CLI', '--json'],
-      f.storeRoot
+    const created = parseJson(
+      expectOk(
+        await run(
+          ['store', 'issue', 'new', issueId, '--store', f.storeId, '--title', 'Carry CLI', '--json'],
+          f.storeRoot
+        )
+      )
     );
+    issueKeys.set(issueId, created.identity.key);
     const aliasA = `child-a-${suffix}`;
     const aliasB = `child-b-${suffix}`;
     // 32 lowercase hex characters each, distinct per child and per issue.
@@ -187,7 +194,7 @@ describe('rasen store issue acceptance exclusions surface', () => {
     const human = expectOk(
       await run(['store', 'issue', 'accept', ISSUE, '--store', f.storeId], execProject)
     );
-    expect(human.stdout).toContain(`Issue ${ISSUE} accepted (resolved)`);
+    expect(human.stdout).toContain(`Issue ${issueKeys.get(ISSUE)} accepted (resolved)`);
     expect(human.stdout).toContain('gate: 2/2 waiting-human, 0 problems standing');
     expect(human.stdout).toContain(`excluded g-sup (superseded): ${REASON}`);
 

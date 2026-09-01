@@ -26,10 +26,12 @@ import type {
 } from '../planning-validation.js';
 import type {
   ExecutionPlanNode,
-  ExecutionPlanRevisionV1,
-  IssueRecordV1,
+  StoredIssueRecord,
+  StoredExecutionPlanRevision,
   IssueState,
 } from '../issues/types.js';
+import type { IssueIdentityV2, ResolvedIssueIdentity } from '../issues/identity.js';
+import type { IssueStorageKey } from '../planning-validation.js';
 
 export type FinalizationOutcomeName = FinalizationOutcome['outcome'];
 
@@ -317,8 +319,12 @@ export interface GroupedChanges extends AggregateCompleteness {
 export interface IssueRecordCopy {
   readonly storeRef: string | null;
   readonly targetLineId: string | null;
+  /** Internal physical locator of this exact copy; never a wire identity. */
+  readonly storageKey: IssueStorageKey;
+  /** The projected authoritative identity; null when this copy is unreadable. */
+  readonly identity: ResolvedIssueIdentity | null;
   readonly sha256: string;
-  readonly record: IssueRecordV1 | null;
+  readonly record: StoredIssueRecord | null;
   /** Present when the copy exists but does not validate. */
   readonly diagnostic: string | null;
 }
@@ -333,13 +339,16 @@ export interface IssueDivergence {
 }
 
 export interface IssueSummary {
+  /** Public authoritative identity; null only when no coherent record is presentable. */
+  readonly identity: IssueIdentityV2 | null;
+  /** @deprecated Use `identity.uid` after checking the summary is readable. */
   readonly issueId: string;
   /**
    * Null when the Issue is divergent (no copy is chosen) AND when no copy
    * could be read at all. `diagnostic` distinguishes the two, so a null record
    * is never a fact without a reason.
    */
-  readonly record: IssueRecordV1 | null;
+  readonly record: StoredIssueRecord | null;
   /**
    * Why no record is presented: the reason the copy that would have been
    * presented could not be read, committed copies first. Null when a record IS
@@ -429,7 +438,7 @@ export interface IssueReadiness {
 export interface ResolvedExecutionPlan extends AggregateCompleteness {
   readonly issueId: IssueId;
   readonly revisionId: ExecutionPlanRevisionId | null;
-  readonly revision: ExecutionPlanRevisionV1 | null;
+  readonly revision: StoredExecutionPlanRevision | null;
   /** Present when the addressed revision exists but does not validate. */
   readonly diagnostic: string | null;
   readonly readiness: IssueReadiness;

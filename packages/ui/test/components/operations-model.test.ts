@@ -50,6 +50,12 @@ function linkEntry(input: {
     association: input.issueIds?.length ? 'linked' : 'unlinked',
     eligibility: input.eligibility ?? (input.issueIds?.length ? 'already-linked' : 'attachable'),
     issues: (input.issueIds ?? []).map(issueId => ({
+      identity: {
+        uid: issueId,
+        key: `ISS-${issueId}`,
+        slug: null,
+        aliases: [],
+      },
       issueId,
       title: issueId,
       state: 'open',
