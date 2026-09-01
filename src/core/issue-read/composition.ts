@@ -116,6 +116,7 @@ export interface IssueProjectionDetailPayload {
 /** One scanned Issue's roll facts — what keeps "honestly unlisted" visible. */
 export interface StoreAttentionScanEntry {
   readonly issueId: string;
+  readonly issueKey: string;
   readonly phase: IssuePhase;
   readonly health: IssueHealth;
   readonly itemCount: number;
@@ -247,7 +248,7 @@ async function detailForList(
       ? null
       : await query.resolveExecutionPlan({
           ...scopeInput(scope),
-          issueId: summary.issueId,
+          issueId: canonicalIssueId(summary),
         });
   return {
     issue: summary,
@@ -272,6 +273,28 @@ export function attentionCounts(
 /** Code-point comparator for the stable cross-Issue (issueId, nodeId) order. */
 function codePointOrder(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function canonicalIssueId(summary: IssueSummary): string {
+  return coherentSummaryIdentity(summary)?.uid ?? summary.issueId;
+}
+
+/**
+ * A byte-divergent record with one shared UID/key still has a coherent public
+ * identity even though no record body may be selected. An unreadable or
+ * storage-mismatched copy has no projected identity and therefore never enters
+ * this fallback.
+ */
+function coherentSummaryIdentity(summary: IssueSummary): IssueSummary['identity'] {
+  if (summary.identity !== null) return summary.identity;
+  const copies = summary.divergence?.copies ?? [];
+  const first = copies[0]?.identity?.identity ?? null;
+  return first !== null && copies.every(copy => {
+    const candidate = copy.identity?.identity;
+    return candidate !== undefined && candidate.uid === first.uid && candidate.key === first.key;
+  })
+    ? first
+    : null;
 }
 
 // -----------------------------------------------------------------------------
@@ -300,10 +323,13 @@ export async function composeIssueProjectionList(
     const detail = await detailForList(query, scope, summary, page);
     // Done follows the recorded acceptance, so the list's phase needs each
     // Issue's acceptance facts exactly as show's does.
-    const acceptance = await readIssueAcceptanceFacts({
-      ...scopeInput(scope),
-      issueId: summary.issueId,
-    });
+    const acceptance = await readIssueAcceptanceFacts(
+      {
+        ...scopeInput(scope),
+        issueId: canonicalIssueId(summary),
+      },
+      { detail }
+    );
     statuses.push(
       await projectIssueStatus(statusInputFor(detail, { ...runState, ...widening, acceptance }))
     );
@@ -329,26 +355,30 @@ export async function composeIssueProjectionDetail(
   issueId: string
 ): Promise<IssueProjectionDetailPayload> {
   const detail = await query.showIssue({ ...scopeInput(scope), issueId });
+  const canonicalId = canonicalIssueId(detail.issue);
   const widening = await resolveStoreWideningContext(scope.store);
   const status = await projectIssueStatus(
     statusInputFor(detail, {
       ...runState,
       ...widening,
-      acceptance: await readIssueAcceptanceFacts({ ...scopeInput(scope), issueId }),
+      acceptance: await readIssueAcceptanceFacts(
+        { ...scopeInput(scope), issueId: canonicalId },
+        { detail }
+      ),
       // The predecessor the latest revision supersedes, for the revision
       // delta — resolved only when there is one; a first revision contributes
       // nothing and reports no delta section.
       predecessorPlan: await resolvePredecessorPlan(
         query,
         scope,
-        issueId,
+        canonicalId,
         detail.plan?.revision?.supersedes ?? null
       ),
     })
   );
   const revisionId = detail.plan?.revisionId ?? null;
   const delivery = deriveIssueDeliveryEvidence(revisionId, status);
-  const review = deriveIssueReview(issueId, revisionId, status);
+  const review = deriveIssueReview(canonicalId, revisionId, status);
   return {
     issue: detail.issue,
     plan: detail.plan,
@@ -375,10 +405,26 @@ export async function composeStoreAttention(
   narrowIssueId?: string
 ): Promise<StoreAttentionPayload> {
   const page = await query.listIssues(scopeInput(scope));
-  const selected =
-    narrowIssueId === undefined
-      ? page.issues
-      : page.issues.filter(summary => summary.issueId === narrowIssueId);
+  let canonicalNarrowIssueId: string | null = null;
+  let selected: readonly IssueSummary[] = page.issues;
+  if (narrowIssueId !== undefined) {
+    const narrowedDetail = await query.showIssue({ ...scopeInput(scope), issueId: narrowIssueId });
+    if (narrowedDetail.issue.identity !== null) {
+      canonicalNarrowIssueId = narrowedDetail.issue.identity.uid;
+      selected = page.issues.filter(
+        summary => summary.identity?.uid === narrowedDetail.issue.identity?.uid
+      );
+    } else {
+      // `showIssue` has already resolved key/slug/legacy selectors to one
+      // summary. A divergent summary intentionally withholds `.identity`, but
+      // its grouping `issueId` is still the resolved canonical UID. Comparing
+      // against the raw selector here would turn a successfully resolved key
+      // or alias into a false "unknown Issue" refusal.
+      const resolvedIssueId = narrowedDetail.issue.issueId;
+      selected = page.issues.filter(summary => summary.issueId === resolvedIssueId);
+      canonicalNarrowIssueId = selected.length === 0 ? null : resolvedIssueId;
+    }
+  }
   if (narrowIssueId !== undefined && selected.length === 0) {
     throw new StoreError(
       `Issue '${narrowIssueId}' is not known to this Store; an unknown id is refused rather than read as an empty scan.`,
@@ -397,26 +443,31 @@ export async function composeStoreAttention(
   const scanned: StoreAttentionScanEntry[] = [];
   const items: IssueAttentionItem[] = [];
   for (const summary of selected) {
-    const detail = await query.showIssue({ ...scopeInput(scope), issueId: summary.issueId });
+    const canonicalId = canonicalIssueId(summary);
+    const detail = await query.showIssue({ ...scopeInput(scope), issueId: canonicalId });
     const status = await projectIssueStatus(
       statusInputFor(detail, {
         ...runState,
         ...widening,
-        acceptance: await readIssueAcceptanceFacts({
-          ...scopeInput(scope),
-          issueId: summary.issueId,
-        }),
+        acceptance: await readIssueAcceptanceFacts(
+          {
+            ...scopeInput(scope),
+            issueId: canonicalId,
+          },
+          { detail }
+        ),
         predecessorPlan: await resolvePredecessorPlan(
           query,
           scope,
-          summary.issueId,
+          canonicalId,
           detail.plan?.revision?.supersedes ?? null
         ),
       })
     );
-    const derived = deriveIssueAttention(summary.issueId, status);
+    const derived = deriveIssueAttention(canonicalId, status);
     scanned.push({
-      issueId: summary.issueId,
+      issueId: canonicalId,
+      issueKey: coherentSummaryIdentity(summary)?.key ?? canonicalId,
       phase: status.phase,
       health: status.health,
       itemCount: derived.length,
@@ -435,7 +486,7 @@ export async function composeStoreAttention(
   );
   return {
     narrowed: narrowIssueId !== undefined,
-    issueId: narrowIssueId ?? null,
+    issueId: canonicalNarrowIssueId,
     scannedCount: scanned.length,
     scanned,
     items,

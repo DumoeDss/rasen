@@ -50,6 +50,7 @@ describe('rasen store issue show — delivery evidence', () => {
   let f: StoreWorkspaceFixture;
   let execRoot: string;
   let instanceId: string;
+  let issueKey: string;
 
   beforeEach(async () => {
     f = await createStoreWorkspaceFixture({
@@ -77,10 +78,15 @@ describe('rasen store issue show — delivery evidence', () => {
    * active Change whose run-state is terminal — the real store's two truths.
    */
   async function createIssueWithArchive(): Promise<void> {
-    await run(
-      ['store', 'issue', 'new', ISSUE, '--store', f.storeId, '--title', 'Delivery CLI', '--json'],
-      f.storeRoot
+    const created = parseJson(
+      expectOk(
+        await run(
+          ['store', 'issue', 'new', ISSUE, '--store', f.storeId, '--title', 'Delivery CLI', '--json'],
+          f.storeRoot
+        )
+      )
     );
+    issueKey = created.identity.key;
     const archived = f.seedChange({
       root: f.storeRoot,
       projectId: PROJECT,
@@ -249,7 +255,7 @@ describe('rasen store issue show — delivery evidence', () => {
     expect(human.stdout).not.toContain(PLANNING_BRANCH);
     expect(human.stdout).not.toContain('ship-log');
     // The listing's own line shape is untouched.
-    expect(human.stdout).toMatch(new RegExp(`${ISSUE}  \\[open\\]`, 'u'));
+    expect(human.stdout).toMatch(new RegExp(`${issueKey}  \\[open\\]`, 'u'));
 
     const json = parseJson(
       expectOk(await run(['store', 'issue', 'list', '--store', f.storeId, '--json'], execRoot))

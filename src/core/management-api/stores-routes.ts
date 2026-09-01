@@ -37,6 +37,10 @@ import { createRequire } from 'node:module';
 import * as path from 'node:path';
 
 import { StoreError } from '../store/errors.js';
+import { isStoreIssueError } from '../store/issues/diagnostics.js';
+import type { IssuePublicationRecovery } from '../store/issues/types.js';
+import { deriveIssueKey, parseIssueAlias } from '../store/issues/identity.js';
+import { assertPortableIssueText } from '../store/issues/records.js';
 import {
   createStoreQueryByUid,
   listProjectEntries,
@@ -46,6 +50,14 @@ import {
   type StoreQueryModule,
 } from '../store/query/index.js';
 import { getBoundedCliEntry } from './whitelist.js';
+import {
+  isAbsentIssueSummary,
+  projectExecutionPlanForWire,
+  projectIssueDetailForWire,
+  projectIssueFailureMessageForWire,
+  projectIssuePageForWire,
+  statusForIssueDiagnosticCode,
+} from './stores.js';
 import type {
   StoreAggregateChangesResponse,
   StoreExecutionPlanResponse,
@@ -179,11 +191,28 @@ export interface StoreApiFailure {
   fix?: string;
   cliExitCode?: number;
   stderr?: string;
+  recovery?: IssuePublicationRecovery;
 }
 
 export type StoreApiResult = { ok: true; status: number; response: unknown } | StoreApiFailure;
 
 function failureFrom(error: unknown): StoreApiFailure {
+  if (isStoreIssueError(error)) {
+    const message = projectIssueFailureMessageForWire(error.issueCode, error.message);
+    return {
+      ok: false,
+      status:
+        error.issueCode === 'issue_scope_required'
+          ? 404
+          : (statusForIssueDiagnosticCode(error.issueCode) ?? 422),
+      code: error.issueCode,
+      message,
+      ...(message !== error.message || error.diagnostic.fix === undefined
+        ? {}
+        : { fix: error.diagnostic.fix }),
+      ...(error.recovery === undefined ? {} : { recovery: error.recovery }),
+    };
+  }
   if (error instanceof StoreError) {
     return {
       ok: false,
@@ -231,22 +260,62 @@ export async function serveStoreRead(
     switch (route.kind) {
       case 'issues': {
         const page = await query.listIssues(scope);
-        return { ok: true, status: 200, response: page satisfies StoreIssueListResponse };
+        return {
+          ok: true,
+          status: 200,
+          response: projectIssuePageForWire(page) satisfies StoreIssueListResponse,
+        };
       }
       case 'issue': {
         const detail = await query.showIssue({ ...scope, issueId: route.issueId });
-        return { ok: true, status: 200, response: detail satisfies StoreIssueDetailResponse };
+        if (isAbsentIssueSummary(detail.issue)) {
+          return {
+            ok: false,
+            status: 404,
+            code: 'issue_not_found',
+            message: `Issue selector '${route.issueId}' matches no Issue.`,
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          response: projectIssueDetailForWire(detail) satisfies StoreIssueDetailResponse,
+        };
       }
       case 'issue-plans': {
-        const plan = await query.resolveExecutionPlan({ ...scope, issueId: route.issueId });
+        const detail = await query.showIssue({ ...scope, issueId: route.issueId });
+        if (isAbsentIssueSummary(detail.issue)) {
+          return {
+            ok: false,
+            status: 404,
+            code: 'issue_not_found',
+            message: `Issue selector '${route.issueId}' matches no Issue.`,
+          };
+        }
+        const plan = projectExecutionPlanForWire(
+          await query.resolveExecutionPlan({ ...scope, issueId: route.issueId }),
+          detail.issue
+        );
         return { ok: true, status: 200, response: plan satisfies StoreExecutionPlanResponse };
       }
       case 'issue-plan': {
-        const plan = await query.resolveExecutionPlan({
-          ...scope,
-          issueId: route.issueId,
-          revisionId: route.revisionId,
-        });
+        const detail = await query.showIssue({ ...scope, issueId: route.issueId });
+        if (isAbsentIssueSummary(detail.issue)) {
+          return {
+            ok: false,
+            status: 404,
+            code: 'issue_not_found',
+            message: `Issue selector '${route.issueId}' matches no Issue.`,
+          };
+        }
+        const plan = projectExecutionPlanForWire(
+          await query.resolveExecutionPlan({
+            ...scope,
+            issueId: route.issueId,
+            revisionId: route.revisionId,
+          }),
+          detail.issue
+        );
         return { ok: true, status: 200, response: plan satisfies StoreExecutionPlanResponse };
       }
       case 'projects': {
@@ -378,13 +447,55 @@ function parseJsonPayload(stdout: string): Record<string, unknown> | null {
 }
 
 /** The CLI's `--json` failure envelope, surfaced UNCHANGED. */
-function cliDiagnostic(stdout: string, stderr: string): { code: string; message: string } {
+function parsePublicationRecovery(value: unknown): IssuePublicationRecovery | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const candidate = value as {
+    kind?: unknown;
+    identity?: { uid?: unknown; key?: unknown };
+    retrySafe?: unknown;
+  };
+  if (
+    candidate.kind !== 'issue-publication-indeterminate' ||
+    candidate.retrySafe !== false ||
+    typeof candidate.identity?.uid !== 'string' ||
+    typeof candidate.identity.key !== 'string'
+  ) {
+    return undefined;
+  }
+  try {
+    if (deriveIssueKey(candidate.identity.uid) !== candidate.identity.key) {
+      return undefined;
+    }
+  } catch {
+    return undefined;
+  }
+  return {
+    kind: candidate.kind,
+    identity: {
+      uid: candidate.identity.uid as IssuePublicationRecovery['identity']['uid'],
+      key: candidate.identity.key as IssuePublicationRecovery['identity']['key'],
+    },
+    retrySafe: false,
+  };
+}
+
+function cliDiagnostic(
+  stdout: string,
+  stderr: string
+): { code: string; message: string; recovery?: IssuePublicationRecovery } {
   const payload = parseJsonPayload(stdout);
   const status = payload?.status;
   if (Array.isArray(status) && status.length > 0) {
     const first = status[0] as { code?: unknown; message?: unknown };
     if (typeof first.code === 'string' && typeof first.message === 'string') {
-      return { code: first.code, message: first.message };
+      const recovery = parsePublicationRecovery(
+        (first as { recovery?: unknown }).recovery
+      );
+      return {
+        code: first.code,
+        message: first.message,
+        ...(recovery === undefined ? {} : { recovery }),
+      };
     }
   }
   return {
@@ -533,9 +644,12 @@ export function createStoreMutator(
         const diagnostic = cliDiagnostic(run.stdout, run.stderr);
         return {
           ok: false,
-          status: 422,
+          status: statusForIssueDiagnosticCode(diagnostic.code) ?? 422,
           code: diagnostic.code,
           message: diagnostic.message,
+          ...(diagnostic.recovery === undefined
+            ? {}
+            : { recovery: diagnostic.recovery }),
           ...(run.exitCode === null ? {} : { cliExitCode: run.exitCode }),
           stderr: run.stderr,
         };
@@ -565,13 +679,44 @@ export async function buildArgv(
   if (route.kind === 'issues') {
     const issueId = body.issueId;
     const title = body.title;
-    for (const [label, value, cap] of [
-      ['issueId', issueId, 128],
-      ['title', title, 200],
-    ] as const) {
-      const problem = invalidValue(label, value, cap);
-      if (problem !== null) {
-        return { ok: false, status: 400, code: 'invalid_input', message: problem };
+    if (typeof title !== 'string' || title.length > 200) {
+      return {
+        ok: false,
+        status: 400,
+        code: 'issue_title_required',
+        message: 'Issue title is required and must be at most 200 characters.',
+      };
+    }
+    try {
+      assertPortableIssueText(title, 'title', 'invalid_issue_record');
+    } catch (error) {
+      return {
+        ok: false,
+        status: 400,
+        code: 'issue_title_required',
+        message: `Issue title is required and must be portable durable text: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      };
+    }
+    if (issueId !== undefined) {
+      if (typeof issueId !== 'string') {
+        return {
+          ok: false,
+          status: 400,
+          code: 'issue_selector_invalid',
+          message: 'The deprecated compatibility issueId alias must be a string when provided.',
+        };
+      }
+      try {
+        parseIssueAlias(issueId, 'compatibilityAlias');
+      } catch (error) {
+        return {
+          ok: false,
+          status: 400,
+          code: 'issue_selector_invalid',
+          message: error instanceof Error ? error.message : String(error),
+        };
       }
     }
     return {
@@ -580,12 +725,12 @@ export async function buildArgv(
         'store',
         'issue',
         'new',
-        issueId as string,
         '--store',
         route.storeUid,
         '--title',
         title as string,
         '--json',
+        ...(issueId === undefined ? [] : ['--', issueId as string]),
       ],
     };
   }

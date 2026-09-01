@@ -114,11 +114,12 @@ describe('the per-project lane derivation', () => {
     issueId: string,
     title: string,
     nodes: readonly ExecutionPlanNodeInput[]
-  ): Promise<void> {
-    await issues().create({ ...scope(), issueId, title });
+  ): Promise<string> {
+    const created = await issues().create({ ...scope(), issueId, title });
     await issues().publishPlan({ ...scope(), issueId, nodes });
     f.git(f.storeRoot, ['add', '-A']);
     f.git(f.storeRoot, ['commit', '-m', `issue + plan ${issueId}`]);
+    return created.identity.uid;
   }
 
   beforeEach(async () => {
@@ -339,7 +340,7 @@ describe('the per-project lane derivation', () => {
 
   it('reports no lanes for an unreadable latest revision', async () => {
     const up = seedAndCommit('child-broken-up', 'e1'.repeat(16), PROJECT_A);
-    await publishPlan(ISSUE, 'Digest broken', [
+    const issueUid = await publishPlan(ISSUE, 'Digest broken', [
       {
         nodeId: 'g-001',
         kind: 'change',
@@ -353,7 +354,7 @@ describe('the per-project lane derivation', () => {
     // Break the recorded digest and COMMIT the broken bytes (the query reads
     // committed content first): empty lanes would read "no projects" — a
     // different claim than "no readable revision".
-    const revisionPath = f.at('rasen', 'issues', ISSUE, 'plans', '0001.yaml');
+    const revisionPath = f.at('rasen', 'issues', issueUid, 'plans', '0001.yaml');
     const corrupted = fs
       .readFileSync(revisionPath, 'utf8')
       .replace('contentSha256:', 'contentSha256X:');

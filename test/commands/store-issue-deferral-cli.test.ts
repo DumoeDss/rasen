@@ -107,6 +107,8 @@ describe('rasen store issue surfaces under a deferral', () => {
   let f: StoreWorkspaceFixture;
   let execProject: string;
   let instanceIds: string[];
+  let issueUid: string;
+  let issueKey: string;
 
   beforeEach(async () => {
     f = await createStoreWorkspaceFixture({
@@ -168,12 +170,16 @@ describe('rasen store issue surfaces under a deferral', () => {
 
   /** The Issue, its two seeded children, and revision 0001 (required + optional). */
   async function seedWantedRevision(): Promise<void> {
-    expectOk(
-      await run(
-        ['store', 'issue', 'new', ISSUE, '--store', f.storeId, '--title', 'Deferral CLI', '--json'],
-        f.storeRoot
+    const created = parseJson(
+      expectOk(
+        await run(
+          ['store', 'issue', 'new', ISSUE, '--store', f.storeId, '--title', 'Deferral CLI', '--json'],
+          f.storeRoot
+        )
       )
     );
+    issueUid = created.identity.uid;
+    issueKey = created.identity.key;
     instanceIds = [
       seedAndCommit('child-a', 'a1'.repeat(16)),
       seedAndCommit('child-opt', 'b2'.repeat(16)),
@@ -315,13 +321,13 @@ describe('rasen store issue surfaces under a deferral', () => {
     const acceptHuman = expectOk(
       await run(['store', 'issue', 'accept', ISSUE, '--store', f.storeId], execProject)
     );
-    expect(acceptHuman.stdout).toContain(`Issue ${ISSUE} accepted (resolved)`);
+    expect(acceptHuman.stdout).toContain(`Issue ${issueKey} accepted (resolved)`);
     // The required total is 1 — the deferral explains why, beside it.
     expect(acceptHuman.stdout).toContain('gate: 1/1 waiting-human, 0 problems standing');
     expect(acceptHuman.stdout).toContain(`excluded g-opt (deferred): ${REASON}`);
 
     // The durable bytes carry it, and the read presents it in both forms.
-    const acceptedPath = f.at('rasen', 'issues', ISSUE, 'accepted.yaml');
+    const acceptedPath = f.at('rasen', 'issues', issueUid, 'accepted.yaml');
     const acceptedText = fs.readFileSync(acceptedPath, 'utf8');
     expect(acceptedText).toContain('lifecycle: deferred');
     expect(acceptedText).toContain(REASON);

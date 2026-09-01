@@ -1,6 +1,7 @@
 import { describe, expectTypeOf, it } from 'vitest';
 
 import type { ChangeInstanceId as ChangeRunChangeInstanceId } from '../../../src/core/change-run/index.js';
+import type { StoreIssueAddress } from '../../../src/core/store-planning/index.js';
 import type {
   computeStorePlanningLayoutV2,
   deriveChangeInstanceId,
@@ -14,6 +15,10 @@ import type {
   FullGitRef,
   GitOid,
   IssueId,
+  IssueKey,
+  IssueSelector,
+  IssueStorageKey,
+  IssueUid,
   PlanningScopeId,
   PortableRelativePath,
   ProjectId,
@@ -77,6 +82,10 @@ describe('public Store planning foundation type surface', () => {
     expectTypeOf<string>().not.toMatchTypeOf<Sha256Digest>();
     expectTypeOf<string>().not.toMatchTypeOf<PortableRelativePath>();
     expectTypeOf<string>().not.toMatchTypeOf<IssueId>();
+    expectTypeOf<string>().not.toMatchTypeOf<IssueUid>();
+    expectTypeOf<string>().not.toMatchTypeOf<IssueKey>();
+    expectTypeOf<string>().not.toMatchTypeOf<IssueSelector>();
+    expectTypeOf<string>().not.toMatchTypeOf<IssueStorageKey>();
     expectTypeOf<string>().not.toMatchTypeOf<ExecutionPlanRevisionId>();
     // planning-identity.ts
     expectTypeOf<string>().not.toMatchTypeOf<PlanningScopeId>();
@@ -105,6 +114,14 @@ describe('public Store planning foundation type surface', () => {
     expectTypeOf<WorkspacePairId>().not.toMatchTypeOf<
       Parameters<typeof serializeArchiveV2>[0]['workspacePairId']
     >();
+  });
+
+  it('requires a branded storage key at every Store Issue address seam', () => {
+    type IssueAddress = Extract<StoreIssueAddress, { readonly kind: 'issue' }>;
+    type PlanAddress = Extract<StoreIssueAddress, { readonly kind: 'execution-plan' }>;
+    expectTypeOf<IssueAddress['issueStorageKey']>().toEqualTypeOf<IssueStorageKey>();
+    expectTypeOf<PlanAddress['issueStorageKey']>().toEqualTypeOf<IssueStorageKey>();
+    expectTypeOf<string>().not.toMatchTypeOf<IssueAddress['issueStorageKey']>();
   });
 
   it('requires verified identities at the durable Archive writer', () => {

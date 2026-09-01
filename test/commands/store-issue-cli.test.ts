@@ -60,8 +60,25 @@ describe('rasen store issue CLI', () => {
     f.cleanup();
   });
 
-  it('creates an Issue with only --store and --title, never requiring --project', async () => {
+  it('creates title-only Issues with server-assigned identity and retains an optional compatibility alias', async () => {
     const result = parseJson(
+      expectOk(
+        await runCLI(
+          ['store', 'issue', 'new', '--store', f.storeId, '--title', '修复登录超时', '--json'],
+          { cwd: f.storeRoot, env: f.env }
+        )
+      )
+    );
+    expect(result.identity.uid).toMatch(/^[0-9a-f-]{36}$/u);
+    expect(result.identity.key).toMatch(/^ISS-[0-9A-HJKMNP-TV-Z]{16}$/u);
+    expect(result.issueId).toBe(result.identity.uid);
+    expect(result.record).toMatchObject({ version: 2, identity: result.identity });
+    expect(result.record.state).toBe('open');
+    expect(result.record.title).toBe('修复登录超时');
+    // The Issue record carries no project.
+    expect(result.record.projectId ?? result.record.project).toBeUndefined();
+
+    const compatible = parseJson(
       expectOk(
         await runCLI(
           ['store', 'issue', 'new', 'my-issue', '--store', f.storeId, '--title', 'Test Issue', '--json'],
@@ -69,21 +86,44 @@ describe('rasen store issue CLI', () => {
         )
       )
     );
-    expect(result.issueId).toBe('my-issue');
-    expect(result.record.state).toBe('open');
-    expect(result.record.title).toBe('Test Issue');
-    // The Issue record carries no project.
-    expect(result.record.projectId ?? result.record.project).toBeUndefined();
+    expect(compatible.identity.aliases).toContainEqual({ kind: 'legacy-id', value: 'my-issue' });
+    expect(compatible.issueId).not.toBe('my-issue');
+
+    for (const alias of ['-alias', '--store']) {
+      const optionShaped = parseJson(
+        expectOk(
+          await runCLI(
+            [
+              'store',
+              'issue',
+              'new',
+              '--store',
+              f.storeId,
+              '--title',
+              `Compatibility ${alias}`,
+              '--json',
+              '--',
+              alias,
+            ],
+            { cwd: f.storeRoot, env: f.env }
+          )
+        )
+      );
+      expect(optionShaped.identity.aliases).toContainEqual({
+        kind: 'legacy-id',
+        value: alias,
+      });
+    }
   });
 
   it('refuses to create an Issue without --title', async () => {
     const result = await runCLI(
-      ['store', 'issue', 'new', 'no-title', '--store', f.storeId, '--json'],
+      ['store', 'issue', 'new', '--store', f.storeId, '--json'],
       { cwd: f.storeRoot, env: f.env }
     );
     expect(result.exitCode).not.toBe(0);
     const json = parseJson(result);
-    expect(json.status[0].code).toBe('issue_scope_required');
+    expect(json.status[0].code).toBe('issue_title_required');
   });
 
   it('prints a pathspec-scoped commit suggestion and stages nothing', async () => {
@@ -96,7 +136,10 @@ describe('rasen store issue CLI', () => {
     // The human output includes a commit suggestion.
     expect(result.stdout).toMatch(/git\s.*commit/);
     // The file exists on disk (the write happened).
-    expect(fs.existsSync(path.join(f.storeRoot, 'rasen', 'issues', 'commit-test', 'issue.yaml'))).toBe(true);
+    const issueDirectories = fs.readdirSync(path.join(f.storeRoot, 'rasen', 'issues'));
+    expect(issueDirectories).toHaveLength(1);
+    expect(issueDirectories[0]).toMatch(/^[0-9a-f-]{36}$/u);
+    expect(fs.existsSync(path.join(f.storeRoot, 'rasen', 'issues', issueDirectories[0] as string, 'issue.yaml'))).toBe(true);
     // The Store's Git index is clean — nothing was staged.
     const status = f.git(f.storeRoot, ['status', '--porcelain']);
     // The new file appears as untracked, not staged.
@@ -105,10 +148,10 @@ describe('rasen store issue CLI', () => {
 
   it('lists Issues in both human and JSON forms', async () => {
     // Create an Issue first.
-    await runCLI(
+    const created = parseJson(expectOk(await runCLI(
       ['store', 'issue', 'new', 'list-test', '--store', f.storeId, '--title', 'List Test', '--json'],
       { cwd: f.storeRoot, env: f.env }
-    );
+    )));
     f.git(f.storeRoot, ['add', 'rasen/issues/']);
     f.git(f.storeRoot, ['commit', '-m', 'seed issue']);
 
@@ -128,16 +171,19 @@ describe('rasen store issue CLI', () => {
     );
 
     // Both forms report the same Issue.
-    expect(humanResult.stdout).toContain('list-test');
+    expect(humanResult.stdout).toContain(created.identity.key);
+    expect(humanResult.stdout).toContain('List Test');
     expect(jsonResult.issues).toHaveLength(1);
-    expect(jsonResult.issues[0].issueId).toBe('list-test');
+    expect(jsonResult.issues[0].issueId).toBe(created.identity.uid);
+    expect(jsonResult.issues[0].identity).toEqual(created.identity);
+    expect(JSON.stringify(jsonResult)).not.toContain('"storageKey"');
   });
 
   it('shows an Issue detail in both human and JSON forms', async () => {
-    await runCLI(
+    const created = parseJson(expectOk(await runCLI(
       ['store', 'issue', 'new', 'show-test', '--store', f.storeId, '--title', 'Show Test', '--json'],
       { cwd: f.storeRoot, env: f.env }
-    );
+    )));
     f.git(f.storeRoot, ['add', 'rasen/issues/']);
     f.git(f.storeRoot, ['commit', '-m', 'seed show-test']);
 
@@ -156,15 +202,17 @@ describe('rasen store issue CLI', () => {
       )
     );
 
-    expect(humanResult.stdout).toContain('show-test');
-    expect(jsonResult.issue.issueId).toBe('show-test');
+    expect(humanResult.stdout).toContain(created.identity.key);
+    expect(humanResult.stdout).toContain(created.identity.uid);
+    expect(jsonResult.issue.issueId).toBe(created.identity.uid);
+    expect(jsonResult.issue.identity).toEqual(created.identity);
   });
 
   it('refuses --state outside the defined vocabulary instead of filtering to nothing (round-1 TRIVIAL-3)', async () => {
-    await runCLI(
+    const created = parseJson(expectOk(await runCLI(
       ['store', 'issue', 'new', 'filter-test', '--store', f.storeId, '--title', 'Filter Test', '--json'],
       { cwd: f.storeRoot, env: f.env }
-    );
+    )));
 
     const bogus = await runCLI(
       ['store', 'issue', 'list', '--store', f.storeId, '--state', 'closed'],
@@ -187,7 +235,7 @@ describe('rasen store issue CLI', () => {
         env: f.env,
       })
     );
-    expect(defined.stdout).toContain('filter-test');
+    expect(defined.stdout).toContain(created.identity.key);
   });
 
   it("carries the plan digest into the human form, not only --json (management-http-api 'both forms agree')", async () => {
@@ -270,10 +318,10 @@ describe('rasen store issue CLI', () => {
   });
 
   it('publishes an Execution Plan revision and prints the commit suggestion', async () => {
-    await runCLI(
+    const created = parseJson(expectOk(await runCLI(
       ['store', 'issue', 'new', 'plan-test', '--store', f.storeId, '--title', 'Plan Test', '--json'],
       { cwd: f.storeRoot, env: f.env }
-    );
+    )));
 
     const nodesFile = f.beside('nodes.yaml');
     f.write(
@@ -301,6 +349,6 @@ describe('rasen store issue CLI', () => {
     expect(result.revision.revisionId).toBe('0001');
     expect(result.revision.supersedes).toBeNull();
     // The revision file exists.
-    expect(fs.existsSync(path.join(f.storeRoot, 'rasen', 'issues', 'plan-test', 'plans', '0001.yaml'))).toBe(true);
+    expect(fs.existsSync(path.join(f.storeRoot, 'rasen', 'issues', created.identity.uid, 'plans', '0001.yaml'))).toBe(true);
   });
 });

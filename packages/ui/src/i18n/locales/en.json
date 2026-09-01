@@ -631,6 +631,8 @@
   "unlinked.dialog.plan_error": "The Issue was created, but its first plan could not be published.",
   "unlinked.dialog.partial": "Issue {issue} was created, but the Change remains unlinked: {error}",
   "unlinked.dialog.recover_attach": "Recover by attaching to this Issue",
+  "unlinked.dialog.indeterminate": "Publication of Issue {issue} is indeterminate. Do not create another Issue in this dialog. Inspect canonical UID {uid} before attaching: {error}",
+  "unlinked.dialog.recover_indeterminate": "Inspect and recover by canonical UID",
   "unlinked.dialog.no_plan": "no plan",
   "unlinked.dialog.confirm_scope": "Confirm Issue {issue}, base {revision}, node {node}, preserving {preserved} existing node(s).",
   "unlinked.dialog.submitting": "Submitting…",

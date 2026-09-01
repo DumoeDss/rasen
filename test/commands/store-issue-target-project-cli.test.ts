@@ -77,6 +77,7 @@ describe('rasen store issue plan — the planning-member gate on both sources', 
         { id: 'main', storeRef: 'refs/heads/main' },
         { id: LINE, storeRef: 'refs/heads/release/0.2' },
       ],
+      storeBranches: ['release/0.2'],
     });
     const cwd = f.projectRoot(PLANNING_A);
     runFromProject = (args: readonly string[]) => runCLI(args, { cwd, env: f.env });

@@ -20,12 +20,21 @@
  */
 import { validateArchiveV2 } from '../finalization-v2.js';
 import {
+  parseIssueId,
+  parseIssueStorageKey,
+  parseIssueUid,
   parseProjectId,
   parseTargetLineId,
   type ProjectId,
   type TargetLineId,
 } from '../planning-validation.js';
-import type { ExecutionPlanRevisionV1 } from '../issues/types.js';
+import type { StoredExecutionPlanRevision } from '../issues/types.js';
+import {
+  isStoreIssueError,
+  resolveIssueSelector,
+  type IssueIdentityCandidate,
+  type ResolvedIssueIdentity,
+} from '../issues/index.js';
 import {
   productionStoreQueryDependencies,
   type StoreQueryDependencies,
@@ -34,6 +43,7 @@ import {
   collectIssues,
   divergenceOf,
   presentedDiagnostic,
+  presentedIdentity,
   presentedRecord,
   readRevision,
 } from './issues-read.js';
@@ -86,6 +96,77 @@ const ARCHIVE_RECORD_FILENAME = 'archive.json';
 const ARCHIVE_DATE_PATTERN = /^(\d{4}-\d{2}-\d{2})-/u;
 /** `<YYYY-MM-DD>-<alias>--<instanceShort>`, or a legacy `<YYYY-MM-DD>-<alias>`. */
 const ARCHIVE_ENTRY_PATTERN = /^\d{4}-\d{2}-\d{2}-(.+?)(?:--[0-9a-f]{6,64})?$/u;
+
+function resolvedSummaryIdentity(issue: IssueSummary): ResolvedIssueIdentity | null {
+  if (issue.identity === null || issue.record === null) return null;
+  return {
+    identity: issue.identity,
+    storageKey: parseIssueStorageKey(
+      issue.record.version === 1 ? issue.record.id : issue.record.identity.uid
+    ),
+    sourceVersion: issue.record.version,
+  };
+}
+
+function summaryIdentityCandidates(
+  issues: readonly IssueSummary[]
+): readonly IssueIdentityCandidate[] {
+  const candidates: IssueIdentityCandidate[] = [];
+  for (const issue of issues) {
+    const resolved = resolvedSummaryIdentity(issue);
+    if (resolved !== null && issue.record !== null) {
+      candidates.push({ ...resolved, title: issue.record.title });
+      continue;
+    }
+    for (const copy of issue.divergence?.copies ?? []) {
+      if (copy.identity !== null && copy.record !== null) {
+        candidates.push({ ...copy.identity, title: copy.record.title });
+      }
+    }
+  }
+  return candidates;
+}
+
+function resolveSummarySelector(
+  issues: readonly IssueSummary[],
+  selector: string,
+  complete: boolean
+): IssueSummary | undefined {
+  const uidText = selector.toLowerCase().startsWith('uid:') ? selector.slice(4) : selector;
+  try {
+    const uid = parseIssueUid(uidText);
+    const authoritative = issues.find(issue => {
+      if (issue.identity?.uid === uid) return true;
+      return (issue.divergence?.copies ?? []).some(
+        copy => copy.identity?.identity.uid === uid
+      );
+    });
+    if (authoritative !== undefined) return authoritative;
+  } catch {
+    // Convenience selectors still require a complete catalog below so a
+    // hidden ref can never turn an ambiguous alias into a guessed winner.
+  }
+  try {
+    const selected = resolveIssueSelector({
+      selector,
+      candidates: summaryIdentityCandidates(issues),
+      complete,
+    });
+    return issues.find(issue => {
+      if (issue.identity?.uid === selected.identity.uid) return true;
+      return (issue.divergence?.copies ?? []).some(
+        copy => copy.identity?.identity.uid === selected.identity.uid
+      );
+    });
+  } catch (error) {
+    if (isStoreIssueError(error) && error.issueCode === 'issue_not_found') {
+      // Preserve the aggregate query's report-not-throw contract for an
+      // unreadable physical copy and for a genuinely absent selector.
+      return issues.find(issue => issue.identity === null && issue.issueId === selector);
+    }
+    throw error;
+  }
+}
 
 /** The Change alias an archive entry name carries, or the name when it carries none. */
 function aliasFromArchiveEntryName(entryName: string): string {
@@ -610,12 +691,27 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
     const matched: IssueSummary[] = [];
     for (const issue of issues) {
       if (issue.latestRevisionId === null) continue;
+      const owner = resolvedSummaryIdentity(issue);
+      if (owner === null) {
+        const copy = issue.divergence?.copies[0];
+        context.reader.recordProblem({
+          kind: 'issue',
+          itemId: issue.issueId,
+          storeRef: copy?.storeRef ?? null,
+          path: `rasen/issues/${String(copy?.storageKey ?? issue.issueId)}/issue.yaml`,
+          reason:
+            issue.divergence === null
+              ? `Issue identity is unreadable; Execution Plan revision '${issue.latestRevisionId}' cannot be checked for Change references.`
+              : `Issue records diverge; Execution Plan revision '${issue.latestRevisionId}' has no coherent owner for Change-reference resolution.`,
+        });
+        continue;
+      }
       const read = await readRevision(
         this.dependencies,
         context.reader,
         context.refs,
         context.store.registeredRoot,
-        issue.issueId,
+        owner,
         issue.latestRevisionId
       );
       const references = (read.revision?.nodes ?? []).some(
@@ -631,9 +727,11 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
       this.dependencies,
       context.reader,
       context.refs,
-      context.store.registeredRoot
+      context.store.registeredRoot,
+      context.store.storeUid
     );
     return contents.map(content => ({
+      identity: presentedIdentity(content.copies),
       issueId: content.issueId,
       record: presentedRecord(content.copies),
       // The reason the record is null, carried on the ITEM. `collectIssues`
@@ -656,10 +754,11 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
   async showIssue(input: IssueSelector): Promise<IssueDetail> {
     const context = await this.open(input);
     const issues = await this.summaries(context);
-    const issue = issues.find(candidate => candidate.issueId === input.issueId);
+    const issue = resolveSummarySelector(issues, input.issueId, context.reader.complete);
     if (issue === undefined) {
       return {
         issue: {
+          identity: null,
           issueId: input.issueId,
           record: null,
           diagnostic: null,
@@ -674,21 +773,21 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
       };
     }
     const plan =
-      issue.latestRevisionId === null
+      issue.latestRevisionId === null || resolvedSummaryIdentity(issue) === null
         ? null
-        : await this.resolvePlanIn(context, input.issueId, issue.latestRevisionId);
+        : await this.resolvePlanIn(context, issue, issue.latestRevisionId);
     return { issue, plan, ...this.completeness(context) };
   }
 
   async resolveExecutionPlan(input: ExecutionPlanSelector): Promise<ResolvedExecutionPlan> {
     const context = await this.open(input);
     let revisionId = input.revisionId ?? null;
+    const issues = await this.summaries(context);
+    const issue = resolveSummarySelector(issues, input.issueId, context.reader.complete);
     if (revisionId === null) {
-      const issues = await this.summaries(context);
-      revisionId =
-        issues.find(candidate => candidate.issueId === input.issueId)?.latestRevisionId ?? null;
+      revisionId = issue?.latestRevisionId ?? null;
     }
-    if (revisionId === null) {
+    if (revisionId === null || issue === undefined) {
       return {
         issueId: input.issueId as ResolvedExecutionPlan['issueId'],
         revisionId: null,
@@ -698,25 +797,36 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
         ...this.completeness(context),
       };
     }
-    return this.resolvePlanIn(context, input.issueId, revisionId);
+    return this.resolvePlanIn(context, issue, revisionId);
   }
 
   private async resolvePlanIn(
     context: QueryContext,
-    issueId: string,
+    issue: IssueSummary,
     revisionId: string
   ): Promise<ResolvedExecutionPlan> {
+    const owner = resolvedSummaryIdentity(issue);
+    if (owner === null) {
+      return {
+        issueId: issue.issueId as ResolvedExecutionPlan['issueId'],
+        revisionId: revisionId as ResolvedExecutionPlan['revisionId'],
+        revision: null,
+        diagnostic: 'Issue record identity is unreadable or divergent; no storage copy can be selected.',
+        readiness: { nodes: [], readyToResolve: false },
+        ...this.completeness(context),
+      };
+    }
     const read = await readRevision(
       this.dependencies,
       context.reader,
       context.refs,
       context.store.registeredRoot,
-      issueId,
+      owner,
       revisionId
     );
     if (read.revision === null) {
       return {
-        issueId: issueId as ResolvedExecutionPlan['issueId'],
+        issueId: issue.issueId as ResolvedExecutionPlan['issueId'],
         revisionId: revisionId as ResolvedExecutionPlan['revisionId'],
         revision: null,
         diagnostic: read.diagnostic,
@@ -732,7 +842,7 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
     });
     const readiness = await this.deriveReadiness(context, evidence, read.revision);
     return {
-      issueId: read.revision.issueId,
+      issueId: parseIssueId(issue.issueId),
       revisionId: read.revision.revisionId,
       revision: read.revision,
       diagnostic: null,
@@ -750,7 +860,7 @@ export class StoreQueryModuleImpl implements StoreQueryModule {
   private async deriveReadiness(
     context: QueryContext,
     evidence: ReferenceEvidence,
-    revision: ExecutionPlanRevisionV1
+    revision: StoredExecutionPlanRevision
   ): Promise<IssueReadiness> {
     const resolutions = new Map<string, ResolvedPlanNode>();
     for (const node of revision.nodes) {

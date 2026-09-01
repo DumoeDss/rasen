@@ -20,13 +20,12 @@ import {
   type StoreWorkspaceFixture,
 } from '../../helpers/store-workspace-fixture.js';
 import {
-  StoreIssuesModule,
   executionPlanDigest,
   normalizePlanNodes,
-  productionStoreIssueDependencies,
-  withDeterministicIssueClock,
+  serializeIssueRecord,
   type ExecutionPlanNodeInput,
 } from '../../../src/core/store/issues/index.js';
+import { parseIssueId } from '../../../src/core/store/planning-validation.js';
 import { StoreQueryModuleImpl } from '../../../src/core/store/query/index.js';
 import { projectIssueStatus, type IssueStatus } from '../../../src/core/issue-status/index.js';
 
@@ -55,12 +54,6 @@ describe('a Phase-2-era single-project revision reads with one lane and identica
     f.cleanup();
   });
 
-  function issues(): StoreIssuesModule {
-    return new StoreIssuesModule({
-      dependencies: withDeterministicIssueClock(productionStoreIssueDependencies, NOW),
-    });
-  }
-
   async function readStatus(): Promise<IssueStatus> {
     const detail = await new StoreQueryModuleImpl().showIssue({ ...scope(), issueId: ISSUE });
     return projectIssueStatus({ detail, workDirFor: async () => null });
@@ -74,7 +67,20 @@ describe('a Phase-2-era single-project revision reads with one lane and identica
       changeId: 'legacy-child',
       instanceSeed: 'e7'.repeat(16),
     });
-    await issues().create({ ...scope(), issueId: ISSUE, title: 'Phase 2 era' });
+    const issueRecordPath = f.at('rasen', 'issues', ISSUE, 'issue.yaml');
+    fs.mkdirSync(path.dirname(issueRecordPath), { recursive: true });
+    fs.writeFileSync(
+      issueRecordPath,
+      serializeIssueRecord({
+        version: 1,
+        id: parseIssueId(ISSUE),
+        title: 'Phase 2 era',
+        state: 'open',
+        reason: null,
+        createdAt: NOW,
+      }),
+      'utf8'
+    );
     f.git(f.storeRoot, ['add', '-A']);
     f.git(f.storeRoot, ['commit', '-m', 'issue + committed child']);
 

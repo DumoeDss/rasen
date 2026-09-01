@@ -28,10 +28,46 @@ vi.mock('../../src/api/client.js', async (importOriginal) => {
 import { LocationProvider, Route, Router, useLocation } from 'preact-iso';
 import { IssueBoardPage } from '../../src/components/IssueBoardPage.js';
 import * as client from '../../src/api/client.js';
+import type { StoreIssueIdentity } from '../../src/api/types.js';
 import {
+  ISSUE_IDENTITIES,
   issueAttentionFixture,
   issueProjectionsFixture,
 } from '../fixtures/issue-projection.js';
+
+const CREATED_IDENTITY = {
+  uid: '20000000-0000-4000-8000-000000000001',
+  key: 'ISS-0000000000000010',
+  slug: null,
+  aliases: [],
+} as const;
+
+const SECOND_CREATED_IDENTITY = {
+  uid: '20000000-0000-4000-8000-000000000003',
+  key: 'ISS-0000000000000012',
+  slug: null,
+  aliases: [],
+} as const;
+
+function createdResponse(
+  identity: StoreIssueIdentity = CREATED_IDENTITY,
+  title = '修复登录超时'
+) {
+  return {
+    identity,
+    issueId: identity.uid,
+    storeId: 'store_x',
+    storeUid: 'store-uid',
+    record: {
+      version: 2 as const,
+      identity,
+      title,
+      state: 'open' as const,
+      reason: null,
+      createdAt: '2026-08-31T00:00:00.000Z',
+    },
+  };
+}
 
 async function flushMicrotasks(times = 8): Promise<void> {
   for (let i = 0; i < times; i++) await Promise.resolve();
@@ -79,6 +115,7 @@ describe('IssueBoardPage', () => {
     document.body.appendChild(container);
     (client.getStoreIssueProjections as any).mockResolvedValue(issueProjectionsFixture);
     (client.getStoreIssueAttention as any).mockResolvedValue(issueAttentionFixture);
+    (client.createStoreIssue as any).mockResolvedValue(createdResponse());
     (client.getStoreProjects as any).mockResolvedValue({
       storeId: 'store_x',
       storeUid: 'store-uid',
@@ -132,9 +169,9 @@ describe('IssueBoardPage', () => {
     // for every Issue in the payload — and it appears in exactly one lane.
     for (const entry of issueProjectionsFixture.issues) {
       expect(cardsInLane(container, entry.status.phase).map((card) => card.getAttribute('data-issue'))).toContain(
-        entry.issueId
+        entry.identity?.uid ?? entry.issueId
       );
-      expect(container.querySelectorAll(`[data-testid="issue-card"][data-issue="${entry.issueId}"]`)).toHaveLength(1);
+      expect(container.querySelectorAll(`[data-testid="issue-card"][data-issue="${entry.identity?.uid ?? entry.issueId}"]`)).toHaveLength(1);
     }
   });
 
@@ -144,7 +181,7 @@ describe('IssueBoardPage', () => {
     expect([...container.querySelectorAll('button')].some((button) => button.textContent === 'New change')).toBe(false);
   });
 
-  it('creates a Store Issue from the Board and refreshes from server truth', async () => {
+  it('creates a Store Issue from a non-ASCII title only, presents its server identity, and refreshes server truth', async () => {
     await mountAtSpace(container, '/s/store_x/issues');
 
     const create = container.querySelector('[data-testid="issue-board-create"]') as HTMLButtonElement;
@@ -155,12 +192,10 @@ describe('IssueBoardPage', () => {
 
     const dialog = container.querySelector('[data-testid="new-issue-dialog"]') as HTMLFormElement;
     expect(dialog).not.toBeNull();
-    const issueId = dialog.querySelector('input[name="issueId"]') as HTMLInputElement;
+    expect(dialog.querySelector('input[name="issueId"]')).toBeNull();
     const title = dialog.querySelector('input[name="title"]') as HTMLInputElement;
     await act(async () => {
-      issueId.value = 'ui-created-issue';
-      issueId.dispatchEvent(new Event('input', { bubbles: true }));
-      title.value = 'Created from the Issue Board';
+      title.value = '修复登录超时';
       title.dispatchEvent(new Event('input', { bubbles: true }));
       await flushMicrotasks();
     });
@@ -170,13 +205,49 @@ describe('IssueBoardPage', () => {
     });
 
     expect(client.createStoreIssue).toHaveBeenCalledWith(
-      { issueId: 'ui-created-issue', title: 'Created from the Issue Board' },
+      { title: '修复登录超时' },
       'store:store_x'
     );
     expect(container.querySelector('[data-testid="new-issue-dialog"]')).toBeNull();
+    const created = container.querySelector('[data-testid="issue-board-created"] a');
+    expect(created?.textContent).toBe(CREATED_IDENTITY.key);
+    expect(created?.getAttribute('href')).toBe(`/s/store_x/issues/${CREATED_IDENTITY.uid}`);
     expect(client.getStoreIssueProjections).toHaveBeenCalledTimes(2);
     expect(client.getStoreIssueAttention).toHaveBeenCalledTimes(2);
     expect(client.getStoreProjects).toHaveBeenCalledTimes(2);
+  });
+
+  it('submits repeated titles unchanged and trusts each distinct server-assigned identity', async () => {
+    (client.createStoreIssue as any)
+      .mockResolvedValueOnce(createdResponse(CREATED_IDENTITY, 'Repeated title'))
+      .mockResolvedValueOnce(createdResponse(SECOND_CREATED_IDENTITY, 'Repeated title'));
+    await mountAtSpace(container, '/s/store_x/issues');
+
+    for (const expected of [CREATED_IDENTITY, SECOND_CREATED_IDENTITY]) {
+      await act(async () => {
+        (container.querySelector('[data-testid="issue-board-create"]') as HTMLButtonElement).click();
+      });
+      const dialog = container.querySelector('[data-testid="new-issue-dialog"]') as HTMLFormElement;
+      expect(dialog.querySelector('input[name="issueId"]')).toBeNull();
+      const title = dialog.querySelector('input[name="title"]') as HTMLInputElement;
+      await act(async () => {
+        title.value = 'Repeated title';
+        title.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await act(async () => {
+        dialog.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        await flushMicrotasks(30);
+      });
+      await act(async () => { await flushMicrotasks(30); });
+      const created = container.querySelector('[data-testid="issue-board-created"] a');
+      expect(created?.textContent).toBe(expected.key);
+      expect(created?.getAttribute('href')).toBe(`/s/store_x/issues/${expected.uid}`);
+    }
+
+    expect((client.createStoreIssue as any).mock.calls).toEqual([
+      [{ title: 'Repeated title' }, 'store:store_x'],
+      [{ title: 'Repeated title' }, 'store:store_x'],
+    ]);
   });
 
   it('renders all five empty lanes when the Store has no Issues', async () => {
@@ -218,8 +289,8 @@ describe('IssueBoardPage', () => {
   it('presents phase, health, and progress as three separate facts equal to their payload fields', async () => {
     await mountAtSpace(container, '/s/store_x/issues');
 
-    const active = issueProjectionsFixture.issues.find((entry) => entry.issueId === 'issue-active')!;
-    const card = cardFor(container, 'issue-active')!;
+    const active = issueProjectionsFixture.issues.find((entry) => entry.identity?.uid === ISSUE_IDENTITIES.active.uid)!;
+    const card = cardFor(container, ISSUE_IDENTITIES.active.uid)!;
     // Phase: the lane placement, and the card's own recorded phase.
     expect(card.getAttribute('data-phase')).toBe(active.status.phase);
     // Health: its own indicator, not folded into the lane.
@@ -233,6 +304,10 @@ describe('IssueBoardPage', () => {
     // An Issue with no readable revision reports no pair rather than 0/0.
     const planningCard = cardFor(container, 'issue-planning')!;
     expect(planningCard.querySelector('[data-testid="issue-card-progress"]')?.textContent).toBe('-/-');
+
+    const readyCard = cardFor(container, ISSUE_IDENTITIES.ready.uid)!;
+    expect(readyCard.querySelector('.issue-card__title')?.textContent).toBe('Ready Issue');
+    expect(readyCard.querySelector('.issue-card__id')?.textContent).toBe(ISSUE_IDENTITIES.ready.key);
   });
 
   it('shows the first item in the scan`s own ordering and no others, and nothing when there are none', async () => {
@@ -241,11 +316,11 @@ describe('IssueBoardPage', () => {
     // The scan's items are already fail-first ordered; `issue-active` has two
     // and the card must show only the FIRST — showing the second would be the
     // Board choosing its own ranking.
-    const attentions = cardFor(container, 'issue-active')!.querySelectorAll(
+    const attentions = cardFor(container, ISSUE_IDENTITIES.active.uid)!.querySelectorAll(
       '[data-testid="issue-card-attention"]'
     );
     expect(attentions).toHaveLength(1);
-    const firstForActive = issueAttentionFixture.items.find((item) => item.issueId === 'issue-active')!;
+    const firstForActive = issueAttentionFixture.items.find((item) => item.issueId === ISSUE_IDENTITIES.active.uid)!;
     expect(attentions[0]!.textContent).toContain(firstForActive.nodeId!);
     expect(attentions[0]!.textContent).toContain('failure');
     // The second item's node must NOT appear on the card.
@@ -253,7 +328,7 @@ describe('IssueBoardPage', () => {
 
     // An Issue the scan reported no items for shows no attention line at all.
     expect(
-      cardFor(container, 'issue-autodecompose-uplift')!.querySelector('[data-testid="issue-card-attention"]')
+      cardFor(container, ISSUE_IDENTITIES.auto.uid)!.querySelector('[data-testid="issue-card-attention"]')
     ).toBeNull();
   });
 
@@ -262,7 +337,7 @@ describe('IssueBoardPage', () => {
     // The Done Issue's projection carries two named nodes, a project lane, a
     // delivery rollup, and a review thread. None of that belongs on a card
     // (spec requirement 1) — it is the Detail's surface.
-    const card = cardFor(container, 'issue-autodecompose-uplift')!;
+    const card = cardFor(container, ISSUE_IDENTITIES.auto.uid)!;
     for (const nodeId of ['issue-autodecompose-graph', 'issue-autodecompose-review-flow']) {
       expect(card.textContent).not.toContain(nodeId);
     }
@@ -280,8 +355,8 @@ describe('IssueBoardPage', () => {
       'record does not parse'
     );
 
-    expect(cardFor(container, 'issue-review')!.querySelector('[data-testid="issue-card-divergent"]')).not.toBeNull();
-    expect(cardFor(container, 'issue-ready')!.querySelector('[data-testid="issue-card-uncommitted"]')).not.toBeNull();
+    expect(cardFor(container, ISSUE_IDENTITIES.review.uid)!.querySelector('[data-testid="issue-card-divergent"]')).not.toBeNull();
+    expect(cardFor(container, ISSUE_IDENTITIES.ready.uid)!.querySelector('[data-testid="issue-card-uncommitted"]')).not.toBeNull();
   });
 
   it('announces every incompleteness fact the payloads report', async () => {
@@ -357,12 +432,12 @@ describe('IssueBoardPage', () => {
     const visible = [...container.querySelectorAll('[data-testid="issue-card"]')].map((card) =>
       card.getAttribute('data-issue')
     );
-    expect(visible).toContain('issue-ready');
-    expect(visible).toContain('issue-review');
-    expect(visible).not.toContain('issue-active');
+    expect(visible).toContain(ISSUE_IDENTITIES.ready.uid);
+    expect(visible).toContain(ISSUE_IDENTITIES.review.uid);
+    expect(visible).not.toContain(ISSUE_IDENTITIES.active.uid);
     // ...each still in its own phase lane, and the lanes themselves unchanged.
     expect(cardsInLane(container, 'ready').map((card) => card.getAttribute('data-issue'))).toEqual([
-      'issue-ready',
+      ISSUE_IDENTITIES.ready.uid,
     ]);
     expect(
       [...container.querySelectorAll('[data-testid="issue-lane"]')].map((lane) => lane.getAttribute('data-phase'))
@@ -391,7 +466,7 @@ describe('IssueBoardPage', () => {
 
   it('does not offer stale projection lanes as member chips, while keeping their Issues under All', async () => {
     const historicalProjectId = 'historical-project';
-    const historicalIssueId = 'issue-active';
+    const historicalIssueId = ISSUE_IDENTITIES.active.uid;
     (client.getStoreIssueProjections as any).mockResolvedValue({
       ...issueProjectionsFixture,
       issues: issueProjectionsFixture.issues.map((entry) =>
@@ -461,7 +536,7 @@ describe('IssueBoardPage', () => {
     (client.getStoreIssueProjections as any).mockResolvedValue({
       ...issueProjectionsFixture,
       issues: issueProjectionsFixture.issues.map((entry) =>
-        entry.issueId === 'issue-active'
+        entry.issueId === ISSUE_IDENTITIES.active.uid
           ? { ...entry, status: { ...entry.status, phase: 'done' as const } }
           : entry
       ),
@@ -481,7 +556,7 @@ describe('IssueBoardPage', () => {
     expect((client.getStoreIssueAttention as any).mock.calls).toHaveLength(2);
     expect((client.getStoreProjects as any).mock.calls).toHaveLength(2);
     expect(cardsInLane(container, 'done').map((card) => card.getAttribute('data-issue'))).toContain(
-      'issue-active'
+      ISSUE_IDENTITIES.active.uid
     );
     expect(cardsInLane(container, 'active')).toHaveLength(0);
   });
@@ -489,11 +564,11 @@ describe('IssueBoardPage', () => {
   it('addresses the Store by the route`s opaque selector and links each card to its detail', async () => {
     await mountAtSpace(container, '/s/store%3Aabc/issues');
     expect((client.getStoreIssueProjections as any).mock.calls[0][0]).toBe('store:store:abc');
-    expect(cardFor(container, 'issue-ready')?.querySelector('[data-testid="issue-card-main"]')?.getAttribute('href')).toBe(
-      '/s/store%3Aabc/issues/issue-ready'
+    expect(cardFor(container, ISSUE_IDENTITIES.ready.uid)?.querySelector('[data-testid="issue-card-main"]')?.getAttribute('href')).toBe(
+      `/s/store%3Aabc/issues/${ISSUE_IDENTITIES.ready.uid}`
     );
-    expect(cardFor(container, 'issue-ready')?.querySelector('[data-testid="issue-card-phase-evidence"]')?.getAttribute('href')).toBe(
-      '/s/store%3Aabc/issues/issue-ready#issue-provenance-plan'
+    expect(cardFor(container, ISSUE_IDENTITIES.ready.uid)?.querySelector('[data-testid="issue-card-phase-evidence"]')?.getAttribute('href')).toBe(
+      `/s/store%3Aabc/issues/${ISSUE_IDENTITIES.ready.uid}#issue-provenance-plan`
     );
   });
 
@@ -506,7 +581,13 @@ describe('IssueBoardPage', () => {
     const aProjects = new Promise<any>((resolve) => { resolveAProjects = resolve; });
     const bEntry = {
       ...issueProjectionsFixture.issues[0]!,
-      issueId: 'issue-store-b',
+      identity: {
+        uid: '30000000-0000-4000-8000-000000000001',
+        key: 'ISS-0000000000000020',
+        slug: 'issue-store-b',
+        aliases: [{ kind: 'legacy-id' as const, value: 'issue-store-b' }],
+      },
+      issueId: '30000000-0000-4000-8000-000000000001',
       record: {
         version: 1 as const,
         id: 'issue-store-b',

@@ -90,6 +90,7 @@ describe('rasen store attention', () => {
   let f: StoreWorkspaceFixture;
   let execProject: string;
   let nowhere: string;
+  let issueIdentities: Map<string, { readonly uid: string; readonly key: string }>;
 
   async function run(args: readonly string[], cwd: string): Promise<RunCLIResult> {
     return runCLI([...args], { cwd, env: f.env });
@@ -120,11 +121,22 @@ describe('rasen store attention', () => {
     f.git(f.storeRoot, ['commit', '-m', `${issueId} + plan`]);
   }
 
+  function identityOf(issueId: string): { readonly uid: string; readonly key: string } {
+    const identity = issueIdentities.get(issueId);
+    if (identity === undefined) throw new Error(`Issue '${issueId}' has not been created.`);
+    return identity;
+  }
+
   async function openIssue(issueId: string, title: string): Promise<void> {
-    await run(
-      ['store', 'issue', 'new', issueId, '--store', f.storeId, '--title', title, '--json'],
-      f.storeRoot
+    const created = parseJson(
+      expectOk(
+        await run(
+          ['store', 'issue', 'new', issueId, '--store', f.storeId, '--title', title, '--json'],
+          f.storeRoot
+        )
+      )
     );
+    issueIdentities.set(issueId, created.identity);
   }
 
   /**
@@ -218,6 +230,7 @@ describe('rasen store attention', () => {
       projects: [PROJECT],
       lines: [{ id: LINE, storeRef: 'refs/heads/main' }],
     });
+    issueIdentities = new Map();
     // A standalone project root: its `.rasen/changes/<alias>/ephemera` is the
     // execution-root landing the projection searches first, so the scan runs
     // from here and observes every run-state above.
@@ -246,12 +259,12 @@ describe('rasen store attention', () => {
     // failed-but-active Issue is never presented as merely busy.
     expect(json.scannedCount).toBe(2);
     const scanByIssue = new Map(json.scanned.map((entry: any) => [entry.issueId, entry]));
-    expect(scanByIssue.get(ISSUE_ALPHA)).toMatchObject({
+    expect(scanByIssue.get(identityOf(ISSUE_ALPHA).uid)).toMatchObject({
       phase: 'active',
       health: 'failed',
       itemCount: 2,
     });
-    expect(scanByIssue.get(ISSUE_BETA)).toMatchObject({
+    expect(scanByIssue.get(identityOf(ISSUE_BETA).uid)).toMatchObject({
       phase: 'active',
       health: 'waiting-human',
       itemCount: 1,
@@ -262,7 +275,7 @@ describe('rasen store attention', () => {
     expect(json.items).toEqual([
       {
         kind: 'failure',
-        issueId: ISSUE_ALPHA,
+        issueId: identityOf(ISSUE_ALPHA).uid,
         phase: 'active',
         health: 'failed',
         nodeId: 'g-fail',
@@ -271,7 +284,7 @@ describe('rasen store attention', () => {
       },
       {
         kind: 'blocked-behind',
-        issueId: ISSUE_ALPHA,
+        issueId: identityOf(ISSUE_ALPHA).uid,
         phase: 'active',
         health: 'failed',
         nodeId: 'g-down',
@@ -280,7 +293,7 @@ describe('rasen store attention', () => {
       },
       {
         kind: 'waiting-human',
-        issueId: ISSUE_BETA,
+        issueId: identityOf(ISSUE_BETA).uid,
         phase: 'active',
         health: 'waiting-human',
         nodeId: 'g-park',
@@ -304,16 +317,24 @@ describe('rasen store attention', () => {
       await run(['store', 'attention', '--store', f.storeId], execProject)
     );
     expect(human.stdout).toContain(`Store attention scan — 2 Issue(s) scanned`);
-    expect(human.stdout).toContain(`${ISSUE_ALPHA}: active/failed — 2 item(s)`);
-    expect(human.stdout).toContain(`${ISSUE_BETA}: active/waiting-human — 1 item(s)`);
+    expect(human.stdout).toContain(`${identityOf(ISSUE_ALPHA).key}: active/failed — 2 item(s)`);
+    expect(human.stdout).toContain(
+      `${identityOf(ISSUE_BETA).key}: active/waiting-human — 1 item(s)`
+    );
     expect(human.stdout).toContain(`run-state: ${execProject}`);
     expect(human.stdout).toContain('attention: 3 item(s)');
     expect(human.stdout).toContain('failure (1)');
-    expect(human.stdout).toContain(`[${ISSUE_ALPHA} active/failed] g-fail boom failed`);
+    expect(human.stdout).toContain(
+      `[${identityOf(ISSUE_ALPHA).key} active/failed] g-fail boom failed`
+    );
     expect(human.stdout).toContain('blocked-behind (1)');
-    expect(human.stdout).toContain(`[${ISSUE_ALPHA} active/failed] g-down down blocked behind g-fail@${PROJECT}: failed`);
+    expect(human.stdout).toContain(
+      `[${identityOf(ISSUE_ALPHA).key} active/failed] g-down down blocked behind g-fail@${PROJECT}: failed`
+    );
     expect(human.stdout).toContain('waiting-human (1)');
-    expect(human.stdout).toContain(`[${ISSUE_BETA} active/waiting-human] g-park park waiting for a human`);
+    expect(human.stdout).toContain(
+      `[${identityOf(ISSUE_BETA).key} active/waiting-human] g-park park waiting for a human`
+    );
     // The failure line leads the waiting-human line — fail-first is the
     // order the answer reads in, not just a JSON detail.
     expect(human.stdout.indexOf('g-fail boom failed')).toBeLessThan(
@@ -349,7 +370,7 @@ describe('rasen store attention', () => {
     );
     expect(narrowed.narrowed).toBe(true);
     expect(narrowed.scannedCount).toBe(1);
-    expect(narrowed.scanned[0].issueId).toBe(ISSUE_ALPHA);
+    expect(narrowed.scanned[0].issueId).toBe(identityOf(ISSUE_ALPHA).uid);
     // Only alpha's items — beta's parked stage is out of the narrowed scan.
     expect(narrowed.items.map((item: any) => item.kind)).toEqual(['failure', 'blocked-behind']);
 
@@ -388,7 +409,8 @@ describe('rasen store attention', () => {
     expect(json.items).toEqual([]);
     expect(json.scanned).toEqual([
       {
-        issueId: 'quiet-issue',
+        issueId: identityOf('quiet-issue').uid,
+        issueKey: identityOf('quiet-issue').key,
         phase: 'ready',
         health: 'healthy',
         itemCount: 0,
@@ -397,7 +419,9 @@ describe('rasen store attention', () => {
     ]);
     const human = expectOk(await run(['store', 'attention', '--store', f.storeId], nowhere));
     expect(human.stdout).toContain('1 Issue(s) scanned');
-    expect(human.stdout).toContain('quiet-issue: ready/healthy — 0 item(s)');
+    expect(human.stdout).toContain(
+      `${identityOf('quiet-issue').key}: ready/healthy — 0 item(s)`
+    );
     expect(human.stdout).toContain('none need attention — 1 Issue(s) scanned');
     expect(human.stdout).toContain('none visible from this directory');
   });
@@ -465,7 +489,7 @@ describe('rasen store attention', () => {
     expect(json.items).toHaveLength(1);
     const item = json.items[0];
     expect(item.kind).toBe('acceptance-awaiting');
-    expect(item.issueId).toBe('review-issue');
+    expect(item.issueId).toBe(identityOf('review-issue').uid);
     expect(item.phase).toBe('review');
     expect(item.health).toBe('waiting-human');
     expect(item.nodeId).toBeNull();
@@ -473,14 +497,18 @@ describe('rasen store attention', () => {
     // acceptance is the human's next act and the gate says so.
     expect(item.gate.eligible).toBe(true);
     expect(item.gate.conditionsRevisionId).toBe('0001');
-    const scan = json.scanned.find((entry: any) => entry.issueId === 'review-issue');
+    const scan = json.scanned.find(
+      (entry: any) => entry.issueId === identityOf('review-issue').uid
+    );
     expect(scan).toMatchObject({ phase: 'review', health: 'waiting-human', itemCount: 1 });
 
     const human = expectOk(await run(['store', 'attention', '--store', f.storeId], execProject));
-    expect(human.stdout).toContain('review-issue: review/waiting-human — 1 item(s)');
+    expect(human.stdout).toContain(
+      `${identityOf('review-issue').key}: review/waiting-human — 1 item(s)`
+    );
     expect(human.stdout).toContain('acceptance-awaiting (1)');
     expect(human.stdout).toContain(
-      `[review-issue review/waiting-human] acceptance is the human's next act (gate holds, conditions revision 0001)`
+      `[${identityOf('review-issue').key} review/waiting-human] acceptance is the human's next act (gate holds, conditions revision 0001)`
     );
   });
 });

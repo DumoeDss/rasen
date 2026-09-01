@@ -15,6 +15,7 @@
 import * as path from 'node:path';
 
 import { resolveStorePlanningLayoutV2Path } from '../planning-foundation.js';
+import type { IssueStorageKey } from '../planning-validation.js';
 import {
   PLANNING_MARKER_FILE_NAME,
   RUN_STATE_DIR_NAME,
@@ -148,7 +149,7 @@ export async function assertIssueWriteLocation(
 /** The Store-level Issue addresses, all computed from the layout contract. */
 export function issueAddresses(
   storeCheckoutRoot: string,
-  issueId: string
+  issueStorageKey: IssueStorageKey
 ): {
   readonly directory: string;
   readonly record: string;
@@ -159,25 +160,25 @@ export function issueAddresses(
 } {
   const directory = resolveStorePlanningLayoutV2Path(storeCheckoutRoot, {
     kind: 'issue',
-    issueId,
+    issueStorageKey,
   });
   return {
     directory,
     record: resolveStorePlanningLayoutV2Path(storeCheckoutRoot, {
       kind: 'issue-record',
-      issueId,
+      issueStorageKey,
     }),
     plans: resolveStorePlanningLayoutV2Path(storeCheckoutRoot, {
       kind: 'execution-plans',
-      issueId,
+      issueStorageKey,
     }),
     acceptance: resolveStorePlanningLayoutV2Path(storeCheckoutRoot, {
       kind: 'acceptance-conditions',
-      issueId,
+      issueStorageKey,
     }),
     accepted: resolveStorePlanningLayoutV2Path(storeCheckoutRoot, {
       kind: 'issue-accepted-record',
-      issueId,
+      issueStorageKey,
     }),
     // The narrative is optional and is never parsed for facts, so it is not a
     // layout address; it is the one Issue file whose absence changes nothing.
@@ -187,12 +188,12 @@ export function issueAddresses(
 
 export function revisionAddress(
   storeCheckoutRoot: string,
-  issueId: string,
+  issueStorageKey: IssueStorageKey,
   revisionId: string
 ): string {
   return resolveStorePlanningLayoutV2Path(storeCheckoutRoot, {
     kind: 'execution-plan',
-    issueId,
+    issueStorageKey,
     revisionId,
   });
 }
@@ -200,12 +201,12 @@ export function revisionAddress(
 /** ONE acceptance-conditions revision's own address — never a composed filename. */
 export function acceptanceRevisionAddress(
   storeCheckoutRoot: string,
-  issueId: string,
+  issueStorageKey: IssueStorageKey,
   revisionId: string
 ): string {
   return resolveStorePlanningLayoutV2Path(storeCheckoutRoot, {
     kind: 'acceptance-condition',
-    issueId,
+    issueStorageKey,
     revisionId,
   });
 }

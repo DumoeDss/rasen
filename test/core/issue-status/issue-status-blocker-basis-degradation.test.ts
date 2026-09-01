@@ -28,9 +28,11 @@ import {
   executionPlanDigest,
   normalizePlanNodes,
   productionStoreIssueDependencies,
+  serializeIssueRecord,
   withDeterministicIssueClock,
   type ExecutionPlanNodeInput,
 } from '../../../src/core/store/issues/index.js';
+import { parseIssueId } from '../../../src/core/store/planning-validation.js';
 import { StoreQueryModuleImpl } from '../../../src/core/store/query/index.js';
 import { writeRunState } from '../../../src/core/pipeline-registry/run-state.js';
 import { ephemeraDir } from '../../../src/core/file-placement.js';
@@ -94,7 +96,20 @@ describe('dependency-fact shape changes move no axis', () => {
       seedAndCommit(PROJECT, 'legacy-b', 'b2'.repeat(16)),
       seedAndCommit(PROJECT, 'legacy-c', 'c3'.repeat(16)),
     ];
-    await issues().create({ ...scope(), issueId: ISSUE, title: 'Phase 2 era serial' });
+    const issueRecordPath = f.at('rasen', 'issues', ISSUE, 'issue.yaml');
+    fs.mkdirSync(path.dirname(issueRecordPath), { recursive: true });
+    fs.writeFileSync(
+      issueRecordPath,
+      serializeIssueRecord({
+        version: 1,
+        id: parseIssueId(ISSUE),
+        title: 'Phase 2 era serial',
+        state: 'open',
+        reason: null,
+        createdAt: NOW,
+      }),
+      'utf8'
+    );
     f.git(f.storeRoot, ['add', '-A']);
     f.git(f.storeRoot, ['commit', '-m', 'issue + children']);
 

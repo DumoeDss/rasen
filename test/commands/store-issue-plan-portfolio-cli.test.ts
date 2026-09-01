@@ -63,6 +63,7 @@ function portfolioJson(
 describe('rasen store issue plan --from-portfolio (CLI)', () => {
   let f: StoreWorkspaceFixture;
   let runFromProject: (args: readonly string[]) => Promise<RunCLIResult>;
+  let issueUid: string;
 
   beforeEach(async () => {
     f = await createStoreWorkspaceFixture({
@@ -72,6 +73,7 @@ describe('rasen store issue plan --from-portfolio (CLI)', () => {
         { id: 'main', storeRef: 'refs/heads/main' },
         { id: LINE, storeRef: 'refs/heads/release/0.2' },
       ],
+      storeBranches: ['release/0.2'],
     });
     const cwd = f.projectRoot(PROJECT);
     runFromProject = (args: readonly string[]) =>
@@ -93,12 +95,15 @@ describe('rasen store issue plan --from-portfolio (CLI)', () => {
     f.git(f.storeRoot, ['add', '-A']);
     f.git(f.storeRoot, ['commit', '-m', 'land children']);
 
-    expectOk(
-      await runFromProject([
-        'store', 'issue', 'new', 'cli-issue', '--store', f.storeId,
-        '--title', 'CLI portfolio publication', '--json',
-      ])
+    const created = parseJson(
+      expectOk(
+        await runFromProject([
+          'store', 'issue', 'new', 'cli-issue', '--store', f.storeId,
+          '--title', 'CLI portfolio publication', '--json',
+        ])
+      )
     );
+    issueUid = created.identity.uid;
   });
 
   afterEach(() => {
@@ -138,7 +143,7 @@ describe('rasen store issue plan --from-portfolio (CLI)', () => {
       childCount: 2,
     });
     expect(result.suggestedCommits).toHaveLength(1);
-    expect(fs.existsSync(f.at('rasen', 'issues', 'cli-issue', 'plans', '0001.yaml'))).toBe(true);
+    expect(fs.existsSync(f.at('rasen', 'issues', issueUid, 'plans', '0001.yaml'))).toBe(true);
   });
 
   it('carries the source facts in the human form too, beside the commit suggestion', async () => {

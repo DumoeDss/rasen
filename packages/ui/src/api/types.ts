@@ -100,6 +100,11 @@ export interface ApiErrorBody {
     cliExitCode?: number;
     stderr?: string;
     details?: ThemeValidationDetail[];
+    recovery?: {
+      kind: 'issue-publication-indeterminate';
+      identity: { uid: string; key: string };
+      retrySafe: false;
+    };
   };
 }
 
@@ -2357,8 +2362,23 @@ export interface StoreChangesResponse extends StoreAggregateCompleteness {
 
 export type StoreIssueState = 'open' | 'resolved' | 'dropped';
 
-/** `rasen/issues/<issueId>/issue.yaml`, as read back. */
-export interface StoreIssueRecordWire {
+export type StoreIssueAliasKind = 'legacy-id' | 'former-slug' | 'custom';
+
+export interface StoreIssueAlias {
+  kind: StoreIssueAliasKind;
+  value: string;
+}
+
+/** Public Issue identity. Physical storage locators are intentionally absent. */
+export interface StoreIssueIdentity {
+  readonly uid: string;
+  readonly key: string;
+  readonly slug: string | null;
+  readonly aliases: readonly StoreIssueAlias[];
+}
+
+/** Historical Issue record. Its authored id remains a compatibility alias. */
+export interface StoreIssueRecordV1Wire {
   version: 1;
   id: string;
   title: string;
@@ -2367,9 +2387,22 @@ export interface StoreIssueRecordWire {
   createdAt: string;
 }
 
+/** New Issue record, owned by the system-assigned UID. */
+export interface StoreIssueRecordV2Wire {
+  version: 2;
+  identity: StoreIssueIdentity;
+  title: string;
+  state: StoreIssueState;
+  reason: string | null;
+  createdAt: string;
+}
+
+export type StoreIssueRecordWire = StoreIssueRecordV1Wire | StoreIssueRecordV2Wire;
+
 export interface StoreIssueRecordCopy {
   storeRef: string | null;
   targetLineId: string | null;
+  identity: StoreIssueIdentity | null;
   sha256: string;
   record: StoreIssueRecordWire | null;
   diagnostic: string | null;
@@ -2380,6 +2413,9 @@ export interface StoreIssueDivergence {
 }
 
 export interface StoreIssueSummary {
+  /** Null only when no coherent record identity can be presented. */
+  identity: StoreIssueIdentity | null;
+  /** @deprecated Use `identity.uid` after checking the summary is readable. */
   issueId: string;
   record: StoreIssueRecordWire | null;
   /** Why no record is presented, when a copy that does not read is the reason. */
@@ -2419,8 +2455,8 @@ export interface StoreExecutionPlanNode {
   uncertainty?: string;
 }
 
-/** `rasen/issues/<issueId>/plans/<revisionId>.yaml`, as read back. */
-export interface StoreExecutionPlanRevisionWire {
+/** Historical Execution Plan revision. */
+export interface StoreExecutionPlanRevisionV1Wire {
   version: 1;
   issueId: string;
   revisionId: string;
@@ -2429,6 +2465,25 @@ export interface StoreExecutionPlanRevisionWire {
   contentSha256: string;
   nodes: StoreExecutionPlanNode[];
 }
+
+/** Core wire aliases make the absence of the internal storage locator explicit. */
+export type StorePublicIssueRecordCopy = StoreIssueRecordCopy;
+export type StorePublicIssueSummary = StoreIssueSummary;
+
+/** New Execution Plan revision, owned by the authoritative Issue UID. */
+export interface StoreExecutionPlanRevisionV2Wire {
+  version: 2;
+  issueUid: string;
+  revisionId: string;
+  supersedes: string | null;
+  createdAt: string;
+  contentSha256: string;
+  nodes: StoreExecutionPlanNode[];
+}
+
+export type StoreExecutionPlanRevisionWire =
+  | StoreExecutionPlanRevisionV1Wire
+  | StoreExecutionPlanRevisionV2Wire;
 
 export type StorePlanNodeResolutionStatus = 'resolved' | 'unresolved' | 'ambiguous' | 'not-created';
 
@@ -2477,22 +2532,20 @@ export interface StoreIssueDetailResponse extends StoreAggregateCompleteness {
   plan: StoreExecutionPlanResponse | null;
 }
 
-export interface StoreSuggestedIssueCommit {
-  repoRoot: string;
-  pathspecs: string[];
-  message: string;
-  rationale: string;
-}
-
 export interface StoreIssueWriteReport {
+  identity: StoreIssueIdentity;
+  /** @deprecated Use `identity.uid`. */
   issueId: string;
   storeId: string;
   storeUid: string;
-  checkoutRoot: string;
-  checkoutRef: string | null;
-  written: string[];
-  suggestedCommits: StoreSuggestedIssueCommit[];
+  warnings?: Array<{
+    code: 'issue_readme_write_failed' | 'issue_record_post_publish_warning';
+    message: string;
+  }>;
 }
+
+/** Exact public core-wire name; retained beside the UI's historical local name. */
+export type StorePublicIssueWriteReport = StoreIssueWriteReport;
 
 /** `POST /api/v1/stores/issues` and `POST /api/v1/stores/issue-state` response — both write one Issue record. */
 export interface StoreIssueRecordResponse extends StoreIssueWriteReport {
@@ -2556,6 +2609,8 @@ export type StoreChangeOccurrence =
   | { kind: 'archived'; change: StoreAggregateArchiveEntry };
 
 export interface StoreChangeIssueLink {
+  identity: StoreIssueIdentity;
+  /** @deprecated Use `identity.uid`. */
   issueId: string;
   title: string | null;
   state: StoreIssueState | null;
@@ -2799,7 +2854,7 @@ export interface StoreIssueAcceptanceCondition {
   verification?: string;
 }
 
-export interface StoreIssueAcceptanceConditionsRevision {
+export interface StoreIssueAcceptanceConditionsRevisionV1 {
   version: 1;
   issueId: string;
   revisionId: string;
@@ -2808,6 +2863,20 @@ export interface StoreIssueAcceptanceConditionsRevision {
   contentSha256: string;
   conditions: StoreIssueAcceptanceCondition[];
 }
+
+export interface StoreIssueAcceptanceConditionsRevisionV2 {
+  version: 2;
+  issueUid: string;
+  revisionId: string;
+  supersedes: string | null;
+  createdAt: string;
+  contentSha256: string;
+  conditions: StoreIssueAcceptanceCondition[];
+}
+
+export type StoreIssueAcceptanceConditionsRevision =
+  | StoreIssueAcceptanceConditionsRevisionV1
+  | StoreIssueAcceptanceConditionsRevisionV2;
 
 /** The latest acceptance-conditions revision read back, or why it could not be. */
 export interface StoreIssueAcceptanceConditionsRead {
@@ -2876,8 +2945,8 @@ export interface StoreIssueAcceptanceRecordExclusion {
   reason: string;
 }
 
-/** `rasen/issues/<issueId>/accepted.yaml` — ONE record per Issue, never rewritten. */
-export interface StoreIssueAcceptedRecord {
+/** Historical acceptance record. */
+export interface StoreIssueAcceptedRecordV1 {
   version: 1;
   issueId: string;
   acceptedAt: string;
@@ -2888,6 +2957,23 @@ export interface StoreIssueAcceptedRecord {
   note: string | null;
   contentSha256: string;
 }
+
+/** New acceptance record, owned by the authoritative Issue UID. */
+export interface StoreIssueAcceptedRecordV2 {
+  version: 2;
+  issueUid: string;
+  acceptedAt: string;
+  conditionsRevisionId: string;
+  conditionsSha256: string;
+  gate: StoreIssueAcceptanceGateSnapshot;
+  exclusions?: StoreIssueAcceptanceRecordExclusion[];
+  note: string | null;
+  contentSha256: string;
+}
+
+export type StoreIssueAcceptedRecord =
+  | StoreIssueAcceptedRecordV1
+  | StoreIssueAcceptedRecordV2;
 
 /** Null when the read supplied no acceptance facts — a named condition of THAT read. */
 export interface StoreIssueAcceptanceStatusBlock {
@@ -2947,6 +3033,8 @@ export type StoreIssueAttentionItem = {
 /** One scanned Issue's roll facts — what keeps "honestly unlisted" visible. */
 export interface StoreIssueAttentionScanEntry {
   issueId: string;
+  /** Added by identity-aware servers; older responses may omit it. */
+  issueKey?: string;
   phase: StoreIssuePhase;
   health: StoreIssueHealth;
   itemCount: number;

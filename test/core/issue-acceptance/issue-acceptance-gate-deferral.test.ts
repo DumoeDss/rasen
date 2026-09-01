@@ -94,6 +94,7 @@ describe('the acceptance gate under a deferred node', () => {
   });
   let execRoot: string;
   let changesDir: string;
+  let issueUid: string;
   const NO_WORK_DIR = async (): Promise<null> => null;
 
   beforeEach(async () => {
@@ -154,7 +155,8 @@ describe('the acceptance gate under a deferred node', () => {
   });
 
   async function setup(nodes: readonly ExecutionPlanNodeInput[]): Promise<void> {
-    await issues().create({ ...scope(), issueId: ISSUE, title: 'Gate deferral' });
+    const created = await issues().create({ ...scope(), issueId: ISSUE, title: 'Gate deferral' });
+    issueUid = created.identity.uid;
     await issues().publishPlan({ ...scope(), issueId: ISSUE, nodes });
     await issues().publishAcceptance({
       ...scope(),
@@ -354,7 +356,7 @@ describe('the acceptance gate under a deferred node', () => {
 
     // The stored bytes carry the deferral, and the record's own digest covers
     // it: the read verifies, and stripping the block refuses.
-    const acceptedPath = f.at('rasen', 'issues', ISSUE, 'accepted.yaml');
+    const acceptedPath = f.at('rasen', 'issues', issueUid, 'accepted.yaml');
     const text = fs.readFileSync(acceptedPath, 'utf8');
     expect(text).toContain('lifecycle: deferred');
     expect(text).toContain(DEFERRAL_REASON);
@@ -383,7 +385,7 @@ describe('the acceptance gate under a deferred node', () => {
       projection: { executionRoot: execRoot, changesDir, workDirFor: NO_WORK_DIR },
     });
     expect(accepted.record.exclusions).toBeUndefined();
-    const text = fs.readFileSync(f.at('rasen', 'issues', ISSUE, 'accepted.yaml'), 'utf8');
+    const text = fs.readFileSync(f.at('rasen', 'issues', issueUid, 'accepted.yaml'), 'utf8');
     expect(text.includes('exclusions')).toBe(false);
     expect(parseAcceptedRecord(text, { verifyDigest: true }).exclusions).toBeUndefined();
   });

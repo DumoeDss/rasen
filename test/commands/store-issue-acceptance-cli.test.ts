@@ -76,6 +76,8 @@ function expectJsonRefused(result: RunCLIResult, code: string): any {
 describe('rasen store issue acceptance surface', () => {
   let f: StoreWorkspaceFixture;
   let execProject: string;
+  let issueUid: string;
+  let issueKey: string;
 
   beforeEach(async () => {
     f = await createStoreWorkspaceFixture({
@@ -110,10 +112,16 @@ describe('rasen store issue acceptance surface', () => {
 
   /** Creates the Issue with a three-node plan; returns the conditions file path. */
   async function createStoreIssue(): Promise<string> {
-    await run(
-      ['store', 'issue', 'new', ISSUE, '--store', f.storeId, '--title', 'Issue layer', '--json'],
-      f.storeRoot
+    const created = parseJson(
+      expectOk(
+        await run(
+          ['store', 'issue', 'new', ISSUE, '--store', f.storeId, '--title', 'Issue layer', '--json'],
+          f.storeRoot
+        )
+      )
     );
+    issueUid = created.identity.uid;
+    issueKey = created.identity.key;
     const ids = [
       seedAndCommit('child-a', 'a1'.repeat(16)),
       seedAndCommit('child-b', 'b2'.repeat(16)),
@@ -193,10 +201,10 @@ describe('rasen store issue acceptance surface', () => {
         execProject
       )
     );
-    expect(human.stdout).toContain(`Issue ${ISSUE}: acceptance conditions revision 0001`);
+    expect(human.stdout).toContain(`Issue ${issueKey}: acceptance conditions revision 0001`);
     expect(human.stdout).toContain('conditions: 2');
     expect(human.stdout).toContain('git -C ');
-    expect(human.stdout).toContain(`rasen/issues/${ISSUE}/acceptance/0001.yaml`);
+    expect(human.stdout).toContain(`rasen/issues/${issueUid}/acceptance/0001.yaml`);
 
     // A second publish mints the next ordinal in both forms.
     const json = parseJson(
@@ -220,9 +228,10 @@ describe('rasen store issue acceptance surface', () => {
     expect(json.revision.revisionId).toBe('0002');
     expect(json.revision.supersedes).toBe('0001');
     expect(json.revision.conditions).toHaveLength(2);
-    expect(json.written[0].replace(/\\/gu, '/')).toContain(
-      `rasen/issues/${ISSUE}/acceptance/0002.yaml`
-    );
+    expect(fs.existsSync(f.at('rasen', 'issues', issueUid, 'acceptance', '0002.yaml'))).toBe(true);
+    expect(json).not.toHaveProperty('written');
+    expect(json).not.toHaveProperty('suggestedCommits');
+    expect(json).not.toHaveProperty('checkoutRoot');
 
     expectRefused(
       await run(['store', 'issue', 'acceptance', ISSUE, '--store', f.storeId], execProject),
@@ -358,13 +367,13 @@ describe('rasen store issue acceptance surface', () => {
         execProject
       )
     );
-    expect(human.stdout).toContain(`Issue ${ISSUE} accepted (resolved)`);
+    expect(human.stdout).toContain(`Issue ${issueKey} accepted (resolved)`);
     expect(human.stdout).toContain('conditions: revision 0001');
     expect(human.stdout).toContain('3/3');
     expect(human.stdout).toContain('note: All three shipped');
     // The commit suggestion names BOTH files that moved.
-    expect(human.stdout).toContain(`rasen/issues/${ISSUE}/accepted.yaml`);
-    expect(human.stdout).toContain(`rasen/issues/${ISSUE}/issue.yaml`);
+    expect(human.stdout).toContain(`rasen/issues/${issueUid}/accepted.yaml`);
+    expect(human.stdout).toContain(`rasen/issues/${issueUid}/issue.yaml`);
 
     // The second accept is refused, in the JSON form's taxonomy code.
     expectJsonRefused(
@@ -408,10 +417,8 @@ describe('rasen store issue acceptance surface', () => {
     );
     expect(json.state).toBe('resolved');
     expect(json.record.conditionsRevisionId).toBe('0001');
-    // The record is the only write — no state file in the pathspecs.
-    expect(json.suggestedCommits[0].pathspecs).toEqual([
-      `rasen/issues/${ISSUE}/accepted.yaml`,
-    ]);
+    expect(fs.existsSync(f.at('rasen', 'issues', issueUid, 'accepted.yaml'))).toBe(true);
+    expect(json).not.toHaveProperty('suggestedCommits');
   }, 60_000);
 
   // Thirteen CLI invocations in one scenario: the per-test budget is raised
@@ -481,7 +488,7 @@ describe('rasen store issue acceptance surface', () => {
     const listHuman = expectOk(
       await run(['store', 'issue', 'list', '--store', f.storeId], execProject)
     );
-    expect(listHuman.stdout).toContain(`${ISSUE}  [resolved]  done/healthy 3/3`);
+    expect(listHuman.stdout).toContain(`${issueKey}  [resolved]  done/healthy 3/3`);
 
     const listJson = parseJson(
       expectOk(

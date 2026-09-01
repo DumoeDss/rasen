@@ -85,6 +85,7 @@ const TERMINAL = () =>
 
 describe('the acceptance record\'s durable exclusions carry', () => {
   let f: StoreWorkspaceFixture;
+  let issueUids: Map<string, string>;
   const scope = () => ({
     store: f.storeId,
     startPath: f.storeRoot,
@@ -97,6 +98,7 @@ describe('the acceptance record\'s durable exclusions carry', () => {
       projects: [PROJECT],
       lines: [{ id: LINE, storeRef: 'refs/heads/main', codeRefs: { [PROJECT]: 'refs/heads/main' } }],
     });
+    issueUids = new Map();
   });
 
   afterEach(() => {
@@ -109,11 +111,13 @@ describe('the acceptance record\'s durable exclusions carry', () => {
     });
   }
 
-  const acceptedPath = (issueId: string) => f.at('rasen', 'issues', issueId, 'accepted.yaml');
+  const acceptedPath = (issueSelector: string) =>
+    f.at('rasen', 'issues', issueUids.get(issueSelector) ?? issueSelector, 'accepted.yaml');
 
   /** Creates the Issue and publishes one conditions revision. */
   async function setup(issueId: string) {
-    await issues().create({ ...scope(), issueId, title: 'Carry target' });
+    const created = await issues().create({ ...scope(), issueId, title: 'Carry target' });
+    issueUids.set(issueId, created.identity.uid);
     const published = await issues().publishAcceptance({
       ...scope(),
       issueId,
@@ -131,14 +135,18 @@ describe('the acceptance record\'s durable exclusions carry', () => {
       conditionsSha256: published.revision.contentSha256,
       gate: SNAPSHOT,
     });
+    if (accepted.record.version !== 2) {
+      throw new Error('new acceptance records must use version 2');
+    }
+    const issueUid = accepted.record.issueUid;
 
     // The exact serialized bytes, hand-written: no `exclusions` key exists
     // anywhere in the file. The two digest lines are the only
     // function-derived values (the conditions digest from the published
     // revision, the record digest over exactly these fields).
     const expected =
-      'version: 1\n' +
-      `issueId: ${ISSUE}\n` +
+      'version: 2\n' +
+      `issueUid: ${issueUid}\n` +
       `acceptedAt: ${NOW}\n` +
       'conditionsRevisionId: "0001"\n' +
       `conditionsSha256: ${published.revision.contentSha256}\n` +
@@ -155,8 +163,8 @@ describe('the acceptance record\'s durable exclusions carry', () => {
     // And the digest the record froze is the digest over the absent body.
     expect(
       acceptedRecordDigest({
-        version: 1,
-        issueId: accepted.record.issueId,
+        version: 2,
+        issueUid,
         acceptedAt: NOW,
         conditionsRevisionId: accepted.record.conditionsRevisionId,
         conditionsSha256: published.revision.contentSha256,
@@ -182,10 +190,13 @@ describe('the acceptance record\'s durable exclusions carry', () => {
       gate: SNAPSHOT,
       exclusions: [],
     });
+    if (otherAccepted.record.version !== 2) {
+      throw new Error('new acceptance records must use version 2');
+    }
     const otherText = fs.readFileSync(acceptedPath(other), 'utf8');
     expect(otherText).toBe(
       text
-        .replaceAll(`issueId: ${ISSUE}`, `issueId: ${other}`)
+        .replaceAll(`issueUid: ${issueUid}`, `issueUid: ${otherAccepted.record.issueUid}`)
         .replaceAll(
           published.revision.contentSha256,
           otherPublished.revision.contentSha256
@@ -410,7 +421,8 @@ describe('the acceptance record\'s durable exclusions carry', () => {
       return seeded.instanceId;
     };
 
-    await issues().create({ ...scope(), issueId: ISSUE, title: 'Carry target' });
+    const created = await issues().create({ ...scope(), issueId: ISSUE, title: 'Carry target' });
+    issueUids.set(ISSUE, created.identity.uid);
     const [a, b, sup] = [
       seedAndCommit('child-a', 'a1'.repeat(16)),
       seedAndCommit('child-b', 'b2'.repeat(16)),

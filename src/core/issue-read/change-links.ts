@@ -6,6 +6,7 @@
  * locks, caches, or persists a reverse index.
  */
 import type { IssueState } from '../store/issues/types.js';
+import type { IssueIdentityV2 } from '../store/issues/identity.js';
 import type {
   AggregateArchiveEntry,
   AggregateChangeEntry,
@@ -31,6 +32,8 @@ export type ChangeOccurrence =
   | { readonly kind: 'archived'; readonly change: AggregateArchiveEntry };
 
 export interface ChangeIssueLink {
+  readonly identity: IssueIdentityV2;
+  /** @deprecated Use `identity.uid`. */
   readonly issueId: string;
   readonly title: string | null;
   readonly state: IssueState | null;
@@ -136,9 +139,24 @@ export async function composeChangeIssueLinks(
 
   for (const summary of issues.issues) {
     if (summary.latestRevisionId === null) continue;
+    if (summary.identity === null) {
+      const copy = summary.divergence?.copies[0];
+      problems.push({
+        kind: 'issue',
+        itemId: summary.issueId,
+        storeRef: copy?.storeRef ?? null,
+        path: `rasen/issues/${String(copy?.storageKey ?? summary.issueId)}/issue.yaml`,
+        reason:
+          summary.divergence === null
+            ? `Issue identity is unreadable; Execution Plan revision '${summary.latestRevisionId}' cannot be checked for Change links.`
+            : `Issue records diverge; Execution Plan revision '${summary.latestRevisionId}' has no coherent owner for Change-link resolution.`,
+      });
+      complete = false;
+      continue;
+    }
     const plan = await query.resolveExecutionPlan({
       ...input,
-      issueId: summary.issueId,
+      issueId: summary.identity.uid,
       revisionId: summary.latestRevisionId,
     });
     unsearched.push(...plan.unsearchedRefs);
@@ -153,10 +171,10 @@ export async function composeChangeIssueLinks(
         byIssue = new Map<string, MutableIssueLink>();
         linksByInstance.set(node.changeInstanceId, byIssue);
       }
-      let link = byIssue.get(summary.issueId);
+      let link = byIssue.get(summary.identity.uid);
       if (link === undefined) {
         link = { summary, revisionId: plan.revisionId, nodeIds: new Set<string>() };
-        byIssue.set(summary.issueId, link);
+        byIssue.set(summary.identity.uid, link);
       }
       link.nodeIds.add(node.nodeId);
     }
@@ -183,7 +201,8 @@ export async function composeChangeIssueLinks(
 
     const issueLinks = [...(linksByInstance.get(instanceId)?.values() ?? [])]
       .map((link): ChangeIssueLink => ({
-        issueId: link.summary.issueId,
+        identity: link.summary.identity as IssueIdentityV2,
+        issueId: (link.summary.identity as IssueIdentityV2).uid,
         title: link.summary.record?.title ?? null,
         state: link.summary.record?.state ?? null,
         revisionId: link.revisionId,

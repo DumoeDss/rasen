@@ -67,6 +67,7 @@ describe('rasen store issue start', () => {
   let execRoot: string;
   let nowhere: string;
   let instanceIds: string[];
+  let issueUid: string;
 
   async function run(args: readonly string[], cwd: string): Promise<RunCLIResult> {
     return runCLI([...args], { cwd, env: f.env });
@@ -124,7 +125,15 @@ describe('rasen store issue start', () => {
 
   /** Creates the Issue plus a three-child serial plan (g-001..g-003). */
   async function createSerialIssue(): Promise<void> {
-    await run(['store', 'issue', 'new', ISSUE, '--store', f.storeId, '--title', 'Issue layer', '--json'], f.storeRoot);
+    const created = parseJson(
+      expectOk(
+        await run(
+          ['store', 'issue', 'new', ISSUE, '--store', f.storeId, '--title', 'Issue layer', '--json'],
+          f.storeRoot
+        )
+      )
+    );
+    issueUid = created.identity.uid;
     instanceIds = [
       seedAndCommit('child-a', 'a1'.repeat(16)),
       seedAndCommit('child-b', 'b2'.repeat(16)),
@@ -195,7 +204,7 @@ describe('rasen store issue start', () => {
         await run(['store', 'issue', 'start', ISSUE, '--store', f.storeId, '--json'], nowhere)
       )
     );
-    expect(json.issueId).toBe(ISSUE);
+    expect(json.issueId).toBe(issueUid);
     expect(json.binding.mode).toBe('fresh');
     expect(json.binding.nodeId).toBe('g-001');
     expect(json.binding.alias).toBe('child-a');

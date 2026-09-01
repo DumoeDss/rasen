@@ -62,6 +62,7 @@ describe('rasen store issue plan --from-decomposition (CLI)', () => {
   let f: StoreWorkspaceFixture;
   let runFromProject: (args: readonly string[]) => Promise<RunCLIResult>;
   let documentPath: string;
+  let issueUid: string;
 
   beforeEach(async () => {
     f = await createStoreWorkspaceFixture({
@@ -71,18 +72,22 @@ describe('rasen store issue plan --from-decomposition (CLI)', () => {
         { id: 'main', storeRef: 'refs/heads/main' },
         { id: LINE, storeRef: 'refs/heads/release/0.2' },
       ],
+      storeBranches: ['release/0.2'],
     });
     const cwd = f.projectRoot(PROJECT);
     runFromProject = (args: readonly string[]) => runCLI(args, { cwd, env: f.env });
     documentPath = f.beside('decomposition.yaml');
     f.write(documentPath, decompositionYaml());
 
-    expectOk(
-      await runFromProject([
-        'store', 'issue', 'new', 'cli-issue', '--store', f.storeId,
-        '--title', 'CLI decomposition publication', '--json',
-      ])
+    const created = parseJson(
+      expectOk(
+        await runFromProject([
+          'store', 'issue', 'new', 'cli-issue', '--store', f.storeId,
+          '--title', 'CLI decomposition publication', '--json',
+        ])
+      )
     );
+    issueUid = created.identity.uid;
   });
 
   afterEach(() => {
@@ -111,7 +116,7 @@ describe('rasen store issue plan --from-decomposition (CLI)', () => {
       nodeCount: 2,
     });
     expect(result.suggestedCommits).toHaveLength(1);
-    expect(fs.existsSync(f.at('rasen', 'issues', 'cli-issue', 'plans', '0001.yaml'))).toBe(true);
+    expect(fs.existsSync(f.at('rasen', 'issues', issueUid, 'plans', '0001.yaml'))).toBe(true);
     // The document is read-only input: byte-identical after publication.
     expect(fs.readFileSync(documentPath, 'utf8')).toBe(before);
   });

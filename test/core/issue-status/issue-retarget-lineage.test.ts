@@ -190,7 +190,7 @@ describe('a retargeted node starts a new observation lineage', () => {
   });
 
   it('refuses a retarget that keeps the old instance, naming both scopes, creating no revision', async () => {
-    await issues().create({ ...scope(), issueId: ISSUE, title: 'Retarget' });
+    const created = await issues().create({ ...scope(), issueId: ISSUE, title: 'Retarget' });
     const instanceA = seedAndCommit('child-x', 'a1'.repeat(16), PROJECT_A);
     await publish([node('g-x', PROJECT_A, instanceA, 'child-x')]);
 
@@ -211,10 +211,10 @@ describe('a retargeted node starts a new observation lineage', () => {
     // No revision was created: the plans directory still holds exactly the
     // one revision, so no lineage could blur through a half-published state.
     const plans = f
-      .git(f.storeRoot, ['ls-files', `rasen/issues/${ISSUE}/plans`])
+      .git(f.storeRoot, ['ls-files', `rasen/issues/${created.identity.uid}/plans`])
       .split(/\r?\n/u)
       .filter(line => line.trim().length > 0);
-    expect(plans).toEqual([`rasen/issues/${ISSUE}/plans/0001.yaml`]);
+    expect(plans).toEqual([`rasen/issues/${created.identity.uid}/plans/0001.yaml`]);
   });
 
   it('reads a retargeted node fresh while the prior revision keeps its terminal history', async () => {

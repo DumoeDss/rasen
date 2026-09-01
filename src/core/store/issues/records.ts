@@ -22,7 +22,13 @@ import {
   parseIssueId,
   type IssueId,
 } from '../planning-validation.js';
-import type { IssueRecordV1, IssueState } from './types.js';
+import {
+  deriveIssueKey,
+  parseIssueAlias,
+  projectV2IssueIdentity,
+  type IssueAliasV1,
+} from './identity.js';
+import type { IssueRecordV1, IssueRecordV2, IssueState, StoredIssueRecord } from './types.js';
 
 /** Every state an Issue record may declare, in lifecycle order. */
 export const ISSUE_STATES: readonly IssueState[] = Object.freeze([
@@ -84,6 +90,33 @@ const IssueRecordSchema = z
   .object({
     version: z.literal(1),
     id: z.string(),
+    title: z.string().min(1).max(200),
+    state: z.enum(['open', 'resolved', 'dropped']),
+    reason: z.string().max(4000).nullable(),
+    createdAt: z.string().refine(isCanonicalIsoTimestamp, {
+      message: 'createdAt must be a canonical ISO-8601 UTC timestamp',
+    }),
+  })
+  .strict();
+
+const IssueAliasSchema = z
+  .object({
+    kind: z.enum(['legacy-id', 'former-slug', 'custom']),
+    value: z.string(),
+  })
+  .strict();
+
+const IssueRecordV2Schema = z
+  .object({
+    version: z.literal(2),
+    identity: z
+      .object({
+        uid: z.string(),
+        key: z.string(),
+        slug: z.string().nullable(),
+        aliases: z.array(IssueAliasSchema),
+      })
+      .strict(),
     title: z.string().min(1).max(200),
     state: z.enum(['open', 'resolved', 'dropped']),
     reason: z.string().max(4000).nullable(),
@@ -171,6 +204,106 @@ export function serializeIssueRecord(value: IssueRecordV1): string {
     reason: record.reason,
     createdAt: record.createdAt,
   });
+}
+
+function validateV2Text(data: {
+  readonly title: string;
+  readonly state: IssueState;
+  readonly reason: string | null;
+}): void {
+  assertPortableText(data.title, 'title');
+  if (data.state === 'dropped') {
+    if (data.reason === null) throw recordError('reason', "is required when state is 'dropped'");
+    assertPortableText(data.reason, 'reason');
+  } else if (data.reason !== null) {
+    assertPortableText(data.reason, 'reason');
+  }
+}
+
+export function validateIssueRecordV2(value: unknown, filePath?: string): IssueRecordV2 {
+  const result = IssueRecordV2Schema.safeParse(value);
+  if (!result.success) throw recordError('record', formatZodIssues(result.error), result.error);
+
+  let aliases: readonly IssueAliasV1[];
+  try {
+    aliases = result.data.identity.aliases.map((alias, index) => ({
+      kind: alias.kind,
+      value: parseIssueAlias(alias.value, `identity.aliases[${index}].value`),
+    }));
+    const duplicate = aliases.find((alias, index) =>
+      aliases.slice(0, index).some(previous => previous.kind === alias.kind && previous.value === alias.value)
+    );
+    if (duplicate !== undefined) {
+      throw new Error(`duplicate ${duplicate.kind} alias '${duplicate.value}'`);
+    }
+    const projected = projectV2IssueIdentity({
+      identity: {
+        uid: result.data.identity.uid as never,
+        key: result.data.identity.key as never,
+        slug: result.data.identity.slug,
+        aliases,
+      },
+      storageKey: filePath === undefined
+        ? result.data.identity.uid
+        : filePath.replace(/\\/gu, '/').split('/').filter(Boolean).at(-2) ?? '',
+    });
+    if (deriveIssueKey(projected.identity.uid) !== projected.identity.key) {
+      throw new Error('Issue key does not derive from UID');
+    }
+    if (projected.identity.slug !== null) {
+      parseIssueAlias(projected.identity.slug, 'identity.slug');
+    }
+    validateV2Text(result.data);
+    return Object.freeze({
+      version: 2 as const,
+      identity: Object.freeze({
+        ...projected.identity,
+        aliases: Object.freeze([...projected.identity.aliases]),
+      }),
+      title: result.data.title,
+      state: result.data.state,
+      reason: result.data.reason,
+      createdAt: result.data.createdAt,
+    });
+  } catch (error) {
+    throw recordError('identity', error instanceof Error ? error.message : String(error), error);
+  }
+}
+
+export function parseStoredIssueRecord(content: string, filePath?: string): StoredIssueRecord {
+  let raw: unknown;
+  try {
+    raw = parseYaml(content);
+  } catch (error) {
+    throw recordError('record', 'contains invalid YAML', error);
+  }
+  if (typeof raw !== 'object' || raw === null || !('version' in raw)) {
+    throw recordError('version', 'is required');
+  }
+  return (raw as { version?: unknown }).version === 2
+    ? validateIssueRecordV2(raw, filePath)
+    : validateIssueRecord(raw, filePath);
+}
+
+export function serializeIssueRecordV2(value: IssueRecordV2): string {
+  const record = validateIssueRecordV2(value);
+  return stringifyYaml({
+    version: 2,
+    identity: {
+      uid: record.identity.uid,
+      key: record.identity.key,
+      slug: record.identity.slug,
+      aliases: record.identity.aliases.map(alias => ({ kind: alias.kind, value: alias.value })),
+    },
+    title: record.title,
+    state: record.state,
+    reason: record.reason,
+    createdAt: record.createdAt,
+  });
+}
+
+export function serializeStoredIssueRecord(value: StoredIssueRecord): string {
+  return value.version === 1 ? serializeIssueRecord(value) : serializeIssueRecordV2(value);
 }
 
 /**

@@ -29,9 +29,11 @@ import {
   executionPlanDigest,
   normalizePlanNodes,
   productionStoreIssueDependencies,
+  serializeIssueRecord,
   withDeterministicIssueClock,
   type ExecutionPlanNodeInput,
 } from '../../../src/core/store/issues/index.js';
+import { parseIssueId } from '../../../src/core/store/planning-validation.js';
 import { StoreQueryModuleImpl } from '../../../src/core/store/query/index.js';
 import { projectIssueStatus, type IssueStatus } from '../../../src/core/issue-status/index.js';
 
@@ -96,7 +98,20 @@ describe('reading a revision never re-verifies membership', () => {
       changeId: 'legacy-child',
       instanceSeed: 'e7'.repeat(16),
     });
-    await issues().create({ ...scope(), issueId: ISSUE, title: 'Phase 2 era' });
+    const issueRecordPath = f.at('rasen', 'issues', ISSUE, 'issue.yaml');
+    fs.mkdirSync(path.dirname(issueRecordPath), { recursive: true });
+    fs.writeFileSync(
+      issueRecordPath,
+      serializeIssueRecord({
+        version: 1,
+        id: parseIssueId(ISSUE),
+        title: 'Phase 2 era',
+        state: 'open',
+        reason: null,
+        createdAt: NOW,
+      }),
+      'utf8'
+    );
     f.git(f.storeRoot, ['add', '-A']);
     f.git(f.storeRoot, ['commit', '-m', 'issue + committed child']);
 

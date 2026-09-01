@@ -69,7 +69,7 @@ describe('resolveIssueScope + assertIssueWriteLocation', () => {
     });
     expect(result.record.state).toBe('open');
     expect(
-      fs.existsSync(path.join(f.storeRoot, 'rasen', 'issues', 'root-issue', 'issue.yaml'))
+      fs.existsSync(path.join(f.storeRoot, 'rasen', 'issues', result.identity.uid, 'issue.yaml'))
     ).toBe(true);
   });
 
@@ -77,7 +77,7 @@ describe('resolveIssueScope + assertIssueWriteLocation', () => {
     const worktreePath = f.beside('wt-plain');
     f.git(f.storeRoot, ['worktree', 'add', worktreePath, '-b', 'wt-plain-branch']);
 
-    await issues.create({
+    const result = await issues.create({
       store: f.storeUid,
       startPath: worktreePath,
       globalDataDir: f.globalDataDir,
@@ -86,10 +86,10 @@ describe('resolveIssueScope + assertIssueWriteLocation', () => {
     });
 
     expect(
-      fs.existsSync(path.join(worktreePath, 'rasen', 'issues', 'worktree-issue', 'issue.yaml'))
+      fs.existsSync(path.join(worktreePath, 'rasen', 'issues', result.identity.uid, 'issue.yaml'))
     ).toBe(true);
     expect(
-      fs.existsSync(path.join(f.storeRoot, 'rasen', 'issues', 'worktree-issue', 'issue.yaml'))
+      fs.existsSync(path.join(f.storeRoot, 'rasen', 'issues', result.identity.uid, 'issue.yaml'))
     ).toBe(false);
   });
 

@@ -23,7 +23,9 @@ import {
   withDeterministicIssueClock,
 } from '../../../src/core/store/issues/index.js';
 import { StoreQueryModuleImpl } from '../../../src/core/store/query/index.js';
+import { parseIssueId } from '../../../src/core/store/planning-validation.js';
 import { serializeArchiveV2 } from '../../../src/core/store/finalization-v2.js';
+import { snapshotDirectory } from '../../helpers/fs-snapshot.js';
 import {
   deriveChangeInstanceId,
   derivePlanningScopeId,
@@ -31,6 +33,12 @@ import {
   deriveWorktreeInstanceId,
 } from '../../../src/core/store/planning-identity.js';
 import { StoreIssueError } from '../../../src/core/store/issues/index.js';
+import {
+  deriveIssueKey,
+  deriveLegacyIssueUid,
+  serializeIssueRecord,
+  serializeIssueRecordV2,
+} from '../../../src/core/store/issues/index.js';
 
 const NOW = '2026-08-07T00:00:00.000Z';
 const LINE_MAIN = 'main';
@@ -525,7 +533,7 @@ describe('the Store aggregate query', () => {
     expect(rollup.projects.map(entry => entry.projectId).sort()).toEqual([...PROJECTS].sort());
   });
 
-  it('reads one ref once per query and leaves no cache behind', async () => {
+  it('reads one ref once per query and leaves no aggregate or selector index behind', async () => {
     seedAndCommit('elftia', LINE_02, 'one', 'a1'.repeat(16));
     seedAndCommit('rocut', LINE_MAIN, 'two', 'b2'.repeat(16));
 
@@ -548,10 +556,13 @@ describe('the Store aggregate query', () => {
 
     const perRef = calls.filter(entry => entry === 'resolve refs/heads/main');
     expect(perRef).toHaveLength(1);
+    await module.listIssues(scope);
     // No durable index anywhere under the machine root.
     const machineRoot = path.join(f.globalDataDir, 'planning-workspaces');
     const names = fs.existsSync(machineRoot) ? fs.readdirSync(machineRoot) : [];
     expect(names).not.toContain('aggregate-index');
+    expect(names).not.toContain('issue-selector-index');
+    expect(names).not.toContain('selector-map');
     expect(names).not.toContain('cache');
   });
 
@@ -622,8 +633,10 @@ describe('Store-level Issues, end to end', () => {
     expect(result.record.state).toBe('open');
     expect(result.record.createdAt).toBe(NOW);
     expect(result.checkoutRoot).toBe(f.storeRoot);
+    expect(result.issueId).toBe(result.identity.uid);
+    expect(result.record).toMatchObject({ version: 2, identity: result.identity });
     expect(result.suggestedCommits[0]?.pathspecs).toEqual([
-      'rasen/issues/cross-line-telemetry/issue.yaml',
+      `rasen/issues/${result.identity.uid}/issue.yaml`,
     ]);
     // No project partition, canonical spec, Change directory, catalog, or
     // Archive entry was created or modified.
@@ -633,13 +646,13 @@ describe('Store-level Issues, end to end', () => {
   });
 
   it('refuses a duplicate without touching the existing record', async () => {
-    await issues(f).create({ ...scope, issueId: 'dup', title: 'first' });
-    const recordPath = f.at('rasen', 'issues', 'dup', 'issue.yaml');
+    const created = await issues(f).create({ ...scope, issueId: 'dup', title: 'first' });
+    const recordPath = f.at('rasen', 'issues', created.identity.uid, 'issue.yaml');
     const before = fs.readFileSync(recordPath, 'utf8');
 
     await expect(
       issues(f).create({ ...scope, issueId: 'dup', title: 'second' })
-    ).rejects.toMatchObject({ issueCode: 'issue_already_exists' });
+    ).rejects.toMatchObject({ issueCode: 'issue_alias_conflict' });
     expect(fs.readFileSync(recordPath, 'utf8')).toBe(before);
   });
 
@@ -658,8 +671,8 @@ describe('Store-level Issues, end to end', () => {
   });
 
   it('requires a reason for dropped and leaves the record byte-identical when refused', async () => {
-    await issues(f).create({ ...scope, issueId: 'needs-reason', title: 'x' });
-    const recordPath = f.at('rasen', 'issues', 'needs-reason', 'issue.yaml');
+    const created = await issues(f).create({ ...scope, issueId: 'needs-reason', title: 'x' });
+    const recordPath = f.at('rasen', 'issues', created.identity.uid, 'issue.yaml');
     const before = fs.readFileSync(recordPath, 'utf8');
 
     await expect(
@@ -725,7 +738,7 @@ describe('Store-level Issues, end to end', () => {
   });
 
   it('allocates past a revision a merge planted, leaving its bytes untouched', async () => {
-    await issues(f).create({ ...scope, issueId: 'collide', title: 'x' });
+    const created = await issues(f).create({ ...scope, issueId: 'collide', title: 'x' });
     await issues(f).publishPlan({
       ...scope,
       issueId: 'collide',
@@ -733,7 +746,7 @@ describe('Store-level Issues, end to end', () => {
     });
     // What an add/add merge from a second clone leaves behind: an ordinal this
     // machine never minted.
-    const planted = f.at('rasen', 'issues', 'collide', 'plans', '0002.yaml');
+    const planted = f.at('rasen', 'issues', created.identity.uid, 'plans', '0002.yaml');
     fs.writeFileSync(planted, 'version: 1\n', 'utf8');
 
     const next = await issues(f).publishPlan({
@@ -750,12 +763,12 @@ describe('Store-level Issues, end to end', () => {
 
   it('refuses with execution_plan_revision_exists when the target file is already there', async () => {
     await issues(f).create({ ...scope, issueId: 'guarded', title: 'x' });
-    await issues(f).publishPlan({
+    const published = await issues(f).publishPlan({
       ...scope,
       issueId: 'guarded',
       nodes: [intentNode('a', 'x')],
     });
-    const existing = f.at('rasen', 'issues', 'guarded', 'plans', '0001.yaml');
+    const existing = published.written[0] as string;
     const before = fs.readFileSync(existing, 'utf8');
 
     // The guard exists for the case allocation cannot see: a plans directory
@@ -816,7 +829,11 @@ describe('Store-level Issues, end to end', () => {
   });
 
   it('refuses an unresolvable reference naming the refs it searched', async () => {
-    await issues(f).create({ ...scope, issueId: 'unresolved-issue', title: 'x' });
+    const created = await issues(f).create({
+      ...scope,
+      issueId: 'unresolved-issue',
+      title: 'x',
+    });
     await expect(
       issues(f).publishPlan({
         ...scope,
@@ -834,7 +851,9 @@ describe('Store-level Issues, end to end', () => {
       })
     ).rejects.toMatchObject({ issueCode: 'issue_reference_unresolved' });
     expect(
-      fs.existsSync(f.at('rasen', 'issues', 'unresolved-issue', 'plans', '0001.yaml'))
+      fs.existsSync(
+        f.at('rasen', 'issues', created.identity.uid, 'plans', '0001.yaml')
+      )
     ).toBe(false);
   });
 
@@ -942,30 +961,45 @@ describe('Store-level Issues, end to end', () => {
   });
 
   it('reports a divergent Issue with every copy and picks no winner', async () => {
-    await issues(f).create({ ...scope, issueId: 'divergent', title: 'from main' });
+    const created = await issues(f).create({
+      ...scope,
+      issueId: 'divergent',
+      title: 'from main',
+    });
+    const issueUid = created.identity.uid;
     commitStore('issue on main');
     // Read back the COMMITTED blob, the same bytes `collectIssues` reads via
     // `RefReader.blob`, not the working-tree file `create()` just wrote.
-    const mainText = f.git(f.storeRoot, ['show', 'main:rasen/issues/divergent/issue.yaml']);
+    const mainText = f.git(f.storeRoot, [
+      'show',
+      `main:rasen/issues/${issueUid}/issue.yaml`,
+    ]);
 
-    // A second Store ref carrying a byte-different record for the same id.
+    // A second Store ref carrying a byte-different V2 record for the same UID.
     f.git(f.storeRoot, ['checkout', 'release/0.2']);
-    const recordPath = f.at('rasen', 'issues', 'divergent', 'issue.yaml');
+    const recordPath = f.at('rasen', 'issues', issueUid, 'issue.yaml');
     fs.mkdirSync(path.dirname(recordPath), { recursive: true });
     fs.writeFileSync(
       recordPath,
-      `version: 1\nid: divergent\ntitle: from the release line\nstate: open\nreason: null\ncreatedAt: ${NOW}\n`,
+      serializeIssueRecordV2({
+        version: 2,
+        identity: created.identity,
+        title: 'from the release line',
+        state: 'open',
+        reason: null,
+        createdAt: NOW,
+      }),
       'utf8'
     );
     commitStore('issue on release/0.2');
     const releaseText = f.git(f.storeRoot, [
       'show',
-      'release/0.2:rasen/issues/divergent/issue.yaml',
+      `release/0.2:rasen/issues/${issueUid}/issue.yaml`,
     ]);
     f.git(f.storeRoot, ['checkout', 'main']);
 
     const page = await query().listIssues(scope);
-    const divergent = page.issues.find(entry => entry.issueId === 'divergent');
+    const divergent = page.issues.find(entry => entry.issueId === issueUid);
     expect(divergent?.divergence).not.toBeNull();
     expect(divergent?.divergence?.copies.length).toBeGreaterThanOrEqual(2);
     // No copy is presented as THE record.
@@ -994,17 +1028,155 @@ describe('Store-level Issues, end to end', () => {
     );
     // And the two differ, which is the whole reason this Issue is divergent.
     expect(mainCopy?.sha256).not.toBe(releaseCopy?.sha256);
+
+    const before = snapshotDirectory(f.at('rasen', 'issues', issueUid));
+    const divergentMutations = [
+      () => issues(f).setState({ ...scope, issueId: issueUid, state: 'resolved' }),
+      () =>
+        issues(f).publishPlan({
+          ...scope,
+          issueId: issueUid,
+          nodes: [intentNode('blocked', 'must not publish against divergence')],
+        }),
+      () =>
+        issues(f).publishAcceptance({
+          ...scope,
+          issueId: issueUid,
+          conditions: [{ id: 'blocked', requirement: 'must not publish against divergence' }],
+        }),
+      () =>
+        issues(f).accept({
+          ...scope,
+          issueId: issueUid,
+          conditionsRevisionId: '0001',
+          conditionsSha256: '0'.repeat(64) as never,
+          gate: {} as never,
+        }),
+    ];
+    for (const mutate of divergentMutations) {
+      await expect(mutate()).rejects.toMatchObject({ issueCode: 'issue_record_divergent' });
+      expect(snapshotDirectory(f.at('rasen', 'issues', issueUid))).toEqual(before);
+    }
+  });
+
+  it('projects before grouping, so V1 and V2 storage locations meet at one UID', async () => {
+    const v1Path = f.at('rasen', 'issues', 'mixed-identity', 'issue.yaml');
+    fs.mkdirSync(path.dirname(v1Path), { recursive: true });
+    fs.writeFileSync(
+      v1Path,
+      serializeIssueRecord({
+        version: 1,
+        id: parseIssueId('mixed-identity'),
+        title: 'Mixed identity',
+        state: 'open',
+        reason: null,
+        createdAt: NOW,
+      }),
+      'utf8'
+    );
+    commitStore('legacy Issue on main');
+
+    const issueUid = deriveLegacyIssueUid(f.storeUid, 'mixed-identity');
+    f.git(f.storeRoot, ['checkout', 'release/0.2']);
+    const v2Path = f.at('rasen', 'issues', issueUid, 'issue.yaml');
+    fs.mkdirSync(path.dirname(v2Path), { recursive: true });
+    fs.writeFileSync(
+      v2Path,
+      serializeIssueRecordV2({
+        version: 2,
+        identity: {
+          uid: issueUid,
+          key: deriveIssueKey(issueUid),
+          slug: 'mixed-identity',
+          aliases: [{ kind: 'legacy-id', value: 'mixed-identity' }],
+        },
+        title: 'Mixed identity',
+        state: 'open',
+        reason: null,
+        createdAt: NOW,
+      }),
+      'utf8'
+    );
+    commitStore('V2 representation on release');
+    f.git(f.storeRoot, ['checkout', 'main']);
+
+    const page = await query().listIssues(scope);
+    const matching = page.issues.filter(issue =>
+      issue.divergence?.copies.some(copy => copy.identity?.identity.uid === issueUid)
+    );
+    expect(matching).toHaveLength(1);
+    expect(matching[0]?.issueId).toBe(issueUid);
+    expect(
+      matching[0]?.divergence?.copies.map(copy => String(copy.storageKey))
+    ).toEqual(expect.arrayContaining(['mixed-identity', issueUid]));
+    expect(
+      new Set(matching[0]?.divergence?.copies.map(copy => copy.identity?.identity.uid))
+    ).toEqual(new Set([issueUid]));
+  });
+
+  it('reports two working-tree storage locations claiming one UID instead of choosing one', async () => {
+    const legacyId = 'local-storage-collision';
+    const issueUid = deriveLegacyIssueUid(f.storeUid, legacyId);
+    const v1Path = f.at('rasen', 'issues', legacyId, 'issue.yaml');
+    fs.mkdirSync(path.dirname(v1Path), { recursive: true });
+    fs.writeFileSync(
+      v1Path,
+      serializeIssueRecord({
+        version: 1,
+        id: parseIssueId(legacyId),
+        title: 'Legacy local copy',
+        state: 'open',
+        reason: null,
+        createdAt: NOW,
+      }),
+      'utf8'
+    );
+    const v2Path = f.at('rasen', 'issues', issueUid, 'issue.yaml');
+    fs.mkdirSync(path.dirname(v2Path), { recursive: true });
+    fs.writeFileSync(
+      v2Path,
+      serializeIssueRecordV2({
+        version: 2,
+        identity: {
+          uid: issueUid,
+          key: deriveIssueKey(issueUid),
+          slug: null,
+          aliases: [],
+        },
+        title: 'V2 local copy',
+        state: 'open',
+        reason: null,
+        createdAt: NOW,
+      }),
+      'utf8'
+    );
+
+    const page = await query().listIssues(scope);
+    const collision = page.issues.find(issue => issue.issueId === issueUid);
+    expect(collision?.record).toBeNull();
+    expect(collision?.identity).toBeNull();
+    expect(
+      collision?.divergence?.copies.map(copy => String(copy.storageKey))
+    ).toEqual(expect.arrayContaining([legacyId, issueUid]));
   });
 
   it('names the malformed Issue and why, and keeps reporting the readable ones', async () => {
-    await issues(f).create({ ...scope, issueId: 'readable', title: 'still fine' });
-    await issues(f).create({ ...scope, issueId: 'malformed', title: 'x' });
+    const readableCreated = await issues(f).create({
+      ...scope,
+      issueId: 'readable',
+      title: 'still fine',
+    });
+    const malformedCreated = await issues(f).create({
+      ...scope,
+      issueId: 'malformed',
+      title: 'x',
+    });
     commitStore('seed two Issues');
 
     // ONE copy, and it does not validate — the case a divergence report cannot
     // cover, because there is nothing to diverge from. The id survived here
     // before this fix; the reason did not, and `complete` stayed true.
-    const recordPath = f.at('rasen', 'issues', 'malformed', 'issue.yaml');
+    const recordPath = f.at('rasen', 'issues', malformedCreated.identity.uid, 'issue.yaml');
     fs.writeFileSync(
       recordPath,
       `${fs.readFileSync(recordPath, 'utf8')}surpriseField: 1\n`,
@@ -1014,7 +1186,7 @@ describe('Store-level Issues, end to end', () => {
 
     const page = await query().listIssues(scope);
 
-    const malformed = page.issues.find(entry => entry.issueId === 'malformed');
+    const malformed = page.issues.find(entry => entry.issueId === malformedCreated.identity.uid);
     expect(malformed).toBeDefined();
     expect(malformed?.record).toBeNull();
     expect(malformed?.divergence).toBeNull();
@@ -1024,7 +1196,7 @@ describe('Store-level Issues, end to end', () => {
     // And with the result, so a caller reading the page sees the problem
     // without inspecting every summary.
     const problem = page.problems.find(
-      entry => entry.kind === 'issue' && entry.itemId === 'malformed'
+      entry => entry.kind === 'issue' && entry.itemId === malformedCreated.identity.uid
     );
     expect(problem).toBeDefined();
     expect(problem?.reason).toContain('surpriseField');
@@ -1032,7 +1204,7 @@ describe('Store-level Issues, end to end', () => {
 
     // The readable Issue is untouched by its neighbour's failure, and carries
     // no diagnostic of its own.
-    const readable = page.issues.find(entry => entry.issueId === 'readable');
+    const readable = page.issues.find(entry => entry.issueId === readableCreated.identity.uid);
     expect(readable?.record?.title).toBe('still fine');
     expect(readable?.diagnostic).toBeNull();
   });
@@ -1041,7 +1213,7 @@ describe('Store-level Issues, end to end', () => {
     'reports a revision whose stored digest no longer matches its content as ' +
       'unverifiable, never as valid (tasks 3.5, 7.4)',
     async () => {
-      await issues(f).create({ ...scope, issueId: 'tampered', title: 'x' });
+      const created = await issues(f).create({ ...scope, issueId: 'tampered', title: 'x' });
       await issues(f).publishPlan({
         ...scope,
         issueId: 'tampered',
@@ -1054,7 +1226,7 @@ describe('Store-level Issues, end to end', () => {
       // `RefReader.blob` -- not a working-tree shortcut.
       const before = f.git(f.storeRoot, [
         'show',
-        'main:rasen/issues/tampered/plans/0001.yaml',
+        `main:rasen/issues/${created.identity.uid}/plans/0001.yaml`,
       ]);
       expect(before).toContain('contentSha256:');
 
@@ -1069,7 +1241,13 @@ describe('Store-level Issues, end to end', () => {
       // no longer match the digest it carries, rather than trusting the
       // stored value once and never checking again (task 7.4's "a preimage
       // change cannot hide behind a verifier that stopped checking").
-      const revisionPath = f.at('rasen', 'issues', 'tampered', 'plans', '0001.yaml');
+      const revisionPath = f.at(
+        'rasen',
+        'issues',
+        created.identity.uid,
+        'plans',
+        '0001.yaml'
+      );
       const tampered = fs
         .readFileSync(revisionPath, 'utf8')
         .replace('do the thing', 'a different thing entirely');
@@ -1100,7 +1278,7 @@ describe('Store-level Issues, end to end', () => {
     }).instanceId;
     commitStore('seed ready change');
 
-    await issues(f).create({ ...scope, issueId: 'readiness', title: 'x' });
+    const created = await issues(f).create({ ...scope, issueId: 'readiness', title: 'x' });
     await issues(f).publishPlan({
       ...scope,
       issueId: 'readiness',
@@ -1125,9 +1303,9 @@ describe('Store-level Issues, end to end', () => {
     });
     commitStore('publish readiness plan');
 
-    const recordPath = f.at('rasen', 'issues', 'readiness', 'issue.yaml');
+    const recordPath = f.at('rasen', 'issues', created.identity.uid, 'issue.yaml');
     const recordBefore = fs.readFileSync(recordPath, 'utf8');
-    const revisionPath = f.at('rasen', 'issues', 'readiness', 'plans', '0001.yaml');
+    const revisionPath = f.at('rasen', 'issues', created.identity.uid, 'plans', '0001.yaml');
     const revisionBefore = fs.readFileSync(revisionPath, 'utf8');
 
     const detail = await query().showIssue({ ...scope, issueId: 'readiness' });
@@ -1153,7 +1331,7 @@ describe('Store-level Issues, end to end', () => {
     }).instanceId;
     commitStore('seed referenced change');
 
-    await issues(f).create({ ...scope, issueId: 'reverse', title: 'x' });
+    const created = await issues(f).create({ ...scope, issueId: 'reverse', title: 'x' });
     await issues(f).publishPlan({
       ...scope,
       issueId: 'reverse',
@@ -1171,13 +1349,116 @@ describe('Store-level Issues, end to end', () => {
     commitStore('publish reverse plan');
 
     const found = await query().issuesReferencing({ ...scope, changeInstanceId: instanceId });
-    expect(found.issues.map(entry => entry.issueId)).toEqual(['reverse']);
+    expect(found.issues.map(entry => entry.issueId)).toEqual([created.identity.uid]);
 
     // No durable back-reference exists anywhere in the referenced Change.
     const changeDir = f.at('rasen', 'projects', 'elftia', 'changes', 'referenced');
     for (const [, content] of Object.entries(treeOf(changeDir))) {
       expect(content).not.toContain('reverse');
     }
+  });
+
+  it('fails closed when reverse lookup reaches a divergent plan-bearing Issue', async () => {
+    const instanceId = f.seedChange({
+      root: f.storeRoot,
+      projectId: 'elftia',
+      targetLineId: LINE_02,
+      changeId: 'divergent-reference',
+      instanceSeed: 'ab'.repeat(16),
+    }).instanceId;
+    commitStore('seed divergent reference');
+
+    const created = await issues(f).create({
+      ...scope,
+      issueId: 'divergent-reverse',
+      title: 'Divergent reverse lookup',
+    });
+    await issues(f).publishPlan({
+      ...scope,
+      issueId: created.identity.uid,
+      nodes: [{
+        nodeId: 'a',
+        kind: 'change',
+        projectId: 'elftia',
+        targetLineId: LINE_02,
+        changeInstanceId: instanceId,
+        dependsOn: [],
+      }],
+    });
+    commitStore('publish divergent reverse plan');
+
+    f.git(f.storeRoot, ['branch', '-f', 'release/0.2', 'main']);
+    f.git(f.storeRoot, ['checkout', 'release/0.2']);
+    const recordPath = f.at('rasen', 'issues', created.identity.uid, 'issue.yaml');
+    fs.writeFileSync(
+      recordPath,
+      fs.readFileSync(recordPath, 'utf8').replace(
+        'title: Divergent reverse lookup',
+        'title: Divergent reverse lookup on release'
+      ),
+      'utf8'
+    );
+    commitStore('diverge reverse Issue on release');
+    f.git(f.storeRoot, ['checkout', 'main']);
+
+    const found = await query().issuesReferencing({ ...scope, changeInstanceId: instanceId });
+    expect(found.issues).toEqual([]);
+    expect(found.complete).toBe(false);
+    expect(found.problems).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'issue',
+        itemId: created.identity.uid,
+        reason: expect.stringMatching(/diverge/iu),
+      }),
+    ]));
+  });
+
+  it('fails closed when reverse lookup reaches an unreadable-identity plan-bearing Issue', async () => {
+    const instanceId = f.seedChange({
+      root: f.storeRoot,
+      projectId: 'elftia',
+      targetLineId: LINE_02,
+      changeId: 'unreadable-reference',
+      instanceSeed: 'ac'.repeat(16),
+    }).instanceId;
+    commitStore('seed unreadable reference');
+
+    const created = await issues(f).create({
+      ...scope,
+      issueId: 'unreadable-reverse',
+      title: 'Unreadable reverse lookup',
+    });
+    await issues(f).publishPlan({
+      ...scope,
+      issueId: created.identity.uid,
+      nodes: [{
+        nodeId: 'a',
+        kind: 'change',
+        projectId: 'elftia',
+        targetLineId: LINE_02,
+        changeInstanceId: instanceId,
+        dependsOn: [],
+      }],
+    });
+    commitStore('publish unreadable reverse plan');
+
+    fs.writeFileSync(
+      f.at('rasen', 'issues', created.identity.uid, 'issue.yaml'),
+      'version: 2\nidentity: unreadable\n',
+      'utf8'
+    );
+    commitStore('damage reverse Issue identity');
+
+    const found = await query().issuesReferencing({ ...scope, changeInstanceId: instanceId });
+    expect(found.issues).toEqual([]);
+    expect(found.complete).toBe(false);
+    expect(found.problems).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'issue',
+        itemId: created.identity.uid,
+        reason: expect.stringMatching(/identity is unreadable/iu),
+      }),
+    ]));
   });
 });
 

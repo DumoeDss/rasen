@@ -49,6 +49,8 @@ export {
   collectIssues,
   divergenceOf,
   presentedDiagnostic,
+  presentedIdentity,
   presentedRecord,
+  presentedResolution,
   readRevision,
 } from './issues-read.js';

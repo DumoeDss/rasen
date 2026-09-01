@@ -34,7 +34,11 @@ import {
   parseChangeInstanceSeed,
 } from '../planning-identity.js';
 import { serializeStoreTargetLineCatalogV1 } from '../planning-catalogs.js';
-import { isProjectId, isTargetLineId } from '../planning-validation.js';
+import {
+  isProjectId,
+  isTargetLineId,
+  parseIssueStorageKey,
+} from '../planning-validation.js';
 import { listTargetLineEntries } from '../query/refs.js';
 import { parseStoreProjectRecord } from '../project-records.js';
 import { upgradeMembershipRecord } from './catalog-upgrade.js';
@@ -249,7 +253,10 @@ export async function buildMigrationPlan(
         const source = path.join(collection, name);
         const destination = safeLayoutPath(
           storeRoot,
-          { kind: 'issue', issueId: declaration.issueId },
+          {
+            kind: 'issue',
+            issueStorageKey: parseIssueStorageKey(declaration.issueId),
+          },
           flavor
         );
         if (destination === null) {

@@ -16,9 +16,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   STORE_LOCK_ORDER,
+  assertIssueAllocationAcquisitionOrder,
   assertIssueAcquisitionOrder,
   assertStoreLockOrderAgreesWithWorkspace,
   heldStoreLockKinds,
+  issueAllocationLockHeld,
+  issueAllocationLockKey,
   issueLockFileName,
   issueLockHeld,
   issueLockKey,
@@ -26,8 +29,10 @@ import {
   issueLockCanonicalBytes,
   heldIssueLockKeys,
   withIssueLock,
+  withIssueAllocationLock,
   withIssueLockBatch,
 } from '../../../src/core/store/issues/index.js';
+import { deriveLegacyIssueUid } from '../../../src/core/store/issues/identity.js';
 import {
   WORKSPACE_LOCK_ORDER,
   scopeLockKey,
@@ -38,12 +43,17 @@ import { createNodeWorkspaceCoordination } from '../../../src/core/store/workspa
 const STORE_UID = '9d1d9f4b-8fd8-45d8-b5ef-f0c7a28491d0';
 const OTHER_STORE_UID = 'aa11bb22-cc33-4d44-8e55-ff6677889900';
 
-describe('the five-key acquisition order', () => {
-  it('enumerates exactly five keys, in this order', () => {
+function legacyIssueLockKey(storeUid: string, issueId: string) {
+  return issueLockKey({ storeUid, issueUid: deriveLegacyIssueUid(storeUid, issueId) });
+}
+
+describe('the six-key acquisition order', () => {
+  it('enumerates exactly six keys, in this order', () => {
     // Enumerated on purpose. Extend by adding the new key WITH its reason in
     // `locks.ts` and adding it here; never by relaxing this to a prefix, a
     // range, a length check, or a subset.
     expect([...STORE_LOCK_ORDER]).toEqual([
+      'issue-allocation',
       'issue',
       'scope',
       'workspace',
@@ -52,9 +62,9 @@ describe('the five-key acquisition order', () => {
     ]);
   });
 
-  it('keeps the four workspace keys in child 4 own order, immediately after issue', () => {
-    expect(STORE_LOCK_ORDER[0]).toBe('issue');
-    expect(STORE_LOCK_ORDER.slice(1)).toEqual([...WORKSPACE_LOCK_ORDER]);
+  it('keeps the four workspace keys in child 4 own order, after allocation and issue', () => {
+    expect(STORE_LOCK_ORDER.slice(0, 2)).toEqual(['issue-allocation', 'issue']);
+    expect(STORE_LOCK_ORDER.slice(2)).toEqual([...WORKSPACE_LOCK_ORDER]);
     expect(() => assertStoreLockOrderAgreesWithWorkspace()).not.toThrow();
   });
 
@@ -65,7 +75,7 @@ describe('the five-key acquisition order', () => {
     expect(() => assertIssueAcquisitionOrder(['integration'])).toThrow(/ordering violated/u);
     // Its message names the full order, so the diagnostic teaches the rule.
     expect(() => assertIssueAcquisitionOrder(['scope'])).toThrow(
-      /issue -> scope -> workspace -> change -> integration/u
+      /issue-allocation -> issue -> scope -> workspace -> change -> integration/u
     );
   });
 
@@ -76,21 +86,27 @@ describe('the five-key acquisition order', () => {
   it('permits the issue key when nothing is held', () => {
     expect(() => assertIssueAcquisitionOrder([])).not.toThrow();
   });
+
+  it('permits issue after allocation but refuses allocation after any held key', () => {
+    expect(() => assertIssueAcquisitionOrder(['issue-allocation'])).not.toThrow();
+    expect(() => assertIssueAllocationAcquisitionOrder(['issue'])).toThrow(/ordering violated/u);
+    expect(() => assertIssueAllocationAcquisitionOrder(['scope'])).toThrow(/ordering violated/u);
+  });
 });
 
 describe('the issue lock key', () => {
   it('is keyed by the permanent Store identity and the Issue identifier', () => {
-    const key = issueLockKey({ storeUid: STORE_UID, issueId: 'cross-line-telemetry' });
+    const key = legacyIssueLockKey(STORE_UID, 'cross-line-telemetry');
     expect(key.kind).toBe('issue');
     expect(key.material).toEqual({
       storeUid: STORE_UID,
-      issueId: 'cross-line-telemetry',
+      issueUid: deriveLegacyIssueUid(STORE_UID, 'cross-line-telemetry'),
     });
   });
 
   it('derives a filename that is a digest, so an id never becomes a filesystem property', () => {
     const name = issueLockFileName(
-      issueLockKey({ storeUid: STORE_UID, issueId: 'cross-line-telemetry' })
+      legacyIssueLockKey(STORE_UID, 'cross-line-telemetry')
     );
     expect(name).toMatch(/^issue-[0-9a-f]{64}\.lock$/u);
     // The identifier itself does not appear in the path.
@@ -99,17 +115,17 @@ describe('the issue lock key', () => {
   });
 
   it('gives two Issues in one Store, and one Issue in two Stores, different keys', () => {
-    const first = issueLockFileName(issueLockKey({ storeUid: STORE_UID, issueId: 'alpha' }));
-    const second = issueLockFileName(issueLockKey({ storeUid: STORE_UID, issueId: 'beta' }));
+    const first = issueLockFileName(legacyIssueLockKey(STORE_UID, 'alpha'));
+    const second = issueLockFileName(legacyIssueLockKey(STORE_UID, 'beta'));
     const elsewhere = issueLockFileName(
-      issueLockKey({ storeUid: OTHER_STORE_UID, issueId: 'alpha' })
+      legacyIssueLockKey(OTHER_STORE_UID, 'alpha')
     );
     expect(new Set([first, second, elsewhere]).size).toBe(3);
   });
 
   it('is deterministic for equal material', () => {
-    expect(issueLockFileName(issueLockKey({ storeUid: STORE_UID, issueId: 'alpha' }))).toBe(
-      issueLockFileName(issueLockKey({ storeUid: STORE_UID, issueId: 'alpha' }))
+    expect(issueLockFileName(legacyIssueLockKey(STORE_UID, 'alpha'))).toBe(
+      issueLockFileName(legacyIssueLockKey(STORE_UID, 'alpha'))
     );
   });
 });
@@ -129,8 +145,22 @@ describe('holding the issue lock', () => {
     return createNodeWorkspaceCoordination(dataDir);
   }
 
+  it('holds Store allocation before the allocated UID issue lock', async () => {
+    const allocation = issueAllocationLockKey({ storeUid: STORE_UID });
+    const issue = legacyIssueLockKey(STORE_UID, 'alpha');
+    await withIssueAllocationLock(coordination(), allocation, async () => {
+      expect(issueAllocationLockHeld()).toBe(true);
+      expect(heldStoreLockKinds()).toEqual(['issue-allocation']);
+      await withIssueLock(coordination(), issue, async () => {
+        expect(heldStoreLockKinds()).toEqual(['issue-allocation', 'issue']);
+      });
+    });
+    expect(issueAllocationLockHeld()).toBe(false);
+    expect(fs.existsSync(issueLockPath(coordination(), allocation))).toBe(false);
+  });
+
   it('creates the lock file under the machine root and removes it afterwards', async () => {
-    const key = issueLockKey({ storeUid: STORE_UID, issueId: 'alpha' });
+    const key = legacyIssueLockKey(STORE_UID, 'alpha');
     const lockPath = issueLockPath(coordination(), key);
     expect(fs.existsSync(lockPath)).toBe(false);
 
@@ -145,7 +175,7 @@ describe('holding the issue lock', () => {
   });
 
   it('releases the key even when the body throws', async () => {
-    const key = issueLockKey({ storeUid: STORE_UID, issueId: 'alpha' });
+    const key = legacyIssueLockKey(STORE_UID, 'alpha');
     const lockPath = issueLockPath(coordination(), key);
     await expect(
       withIssueLock(coordination(), key, async () => {
@@ -157,9 +187,9 @@ describe('holding the issue lock', () => {
 
   it('deduplicates and canonical-byte-sorts a migration batch, then releases it', async () => {
     const keys = [
-      issueLockKey({ storeUid: STORE_UID, issueId: 'beta' }),
-      issueLockKey({ storeUid: STORE_UID, issueId: 'alpha' }),
-      issueLockKey({ storeUid: STORE_UID, issueId: 'beta' }),
+      legacyIssueLockKey(STORE_UID, 'beta'),
+      legacyIssueLockKey(STORE_UID, 'alpha'),
+      legacyIssueLockKey(STORE_UID, 'beta'),
     ];
     let heldPaths: string[] = [];
     await withIssueLockBatch(coordination(), keys, async () => {
@@ -177,7 +207,7 @@ describe('holding the issue lock', () => {
   it('releases an earlier batch key when a later canonical key is unavailable', async () => {
     const handle = coordination();
     const keys = ['alpha', 'beta']
-      .map((issueId) => issueLockKey({ storeUid: STORE_UID, issueId }))
+      .map(issueId => legacyIssueLockKey(STORE_UID, issueId))
       .sort((left, right) =>
         Buffer.compare(issueLockCanonicalBytes(left), issueLockCanonicalBytes(right))
       );
@@ -196,7 +226,7 @@ describe('holding the issue lock', () => {
   it('releases the whole batch after callback failure', async () => {
     const handle = coordination();
     const keys = ['alpha', 'beta'].map((issueId) =>
-      issueLockKey({ storeUid: STORE_UID, issueId })
+      legacyIssueLockKey(STORE_UID, issueId)
     );
     await expect(
       withIssueLockBatch(handle, keys, async () => {
@@ -209,7 +239,7 @@ describe('holding the issue lock', () => {
   it('serializes overlapping migration batches across refs while disjoint batches complete', async () => {
     const handle = coordination();
     const keys = (ids: readonly string[]) =>
-      ids.map((issueId) => issueLockKey({ storeUid: STORE_UID, issueId }));
+      ids.map(issueId => legacyIssueLockKey(STORE_UID, issueId));
     let announce!: () => void;
     let release!: () => void;
     const held = new Promise<void>((resolve) => {
@@ -249,13 +279,13 @@ describe('holding the issue lock', () => {
     let both = false;
     await withIssueLock(
       coordination(),
-      issueLockKey({ storeUid: STORE_UID, issueId: 'alpha' }),
+      legacyIssueLockKey(STORE_UID, 'alpha'),
       async () => {
         // A DIFFERENT key, taken while the first is held. If they serialized
         // this would deadlock against the bounded deadline rather than return.
         await withIssueLockIgnoringOrder(
           coordination(),
-          issueLockKey({ storeUid: STORE_UID, issueId: 'beta' }),
+          legacyIssueLockKey(STORE_UID, 'beta'),
           async () => {
             both = true;
           }
@@ -266,7 +296,7 @@ describe('holding the issue lock', () => {
   });
 
   it('takes ONLY the issue key: no scope, workspace, change, or integration file appears', async () => {
-    const key = issueLockKey({ storeUid: STORE_UID, issueId: 'alpha' });
+    const key = legacyIssueLockKey(STORE_UID, 'alpha');
     await withIssueLock(coordination(), key, async () => {
       const locksDir = coordination().resolve('locks');
       const names = fs.existsSync(locksDir) ? fs.readdirSync(locksDir) : [];
@@ -283,7 +313,7 @@ describe('holding the issue lock', () => {
         async () => {
           await withIssueLock(
             coordinationHandle,
-            issueLockKey({ storeUid: STORE_UID, issueId: 'alpha' }),
+            legacyIssueLockKey(STORE_UID, 'alpha'),
             async () => undefined
           );
         }
@@ -292,7 +322,7 @@ describe('holding the issue lock', () => {
   });
 
   it('lets a reader run while the issue key is held, because a read takes none', async () => {
-    const key = issueLockKey({ storeUid: STORE_UID, issueId: 'alpha' });
+    const key = legacyIssueLockKey(STORE_UID, 'alpha');
     let readRan = false;
     await withIssueLock(coordination(), key, async () => {
       // A read acquires nothing, so it neither waits nor trips the order check.

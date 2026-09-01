@@ -56,6 +56,7 @@ import { registerStoreAggregateCommands } from './store-aggregate.js';
 import { registerStoreIssueCommand } from './store-issue.js';
 import { registerStoreTargetLineCommand } from './store-target-line.js';
 import { registerWorkspaceCommand } from './workspace.js';
+import { projectStoreAttentionForWire } from '../core/management-api/stores.js';
 import {
   diagnoseMigrationDrift,
   migrateStoreMembership,
@@ -557,8 +558,11 @@ interface StoreAttentionOptions {
 }
 
 /** One attention item's human line — the item's own context carries the axes. */
-function renderAttentionItem(item: IssueAttentionItem): string {
-  const context = `[${item.issueId} ${item.phase}/${item.health}]`;
+function renderAttentionItem(
+  item: IssueAttentionItem,
+  issueKeys: ReadonlyMap<string, string>
+): string {
+  const context = `[${issueKeys.get(item.issueId) ?? item.issueId} ${item.phase}/${item.health}]`;
   const who = item.nodeId === null ? '' : item.alias === null ? ` ${item.nodeId}` : ` ${item.nodeId} ${item.alias}`;
   switch (item.kind) {
     case 'failure':
@@ -611,11 +615,13 @@ function renderAttentionAnswer(
   scanned: readonly StoreAttentionScanEntry[],
   items: readonly IssueAttentionItem[]
 ): void {
-  const scope = narrowed ? `narrowed to ${narrowedIssueId} — ` : '';
+  const issueKeys = new Map(scanned.map(entry => [entry.issueId, entry.issueKey]));
+  const narrowedKey = narrowedIssueId === null ? null : issueKeys.get(narrowedIssueId) ?? narrowedIssueId;
+  const scope = narrowed ? `narrowed to ${narrowedKey} — ` : '';
   console.log(`Store attention scan — ${scope}${scanned.length} Issue(s) scanned`);
   console.log('  scanned:');
   for (const entry of scanned) {
-    console.log(`    ${entry.issueId}: ${entry.phase}/${entry.health} — ${entry.itemCount} item(s)`);
+    console.log(`    ${entry.issueKey}: ${entry.phase}/${entry.health} — ${entry.itemCount} item(s)`);
   }
   for (const line of attentionVisibilityLines(scanned)) console.log(line);
   if (items.length === 0) {
@@ -626,7 +632,7 @@ function renderAttentionAnswer(
       const group = items.filter(item => item.kind === kind);
       if (group.length === 0) continue;
       console.log(`  ${kind} (${group.length})`);
-      for (const item of group) console.log(renderAttentionItem(item));
+      for (const item of group) console.log(renderAttentionItem(item, issueKeys));
     }
   }
   console.log('');
@@ -1745,7 +1751,7 @@ export function registerStoreCommand(program: Command): void {
           options.issue
         );
         if (options.json) {
-          printJson(answer);
+          printJson(projectStoreAttentionForWire(answer));
           return;
         }
         renderAttentionAnswer(answer.narrowed, answer.issueId, answer.scanned, answer.items);

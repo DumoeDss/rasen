@@ -207,7 +207,8 @@ export async function composeIssueConfirm(
   return {
     ok: true,
     report: {
-      issueId: detail.issue.issueId,
+      ...(detail.issue.identity == null ? {} : { identity: detail.issue.identity }),
+      issueId: detail.issue.identity?.uid ?? detail.issue.issueId,
       revisionId: revision.revisionId,
       contracts,
       pendingChanges,

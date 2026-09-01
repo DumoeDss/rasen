@@ -24,10 +24,12 @@ import { LocationProvider, Route, Router, useLocation } from 'preact-iso';
 import { IssueDetailPage } from '../../src/components/IssueDetailPage.js';
 import * as client from '../../src/api/client.js';
 import {
+  ISSUE_IDENTITIES,
   issueAttentionNarrowedFixture,
   issueAttentionUnreadableFixture,
   realIssueProjectionFixture,
   unreadableIssueProjectionFixture,
+  v2IssueProjectionFixture,
 } from '../fixtures/issue-projection.js';
 
 async function flushMicrotasks(times = 8): Promise<void> {
@@ -55,7 +57,7 @@ async function mountAtSpace(container: HTMLElement, path: string): Promise<void>
   });
 }
 
-const REAL_PATH = '/s/store_x/issues/issue-autodecompose-uplift';
+const REAL_PATH = `/s/store_x/issues/${ISSUE_IDENTITIES.auto.uid}`;
 
 function RoutedIssueDetail() {
   const { route } = useLocation();
@@ -87,13 +89,46 @@ describe('IssueDetailPage', () => {
   it('fetches the Issue named by the URL and its narrowed attention scan', async () => {
     await mountAtSpace(container, REAL_PATH);
     expect((client.getStoreIssueProjection as any).mock.calls[0]).toEqual([
-      'issue-autodecompose-uplift',
+      ISSUE_IDENTITIES.auto.uid,
       'store:store_x',
     ]);
     expect((client.getStoreIssueAttention as any).mock.calls[0]).toEqual([
       'store:store_x',
-      'issue-autodecompose-uplift',
+      ISSUE_IDENTITIES.auto.uid,
     ]);
+  });
+
+  it('shows the human key and UID, and replaces a compatible legacy deep link with the canonical UID route', async () => {
+    await mountAtSpace(container, '/s/store_x/issues/issue-autodecompose-uplift');
+    await act(async () => { await flushMicrotasks(20); });
+
+    expect(container.querySelector('[data-testid="issue-detail-key"]')?.textContent)
+      .toBe(ISSUE_IDENTITIES.auto.key);
+    expect(container.querySelector('[data-testid="issue-detail-uid"]')?.textContent)
+      .toBe(ISSUE_IDENTITIES.auto.uid);
+    expect(window.location.pathname).toBe(REAL_PATH);
+    expect((client.getStoreIssueProjection as any).mock.calls).toContainEqual([
+      'issue-autodecompose-uplift',
+      'store:store_x',
+    ]);
+    expect((client.getStoreIssueProjection as any).mock.calls).toContainEqual([
+      ISSUE_IDENTITIES.auto.uid,
+      'store:store_x',
+    ]);
+  });
+
+  it('renders version-2 Issue, plan, acceptance-conditions, and accepted-record resources', async () => {
+    (client.getStoreIssueProjection as any).mockResolvedValue(v2IssueProjectionFixture);
+    await mountAtSpace(container, REAL_PATH);
+
+    expect(container.querySelector('[data-testid="issue-detail-record-identity"]')?.textContent)
+      .toContain('v2');
+    expect(container.querySelector('[data-testid="issue-detail-record-identity"]')?.textContent)
+      .toContain(ISSUE_IDENTITIES.auto.key);
+    expect(container.querySelector('[data-testid="issue-detail-plan"]')?.textContent)
+      .toContain(v2IssueProjectionFixture.plan!.revision!.revisionId);
+    expect(container.querySelector('[data-testid="issue-detail-acceptance"]')?.textContent)
+      .toContain(v2IssueProjectionFixture.status.acceptance!.record!.acceptedAt);
   });
 
   it('renders one exact provenance target per state family and preserves payload locators verbatim', async () => {
@@ -449,7 +484,7 @@ describe('IssueDetailPage', () => {
   it('still renders what derived for an Issue whose plan did not read back, with the problem beside it', async () => {
     (client.getStoreIssueProjection as any).mockResolvedValue(unreadableIssueProjectionFixture);
     (client.getStoreIssueAttention as any).mockResolvedValue(issueAttentionUnreadableFixture);
-    await mountAtSpace(container, '/s/store_x/issues/broken-issue');
+    await mountAtSpace(container, `/s/store_x/issues/${ISSUE_IDENTITIES.broken.uid}`);
 
     // The read is present: axes, sections, review determination.
     expect(container.querySelector('[data-testid="issue-detail-axes"]')).not.toBeNull();
@@ -513,6 +548,7 @@ describe('IssueDetailPage', () => {
       ...realIssueProjectionFixture,
       issue: {
         ...realIssueProjectionFixture.issue,
+        identity: { ...realIssueProjectionFixture.issue.identity!, uid: issueId },
         issueId,
         record: { ...realIssueProjectionFixture.issue.record, id: issueId, title },
       },

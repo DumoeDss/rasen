@@ -1991,7 +1991,12 @@
               "description": "创建并查看仓库级 Issue——跨项目的意图，其生命周期比任何一个变更都长",
               "commands": {
                 "new": {
-                  "description": "创建一个新 Issue；标题从不推断，必须显式指定",
+                  "description": "根据标题创建新 Issue；UID 与人类可读 key 由系统分配",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "已弃用的兼容别名；只保留在新 Issue 上，绝不决定 UID、key 或目录"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "获得该 Issue 的仓库"
@@ -2023,6 +2028,11 @@
                 },
                 "show": {
                   "description": "显示单个 Issue 及其最新的 Execution Plan 修订版本（如有）",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID、系统生成的 key、唯一 slug 或兼容的旧标识符"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "持有该 Issue 的仓库"
@@ -2034,6 +2044,11 @@
                 },
                 "state": {
                   "description": "转换 Issue 的状态；终态无法再次转换",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID、系统生成的 key、唯一 slug 或兼容的旧标识符"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "持有该 Issue 的仓库"
@@ -2051,6 +2066,11 @@
                 },
                 "plan": {
                   "description": "根据 YAML 节点列表为某个 Issue 发布新的不可变 Execution Plan 修订版本",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID、系统生成的 key、唯一 slug 或兼容的旧标识符"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "持有该 Issue 的仓库"
@@ -2071,6 +2091,11 @@
                 },
                 "acceptance": {
                   "description": "从 YAML 条件清单为 Issue 发布一个新的不可变验收条件修订",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID、系统生成的 key、唯一 slug 或兼容的旧标识符"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "持有该 Issue 的仓库"
@@ -2085,6 +2110,11 @@
                 },
                 "accept": {
                   "description": "显式接受一个 Issue：评估验收闸门，仅在闸门成立时记录验收并关闭该 Issue",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID、系统生成的 key、唯一 slug 或兼容的旧标识符"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "持有该 Issue 的仓库"
@@ -2099,6 +2129,11 @@
                 },
                 "start": {
                   "description": "解析下一个计划节点绑定的执行上下文并输出启动契约；启动是解析与验证，绝不生成进程",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID、系统生成的 key、唯一 slug 或兼容的旧标识符"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "持有该 Issue 的仓库"
@@ -2116,6 +2151,11 @@
                 },
                 "confirm": {
                   "description": "为指定修订（缺省为最新可读修订）组装确认报告：已验证的启动契约集合与待创建的 Change。confirm 只组装、不写入任何内容；启动仍是逐节点的操作",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID、系统生成的 key、唯一 slug 或兼容的旧标识符"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "持有该 Issue 的仓库"
@@ -2130,6 +2170,11 @@
                 },
                 "ready": {
                   "description": "报告该 Issue 最新已发布修订的确定性就绪集：每个可运行的 Change 节点，以及每个非成员节点及其退出理由，附运行状态可见性标签与状态问题。只读且仅针对最新修订——调度器调度的是最新修订",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID、系统生成的 key、唯一 slug 或兼容的旧标识符"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "持有该 Issue 的仓库"

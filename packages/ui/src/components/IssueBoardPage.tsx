@@ -5,6 +5,7 @@ import type {
   SpaceMember,
   StoreIssueAttentionItem,
   StoreIssueAttentionResponse,
+  StoreIssueIdentity,
   StoreIssueProjectionEntry,
   StoreIssueProjectionsResponse,
   StoreProjectsResponse,
@@ -42,6 +43,14 @@ export function IssueBoardPage() {
   return <IssueBoardState key={selector ?? 'no-store'} space={space} selector={selector} />;
 }
 
+function CreatedIssueNotice({ identity, space }: { identity: StoreIssueIdentity; space: Space }) {
+  return (
+    <p class="issue-board__created" data-testid="issue-board-created">
+      <a href={spaceHref(space, 'issues', identity.uid)}>{identity.key}</a>
+    </p>
+  );
+}
+
 /** Selector-owned state: a route change replaces this child synchronously. */
 function IssueBoardState({ space, selector }: { space: Space | null; selector: string | undefined }) {
   const t = useT();
@@ -52,6 +61,7 @@ function IssueBoardState({ space, selector }: { space: Space | null; selector: s
   const [loading, setLoading] = useState(true);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [createdIdentity, setCreatedIdentity] = useState<StoreIssueIdentity | null>(null);
   // The selected member chip (a member's projectId), or null for "All". State
   // of THIS mount only — never persisted, never restored (spec: "the filter
   // does not persist").
@@ -93,13 +103,21 @@ function IssueBoardState({ space, selector }: { space: Space | null; selector: s
     setRefreshNonce((n) => n + 1);
   }
 
-  function handleIssueCreated() {
+  function handleIssueCreated(identity: StoreIssueIdentity) {
     setDialogOpen(false);
+    setCreatedIdentity(identity);
     refresh();
   }
 
   if (loading) {
-    return <p class="issue-board__loading">{t('issues.loading')}</p>;
+    return (
+      <>
+        <p class="issue-board__loading">{t('issues.loading')}</p>
+        {createdIdentity !== null && space !== null && (
+          <CreatedIssueNotice identity={createdIdentity} space={space} />
+        )}
+      </>
+    );
   }
 
   if (pageError) {
@@ -238,6 +256,9 @@ function IssueBoardState({ space, selector }: { space: Space | null; selector: s
           onCreated={handleIssueCreated}
         />
       )}
+      {createdIdentity !== null && space !== null && (
+        <CreatedIssueNotice identity={createdIdentity} space={space} />
+      )}
       {notices.length > 0 && (
         <ul class="issue-board__notices" data-testid="issue-board-notices">
           {notices.map((notice, index) => (
@@ -272,10 +293,10 @@ function IssueBoardState({ space, selector }: { space: Space | null; selector: s
               ) : (
                 laneIssues.map((entry) => (
                   <IssueCard
-                    key={entry.issueId}
+                    key={entry.identity?.uid ?? entry.issueId}
                     entry={entry}
-                    attentionItem={topAttention.get(entry.issueId) ?? null}
-                    href={space ? spaceHref(space, 'issues', entry.issueId) : '/'}
+                    attentionItem={topAttention.get(entry.identity?.uid ?? entry.issueId) ?? null}
+                    href={space ? spaceHref(space, 'issues', entry.identity?.uid ?? entry.issueId) : '/'}
                   />
                 ))
               )}
@@ -294,10 +315,9 @@ function NewIssueDialog({
 }: {
   selector: string | undefined;
   onCancel: () => void;
-  onCreated: () => void;
+  onCreated: (identity: StoreIssueIdentity) => void;
 }) {
   const t = useT();
-  const [issueId, setIssueId] = useState('');
   const [title, setTitle] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -308,8 +328,8 @@ function NewIssueDialog({
     setSubmitting(true);
     setErrorMessage(null);
     try {
-      await client.createStoreIssue({ issueId, title }, selector);
-      onCreated();
+      const result = await client.createStoreIssue({ title }, selector);
+      onCreated(result.identity);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) return;
       setSubmitting(false);
@@ -326,17 +346,6 @@ function NewIssueDialog({
         onSubmit={handleSubmit}
       >
         <h2 class="new-change-dialog__title">{t('unlinked.create')}</h2>
-        <label class="new-change-dialog__field">
-          <span>{t('unlinked.dialog.issue_id')}</span>
-          <input
-            type="text"
-            name="issueId"
-            value={issueId}
-            disabled={submitting}
-            required
-            onInput={(event) => setIssueId((event.target as HTMLInputElement).value)}
-          />
-        </label>
         <label class="new-change-dialog__field">
           <span>{t('unlinked.dialog.issue_title')}</span>
           <input

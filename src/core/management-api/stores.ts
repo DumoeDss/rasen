@@ -32,7 +32,7 @@
 import { createStoreQueryByUid } from '../store/query/module.js';
 import { StoreIssuesModuleInstance } from '../store/issues/module.js';
 import { findPlanNodeSchemaProblems } from '../store/issues/plans.js';
-import { isStoreIssueError } from '../store/issues/diagnostics.js';
+import { isStoreIssueError, issueError } from '../store/issues/diagnostics.js';
 import { StoreError } from '../store/errors.js';
 import {
   composeChangeIssueLinks,
@@ -59,14 +59,30 @@ import type {
   IssueDetail,
   ResolvedExecutionPlan,
   FinalizationOutcomeName,
+  AggregateProblem,
 } from '../store/query/types.js';
 import type {
   IssueState,
   IssueRecordResult,
   ExecutionPlanResult,
   ExecutionPlanNodeInput,
+  IssuePublicationRecovery,
+  IssueWriteWarning,
+  StoreIssues,
   StoreIssueErrorCode,
 } from '../store/issues/types.js';
+import type {
+  StoreIssueDetailResponse,
+  StoreIssueProjectionResponse,
+  StoreIssueProjectionsResponse,
+  StoreIssueReferencesResponse,
+  StoreIssueRecordResponse,
+  StoreIssuesResponse,
+  StoreExecutionPlanResponse,
+  StoreExecutionPlanPublishResponse,
+  StorePublicIssueRecordCopy,
+  StorePublicIssueSummary,
+} from './wire-types.js';
 
 // -----------------------------------------------------------------------------
 // Result envelope
@@ -74,7 +90,202 @@ import type {
 
 export type StoreHandlerResult<T> =
   | { ok: true; status: 200; response: T }
-  | { ok: false; status: number; code: string; message: string };
+  | {
+      ok: false;
+      status: number;
+      code: string;
+      message: string;
+      recovery?: IssuePublicationRecovery;
+    };
+
+const PUBLIC_ISSUE_DIAGNOSTIC =
+  'Issue data could not be read or verified; inspect the Store locally for storage details.';
+
+function samePublicIdentity(
+  left: StorePublicIssueRecordCopy['identity'],
+  right: StorePublicIssueRecordCopy['identity']
+): boolean {
+  return left !== null && right !== null && left.uid === right.uid && left.key === right.key;
+}
+
+function publicIdentityForSummary(
+  summary: IssueSummaryPage['issues'][number]
+): StorePublicIssueSummary['identity'] {
+  if (summary.identity !== null) return summary.identity;
+  const copies = summary.divergence?.copies ?? [];
+  const first = copies[0]?.identity?.identity ?? null;
+  return first !== null && copies.every(copy => samePublicIdentity(first, copy.identity?.identity ?? null))
+    ? first
+    : null;
+}
+
+function publicIssueCopy(
+  copy: NonNullable<IssueSummaryPage['issues'][number]['divergence']>['copies'][number]
+): StorePublicIssueRecordCopy {
+  const { storageKey: _storageKey, identity, diagnostic: _diagnostic, ...publicCopy } = copy;
+  return {
+    ...publicCopy,
+    identity: identity?.identity ?? null,
+    diagnostic: copy.diagnostic === null ? null : PUBLIC_ISSUE_DIAGNOSTIC,
+  };
+}
+
+export function projectIssueSummaryForWire(
+  summary: IssueSummaryPage['issues'][number]
+): StorePublicIssueSummary {
+  const identity = publicIdentityForSummary(summary);
+  return {
+    ...summary,
+    identity,
+    issueId: identity?.uid ?? '(unavailable Issue identity)',
+    diagnostic: summary.diagnostic === null ? null : PUBLIC_ISSUE_DIAGNOSTIC,
+    divergence:
+      summary.divergence === null
+        ? null
+        : { copies: summary.divergence.copies.map(publicIssueCopy) },
+  };
+}
+
+/** Issue filesystem locations remain actionable in core/human diagnostics, not JSON. */
+export function projectIssueProblemsForWire(
+  problems: readonly AggregateProblem[],
+  safeIssueIds: ReadonlySet<string> = new Set()
+): readonly AggregateProblem[] {
+  return problems.map(problem =>
+    problem.kind === 'issue'
+      ? {
+          ...problem,
+          itemId: safeIssueIds.has(problem.itemId)
+            ? problem.itemId
+            : '(unavailable Issue identity)',
+          path: '(internal Issue storage)',
+          reason: PUBLIC_ISSUE_DIAGNOSTIC,
+        }
+      : problem
+  );
+}
+
+function safeIssueIdsForWire(
+  summaries: readonly IssueSummaryPage['issues'][number][]
+): ReadonlySet<string> {
+  return new Set(
+    summaries
+      .map(publicIdentityForSummary)
+      .filter((identity): identity is NonNullable<typeof identity> => identity !== null)
+      .flatMap(identity => [identity.uid, identity.key])
+  );
+}
+
+function unsafeIssueLocatorsForWire(
+  summaries: readonly IssueSummaryPage['issues'][number][]
+): ReadonlySet<string> {
+  return new Set(
+    summaries
+      .filter(summary => publicIdentityForSummary(summary) === null)
+      .map(summary => summary.issueId)
+  );
+}
+
+function redactIssueDiagnosticValue(
+  value: unknown,
+  unsafeIssueLocators: ReadonlySet<string>,
+  propertyName?: string
+): unknown {
+  if (typeof value === 'string') {
+    if (
+      (propertyName === 'issueId' ||
+        propertyName === 'issueKey' ||
+        propertyName === 'itemId') &&
+      unsafeIssueLocators.has(value)
+    ) {
+      return '(unavailable Issue identity)';
+    }
+    if (
+      unsafeIssueLocators.size > 0 &&
+      (propertyName === 'diagnostic' || propertyName === 'reason')
+    ) {
+      return PUBLIC_ISSUE_DIAGNOSTIC;
+    }
+    if (
+      (propertyName === 'path' || propertyName === 'ref') &&
+      [...unsafeIssueLocators].some(locator => value.includes(locator))
+    ) {
+      return '(internal Issue storage)';
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(entry =>
+      redactIssueDiagnosticValue(entry, unsafeIssueLocators)
+    );
+  }
+  if (typeof value !== 'object' || value === null) return value;
+  const projected: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (key === 'storageKey') continue;
+    projected[key] = redactIssueDiagnosticValue(entry, unsafeIssueLocators, key);
+  }
+  return projected;
+}
+
+/** Redacts nested status/review/attention diagnostics with the same summary authority. */
+export function projectIssueDiagnosticPayloadForWire<T>(
+  value: T,
+  summaries: readonly IssueSummaryPage['issues'][number][]
+): T {
+  return redactIssueDiagnosticValue(
+    value,
+    unsafeIssueLocatorsForWire(summaries)
+  ) as T;
+}
+
+export function projectStoreAttentionForWire(
+  payload: StoreAttentionPayload
+): StoreAttentionPayload {
+  const unsafe = new Set(
+    payload.scanned
+      .filter(entry => entry.issueId === entry.issueKey)
+      .flatMap(entry => [entry.issueId, entry.issueKey])
+  );
+  return redactIssueDiagnosticValue(payload, unsafe) as StoreAttentionPayload;
+}
+
+export function projectIssuePageForWire(page: IssueSummaryPage): StoreIssuesResponse {
+  const safeIssueIds = safeIssueIdsForWire(page.issues);
+  return {
+    ...page,
+    issues: page.issues.map(projectIssueSummaryForWire),
+    problems: projectIssueProblemsForWire(page.problems, safeIssueIds),
+  };
+}
+
+export function projectExecutionPlanForWire(
+  plan: ResolvedExecutionPlan,
+  summary: IssueSummaryPage['issues'][number]
+): StoreExecutionPlanResponse {
+  const identity = publicIdentityForSummary(summary);
+  return projectIssueDiagnosticPayloadForWire({
+    ...plan,
+    issueId: identity?.uid ?? '(unavailable Issue identity)',
+    problems: projectIssueProblemsForWire(
+      plan.problems,
+      identity === null ? new Set() : new Set([identity.uid, identity.key])
+    ),
+  }, [summary]);
+}
+
+export function projectIssueDetailForWire(detail: IssueDetail): StoreIssueDetailResponse {
+  const safeIssueIds = safeIssueIdsForWire([detail.issue]);
+  return {
+    ...detail,
+    issue: projectIssueSummaryForWire(detail.issue),
+    plan:
+      detail.plan === null
+        ? null
+        : projectExecutionPlanForWire(detail.plan, detail.issue),
+    problems: projectIssueProblemsForWire(detail.problems, safeIssueIds),
+  };
+}
 
 // -----------------------------------------------------------------------------
 // Store space resolution (by stable identity)
@@ -157,15 +368,28 @@ export async function resolveStoreSpace(selector: string | undefined): Promise<S
 // Error mapping
 // -----------------------------------------------------------------------------
 
-function statusForIssueCode(code: StoreIssueErrorCode): number {
+export function statusForIssueDiagnosticCode(code: string): number | undefined {
   switch (code) {
     case 'issue_scope_required':
+    case 'issue_title_required':
+    case 'issue_selector_required':
+    case 'issue_selector_invalid':
     case 'store_query_scope_incomplete':
       return 400;
     case 'issue_not_found':
       return 404;
+    case 'issue_resource_identity_mismatch':
+      return 422;
     case 'store_query_ref_unreadable':
       return 502;
+    case 'issue_identity_allocation_failed':
+    case 'issue_publication_indeterminate':
+      return 500;
+    case 'issue_selector_ambiguous':
+    case 'issue_identity_conflict':
+    case 'issue_key_conflict':
+    case 'issue_alias_conflict':
+    case 'issue_storage_identity_mismatch':
     case 'issue_already_exists':
     case 'issue_record_divergent':
     case 'issue_state_transition_refused':
@@ -182,7 +406,45 @@ function statusForIssueCode(code: StoreIssueErrorCode): number {
     case 'issue_write_requires_store_checkout':
       return 409;
     default:
-      return 400;
+      return undefined;
+  }
+}
+
+export function statusForIssueCode(code: StoreIssueErrorCode): number {
+  return statusForIssueDiagnosticCode(code) ?? 400;
+}
+
+const ISSUE_FAILURE_CODES_WITH_INTERNAL_LOCATORS = new Set([
+  'store_query_ref_unreadable',
+  'issue_storage_identity_mismatch',
+]);
+
+/** Read refusals may retain physical selectors internally, but never on HTTP. */
+export function projectIssueFailureMessageForWire(code: string, message: string): string {
+  return ISSUE_FAILURE_CODES_WITH_INTERNAL_LOCATORS.has(code)
+    ? PUBLIC_ISSUE_DIAGNOSTIC
+    : message;
+}
+
+export function isAbsentIssueSummary(
+  summary: IssueSummaryPage['issues'][number]
+): boolean {
+  return (
+    summary.identity === null &&
+    summary.record === null &&
+    summary.divergence === null &&
+    summary.diagnostic === null &&
+    summary.revisionIds.length === 0 &&
+    summary.refs.length === 0
+  );
+}
+
+function requirePresentIssue(
+  selector: string,
+  summary: IssueSummaryPage['issues'][number]
+): void {
+  if (isAbsentIssueSummary(summary)) {
+    throw issueError('issue_not_found', `Issue selector '${selector}' matches no Issue.`);
   }
 }
 
@@ -203,9 +465,19 @@ const STATUS_FOR_STORE_ERROR_CODE: Readonly<Record<string, number>> = {
   issue_attention_unknown_issue: 404,
 };
 
-function mapThrown(error: unknown): { status: number; code: string; message: string } {
+function mapThrown(error: unknown): {
+  status: number;
+  code: string;
+  message: string;
+  recovery?: IssuePublicationRecovery;
+} {
   if (isStoreIssueError(error)) {
-    return { status: statusForIssueCode(error.issueCode), code: error.issueCode, message: error.message };
+    return {
+      status: statusForIssueCode(error.issueCode),
+      code: error.issueCode,
+      message: projectIssueFailureMessageForWire(error.issueCode, error.message),
+      ...(error.recovery === undefined ? {} : { recovery: error.recovery }),
+    };
   }
   if (error instanceof StoreError) {
     const code = error.diagnostic.code;
@@ -271,24 +543,61 @@ export function handleStoreChanges(
 export function handleStoreIssues(
   space: ResolvedStoreSpace,
   state?: IssueState
-): Promise<StoreHandlerResult<IssueSummaryPage>> {
-  return run(() => storeQuery.listIssues({ ...baseQuery(space), ...(state ? { state } : {}) }));
+): Promise<StoreHandlerResult<StoreIssuesResponse>> {
+  return run(async () =>
+    projectIssuePageForWire(
+      await storeQuery.listIssues({ ...baseQuery(space), ...(state ? { state } : {}) })
+    )
+  );
+}
+
+type IssueSelectorResult =
+  | { readonly ok: true; readonly selector: string }
+  | { readonly ok: false; readonly status: 400; readonly code: string; readonly message: string };
+
+/**
+ * The one HTTP-boundary contract for every Issue selector field/query value.
+ * `issueId` remains the compatibility field name for this release, but its
+ * value is a selector (UID, generated key, unique slug, or legacy alias), never
+ * a path or storage id.
+ */
+function requireIssueSelector(value: unknown, action: string): IssueSelectorResult {
+  if (value === undefined || value === null || value === '') {
+    return {
+      ok: false,
+      status: 400,
+      code: 'issue_selector_required',
+      message: `${action} requires an Issue selector in issueId.`,
+    };
+  }
+  if (typeof value !== 'string') {
+    return {
+      ok: false,
+      status: 400,
+      code: 'issue_selector_invalid',
+      message: `${action} requires issueId to be a string selector.`,
+    };
+  }
+  return { ok: true, selector: value };
 }
 
 export async function handleStoreIssue(
   space: ResolvedStoreSpace,
   issueId: string | undefined
-): Promise<StoreHandlerResult<IssueDetail>> {
-  if (!issueId) {
-    return { ok: false, status: 400, code: 'issue_id_required', message: 'issueId is required.' };
-  }
-  return run(() => storeQuery.showIssue({ ...baseQuery(space), issueId }));
+): Promise<StoreHandlerResult<StoreIssueDetailResponse>> {
+  const selected = requireIssueSelector(issueId, 'Reading an Issue');
+  if (!selected.ok) return selected;
+  return run(async () => {
+    const detail = await storeQuery.showIssue({ ...baseQuery(space), issueId: selected.selector });
+    requirePresentIssue(selected.selector, detail.issue);
+    return projectIssueDetailForWire(detail);
+  });
 }
 
 export async function handleStoreIssueReferences(
   space: ResolvedStoreSpace,
   changeInstanceId: string | undefined
-): Promise<StoreHandlerResult<IssueSummaryPage>> {
+): Promise<StoreHandlerResult<StoreIssueReferencesResponse>> {
   if (!changeInstanceId) {
     return {
       ok: false,
@@ -297,7 +606,11 @@ export async function handleStoreIssueReferences(
       message: 'changeInstanceId is required.',
     };
   }
-  return run(() => storeQuery.issuesReferencing({ ...baseQuery(space), changeInstanceId }));
+  return run(async () =>
+    projectIssuePageForWire(
+      await storeQuery.issuesReferencing({ ...baseQuery(space), changeInstanceId })
+    )
+  );
 }
 
 // -----------------------------------------------------------------------------
@@ -326,10 +639,26 @@ export function handleStoreIssueProjections(
   space: ResolvedStoreSpace,
   runState: IssueRunStateContext,
   state?: IssueState
-): Promise<StoreHandlerResult<IssueProjectionListPayload>> {
-  return run(() =>
-    composeIssueProjectionList(storeQuery, projectionScope(space), runState, state)
-  );
+): Promise<StoreHandlerResult<StoreIssueProjectionsResponse>> {
+  return run(async () => {
+    const payload = await composeIssueProjectionList(
+      storeQuery,
+      projectionScope(space),
+      runState,
+      state
+    );
+    return {
+      ...payload,
+      issues: payload.issues.map(entry => ({
+        ...projectIssueSummaryForWire(entry),
+        status: projectIssueDiagnosticPayloadForWire(entry.status, [entry]),
+      })),
+      problems: projectIssueProblemsForWire(
+        payload.problems,
+        safeIssueIdsForWire(payload.issues)
+      ),
+    };
+  });
 }
 
 /**
@@ -342,13 +671,29 @@ export async function handleStoreIssueProjection(
   space: ResolvedStoreSpace,
   runState: IssueRunStateContext,
   issueId: string | undefined
-): Promise<StoreHandlerResult<IssueProjectionDetailPayload>> {
-  if (!issueId) {
-    return { ok: false, status: 400, code: 'issue_id_required', message: 'issueId is required.' };
-  }
-  return run(() =>
-    composeIssueProjectionDetail(storeQuery, projectionScope(space), runState, issueId)
-  );
+): Promise<StoreHandlerResult<StoreIssueProjectionResponse>> {
+  const selected = requireIssueSelector(issueId, 'Reading an Issue projection');
+  if (!selected.ok) return selected;
+  return run(async () => {
+    const payload = await composeIssueProjectionDetail(
+      storeQuery,
+      projectionScope(space),
+      runState,
+      selected.selector
+    );
+    requirePresentIssue(selected.selector, payload.issue);
+    return projectIssueDiagnosticPayloadForWire({
+      ...payload,
+      issue: projectIssueSummaryForWire(payload.issue),
+      plan: payload.plan === null
+        ? null
+        : projectExecutionPlanForWire(payload.plan, payload.issue),
+      problems: projectIssueProblemsForWire(
+        payload.problems,
+        safeIssueIdsForWire([payload.issue])
+      ),
+    }, [payload.issue]);
+  });
 }
 
 /**
@@ -361,8 +706,15 @@ export function handleStoreIssueAttention(
   runState: IssueRunStateContext,
   issueId?: string
 ): Promise<StoreHandlerResult<StoreAttentionPayload>> {
-  return run(() =>
-    composeStoreAttention(storeQuery, projectionScope(space), runState, issueId)
+  if (issueId !== undefined) {
+    const selected = requireIssueSelector(issueId, 'Narrowing Issue attention');
+    if (!selected.ok) return Promise.resolve(selected);
+    issueId = selected.selector;
+  }
+  return run(async () =>
+    projectStoreAttentionForWire(
+      await composeStoreAttention(storeQuery, projectionScope(space), runState, issueId)
+    )
   );
 }
 
@@ -373,24 +725,34 @@ export function handleStoreIssueAttention(
 export function handleStoreChangeIssueLinks(
   space: ResolvedStoreSpace
 ): Promise<StoreHandlerResult<ChangeIssueLinksPayload>> {
-  return run(() => composeChangeIssueLinks(storeQuery, projectionScope(space)));
+  return run(async () => {
+    const payload = await composeChangeIssueLinks(storeQuery, projectionScope(space));
+    return { ...payload, problems: projectIssueProblemsForWire(payload.problems) };
+  });
 }
 
 export async function handleStoreExecutionPlan(
   space: ResolvedStoreSpace,
   issueId: string | undefined,
   revisionId: string | undefined
-): Promise<StoreHandlerResult<ResolvedExecutionPlan>> {
-  if (!issueId) {
-    return { ok: false, status: 400, code: 'issue_id_required', message: 'issueId is required.' };
-  }
-  return run(() =>
-    storeQuery.resolveExecutionPlan({
+): Promise<StoreHandlerResult<StoreExecutionPlanResponse>> {
+  const selected = requireIssueSelector(issueId, 'Reading an execution plan');
+  if (!selected.ok) return selected;
+  return run(async () => {
+    const detail = await storeQuery.showIssue({
       ...baseQuery(space),
-      issueId,
-      ...(revisionId ? { revisionId } : {}),
-    })
-  );
+      issueId: selected.selector,
+    });
+    requirePresentIssue(selected.selector, detail.issue);
+    return projectExecutionPlanForWire(
+      await storeQuery.resolveExecutionPlan({
+        ...baseQuery(space),
+        issueId: selected.selector,
+        ...(revisionId ? { revisionId } : {}),
+      }),
+      detail.issue
+    );
+  });
 }
 
 // -----------------------------------------------------------------------------
@@ -415,30 +777,67 @@ function writeScope(space: ResolvedStoreSpace): { store: string; startPath: stri
   return { store: space.storeUid, startPath: space.root };
 }
 
+function publicIssueRecordResult(result: IssueRecordResult): StoreIssueRecordResponse {
+  return {
+    identity: result.identity,
+    issueId: result.issueId,
+    record: result.record,
+    storeId: result.storeId,
+    storeUid: result.storeUid,
+    ...(result.warnings === undefined ? {} : { warnings: publicIssueWarnings(result.warnings) }),
+  };
+}
+
+function publicExecutionPlanResult(
+  result: ExecutionPlanResult
+): StoreExecutionPlanPublishResponse {
+  return {
+    identity: result.identity,
+    issueId: result.issueId,
+    revision: result.revision,
+    storeId: result.storeId,
+    storeUid: result.storeUid,
+    ...(result.warnings === undefined ? {} : { warnings: publicIssueWarnings(result.warnings) }),
+  };
+}
+
+function publicIssueWarnings(
+  warnings: readonly IssueWriteWarning[]
+): readonly Pick<IssueWriteWarning, 'code' | 'message'>[] {
+  return warnings.map(({ code, message }) => ({ code, message }));
+}
+
 export async function handleStoreIssueCreate(
   space: ResolvedStoreSpace,
-  body: { issueId?: unknown; title?: unknown; readme?: unknown }
-): Promise<StoreHandlerResult<IssueRecordResult>> {
-  const issueId = typeof body.issueId === 'string' ? body.issueId : '';
-  const title = typeof body.title === 'string' ? body.title : '';
-  const missing = [!issueId ? 'issueId' : null, !title ? 'title' : null].filter(
-    (value): value is string => value !== null
-  );
-  if (missing.length > 0) {
+  body: { issueId?: unknown; title?: unknown; readme?: unknown },
+  options: { readonly issues?: Pick<StoreIssues, 'create'> } = {}
+): Promise<StoreHandlerResult<StoreIssueRecordResponse>> {
+  if (typeof body.title !== 'string' || body.title.length === 0) {
     return {
       ok: false,
       status: 400,
-      code: 'issue_create_incomplete',
-      message: `Creating an Issue requires ${missing.join(' and ')}.`,
+      code: 'issue_title_required',
+      message: 'Creating an Issue requires a non-empty title.',
     };
   }
-  return run(() =>
-    StoreIssuesModuleInstance.create({
+  if (body.issueId !== undefined && typeof body.issueId !== 'string') {
+    return {
+      ok: false,
+      status: 400,
+      code: 'issue_selector_invalid',
+      message: 'The deprecated compatibility issueId alias must be a string when provided.',
+    };
+  }
+  const compatibilityAlias =
+    typeof body.issueId === 'string' ? body.issueId : undefined;
+  const issues = options.issues ?? StoreIssuesModuleInstance;
+  return run(async () =>
+    publicIssueRecordResult(await issues.create({
       ...writeScope(space),
-      issueId,
-      title,
+      title: body.title as string,
+      ...(compatibilityAlias === undefined ? {} : { issueId: compatibilityAlias }),
       ...(typeof body.readme === 'boolean' ? { readme: body.readme } : {}),
-    })
+    }))
   );
 }
 
@@ -447,12 +846,13 @@ const ISSUE_STATES: readonly IssueState[] = ['open', 'resolved', 'dropped'];
 export async function handleStoreIssueSetState(
   space: ResolvedStoreSpace,
   body: { issueId?: unknown; state?: unknown; reason?: unknown }
-): Promise<StoreHandlerResult<IssueRecordResult>> {
-  const issueId = typeof body.issueId === 'string' ? body.issueId : '';
+): Promise<StoreHandlerResult<StoreIssueRecordResponse>> {
+  const selected = requireIssueSelector(body.issueId, "Setting an Issue's state");
+  if (!selected.ok) return selected;
   const state = typeof body.state === 'string' && (ISSUE_STATES as readonly string[]).includes(body.state)
     ? (body.state as IssueState)
     : undefined;
-  const missing = [!issueId ? 'issueId' : null, !state ? 'a valid state ("open", "resolved", or "dropped")' : null].filter(
+  const missing = [!state ? 'a valid state ("open", "resolved", or "dropped")' : null].filter(
     (value): value is string => value !== null
   );
   if (missing.length > 0 || state === undefined) {
@@ -463,13 +863,13 @@ export async function handleStoreIssueSetState(
       message: `Setting an Issue's state requires ${missing.join(' and ')}.`,
     };
   }
-  return run(() =>
-    StoreIssuesModuleInstance.setState({
+  return run(async () =>
+    publicIssueRecordResult(await StoreIssuesModuleInstance.setState({
       ...writeScope(space),
-      issueId,
+      issueId: selected.selector,
       state,
       ...(typeof body.reason === 'string' ? { reason: body.reason } : {}),
-    })
+    }))
   );
 }
 
@@ -570,16 +970,9 @@ export function findInvalidPlanNodes(
 export async function handleStorePublishPlan(
   space: ResolvedStoreSpace,
   body: { issueId?: unknown; nodes?: unknown; expectedRevisionId?: unknown }
-): Promise<StoreHandlerResult<ExecutionPlanResult>> {
-  const issueId = typeof body.issueId === 'string' ? body.issueId : '';
-  if (!issueId) {
-    return {
-      ok: false,
-      status: 400,
-      code: 'issue_id_required',
-      message: 'Publishing an execution plan requires issueId.',
-    };
-  }
+): Promise<StoreHandlerResult<StoreExecutionPlanPublishResponse>> {
+  const selected = requireIssueSelector(body.issueId, 'Publishing an execution plan');
+  if (!selected.ok) return selected;
   if (!Array.isArray(body.nodes)) {
     return {
       ok: false,
@@ -667,14 +1060,14 @@ export async function handleStorePublishPlan(
           .join('; ')}.`,
     };
   }
-  return run(() =>
-    StoreIssuesModuleInstance.publishPlan({
+  return run(async () =>
+    publicExecutionPlanResult(await StoreIssuesModuleInstance.publishPlan({
       ...writeScope(space),
-      issueId,
+      issueId: selected.selector,
       nodes: rawNodes as unknown as readonly ExecutionPlanNodeInput[],
       ...(expectedRevisionId === undefined ? {} : { expectedRevisionId }),
       pipelineKnown: (name: string) =>
         listPipelines(space.root).includes(name.replace(/\.ya?ml$/, '')),
-    })
+    }))
   );
 }

@@ -631,6 +631,8 @@
   "unlinked.dialog.plan_error": "Issue は作成されましたが、最初のプランを公開できませんでした。",
   "unlinked.dialog.partial": "Issue {issue} は作成されましたが、変更は未リンクのままです: {error}",
   "unlinked.dialog.recover_attach": "この Issue へのリンクで復旧",
+  "unlinked.dialog.indeterminate": "Issue {issue} の公開結果は不確定です。このダイアログでは別の Issue を作成しないでください。関連付ける前に正規 UID {uid} を確認してください: {error}",
+  "unlinked.dialog.recover_indeterminate": "正規 UID で確認して復旧",
   "unlinked.dialog.no_plan": "プランなし",
   "unlinked.dialog.confirm_scope": "Issue {issue}、基準 {revision}、ノード {node}、既存ノード {preserved} 件の保持を確認してください。",
   "unlinked.dialog.submitting": "送信中…",

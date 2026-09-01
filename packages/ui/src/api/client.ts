@@ -93,6 +93,7 @@ export class ApiError extends Error {
    */
   state?: unknown;
   details?: ApiErrorBody['error']['details'];
+  recovery?: ApiErrorBody['error']['recovery'];
 
   constructor(status: number, body: ApiErrorBody & { state?: unknown }) {
     super(body.error.message);
@@ -102,6 +103,7 @@ export class ApiError extends Error {
     this.fix = body.error.fix;
     this.state = body.state;
     this.details = body.error.details;
+    this.recovery = body.error.recovery;
   }
 }
 
@@ -712,8 +714,8 @@ export function getStoreIssues(space?: string, state?: StoreIssueState): Promise
  * its owning project; a reference the Store cannot read is reported
  * unreadable with the reason, never omitted).
  */
-export function getStoreIssue(issueId: string, space?: string): Promise<StoreIssueDetailResponse> {
-  const params = new URLSearchParams({ issueId });
+export function getStoreIssue(issueSelector: string, space?: string): Promise<StoreIssueDetailResponse> {
+  const params = new URLSearchParams({ issueId: issueSelector });
   if (space) params.set('space', space);
   return request<StoreIssueDetailResponse>(`/api/v1/stores/issue?${params.toString()}`);
 }
@@ -742,10 +744,10 @@ export function getStoreIssueProjections(
 
 /** One Issue's whole read: status, delivery evidence, and review from one derivation. */
 export function getStoreIssueProjection(
-  issueId: string,
+  issueSelector: string,
   space?: string
 ): Promise<StoreIssueProjectionResponse> {
-  const params = new URLSearchParams({ issueId });
+  const params = new URLSearchParams({ issueId: issueSelector });
   if (space) params.set('space', space);
   return request<StoreIssueProjectionResponse>(`/api/v1/stores/issue-projection?${params.toString()}`);
 }
@@ -757,11 +759,11 @@ export function getStoreIssueProjection(
  */
 export function getStoreIssueAttention(
   space?: string,
-  issueId?: string
+  issueSelector?: string
 ): Promise<StoreIssueAttentionResponse> {
   const params = new URLSearchParams();
   if (space) params.set('space', space);
-  if (issueId) params.set('issueId', issueId);
+  if (issueSelector) params.set('issueId', issueSelector);
   const query = params.toString();
   return request<StoreIssueAttentionResponse>(
     query ? `/api/v1/stores/issue-attention?${query}` : '/api/v1/stores/issue-attention'
@@ -789,11 +791,11 @@ export function getStoreIssueReferences(
 
 /** One Issue's resolved Execution Plan; omitted `revisionId` selects the latest published revision. */
 export function getStoreExecutionPlan(
-  issueId: string,
+  issueSelector: string,
   space?: string,
   revisionId?: string
 ): Promise<StoreExecutionPlanResponse> {
-  const params = new URLSearchParams({ issueId });
+  const params = new URLSearchParams({ issueId: issueSelector });
   if (space) params.set('space', space);
   if (revisionId) params.set('revisionId', revisionId);
   return request<StoreExecutionPlanResponse>(`/api/v1/stores/execution-plan?${params.toString()}`);

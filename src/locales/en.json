@@ -1991,7 +1991,12 @@
               "description": "Author and read Store-level Issues, cross-project intent that outlives any one change",
               "commands": {
                 "new": {
-                  "description": "Create a new Issue; its title is never inferred and must be given explicitly",
+                  "description": "Create a new Issue from its title; the system assigns its UID and human key",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Deprecated compatibility alias to retain on the new Issue; never chooses its UID, key, or directory"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "Store that gains the Issue"
@@ -2023,6 +2028,11 @@
                 },
                 "show": {
                   "description": "Show one Issue and its latest Execution Plan revision, if any",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID, generated key, unique slug, or compatible legacy identifier"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "Store holding the Issue"
@@ -2034,6 +2044,11 @@
                 },
                 "state": {
                   "description": "Transition an Issue's state; a terminal state cannot be re-transitioned",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID, generated key, unique slug, or compatible legacy identifier"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "Store holding the Issue"
@@ -2051,6 +2066,11 @@
                 },
                 "plan": {
                   "description": "Publish a new immutable Execution Plan revision for an Issue from a YAML node list",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID, generated key, unique slug, or compatible legacy identifier"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "Store holding the Issue"
@@ -2071,6 +2091,11 @@
                 },
                 "acceptance": {
                   "description": "Publish a new immutable acceptance-conditions revision for an Issue from a YAML condition list",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID, generated key, unique slug, or compatible legacy identifier"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "Store holding the Issue"
@@ -2085,6 +2110,11 @@
                 },
                 "accept": {
                   "description": "Accept an Issue explicitly: evaluate the acceptance gate and, only when it holds, record the acceptance and close the Issue",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID, generated key, unique slug, or compatible legacy identifier"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "Store holding the Issue"
@@ -2099,6 +2129,11 @@
                 },
                 "start": {
                   "description": "Resolve the next plan node's bound execution context and emit the launch contract; starting resolves and verifies, it never spawns",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID, generated key, unique slug, or compatible legacy identifier"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "Store holding the Issue"
@@ -2116,6 +2151,11 @@
                 },
                 "confirm": {
                   "description": "Compose the confirm report for one revision (default the latest readable): the verified launch-contract set and the pending-Change report. Confirm composes and writes nothing; starting a node remains a per-node act",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID, generated key, unique slug, or compatible legacy identifier"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "Store holding the Issue"
@@ -2130,6 +2170,11 @@
                 },
                 "ready": {
                   "description": "Report the deterministic ready set for the Issue's latest published revision: every runnable Change node plus every non-member with its exit reason, the run-state visibility label, and the status problems. Read-only and latest-revision only; the scheduler schedules the latest",
+                  "positionals": {
+                    "issue-selector": {
+                      "description": "Issue UID, generated key, unique slug, or compatible legacy identifier"
+                    }
+                  },
                   "options": {
                     "store": {
                       "description": "Store holding the Issue"

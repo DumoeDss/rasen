@@ -41,7 +41,7 @@ import {
 import type { IssueDetail, ResolvedPlanNode } from '../store/query/index.js';
 import type {
   ExecutionPlanNode,
-  ExecutionPlanRevisionV1,
+  StoredExecutionPlanRevision,
 } from '../store/issues/types.js';
 import { resolveStorePlanningLayoutV2Path } from '../store/planning-layout-v2.js';
 import type { WorkspaceIndexEntry } from '../store/workspace/registry.js';
@@ -734,8 +734,8 @@ function deriveProjectLanes(
  * wholesale rewrite.
  */
 export function deriveRevisionDelta(
-  revision: ExecutionPlanRevisionV1,
-  predecessor: ExecutionPlanRevisionV1
+  revision: StoredExecutionPlanRevision,
+  predecessor: StoredExecutionPlanRevision
 ): IssueRevisionDelta {
   const current = new Map(revision.nodes.map(node => [node.nodeId, node] as const));
   const before = new Map(predecessor.nodes.map(node => [node.nodeId, node] as const));

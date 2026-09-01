@@ -1,5 +1,6 @@
 import type { ChangeMetadata } from '../change-metadata/index.js';
 import type {
+  IssueStorageKey,
   PlanningScopeId,
   VerifiedChangeInstanceId,
 } from '../store/planning-foundation.js';
@@ -89,12 +90,12 @@ export type OpenPlanningScope =
  * target line.
  */
 export type StoreIssueAddress =
-  | { readonly kind: 'issue'; readonly issueId: string }
-  | { readonly kind: 'issue-record'; readonly issueId: string }
-  | { readonly kind: 'execution-plans'; readonly issueId: string }
+  | { readonly kind: 'issue'; readonly issueStorageKey: IssueStorageKey }
+  | { readonly kind: 'issue-record'; readonly issueStorageKey: IssueStorageKey }
+  | { readonly kind: 'execution-plans'; readonly issueStorageKey: IssueStorageKey }
   | {
       readonly kind: 'execution-plan';
-      readonly issueId: string;
+      readonly issueStorageKey: IssueStorageKey;
       readonly revisionId: string;
     };
 
