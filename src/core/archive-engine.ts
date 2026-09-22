@@ -106,6 +106,35 @@ export function hasReservedArchiveShipLogSection(content: string): boolean {
   return /^## Archive[ \t]*\r?$/m.test(content);
 }
 
+export interface RecordedShipCommit {
+  /** Whether the log carries a `**Commit:**` field at all. */
+  readonly field: 'absent' | 'present';
+  /** The recorded hash, or null when the field is absent or unreadable. */
+  readonly commit: string | null;
+}
+
+/**
+ * Read the ship commit a ship log records.
+ *
+ * The hash is read independently of its Markdown presentation: a bare hash and
+ * a hash enclosed in a matched pair of backticks yield the same commit. An
+ * unmatched backtick, a trailing qualifier, an empty value, and any other
+ * non-hexadecimal text leave `commit` null while still reporting the field as
+ * present, so a caller can distinguish a change that never recorded a ship
+ * commit from a log whose recorded fact cannot be read. Archive planning and
+ * archive finalization share this reader so a saved plan and the transaction
+ * applying it can never derive different commits from the same log.
+ */
+export function readRecordedShipCommit(content: string): RecordedShipCommit {
+  const value = content.match(/^\*\*Commit:\*\*[ \t]*(.*?)[ \t]*\r?$/im)?.[1];
+  if (value === undefined) return { field: 'absent', commit: null };
+  const unwrapped = /^`(.*)`$/.exec(value)?.[1] ?? value;
+  return {
+    field: 'present',
+    commit: /^[0-9a-f]{7,64}$/i.test(unwrapped) ? unwrapped : null,
+  };
+}
+
 export type ArchiveBlockerOperation =
   | 'source-lstat'
   | 'source-inventory'
@@ -9021,11 +9050,6 @@ function handoffIntermediateMatchesDurableIntent(
   return sawIntermediate;
 }
 
-function extractRecordedShipCommit(content: string): string | null {
-  const match = content.match(/^\*\*Commit:\*\*\s*([0-9a-f]{7,64})\s*$/im);
-  return match?.[1] ?? null;
-}
-
 async function finalizeStagedShipLog(
   plan: ArchivePlan,
   adapters: ArchiveEngineAdapters
@@ -9120,7 +9144,7 @@ async function finalizeStagedShipLog(
     return;
   }
   const recordedCommit =
-    plan.shipLog.recordedCommit ?? extractRecordedShipCommit(content);
+    plan.shipLog.recordedCommit ?? readRecordedShipCommit(content).commit;
   const suffix = [
     '',
     '## Archive',

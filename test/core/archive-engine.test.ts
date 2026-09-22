@@ -940,6 +940,22 @@ describe('archive plan/apply engine', () => {
     expect(finalized.toString('utf8').slice(original.length)).toContain('## Archive');
   });
 
+  it('records a ship commit written as a Markdown code span', async () => {
+    const sha = '8a11f7446d8847f6780687fc3c2d85d110eef2c9';
+    await fs.writeFile(
+      path.join(active, 'evidence', 'ship-log.md'),
+      `# Ship Log: sample\n**Mode:** local\n**Commit:** \`${sha}\`\n`
+    );
+    const archivePlan = await plan();
+
+    expect((await applyArchive(archivePlan)).status).toBe('complete');
+    const finalized = await fs.readFile(
+      path.join(archivePlan.paths.final, 'evidence', 'ship-log.md'),
+      'utf8'
+    );
+    expect(finalized).toContain(`**Ship commit:** ${sha}`);
+  });
+
   it('refuses a source that drifts after planning without creating a stage', async () => {
     const archivePlan = await plan();
     await fs.writeFile(path.join(active, 'after-plan.txt'), 'drift');
