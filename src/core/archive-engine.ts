@@ -106,33 +106,34 @@ export function hasReservedArchiveShipLogSection(content: string): boolean {
   return /^## Archive[ \t]*\r?$/m.test(content);
 }
 
-export interface RecordedShipCommit {
-  /** Whether the log carries a `**Commit:**` field at all. */
-  readonly field: 'absent' | 'present';
-  /** The recorded hash, or null when the field is absent or unreadable. */
-  readonly commit: string | null;
-}
-
 /**
  * Read the ship commit a ship log records.
  *
  * The hash is read independently of its Markdown presentation: a bare hash and
- * a hash enclosed in a matched pair of backticks yield the same commit. An
- * unmatched backtick, a trailing qualifier, an empty value, and any other
- * non-hexadecimal text leave `commit` null while still reporting the field as
- * present, so a caller can distinguish a change that never recorded a ship
- * commit from a log whose recorded fact cannot be read. Archive planning and
- * archive finalization share this reader so a saved plan and the transaction
- * applying it can never derive different commits from the same log.
+ * a hash enclosed in a matched pair of backticks yield the same commit. Every
+ * `**Commit:**` line is scanned in order and the first readable value wins.
+ * That preserves the effective semantic of the whole-line expression this
+ * reader replaced, whose hash requirement made `String.prototype.match` skip
+ * an unreadable labelled line and return the first readable one; without it a
+ * log whose first field holds a placeholder and whose later field holds the
+ * real hash would record no ship commit at all. A value is the text on the
+ * label's own line: the replaced expression's `\s*` let a hash on the line
+ * after the label resolve, and that cross-line acceptance is dropped on
+ * purpose, matching how {@link hasReservedArchiveShipLogSection} reads its own
+ * one-line marker. An unmatched backtick, a trailing qualifier, an empty value,
+ * and any other non-hexadecimal text never have anything substituted for them:
+ * when no line reads, the result is null. Archive planning and archive
+ * finalization share this reader so a saved plan and the transaction applying
+ * it can never derive different commits from the same log.
  */
-export function readRecordedShipCommit(content: string): RecordedShipCommit {
-  const value = content.match(/^\*\*Commit:\*\*[ \t]*(.*?)[ \t]*\r?$/im)?.[1];
-  if (value === undefined) return { field: 'absent', commit: null };
-  const unwrapped = /^`(.*)`$/.exec(value)?.[1] ?? value;
-  return {
-    field: 'present',
-    commit: /^[0-9a-f]{7,64}$/i.test(unwrapped) ? unwrapped : null,
-  };
+export function readRecordedShipCommit(content: string): string | null {
+  for (const [, value] of content.matchAll(
+    /^\*\*Commit:\*\*[ \t]*(.*?)[ \t]*\r?$/gim
+  )) {
+    const unwrapped = /^`(.*)`$/.exec(value)?.[1] ?? value;
+    if (/^[0-9a-f]{7,64}$/i.test(unwrapped)) return unwrapped;
+  }
+  return null;
 }
 
 export type ArchiveBlockerOperation =
@@ -9144,7 +9145,7 @@ async function finalizeStagedShipLog(
     return;
   }
   const recordedCommit =
-    plan.shipLog.recordedCommit ?? readRecordedShipCommit(content).commit;
+    plan.shipLog.recordedCommit ?? readRecordedShipCommit(content);
   const suffix = [
     '',
     '## Archive',

@@ -618,7 +618,7 @@ async function inspectShipLog(
         shipLog: {
           source: candidate,
           sha256: createHash('sha256').update(content).digest('hex'),
-          recordedCommit: readRecordedShipCommit(text).commit,
+          recordedCommit: readRecordedShipCommit(text),
           reservedSection: hasReservedArchiveShipLogSection(text),
         },
         deliveryMode: modeMatch

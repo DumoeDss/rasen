@@ -2256,56 +2256,72 @@ The system SHALL do the thing differently.
 
     interface RecordedShipCommitCase {
       scenario: string;
-      commitLine: string;
+      commitLines: string;
       recordedCommit: string | null;
     }
 
     const shipCommitSha = '8a11f7446d8847f6780687fc3c2d85d110eef2c9';
+    const laterShipCommitSha = '3c9d2b7e5f1a4860c2d4e6f8a0b1c3d5e7f90123';
 
     const recordedShipCommitCases: RecordedShipCommitCase[] = [
       {
         scenario: 'a bare hash',
-        commitLine: `**Commit:** ${shipCommitSha}`,
+        commitLines: `**Commit:** ${shipCommitSha}`,
         recordedCommit: shipCommitSha,
       },
       {
         scenario: 'a matched code span',
-        commitLine: `**Commit:** \`${shipCommitSha}\``,
+        commitLines: `**Commit:** \`${shipCommitSha}\``,
         recordedCommit: shipCommitSha,
       },
       {
         scenario: 'an abbreviated hash',
-        commitLine: '**Commit:** 8a11f74',
+        commitLines: '**Commit:** 8a11f74',
         recordedCommit: '8a11f74',
       },
       {
         scenario: 'an unmatched backtick',
-        commitLine: `**Commit:** \`${shipCommitSha}`,
+        commitLines: `**Commit:** \`${shipCommitSha}`,
         recordedCommit: null,
       },
       {
         scenario: 'a trailing qualifier',
-        commitLine: `**Commit:** ${shipCommitSha} (dirty)`,
+        commitLines: `**Commit:** ${shipCommitSha} (dirty)`,
         recordedCommit: null,
       },
       {
         scenario: 'a non-hexadecimal value',
-        commitLine: '**Commit:** not-a-hash',
+        commitLines: '**Commit:** not-a-hash',
         recordedCommit: null,
       },
-      { scenario: 'an empty field', commitLine: '**Commit:**', recordedCommit: null },
-      { scenario: 'no commit field at all', commitLine: '', recordedCommit: null },
+      { scenario: 'an empty field', commitLines: '**Commit:**', recordedCommit: null },
+      { scenario: 'no commit field at all', commitLines: '', recordedCommit: null },
+      {
+        scenario: 'an unreadable field followed by a readable one',
+        commitLines: `**Commit:** pending\n**Commit:** ${shipCommitSha}`,
+        recordedCommit: shipCommitSha,
+      },
+      {
+        scenario: 'two readable fields',
+        commitLines: `**Commit:** ${shipCommitSha}\n**Commit:** ${laterShipCommitSha}`,
+        recordedCommit: shipCommitSha,
+      },
+      {
+        scenario: 'a hash on the line after the label',
+        commitLines: `**Commit:**\n${shipCommitSha}`,
+        recordedCommit: null,
+      },
     ];
 
     it.each(recordedShipCommitCases)(
       'records one ship commit through planning and finalization for $scenario',
-      async ({ commitLine, recordedCommit }) => {
+      async ({ commitLines, recordedCommit }) => {
         setUpGitRepo();
         const changeName = 'ship-commit-presentation';
         const changeDir = await seedChange(changeName);
         await fs.writeFile(
           path.join(changeDir, 'ship-log.md'),
-          `# Ship Log\n\n**Mode:** local\n${commitLine}\n`
+          `# Ship Log\n\n**Mode:** local\n${commitLines}\n`
         );
         commitAll('initial');
 
