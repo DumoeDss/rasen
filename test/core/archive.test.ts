@@ -2254,6 +2254,105 @@ The system SHALL do the thing differently.
       }
     );
 
+    interface RecordedShipCommitCase {
+      scenario: string;
+      commitLines: string;
+      recordedCommit: string | null;
+    }
+
+    const shipCommitSha = '8a11f7446d8847f6780687fc3c2d85d110eef2c9';
+    const laterShipCommitSha = '3c9d2b7e5f1a4860c2d4e6f8a0b1c3d5e7f90123';
+
+    const recordedShipCommitCases: RecordedShipCommitCase[] = [
+      {
+        scenario: 'a bare hash',
+        commitLines: `**Commit:** ${shipCommitSha}`,
+        recordedCommit: shipCommitSha,
+      },
+      {
+        scenario: 'a matched code span',
+        commitLines: `**Commit:** \`${shipCommitSha}\``,
+        recordedCommit: shipCommitSha,
+      },
+      {
+        scenario: 'an abbreviated hash',
+        commitLines: '**Commit:** 8a11f74',
+        recordedCommit: '8a11f74',
+      },
+      {
+        scenario: 'an unmatched backtick',
+        commitLines: `**Commit:** \`${shipCommitSha}`,
+        recordedCommit: null,
+      },
+      {
+        scenario: 'a trailing qualifier',
+        commitLines: `**Commit:** ${shipCommitSha} (dirty)`,
+        recordedCommit: null,
+      },
+      {
+        scenario: 'a non-hexadecimal value',
+        commitLines: '**Commit:** not-a-hash',
+        recordedCommit: null,
+      },
+      { scenario: 'an empty field', commitLines: '**Commit:**', recordedCommit: null },
+      { scenario: 'no commit field at all', commitLines: '', recordedCommit: null },
+      {
+        scenario: 'an unreadable field followed by a readable one',
+        commitLines: `**Commit:** pending\n**Commit:** ${shipCommitSha}`,
+        recordedCommit: shipCommitSha,
+      },
+      {
+        scenario: 'two readable fields',
+        commitLines: `**Commit:** ${shipCommitSha}\n**Commit:** ${laterShipCommitSha}`,
+        recordedCommit: shipCommitSha,
+      },
+      {
+        scenario: 'a hash on the line after the label',
+        commitLines: `**Commit:**\n${shipCommitSha}`,
+        recordedCommit: null,
+      },
+    ];
+
+    it.each(recordedShipCommitCases)(
+      'records one ship commit through planning and finalization for $scenario',
+      async ({ commitLines, recordedCommit }) => {
+        setUpGitRepo();
+        const changeName = 'ship-commit-presentation';
+        const changeDir = await seedChange(changeName);
+        await fs.writeFile(
+          path.join(changeDir, 'ship-log.md'),
+          `# Ship Log\n\n**Mode:** local\n${commitLines}\n`
+        );
+        commitAll('initial');
+
+        await archiveCommand.execute(changeName, {
+          dryRun: true, savePlan: true, yes: true, json: true,
+        });
+        const preview = parseLoggedArchive();
+        expect(preview.archive.plan.shipLog.recordedCommit).toBe(recordedCommit);
+
+        vi.mocked(console.log).mockClear();
+        await archiveCommand.execute(undefined, {
+          applyPlan: preview.archive.planToken, yes: true, json: true,
+        });
+        const applied = parseLoggedArchive();
+        expect(
+          applied.archive.result.status,
+          JSON.stringify(applied.archive.result)
+        ).toBe('complete');
+        const finalized = await fs.readFile(
+          path.join(applied.archive.result.path, 'evidence', 'ship-log.md'),
+          'utf8'
+        );
+        expect(finalized).toContain('## Archive');
+        if (recordedCommit === null) {
+          expect(finalized).not.toContain('**Ship commit:**');
+        } else {
+          expect(finalized).toContain(`**Ship commit:** ${recordedCommit}`);
+        }
+      }
+    );
+
     interface PlanningRecoveryDriftCase {
       scenario: string;
       plannedContent: string;

@@ -12,6 +12,7 @@ import {
   abortArchivePlan,
   inspectArchiveApplyPlan,
   hasReservedArchiveShipLogSection,
+  readRecordedShipCommit,
   createArchiveIntentTemplate,
   createArchivePlan,
   loadStoredArchivePlan,
@@ -617,9 +618,7 @@ async function inspectShipLog(
         shipLog: {
           source: candidate,
           sha256: createHash('sha256').update(content).digest('hex'),
-          recordedCommit:
-            text.match(/^\*\*Commit:\*\*\s*([0-9a-f]{7,64})\s*$/im)?.[1] ??
-            null,
+          recordedCommit: readRecordedShipCommit(text),
           reservedSection: hasReservedArchiveShipLogSection(text),
         },
         deliveryMode: modeMatch

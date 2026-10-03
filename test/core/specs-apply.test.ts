@@ -736,3 +736,142 @@ describe('spec reconciliation analysis', () => {
   });
 
 });
+
+describe('generated canonical specs are written commit-clean', () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'rasen-spec-terminal-newline-')
+    );
+  });
+
+  afterEach(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  async function rebuild(
+    capability: string,
+    delta: string,
+    existing?: string
+  ): Promise<string> {
+    const changeDir = path.join(root, 'changes', 'terminal-newline');
+    const mainSpecsDir = path.join(root, 'specs');
+    const source = path.join(changeDir, 'specs', capability, 'spec.md');
+    await fs.mkdir(path.dirname(source), { recursive: true });
+    await fs.writeFile(source, delta);
+    if (existing !== undefined) {
+      const target = path.join(mainSpecsDir, capability, 'spec.md');
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.writeFile(target, existing);
+    }
+
+    const analysis = await analyzeSpecUpdates(
+      await findSpecUpdates(changeDir, mainSpecsDir),
+      'terminal-newline',
+      { silent: true }
+    );
+
+    expect(analysis.issues).toEqual([]);
+    return analysis.prepared[0].rebuilt;
+  }
+
+  it('ends a newly created capability with exactly one newline', async () => {
+    const rebuilt = await rebuild(
+      'created',
+      addedDelta(requirement('Created rule', 'Created'))
+    );
+
+    expect(rebuilt).toContain('### Requirement: Created rule');
+    expect(/\n*$/.exec(rebuilt)?.[0]).toBe('\n');
+  });
+
+  it('ends an updated capability with exactly one newline', async () => {
+    const rebuilt = await rebuild(
+      'updated',
+      addedDelta(requirement('Added rule', 'Added')),
+      mainSpec(requirement('Existing rule', 'Existing'))
+    );
+
+    expect(rebuilt).toContain('### Requirement: Existing rule');
+    expect(rebuilt).toContain('### Requirement: Added rule');
+    expect(/\n*$/.exec(rebuilt)?.[0]).toBe('\n');
+  });
+
+  it.each([
+    { scenario: 'no terminating newline', suffix: '' },
+    { scenario: 'one terminating newline', suffix: '\n' },
+    { scenario: 'several terminating newlines', suffix: '\n\n\n' },
+  ])(
+    'normalizes an existing spec that ends with $scenario',
+    async ({ scenario, suffix }) => {
+      const base = mainSpec(requirement('Existing rule', 'Existing')).replace(
+        /\n+$/,
+        ''
+      );
+      const rebuilt = await rebuild(
+        'terminators',
+        addedDelta(requirement('Added rule', scenario)),
+        `${base}${suffix}`
+      );
+
+      expect(rebuilt).toContain('### Requirement: Existing rule');
+      expect(/\n*$/.exec(rebuilt)?.[0]).toBe('\n');
+    }
+  );
+
+  it('normalizes an existing spec written with CRLF line endings', async () => {
+    const rebuilt = await rebuild(
+      'crlf',
+      addedDelta(requirement('Added rule', 'Added')),
+      mainSpec(requirement('Existing rule', 'Existing')).replace(/\n/g, '\r\n')
+    );
+
+    expect(rebuilt).toContain('### Requirement: Existing rule');
+    expect(rebuilt.endsWith('\r\n')).toBe(false);
+    expect(/\n*$/.exec(rebuilt)?.[0]).toBe('\n');
+  });
+
+  it('preserves a section that follows the requirements', async () => {
+    const rebuilt = await rebuild(
+      'trailing-section',
+      addedDelta(requirement('Added rule', 'Added')),
+      [
+        '# Capability',
+        '',
+        '## Purpose',
+        '',
+        'Exercise reconciliation.',
+        '',
+        '## Requirements',
+        '',
+        requirement('Existing rule', 'Existing'),
+        '',
+        '## Notes',
+        '',
+        'Kept verbatim.',
+        '',
+      ].join('\n')
+    );
+
+    expect(rebuilt).toContain('## Notes');
+    expect(rebuilt).toContain('Kept verbatim.');
+    expect(/\n*$/.exec(rebuilt)?.[0]).toBe('\n');
+  });
+
+  it('rewrites an already-normalized spec to identical bytes', async () => {
+    const normalized = await rebuild(
+      'idempotent',
+      addedDelta(requirement('Added rule', 'Added')),
+      mainSpec(requirement('Existing rule', 'Existing'))
+    );
+
+    const rewritten = await rebuild(
+      'idempotent-rewrite',
+      modifiedDelta(requirement('Added rule', 'Added')),
+      normalized
+    );
+
+    expect(rewritten).toBe(normalized);
+  });
+});

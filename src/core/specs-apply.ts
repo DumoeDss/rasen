@@ -731,10 +731,16 @@ async function buildUpdatedSpecCore(
     .join('\n\n')
     .trimEnd();
 
-  const rebuilt = [parts.before.trimEnd(), parts.headerLine, reqBody, parts.after]
+  const composed = [parts.before.trimEnd(), parts.headerLine, reqBody, parts.after]
     .filter((s, idx) => !(idx === 0 && s === ''))
     .join('\n')
     .replace(/\n{3,}/g, '\n\n');
+  // Canonical specs are committed files: exactly one terminal newline and no
+  // trailing blank line. `extractRequirementsSection` promotes an empty tail to
+  // `after: '\n'` whenever `## Requirements` is the final section, and the join
+  // above contributes another, so the composed text ends with two newlines
+  // regardless of how the delta or the existing canonical file terminated.
+  const rebuilt = `${composed.replace(/\s+$/, '')}\n`;
 
   if (options.validateTarget && !emptied) {
     const report = await new Validator().validateSpecContent(specName, rebuilt);
