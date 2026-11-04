@@ -5,6 +5,7 @@
  * templates file into workflow-focused modules.
  */
 import type { SkillTemplate } from '../types.js';
+import { EVIDENCE_RETENTION_GUIDANCE } from '../evidence-retention.js';
 import { GENERATED_ARCHIVE_COMMAND_EXAMPLES } from '../../archive-consumer-invocation.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
@@ -15,6 +16,8 @@ export function getArchiveChangeSkillTemplate(): SkillTemplate {
     instructions: `Archive a completed change in the experimental workflow.
 
 ${STORE_SELECTION_GUIDANCE}
+
+${EVIDENCE_RETENTION_GUIDANCE}
 
 **Store finalization hard gate:** inspect the first resolved CLI payload before any planning, Git, spec, or filesystem mutation. If root.scope.kind is 'store-project', the change is FINALIZED rather than merely archived: you MUST obtain exactly one explicitly declared outcome from the user — 'landed', 'superseded', 'cancelled', or 'abandoned' — and pass it as \`--outcome\`. NEVER choose one yourself, never infer one from a ship log, a merged pull request, or completed tasks, and never default to 'landed'. Every non-landed outcome additionally requires a non-empty \`--reason\`, and 'superseded' additionally requires \`--by <changeInstanceId>\`; pass them as command options rather than writing them into an artifact. A 'landed' outcome must PROVE its commit is reachable from the target line's code ref — if the CLI refuses, surface the diagnostic and stop; do not retry with another outcome and do not add \`--skip-specs\`. If root.scope.kind is 'legacy-store', REFUSE with 'legacy_flat_store_requires_migration' — the legacy flat Store planning tree is read-only until 'rasen store migrate-layout <store-id>' has migrated it. Any other scope archives as before, with no outcome required or recorded.
 

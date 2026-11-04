@@ -65,11 +65,6 @@ const EXCEPTIONS: readonly Exception[] = Object.freeze([
     defect: 'replacement-char',
     reason: 'predates this branch; byte-identical to the HEAD blob.',
   },
-  {
-    file: 'test/core/templates/skill-templates-parity.test.ts',
-    defect: 'bom',
-    reason: 'predates this branch; byte-identical to the HEAD blob.',
-  },
 ]);
 
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'coverage']);

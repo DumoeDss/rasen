@@ -28,16 +28,16 @@ import { toKebabCase } from './id.js';
 /**
  * The execution root's Rasen state directory. Distinct from the planning
  * root's `rasen/` (`WORKSPACE_DIR_NAME`): this one is hidden, holds only
- * regenerable material (ephemera, probe fallbacks), and whether it enters Git
- * is governed solely by the user's `.gitignore` — Rasen writes no ignore rules.
+ * execution-local material (ephemera, probe fallbacks), and whether it enters
+ * Git is governed solely by the user's `.gitignore` — Rasen writes no ignore rules.
  */
 export const EXECUTION_STATE_DIR_NAME = '.rasen';
 
-/** `<changeRoot>/evidence` — reports, verification output, ship log. */
+/** `<changeRoot>/evidence` — reports, verification output, ship log, required observations. */
 export const EVIDENCE_DIR_NAME = 'evidence';
 /** `<changeRoot>/handoff` — handoff documents and relay prompts. */
 export const HANDOFF_DIR_NAME = 'handoff';
-/** `<executionRoot>/.rasen/changes/<change>/ephemera` — run-state, raw logs. */
+/** `<executionRoot>/.rasen/changes/<change>/ephemera` — run-state, scratch, regenerable detail. */
 export const EPHEMERA_DIR_NAME = 'ephemera';
 /** `<executionRoot>/.rasen/probes/<change>/<probe>` — probe fallback only. */
 export const PROBES_DIR_NAME = 'probes';
@@ -48,9 +48,9 @@ export const DESIGN_DOCS_DIR_NAME = 'design-docs';
  * Evidence directory for a change: everything delivered WITH the Archive for
  * later re-running or review (`review-report.md`, `cso-report.md`,
  * `qa-report.md`, `benchmark-report.md`, `design-review-report.md`,
- * `review-cycle-report.md`, `verification-report.md`, `ship-log.md`, and
- * verification drivers). Inside the change directory, so the existing archive
- * flow carries it for free.
+ * `review-cycle-report.md`, `verification-report.md`, `ship-log.md`,
+ * verification drivers, and raw observations required to audit a claim).
+ * Inside the change directory, so the existing archive flow carries it for free.
  */
 export function evidenceDir(changeRoot: string): string {
   return path.join(changeRoot, EVIDENCE_DIR_NAME);
@@ -67,8 +67,9 @@ export function handoffDir(changeRoot: string): string {
 
 /**
  * Ephemera directory for a change: run-state (`auto-run.json`,
- * `portfolio-run.json`, goal-loop run artifacts), raw logs and captures,
- * caches, regenerable intermediates. Lands in the EXECUTION root, which is
+ * `portfolio-run.json`, goal-loop run artifacts), disposable collection
+ * scratch, caches, regenerable intermediates. Raw output a claim depends on is
+ * evidence, not ephemera. Lands in the EXECUTION root, which is
  * per-worktree by construction — this is what structurally eliminates the
  * cross-worktree run-state collision that a shared machine home produced.
  */

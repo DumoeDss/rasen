@@ -5,6 +5,7 @@
  * templates file into workflow-focused modules.
  */
 import type { SkillTemplate } from '../types.js';
+import { EVIDENCE_RETENTION_GUIDANCE } from '../evidence-retention.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 export function getExploreSkillTemplate(): SkillTemplate {
@@ -18,6 +19,8 @@ export function getExploreSkillTemplate(): SkillTemplate {
 **This is a stance, not a workflow.** There are no fixed steps, no required sequence, no mandatory outputs. You're a thinking partner helping the user explore.
 
 ${STORE_SELECTION_GUIDANCE}
+
+${EVIDENCE_RETENTION_GUIDANCE}
 
 ---
 
@@ -125,13 +128,14 @@ If the user mentions a change or you detect one is relevant:
     | Scope changed              | \`proposal.md\`                |
     | New work identified        | \`tasks.md\`                   |
     | Assumption invalidated     | Relevant artifact              |
-    | Bulky raw research (scratch logs, fetched corpora) | the ephemera directory's \`research/\` area (\`<ephemeraDir>/research/\` from status JSON) — never a committed artifact |
+    | Bulky disposable research (scratch logs, regenerable fetched corpora) | the ephemera directory's \`research/\` area (\`<ephemeraDir>/research/\` from status JSON); distill conclusions into committed artifacts |
+    | Required original observations or mutable fetched inputs | retained evidence or their existing approved retention owner; reference identity and availability rather than copying payloads into conclusions |
 
    Example offers:
    - "That's a design decision. Capture it in design.md?"
    - "This is a new requirement. Add it to specs?"
    - "This changes scope. Update the proposal?"
-   - "That's a lot of raw material — want me to dump it in the ephemera directory's research/ folder and just keep the conclusion here?"
+   - "This is disposable research scratch — keep it in the ephemera directory's research/ folder and retain the conclusion with references to any required originals?"
 
 4. **The user decides** - Offer and move on. Don't pressure. Don't auto-capture.
 

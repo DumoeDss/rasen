@@ -5,6 +5,7 @@
  * templates file into workflow-focused modules.
  */
 import type { SkillTemplate } from '../types.js';
+import { EVIDENCE_RETENTION_GUIDANCE } from '../evidence-retention.js';
 import { GENERATED_ARCHIVE_COMMAND_EXAMPLES } from '../../archive-consumer-invocation.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
@@ -17,6 +18,8 @@ export function getBulkArchiveChangeSkillTemplate(): SkillTemplate {
 This skill allows you to batch-archive changes, handling spec conflicts intelligently by checking the codebase to determine what's actually implemented.
 
 ${STORE_SELECTION_GUIDANCE}
+
+${EVIDENCE_RETENTION_GUIDANCE}
 
 **Store finalization hard gate:** inspect the first resolved CLI payload before selecting or mutating Changes. If root.scope.kind is 'store-project', every change in the batch is FINALIZED and carries its OWN explicitly declared \`--outcome\` ('landed', 'superseded', 'cancelled', or 'abandoned') plus the \`--reason\` or \`--by <changeInstanceId>\` that outcome requires. An outcome is NEVER inferred from a sibling, reused across changes, or defaulted; if any member has none, REFUSE the entire batch naming that change and create or apply no per-change stored plans. If root.scope.kind is 'legacy-store', REFUSE with 'legacy_flat_store_requires_migration' — the legacy flat Store planning tree is read-only until 'rasen store migrate-layout <store-id>' has migrated it. Any other scope archives as before, with no outcome required or recorded.
 

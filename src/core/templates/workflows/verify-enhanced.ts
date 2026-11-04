@@ -6,11 +6,14 @@
  * Auto-scales review depth based on change scope.
  */
 import type { SkillTemplate } from '../types.js';
+import { EVIDENCE_RETENTION_GUIDANCE } from '../evidence-retention.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 const VERIFY_ENHANCED_INSTRUCTIONS = `Enhanced verification — combines Rasen completeness/correctness/consistency checks with expert reviews.
 
 ${STORE_SELECTION_GUIDANCE}
+
+${EVIDENCE_RETENTION_GUIDANCE}
 
 Automatically adjusts review depth based on task size. Reports saved to the change's evidence directory (sticky-legacy fallback: the legacy work directory, then the change directory).
 

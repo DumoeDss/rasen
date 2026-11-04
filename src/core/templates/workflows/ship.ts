@@ -15,12 +15,15 @@
  * `rasen-archive-change`'s engine-owned publication.
  */
 import type { SkillTemplate } from '../types.js';
+import { EVIDENCE_RETENTION_GUIDANCE } from '../evidence-retention.js';
 import { GENERATED_ARCHIVE_COMMAND_EXAMPLES } from '../../archive-consumer-invocation.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 const SHIP_INSTRUCTIONS = `Release workflow — commit, resolve the delivery mode (pr / push / local), test when evidence demands it, deliver, optionally merge and deploy.
 
 ${STORE_SELECTION_GUIDANCE}
+
+${EVIDENCE_RETENTION_GUIDANCE}
 
 **Store finalization hard gate:** inspect the first resolved Change/status payload before tests, commits, delivery, spec sync, or Archive work. If root.scope.kind is 'store-project' and the resolved archive timing is 'in-ship', pass \`--outcome landed\` explicitly to the archive command. Delivery having happened is NOT sufficient on its own: if the delivered commit is not yet reachable from the code ref the change's target line declares for its project, the CLI refuses — report the unfinalized state and why, leave the change active, and NEVER retry by choosing another outcome, by adding \`--skip-specs\`, or by supplying a different commit. A change whose committed metadata declares no implementation finalizes as landed with no commit; do not fabricate one. If root.scope.kind is 'legacy-store', REFUSE with 'legacy_flat_store_requires_migration' — the legacy flat Store planning tree is read-only until 'rasen store migrate-layout <store-id>' has migrated it. Any other scope proceeds as before, with no outcome required or recorded.
 

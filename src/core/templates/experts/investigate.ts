@@ -1,9 +1,12 @@
 import type { SkillTemplate } from '../types.js';
+import { EVIDENCE_RETENTION_GUIDANCE } from '../evidence-retention.js';
 import { STORE_SELECTION_GUIDANCE } from '../workflows/store-selection.js';
 import { PREAMBLE_DIALOGUE, PROBE_PLACEMENT_GUIDANCE } from './_shared.js';
 
 const BODY = `
 ${PREAMBLE_DIALOGUE}
+
+${EVIDENCE_RETENTION_GUIDANCE}
 
 # Systematic Debugging
 
@@ -60,6 +63,8 @@ Run the loop. Watch it go red — the bug appears. Confirm:
 - [ ] It reproduces across multiple runs (or, for non-deterministic bugs, at a high enough rate to debug against).
 
 **Minimise:** once it's red, shrink the repro to the **smallest scenario that still goes red**. Cut inputs, callers, config, data, and steps **one at a time**, re-running the loop after each cut — keep only what's load-bearing for the failure. Done when removing any remaining element makes the loop go green. A minimal repro shrinks the hypothesis space in Phase 4 (fewer moving parts to suspect) and becomes the clean regression test in Phase 6.
+
+**Captured artifacts.** A captured trace, payload, or user-supplied dump that the root-cause claim depends on is an observation, not scratch: keep the original once and reference it from the report (see Source-backed evidence). New captures for an active Change use the CLI-reported \`evidenceDir\`; reference originals already held by an approved retention owner instead of moving or copying them. Without a Change, leave captures at their existing locations and report locator, byte size, SHA-256, and that no Change retains them. Do not copy private payloads or credentials into the report.
 
 Do not proceed until you have reproduced **and** minimised.
 
@@ -150,7 +155,7 @@ Each probe must map to a specific prediction from Phase 4. **Change one variable
 
 **Tag every debug log** with a unique prefix, e.g. \`[DEBUG-a4f2]\`, so cleanup is a single grep — untagged logs survive, tagged logs die.
 
-**Perf branch.** For performance regressions, logs are usually wrong. Instead establish a baseline measurement (timing harness, \`performance.now()\`, profiler, query plan), then bisect. Measure first, fix second.
+**Perf branch.** For performance regressions, logs are usually wrong. Instead establish a baseline measurement (timing harness, \`performance.now()\`, profiler, query plan), then bisect. Measure first, fix second. Keep the baseline samples that the regression claim depends on; a post-fix measurement is a new observation, not a revision of the baseline.
 
 ${PROBE_PLACEMENT_GUIDANCE}
 
@@ -210,7 +215,7 @@ Before declaring done:
 - [ ] Original repro no longer reproduces (Phase 1 loop is green)
 - [ ] Regression test passes (or the absence of a correct seam is documented)
 - [ ] All \`[DEBUG-...]\` instrumentation removed (\`grep\` the prefix)
-- [ ] Throwaway harnesses deleted or moved to a clearly-marked debug location
+- [ ] Throwaway harnesses deleted, unless a reported result depends on them — then keep them per the placement rule above
 - [ ] Actual changed files and diff match the latest declared affected area;
       every expansion has recorded evidence, and no unexplained file remains
 
@@ -221,7 +226,7 @@ DEBUG REPORT
 Symptom:         [what the user observed]
 Root cause:      [what was actually wrong]
 Fix:             [what was changed, with file:line references]
-Evidence:        [test output, reproduction attempt showing fix works]
+Evidence:        [test output, reproduction attempt showing fix works; recipe and observation references when collected data backs the claim]
 Regression test: [file:line of the new test, or documented absence of a correct seam]
 Scope audit:      [declared area, actual changed files, justified expansions, unresolved files]
 Related:         [TODOS.md items, prior bugs in same area, architectural notes]

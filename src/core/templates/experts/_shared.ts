@@ -2,15 +2,15 @@
  * Shared instruction blocks for expert skill templates.
  *
  * These constants are the single source of truth for prose blocks interpolated
- * into the expert template strings in `experts/*.ts` (via `${BLOCK}`). Freshness
- * is pinned by the parity golden-master in
- * `test/core/templates/skill-templates-parity.test.ts`.
+ * into the expert template strings in `experts/*.ts` (via `${BLOCK}`).
  *
  * The browser-driving blocks (`CHROME_USE_SETUP`, `CHROME_USE_SNAPSHOT`,
  * `CHROME_USE_ENDPOINTS`, and the methodology blocks) instruct the reader to drive
  * the vendored chrome-use CDP proxy over its curl endpoints at `localhost:3456`;
  * endpoint names/params mirror `skills/experts/chrome-use/references/cdp-api.md`.
  */
+
+import { EVIDENCE_RETENTION_GUIDANCE } from '../evidence-retention.js';
 
 const PREAMBLE_BASE = `## Preamble (run first)
 
@@ -153,12 +153,14 @@ plan's living status.`;
 /**
  * Full orchestration preamble — for the generic review-family experts
  * (review, cso, qa, qa-only, benchmark, design-review, codex) whose findings
- * feed the canonical severity scale and the dispatched-mode contract.
+ * feed the canonical severity scale and the dispatched-mode contract. Carries
+ * the evidence-retention guidance once, after the dispatch contract it defers to.
  */
 export const PREAMBLE = [
   `${PREAMBLE_BASE}\n${REPO_MODE_CONFIG}`,
   SEVERITY_VOCABULARY,
   DISPATCH_CONTRACT,
+  EVIDENCE_RETENTION_GUIDANCE,
   ASK_USER_QUESTION_FORMAT,
   DIALOGUE_OVERRIDE,
   REPO_OWNERSHIP,
@@ -229,14 +231,17 @@ mkdir -p "$DOCS_DIR"
  * enter code history and be checkout-able by a later reader, so there is no
  * external/machine-root option. The project's own convention wins over the
  * fixed fallback — a repo that already has `experiments/` should not grow a
- * second, Rasen-shaped home for the same kind of code.
+ * second, Rasen-shaped home for the same kind of code. Only the code is placed
+ * here; its outputs follow the evidence/ephemera split.
  */
 export const PROBE_PLACEMENT_GUIDANCE = `**Where probe / prototype / harness code goes.** Probe code is a project deliverable, not scratch state: it lands in the **execution root** (the code checkout you are working in) so it enters code history and a later reader can check it out and re-run it. It NEVER goes under the machine root (\`~/.rasen/\`), and there is no external/internal option to choose.
 
 1. **Follow the project's own convention first.** If the repo already has an \`experiments/\`, \`prototypes/\`, \`tools/\`, or \`fixtures/\` directory — or a module-adjacent location matching how it organizes this kind of code — put the probe there. A project convention always wins; do not invent a parallel home for code the project already has a place for.
 2. **Only when no convention is identifiable**, use the fixed fallback \`<executionRoot>/.rasen/probes/<change>/<probe>/\` — one directory per probe, named for the question it answers. Resolve \`<executionRoot>\` as the code checkout root (\`git rev-parse --show-toplevel\`); \`<change>\` is the active change name, or the topic slug when no change is active.
 
-Whether any of it enters Git is the user's \`.gitignore\` decision — Rasen writes no ignore rules.`;
+Whether any of it enters Git is the user's \`.gitignore\` decision — Rasen writes no ignore rules.
+
+**Code versus its outputs.** A report or recipe cites probe code by repository, path, and full commit only once that code is committed; do not copy committed code into a Change. Uncommitted or ignored probe code that produced cited results is an executed-source deviation: identify its content digest, or state that executed-source identity is incomplete. Placing the code here does not classify its outputs: observations required to audit a claim are evidence, while scratch and regenerable output are ephemera.`;
 
 export const CHROME_USE_SETUP = `## SETUP (run this BEFORE any chrome-use command)
 

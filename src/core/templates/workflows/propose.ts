@@ -5,6 +5,7 @@
  * templates file into workflow-focused modules.
  */
 import type { SkillTemplate } from '../types.js';
+import { EVIDENCE_RETENTION_GUIDANCE } from '../evidence-retention.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 export function getOpsxProposeSkillTemplate(): SkillTemplate {
@@ -23,6 +24,8 @@ When ready to implement, run rasen-apply-change
 ---
 
 ${STORE_SELECTION_GUIDANCE}
+
+${EVIDENCE_RETENTION_GUIDANCE}
 
 **Methodology consult (optional):** For design-dense changes — a new module or a non-trivial interface — consult the \`rasen-codebase-design\` skill (deep-module design, design-it-twice) before writing specs. Capture the resulting interface/design decisions in this change's \`design.md\` Decisions section (or a change-directory sidecar resolved from \`rasen status --json\` \`changeRoot\`). This is a conditional reference, not a required step; don't inline the expert body.
 
@@ -114,7 +117,7 @@ After completing all artifacts, summarize:
 - **IMPORTANT**: \`context\` and \`rules\` are constraints for YOU, not content for the file
   - Do NOT copy \`<context>\`, \`<rules>\`, \`<project_context>\` blocks into the artifact
   - These guide what you write, but should never appear in the output
-- Bulky raw research material (scratch probing logs, fetched corpora, long transcripts) belongs in the ephemera directory's \`research/\` area (\`<ephemeraDir>/research/\` from status JSON) — never in a committed artifact; distill conclusions into \`design.md\` or a slim committed research doc instead
+- Bulky disposable research material (scratch probing logs, regenerable fetched corpora, long working transcripts) belongs in the ephemera directory's \`research/\` area (\`<ephemeraDir>/research/\` from status JSON); distill conclusions into \`design.md\` or a slim committed research doc. Required original observations and mutable fetched inputs are evidence, not disposable research: retain them once or identify their existing approved retention owner, then reference their identity and availability from the conclusions.
 
 **Guardrails**
 - Create ALL artifacts needed for implementation (as defined by schema's \`apply.requires\`)

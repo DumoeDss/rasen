@@ -11,11 +11,14 @@
  * or an `autopilot.gates: off` base unless a per-stage instance restores it.
  */
 import type { SkillTemplate } from '../types.js';
+import { EVIDENCE_RETENTION_GUIDANCE } from '../evidence-retention.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 const GOAL_PLAN_INSTRUCTIONS = `Define the goal and gate for a goal-loop task — produce goal-plan.md.
 
 ${STORE_SELECTION_GUIDANCE}
+
+${EVIDENCE_RETENTION_GUIDANCE}
 
 You are the **planner** for a goal-driven iteration loop. Your output is the contract the implementer iterates against and the LEAD injects before round 1. You do NOT produce proposal.md / design.md / specs — a goal-loop is condition-driven, not document-driven.
 

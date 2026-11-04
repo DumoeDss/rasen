@@ -149,7 +149,7 @@ grill 方法论三件（`codebase-design`/`tdd`/`prototype`）**不**把专家�
 
 `src/core/templates/experts/<name>.ts` 是专家技能的**唯一权威源**——每个 getter 返回一个 `SkillTemplate`，指令体是 TS 模板字符串。共享块（PREAMBLE、BROWSE_SETUP、SPEC_REVIEW_LOOP 等 14 个）抽到 `src/core/templates/experts/_shared.ts` 常量。`openspec init`/`update` 从这些模板生成安装侧的 `SKILL.md` + sidecar。
 
-> 这是 `unify-expert-template-pipeline` 的核心成果：此前源是 `skills/gstack/<name>/SKILL.md.tmpl`，由 bun + `gen-skill-docs` 生成。现已统一为 TS 模板 + parity 哈希门禁，工具链删除。
+> 此前的 `unify-expert-template-pipeline` 迁移以 TypeScript 模板替代了 `.tmpl` 文件和 bun 生成器。该迁移使用的哈希一致性门禁已退役；当前交付验证流程见 §4.3，另可参阅[英文规范说明](../grill-gstack-absorption.md#43-generation-and-installation-validation)。
 
 ### 4.2 命名规则（去 gstack 后）
 
@@ -162,9 +162,9 @@ grill 方法论三件（`codebase-design`/`tdd`/`prototype`）**不**把专家�
 
 `openspec-` 前缀的工作流技能（explore/propose/apply/...）与 `openspec-` 前缀的专家技能现在共处同一命名空间、无歧义（`openspec-review` 专家 vs `openspec-review-cycle` 工作流，名字不同）。
 
-### 4.3 新鲜度门禁：parity golden-master
+### 4.3 生成与安装验证
 
-`test/core/templates/skill-templates-parity.test.ts` 用两组哈希钉死模板内容：`EXPECTED_FUNCTION_HASHES`（每个 getter 的结构哈希）和 `EXPECTED_GENERATED_SKILL_CONTENT_HASHES`（生成内容哈希）。改了模板必须同步重算哈希，否则测试红——这就是「新鲜度门禁」，取代了旧的 gen-skill-docs 一致性检查。19 个专家现已全部纳入。
+编译权威的 TypeScript 模板，再通过构建后的 CLI `update` 流程刷新受影响的已安装技能。检查实际生成和安装的产物，并记录与用户可见行为变更对应的命令、结果及验证限制。保留与变更风险相称的生成、安装、路由和消费端行为检查；不要恢复 `test/core/templates/skill-templates-parity.test.ts`，也不要用永久性的提示文本、连接关系或哈希断言取代行为证据。生成的 `SKILL.md` 是交付产物，不是第二份权威源。
 
 ### 4.4 ship 契约（去 gstack 假设后的重构）
 
@@ -203,7 +203,7 @@ gstack `/ship` 假设「feature 分支从 main 分叉、PR 回 main」，所以�
 
 ## 6. 测试与门禁
 
-- **parity golden-master**：`test/core/templates/skill-templates-parity.test.ts`（函数哈希 + 生成内容哈希，19 专家 + 工作流全在列）。
+- **生成与交付验证**：按照 [§4.3](../grill-gstack-absorption.md#43-generation-and-installation-validation) 的构建/更新流程检查受影响的已安装技能，并记录行为证据，而不是重新固定模板哈希。
 - **profiles**：`test/core/profiles.test.ts` 守核心/扩展技能集划分（review-cycle 是 opt-in 不进 core）。
 - **skill-generation / sidecar-install**：守生成与安装正确性。
 - **pipeline-registry**：守流水线 DAG（skill 引用必须真实存在——改名后 `openspec:review` 等都得对得上）。

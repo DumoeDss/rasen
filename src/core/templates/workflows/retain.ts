@@ -9,11 +9,14 @@
  * is `off`.
  */
 import type { SkillTemplate } from '../types.js';
+import { EVIDENCE_RETENTION_GUIDANCE } from '../evidence-retention.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 const RETAIN_INSTRUCTIONS = `Policy-driven retention runner. Resolve exactly one retention mode, then load ONLY the matching branch. report and codify are mutually exclusive — never run both.
 
 ${STORE_SELECTION_GUIDANCE}
+
+${EVIDENCE_RETENTION_GUIDANCE}
 
 ## 1. Prepare the run: resolve the mode, freeze identity for codify
 

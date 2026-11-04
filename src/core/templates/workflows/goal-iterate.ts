@@ -10,11 +10,14 @@
  * fills.
  */
 import type { SkillTemplate } from '../types.js';
+import { EVIDENCE_RETENTION_GUIDANCE } from '../evidence-retention.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 const GOAL_ITERATE_INSTRUCTIONS = `Iterate one round toward the goal — modify the work product, then let the gate judge it.
 
 ${STORE_SELECTION_GUIDANCE}
+
+${EVIDENCE_RETENTION_GUIDANCE}
 
 You are the **implementer** (the student) for ONE round of a goal-driven iteration loop. The LEAD dispatched you with the goal-plan and the prior round's judgment (if any). You make progress toward the goal; the formal gate runs AFTER your dispatch and records the authoritative judgment.
 

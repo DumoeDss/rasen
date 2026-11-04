@@ -5,6 +5,7 @@
  * templates file into workflow-focused modules.
  */
 import type { SkillTemplate } from '../types.js';
+import { EVIDENCE_RETENTION_GUIDANCE } from '../evidence-retention.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 export function getApplyChangeSkillTemplate(): SkillTemplate {
@@ -14,6 +15,8 @@ export function getApplyChangeSkillTemplate(): SkillTemplate {
     instructions: `Implement tasks from a Rasen change.
 
 ${STORE_SELECTION_GUIDANCE}
+
+${EVIDENCE_RETENTION_GUIDANCE}
 
 **Implementation disciplines (optional):** For test-first work, consult the \`rasen-tdd\` skill — agree the seams up front, drive red→green, and keep only the tests worth keeping. For changes touching destructive operations (\`rm -rf\`, \`DROP TABLE\`, force-push), consult the \`rasen-careful\` skill before running them. These are conditional references, not required steps; don't inline the expert bodies.
 

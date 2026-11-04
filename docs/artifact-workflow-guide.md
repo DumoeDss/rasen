@@ -252,6 +252,40 @@ Regardless of profile, `rasen init` installs a set of expert skills (generated a
 
 `/review` (code review), `/qa` `/qa-only` (QA), `/cso` (security), `/benchmark` (performance), `/design-review` `/design-consultation` (design / visual), `/investigate` `/careful` (investigation / destructive-command caution), `/codex`, `/setup-browser-cookies`, etc. For scope control, declare the evidence-backed affected area before editing and inspect the actual changed-file set and diff before completion. Managed sandbox/workspace policy remains the mechanism for execution containment.
 
+### 3.9 Source-backed evidence retention
+
+Generated skills distinguish **deterministic regeneration**, **historical reanalysis**, and **experimental reruns**. A source commit identifies code, not a past execution. Keep original observations needed to audit a claim; regenerate derived reports instead of storing their copies throughout a Change.
+
+- Resolve `evidenceDir` and `ephemeraDir` through `rasen status --change <name> --json`, preserving the selected Store/project/target line. New required observations belong in evidence, even when they are raw logs or JSON. Disposable scratch and regenerable detail belong in ephemera. Reference an existing approved retention owner rather than duplicating its originals.
+- Keep generator/analysis code in the project's source/probe convention. Reports reference its repository, full commit, and entry point. Dirty or untracked execution inputs need preserved content and digests; otherwise mark executed-source identity incomplete.
+- Keep decisions, aggregates, limits, and one recipe in the canonical report or existing index. Reference samples rather than embedding arrays, full stdout, or inventories again. Preserve failures, exclusions, and incomplete attempts.
+- Verify regeneration before describing omitted output as reproducible. Historical reanalysis requires the original observations; repeating a benchmark produces a new observation, not proof of the previous timing.
+- For required originals already in ephemera, follow the shared **Snapshot required ephemera before cleanup** and **Local preservation is not archive delivery** procedure in [`EVIDENCE_RETENTION_GUIDANCE`](../src/core/templates/evidence-retention.ts). Authorized byte-verified evidence snapshots precede saved archive plans; live run-state stays authoritative in place. Approved `--keep-ephemera` retention is local-only, not archive delivery.
+- New standalone benchmark records use the existing `.rasen/benchmark-reports/` roots with an immutable, non-overwriting `YYYY-MM-DDTHHmmssSSSZ-<uuid>` token in `{date}-benchmark.md`, `{date}-benchmark.json`, and `baselines/baseline-{date}.json`. A baseline capture references its baseline original without a duplicate run JSON. Reports cite immutable originals; compatible `baseline.json` is only a current working copy, never a pointer. Legacy paths and reports remain unchanged; follow the [benchmark instructions](../src/core/templates/experts/benchmark.ts) before refreshing an existing working baseline.
+
+This is a recipe **template**, not an executable command or a new required file format:
+
+```text
+Claim / stop: Recompute the recorded comparison using all completed,
+failed, and excluded observations; stop when the declared result matches.
+Mode: historical reanalysis
+Analysis: <repository>, <full commit>, tools/analyze.mjs
+Measured source: <repository>, <full commit>; <binary digest if relevant>
+Source deviations: none, or <preserved patch/content and SHA-256>
+Input: base=<resolved evidenceDir>, locator=raw observations.json,
+       bytes=<saved size>, sha256=<saved digest>, access=<retrieval limits>
+Working directory: <absolute analysis repository root>
+Argument vector: ["node", "tools/analyze.mjs", "--input",
+                  "<absolute path to raw observations.json>"]
+Environment: <lockfile identity, runtime and claim-relevant platform details>
+Expected domain: <aggregates, exclusions and verdict; variable metadata excluded>
+Check: <command actually run, observed result, limitations or unperformed checks>
+```
+
+Use explicit path bases and argument boundaries, including paths containing spaces; do not assume the shell's cwd is the selected project or that POSIX syntax applies on Windows. Record seeds/configuration when relevant. A digest establishes identity, not availability: private or missing inputs limit receiver reproduction. Keep credentials and private payloads out of publishable reports.
+
+These are agent instructions, not a recipe executor or validator. Reading a recipe does not authorize commands or downloads. Existing `TEST EVIDENCE`, verdict, test, ship, and archive gates still apply. Dispatched report-only experts write only their allowed canonical report and report unmet retention needs to the LEAD for an authorized writer; other dispatched writers remain within their stage permissions. Standalone workflows keep their existing roots. Existing archives, hashes, journals, sticky-legacy locations, and Git policy are unchanged. Legacy reports without recipes gain no new archive blocker, and retention guidance grants no automatic deletion, relocation, or repacking permission.
+
 ---
 
 ## 4. Underlying CLI commands (the deterministic base that slash commands depend on)

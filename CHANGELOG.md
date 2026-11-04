@@ -8,6 +8,8 @@
 
 ### Changed
 
+- Generated planning, investigation, benchmark, verification, orchestration, and delivery skills now share source-backed evidence-retention guidance: pin generators and inputs, retain original observations once, and regenerate derived detail. Recipes distinguish deterministic regeneration, historical reanalysis, and new experimental runs without adding a recipe executor, storage format, archive gate, or cleanup permission.
+
 - Repo-local planning roots discovered as the nearest root now expose the resolver's authoritative `root.scope` in JSON discovery, including `list`, `status`, `instructions`, `doctor`, and `context`. Typed planning locations remain available without an active Change, while existing `root.path`, `root.source`, configuration-inheritance notices, and Store migration boundaries are preserved.
 - **BREAKING (saved archive plans):** Archive payload and evidence now exclude regular `.DS_Store`, `Thumbs.db`, and `desktop.ini` files. Same-name directories and symlinks, meaningful hidden files, Git state, and ephemera keep their existing contracts. Historical plans that recorded these files as payload are explicitly refused with `archive_os_metadata_policy_incompatible`; historical accounting still verifies every recorded evidence digest.
 

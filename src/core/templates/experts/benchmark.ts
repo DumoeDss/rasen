@@ -28,10 +28,14 @@ When the user types \`/benchmark\`, run this skill.
 
 ### Phase 1: Setup
 
+Standalone mode only (dispatched mode writes no \`.rasen/benchmark-reports/\` files):
+
 \`\`\`bash
 mkdir -p .rasen/benchmark-reports
 mkdir -p .rasen/benchmark-reports/baselines
 \`\`\`
+
+For every new standalone capture, choose one collision-free, Windows-safe \`{date}\` token: UTC \`YYYY-MM-DDTHHmmssSSSZ-<uuid>\` (ASCII letters, digits, and hyphens; no colons). Use it in the existing filename forms below. Create new records without overwriting; on a collision, choose a new UUID. Keep completed records immutable, including repeated captures on the same day. Read legacy filenames unchanged; do not rename or rewrite historical reports.
 
 ### Phase 2: Page Discovery
 
@@ -83,13 +87,14 @@ curl -sX POST "localhost:3456/eval?target=$TAB" -d "(() => { const r = performan
 
 ### Phase 4: Baseline Capture (--baseline mode)
 
-Save metrics to baseline file:
+Save metrics using the existing baseline JSON shape:
 
 \`\`\`json
 {
   "url": "<url>",
   "timestamp": "<ISO>",
   "branch": "<branch>",
+  "commit": "<full commit SHA>",
   "pages": {
     "/": {
       "ttfb_ms": 120,
@@ -111,11 +116,19 @@ Save metrics to baseline file:
 }
 \`\`\`
 
-Write to \`.rasen/benchmark-reports/baselines/baseline.json\`.
+**Standalone mode:** a normal \`--baseline\` request writes a new authoritative observation to \`.rasen/benchmark-reports/baselines/baseline-{date}.json\`, verifies its saved byte size/SHA-256, and cites that immutable locator in this run's report. Recapture uses a new token, never overwrites a historical baseline, and needs no new retention gate.
+
+For existing readers, \`.rasen/benchmark-reports/baselines/baseline.json\` may remain a current WORKING snapshot with the same metrics JSON shape and bytes as the selected immutable baseline. It is a disposable compatibility cache, not a pointer object or another authoritative observation.
+
+Before replacing working bytes still required by a saved report, retain them once at a unique immutable baseline locator (or verify their existing immutable original). Verify saved size/SHA-256 and record \`old locator + captured SHA-256 -> retained locator\`, with byte size, in the new report. Do not rewrite historical reports or imply the working locator is immutable. Require actual source access and write/publication authorization; never copy private bytes blindly. If source or authorization is unavailable, leave the working file in place and state the retention limitation rather than claim availability. If a historical report requires that exact locator unchanged, leave it there as well. New baseline capture still succeeds using its new immutable file directly.
+
+**Dispatched mode:** write no baseline file. Record the measurements the result depends on once in \`benchmark-report.md\`; report any retention you cannot perform there to the LEAD.
 
 ### Phase 5: Comparison
 
-If baseline exists, compare current metrics against it:
+Compare against the newly captured baseline in \`--baseline\` mode. Otherwise select only baseline records for the same URL/pages, ordered by their JSON observation \`timestamp\`, never filename tokens, copy times, or non-baseline run records. Retaining a legacy baseline preserves its recorded capture timestamp; copying old bytes does not make a new capture. If capture ordering cannot be established, report the limit rather than infer recency.
+
+Fall back to legacy \`baseline.json\` when no applicable immutable baseline exists. Before citing a legacy working baseline in a new saved report, retain an authorized, byte-verified immutable copy as above; if unavailable, report that retention limit rather than claim immutable availability. Reports cite the exact baseline original, never the mutable working file alone.
 
 \`\`\`
 PERFORMANCE REPORT — [url]
@@ -190,7 +203,7 @@ Grade: B (4/6 passing)
 
 ### Phase 8: Trend Analysis (--trend mode)
 
-Load historical baseline files and show trends:
+Load historical immutable baseline/run records and legacy files from the established directories and show trends. Count a WORKING \`baseline.json\` copy only when no matching immutable original exists; do not count the same observation twice.
 
 \`\`\`
 PERFORMANCE TRENDS (last 5 benchmarks)
@@ -210,7 +223,7 @@ TREND: Performance degrading. LCP doubled in 8 days.
 
 **Dispatched mode:** write ONLY \`benchmark-report.md\` in the change's evidence directory (the \`evidenceDir\` reported by the CLI, per the PREAMBLE's dispatched-mode rule; sticky-legacy: a report already at a legacy location is updated in place), each result tagged with a canonical severity (a \`REGRESSION\` crossing a hard budget / FAIL row → Blocker, a timing or size \`REGRESSION\` → Major, a \`WARNING\` → Minor, \`OK\` and grade-only deltas → Trivial); skip the \`.rasen/benchmark-reports/\` writes. Then return.
 
-**Standalone mode.** Write to \`.rasen/benchmark-reports/{date}-benchmark.md\` and \`.rasen/benchmark-reports/{date}-benchmark.json\`.
+**Standalone mode.** Write a new \`.rasen/benchmark-reports/{date}-benchmark.md\` and, for non-baseline runs, \`.rasen/benchmark-reports/{date}-benchmark.json\`, using Phase 1's collision-free token. The \`.json\` holds this run's original measurements; a baseline capture instead uses its immutable \`baselines/baseline-{date}.json\` without duplicating those measurements. The \`.md\` carries the decision, aggregates, limits, and recipe, and cites the immutable measurement/baseline locators, byte sizes, and SHA-256 instead of copying their arrays. Never overwrite a completed run record.
 
 ## Important Rules
 

@@ -5,6 +5,7 @@
  * templates file into workflow-focused modules.
  */
 import type { SkillTemplate } from '../types.js';
+import { EVIDENCE_RETENTION_GUIDANCE } from '../evidence-retention.js';
 import { STORE_SELECTION_GUIDANCE } from './store-selection.js';
 
 export function getVerifyChangeSkillTemplate(): SkillTemplate {
@@ -14,6 +15,8 @@ export function getVerifyChangeSkillTemplate(): SkillTemplate {
     instructions: `Verify that an implementation matches the change artifacts (specs, tasks, design).
 
 ${STORE_SELECTION_GUIDANCE}
+
+${EVIDENCE_RETENTION_GUIDANCE}
 
 **Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
