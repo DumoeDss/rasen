@@ -49,6 +49,7 @@ import {
   findSpecUpdates,
   SpecReconciliationError,
   type SpecReconciliationIssue,
+  type SpecReconciliationMode,
 } from './specs-apply.js';
 import { classifyStoreRootLayout } from './store/layout-write-guard.js';
 import { productionStoreLayoutMigrationDependencies } from './store/layout-migration/dependencies.js';
@@ -61,6 +62,7 @@ import {
   type FinalizationResult,
   type ImmutableFinalizationPlan,
 } from './store/finalization/index.js';
+import type { ValidationIssue, ValidationReport } from './validation/types.js';
 import { Validator } from './validation/validator.js';
 
 interface PreparedSpecActions {
@@ -541,6 +543,25 @@ class ArchiveBlockedError extends Error {
 async function changeHasDeltaSpecs(changeDir: string): Promise<boolean> {
   const discovery = await discoverDeltaSpecFiles(changeDir);
   return discovery.files.length > 0;
+}
+
+/** Keep typed context without parsing diagnostic prose. */
+function validationIssueBlocker(
+  issue: ValidationIssue,
+  changeDir: string
+): ArchivePlan['blockers'][number] {
+  const context = [issue.capability, issue.requirement].filter(
+    (part): part is string => part !== undefined
+  );
+  return {
+    operation: 'validation',
+    path: issue.source ?? changeDir,
+    ...(issue.code === undefined ? {} : { code: issue.code }),
+    message:
+      context.length === 0
+        ? issue.message
+        : `${context.join(' > ')}: ${issue.message}`,
+  };
 }
 
 function finalizationFacts(
@@ -1245,13 +1266,19 @@ export class ArchiveCommand {
       validationDecision = 'blocked';
     } else if (!skipValidation) {
       try {
-        const validationPassed = await this.validateActiveChange(
+        const report = await this.validateActiveChange(
           changeDir,
           root.specsDir,
+          options.skipSpecs ? 'archive-skip-specs' : 'apply',
           json
         );
-        if (!validationPassed) {
+        if (!report.valid) {
           validationDecision = 'blocked';
+          for (const issue of report.issues) {
+            if (issue.level === 'ERROR') {
+              planningBlockers.push(validationIssueBlocker(issue, changeDir));
+            }
+          }
           compatibilityDiagnostic ??= new ArchiveBlockedError(
             'archive_validation_failed',
             `Validation failed for change '${changeName}'.`,
@@ -1903,8 +1930,9 @@ export class ArchiveCommand {
   private async validateActiveChange(
     changeDir: string,
     canonicalSpecsDir: string,
+    reconciliationMode: SpecReconciliationMode,
     json: boolean
-  ): Promise<boolean> {
+  ): Promise<ValidationReport> {
     const validator = new Validator();
     if (!json) {
       const proposal = path.join(changeDir, 'proposal.md');
@@ -1927,25 +1955,23 @@ export class ArchiveCommand {
       deltaDiscovery.files.length === 0 &&
       deltaDiscovery.issues.length === 0
     ) {
-      return true;
+      return { valid: true, issues: [], summary: { errors: 0, warnings: 0, info: 0 } };
     }
     const report = await validator.validateChangeDeltaSpecs(
       changeDir,
       canonicalSpecsDir,
-      deltaDiscovery
+      deltaDiscovery,
+      reconciliationMode
     );
-    if (report.valid) return true;
-    if (!json) {
-      console.log(chalk.red('\nValidation errors in change delta specs:'));
+    // Blocking errors are rendered from the plan.
+    if (!json && !report.valid) {
       for (const issue of report.issues) {
-        console.log(
-          issue.level === 'ERROR'
-            ? chalk.red(`  - ${issue.message}`)
-            : chalk.yellow(`  - ${issue.message}`)
-        );
+        if (issue.level !== 'ERROR') {
+          console.log(chalk.yellow(`  - ${issue.message}`));
+        }
       }
     }
-    return false;
+    return report;
   }
 
   private async prepareSpecActions(

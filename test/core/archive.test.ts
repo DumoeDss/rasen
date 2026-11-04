@@ -1832,6 +1832,340 @@ E1 updated`);
     });
   });
 
+  describe('validation under skipped synchronization', () => {
+    interface SeededSpec {
+      readonly capability: string;
+      readonly delta: string;
+      /** Canonical spec bytes; omitted when the capability has no canonical spec. */
+      readonly canonical?: string;
+    }
+
+    const completedTasks = '- [x] Record actions\n';
+    const pushShipLog = '# Ship Log\n\n**Mode:** push\n';
+    const prShipLog = '# Ship Log\n\n**Mode:** pr\n**PR:** https://example.com/pull/1\n';
+
+    function requirementBlock(name: string, statement: string, outcome: string): string {
+      return [
+        `### Requirement: ${name}`,
+        statement,
+        '',
+        '#### Scenario: An action completes',
+        '- **WHEN** an action completes',
+        `- **THEN** ${outcome}`,
+      ].join('\n');
+    }
+
+    const recordedAction = (outcome: string): string =>
+      requirementBlock('Recorded action', 'The system SHALL record completed actions.', outcome);
+    const addedDelta = (block: string): string => `## ADDED Requirements\n\n${block}\n`;
+    const canonicalSpec = (block: string): string =>
+      `# Ledger\n\n## Purpose\nRecords completed actions for subsequent inspection.\n\n## Requirements\n\n${block}\n`;
+    const identifies = (capability: string, requirement: string) =>
+      expect.stringMatching(new RegExp(`${capability}[\\s\\S]*${requirement}`));
+
+    function deltaPath(changeName: string, capability: string): string {
+      return path.join(tempDir, 'rasen', 'changes', changeName, 'specs', capability, 'spec.md');
+    }
+
+    function canonicalPath(capability: string): string {
+      return path.join(tempDir, 'rasen', 'specs', capability, 'spec.md');
+    }
+
+    async function writeAt(file: string, content: string): Promise<void> {
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, content);
+    }
+
+    async function seedSynchronizationChange(
+      changeName: string,
+      specs: readonly SeededSpec[],
+      files: Readonly<Record<string, string>> = { 'tasks.md': completedTasks }
+    ): Promise<string> {
+      const changeDir = path.join(tempDir, 'rasen', 'changes', changeName);
+      for (const spec of specs) {
+        await writeAt(deltaPath(changeName, spec.capability), spec.delta);
+        if (spec.canonical !== undefined) {
+          await writeAt(canonicalPath(spec.capability), spec.canonical);
+        }
+      }
+      for (const [name, content] of Object.entries(files)) {
+        await writeAt(path.join(changeDir, name), content);
+      }
+      return changeDir;
+    }
+
+    /** The archive JSON envelope fields these cases read from the command's stdout. */
+    interface LoggedArchive {
+      readonly archive: {
+        readonly planToken: string;
+        readonly plan: ArchivePlan;
+        readonly result: { readonly status: string; readonly path: string };
+      };
+      readonly plan: ArchivePlan;
+      readonly status: readonly { readonly code: string }[];
+    }
+
+    function loggedJson(): LoggedArchive {
+      return JSON.parse(
+        vi.mocked(console.log).mock.calls.at(-1)?.[0] as string
+      ) as LoggedArchive;
+    }
+
+    interface SynchronizedCase {
+      readonly scenario: string;
+      readonly delta: string;
+      readonly canonical: string;
+    }
+
+    const synchronizedBlock = recordedAction('its result is recorded');
+    const synchronizedCases: SynchronizedCase[] = [
+      {
+        scenario: 'accepts synchronized ADDED requirements in a skipped-specs preview and applies the saved plan',
+        delta: addedDelta(synchronizedBlock),
+        canonical: canonicalSpec(synchronizedBlock),
+      },
+      {
+        scenario: 'archives CRLF-authored ADDED blocks already present in an LF canonical spec',
+        delta: addedDelta(synchronizedBlock).replace(/\n/g, '\r\n'),
+        canonical: canonicalSpec(synchronizedBlock),
+      },
+      {
+        scenario: 'archives LF ADDED blocks already present in a CRLF-authored canonical spec',
+        delta: addedDelta(synchronizedBlock),
+        canonical: canonicalSpec(synchronizedBlock).replace(/\n/g, '\r\n'),
+      },
+    ];
+
+    it.each(synchronizedCases)('$scenario', async ({ delta, canonical }) => {
+      const changeName = 'synchronized-added';
+      const changeDir = await seedSynchronizationChange(changeName, [
+        { capability: 'ledger', delta, canonical },
+      ]);
+
+      await archiveCommand.execute(changeName, {
+        skipSpecs: true,
+        dryRun: true,
+        savePlan: true,
+        json: true,
+        yes: true,
+      });
+      const preview = loggedJson();
+      expect(process.exitCode ?? 0).toBe(0);
+      expect(preview.archive.plan.decisions.validation).toBe('passed');
+      expect(preview.archive.plan.decisions.specSync?.mode).toBe('skip');
+      expect(preview.archive.plan.specActions).toEqual([]);
+      expect(preview.archive.plan.blockers).toEqual([]);
+      expect(await fs.readFile(canonicalPath('ledger'))).toEqual(Buffer.from(canonical));
+      expect(await fs.readFile(deltaPath(changeName, 'ledger'))).toEqual(Buffer.from(delta));
+
+      vi.mocked(console.log).mockClear();
+      await archiveCommand.execute(undefined, {
+        applyPlan: preview.archive.planToken,
+        yes: true,
+        json: true,
+      });
+      const applied = loggedJson();
+      expect(applied.archive.result.status).toBe('complete');
+      await expect(fs.access(changeDir)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(await fs.readFile(canonicalPath('ledger'))).toEqual(Buffer.from(canonical));
+      expect(
+        await fs.readFile(path.join(applied.archive.result.path, 'specs', 'ledger', 'spec.md'))
+      ).toEqual(Buffer.from(delta));
+    });
+
+    it('reports a same-name ADDED conflict by code, source, and requirement in every preview', async () => {
+      const changeName = 'conflicting-added';
+      const delta = addedDelta(recordedAction('its result is recorded'));
+      const canonical = canonicalSpec(recordedAction('its result is discarded'));
+      const changeDir = await seedSynchronizationChange(changeName, [
+        { capability: 'ledger', delta, canonical },
+      ]);
+      const source = deltaPath(changeName, 'ledger');
+      const conflict = expect.objectContaining({
+        operation: 'validation',
+        path: source,
+        code: 'spec_added_requirement_exists',
+        message: identifies('ledger', 'Recorded action'),
+      });
+
+      await archiveCommand.execute(changeName, {
+        skipSpecs: true,
+        dryRun: true,
+        savePlan: true,
+        json: true,
+        yes: true,
+      });
+      const preview = loggedJson();
+      expect(process.exitCode).toBe(1);
+      expect(preview.archive.plan.decisions.validation).toBe('blocked');
+      expect(preview.archive.plan.specActions).toEqual([]);
+      expect(preview.archive.plan.blockers).toEqual(
+        expect.arrayContaining([
+          conflict,
+          expect.objectContaining({ operation: 'validation', path: changeDir }),
+        ])
+      );
+      const saved = await loadStoredArchivePlan(
+        preview.archive.planToken,
+        getGlobalDataDir()
+      );
+      expect(saved.blockers).toEqual(expect.arrayContaining([conflict]));
+
+      vi.mocked(console.log).mockClear();
+      await archiveCommand.execute(changeName, { skipSpecs: true, dryRun: true, yes: true });
+      const human = vi.mocked(console.log).mock.calls.flat().join('\n');
+      expect(human).toContain('spec_added_requirement_exists');
+      expect(human).toContain(JSON.stringify(source));
+      expect(human).toContain('Recorded action');
+
+      vi.mocked(console.log).mockClear();
+      await archiveCommand.execute(undefined, {
+        applyPlan: preview.archive.planToken,
+        yes: true,
+        json: true,
+      });
+      expect(loggedJson().archive.result.status).toBe('blocked');
+      await expect(fs.access(changeDir)).resolves.toBeUndefined();
+      expect(await fs.readFile(canonicalPath('ledger'))).toEqual(Buffer.from(canonical));
+      expect(await fs.readFile(source)).toEqual(Buffer.from(delta));
+    });
+
+    it('keeps independent validation issues beside accepted synchronized requirements', async () => {
+      const changeName = 'mixed-synchronization';
+      const synchronized = recordedAction('its result is recorded');
+      const alphaCanonical = canonicalSpec(synchronized);
+      const betaCanonical = canonicalSpec(recordedAction('its result is discarded'));
+      await seedSynchronizationChange(changeName, [
+        { capability: 'alpha', delta: addedDelta(synchronized), canonical: alphaCanonical },
+        { capability: 'beta', delta: addedDelta(synchronized), canonical: betaCanonical },
+        {
+          capability: 'gamma',
+          delta: addedDelta(
+            requirementBlock('Unkeyed action', 'The system records actions.', 'its result is recorded')
+          ),
+        },
+      ]);
+
+      await archiveCommand.execute(changeName, {
+        skipSpecs: true,
+        dryRun: true,
+        json: true,
+        yes: true,
+      });
+      const preview = loggedJson();
+      const issues = preview.archive.plan.blockers.filter(
+        blocker => blocker.operation === 'validation' && blocker.code !== undefined
+      );
+      expect(process.exitCode).toBe(1);
+      expect(preview.archive.plan.specActions).toEqual([]);
+      expect(issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: deltaPath(changeName, 'beta'),
+            code: 'spec_added_requirement_exists',
+            message: identifies('beta', 'Recorded action'),
+          }),
+          expect.objectContaining({
+            path: deltaPath(changeName, 'gamma'),
+            code: 'spec_delta_requirement_keyword_missing',
+            message: identifies('gamma', 'Unkeyed action'),
+          }),
+        ])
+      );
+      expect(issues.map(issue => issue.path)).not.toContain(deltaPath(changeName, 'alpha'));
+      expect(await fs.readFile(canonicalPath('alpha'))).toEqual(Buffer.from(alphaCanonical));
+      expect(await fs.readFile(canonicalPath('beta'))).toEqual(Buffer.from(betaCanonical));
+      await expect(fs.access(canonicalPath('gamma'))).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    interface GateCase {
+      readonly scenario: string;
+      /** THEN outcome of the canonical block; the delta always records its result. */
+      readonly canonicalOutcome: string;
+      readonly tasks: string;
+      readonly shipLog: string;
+      readonly yes: boolean;
+      readonly validation: 'passed' | 'blocked';
+      readonly validationIssueCodes: string[];
+      readonly statusCode: string;
+    }
+
+    const gateCases: GateCase[] = [
+      {
+        scenario: 'synchronized requirements do not waive merge confirmation',
+        canonicalOutcome: 'its result is recorded',
+        tasks: completedTasks,
+        shipLog: prShipLog,
+        yes: false,
+        validation: 'passed',
+        validationIssueCodes: [],
+        statusCode: 'archive_merge_confirmation_required',
+      },
+      {
+        scenario: 'merge confirmation does not waive a same-name ADDED conflict',
+        canonicalOutcome: 'its result is discarded',
+        tasks: completedTasks,
+        shipLog: prShipLog,
+        yes: true,
+        validation: 'blocked',
+        validationIssueCodes: ['spec_added_requirement_exists'],
+        statusCode: 'archive_validation_failed',
+      },
+      {
+        scenario: 'synchronized requirements do not waive incomplete tasks',
+        canonicalOutcome: 'its result is recorded',
+        tasks: '- [ ] Record actions\n',
+        shipLog: pushShipLog,
+        yes: false,
+        validation: 'passed',
+        validationIssueCodes: [],
+        statusCode: 'archive_tasks_incomplete',
+      },
+      {
+        scenario: 'a task override does not waive a same-name ADDED conflict',
+        canonicalOutcome: 'its result is discarded',
+        tasks: '- [ ] Record actions\n',
+        shipLog: pushShipLog,
+        yes: true,
+        validation: 'blocked',
+        validationIssueCodes: ['spec_added_requirement_exists'],
+        statusCode: 'archive_validation_failed',
+      },
+    ];
+
+    it.each(gateCases)(
+      '$scenario',
+      async ({ canonicalOutcome, tasks, shipLog, yes, validation, validationIssueCodes, statusCode }) => {
+        const changeName = 'gated-synchronization';
+        const canonical = canonicalSpec(recordedAction(canonicalOutcome));
+        const changeDir = await seedSynchronizationChange(
+          changeName,
+          [
+            {
+              capability: 'ledger',
+              delta: addedDelta(recordedAction('its result is recorded')),
+              canonical,
+            },
+          ],
+          { 'tasks.md': tasks, 'ship-log.md': shipLog }
+        );
+
+        await archiveCommand.execute(changeName, { skipSpecs: true, json: true, yes });
+        const output = loggedJson();
+        expect(process.exitCode).toBe(1);
+        expect(output.status[0].code).toBe(statusCode);
+        expect(output.plan.decisions.validation).toBe(validation);
+        expect(
+          output.plan.blockers
+            .filter(blocker => blocker.operation === 'validation' && blocker.code !== undefined)
+            .map(blocker => blocker.code)
+        ).toEqual(validationIssueCodes);
+        await expect(fs.access(changeDir)).resolves.toBeUndefined();
+        expect(await fs.readFile(canonicalPath('ledger'))).toEqual(Buffer.from(canonical));
+      }
+    );
+  });
+
   describe('exit code on blocked archive (human mode)', () => {
     // Regression for the silent-exit-0 bug: when archive is blocked in
     // human mode it must set a non-zero exit code so scripts/CI can detect
@@ -1860,9 +2194,6 @@ The system will log all events.
       await archiveCommand.execute(changeName, { yes: true, skipSpecs: true });
 
       expect(process.exitCode).toBe(1);
-      expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('validation: Archive validation did not pass.')
-      );
 
       // Change must NOT have been archived
       const archiveDir = path.join(tempDir, 'rasen', 'changes', 'archive');
