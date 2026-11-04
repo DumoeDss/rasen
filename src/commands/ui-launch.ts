@@ -40,7 +40,7 @@ export interface UiLaunchOptions {
 }
 
 export interface UiLaunchConfig {
-  /** Route to land on, e.g. `/` or `/config`. Combined with the token fragment. */
+  /** Route to land on, e.g. `/` or the stable launch-project alias `/p/config`. */
   entryPath: string;
   /** Printed before the URL, e.g. `Rasen UI` or `Config UI`. */
   label: string;
@@ -48,6 +48,14 @@ export interface UiLaunchConfig {
   notice?: string;
   /** Label used in the "could not start" error message, e.g. "management server". */
   serverLabel: string;
+}
+
+function browserUrl(port: number, config: UiLaunchConfig, spaceQuery: string): string {
+  // `/p/config` intentionally means the daemon's launch project and therefore
+  // stays stable across project-id changes. The general UI root keeps its cwd
+  // selector so multi-project launches still land in the requested space.
+  const query = config.entryPath === '/p/config' ? '' : spaceQuery;
+  return `http://127.0.0.1:${port}${config.entryPath}${query}`;
 }
 
 /**
@@ -202,13 +210,7 @@ async function runAdoptOrSpawn(
 
   if (probed.result.kind === 'rasen-daemon' && probed.result.version === version) {
     // Same-version daemon — adopt without spawning.
-    const state = readDaemonState();
-    if (!state?.token) {
-      console.error(`Error: a running rasen daemon was found but its runtime state (token) could not be read. Run 'rasen daemon stop' then retry.`);
-      process.exitCode = 1;
-      return;
-    }
-    const url = `http://127.0.0.1:${probed.port}${config.entryPath}${spaceQuery}#token=${state.token}`;
+    const url = browserUrl(probed.port, config, spaceQuery);
     printUrlAndOpen(url, config, uiAssetsDir, options.open);
     return;
   }
@@ -238,13 +240,7 @@ async function runAdoptOrSpawn(
     process.exitCode = 1;
     return;
   }
-  const state = readDaemonState();
-  if (!state?.token) {
-    console.error(`Error: the daemon started but its runtime state (token) could not be read. Run 'rasen daemon stop' then retry.`);
-    process.exitCode = 1;
-    return;
-  }
-  const url = `http://127.0.0.1:${spawned.port}${config.entryPath}${spaceQuery}#token=${state.token}`;
+  const url = browserUrl(spawned.port, config, spaceQuery);
   printUrlAndOpen(url, config, uiAssetsDir, options.open);
 }
 
@@ -278,7 +274,7 @@ async function runSelfHosted(
     return;
   }
 
-  const url = `http://127.0.0.1:${handle.port}${config.entryPath}${spaceQuery}#token=${token}`;
+  const url = browserUrl(handle.port, config, spaceQuery);
   printUrlAndOpen(url, config, uiAssetsDir, options.open);
 
   let shuttingDown = false;

@@ -168,11 +168,11 @@ describe('store registry facade', () => {
 
     await expect(
       registerStore({
-        id: 'Acme',
+        id: 'Bad/Id',
         localPath: storeRoot,
         globalDataDir: tempDir,
       })
-    ).rejects.toThrow(/kebab-case/u);
+    ).rejects.toThrow(/path separators/u);
 
     await expect(
       registerStore({

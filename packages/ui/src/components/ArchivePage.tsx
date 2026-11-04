@@ -10,7 +10,7 @@ import type {
 import { groupArchivedTasks, tasksForMember, type ArchivedTask } from '../board/columns.js';
 import { MemberChips } from './MemberChips.js';
 import { PageHeader } from './ui/PageHeader.js';
-import { spaceHref, useSpace } from '../store/use-space.js';
+import { spaceEntryForSelector, spaceHref, useSpace } from '../store/use-space.js';
 import { useT } from '../i18n/store.js';
 
 /**
@@ -132,7 +132,7 @@ export function ArchivePage() {
   // members come from the spaces listing, matched by opaque id.
   const storeMembers: SpaceMember[] =
     space?.type === 'store'
-      ? (spaces.find((s) => s.type === 'store' && s.id === space.id) as
+      ? (spaceEntryForSelector(spaces, space) as
           | { members: SpaceMember[] }
           | undefined)?.members ?? []
       : [];

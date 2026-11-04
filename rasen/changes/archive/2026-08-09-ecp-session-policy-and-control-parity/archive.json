@@ -1,0 +1,37 @@
+{
+  "change": "ecp-session-policy-and-control-parity",
+  "archivedAt": "2026-08-09T09:02:01.731Z",
+  "codeCommit": "6eb46a599162eeea4206da561c3dd6b00f7f912f",
+  "planningBranch": "wip/ecp-shared-bounded-loop-lifecycle-resume",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/ecp8-deferred-receipts.md",
+      "sha256": "e1e8923f255be024d9f8ae07c6d55e889fd251a40d6d2ba50061f8eec869bc45"
+    },
+    {
+      "path": "evidence/implementation-baseline.md",
+      "sha256": "4981231719bd24008d4d5a74522f75095811d2f77513b71185e265c1c47d7357"
+    },
+    {
+      "path": "evidence/mutation-receipts.md",
+      "sha256": "2f787bac16e13ea4360c02fe6c7b84e8ddf490c1d6bb4777ad8dc7bf1f97d09b"
+    },
+    {
+      "path": "evidence/review-round-1.md",
+      "sha256": "c025c6adac531d1f87726deb62fb894a049eaeb83aec156d2f748e9810ffad75"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "8934c32c41b9c6b66c2c8d10eb59d5a0b303054bed0e02a93a775685d14a9c8e"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

@@ -1,0 +1,149 @@
+# issue-execution-binding Specification (Delta)
+
+## ADDED Requirements
+
+### Requirement: Starting an Issue's node resolves its bound execution context
+
+`rasen store issue start` SHALL resolve, for one Issue, the plan node that is next to execute and
+the execution context it is bound to, and SHALL emit the launch contract — the Issue, the node,
+the Change instance and alias, the member project and target line, the working directory to
+launch from, the attached Store planning root, and the pipeline to run when one is known. The
+next-to-execute node SHALL be the node the operator names with `--node`, or the single node that
+has not started and whose dependencies' work is complete; when several nodes qualify the command
+SHALL refuse naming every candidate rather than choose one, and when none qualifies it SHALL
+refuse naming why. An Issue with no readable published plan SHALL be refused toward planning.
+The command resolves and verifies the binding; launching the pipeline itself remains an action
+for the operator or agent session that receives the contract, executed from the emitted working
+directory.
+
+#### Scenario: A single frontier node yields its launch contract
+
+- **WHEN** an Issue's plan has one not-started node whose dependencies' work is complete, and `rasen store issue start` runs for that Issue
+- **THEN** the command emits the node's launch contract naming the Change, the member project, the working directory to launch from, and the attached Store planning root
+
+#### Scenario: Several runnable nodes are named, not chosen among
+
+- **WHEN** an Issue's plan has two not-started nodes whose dependencies' work is complete
+- **THEN** the command refuses, naming every runnable node
+- **AND** names the `--node` selection the operator must make
+
+#### Scenario: A blocked node names its blockers
+
+- **WHEN** `--node` names a node whose dependencies' work is not complete
+- **THEN** the command refuses, naming the nodes whose work must complete first
+
+#### Scenario: An Issue without a plan is refused toward planning
+
+- **WHEN** `rasen store issue start` runs for an Issue with no readable published plan
+- **THEN** the command refuses, naming the planning phase and the publish action that precedes execution
+
+### Requirement: The launch context composes the member-project binding
+
+The working directory a launch contract emits SHALL come from the Change's own binding, composed
+and never invented: the execution root recorded for that Change's instance in the Store's
+workspace index, or the member project's registered checkout resolved through the same
+session-launch composition a supervised session uses — member-project working directory, Store
+planning root attached as context, the Store's membership record vouching for the project, and
+the checkout's recorded identity checked against the chosen project. When neither binding exists
+the command SHALL refuse and name the exact workspace preparation that would create it, and a
+launch-context failure SHALL carry the session-launch composition's own diagnostic through
+rather than replace it. When a pipeline name is supplied it SHALL be validated against the
+pipeline registry before the contract is emitted.
+
+#### Scenario: A workspace-bound Change launches from its pair's execution root
+
+- **WHEN** the node's Change instance has a workspace index entry recording an execution root
+- **THEN** the emitted contract's working directory is that execution root
+- **AND** the contract labels the binding as the workspace pair
+
+#### Scenario: A registered checkout launches with the Store attached
+
+- **WHEN** the node's Change has no workspace index entry and its member project resolves through the session-launch composition
+- **THEN** the emitted contract's working directory is the member project's checkout
+- **AND** the Store planning root is carried as attached context
+
+#### Scenario: An unprepared Change names its preparation
+
+- **WHEN** the node's Change has neither a workspace index entry nor a resolvable member-project checkout
+- **THEN** the command refuses with the exact `store workspace plan --existing-change` command that prepares the binding
+
+#### Scenario: A launch-context failure carries its own diagnostic
+
+- **WHEN** the session-launch composition refuses the member project, for membership or identity
+- **THEN** the refusal carries that composition's diagnostic and repair guidance unchanged
+
+#### Scenario: The start command writes nothing
+
+- **WHEN** `rasen store issue start` resolves and emits a launch contract
+- **THEN** the Issue record, every plan revision, every run-state file, and the workspace index are byte-identical before and after
+
+### Requirement: A running node is reported, not restarted
+
+When the node `start` addresses has already begun or completed, the command SHALL report that
+node's real state with a resume-oriented contract — the pipeline recorded in its run-state, its
+run-state location, and the launch working directory — rather than a fresh-launch contract, and
+a node whose work is complete SHALL be reported complete with no launch contract at all. A
+`--pipeline` value SHALL be recorded in the contract as the pipeline to run; when the node's
+run-state already records a pipeline, both values SHALL agree or the command SHALL refuse the
+disagreement.
+
+#### Scenario: An in-flight node is reported running
+
+- **WHEN** `rasen store issue start --node` addresses a node whose Change has in-flight run-state
+- **THEN** the command reports the node as running, carrying the pipeline and run-state location its run-state records
+
+#### Scenario: A complete node is reported complete
+
+- **WHEN** `--node` addresses a node whose work is complete or finalized
+- **THEN** the command reports the node complete and emits no launch contract
+
+#### Scenario: A conflicting pipeline choice is refused
+
+- **WHEN** `--pipeline` names a pipeline and the addressed node's run-state records a different one
+- **THEN** the command refuses, naming both values
+
+### Requirement: Run and Session facts are attributed per node
+
+The Issue read surface SHALL carry, for each plan node whose run-state was located, the
+attribution facts that join the node's execution back to the Issue: the pipeline recorded in its
+run-state, the durable session pointers its stages record — each carrying its stage, role,
+runtime, and whichever of the session id, thread id, and transcript location that stage's worker
+recorded — and the locator of the Change's evidence directory when its planning address
+resolves. A live agent handle SHALL NOT be presented as a durable session fact, and a run-state
+that records no session pointers SHALL report none rather than synthesize any. The `--json` form
+SHALL carry the same attribution facts as the human form.
+
+#### Scenario: A node carries its recorded session pointers
+
+- **WHEN** a node's located run-state records stage workers with session ids and transcript locations
+- **THEN** the node's attribution on the Issue read surface lists each stage's role, runtime, session id, and transcript location
+
+#### Scenario: A run without session pointers reports none
+
+- **WHEN** a node's located run-state records no stage workers
+- **THEN** the node's attribution reports no session facts
+- **AND** no session fact is synthesized
+
+#### Scenario: Live agent handles are excluded
+
+- **WHEN** a stage's worker record carries a live agent handle alongside its durable pointers
+- **THEN** the durable pointers are attributed and the live handle is not presented as durable
+
+### Requirement: The binding and its attribution add no second mutable truth
+
+The launch binding and the attribution facts SHALL be derived at read time from the plan
+revision, the Store's membership and committed evidence, and the workspace index, and SHALL be
+persisted nowhere: no binding or attribution value SHALL be written into an Issue record, a plan
+revision, a Change's run-state, or the workspace index by the start command or by the Issue read
+surface. Reading the same Issue over unchanged evidence SHALL yield the same binding and
+attribution.
+
+#### Scenario: An attribution read writes nothing
+
+- **WHEN** an Issue's status and attribution are read
+- **THEN** the Issue record, plan revisions, run-state files, and workspace index are byte-identical before and after
+
+#### Scenario: Unchanged evidence yields the same binding
+
+- **WHEN** `rasen store issue start` resolves the same Issue twice with no change to its plan, evidence, or index
+- **THEN** both invocations emit the same launch contract

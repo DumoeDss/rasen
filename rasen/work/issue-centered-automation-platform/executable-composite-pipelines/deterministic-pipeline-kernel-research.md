@@ -27,6 +27,13 @@
 > **正文与 §15.4 的标题、条目一律未改名，这是刻意的**：§15.4 的 14 条 exit
 > condition 内容一条未变，而 `slices/product-closure/result.md` 是**逐字引用**
 > 它们的 —— 改标题会打断那条引用链，本条修订记录才是权威的重命名说明。<br>
+> **当前边界校准：2026-08-01（用户拍板）——完整 ECP 固定为 `0.2.0`；Issue、
+> Execution Plan、Dispatch、portfolio 与 `auto-decompose` 上移固定为 `0.3.0`。**
+> 本文其余 `0.1.6`/`0.1.7` 标签继续按上一条作为历史里程碑映射读取；§15.6
+> 和最终结论中的 Issue 版本号已修正，避免与 ECP `0.2.0` 撞号。<br>
+> 实现校准：ECP-1..5 的主要内核与产品面已交付，但 2026-08-01 Direction 审查
+> 仍发现 v2 默认创作、Canvas/loop contract、Session executor、自宿主与发布审查
+> 缺口；当前状态是 `partial`，以 `target-state.md` 和 `roadmap.md` 为当前真相。<br>
 > 范围：当前 Rasen Pipeline/Canvas、`rasen-auto`、`rasen-goal`、
 > `rasen-review-cycle`、`GrokBuild.SKILL.md`，以及 `north-star.md` 对这些研究的
 > 再次校准
@@ -190,11 +197,12 @@ Issue 平台、任意脚本和无界 authoring：
 
 ```text
 0.1.5  当前管理平台闭环 + Pipeline 格式版本/兼容边界
-0.1.6  Executable Composite Pipelines：
+0.1.6  0.1.5 的 bug 修复线
+0.2.0  Executable Composite Pipelines：
        Definition v2 + Canvas + Custom Composite + Reconciler + Operations
        + ReviewCycle/GoalLoop + 统一入口 + Change-level built-ins
-0.1.7  不预留任何使上述范式成立所必需的能力；仅按 0.1.6 真实证据安排增强
-0.2.0  Issue Execution Plan + auto-decompose 上移到 Dispatch/Planning Domain
+0.3.0  Issue Execution Plan + auto-decompose 上移到 Dispatch/Planning Domain；
+       不承接任何使 ECP 成立所必需的能力
 ```
 
 其中 `0.1.5` 一行已经从建议变成已完成事实：产品 PR
@@ -1471,7 +1479,7 @@ ReviewCycle 与 GoalLoop 共享：
 
 `0.1.6` 退出前，所有 Change-level built-in Pipelines 应能由同一 Reconciler
 执行。`auto-decompose` 明确排除：它产生多个 Changes 和 portfolio，属于
-`0.2.0` Issue Execution Plan/Dispatch，而不是 Change Pipeline runner。
+`0.3.0` Issue Execution Plan/Dispatch，而不是 Change Pipeline runner。
 
 兼容层必须有退出计划：
 
@@ -1503,7 +1511,7 @@ Canvas draft 可以是编辑时单一来源，但保存后仍由服务端静态�
 只能基于真实需求增加更深 typed dataflow、Composite library/分享、run compare/
 replay、性能 hardening 或 legacy 最终移除。
 
-### Slice F：`0.2.0` Issue evidence 回流
+### Slice F：`0.3.0` Issue evidence 回流
 
 把 Change Run 的结果交给 north-star 的 Evidence And Acceptance：
 
@@ -1642,7 +1650,7 @@ False Done rate
     runtime ownership。
 15. `0.1.6` 在同一版本内依次接入 `bug-fix`、`small-feature`、goal pipelines
     与 `full-feature`，并至少 dogfood 一个 Canvas-authored Custom Composite。
-16. `auto-decompose`/portfolio 属于 `0.2.0` Issue Execution Plan，不进入
+16. `auto-decompose`/portfolio 属于 `0.3.0` Issue Execution Plan，不进入
     `0.1.6` Change-level Executable Composite Pipeline 或 Change-run Operations。
 
 ### 暂时保持开放
@@ -1874,7 +1882,7 @@ Definition、Canvas、Custom Composite、Runtime 与 Operations 缺一项，`0.1
 Operations dogfood 证明公共抽象不稳定，应在 `0.1.6` 内修正 contract，而不是
 把完整性债务推给 `0.1.7`。
 
-### 15.6 `0.2.0`：Issue Execution Plan 与 auto-decompose 上移
+### 15.6 `0.3.0`：Issue Execution Plan 与 auto-decompose 上移
 
 以下内容不属于 Change-level Executable Composite Pipeline：
 
@@ -1885,7 +1893,7 @@ Operations dogfood 证明公共抽象不稳定，应在 `0.1.6` 内修正 contra
 - Issue acceptance；
 - 将 auto-decompose 从 Change 前置 stage 上移到 Dispatch。
 
-它们与 north-star 的 Issue 平台阶段一致，应进入 `0.2.0` 或对应的 Issue
+它们与 north-star 的 Issue 平台阶段一致，应进入 `0.3.0` 或对应的 Issue
 版本线，而不是因为“图模型相似”提前塞入 `0.1.6`。
 
 ### 15.7 下一步如何开始
@@ -1990,6 +1998,6 @@ Reconciler、canonical Run Record 与 Change-run Operations 同步建设；再�
 `bug-fix`、`small-feature`/ReviewCycle、goal pipelines、`full-feature` 和
 Canvas-authored Custom Composite 逐条证明完整闭环，最终让 auto/goal/
 review-cycle 入口汇入同一个运行模型。`0.1.7` 不预留任何核心范式能力；
-`0.2.0` 再进入 Issue Execution Plan、portfolio 和 auto-decompose 上移。这样既
+`0.3.0` 再进入 Issue Execution Plan、portfolio 和 auto-decompose 上移。这样既
 避免 runtime/产品面的双重真相，也不会重走 Harness “架构接近完成、真实闭环
 仍未发生”的路线。

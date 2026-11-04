@@ -11,6 +11,7 @@ import { Command, Option } from 'commander';
 
 import {
   resolveRootForCommand,
+  toRootOutput,
   type ResolvedOpenSpecRoot,
 } from '../core/root-selection.js';
 import { resolveProjectHome } from '../core/project-home.js';
@@ -22,16 +23,48 @@ import {
   isAvailableMember,
   type WorkingSet,
   type WorkingSetMember,
+  type WorkingSetWorkspace,
+  type WorkingSetWorktree,
 } from '../core/working-set.js';
+import {
+  StoreWorkspace,
+  reportsNoPreparedWorkspace,
+  type WorkspaceDescription,
+  type WorktreeFacts,
+} from '../core/store/workspace/index.js';
 import { StoreError } from '../core/store/errors.js';
 import { emitFailure, printJson } from './shared-output.js';
 import { gatherRelationshipData } from './shared-gather.js';
 
 const FAILURE_PAYLOAD = { root: null, members: [] };
 
+/**
+ * The aggregate payload must SAY that project content needs project authority
+ * (`store-planning-scope-routing`: "Aggregate context has no fabricated project
+ * home"). Without it an aggregate read is indistinguishable from a healthy
+ * project context that simply declares no references. `doctor` reports the same
+ * fact under the same code.
+ */
+const STORE_AGGREGATE_STATUS = {
+  severity: 'info' as const,
+  code: 'store_aggregate_scope',
+  message:
+    'Store aggregate scope: project authority is required for project content. Add --project <project-id> to address a project.',
+};
+
 async function gatherWorkingSet(
   root: ResolvedOpenSpecRoot
 ): Promise<{ workingSet: WorkingSet; declaredReferenceCount: number }> {
+  if (root.planningScope?.kind === 'store-aggregate') {
+    return {
+      workingSet: {
+        root: { ...toRootOutput(root), role: 'openspec_root' },
+        members: [],
+        status: [STORE_AGGREGATE_STATUS],
+      },
+      declaredReferenceCount: 0,
+    };
+  }
   const data = await gatherRelationshipData(root);
 
   // Reuse the 3.6 composition for member classification; the
@@ -72,10 +105,129 @@ async function gatherWorkingSet(
     root: { ...workingSetWithHome.root, workspaceIdentity },
   };
 
+  const workspace = await gatherWorkspace(root);
   return {
-    workingSet: workingSetWithIdentity,
+    workingSet:
+      workspace === undefined
+        ? workingSetWithIdentity
+        : { ...workingSetWithIdentity, workspace },
     declaredReferenceCount: data.projectConfig?.references?.length ?? 0,
   };
+}
+
+function worktreeProjection(facts: WorktreeFacts | undefined): WorkingSetWorktree | undefined {
+  if (facts === undefined) return undefined;
+  return {
+    root: facts.root,
+    exists: facts.exists,
+    ...(facts.worktreeInstanceId === undefined
+      ? {}
+      : { worktreeInstanceId: facts.worktreeInstanceId }),
+    ...(facts.ref === undefined ? {} : { ref: facts.ref }),
+    ...(facts.headOid === undefined ? {} : { headOid: facts.headOid }),
+  };
+}
+
+function workspaceProjection(description: WorkspaceDescription): WorkingSetWorkspace {
+  const planning = worktreeProjection(description.planning);
+  const execution = worktreeProjection(description.execution);
+  return {
+    bindingState: description.bindingState,
+    prepared: description.prepared,
+    ...(description.scope === undefined
+      ? {}
+      : {
+          storeUid: description.scope.storeUid,
+          projectId: description.scope.projectId,
+          targetLineId: description.scope.targetLineId,
+        }),
+    ...(description.changeId === undefined ? {} : { changeId: description.changeId }),
+    ...(description.changeInstanceId === undefined
+      ? {}
+      : { changeInstanceId: description.changeInstanceId }),
+    ...(description.workspacePairId === undefined
+      ? {}
+      : { workspacePairId: description.workspacePairId }),
+    ...(planning === undefined ? {} : { planning }),
+    ...(execution === undefined ? {} : { execution }),
+    findings: description.findings.map((finding) => ({ ...finding })),
+  };
+}
+
+/**
+ * The workspace pair for this scope, or undefined when the scope cannot have
+ * one (standalone, legacy-flat, and Store aggregate scopes). Producing it is
+ * strictly read-only, and any failure to resolve it is reported as an absent
+ * workspace rather than failing `rasen context`, whose job is to report.
+ */
+async function gatherWorkspace(
+  root: ResolvedOpenSpecRoot
+): Promise<WorkingSetWorkspace | undefined> {
+  const ref = root.planningScope?.ref;
+  if (ref === undefined || ref.mode !== 'store-project' || ref.targetLineId === undefined) {
+    return undefined;
+  }
+  try {
+    const description = await new StoreWorkspace().describe({
+      store: ref.storeUid,
+      project: ref.projectId,
+      targetLine: ref.targetLineId,
+      startPath: process.cwd(),
+    });
+    return workspaceProjection(description);
+  } catch (error) {
+    return {
+      bindingState: 'unbound',
+      prepared: false,
+      storeUid: ref.storeUid,
+      projectId: ref.projectId,
+      targetLineId: ref.targetLineId,
+      findings: [
+        {
+          code: 'workspace_unresolved',
+          severity: 'warning',
+          message: `The workspace pair for this scope could not be resolved: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        },
+      ],
+    };
+  }
+}
+
+function printWorkspace(workspace: WorkingSetWorkspace): void {
+  console.log('');
+  console.log('Planning workspace');
+  console.log(`  Binding state: ${workspace.bindingState}`);
+  // Printed only when the Module SAID nothing is prepared, never inferred from
+  // `prepared === false`. That flag is also false when the scope holds several
+  // pairs and this location picks none of them, and when the pair could not be
+  // resolved — in both of those the sentence contradicts the finding printed a
+  // few lines below, and it is the sentence a reader takes as the answer.
+  if (reportsNoPreparedWorkspace(workspace.findings)) {
+    console.log(
+      `  No workspace is prepared for project ${workspace.projectId ?? '(unknown)'} on target line ${workspace.targetLineId ?? '(unknown)'}.`
+    );
+  }
+  if (workspace.targetLineId) console.log(`  Target line: ${workspace.targetLineId}`);
+  if (workspace.changeId) console.log(`  Change: ${workspace.changeId}`);
+  if (workspace.changeInstanceId) {
+    console.log(`  Change instance: ${workspace.changeInstanceId}`);
+  }
+  if (workspace.workspacePairId) console.log(`  Pair: ${workspace.workspacePairId}`);
+  for (const [label, side] of [
+    ['Store planning worktree', workspace.planning],
+    ['Project execution worktree', workspace.execution],
+  ] as const) {
+    if (side === undefined) continue;
+    console.log(`  ${label}: ${side.root}${side.exists ? '' : ' (missing)'}`);
+    if (side.worktreeInstanceId) console.log(`    Instance: ${side.worktreeInstanceId}`);
+    if (side.ref) console.log(`    Ref: ${side.ref}`);
+    if (side.headOid) console.log(`    HEAD: ${side.headOid}`);
+  }
+  for (const finding of workspace.findings) {
+    console.log(`  ${finding.severity}: ${finding.message}`);
+  }
 }
 
 function memberLine(member: WorkingSetMember): string {
@@ -93,6 +245,16 @@ function printHumanWorkingSet(workingSet: WorkingSet, declaredReferenceCount: nu
   }
   if (workingSet.root.workspaceIdentity) {
     console.log(`  Workspace identity: ${workingSet.root.workspaceIdentity}`);
+  }
+
+  if (workingSet.root.scope?.kind === 'store-aggregate') {
+    // An aggregate read has no project working set to list; the human form must
+    // still state the authority requirement rather than reading as an empty
+    // but healthy project context.
+    console.log('');
+    console.log('Store aggregate');
+    console.log(`  ${STORE_AGGREGATE_STATUS.message}`);
+    return;
   }
 
   const availableStores = workingSet.members.filter(
@@ -121,6 +283,8 @@ function printHumanWorkingSet(workingSet: WorkingSet, declaredReferenceCount: nu
         : 'No references declared; the working set is this root alone.'
     );
   }
+
+  if (workingSet.workspace) printWorkspace(workingSet.workspace);
 
   if (unavailable.length > 0 || workingSet.status.length > 0) {
     console.log('');
@@ -192,6 +356,7 @@ export function registerContextCommand(program: Command): void {
     .description('')
     .option('--store <id>', '')
     .option('--project <id>', '')
+    .option('--target-line <id>', '')
     .addOption(
       new Option('--store-path <path>', '').hideHelp()
     )
@@ -202,6 +367,7 @@ export function registerContextCommand(program: Command): void {
       async (options: {
         store?: string;
         project?: string;
+        targetLine?: string;
         storePath?: string;
         json?: boolean;
         codeWorkspace?: string;
@@ -209,8 +375,20 @@ export function registerContextCommand(program: Command): void {
       }) => {
         try {
           const root = await resolveRootForCommand(
-            { store: options.store, project: options.project, storePath: options.storePath },
-            { json: options.json, failurePayload: FAILURE_PAYLOAD, allowImplicitRoot: false }
+            {
+              store: options.store,
+              project: options.project,
+              targetLine: options.targetLine,
+              storePath: options.storePath,
+            },
+            {
+              json: options.json,
+              failurePayload: FAILURE_PAYLOAD,
+              allowImplicitRoot: false,
+              ...(options.store !== undefined && options.project === undefined
+                ? { intent: 'store-read' as const }
+                : {}),
+            }
           );
           if (!root) {
             return;

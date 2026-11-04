@@ -14,9 +14,24 @@ import {
 } from '../threshold-resolver.js';
 import {
   DISPATCH_RUNTIMES,
+  hasRuntimeCapability,
   type DetectedHostRuntime,
   type DispatchRuntime,
 } from '../runtime-adapters.js';
+import { CONSULTATION_SERVER_LIMITS } from '../change-run/consultation-contracts.js';
+import {
+  OmniCrossUpstreamSchema,
+  StageInferenceSchema,
+  type OmniCrossUpstream,
+  type StageInference,
+} from '../omnicross/contracts.js';
+
+export {
+  OmniCrossUpstreamSchema,
+  StageInferenceSchema,
+  type OmniCrossUpstream,
+  type StageInference,
+};
 
 export type { ThresholdValue };
 
@@ -363,6 +378,10 @@ export const StageSchema = z
     sandbox: AgentRuntimeSandboxSchema.optional(),
     model: z.string().min(1).optional(),
     effort: LeafEffortSchema.optional(),
+    // Credential-free inference intent. The effective model remains the
+    // existing stage/role/config-resolved `model`; inference never owns a
+    // second model precedence chain.
+    inference: StageInferenceSchema.optional(),
     // Per-stage context-handoff overrides. Resolved against the pipeline block
     // and built-in defaults by resolveStageHandoffConfig. `roles` is not
     // accepted here — it is pipeline-level config.
@@ -375,6 +394,13 @@ export const StageSchema = z
         code: 'custom',
         path: ['skill'],
         message: 'skill field is required',
+      });
+    }
+    if (stage.kind === 'decompose' && stage.inference !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['inference'],
+        message: 'inference is valid only on standard agent stages',
       });
     }
   });
@@ -419,6 +445,88 @@ function coerceLegacyVetGates(raw: unknown): unknown {
 }
 
 /**
+ * Optional content limits for a consultation binding. Each field is
+ * individually optional and defaults to the corresponding server maximum
+ * from {@link CONSULTATION_SERVER_LIMITS} when omitted at resolve time.
+ * Values exceeding server maxima are rejected at parse time.
+ */
+const ConsultationContentLimitsYamlSchema = z
+  .strictObject({
+    maxQuestionBytes: z
+      .number()
+      .int()
+      .positive()
+      .max(CONSULTATION_SERVER_LIMITS.maxQuestionBytes)
+      .optional(),
+    maxAdviceBytes: z
+      .number()
+      .int()
+      .positive()
+      .max(CONSULTATION_SERVER_LIMITS.maxAdviceBytes)
+      .optional(),
+    maxAttemptedApproaches: z
+      .number()
+      .int()
+      .positive()
+      .max(CONSULTATION_SERVER_LIMITS.maxAttemptedApproaches)
+      .optional(),
+    maxConstraints: z
+      .number()
+      .int()
+      .positive()
+      .max(CONSULTATION_SERVER_LIMITS.maxConstraints)
+      .optional(),
+    maxEvidencePointers: z
+      .number()
+      .int()
+      .positive()
+      .max(CONSULTATION_SERVER_LIMITS.maxEvidencePointers)
+      .optional(),
+    maxAdviceSteps: z
+      .number()
+      .int()
+      .positive()
+      .max(CONSULTATION_SERVER_LIMITS.maxAdviceSteps)
+      .optional(),
+    maxCautions: z
+      .number()
+      .int()
+      .positive()
+      .max(CONSULTATION_SERVER_LIMITS.maxCautions)
+      .optional(),
+    maxEvidenceNotes: z
+      .number()
+      .int()
+      .positive()
+      .max(CONSULTATION_SERVER_LIMITS.maxEvidenceNotes)
+      .optional(),
+  });
+
+/**
+ * A consultation binding in the pipeline YAML. Each entry maps a source stage
+ * (by stage id) to a Teacher capability and declares per-invocation /
+ * per-consultation limits. The resolver translates this into a
+ * {@link RuntimeConsultationBinding} with resolved hierarchical paths.
+ */
+export const ConsultationBindingYamlSchema = z.strictObject({
+  sourceStage: z.string().min(1),
+  teacherSkill: z.string().min(1),
+  maxConsultationsPerInvocation: z
+    .number()
+    .int()
+    .positive()
+    .max(CONSULTATION_SERVER_LIMITS.maxConsultationsPerInvocation),
+  maxTeacherAttemptsPerConsultation: z
+    .number()
+    .int()
+    .positive()
+    .max(CONSULTATION_SERVER_LIMITS.maxTeacherAttemptsPerConsultation),
+  limits: ConsultationContentLimitsYamlSchema.optional(),
+});
+
+export type ConsultationBindingYaml = z.infer<typeof ConsultationBindingYamlSchema>;
+
+/**
  * Full pipeline YAML structure.
  */
 export const PIPELINE_DEFINITION_VERSION = 1 as const;
@@ -441,21 +549,48 @@ export const PipelineDefinitionVersionSchema = z
   })
   .default(PIPELINE_DEFINITION_VERSION);
 
-export const PipelineYamlSchema = z.preprocess(coerceLegacyVetGates, z.object({
-  version: PipelineDefinitionVersionSchema,
-  name: z.string().min(1, { error: 'Pipeline name is required' }),
-  description: z.string().optional(),
-  agents: PipelineAgentRuntimeOverridesSchema.optional(),
-  handoff: HandoffConfigSchema.optional(),
-  reuse: ReuseConfigSchema.optional(),
-  // Records provenance: `composed` means autopilot-assembled and activates the
-  // hard quality floor; `ui` means Canvas-authored and carries no extra policy.
-  // Absent means no recorded assembly origin.
-  origin: z.enum(['composed', 'ui']).optional().describe(
-    "Records how a pipeline was assembled: 'composed' by the autopilot LEAD, 'ui' by the management UI's Canvas; absent means no recorded assembly origin. Only 'composed' activates the required reviewer-role stage and review-cycle loop quality floor."
-  ),
-  stages: z.array(StageSchema).min(1, { error: 'At least one stage required' }),
-}));
+const PipelineYamlObjectSchema = z
+  .object({
+    version: PipelineDefinitionVersionSchema,
+    name: z.string().min(1, { error: 'Pipeline name is required' }),
+    description: z.string().optional(),
+    agents: PipelineAgentRuntimeOverridesSchema.optional(),
+    handoff: HandoffConfigSchema.optional(),
+    reuse: ReuseConfigSchema.optional(),
+    // Records provenance: `composed` means autopilot-assembled and activates the
+    // hard quality floor; `ui` means Canvas-authored and carries no extra policy.
+    // Absent means no recorded assembly origin.
+    origin: z.enum(['composed', 'ui']).optional().describe(
+      "Records how a pipeline was assembled: 'composed' by the autopilot LEAD, 'ui' by the management UI's Canvas; absent means no recorded assembly origin. Only 'composed' activates the required reviewer-role stage and review-cycle loop quality floor."
+    ),
+    stages: z.array(StageSchema).min(1, { error: 'At least one stage required' }),
+    /**
+     * Optional consultation bindings. When present, the profile resolver adds
+     * Teacher capability bindings and consultation entries to the execution
+     * profile. When absent, the profile is byte-identical to before this field
+     * existed.
+     */
+    consultations: z.array(ConsultationBindingYamlSchema).optional(),
+  })
+  .superRefine((pipeline, ctx) => {
+    if (pipeline.consultations === undefined) return;
+    const standardStageIds = new Set(
+      pipeline.stages
+        .filter((stage) => stage.kind === 'standard')
+        .map((stage) => stage.id)
+    );
+    for (const consultation of pipeline.consultations) {
+      if (!standardStageIds.has(consultation.sourceStage)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['consultations'],
+          message: `consultation sourceStage "${consultation.sourceStage}" does not match any standard stage id in this pipeline`,
+        });
+      }
+    }
+  });
+
+export const PipelineYamlSchema = z.preprocess(coerceLegacyVetGates, PipelineYamlObjectSchema);
 
 // Derived TypeScript types
 export type StageLoop = z.infer<typeof StageLoopSchema>;
@@ -635,7 +770,7 @@ export function resolveStageRuntimeConfig(
   } else if (roleDefault?.runtime !== undefined) {
     runtime = roleDefault.runtime;
     runtimeSource = 'agent';
-  } else if (runtimeContext.host.runtime !== 'unknown') {
+  } else if (hasRuntimeCapability(runtimeContext.host.runtime, 'canDispatch')) {
     runtime = runtimeContext.host.runtime;
     runtimeSource = 'host';
   } else {
@@ -759,6 +894,31 @@ export const DEFAULT_HANDOFF_CONFIG = {
   maxRelays: 3,
   stallLimit: 2,
 } as const;
+
+/**
+ * Built-in handoff-threshold default for a `codex` runtime. Codex hosts run
+ * a larger window (~250k) with low-loss native auto-compact, so a worker can
+ * productively use far more of its window before handing off than Claude's
+ * 0.5 default allows — handing off at 0.5 retires a worker that could have
+ * kept working through another compaction. Still overridable by any
+ * project/store/global `handoff.threshold` or bound scheme.
+ */
+export const DEFAULT_CODEX_HANDOFF_THRESHOLD = 0.85;
+
+/**
+ * Built-in handoff-threshold default for a runtime: Codex gets
+ * {@link DEFAULT_CODEX_HANDOFF_THRESHOLD}; every other runtime (including the
+ * claude/unknown fallback) gets {@link DEFAULT_HANDOFF_CONFIG.threshold}.
+ * This is the floor of threshold resolution — the value used only when no
+ * config layer, preset, or bound scheme supplies one.
+ */
+export function defaultHandoffThresholdForRuntime(
+  runtime: string | undefined
+): number {
+  return runtime === 'codex'
+    ? DEFAULT_CODEX_HANDOFF_THRESHOLD
+    : DEFAULT_HANDOFF_CONFIG.threshold;
+}
 
 export interface ResolvedStageHandoffConfig {
   threshold: ThresholdValue;
@@ -904,7 +1064,7 @@ export function resolveStageHandoffConfig(
       globalRole: { value: globalRoleThreshold, source: 'global-role' },
       global: { value: configLayers?.globalThreshold, source: 'global-config' },
       preset: { value: presetThreshold, source: 'preset' },
-      default: { value: DEFAULT_HANDOFF_CONFIG.threshold, source: 'default' },
+      default: { value: defaultHandoffThresholdForRuntime(bindingRuntime), source: 'default' },
     },
   });
   const threshold = resolvedThreshold.threshold;
@@ -1020,10 +1180,10 @@ export function resolvePipelineReuseConfig(
     const roleModel = normalizeAgentRuntimeConfig(pipeline.agents?.[role])?.model;
     const presetThreshold = resolveModelPreset(roleModel)?.reuseThreshold;
     const declaredRuntime = normalizeAgentRuntimeConfig(pipeline.agents?.[role])?.runtime;
-    const fallbackRuntime =
-      thresholdContext?.host?.runtime && thresholdContext.host.runtime !== 'unknown'
-        ? thresholdContext.host.runtime
-        : 'claude';
+    const hostRuntime = thresholdContext?.host?.runtime;
+    const fallbackRuntime = hasRuntimeCapability(hostRuntime, 'canDispatch')
+      ? hostRuntime
+      : 'claude';
     return resolveThreshold({
       family: 'reuse',
       role,

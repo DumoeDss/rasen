@@ -1,0 +1,121 @@
+# Dogfood receipt 3 — teardown, no residue
+
+Date: 2026-08-20T01:00:09Z
+Temp root was: /tmp/tmp.A8psYm1UDj
+
+## Project namespace entry forgotten first (double-clear: config + .rasen-store)
+$ node E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code/.claude/worktrees/issue-layer/bin/rasen.js store remove dogfood-app --project-namespace --yes --json
+{
+  "store": {
+    "id": "dogfood-app",
+    "root": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\app",
+    "metadata_path": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\app\\.rasen-store\\store.yaml"
+  },
+  "registry": {
+    "path": "C:\\Users\\Sayo\\.rasen\\stores\\registry.yaml",
+    "removed": true
+  },
+  "files": {
+    "deleted": true,
+    "deleted_path": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\app",
+    "left_on_disk": null
+  },
+  "status": []
+}
+
+## Store registration forgotten and folder deleted
+$ node E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code/.claude/worktrees/issue-layer/bin/rasen.js store remove issue-plan-pub-dogfood --yes --json
+{
+  "store": {
+    "id": "issue-plan-pub-dogfood",
+    "root": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\store",
+    "metadata_path": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\store\\.rasen-store\\store.yaml"
+  },
+  "registry": {
+    "path": "C:\\Users\\Sayo\\.rasen\\stores\\registry.yaml",
+    "removed": true
+  },
+  "files": {
+    "deleted": true,
+    "deleted_path": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\store",
+    "left_on_disk": null
+  },
+  "status": []
+}
+
+## Temp root removed
+temp dir gone: yes
+
+## Residue checks
+$ node E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code/.claude/worktrees/issue-layer/bin/rasen.js store list --json
+{
+  "stores": [
+    {
+      "id": "awplanet",
+      "root": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\elftia\\_others\\awplanet",
+      "type": "project"
+    },
+    {
+      "id": "editor-bridge-cli",
+      "root": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\elftia\\_others\\editor-bridge-cli",
+      "type": "project"
+    },
+    {
+      "id": "elftia",
+      "root": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\elftia\\elftia\\elftia",
+      "type": "project"
+    },
+    {
+      "id": "elftia-store",
+      "root": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\elftia\\elftia-store",
+      "uid": "a9da9342-9665-49d7-b7bc-5ef020844acb",
+      "type": "store"
+    },
+    {
+      "id": "elftia-website",
+      "root": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\elftia\\elftia-website",
+      "type": "project"
+    },
+    {
+      "id": "issue-layer",
+      "root": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer",
+      "type": "project"
+    },
+    {
+      "id": "project-a",
+      "root": "C:\\Users\\Sayo\\.rasen\\projects\\autonomy-ladder-1e42477e\\changes\\separate-session-planning-and-execution-context\\work\\dogfood-fixture\\project-a",
+      "type": "project"
+    },
+    {
+      "id": "project-b",
+      "root": "C:\\Users\\Sayo\\.rasen\\projects\\autonomy-ladder-1e42477e\\changes\\separate-session-planning-and-execution-context\\work\\dogfood-fixture\\project-b",
+      "type": "project"
+    },
+    {
+      "id": "rasen-store",
+      "root": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-store",
+      "uid": "f35acc7d-e088-4186-9ad6-b4b770649b0b",
+      "type": "store"
+    },
+    {
+      "id": "rocut",
+      "root": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\elftia\\_others\\rocut",
+      "type": "project"
+    },
+    {
+      "id": "scene-bridge-store",
+      "root": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\elftia\\_others\\scene-bridge-store",
+      "uid": "0025c1ef-9c1b-4238-aca6-861dc03ba4b7",
+      "type": "store"
+    },
+    {
+      "id": "session-context-dogfood-0725",
+      "root": "C:\\Users\\Sayo\\.rasen\\projects\\autonomy-ladder-1e42477e\\changes\\separate-session-planning-and-execution-context\\work\\dogfood-fixture\\store",
+      "uid": "cc7b093e-2403-48ad-841d-369c7217013f",
+      "type": "store"
+    }
+  ],
+  "status": []
+}
+registry still names THIS dogfood store/project: 0 (0 = clean; unrelated older dogfood-named fixtures are not ours)
+(verified separately: node bin/rasen.js store list --json | grep -c -e issue-plan-pub-dogfood -e dogfood-app => 0; temp root gone)

@@ -1,0 +1,31 @@
+{
+  "change": "fix-split-planning-truth-repair",
+  "archivedAt": "2026-08-27T09:37:07.300Z",
+  "codeCommit": "9e00cdc94a80aaab9062c0bc5012ff29f16f4372",
+  "planningBranch": "chore/archive-split-planning-truth-repair",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/01-guard-red-before.txt",
+      "sha256": "d64d5e1a4767cd020a070e06aedb854aad812979c9e6530655774f24ebd53180"
+    },
+    {
+      "path": "evidence/02-rendered-refusal-after.txt",
+      "sha256": "6a684100121eaa8bdcc8f5be4388448c5056d1610e6ba002d3fd2c00b1a8937f"
+    },
+    {
+      "path": "evidence/03-suites-green.txt",
+      "sha256": "3ceb5328d219d83336ae2508f22b44b6fb1ef99037bebad2db3d399fbcc9b6c9"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "d3386ccdd808e30742a2bfb86731281e29a20c3ab788b5452895545ce492f003"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [],
+  "missing": [
+    "verification-report"
+  ]
+}

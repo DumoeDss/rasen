@@ -1,0 +1,28 @@
+{
+  "issueId": "issue-autodecompose-uplift",
+  "record": {
+    "version": 1,
+    "id": "issue-autodecompose-uplift",
+    "title": "Issue layer Phase 4: auto-decompose uplift (reviewable decomposition dispatch)",
+    "state": "open",
+    "reason": null,
+    "createdAt": "2026-08-21T08:10:49.108Z"
+  },
+  "storeId": "issue-registry",
+  "storeUid": "f76edc31-229a-42bc-a5c7-848021eeb2da",
+  "checkoutRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+  "checkoutRef": "refs/heads/main",
+  "written": [
+    "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store\\rasen\\issues\\issue-autodecompose-uplift\\issue.yaml"
+  ],
+  "suggestedCommits": [
+    {
+      "repoRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+      "pathspecs": [
+        "rasen/issues/issue-autodecompose-uplift/issue.yaml"
+      ],
+      "message": "chore(store): open issue issue-autodecompose-uplift",
+      "rationale": "Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing."
+    }
+  ]
+}

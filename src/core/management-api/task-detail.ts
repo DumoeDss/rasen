@@ -11,7 +11,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { WORKSPACE_DIR_NAME } from '../config.js';
 import { validateChangeName } from '../../utils/change-utils.js';
 import {
   getActiveChangeIds,
@@ -31,7 +30,14 @@ import {
 } from '../pipeline-registry/portfolio-state.js';
 import { buildChangeSummary, findPortfolioContainers, portfolioOf } from './changes.js';
 import { buildChangeRunEntry } from './runs.js';
-import { ephemeraDir } from '../file-placement.js';
+import {
+  changeStateLocations,
+  resolveActiveChangeDir,
+  resolveExecutionHome,
+  resolveProjectContentSpace,
+  type ProjectSpaceInput,
+} from './project-space.js';
+import type { ArchiveNarrowing } from './archive.js';
 import type {
   ChangeLoadError,
   TaskChildDetail,
@@ -39,7 +45,7 @@ import type {
 } from './wire-types.js';
 
 export type TaskDetailResult =
-  | { ok: true; response: TaskDetailResponse }
+  | { ok: true; response: TaskDetailResponse; narrowing?: ArchiveNarrowing }
   | { ok: false; status: number; code: string; message: string };
 
 /**
@@ -53,31 +59,39 @@ export type TaskDetailResult =
  * resolution both degrade cleanly to the in-repo / legacy locations.
  */
 export async function handleTaskDetail(
-  root: string | undefined,
-  home: ProjectHome | null,
+  input: ProjectSpaceInput,
+  home: ProjectHome | null | undefined,
   id: string
 ): Promise<TaskDetailResult> {
-  if (!root) {
-    return {
-      ok: false,
-      status: 400,
-      code: 'project_required',
-      message: 'No Rasen project is available for this server; launch `rasen ui` inside a project.',
-    };
-  }
+  const resolved = resolveProjectContentSpace(input);
+  if (!resolved.ok) return resolved;
+  const space = resolved.space;
+  const resolvedHome = await resolveExecutionHome(space, home);
 
   const nameCheck = validateChangeName(id);
   if (!nameCheck.valid) {
     return { ok: false, status: 400, code: 'invalid_input', message: nameCheck.error ?? 'Invalid task id.' };
   }
 
-  const changesDir = path.join(root, WORKSPACE_DIR_NAME, 'changes');
-  const archiveDir = path.join(changesDir, 'archive');
-  const containers = findPortfolioContainers(changesDir);
+  const archiveDir = space.archiveDir ?? null;
+  // Same narrowing as `handleArchive`: a Store v2 project scope with no
+  // resolved target line supplies no archive-line path. Archived children are
+  // still enumerable from the machine-home union, but the result states which
+  // dimension was not addressed so the caller does not read a partial roster as
+  // the complete one.
+  const narrowedByTargetLine =
+    typeof input !== 'string' &&
+    input !== undefined &&
+    input.type === 'project' &&
+    input.archiveDir === undefined;
+  const containers = findPortfolioContainers(space.changesDir);
 
-  const activeIds = await getActiveChangeIds(root);
+  const activeIds = await getActiveChangeIds(space.planningCheckoutRoot, space.changesDir);
   const archivedRefs: ArchivedRef[] = [];
-  for (const dated of await getArchivedChangeIds(root)) {
+  for (const dated of await getArchivedChangeIds(space.planningCheckoutRoot, {
+    archiveDir,
+    home: resolvedHome,
+  })) {
     const ref = parseArchivedRef(dated);
     if (ref) archivedRefs.push(ref);
   }
@@ -86,7 +100,7 @@ export async function handleTaskDetail(
   // portfolio — even when it ALSO carries a `proposal.md` (the self-
   // referencing edge): portfolio wins, and the self-named change appears as
   // one of its own children (it satisfies `portfolioOf(id) === id`).
-  const isPortfolio = fs.existsSync(path.join(changesDir, id, 'planning-context.md'));
+  const isPortfolio = fs.existsSync(path.join(space.changesDir, id, 'planning-context.md'));
   let kind: 'portfolio' | 'single';
   if (isPortfolio) {
     kind = 'portfolio';
@@ -107,14 +121,19 @@ export async function handleTaskDetail(
   // Active children first, in `getActiveChangeIds` order (design D7).
   for (const name of activeIds) {
     if (!belongsToTask(name)) continue;
-    const changeDir = path.join(changesDir, name);
-    const run = buildChangeRunEntry(name, changeDir, {
-      ephemeraDir: ephemeraDir(root, name),
-      workDir: home ? home.workDir(name) : null,
-    });
+    const changeDir = await resolveActiveChangeDir(space, name);
+    const run = buildChangeRunEntry(
+      name,
+      changeDir,
+      changeStateLocations(space, resolvedHome, name)
+    );
     try {
-      const summary = await buildChangeSummary(root, changesDir, name, containers, home);
-      const tasks = await listTaskItemsForChange(changesDir, name, root);
+      const summary = await buildChangeSummary(space, name, containers, resolvedHome);
+      const tasks = await listTaskItemsForChange(
+        space.changesDir,
+        name,
+        space.planningCheckoutRoot
+      );
       children.push({
         name,
         archived: false,
@@ -133,8 +152,18 @@ export async function handleTaskDetail(
       children.push({
         name,
         archived: false,
-        taskProgress: await getTaskProgressForChange(changesDir, name, root),
-        tasks: await listTaskItemsForChange(changesDir, name, root),
+        taskProgress: await getTaskProgressForChange(
+          space.changesDir,
+          name,
+          space.planningCheckoutRoot,
+          space.schemasDir
+        ),
+        tasks: await listTaskItemsForChange(
+          space.changesDir,
+          name,
+          space.planningCheckoutRoot,
+          space.schemasDir
+        ),
         summary: null,
         run,
         dependsOn: [],
@@ -149,13 +178,24 @@ export async function handleTaskDetail(
   // (`getArchivedChangeIds` unions both without saying which holds each).
   for (const ref of archivedRefs) {
     if (!belongsToTask(ref.name)) continue;
-    const archiveChangesDir = resolveArchivedChangeDir(archiveDir, home, ref.dated);
+    const archiveChangesDir = resolveArchivedChangeDir(archiveDir, resolvedHome, ref.dated);
+    if (archiveChangesDir === null) continue;
     children.push({
       name: ref.name,
       archived: true,
       archivedAt: ref.date,
-      taskProgress: await getTaskProgressForChange(archiveChangesDir, ref.dated, root),
-      tasks: await listTaskItemsForChange(archiveChangesDir, ref.dated, root),
+      taskProgress: await getTaskProgressForChange(
+        archiveChangesDir,
+        ref.dated,
+        space.planningCheckoutRoot,
+        space.schemasDir
+      ),
+      tasks: await listTaskItemsForChange(
+        archiveChangesDir,
+        ref.dated,
+        space.planningCheckoutRoot,
+        space.schemasDir
+      ),
       summary: null,
       run: null,
       dependsOn: [],
@@ -168,11 +208,11 @@ export async function handleTaskDetail(
   // never shows "no dependencies recorded" for a record it simply could not
   // parse. Same distinction `/runs` makes about the same file.
   if (kind === 'portfolio') {
-    const containerDir = path.join(changesDir, id);
-    const location = resolvePortfolioStateLocation(containerDir, {
-      ephemeraDir: ephemeraDir(root, id),
-      workDir: home ? home.workDir(id) : null,
-    });
+    const containerDir = await resolveActiveChangeDir(space, id);
+    const location = resolvePortfolioStateLocation(
+      containerDir,
+      changeStateLocations(space, resolvedHome, id)
+    );
     const read = location
       ? readPortfolioStateDetailed(location.dir)
       : ({ kind: 'absent' } as const);
@@ -193,5 +233,17 @@ export async function handleTaskDetail(
     }
   }
 
-  return { ok: true, response: { task: { id, kind, label: id }, children, errors } };
+  return {
+    ok: true,
+    response: { task: { id, kind, label: id }, children, errors },
+    ...(narrowedByTargetLine
+      ? {
+          narrowing: {
+            dimension: 'target-line' as const,
+            reason:
+              'No target line was addressed; archived children for this project are organized per target line. Resolve a target line to see them.',
+          } satisfies ArchiveNarrowing,
+        }
+      : {}),
+  };
 }

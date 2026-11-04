@@ -212,6 +212,7 @@ describe('rasen agent dispatch --runtime claude', () => {
     const busySessionId = `busy-${randomUUID()}`;
 
     const first = dispatch(prompt, ['--resume', busySessionId], {
+      timeoutMs: 20_000,
       cliTimeoutMs: 30_000,
     });
     await waitForFile(markerFile);
@@ -235,7 +236,10 @@ describe('rasen agent dispatch --runtime claude', () => {
     expect(fs.existsSync(duplicateSpawnMarker)).toBe(false);
 
     const firstResult = await first;
-    expect(firstResult.exitCode).toBe(0);
+    expect(
+      firstResult.exitCode,
+      `${firstResult.stderr}\n${firstResult.stdout}`
+    ).toBe(0);
     expect(receipt(firstResult.stdout)).toMatchObject({
       ok: true,
       sessionId: busySessionId,

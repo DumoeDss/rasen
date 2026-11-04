@@ -1,29 +1,91 @@
+import type { ComponentChildren } from 'preact';
+
 import type { PipelineCatalogSkill } from '../api/types.js';
-import { V2_ROOT_PALETTE_KINDS, type V2EditableNodeKind } from './draft.js';
+import {
+  groupPaletteSkills,
+  isBindableSkill,
+  V2_ROOT_PALETTE_GESTURES,
+  type PaletteSectionId,
+  type V2RootGesture,
+} from './draft.js';
 
 /** The DnD payload MIME type carrying a dragged skill's catalog entry. */
 export const PALETTE_DND_TYPE = 'application/rasen-pipeline-skill';
 
+const GESTURE_LABEL: Record<V2RootGesture, string> = {
+  stage: 'Stage',
+  parallel: 'Parallel',
+  loop: 'Loop',
+  finish: 'Finish',
+};
+
+/** Section display names — presentation labels over the helper's section ids. */
+const SECTION_TITLE: Record<PaletteSectionId, string> = {
+  core: 'Core',
+  workflows: 'Workflows',
+  experts: 'Experts',
+  internal: 'Internal',
+};
+
+/**
+ * One grouped palette section: a heading with the stable testid contract
+ * (`palette-section-<id>`) and the section's entries. Shared by BOTH palette
+ * branches so v1 cards and the v2 Stage expansion render the SAME grouped
+ * model (canvas-palette-grouping design D3). The experts section carries the
+ * distinct heading class; the distinct VISUAL treatment lives in style.css
+ * and is proven in the real-browser check, not from markup alone.
+ */
+function PaletteSection({
+  id,
+  children,
+}: {
+  id: PaletteSectionId;
+  children: ComponentChildren;
+}) {
+  return (
+    <section
+      class="palette-section"
+      data-testid={`palette-section-${id}`}
+    >
+      <h4
+        class={`palette-section__title${
+          id === 'experts' ? ' palette-section__title--experts' : ''
+        }`}
+      >
+        {SECTION_TITLE[id]}
+      </h4>
+      {children}
+    </section>
+  );
+}
+
 /**
  * The assembly palette. Version 1 keeps the established draggable skill
- * vocabulary; version 2 exposes the root node kinds this Definition slice can
- * mutate. AtomicStage is unavailable until the trusted catalog supplies an
- * exact capability revision; the caller reports any further unavailable kinds
- * via `disabledKinds` so the palette never re-decides insertability itself.
+ * vocabulary; version 2 offers the four author gestures (design D2/D3) —
+ * Stage, Parallel, Loop, Finish — rather than the Definition's eight raw
+ * node kinds. The panel renders and decides nothing: which gestures are
+ * available is decided entirely by the caller's `disabledGestures`
+ * (`unavailableRootGestures()` in `draft.ts`), read here and nowhere
+ * recomputed, and the grouped order is decided entirely by
+ * `groupPaletteSkills()` (draft.ts) — both branches render its output as-is.
  */
 export function PalettePanel({
   skills,
   loading,
   definitionVersion = 1,
-  disabledKinds,
-  onAddV2Node,
+  disabledGestures,
+  onAddGesture,
+  onAddStage,
 }: {
   skills: PipelineCatalogSkill[] | null;
   loading: boolean;
   definitionVersion?: 1 | 2;
-  /** Kinds the current draft cannot accept right now (e.g. no declaration). */
-  disabledKinds?: readonly V2EditableNodeKind[];
-  onAddV2Node?: (kind: V2EditableNodeKind) => void;
+  /** Gestures the current draft cannot accept right now (`unavailableRootGestures`). */
+  disabledGestures?: readonly V2RootGesture[];
+  /** Parallel / Loop / Finish — gestures that take no further author input. */
+  onAddGesture?: (gesture: 'parallel' | 'loop' | 'finish') => void;
+  /** Stage — the author picks which installed skill's capability to bind. */
+  onAddStage?: (capability: { id: string; version: string }) => void;
 }) {
   function onDragStart(event: DragEvent, skill: PipelineCatalogSkill) {
     if (!event.dataTransfer) return;
@@ -34,7 +96,7 @@ export function PalettePanel({
   return (
     <aside class="palette-panel" data-testid="palette-panel">
       <h3 class="palette-panel__title">
-        {definitionVersion === 2 ? 'Root nodes' : 'Skills'}
+        {definitionVersion === 2 ? 'Gestures' : 'Skills'}
       </h3>
       {loading && (
         <p class="palette-panel__loading" data-testid="palette-loading">
@@ -43,23 +105,85 @@ export function PalettePanel({
       )}
       {definitionVersion === 2 && (
         <div class="palette-panel__list" data-testid="v2-palette">
-          {V2_ROOT_PALETTE_KINDS.map((kind) => {
-            const disabled =
-              (kind === 'AtomicStage' &&
-                !(skills ?? []).some(
-                  (skill) => skill.enabled && skill.capability !== undefined
-                )) ||
-              (disabledKinds ?? []).includes(kind);
+          {V2_ROOT_PALETTE_GESTURES.map((gesture) => {
+            const unavailable = (disabledGestures ?? []).includes(gesture);
+            if (gesture === 'stage') {
+              return (
+                <div
+                  key="stage"
+                  class="palette-panel__gesture-group"
+                  data-testid="v2-palette-gesture-stage"
+                >
+                  <div class="palette-panel__gesture-label">Stage</div>
+                  {unavailable && (
+                    <p class="palette-panel__empty">
+                      No enabled exact capability revision is available.
+                    </p>
+                  )}
+                  {!unavailable &&
+                    groupPaletteSkills(skills ?? []).map((section) => (
+                      <PaletteSection key={section.id} id={section.id}>
+                        {section.skills.map((skill) => {
+                          // One rule, owned by `draft.ts` — the same predicate the
+                          // page's `exactCapabilities()` reads to decide whether the
+                          // Stage gesture is offered at all. The panel decides
+                          // nothing (see this component's doc comment).
+                          const skillDisabled = !isBindableSkill(skill);
+                          // The state is NAMED on screen, not only in a `title`
+                          // tooltip: a tooltip is not a visible state, and the
+                          // requirement is that a skill which cannot be placed says
+                          // so. Mirrors the v1 branch's `palette-card__state` span
+                          // below, but distinguishes the two reasons a skill is
+                          // unplaceable because the requirement names both.
+                          const stateLabel = !skill.enabled
+                            ? 'disabled'
+                            : 'no exact capability';
+                          return (
+                            <button
+                              key={skill.id}
+                              type="button"
+                              class={`palette-card${skillDisabled ? ' palette-card--disabled' : ''}`}
+                              data-testid={`v2-palette-gesture-stage-${skill.id}`}
+                              disabled={skillDisabled}
+                              title={
+                                skillDisabled
+                                  ? `${skill.description} — ${
+                                      !skill.enabled
+                                        ? 'disabled in this profile'
+                                        : 'no exact capability revision'
+                                    }`
+                                  : skill.description
+                              }
+                              onClick={() => skill.capability && onAddStage?.(skill.capability)}
+                            >
+                              <span class="palette-card__id">{skill.id}</span>
+                              {skillDisabled && (
+                                <span
+                                  class="palette-card__state"
+                                  data-testid="palette-card-disabled-state"
+                                  data-skill={skill.id}
+                                >
+                                  {stateLabel}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </PaletteSection>
+                    ))}
+                </div>
+              );
+            }
             return (
               <button
-                key={kind}
+                key={gesture}
                 type="button"
                 class="palette-card"
-                data-testid={`v2-palette-add-${kind}`}
-                disabled={disabled}
-                onClick={() => onAddV2Node?.(kind)}
+                data-testid={`v2-palette-gesture-${gesture}`}
+                disabled={unavailable}
+                onClick={() => onAddGesture?.(gesture)}
               >
-                {kind}
+                {GESTURE_LABEL[gesture]}
               </button>
             );
           })}
@@ -70,35 +194,39 @@ export function PalettePanel({
       )}
       {definitionVersion === 1 && (
         <div class="palette-panel__list">
-          {(skills ?? []).map((skill) => (
-            <div
-              key={skill.id}
-              class={`palette-card${skill.enabled ? '' : ' palette-card--disabled'}`}
-              data-testid="palette-card"
-              data-skill={skill.id}
-              data-enabled={skill.enabled}
-              draggable={skill.enabled}
-              title={
-                skill.enabled
-                  ? skill.description
-                  : `${skill.description} — disabled in this profile`
-              }
-              onDragStart={(event) =>
-                skill.enabled
-                  ? onDragStart(event as unknown as DragEvent, skill)
-                  : event.preventDefault()
-              }
-            >
-              <span class="palette-card__id">{skill.id}</span>
-              {!skill.enabled && (
-                <span
-                  class="palette-card__state"
-                  data-testid="palette-card-disabled-state"
+          {groupPaletteSkills(skills ?? []).map((section) => (
+            <PaletteSection key={section.id} id={section.id}>
+              {section.skills.map((skill) => (
+                <div
+                  key={skill.id}
+                  class={`palette-card${skill.enabled ? '' : ' palette-card--disabled'}`}
+                  data-testid="palette-card"
+                  data-skill={skill.id}
+                  data-enabled={skill.enabled}
+                  draggable={skill.enabled}
+                  title={
+                    skill.enabled
+                      ? skill.description
+                      : `${skill.description} — disabled in this profile`
+                  }
+                  onDragStart={(event) =>
+                    skill.enabled
+                      ? onDragStart(event as unknown as DragEvent, skill)
+                      : event.preventDefault()
+                  }
                 >
-                  disabled
-                </span>
-              )}
-            </div>
+                  <span class="palette-card__id">{skill.id}</span>
+                  {!skill.enabled && (
+                    <span
+                      class="palette-card__state"
+                      data-testid="palette-card-disabled-state"
+                    >
+                      disabled
+                    </span>
+                  )}
+                </div>
+              ))}
+            </PaletteSection>
           ))}
         </div>
       )}

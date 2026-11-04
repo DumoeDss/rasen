@@ -1,0 +1,55 @@
+{
+  "issueId": "issue-multi-change-execution",
+  "revision": {
+    "version": 1,
+    "issueId": "issue-multi-change-execution",
+    "revisionId": "0001",
+    "supersedes": null,
+    "createdAt": "2026-08-20T06:45:03.639Z",
+    "conditions": [
+      {
+        "id": "acceptance-gate-holds-until-close",
+        "requirement": "The acceptance gate holds while any required node's work is un-terminal, and the Issue is accepted only at portfolio close through the recorded acceptance",
+        "verification": "staged gate-holds capture (this change) + the portfolio-close accept record (LEAD-driven)"
+      },
+      {
+        "id": "each-change-runs-and-verifies-independently",
+        "requirement": "Every change node reaches a terminal run (ship + archive for g-001/g-002; g-003 closes with this baseline persisted), each through its own small-feature pipeline with its own verification gates",
+        "verification": "per-child run-states under the worktree ephemera + the repo's archived changes"
+      },
+      {
+        "id": "persistent-store-is-the-registry",
+        "requirement": "The loop runs against the persistent store issue-registry (not a temp store) and the store survives this change as the machine's Issue registry",
+        "verification": "this change's evidence receipts + the store's own git history"
+      },
+      {
+        "id": "plan-published-from-real-portfolio",
+        "requirement": "Revision 0001 names every portfolio child as an explicit change reference (no name-prefix inference) with the serial dependsOn DAG intact",
+        "verification": "store issue plan --from-portfolio receipt (4-1-plan-0001.json) over the worktree's real portfolio run-state"
+      },
+      {
+        "id": "tri-axis-live-through-completion",
+        "requirement": "The projection shows progress moving 2/3 to 3/3 and phase reaching review as g-003 completes, derived from real evidence rather than fixtures",
+        "verification": "store issue show captures from the worktree cwd (4-2 receipt pre-close, portfolio-close receipt final)"
+      }
+    ],
+    "contentSha256": "3dfb336c61eecc6920a02638e491f92e8cda9b97da8e4a2c3810a62b27058166"
+  },
+  "storeId": "issue-registry",
+  "storeUid": "f76edc31-229a-42bc-a5c7-848021eeb2da",
+  "checkoutRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+  "checkoutRef": "refs/heads/main",
+  "written": [
+    "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store\\rasen\\issues\\issue-multi-change-execution\\acceptance\\0001.yaml"
+  ],
+  "suggestedCommits": [
+    {
+      "repoRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+      "pathspecs": [
+        "rasen/issues/issue-multi-change-execution/acceptance/0001.yaml"
+      ],
+      "message": "chore(store): publish acceptance conditions issue-multi-change-execution/0001",
+      "rationale": "Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing."
+    }
+  ]
+}

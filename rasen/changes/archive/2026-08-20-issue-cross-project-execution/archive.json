@@ -1,0 +1,103 @@
+{
+  "change": "issue-cross-project-execution",
+  "archivedAt": "2026-08-20T18:02:22.828Z",
+  "codeCommit": "b235fdc79e515cde326d6b7590a3d3c9c5a47a53",
+  "planningBranch": "feat/issue-phase3",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/close-aggregated-show-pair.json",
+      "sha256": "4d751b65571ecc9a4d8de8c6a907af0574ed62f5dfe8957669dffc3ff6451a93"
+    },
+    {
+      "path": "evidence/close-aggregated-show-pair.txt",
+      "sha256": "c4cdb467b56b1afa1b1b61499fb9e636c76471fed0246d88759de7122c4aa448"
+    },
+    {
+      "path": "evidence/close-aggregated-show-worktree.json",
+      "sha256": "3f7a93e8fb1c058834b6bd1ce6d406930ea70f0e19ee99a4a9cbc61ce38212cd"
+    },
+    {
+      "path": "evidence/close-aggregated-show-worktree.txt",
+      "sha256": "8c1112af47543d782c9e6a4bf55acda6afc10f372b2489a7ec419b1f9b6e8a94"
+    },
+    {
+      "path": "evidence/close-baseline-show.txt",
+      "sha256": "3ac5138f9d8a9be74332bf91680d8f43ab8880bab188174ef6b0af0d7f3e57af"
+    },
+    {
+      "path": "evidence/close-final-worktree-show.txt",
+      "sha256": "e63a37b2bae5cc1ad19ce7327b0d575a8fd400f6f61ba332b57bfd83294b127a"
+    },
+    {
+      "path": "evidence/close-leg1-seed.json",
+      "sha256": "19229703b5f61fd436e4f06a82191ffc92182a4ad2a4294dbe3d8966e30b2752"
+    },
+    {
+      "path": "evidence/close-post-mirror-show.txt",
+      "sha256": "e63a37b2bae5cc1ad19ce7327b0d575a8fd400f6f61ba332b57bfd83294b127a"
+    },
+    {
+      "path": "evidence/close-revision-0002.json",
+      "sha256": "bbd6647cd76f6825b16bc0d6dcc6bfda53d678b6dd19a79e11530e6a8399bfeb"
+    },
+    {
+      "path": "evidence/close-site-refusal-at-0002.json",
+      "sha256": "2ae26ae36c817106c525e0c573c60fe12422dc2bbef0dc3c5bf19ef6c78a8b5d"
+    },
+    {
+      "path": "evidence/close-site-release-after.json",
+      "sha256": "9d0294149e315d9b920193e82b931b29f9f3ac05b876726cb9dc082f5268bece"
+    },
+    {
+      "path": "evidence/close-site-release-start.json",
+      "sha256": "786e4073581d8c8af334ecd6d2a79dc67dd3546b330431dc68149d2e626776c3"
+    },
+    {
+      "path": "evidence/close-site-release.txt",
+      "sha256": "3fac990427fc0b0d1e82e15278d2fee7ef738e410311fea9fdc688c6f56d0afd"
+    },
+    {
+      "path": "evidence/close-site-terminal-show.txt",
+      "sha256": "a64c8546b2fbeb2796599a0f453f7493cc87da0156712d6fe439510d825e0591"
+    },
+    {
+      "path": "evidence/close-summary.md",
+      "sha256": "a62119368e9310c7462a2c5e25b64266865cfbb517b27bd80971ac53fa2ecd05"
+    },
+    {
+      "path": "evidence/close-workspace-apply-failed-maxpath.txt",
+      "sha256": "95c832ecc85a52fbeaecc21d10ba3706176e23dd0197d229b532b125635f5f4b"
+    },
+    {
+      "path": "evidence/close-workspace-apply.json",
+      "sha256": "c9404e919756b47d89dfa78a88883218760028ab80f3fcf0244c9a398e1ae1d9"
+    },
+    {
+      "path": "evidence/close-workspace-pair-default-plan.json",
+      "sha256": "19878e9f7ecd102426163ad78ae64f6e0be85255156806b246fc0ade7ea56035"
+    },
+    {
+      "path": "evidence/close-workspace-pair-note.txt",
+      "sha256": "6499ebba648750de07a6866822e18658871d9be6e92e77ae92ce9c6f32846910"
+    },
+    {
+      "path": "evidence/close-workspace-pair-refusal.json",
+      "sha256": "96493afe885ac671320bd26b880202276088f697b2139572920ccddb68da602e"
+    },
+    {
+      "path": "evidence/close-workspace-plan-short-root.json",
+      "sha256": "ffc06cf23690b48b8791b3c540929c06ecefadb66b22386b0b16e6ca7d867aa5"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "8f16c9089ee30734302ba0d7e93f69060146aff2b77c9daefa4332c6ffd3eee2"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [],
+  "missing": [
+    "verification-report"
+  ]
+}

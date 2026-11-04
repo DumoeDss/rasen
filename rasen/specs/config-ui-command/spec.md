@@ -2,17 +2,17 @@
 
 ## Purpose
 
-This spec defines the `rasen config ui` subcommand, now a deprecated alias that starts the same unified management server as `rasen ui`, resolves the launch project, opens the user's browser to a token-carrying URL landing on the config view, and preserves every config API contract. It governs how the command handles browser launch, optional UI package resolution and static serving, and clean shutdown so process exit is never blocked by open sockets.
+This spec defines the `rasen config ui` subcommand, now a deprecated alias that starts the same unified management server as `rasen ui`, resolves the launch project, opens the user's browser through the stable token-free `/p/config` entry point, and preserves every config API contract. It governs how the command handles browser launch, optional UI package resolution and static serving, and clean shutdown so process exit is never blocked by open sockets.
 
 ## Requirements
 
 ### Requirement: `rasen config ui` is a deprecated alias for the management platform
-The CLI SHALL keep `rasen config ui` working as a deprecated alias: it starts the same unified management server as `rasen ui` (management endpoints, config endpoints, and UI assets on one origin under one session token), resolves the launch project from the working directory (nullable when outside a Rasen project), prints the server URL with the session token in the fragment landing on the config view, and opens the user's default browser to it. It SHALL print a one-line deprecation notice naming `rasen ui` as the replacement. A `--no-open` flag SHALL suppress the browser launch, and a `--port <n>` flag SHALL pin the listen port (ephemeral by default); a port collision SHALL fail with a clear message naming the port, and an invalid port SHALL exit non-zero without starting a server. Every config API endpoint SHALL behave identically to the previous config-only server — same paths, same auth model, same error-code semantics.
+The CLI SHALL keep `rasen config ui` working as a deprecated alias: it starts the same unified management server as `rasen ui` (management endpoints, config endpoints, and UI assets on one origin under one daemon session), resolves the launch project from the working directory (nullable when outside a Rasen project), prints the stable token-free `http://127.0.0.1:<port>/p/config` entry URL, and opens the user's default browser to it. That entry SHALL establish the browser session and redirect to the launch project's canonical `/p/<projectId>/config` route. It SHALL print a one-line deprecation notice naming `rasen ui` as the replacement. A `--no-open` flag SHALL suppress the browser launch, and a `--port <n>` flag SHALL pin the listen port (ephemeral by default); a port collision SHALL fail with a clear message naming the port, and an invalid port SHALL exit non-zero without starting a server. Every config API endpoint SHALL preserve its paths, response shapes, and error-code semantics while accepting the shared browser-session credential.
 
 #### Scenario: Alias launch lands on the config view
 - **WHEN** the user runs `rasen config ui` inside a Rasen project
 - **THEN** the unified management server starts on 127.0.0.1 with an ephemeral port
-- **AND** the printed URL carries the session token in the fragment and opens on the config view
+- **AND** the printed URL is exactly the token-free `/p/config` entry and opens on the launch project's config view
 - **AND** a deprecation notice pointing at `rasen ui` is printed
 
 #### Scenario: Config API contracts preserved

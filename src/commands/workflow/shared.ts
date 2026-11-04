@@ -14,15 +14,18 @@ export { DEFAULT_SCHEMA } from '../../core/config.js';
 import type { ReferenceIndexEntry } from '../../core/references.js';
 import {
   isRootSelectionError,
-  isStoreSelectedRoot,
+  resolvedExecutionProjectRoot,
   type ResolvedOpenSpecRoot,
 } from '../../core/root-selection.js';
 import {
   evidenceDir,
   handoffDir,
   ephemeraDir,
-  resolveExecutionRoot,
 } from '../../core/file-placement.js';
+import {
+  buildResolvedPlanningActionContext,
+  type ActionContext,
+} from '../../core/change-status-policy.js';
 import { validateChangeName } from '../../utils/change-utils.js';
 import type { ResolvedNextStep } from '../../core/workflow-chain.js';
 
@@ -55,7 +58,7 @@ export interface ChangeLandingDirs {
   /** `<changeRoot>/handoff` — handoff documents and relay prompts. */
   handoffDir: string;
   /** `<executionRoot>/.rasen/changes/<change>/ephemera` — run-state, logs. */
-  ephemeraDir: string;
+  ephemeraDir?: string;
 }
 
 /**
@@ -68,14 +71,30 @@ export function resolveChangeLandingDirs(
   changeDir: string,
   changeName: string
 ): ChangeLandingDirs {
-  const executionRoot = resolveExecutionRoot(root.path, {
-    storeSelected: isStoreSelectedRoot(root),
-  });
+  const executionRoot = resolvedExecutionProjectRoot(root);
   return {
     evidenceDir: evidenceDir(changeDir),
     handoffDir: handoffDir(changeDir),
-    ephemeraDir: ephemeraDir(executionRoot, changeName),
+    ...(executionRoot === undefined ? {} : { ephemeraDir: ephemeraDir(executionRoot, changeName) }),
   };
+}
+
+/** Build the agent authority payload from the same frozen scope as its paths. */
+export function resolvePlanningActionContext(
+  root: ResolvedOpenSpecRoot,
+  artifactIds: string[]
+): ActionContext {
+  const executionRoot = resolvedExecutionProjectRoot(root);
+  const standaloneCompatibility =
+    root.planningScope?.kind === 'standalone' ||
+    (root.planningScope === undefined && root.storeType !== 'store');
+  return buildResolvedPlanningActionContext({
+    artifactIds,
+    planningWriteRoots: [root.specsDir, root.changesDir],
+    planningReadRoot: root.projectHome ?? root.path,
+    ...(executionRoot === undefined ? {} : { executionRoot }),
+    ...(standaloneCompatibility ? { compatibilityRoot: root.path } : {}),
+  });
 }
 
 export interface ApplyInstructions {
@@ -105,7 +124,7 @@ export interface ApplyInstructions {
   /** `<changeRoot>/handoff` — always present (`file-placement` capability). */
   handoffDir: string;
   /** `<executionRoot>/.rasen/changes/<change>/ephemera` — always present. */
-  ephemeraDir: string;
+  ephemeraDir?: string;
   /**
    * Runtime-resolved next workflow(s), filtered to the installed workflow
    * set (design D1/D3/D4). Distinct from the artifact-authoring `nextSteps`
@@ -125,6 +144,18 @@ export function printJson(payload: unknown): void {
 export function statusFromError(error: unknown): ChangeCommandStatus {
   if (isRootSelectionError(error)) {
     return { ...error.diagnostic };
+  }
+
+  // Root SELECTION is not the only place a coded diagnostic comes from. A
+  // refusal raised after the root resolves — `workspace_already_bound` from the
+  // planning/execution binding, or any other planning-scope or Store error —
+  // carries the same `{ severity, code, message, target?, fix? }` envelope
+  // without sharing a class, and collapsing it to `change_error` throws away
+  // the taxonomy code the caller is told to branch on. `asStatus` in
+  // `shared-output.ts` already duck-types it this way.
+  const diagnostic = (error as { diagnostic?: ChangeCommandStatus }).diagnostic;
+  if (diagnostic && typeof diagnostic.code === 'string' && diagnostic.severity === 'error') {
+    return { ...diagnostic };
   }
 
   return {
@@ -248,10 +279,14 @@ export async function validateChangeExists(
  * @param schemaName - The schema name to validate
  * @param projectRoot - Optional project root for project-local schema resolution
  */
-export function validateSchemaExists(schemaName: string, projectRoot?: string): string {
-  const schemaDir = getSchemaDir(schemaName, projectRoot);
+export function validateSchemaExists(
+  schemaName: string,
+  projectRoot?: string,
+  projectSchemasDir?: string
+): string {
+  const schemaDir = getSchemaDir(schemaName, projectRoot, projectSchemasDir);
   if (!schemaDir) {
-    const availableSchemas = listSchemas(projectRoot);
+    const availableSchemas = listSchemas(projectRoot, projectSchemasDir);
     throw new Error(
       `Schema '${schemaName}' not found. Available schemas:\n  ${availableSchemas.join('\n  ')}`
     );

@@ -9,9 +9,44 @@ permissions:
   contents: write
 
 jobs:
+  native-helpers:
+    name: Build ProcessCapsule (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+
+      - name: Setup pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88.0'
+
+      - name: Build source-owned ProcessCapsule
+        run: node scripts/build-process-capsule.mjs
+        env:
+          RASEN_PROCESS_CAPSULE_EXPORT_DIR: .native-helper-export
+
+      - name: Upload ProcessCapsule with provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: process-capsule-${{ matrix.os }}
+          path: .native-helper-export
+          if-no-files-found: error
+
   release:
     name: Build CLI and UI release
     runs-on: ubuntu-latest
+    needs: native-helpers
     timeout-minutes: 30
     steps:
       - name: Checkout code
@@ -38,11 +73,18 @@ jobs:
       - name: Validate lockstep versions and prepare release notes
         run: node scripts/release-contract.mjs --tag "${GITHUB_REF_NAME}" --notes-output "${RUNNER_TEMP}/release-notes.md"
 
-      - name: Test CLI
-        run: pnpm test
+      - name: Download native ProcessCapsule matrix
+        uses: actions/download-artifact@v4
+        with:
+          pattern: process-capsule-*
+          path: .native-helper-staging
+          merge-multiple: true
 
       - name: Build CLI
         run: pnpm build
+
+      - name: Test CLI
+        run: pnpm test
 
       - name: Typecheck UI
         run: pnpm --dir packages/ui typecheck
@@ -100,7 +142,7 @@ jobs:
   publish-npm:
     name: Publish CLI and UI to npm
     runs-on: ubuntu-latest
-    needs: release
+    needs: [release, native-helpers]
     timeout-minutes: 30
     permissions:
       contents: read
@@ -147,6 +189,14 @@ jobs:
       - name: Validate lockstep release contract
         if: steps.token_check.outputs.present == 'true'
         run: node scripts/release-contract.mjs --tag "${GITHUB_REF_NAME}"
+
+      - name: Download native ProcessCapsule matrix
+        if: steps.token_check.outputs.present == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: process-capsule-*
+          path: .native-helper-staging
+          merge-multiple: true
 
       - name: Build CLI
         if: steps.token_check.outputs.present == 'true'

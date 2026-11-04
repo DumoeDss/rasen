@@ -69,6 +69,7 @@ const COMMANDS: readonly CommandDefinition[] = [
       COMMON_FLAGS.json,
       COMMON_FLAGS.store,
       COMMON_FLAGS.project,
+      COMMON_FLAGS.targetLine,
     ],
   },
   {
@@ -103,6 +104,7 @@ const COMMANDS: readonly CommandDefinition[] = [
       COMMON_FLAGS.noInteractive,
       COMMON_FLAGS.store,
       COMMON_FLAGS.project,
+      COMMON_FLAGS.targetLine,
     ],
   },
   {
@@ -133,6 +135,7 @@ const COMMANDS: readonly CommandDefinition[] = [
       },
       COMMON_FLAGS.store,
       COMMON_FLAGS.project,
+      COMMON_FLAGS.targetLine,
     ],
   },
   {
@@ -162,6 +165,7 @@ const COMMANDS: readonly CommandDefinition[] = [
             takesValue: true,
             completionValues: ['in-repo', 'external', 'store'],
           },
+          { name: 'target-line', takesValue: true },
           { name: 'dry-run', },
           { name: 'verify-hash', },
           COMMON_FLAGS.json,
@@ -186,9 +190,6 @@ const COMMANDS: readonly CommandDefinition[] = [
         name: 'keep-ephemera',
       },
       {
-        name: 'no-whitespace-check',
-      },
-      {
         name: 'dry-run',
       },
       {
@@ -199,14 +200,40 @@ const COMMANDS: readonly CommandDefinition[] = [
         takesValue: true,
       },
       {
+        name: 'abort-plan',
+        takesValue: true,
+      },
+      {
         name: 'intent-template',
       },
       {
         name: 'intent-file',
         takesValue: true,
       },
+      {
+        name: 'outcome',
+        takesValue: true,
+        completionValues: ['landed', 'superseded', 'cancelled', 'abandoned'],
+      },
+      {
+        name: 'reason',
+        takesValue: true,
+      },
+      {
+        name: 'by',
+        takesValue: true,
+      },
+      {
+        name: 'by-target-line',
+        takesValue: true,
+      },
+      {
+        name: 'commit',
+        takesValue: true,
+      },
       COMMON_FLAGS.store,
       COMMON_FLAGS.project,
+      COMMON_FLAGS.targetLine,
     ],
   },
   {
@@ -223,6 +250,7 @@ const COMMANDS: readonly CommandDefinition[] = [
       COMMON_FLAGS.json,
       COMMON_FLAGS.store,
       COMMON_FLAGS.project,
+      COMMON_FLAGS.targetLine,
     ],
   },
   {
@@ -241,6 +269,7 @@ const COMMANDS: readonly CommandDefinition[] = [
       COMMON_FLAGS.json,
       COMMON_FLAGS.store,
       COMMON_FLAGS.project,
+      COMMON_FLAGS.targetLine,
     ],
   },
   {
@@ -291,6 +320,7 @@ const COMMANDS: readonly CommandDefinition[] = [
           COMMON_FLAGS.json,
           COMMON_FLAGS.store,
           COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
         ],
       },
     ],
@@ -302,7 +332,7 @@ const COMMANDS: readonly CommandDefinition[] = [
       {
         name: 'setup',
         acceptsPositional: true,
-        positionals: [{ name: 'id', optional: true }],
+        positionals: [{ name: 'name', optional: true }],
         flags: [
           {
             name: 'path',
@@ -316,6 +346,10 @@ const COMMANDS: readonly CommandDefinition[] = [
           },
           {
             name: 'remote',
+            takesValue: true,
+          },
+          {
+            name: 'layout',
             takesValue: true,
           },
           COMMON_FLAGS.json,
@@ -419,6 +453,23 @@ const COMMANDS: readonly CommandDefinition[] = [
         ],
       },
       {
+        name: 'migrate-layout',
+        acceptsPositional: true,
+        positionals: [{ name: 'store-id' }],
+        flags: [
+          { name: 'mapping', takesValue: true },
+          { name: 'default-target-line', takesValue: true },
+          { name: 'include-untracked', },
+          { name: 'dry-run', },
+          { name: 'apply', },
+          { name: 'status', },
+          { name: 'resume', },
+          { name: 'rollback', },
+          { name: 'retire-flat', },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
         name: 'adopt',
         acceptsPositional: true,
         positionals: [{ name: 'path', type: 'path', optional: true }],
@@ -429,6 +480,7 @@ const COMMANDS: readonly CommandDefinition[] = [
             takesValue: true,
             completionValues: ['move', 'leave'],
           },
+          { name: 'target-line', takesValue: true },
           { name: 'dry-run', },
           { name: 'verify-hash', },
           COMMON_FLAGS.json,
@@ -467,6 +519,262 @@ const COMMANDS: readonly CommandDefinition[] = [
           COMMON_FLAGS.json,
         ],
       },
+      {
+        name: 'target-line',
+        flags: [],
+        subcommands: [
+          {
+            name: 'add',
+            acceptsPositional: true,
+            positionals: [{ name: 'target-line-id' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'store-ref', takesValue: true },
+              COMMON_FLAGS.project,
+              { name: 'code-ref', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'set-ref',
+            acceptsPositional: true,
+            positionals: [{ name: 'target-line-id' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'store-ref', takesValue: true },
+              COMMON_FLAGS.project,
+              { name: 'code-ref', takesValue: true },
+              { name: 'remove-code-ref' },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'list',
+            flags: [COMMON_FLAGS.store, COMMON_FLAGS.json],
+          },
+          {
+            name: 'show',
+            acceptsPositional: true,
+            positionals: [{ name: 'target-line-id' }],
+            flags: [COMMON_FLAGS.store, COMMON_FLAGS.project, COMMON_FLAGS.json],
+          },
+        ],
+      },
+      {
+        // The bound planning/execution worktree PAIR. `workspace` is a RETIRED
+        // top-level group name, and a pair is Store content in any case, so
+        // this group is a `store` subcommand rather than a fourth top-level
+        // `work*` group beside `work`, `workset`, and `workflow`.
+        name: 'workspace',
+        flags: [],
+        subcommands: [
+          {
+            name: 'plan',
+            flags: [
+              COMMON_FLAGS.store,
+              COMMON_FLAGS.project,
+              COMMON_FLAGS.targetLine,
+              { name: 'change', takesValue: true },
+              { name: 'planning-worktree', takesValue: true },
+              { name: 'execution-worktree', takesValue: true },
+              { name: 'existing-change' },
+              { name: 'apply' },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'apply',
+            flags: [
+              { name: 'apply-plan', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'show',
+            flags: [
+              COMMON_FLAGS.store,
+              COMMON_FLAGS.project,
+              COMMON_FLAGS.targetLine,
+              { name: 'change', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'cleanup',
+            flags: [
+              COMMON_FLAGS.store,
+              COMMON_FLAGS.project,
+              COMMON_FLAGS.targetLine,
+              { name: 'change', takesValue: true },
+              { name: 'include-untracked' },
+              { name: 'apply-plan', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+        ],
+      },
+      {
+        // A Store-level Issue spans projects, so every sub-entry here takes
+        // only `--store` — never `--project`, never `--target-line`.
+        name: 'issue',
+        flags: [],
+        subcommands: [
+          {
+            name: 'new',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-selector', optional: true }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'title', takesValue: true },
+              { name: 'readme' },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'list',
+            flags: [
+              COMMON_FLAGS.store,
+              {
+                name: 'state',
+                takesValue: true,
+                completionValues: ['open', 'resolved', 'dropped'],
+              },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'show',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-selector' }],
+            flags: [COMMON_FLAGS.store, COMMON_FLAGS.json],
+          },
+          {
+            name: 'state',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-selector' }],
+            flags: [
+              COMMON_FLAGS.store,
+              {
+                name: 'state',
+                takesValue: true,
+                completionValues: ['open', 'resolved', 'dropped'],
+              },
+              { name: 'reason', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            name: 'plan',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-selector' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'from-file', takesValue: true },
+              // The second publication source: a parent change name whose
+              // portfolio run-state compiles into the next revision.
+              // Mutually exclusive with from-file; the CLI refuses both-or-neither.
+              { name: 'from-portfolio', takesValue: true },
+              // The third publication source: a machine-proposed decomposition
+              // document compiled into the next revision. Mutually exclusive
+              // with the other two; the CLI refuses any two-or-none together.
+              { name: 'from-decomposition', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            // Publishes the next immutable acceptance-conditions revision —
+            // the checklist an Issue is accepted against.
+            name: 'acceptance',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-selector' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'from-file', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            // The explicit close: evaluates the acceptance gate and records
+            // the acceptance only when it holds.
+            name: 'accept',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-selector' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'note', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            // Resolves and verifies the next node's launch binding — it never
+            // spawns; the contract is for the operator or agent session that
+            // receives it.
+            name: 'start',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-selector' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'node', takesValue: true },
+              { name: 'pipeline', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            // The Issue dispatch's confirm step: composes the verified
+            // launch-contract set and pending-Change report for one revision
+            // and writes nothing — starting a confirmed node stays a
+            // per-node act.
+            name: 'confirm',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-selector' }],
+            flags: [
+              COMMON_FLAGS.store,
+              { name: 'revision', takesValue: true },
+              COMMON_FLAGS.json,
+            ],
+          },
+          {
+            // The deterministic scheduling read: the ready set of the LATEST
+            // published revision plus every non-member with its exit reason.
+            // Read-only; no --revision — the scheduler schedules the latest.
+            name: 'ready',
+            acceptsPositional: true,
+            positionals: [{ name: 'issue-selector' }],
+            flags: [COMMON_FLAGS.store, COMMON_FLAGS.json],
+          },
+        ],
+      },
+      {
+        // The grouped-Changes read: deliberately a top-level `store` sibling,
+        // not a subcommand of a shared `aggregate` noun (see store-aggregate.ts).
+        name: 'changes',
+        flags: [
+          COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
+          { name: 'outcome', takesValue: true },
+          { name: 'state', takesValue: true },
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        // The per-project rollup read: same rationale as `changes` above.
+        name: 'projects',
+        flags: [COMMON_FLAGS.store, COMMON_FLAGS.json],
+      },
+      {
+        // The cross-Issue attention scan: what across the Store's Issues
+        // needs a human right now — five kinds in fail-first order, every
+        // scanned Issue visible in the summary. A Store-scoped fleet read
+        // (hence a sibling of `issue`, not one of its per-Issue verbs);
+        // read-only; `--issue` narrows and refuses an unknown id.
+        name: 'attention',
+        flags: [
+          COMMON_FLAGS.store,
+          { name: 'issue', takesValue: true },
+          COMMON_FLAGS.json,
+        ],
+      },
     ],
   },
   {
@@ -475,6 +783,7 @@ const COMMANDS: readonly CommandDefinition[] = [
       COMMON_FLAGS.json,
       COMMON_FLAGS.store,
       COMMON_FLAGS.project,
+      COMMON_FLAGS.targetLine,
       {
         name: 'code-workspace',
         takesValue: true,
@@ -518,6 +827,7 @@ const COMMANDS: readonly CommandDefinition[] = [
       COMMON_FLAGS.json,
       COMMON_FLAGS.store,
       COMMON_FLAGS.project,
+      COMMON_FLAGS.targetLine,
       {
         name: 'gc',
       },
@@ -1093,6 +1403,10 @@ const COMMANDS: readonly CommandDefinition[] = [
       {
         name: 'exec',
         flags: [
+          { name: 'backend', takesValue: true, completionValues: ['claude'] },
+          { name: 'prompt-file', takesValue: true },
+          { name: 'request-id', takesValue: true },
+          { name: 'timeout-ms', takesValue: true },
           { name: 'run', takesValue: true },
           { name: 'session', takesValue: true },
           { name: 'action', takesValue: true },
@@ -1121,7 +1435,24 @@ const COMMANDS: readonly CommandDefinition[] = [
         ],
       },
       {
+        name: 'inspect',
+        acceptsPositional: true,
+        positionals: [{ name: 'id' }],
+        flags: [COMMON_FLAGS.json],
+      },
+      ...(['cancel', 'restart'] as const).map((name) => ({
+        name,
+        acceptsPositional: true,
+        positionals: [{ name: 'id' }],
+        flags: [
+          ...(name === 'restart' ? [] : [{ name: 'reason', takesValue: true }]),
+          COMMON_FLAGS.json,
+        ],
+      })),
+      {
         name: 'retire',
+        acceptsPositional: true,
+        positionals: [{ name: 'id', optional: true }],
         flags: [
           { name: 'run', takesValue: true },
           { name: 'session', takesValue: true },
@@ -1207,7 +1538,7 @@ const COMMANDS: readonly CommandDefinition[] = [
     subcommands: [
       {
         name: 'list',
-        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
+        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project, COMMON_FLAGS.targetLine],
       },
       {
         name: 'show',
@@ -1240,6 +1571,7 @@ const COMMANDS: readonly CommandDefinition[] = [
           COMMON_FLAGS.json,
           COMMON_FLAGS.store,
           COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
         ],
       },
       {
@@ -1270,20 +1602,21 @@ const COMMANDS: readonly CommandDefinition[] = [
           COMMON_FLAGS.json,
           COMMON_FLAGS.store,
           COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
         ],
       },
       {
         name: 'classify',
         acceptsPositional: true,
         positionals: [{ name: 'task' }],
-        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
+        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project, COMMON_FLAGS.targetLine],
       },
       {
         name: 'resume',
         acceptsPositional: true,
         positionalType: 'change-id',
         positionals: [{ name: 'change', type: 'change-id' }],
-        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
+        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project, COMMON_FLAGS.targetLine],
       },
       {
         name: 'start',
@@ -1326,6 +1659,18 @@ const COMMANDS: readonly CommandDefinition[] = [
           { name: 'pipeline' },
         ],
         flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
+      },
+      {
+        name: 'admit',
+        acceptsPositional: true,
+        positionals: [{ name: 'change', type: 'change-id' }],
+        flags: [
+          { name: 'run', takesValue: true },
+          { name: 'turn-input-file', takesValue: true },
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+          COMMON_FLAGS.project,
+        ],
       },
       {
         name: 'cancel',
@@ -1375,13 +1720,14 @@ const COMMANDS: readonly CommandDefinition[] = [
           COMMON_FLAGS.json,
           COMMON_FLAGS.store,
           COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
         ],
       },
       {
         name: 'validate',
         acceptsPositional: true,
         positionals: [{ name: 'name-or-path' }],
-        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project],
+        flags: [COMMON_FLAGS.json, COMMON_FLAGS.store, COMMON_FLAGS.project, COMMON_FLAGS.targetLine],
       },
       {
         name: 'import',
@@ -1393,6 +1739,7 @@ const COMMANDS: readonly CommandDefinition[] = [
           COMMON_FLAGS.json,
           COMMON_FLAGS.store,
           COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
         ],
       },
       {
@@ -1407,6 +1754,7 @@ const COMMANDS: readonly CommandDefinition[] = [
           COMMON_FLAGS.json,
           COMMON_FLAGS.store,
           COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
         ],
       },
       {
@@ -1419,6 +1767,7 @@ const COMMANDS: readonly CommandDefinition[] = [
           COMMON_FLAGS.json,
           COMMON_FLAGS.store,
           COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
         ],
       },
       {
@@ -1431,6 +1780,7 @@ const COMMANDS: readonly CommandDefinition[] = [
           COMMON_FLAGS.json,
           COMMON_FLAGS.store,
           COMMON_FLAGS.project,
+          COMMON_FLAGS.targetLine,
         ],
       },
     ],
@@ -1476,6 +1826,7 @@ const COMMANDS: readonly CommandDefinition[] = [
             name: 'project',
             takesValue: true,
           },
+          { name: 'target-line', takesValue: true },
           {
             name: 'json',
           },
@@ -1502,6 +1853,7 @@ const COMMANDS: readonly CommandDefinition[] = [
           { name: 'cwd', takesValue: true },
           { name: 'timeout-ms', takesValue: true },
           { name: 'resume', takesValue: true },
+          { name: 'inference-file', takesValue: true },
           COMMON_FLAGS.json,
         ],
       },

@@ -1,0 +1,204 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-24",
+  "source": {
+    "storeId": "issue-registry",
+    "storeUid": "f76edc31-229a-42bc-a5c7-848021eeb2da",
+    "root": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+    "head": "f295abce308297dd09eb34a81287c614a8c489c5",
+    "trackedFiles": 311,
+    "trackedByteFingerprint": {
+      "algorithm": "SHA-256 over each git ls-files -z path, then NUL, then that file's raw bytes",
+      "before": "92d63cf7580014aa7a98244fa4dfc36d530fdadb9d263ad54fdd2171af23c7b8",
+      "after": "92d63cf7580014aa7a98244fa4dfc36d530fdadb9d263ad54fdd2171af23c7b8"
+    },
+    "gitStatusBefore": "clean",
+    "gitStatusAfter": "clean"
+  },
+  "payload": {
+    "serialization": "JSON.stringify(response)",
+    "bytes": 35539,
+    "sha256": "f6f6bc2052ee3370f4dd0704a1aefa381bcfec2d2f6beb26b54474ba20060686",
+    "complete": true,
+    "counts": {
+      "entries": 15,
+      "active": 3,
+      "archived": 12,
+      "linked": 15,
+      "unlinked": 0,
+      "unknown": 0,
+      "attachable": 0,
+      "already-linked": 15
+    },
+    "unsearchedRefs": [],
+    "problems": [],
+    "entries": [
+      {
+        "kind": "active",
+        "projectId": "6ca78b98-777f-45bc-8d9b-b84c34e1a531",
+        "targetLineId": "line-0.2",
+        "changeId": "document-multi-project-issues",
+        "changeInstanceId": "ci_4950d004af6e4085c862933dc877396e904522b71d50d07573e4dfe68b8d72c4",
+        "association": "linked",
+        "eligibility": "already-linked",
+        "issues": [{ "issueId": "issue-cross-project-execution", "revisionId": "0002", "nodeIds": ["document-multi-project-issues"] }]
+      },
+      {
+        "kind": "active",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "changeId": "issue-needs-attention",
+        "changeInstanceId": "ci_6680a8bfed77fe5b5225e6203580165e768e73a43f3ecc3d72bb06beccad26e5",
+        "association": "linked",
+        "eligibility": "already-linked",
+        "issues": [{ "issueId": "issue-cross-project-replanning", "revisionId": "0002", "nodeIds": ["issue-needs-attention"] }]
+      },
+      {
+        "kind": "active",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "changeId": "issue-persistent-baseline",
+        "changeInstanceId": "ci_31ac4af911fefd06c65efd8a8d4da5ec4193b3795133a7d41a0fc87544bd9e7d",
+        "association": "linked",
+        "eligibility": "already-linked",
+        "issues": [{ "issueId": "issue-multi-change-execution", "revisionId": "0001", "nodeIds": ["issue-persistent-baseline"] }]
+      },
+      {
+        "kind": "archived",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "changeId": "issue-autodecompose-graph",
+        "changeInstanceId": "ci_96db06e16c62383fc2c4218874cb00e6e2a93a9b3c5415206bb8c568d267ab42",
+        "association": "linked",
+        "eligibility": "already-linked",
+        "issues": [{ "issueId": "issue-autodecompose-uplift", "revisionId": "0004", "nodeIds": ["issue-autodecompose-graph"] }]
+      },
+      {
+        "kind": "archived",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "changeId": "issue-autodecompose-review-flow",
+        "changeInstanceId": "ci_7743ca6838b1cb8f3d94ca5b4b3267c26ef3a069505967520d261d845d5e5696",
+        "association": "linked",
+        "eligibility": "already-linked",
+        "issues": [{ "issueId": "issue-autodecompose-uplift", "revisionId": "0004", "nodeIds": ["issue-autodecompose-review-flow"] }]
+      },
+      {
+        "kind": "archived",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "changeId": "issue-cross-project-gating",
+        "changeInstanceId": "ci_3682f3979e67a6b1ac48fd1c4cec6abd65d6ad783dc7bf3c70f0d807827818be",
+        "association": "linked",
+        "eligibility": "already-linked",
+        "issues": [{ "issueId": "issue-cross-project-execution", "revisionId": "0002", "nodeIds": ["issue-cross-project-gating"] }]
+      },
+      {
+        "kind": "archived",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "changeId": "issue-deferral-record",
+        "changeInstanceId": "ci_faf1d69e28904b9afc3d35c2bb8a078479e9888058c7255994481d877f1f7126",
+        "association": "linked",
+        "eligibility": "already-linked",
+        "issues": [{ "issueId": "issue-level-review-delivery", "revisionId": "0001", "nodeIds": ["issue-deferral-record"] }]
+      },
+      {
+        "kind": "archived",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "changeId": "issue-delivery-evidence-rollup",
+        "changeInstanceId": "ci_a73bd8e258946ec67b2179f05c377a86b5878e7eca7654005488d92095defa91",
+        "association": "linked",
+        "eligibility": "already-linked",
+        "issues": [{ "issueId": "issue-level-review-delivery", "revisionId": "0001", "nodeIds": ["issue-delivery-evidence-rollup"] }]
+      },
+      {
+        "kind": "archived",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "changeId": "issue-node-lifecycle",
+        "changeInstanceId": "ci_8740087b798d080a086d4e18ee283efe44bd4de1205e8cb5247a70cabcb36d7e",
+        "association": "linked",
+        "eligibility": "already-linked",
+        "issues": [{ "issueId": "issue-multi-change-execution", "revisionId": "0001", "nodeIds": ["issue-node-lifecycle"] }]
+      },
+      {
+        "kind": "archived",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "changeId": "issue-plan-publication",
+        "changeInstanceId": "ci_d94c1e6a7563e9d815f100867eb717cba9a8ebddf332ff6257f2c41c128dda03",
+        "association": "linked",
+        "eligibility": "already-linked",
+        "issues": [{ "issueId": "issue-multi-change-execution", "revisionId": "0001", "nodeIds": ["issue-plan-publication"] }]
+      },
+      {
+        "kind": "archived",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "changeId": "issue-project-grouped-views",
+        "changeInstanceId": "ci_6902c14a5bc22c185131315484aaaa0599ae182691b0bed398af856339032684",
+        "association": "linked",
+        "eligibility": "already-linked",
+        "issues": [{ "issueId": "issue-cross-project-execution", "revisionId": "0002", "nodeIds": ["issue-project-grouped-views"] }]
+      },
+      {
+        "kind": "archived",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "changeId": "issue-ready-set-scheduling",
+        "changeInstanceId": "ci_720f005056ac205062fe6df97795ce8c34df19bfdbb1bb6b79251e9dc406108a",
+        "association": "linked",
+        "eligibility": "already-linked",
+        "issues": [{ "issueId": "issue-cross-project-replanning", "revisionId": "0002", "nodeIds": ["issue-ready-set-scheduling"] }]
+      },
+      {
+        "kind": "archived",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "changeId": "issue-revision-history-preservation",
+        "changeInstanceId": "ci_f1f9efb27efa440f4e927cbf54aca67aabbcc4f7ea7738839346992aae758342",
+        "association": "linked",
+        "eligibility": "already-linked",
+        "issues": [{ "issueId": "issue-cross-project-replanning", "revisionId": "0002", "nodeIds": ["issue-revision-history-preservation"] }]
+      },
+      {
+        "kind": "archived",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "changeId": "issue-target-project-binding",
+        "changeInstanceId": "ci_114dc062aed6b5c7b7a2aa2860e8ffa29e356ced35baadfa0901052fccc859ec",
+        "association": "linked",
+        "eligibility": "already-linked",
+        "issues": [{ "issueId": "issue-cross-project-execution", "revisionId": "0002", "nodeIds": ["issue-target-project-binding"] }]
+      },
+      {
+        "kind": "archived",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "changeId": "issue-unified-review-gate",
+        "changeInstanceId": "ci_08dfeba86d9ff15caacfaebfde14abe8a0ec961e9200c63fe662e75b38021fd9",
+        "association": "linked",
+        "eligibility": "already-linked",
+        "issues": [{ "issueId": "issue-level-review-delivery", "revisionId": "0001", "nodeIds": ["issue-unified-review-gate"] }]
+      }
+    ]
+  },
+  "renderReceipt": {
+    "unlinkedChanges": {
+      "attachableRows": 0,
+      "linkedSummary": 15,
+      "unknownRows": 0,
+      "incompletenessNotice": false
+    },
+    "operations": {
+      "changeCandidates": 15,
+      "candidatesWithProvenIssueLinks": 15,
+      "unlinkedCandidates": 0,
+      "unknownCandidates": 0,
+      "sessionRunLifecycleRead": "not-performed",
+      "note": "This dogfood capture exercised the D1 attribution input only; it does not claim a live Session or Run lifecycle read."
+    }
+  }
+}

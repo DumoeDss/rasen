@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 
 import { handleRuns, handleRunDetail } from '../../../src/core/management-api/runs.js';
 import { isManagementPath } from '../../../src/core/management-api/router.js';
-import { resolveProjectHome } from '../../../src/core/project-home.js';
+import { resolveProjectHome, type ProjectHome } from '../../../src/core/project-home.js';
 import { getGlobalDataDir } from '../../../src/core/global-config.js';
 import {
   createCanonicalRunRecord,
@@ -77,8 +77,15 @@ function deriveWorkspaceId(root: string): WorkspaceInstanceId {
     .update(root)
     .digest('hex')
     .slice(0, 12)}`;
+  return deriveWorkspaceIdForPlanningHome(root, planningSpaceHome);
+}
+
+function deriveWorkspaceIdForPlanningHome(
+  physicalRoot: string,
+  planningSpaceHome: string
+): WorkspaceInstanceId {
   const planningSpaceId = derivePlanningSpaceId(planningSpaceHome);
-  const st = fs.statSync(root, { bigint: true });
+  const st = fs.statSync(physicalRoot, { bigint: true });
   const physical = readPhysicalIdentity({
     device: st.dev,
     ino: st.ino,
@@ -93,6 +100,20 @@ function derivePlanningSpace(root: string): PlanningSpaceId {
     .digest('hex')
     .slice(0, 12)}`;
   return derivePlanningSpaceId(planningSpaceHome);
+}
+
+function projectHomeWithArchive(archiveDir: string): ProjectHome {
+  const homeDir = path.dirname(archiveDir);
+  return {
+    projectId: 'runs-api-test-project',
+    name: 'runs-api-test-home',
+    mode: 'in-repo',
+    homeDir,
+    archiveDir,
+    workDir: (changeName) => path.join(homeDir, 'changes', changeName, 'work'),
+    archivedWorkDir: (archivedName) =>
+      path.join(homeDir, 'changes', 'archive', archivedName, 'work'),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -290,6 +311,55 @@ describe('management-api runs handler — reconciler discovery (13.2)', () => {
     const runIds = result.reconcilerRuns!.map((r) => r.runId);
     expect(runIds).toContain(`run:${'c'.repeat(64)}`);
     expect(runIds).not.toContain(`run:${'d'.repeat(64)}`);
+  });
+
+  it('does not leak another workspace Run when registered archive authority is unavailable', async () => {
+    const psId = derivePlanningSpace(projectRoot);
+    const runId = `run:${'7'.repeat(64)}`;
+    publishRun({
+      storeRoot,
+      runId,
+      changeId: 'unavailable-authority-change',
+      planningSpaceId: psId as string,
+      workspaceInstanceId: 'workspace-instance:' + '7'.repeat(64),
+    });
+    const archiveFile = path.join(tempHome, 'archive-is-not-a-directory');
+    fs.writeFileSync(archiveFile, 'not a directory');
+
+    const result = await handleRuns(
+      projectRoot,
+      projectHomeWithArchive(archiveFile)
+    );
+    expect(result.reconcilerRuns?.map((run) => run.runId)).not.toContain(runId);
+  });
+
+  it('keeps one registered Run current across active-to-archive physical identity transition', async () => {
+    const changeId = 'registered-transition-change';
+    const changeDir = path.join(projectRoot, WORKSPACE_DIR_NAME, 'changes', changeId);
+    const archiveDir = path.join(tempHome, 'registered-home', 'archive');
+    fs.mkdirSync(changeDir, { recursive: true });
+    fs.mkdirSync(archiveDir, { recursive: true });
+    const home = projectHomeWithArchive(archiveDir);
+    const workspaceInstanceId = deriveWorkspaceIdForPlanningHome(changeDir, home.name);
+    const runId = `run:${'9'.repeat(64)}`;
+    publishRun({
+      storeRoot,
+      runId,
+      changeId,
+      planningSpaceId: derivePlanningSpaceId(home.name) as string,
+      workspaceInstanceId: workspaceInstanceId as string,
+    });
+
+    const activeList = await handleRuns(projectRoot, home);
+    expect(activeList.reconcilerRuns?.find((run) => run.runId === runId)?.sourceState).toBe('active');
+    const activeDetail = await handleRunDetail(changeId, runId, projectRoot, home);
+    expect(activeDetail.ok && activeDetail.view.workspace.scope).toBe('current');
+
+    fs.renameSync(changeDir, path.join(archiveDir, `2026-08-02-${changeId}`));
+    const archivedList = await handleRuns(projectRoot, home);
+    expect(archivedList.reconcilerRuns?.find((run) => run.runId === runId)?.sourceState).toBe('archived');
+    const archivedDetail = await handleRunDetail(changeId, runId, projectRoot, home);
+    expect(archivedDetail.ok && archivedDetail.view.workspace.scope).toBe('current');
   });
 
   it('isolates an invalid/corrupt Run as a per-entry error without hiding valid Runs', async () => {
@@ -543,6 +613,36 @@ describe('management-api runs detail handler (13.5/13.6)', () => {
     for (const action of rootSection!.actions) {
       expect(action.deliveryState).not.toBe('granted');
     }
+  });
+
+  it('redacts detail when registered archive authority cannot be established', async () => {
+    const psId = derivePlanningSpace(projectRoot);
+    const runId = `run:${'8'.repeat(64)}`;
+    publishRun({
+      storeRoot,
+      runId,
+      changeId: 'unavailable-detail-change',
+      planningSpaceId: psId as string,
+      workspaceInstanceId: 'workspace-instance:' + '8'.repeat(64),
+    });
+    const archiveFile = path.join(tempHome, 'archive-is-not-a-directory');
+    fs.writeFileSync(archiveFile, 'not a directory');
+
+    const result = await handleRunDetail(
+      'unavailable-detail-change',
+      runId,
+      projectRoot,
+      projectHomeWithArchive(archiveFile)
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.view.workspace.scope).toBe('other');
+    const rootSection = result.view.sections.find(
+      (section): section is Extract<typeof section, { kind: 'root-dag' }> =>
+        section.kind === 'root-dag'
+    );
+    expect(rootSection?.allowedControls).toEqual([]);
+    expect(rootSection?.actions.every((action) => action.deliveryState !== 'granted')).toBe(true);
   });
 
   it('returns 404 for an unknown Run', async () => {

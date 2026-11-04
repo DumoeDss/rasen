@@ -1,0 +1,65 @@
+{
+  "allOk": true,
+  "results": [
+    {
+      "name": "the palette offers a stage gesture",
+      "ok": true,
+      "detail": "v2-palette-gesture-stage-rasen-propose"
+    },
+    {
+      "name": "the three fresh stages render at finite computed layout transforms",
+      "ok": true,
+      "detail": "{\"atomic-stage\":\"translate(0px, 0px)\",\"atomic-stage-2\":\"translate(0px, 140px)\",\"atomic-stage-3\":\"translate(0px, 280px)\"}"
+    },
+    {
+      "name": "the drag physically moved the node (real drag physics, direction matches)",
+      "ok": true,
+      "detail": "moved translate(0px, 0px) -> translate(135.354px, 77.7695px) (flow delta 135.4,77.8; screen delta 260,150 at zoom 1.68447)"
+    },
+    {
+      "name": "the dragged node keeps its exact transform across the palette-add rebuild",
+      "ok": true,
+      "detail": "translate(135.354px, 77.7695px) -> translate(135.354px, 77.7695px)"
+    },
+    {
+      "name": "the added node renders at a finite layout position, distinct from the dragged placement",
+      "ok": true,
+      "detail": "translate(0px, 420px) (vs dragged translate(135.354px, 77.7695px))"
+    },
+    {
+      "name": "the rename produced the new id and the old id is gone",
+      "ok": true,
+      "detail": "mover present: true"
+    },
+    {
+      "name": "the dragged node keeps its exact transform through the rename (placement follows the id)",
+      "ok": true,
+      "detail": "translate(135.354px, 77.7695px) -> translate(135.354px, 77.7695px)"
+    },
+    {
+      "name": "Re-layout returns the dragged node to computed layout (leaves the author placement)",
+      "ok": true,
+      "detail": "translate(135.354px, 77.7695px) -> translate(0px, 0px)"
+    },
+    {
+      "name": "the never-dragged neighbor stays at its computed layout across Re-layout",
+      "ok": true,
+      "detail": "translate(0px, 140px) -> translate(0px, 140px)"
+    },
+    {
+      "name": "after Re-layout a later edit never resurrects the departed placement",
+      "ok": true,
+      "detail": "translate(0px, 0px) (dragged spot was translate(135.354px, 77.7695px))"
+    },
+    {
+      "name": "the node re-added under the freed id lands on computed layout, not the departed placement",
+      "ok": true,
+      "detail": "translate(0px, 560px) (the departed spot was translate(135.354px, 77.7695px))"
+    },
+    {
+      "name": "tab is alive after the full pass (no listener freeze)",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

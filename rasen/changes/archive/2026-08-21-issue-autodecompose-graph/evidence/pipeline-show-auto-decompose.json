@@ -1,0 +1,397 @@
+{
+  "version": 1,
+  "name": "auto-decompose",
+  "description": "Decompose-enabled entry pipeline. The LEAD evaluates the leading decompose stage first: skip it and the remaining stages run on a single change exactly like small-feature; take it and the LEAD fans the task out into multiple child changes, each driven through the decompose-free childPipeline (small-feature) under the conservative serial/parallel policy. The decompose stage is LEAD-audited, not a human gate.",
+  "boundedLoops": [
+    {
+      "nodeId": "stage:review-loop",
+      "limits": {
+        "maxIterations": 3,
+        "maxActions": 48,
+        "budget": 48
+      },
+      "lifecycle": {
+        "version": 1,
+        "thresholds": {
+          "stallIterations": 2,
+          "sameBlockerAttempts": 3
+        },
+        "strategy": {
+          "maxAttempts": 0,
+          "requireMaterialChange": true
+        },
+        "exits": {
+          "iterationLimit": {
+            "action": "escalate",
+            "outcome": "review_cycle_exhausted"
+          },
+          "actionLimit": {
+            "action": "escalate",
+            "outcome": "review_cycle_exhausted"
+          },
+          "budgetLimit": {
+            "action": "escalate",
+            "outcome": "review_cycle_exhausted"
+          },
+          "stalled": {
+            "action": "escalate",
+            "outcome": "review_cycle_exhausted"
+          },
+          "blocked": {
+            "action": "human-required",
+            "outcome": "review_cycle_exhausted"
+          },
+          "strategyExhausted": {
+            "action": "escalate",
+            "outcome": "review_cycle_exhausted"
+          }
+        }
+      }
+    }
+  ],
+  "agents": {},
+  "hostRuntime": "claude",
+  "hostRuntimeSource": "claude-code",
+  "reuse": {
+    "planner": "auto",
+    "implementer": "auto",
+    "threshold": 0.6,
+    "roles": {
+      "planner": 0.6,
+      "implementer": 0.6
+    },
+    "sources": {
+      "threshold": "global-scheme",
+      "roles": {
+        "planner": "global-scheme",
+        "implementer": "global-scheme"
+      }
+    },
+    "bindings": {
+      "threshold": {
+        "scope": "global",
+        "row": "default",
+        "scheme": "claude"
+      },
+      "roles": {
+        "planner": {
+          "scope": "global",
+          "row": "claude",
+          "scheme": "claude"
+        },
+        "implementer": {
+          "scope": "global",
+          "row": "claude",
+          "scheme": "claude"
+        }
+      }
+    }
+  },
+  "buildOrder": [
+    "decompose",
+    "propose",
+    "apply",
+    "verify",
+    "review-loop",
+    "ship",
+    "archive"
+  ],
+  "stages": [
+    {
+      "id": "decompose",
+      "kind": "decompose",
+      "skill": null,
+      "childPipeline": "small-feature",
+      "role": "planner",
+      "requires": [],
+      "gate": false,
+      "effectiveGate": false,
+      "gateSource": "autopilot-global",
+      "loop": null,
+      "parallelGroup": null,
+      "condition": "needs-decomposition",
+      "leadReview": false,
+      "verifyPolicy": null,
+      "runtime": "claude",
+      "runtimeSource": "host",
+      "dispatchMode": "native",
+      "bridge": null,
+      "sessionReuse": null,
+      "sandbox": null,
+      "model": null,
+      "modelSource": "default",
+      "effort": null,
+      "effortSource": "default",
+      "inference": null,
+      "handoff": {
+        "threshold": 0.7,
+        "maxRelays": 3,
+        "stallLimit": 2,
+        "source": "global-scheme",
+        "binding": {
+          "scope": "global",
+          "row": "claude",
+          "scheme": "claude"
+        }
+      }
+    },
+    {
+      "id": "propose",
+      "kind": "standard",
+      "skill": "rasen-propose",
+      "childPipeline": null,
+      "role": "planner",
+      "requires": [
+        "decompose"
+      ],
+      "gate": true,
+      "effectiveGate": false,
+      "gateSource": "autopilot-global",
+      "loop": null,
+      "parallelGroup": null,
+      "condition": null,
+      "leadReview": false,
+      "verifyPolicy": null,
+      "runtime": "claude",
+      "runtimeSource": "host",
+      "dispatchMode": "native",
+      "bridge": null,
+      "sessionReuse": null,
+      "sandbox": null,
+      "model": null,
+      "modelSource": "default",
+      "effort": null,
+      "effortSource": "default",
+      "inference": null,
+      "handoff": {
+        "threshold": 0.7,
+        "maxRelays": 3,
+        "stallLimit": 2,
+        "source": "global-scheme",
+        "binding": {
+          "scope": "global",
+          "row": "claude",
+          "scheme": "claude"
+        }
+      }
+    },
+    {
+      "id": "apply",
+      "kind": "standard",
+      "skill": "rasen-apply-change",
+      "childPipeline": null,
+      "role": "implementer",
+      "requires": [
+        "propose"
+      ],
+      "gate": true,
+      "effectiveGate": false,
+      "gateSource": "autopilot-global",
+      "loop": null,
+      "parallelGroup": null,
+      "condition": null,
+      "leadReview": false,
+      "verifyPolicy": null,
+      "runtime": "claude",
+      "runtimeSource": "host",
+      "dispatchMode": "native",
+      "bridge": null,
+      "sessionReuse": null,
+      "sandbox": null,
+      "model": null,
+      "modelSource": "default",
+      "effort": null,
+      "effortSource": "default",
+      "inference": null,
+      "handoff": {
+        "threshold": 0.7,
+        "maxRelays": 3,
+        "stallLimit": 2,
+        "source": "global-scheme",
+        "binding": {
+          "scope": "global",
+          "row": "claude",
+          "scheme": "claude"
+        }
+      }
+    },
+    {
+      "id": "verify",
+      "kind": "standard",
+      "skill": "rasen-review",
+      "childPipeline": null,
+      "role": "reviewer",
+      "requires": [
+        "apply"
+      ],
+      "gate": false,
+      "effectiveGate": false,
+      "gateSource": "autopilot-global",
+      "loop": null,
+      "parallelGroup": null,
+      "condition": "always",
+      "leadReview": false,
+      "verifyPolicy": "standard",
+      "runtime": "claude",
+      "runtimeSource": "host",
+      "dispatchMode": "native",
+      "bridge": null,
+      "sessionReuse": null,
+      "sandbox": null,
+      "model": null,
+      "modelSource": "default",
+      "effort": null,
+      "effortSource": "default",
+      "inference": null,
+      "handoff": {
+        "threshold": 0.7,
+        "maxRelays": 3,
+        "stallLimit": 2,
+        "source": "global-scheme",
+        "binding": {
+          "scope": "global",
+          "row": "claude",
+          "scheme": "claude"
+        }
+      }
+    },
+    {
+      "id": "review-loop",
+      "kind": "standard",
+      "skill": "rasen-review-cycle",
+      "childPipeline": null,
+      "role": "fixer",
+      "requires": [
+        "verify"
+      ],
+      "gate": false,
+      "effectiveGate": false,
+      "gateSource": "autopilot-global",
+      "loop": {
+        "kind": "review-cycle",
+        "maxRounds": 3
+      },
+      "parallelGroup": null,
+      "condition": null,
+      "leadReview": false,
+      "verifyPolicy": null,
+      "runtime": "claude",
+      "runtimeSource": "host",
+      "dispatchMode": "native",
+      "bridge": null,
+      "sessionReuse": null,
+      "sandbox": null,
+      "model": null,
+      "modelSource": "default",
+      "effort": null,
+      "effortSource": "default",
+      "inference": null,
+      "handoff": {
+        "threshold": 0.7,
+        "maxRelays": 3,
+        "stallLimit": 2,
+        "source": "global-scheme",
+        "binding": {
+          "scope": "global",
+          "row": "claude",
+          "scheme": "claude"
+        }
+      }
+    },
+    {
+      "id": "ship",
+      "kind": "standard",
+      "skill": "rasen-ship",
+      "childPipeline": null,
+      "role": "shipper",
+      "requires": [
+        "review-loop"
+      ],
+      "gate": true,
+      "effectiveGate": false,
+      "gateSource": "autopilot-global",
+      "loop": null,
+      "parallelGroup": null,
+      "condition": null,
+      "leadReview": false,
+      "verifyPolicy": null,
+      "runtime": "claude",
+      "runtimeSource": "host",
+      "dispatchMode": "native",
+      "bridge": null,
+      "sessionReuse": null,
+      "sandbox": null,
+      "model": "sonnet",
+      "modelSource": "stage",
+      "effort": null,
+      "effortSource": "default",
+      "inference": null,
+      "handoff": {
+        "threshold": 0.7,
+        "maxRelays": 3,
+        "stallLimit": 2,
+        "source": "global-scheme",
+        "binding": {
+          "scope": "global",
+          "row": "claude",
+          "scheme": "claude"
+        }
+      }
+    },
+    {
+      "id": "archive",
+      "kind": "standard",
+      "skill": "rasen-archive-change",
+      "childPipeline": null,
+      "role": "shipper",
+      "requires": [
+        "ship"
+      ],
+      "gate": false,
+      "effectiveGate": false,
+      "gateSource": "autopilot-global",
+      "loop": null,
+      "parallelGroup": null,
+      "condition": null,
+      "leadReview": false,
+      "verifyPolicy": null,
+      "runtime": "claude",
+      "runtimeSource": "host",
+      "dispatchMode": "native",
+      "bridge": null,
+      "sessionReuse": null,
+      "sandbox": null,
+      "model": "sonnet",
+      "modelSource": "stage",
+      "effort": null,
+      "effortSource": "default",
+      "inference": null,
+      "handoff": {
+        "threshold": 0.7,
+        "maxRelays": 3,
+        "stallLimit": 2,
+        "source": "global-scheme",
+        "binding": {
+          "scope": "global",
+          "row": "claude",
+          "scheme": "claude"
+        }
+      }
+    }
+  ],
+  "availableEngines": [
+    "legacy",
+    "reconciler"
+  ],
+  "reconcilerSupport": {
+    "supported": false,
+    "reason": "unsupported_pipeline_semantics",
+    "profileDigest": "sha256:04ad747728c6d4f15721c379478d566a1df39d1eb0ec7c6954f93677c6473dc7"
+  },
+  "enginePolicy": {
+    "configured": "auto",
+    "source": "default",
+    "effectiveEngine": "reconciler"
+  },
+  "compatibilityBoundary": "issue-dispatch-0.3.0"
+}

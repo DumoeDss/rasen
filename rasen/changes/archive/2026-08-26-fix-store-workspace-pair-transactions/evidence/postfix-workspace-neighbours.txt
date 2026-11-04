@@ -1,0 +1,123 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.6 [39m[90mE:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code[39m
+
+ [32m✓[39m test/core/store/workspace-pairing.test.ts[2m > [22mworkspace pairing: prepared to bound[2m > [22mdescribes a scope with no prepared workspace as unbound and says so[33m 4725[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-apply.test.ts[2m > [22mapplying a workspace plan[2m > [22mcreates both worktrees from the frozen commits and writes both binding documents[33m 12739[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-pairing.test.ts[2m > [22mworkspace pairing: prepared to bound[2m > [22mdescribes a prepared pair as prepared, with no Change instance and no pair id[33m 13024[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-repreparation.test.ts[2m > [22mre-preparing a Change workspace pair[2m > [22mfixed contract[2m > [22mapplies a re-plan whose created destination is simply absent (task 2.2)[33m 24829[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mremoves exactly the two recorded roots and this pair index entry[33m 24748[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-apply.test.ts[2m > [22mapplying a workspace plan[2m > [22mconsumes only the token, ignoring the directory and selectors that produced the plan[33m 13677[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-pairing.test.ts[2m > [22mworkspace pairing: prepared to bound[2m > [22mcompletes the pair when the Change is created, and describes it as bound[33m 15679[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mpreviews without writing anything[33m 14011[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-apply.test.ts[2m > [22mapplying a workspace plan[2m > [22mis idempotent: re-applying a token completes rather than duplicating[33m 15138[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-pairing.test.ts[2m > [22mworkspace pairing: prepared to bound[2m > [22mdescribes a pair whose worktree has been removed as drifted, and rewrites nothing[33m 11647[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mleaves the Change directory in the Store integration checkout alone[33m 20725[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-pairing.test.ts[2m > [22mworkspace pairing: prepared to bound[2m > [22mwrites nothing while describing, in any state[33m 14562[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-repreparation.test.ts[2m > [22mre-preparing a Change workspace pair[2m > [22mfixed contract[2m > [22mrefuses a second pair at a fresh destination while the recorded pair is live, and converges after cleanup (task 3.2)[33m 34945[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-apply.test.ts[2m > [22mapplying a workspace plan[2m > [22mcompletes an existing Change with one canonical, retry-stable pair identity[33m 19447[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mrefuses when no pair is recorded for the Change[33m 4222[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mpins the no-entry plan id to a fixed value on fixed input, not merely to a fresh recompute[33m 2827[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-pairing.test.ts[2m > [22mworkspace pairing: prepared to bound[2m > [22mrefuses a second Change in a bound planning worktree, from the record and not a scan[33m 10584[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-apply.test.ts[2m > [22mapplying a workspace plan[2m > [22mkeeps an existing Change prepared when completion cannot derive the execution identity[33m 9983[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-repreparation.test.ts[2m > [22mre-preparing a Change workspace pair[2m > [22mfixed contract[2m > [22mstates the re-creation of a vanished recorded pair in the preview (task 3.3)[33m 13474[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-pairing.test.ts[2m > [22mworkspace pairing: prepared to bound[2m > [22mpermits the SAME Change to reach binding twice, which is how an interrupted run completes[33m 9988[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mcleanup plan id is exactly sha256(canonicalBytes(body)) hex, over body and nothing else[33m 14865[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-apply.test.ts[2m > [22mapplying a workspace plan[2m > [22mrefuses originally-created worktree identity drift on retry without rewriting binding state[33m 15031[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-repreparation.test.ts[2m > [22mre-preparing a Change workspace pair[2m > [22mfixed contract[2m > [22mtreats a case-aliased spelling of the recorded root as the same root (task 3.3)[33m 13700[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-pairing.test.ts[2m > [22mworkspace pairing: prepared to bound[2m > [22mpermits a second Change in a planning worktree that is prepared but not yet bound[33m 8115[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mrefuses a tracked modification and lists the file, discarding nothing[33m 11037[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-pairing.test.ts[2m > [22mworkspace pairing: prepared to bound[2m > [22mrefuses to complete a binding whose marker names another project or line[33m 7589[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-apply.test.ts[2m > [22mapplying a workspace plan[2m > [22mrefuses reused-worktree identity drift before writing the prepared carriers[33m 11326[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-repreparation.test.ts[2m > [22mre-preparing a Change workspace pair[2m > [22mfixed contract[2m > [22mnames the ref and frozen commit every created side is born from (task 4.1)[33m 10914[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-pairing.test.ts[2m > [22mworkspace pairing: prepared to bound[2m > [22mrefuses to complete a binding whose marker names another STORE[33m 7860[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-pairing.test.ts[2m > [22mworkspace pairing: prepared to bound[2m > [22mrecords the Change instance and says so when no execution side is known[33m 4541[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-apply.test.ts[2m > [22mapplying a workspace plan[2m > [22mrefuses a reused marker target-line disagreement without rewriting either carrier[33m 11322[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-repreparation.test.ts[2m > [22mre-preparing a Change workspace pair[2m > [22mfixed contract[2m > [22mstill refuses a resumed created destination that is a different incarnation (task 2.3)[33m 11742[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mrefuses untracked files by default, lists them, and accepts them only when told[33m 19217[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-apply.test.ts[2m > [22mapplying a workspace plan[2m > [22mleaves a resumable record and no orphan when the first worktree creation fails[33m 8506[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-pairing.test.ts[2m > [22mworkspace pairing: prepared to bound[2m > [22mrecomputes a different pair id when a worktree instance is replaced[33m 11765[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-repreparation.test.ts[2m > [22mre-preparing a Change workspace pair[2m > [22mfixed contract[2m > [22mprepares in one invocation on a line that advanced moments before (task 4.4)[33m 11494[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mrefuses unmerged work, naming the unreachable commit, and merges nothing[33m 12227[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-apply.test.ts[2m > [22mapplying a workspace plan[2m > [22mleaves no orphan worktree when the second creation fails[33m 8875[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22mfreezes both ref OIDs and creates each worktree from the frozen commit, not the ref name[33m 4039[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22mbuilds the closed action list with an absolute destination for each action[33m 4531[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-repreparation.test.ts[2m > [22mre-preparing a Change workspace pair[2m > [22mfixed contract[2m > [22mstill refuses stale when a competitor moves the ref inside the compound window, and converges on repeat (task 4.4)[33m 12354[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mrefuses a worktree that has moved to another ref[33m 12457[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22mproduces an identical plan and plan id for equal inputs[33m 5303[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-apply.test.ts[2m > [22mapplying a workspace plan[2m > [22mnever leaves a half-written marker when a binding document write fails[33m 11727[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22mplan id is exactly sha256(canonicalBytes(body)) hex, over body and nothing else[33m 3280[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-apply.test.ts[2m > [22mapplying a workspace plan[2m > [22maborts with workspace_plan_stale when the Store ref moves, creating nothing[33m 4339[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-repreparation.test.ts[2m > [22mre-preparing a Change workspace pair[2m > [22mfixed contract[2m > [22mfails the compound with a named lock holder rather than deadlocking (task 4.4)[33m 8850[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22mchanges the plan id when a frozen input changes[33m 5441[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-apply.test.ts[2m > [22mapplying a workspace plan[2m > [22maborts when the code ref moves[33m 4668[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mrefuses a repository main checkout, which cleanup never removes[33m 10495[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22mwrites the plan under the machine data directory and nothing into either repository[33m 4476[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-apply.test.ts[2m > [22mapplying a workspace plan[2m > [22maborts when the target-line catalog text is edited[33m 4973[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22mreports every unsatisfied precondition rather than stopping at the first[33m 4759[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-apply.test.ts[2m > [22mapplying a workspace plan[2m > [22maborts when the Store stops declaring layout version 2[33m 3341[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mrefuses while a scope lock is held elsewhere, and names the lock FILE[33m 10931[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22mwrites nothing at all when the plan cannot be applied[33m 3671[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-repreparation.test.ts[2m > [22mre-preparing a Change workspace pair[2m > [22mfixed contract[2m > [22mreattaches the pair branch an earlier pair left behind rather than re-minting it[33m 17634[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-apply.test.ts[2m > [22mapplying a workspace plan[2m > [22maborts when a planned destination is occupied by something else[33m 5339[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-repreparation.test.ts[2m > [22mre-preparing a Change workspace pair[2m > [22mfixed contract[2m > [22mrefuses a created side whose pair branch another worktree already has checked out[33m 5258[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mdoes not call a lock held when its owner is provably dead, because the acquirer would steal it[33m 11237[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22mrefuses to reuse a RECORDED worktree that has moved to another ref, and switches nothing[33m 10810[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-apply.test.ts[2m > [22mapplying a workspace plan[2m > [22maborts when another Change is prepared in the same scope between plan and apply[33m 8893[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22madopts the ref a freshly reused worktree is already on, because nothing is recorded yet[33m 5247[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-apply.test.ts[2m > [22mapplying a workspace plan[2m > [22mwrites nothing outside the two planned roots and the machine data directory[33m 7669[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-repreparation.test.ts[2m > [22mre-preparing a Change workspace pair[2m > [22mfixed contract[2m > [22mrefuses stale when the reattached pair branch moves between planning and applying[33m 11942[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22mrefuses to reuse a worktree with a detached HEAD, because a pair records a ref[33m 5162[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mstill refuses on a lock whose holder cannot be established[33m 10904[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22mrefuses the Store integration checkout as a planning worktree[33m 4604[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-apply.test.ts[2m > [22mapplying a workspace plan[2m > [22mwrites only the association document into a reused main-checkout execution root[33m 9992[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-repreparation.test.ts[2m > [22mre-preparing a Change workspace pair[2m > [22mdesigned staleness[2m > [22mrefuses a moved Store ref, naming both the frozen and the live commit (task 1.4)[33m 11642[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22mpermits the project main checkout as the execution side[33m 4640[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mrefuses a worktree a live session context still references[33m 10357[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22mkeeps the blessing for an aliased spelling of the main checkout[33m 4861[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-binding.test.ts[2m > [22mworkspace binding carriers and the machine index[2m > [22mround-trips a carrier document byte for byte[33m 4144[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-binding.test.ts[2m > [22mworkspace binding carriers and the machine index[2m > [22mpins the carrier digest to a fixed value on fixed content, not merely to its own formula[33m 3608[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22mleaves a dirty reused worktree alone, because preparation does not touch it[33m 4603[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mcounts a session context it cannot read as referencing everything[33m 9312[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-binding.test.ts[2m > [22mworkspace binding carriers and the machine index[2m > [22mtreats a corrupt or incomplete carrier as a conflict, never as an absence[33m 3317[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22masserts marker containment against the planned root on the plan flavor[33m 3091[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-binding.test.ts[2m > [22mworkspace binding carriers and the machine index[2m > [22mreads a carrier from the exact path the layout rule names[33m 3561[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22mrefuses a planned root inside its own repository checkout[33m 3901[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-binding.test.ts[2m > [22mworkspace binding carriers and the machine index[2m > [22mrefuses a carrier that names another Store, project, or target line than the committed identity[33m 3990[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mscans sessions under the REAL machine root when no data directory is threaded[33m 9422[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22mrefuses a pair whose two roots are the same path or nested[33m 4575[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-binding.test.ts[2m > [22mworkspace binding carriers and the machine index[2m > [22mnever infers a planning worktree for an execution checkout that records none[33m 3917[2mms[22m[39m
+ [32m✓[39m test/core/store/store-archive-delivery.test.ts[2m > [22mthe archive delivery block (readArchiveEntry + threading + rollup)[2m > [22mpins the delivery facts per shape, verbatim through every level[33m 19478[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22mreports both root containment checks as satisfied for the normal case[33m 3605[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-binding.test.ts[2m > [22mworkspace binding carriers and the machine index[2m > [22mrefuses two carriers that disagree, on every axis they can disagree about[33m 3335[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22mrefuses a foreign path flavor rather than emitting a destination nothing can open[33m 2425[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22mrefuses a scope with no project, no target line, or no code locator[33m 2895[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-binding.test.ts[2m > [22mworkspace binding carriers and the machine index[2m > [22mpins the index fingerprint to a fixed value on a fixed document, not merely to its own formula[33m 3463[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-binding.test.ts[2m > [22mworkspace binding carriers and the machine index[2m > [22mwrites the index document at the per-scope path the record shape names[33m 5077[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mlists and removes an untracked file whose name is not ASCII[33m 16495[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22mrefuses a second Change in a planning worktree the index already records[33m 6954[2mms[22m[39m
+ [32m✓[39m test/core/store/store-archive-delivery.test.ts[2m > [22mthe archive delivery block (readArchiveEntry + threading + rollup)[2m > [22mderives the identical delivery twice and writes nothing while doing it[33m 14874[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mreports a modified non-ASCII tracked path as itself[33m 2917[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22mverifies an already-minted identity under intent existing-change[33m 3029[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-plan.test.ts[2m > [22mworkspace plan construction[2m > [22mrefuses to bind a Change frozen against another line[33m 3451[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-binding.test.ts[2m > [22mworkspace binding carriers and the machine index[2m > [22mre-verifies a healthy entry as consistent[33m 5733[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22msurfaces a Git failure as workspace_git_failed, on the seam that has no fallback[33m 2201[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-binding.test.ts[2m > [22mworkspace binding carriers and the machine index[2m > [22mtreats a removed worktree as a conflict rather than as truth[33m 5117[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mlists every failed precondition at once, with no force and no partial removal[33m 7776[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-binding.test.ts[2m > [22mworkspace binding carriers and the machine index[2m > [22mtreats a root that is no longer a worktree of the recorded repository as a conflict[33m 4494[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-binding.test.ts[2m > [22mworkspace binding carriers and the machine index[2m > [22mreports a ref that moved under a recorded worktree[33m 4922[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-binding.test.ts[2m > [22mworkspace binding carriers and the machine index[2m > [22mrepairs a missing entry from live Git and is byte-stable when repeated[33m 3725[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mresumes from the recorded phase after an interrupted removal[33m 11804[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-binding.test.ts[2m > [22mworkspace binding carriers and the machine index[2m > [22mrefuses two entries claiming one execution worktree, listing every claimant[33m 5598[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-binding.test.ts[2m > [22mworkspace binding carriers and the machine index[2m > [22mrefuses two planning worktrees claiming one Change instance[33m 5514[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mre-checks reachability before the first removal, and removes nothing when it fails[33m 9973[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-binding.test.ts[2m > [22mworkspace binding carriers and the machine index[2m > [22maccepts two Changes in one scope that hold different worktrees[33m 5388[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mrefuses an apply after a sibling Change was prepared in the same scope[33m 9548[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mprunes the repository of a side that vanished between preview and apply[33m 8722[2mms[22m[39m
+ [32m✓[39m test/core/store/workspace-cleanup.test.ts[2m > [22mworkspace cleanup[2m > [22mremoves an unbound pair, which trivially satisfies reachability[33m 10194[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m7 passed[39m[22m[90m (7)[39m
+[2m      Tests [22m [1m[32m113 passed[39m[22m[90m (113)[39m
+[2m   Start at [22m 15:27:05
+[2m   Duration [22m 303.35s[2m (transform 9.96s, setup 566ms, collect 61.37s, tests 1003.09s, environment 2ms, prepare 2.64s)[22m
+
+EXIT=0

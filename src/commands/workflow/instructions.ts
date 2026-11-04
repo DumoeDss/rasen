@@ -23,6 +23,8 @@ import {
 import { resolveChangeWorkDir } from '../../core/change-work.js';
 import {
   resolveRootForCommand,
+  readResolvedProjectConfig,
+  resolvedExecutionProjectRoot,
   withStoreFlag,
   toPlanningHome,
   toRootOutput,
@@ -35,11 +37,12 @@ import {
   type ReferenceIndexEntry,
 } from '../../core/references.js';
 import { readRegistrySnapshot } from '../../core/store/registry.js';
-import { readProjectConfig, type ProjectConfig } from '../../core/project-config.js';
+import { resolveArchiveTiming, type ProjectConfig } from '../../core/project-config.js';
 import {
   validateChangeExists,
   validateSchemaExists,
   resolveChangeLandingDirs,
+  resolvePlanningActionContext,
   type ChangeLandingDirs,
   type TaskItem,
   type ApplyInstructions,
@@ -61,6 +64,7 @@ export interface InstructionsOptions {
   schema?: string;
   store?: string;
   project?: string;
+  targetLine?: string;
   storePath?: string;
   json?: boolean;
 }
@@ -70,6 +74,7 @@ export interface ApplyInstructionsOptions {
   schema?: string;
   store?: string;
   project?: string;
+  targetLine?: string;
   storePath?: string;
   json?: boolean;
 }
@@ -88,7 +93,7 @@ async function loadRootConfigContext(root: ResolvedOpenSpecRoot): Promise<{
   references: ReferenceIndexEntry[] | undefined;
 }> {
   // readProjectConfig never throws: missing/unparseable configs are null.
-  const projectConfig = readProjectConfig(root.path);
+  const projectConfig = readResolvedProjectConfig(root);
 
   // One registry read serves every relationship consumer in this
   // output so it never carries a torn snapshot.
@@ -114,7 +119,12 @@ export async function instructionsCommand(
   options: InstructionsOptions
 ): Promise<void> {
   // Resolve (and banner) before the spinner starts so stderr stays readable.
-  const root = await resolveRootForCommand(options, { json: options.json });
+  const root = await resolveRootForCommand(options, {
+    json: options.json,
+    ...(options.change === undefined
+      ? {}
+      : { changeSelector: { changeId: options.change } }),
+  });
   if (!root) {
     return;
   }
@@ -124,6 +134,7 @@ export async function instructionsCommand(
   try {
     const planningHome = toPlanningHome(root);
     const projectRoot = root.path;
+    const { projectConfig, references } = await loadRootConfigContext(root);
     const changeName = await validateChangeExists(
       options.change,
       projectRoot,
@@ -133,13 +144,15 @@ export async function instructionsCommand(
 
     // Validate schema if explicitly provided
     if (options.schema) {
-      validateSchemaExists(options.schema, projectRoot);
+      validateSchemaExists(options.schema, projectRoot, root.schemasDir);
     }
 
     // loadChangeContext will auto-detect schema from metadata if not provided
     const context = loadChangeContext(projectRoot, changeName, options.schema, {
       changeDir: getChangeDir(planningHome, changeName),
       planningHome,
+      ...(root.schemasDir === undefined ? {} : { projectSchemasDir: root.schemasDir }),
+      projectConfig,
     });
 
     if (!artifactId) {
@@ -160,7 +173,6 @@ export async function instructionsCommand(
       );
     }
 
-    const { projectConfig, references } = await loadRootConfigContext(root);
     const instructions = generateInstructions(context, artifactId, projectRoot, {
       projectConfig,
       references,
@@ -175,7 +187,10 @@ export async function instructionsCommand(
     // machine-home work directory — nothing new lands there. The field stays
     // in the payload when the project already has an identity, so
     // sticky-legacy readers can still check the legacy location.
-    const workDir = await resolveChangeWorkDir(projectRoot, changeName, { ensure: false });
+    const executionRoot = resolvedExecutionProjectRoot(root);
+    const workDir = executionRoot === undefined
+      ? null
+      : await resolveChangeWorkDir(executionRoot, changeName, { ensure: false });
 
     spinner?.stop();
 
@@ -184,7 +199,16 @@ export async function instructionsCommand(
         JSON.stringify(
           {
             ...instructions,
+            changeRoot: instructions.changeDir,
             ...landing,
+            actionContext: resolvePlanningActionContext(
+              root,
+              context.graph.getAllArtifacts().map((artifact) => artifact.id)
+            ),
+            archive: {
+              timing: resolveArchiveTiming(projectConfig),
+              archiveDir: root.archiveDir,
+            },
             ...(workDir ? { workDir } : {}),
             root: toRootOutput(root),
           },
@@ -413,6 +437,7 @@ function parseTasksFile(content: string): TaskItem[] {
 export interface GenerateApplyInstructionsOptions {
   planningHome?: PlanningHome;
   references?: ReferenceIndexEntry[];
+  projectConfig?: ProjectConfig | null;
   /**
    * The resolved root, used to derive the execution root for `ephemeraDir`
    * (`file-placement` capability). Omitted only by callers with no root
@@ -436,15 +461,18 @@ export async function generateApplyInstructions(
   const planningHome =
     options.planningHome ?? resolveCurrentPlanningHomeSync({ startPath: projectRoot });
   const references = options.references;
+  const projectSchemasDir = options.root?.schemasDir;
   // loadChangeContext will auto-detect schema from metadata if not provided
   const context = loadChangeContext(projectRoot, changeName, schemaName, {
     changeDir: getChangeDir(planningHome, changeName),
     planningHome,
+    ...(projectSchemasDir === undefined ? {} : { projectSchemasDir }),
+    ...(options.projectConfig === undefined ? {} : { projectConfig: options.projectConfig }),
   });
   const changeDir = context.changeDir;
 
   // Get the full schema to access the apply phase configuration
-  const schema = resolveSchema(context.schemaName, projectRoot);
+  const schema = resolveSchema(context.schemaName, projectRoot, projectSchemasDir);
   const applyConfig = schema.apply;
 
   // Determine required artifacts and tracking file from schema
@@ -520,7 +548,12 @@ export async function generateApplyInstructions(
   // Probe-only (`change-work-dir` capability): apply-instructions no longer
   // mints machine identity or a machine-home work directory — nothing new
   // lands there. The legacy field survives for sticky-legacy readers.
-  const workDir = await resolveChangeWorkDir(projectRoot, changeName, { ensure: false });
+  const executionRoot = options.root === undefined
+    ? projectRoot
+    : resolvedExecutionProjectRoot(options.root);
+  const workDir = executionRoot === undefined
+    ? null
+    : await resolveChangeWorkDir(executionRoot, changeName, { ensure: false });
 
   // Always present: derived from the planning and execution roots alone.
   const landing = resolveChangeLandingDirs(
@@ -556,7 +589,12 @@ export async function generateApplyInstructions(
 
 export async function applyInstructionsCommand(options: ApplyInstructionsOptions): Promise<void> {
   // Resolve (and banner) before the spinner starts so stderr stays readable.
-  const root = await resolveRootForCommand(options, { json: options.json });
+  const root = await resolveRootForCommand(options, {
+    json: options.json,
+    ...(options.change === undefined
+      ? {}
+      : { changeSelector: { changeId: options.change } }),
+  });
   if (!root) {
     return;
   }
@@ -575,21 +613,36 @@ export async function applyInstructionsCommand(options: ApplyInstructionsOptions
 
     // Validate schema if explicitly provided
     if (options.schema) {
-      validateSchemaExists(options.schema, projectRoot);
+      validateSchemaExists(options.schema, projectRoot, root.schemasDir);
     }
 
     // generateApplyInstructions uses loadChangeContext which auto-detects schema
-    const { references } = await loadRootConfigContext(root);
+    const { projectConfig, references } = await loadRootConfigContext(root);
     const instructions = await generateApplyInstructions(projectRoot, changeName, options.schema, {
       planningHome,
       references,
+      projectConfig,
       root,
     });
 
     spinner?.stop();
 
     if (options.json) {
-      console.log(JSON.stringify({ ...instructions, root: toRootOutput(root) }, null, 2));
+      console.log(JSON.stringify({
+        ...instructions,
+        changeRoot: instructions.changeDir,
+        actionContext: resolvePlanningActionContext(
+          root,
+          resolveSchema(instructions.schemaName, projectRoot, root.schemasDir).artifacts.map(
+            (artifact) => artifact.id
+          )
+        ),
+        archive: {
+          timing: resolveArchiveTiming(projectConfig),
+          archiveDir: root.archiveDir,
+        },
+        root: toRootOutput(root),
+      }, null, 2));
       return;
     }
 
@@ -607,7 +660,9 @@ export function printApplyInstructionsText(instructions: ApplyInstructions): voi
   console.log(`Schema: ${schemaName}`);
   console.log(`Evidence dir: ${instructions.evidenceDir}`);
   console.log(`Handoff dir: ${instructions.handoffDir}`);
-  console.log(`Ephemera dir: ${instructions.ephemeraDir}`);
+  if (instructions.ephemeraDir) {
+    console.log(`Ephemera dir: ${instructions.ephemeraDir}`);
+  }
   if (workDir) {
     console.log(`Work dir (legacy): ${workDir}`);
   }

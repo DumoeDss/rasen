@@ -7,14 +7,35 @@
  * without a canvas mount, the same reasoning that made `layout.ts` pure.
  */
 import type {
+  PipelineAgentRuntime,
+  PipelineAgentRuntimeSandbox,
+  PipelineAgentRuntimeSessionReuse,
+  PipelineCatalogSkill,
+  PipelineStageHandoffConfig,
+  PipelineVerifyPolicy,
   ThresholdValue,
+  WireAtomicStageExecutionV1,
+  WireAtomicStageNode,
+  WireBoundedLoopLifecyclePolicyV1,
+  WireBoundedLoopNode,
   WireCompositeDeclaration,
+  WireConsultationBinding,
+  WireDefinitionArtifact,
   WireDefinitionConnection,
   WireDefinitionNode,
+  WireDefinitionPort,
+  WireFanOutNode,
+  WireGateNode,
+  WireGoalCycleVariant,
+  WireGoalCyclePhase,
+  WireJoinNode,
+  WireLoopLifecycleBlockedExit,
   WirePipelineDefinition,
   WirePipelineDefinitionV1,
   WirePipelineDefinitionV2,
   WirePipelineDefinitionStage,
+  WireStageRole,
+  WireReviewCyclePhase,
 } from '../api/types.js';
 
 /**
@@ -39,6 +60,21 @@ import type {
 export const CONTROL_SOURCE_PORT = 'done';
 export const CONTROL_TARGET_PORT = 'input';
 
+/**
+ * The engine's control-flow port TYPE (`CONTROL_PORT_TYPE`,
+ * `src/core/pipeline-registry/definition.ts`) — the type every control edge
+ * carries. A derived declaration INPUT row must carry it VERBATIM: the
+ * engine types a Composite declaration's input rows straight from
+ * `portMap(declaration.inputs)` (name → authored type) with NONE of the
+ * conventional control-port widening an empty-descriptor AtomicStage gets —
+ * the `CONTROL_INPUT_PORTS` widening in `contractForNode` is AtomicStage-only
+ * — so a derived row typed with the port NAME ('input') leaves every
+ * connection onto it a PORT_MISMATCH (`validateTypedPorts`). Round one and
+ * child-1 both minted name-typed rows; canvas-loop-validate-clean-synthesis
+ * re-types every derived loop-path row with this constant.
+ */
+export const CONTROL_PORT_TYPE = 'ecp/control';
+
 export function isV1Definition(
   def: WirePipelineDefinition
 ): def is WirePipelineDefinitionV1 {
@@ -49,6 +85,43 @@ export function isV2Definition(
   def: WirePipelineDefinition
 ): def is WirePipelineDefinitionV2 {
   return def.version === 2;
+}
+
+/**
+ * Browser-safe mirror of the core blank Definition v2 factory. Keep this pure
+ * and dependency-free so Canvas never bundles the Node-oriented kernel. The
+ * cross-package parity fixture pins every field to the core factory.
+ */
+export function createBlankCanvasPipelineDefinitionV2(
+  name: string,
+  source = 'canvas'
+): WirePipelineDefinitionV2 {
+  return {
+    version: 2,
+    id: `pipeline:${name}`,
+    sourceId: `${source}:${name}`,
+    name,
+    inputs: [],
+    artifacts: [],
+    outcomes: [],
+    declarations: [],
+    root: { nodes: [], connections: [] },
+  };
+}
+
+/** Forks an authored v2 definition into stable Canvas-owned user identities. */
+export function duplicateV2Definition(
+  def: WirePipelineDefinitionV2,
+  name: string
+): WirePipelineDefinitionV2 {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error('A duplicate pipeline name cannot be blank.');
+  return {
+    ...def,
+    id: `pipeline:${trimmed}`,
+    sourceId: `canvas:${trimmed}`,
+    name: trimmed,
+  };
 }
 
 /**
@@ -270,6 +343,38 @@ export function bodyWouldCreateCycle(
 }
 
 /**
+ * The region a refused back-edge `from -> to` closes
+ * (canvas-backedge-loop-inference design D2): `{to, from}` plus every node
+ * on a path between them — `{n | to ⇝* n ∧ n ⇝* from}` — computed over the
+ * SAME adjacency builder {@link wouldCreateCycle} uses, so the region can
+ * never disagree with the rule that recognized the draw as loop intent.
+ * Both endpoints are always members (the existing path `to ⇝* from` is what
+ * made the draw a refusal); a self-loop draw (`from === to`) yields exactly
+ * that one node. Insertion order follows the draft's node order, so the set
+ * is deterministic across runs.
+ */
+export function backedgeRegion(
+  def: WirePipelineDefinition,
+  from: string,
+  to: string
+): Set<string> {
+  const adjacency = buildAdjacency(def);
+  const region = new Set<string>([to, from]);
+  const nodeIds = isV1Definition(def)
+    ? def.stages.map((stage) => stage.id)
+    : def.root.nodes.map((node) => node.id);
+  for (const node of nodeIds) {
+    if (region.has(node)) continue;
+    // to ⇝* node (node is downstream of the edge's target) AND node ⇝* from
+    // (node is upstream of the edge's source) — node lies on the cycle.
+    if (reachesThrough(adjacency, node, to) && reachesThrough(adjacency, from, node)) {
+      region.add(node);
+    }
+  }
+  return region;
+}
+
+/**
  * Generates a stage id from a skill id (lowercased, non-id characters
  * collapsed to `-`), uniquified against the draft's existing stage ids with a
  * numeric suffix. Panel-editable afterward via `renameStage`.
@@ -307,15 +412,400 @@ export function updateV2NodeFields(
   };
 }
 
-export type V2EditableNodeKind = 'AtomicStage' | 'Gate' | 'Choice' | 'Finish' | 'CompositeRef' | 'BoundedLoop';
+export interface AtomicStageExecutionPatch {
+  role?: WireStageRole;
+  workspace?: Partial<WireAtomicStageExecutionV1['workspace']>;
+  leadReview?: boolean | null;
+  verifyPolicy?: PipelineVerifyPolicy | null;
+  runtime?: PipelineAgentRuntime | null;
+  model?: string | null;
+  effort?: string | null;
+  sandbox?: PipelineAgentRuntimeSandbox | null;
+  sessionReuse?: PipelineAgentRuntimeSessionReuse | null;
+  handoff?: {
+    threshold?: PipelineStageHandoffConfig['threshold'] | null;
+    maxRelays?: number | null;
+    stallLimit?: number | null;
+    [key: string]: unknown;
+  } | null;
+}
+
+/**
+ * Patches one AtomicStage execution owner in place. `null` clears an optional
+ * authored field; nested workspace/handoff patches retain unexposed siblings.
+ */
+export function updateAtomicStageExecution(
+  def: WirePipelineDefinitionV2,
+  id: string,
+  patch: AtomicStageExecutionPatch
+): WirePipelineDefinitionV2 {
+  const node = def.root.nodes.find((candidate) => candidate.id === id);
+  if (!node || node.kind !== 'AtomicStage') {
+    throw new Error(`AtomicStage '${id}' does not exist.`);
+  }
+  const current: WireAtomicStageExecutionV1 = node.execution ?? {
+    version: 1,
+    role: 'implementer',
+    workspace: { access: 'write' },
+  };
+  const next: WireAtomicStageExecutionV1 = {
+    ...current,
+    ...(patch.role !== undefined ? { role: patch.role } : {}),
+    workspace:
+      patch.workspace === undefined
+        ? current.workspace
+        : { ...current.workspace, ...patch.workspace },
+  };
+  const optionalKeys = [
+    'leadReview',
+    'verifyPolicy',
+    'runtime',
+    'model',
+    'effort',
+    'sandbox',
+    'sessionReuse',
+  ] as const;
+  for (const key of optionalKeys) {
+    const value = patch[key];
+    if (value === undefined) continue;
+    if (value === null) delete next[key];
+    else next[key] = value as never;
+  }
+  if (patch.handoff === null) {
+    delete next.handoff;
+  } else if (patch.handoff !== undefined) {
+    const handoff = { ...(current.handoff ?? {}) };
+    for (const [key, value] of Object.entries(patch.handoff)) {
+      if (value === null) delete handoff[key];
+      else handoff[key] = value;
+    }
+    next.handoff = handoff;
+  }
+  return updateV2NodeFields(def, id, { execution: next } as Partial<WireAtomicStageNode>);
+}
+
+export interface DefinitionContractPatch {
+  inputs?: WireDefinitionPort[];
+  artifacts?: WireDefinitionArtifact[];
+  outcomes?: string[];
+  limits?: {
+    maxActions?: number | null;
+    budget?: number | null;
+    [key: string]: unknown;
+  } | null;
+}
+
+function assertNamedContractRows(
+  label: string,
+  rows: readonly { name: string; type: string }[]
+): void {
+  const names = rows.map((row) => row.name.trim());
+  if (names.some((name) => !name)) throw new Error(`A ${label} name cannot be blank.`);
+  if (new Set(names).size !== names.length) throw new Error(`${label} names must be unique.`);
+  if (rows.some((row) => !row.type.trim())) throw new Error(`A ${label} type cannot be blank.`);
+}
+
+function assertNamedOutcomes(label: string, outcomes: readonly string[]): void {
+  const values = outcomes.map((outcome) => outcome.trim());
+  if (values.some((outcome) => !outcome)) throw new Error(`A ${label} outcome cannot be blank.`);
+  if (new Set(values).size !== values.length) throw new Error(`${label} outcomes must be unique.`);
+}
+
+/** Patches top-level authored contracts without reconstructing the Definition. */
+export function updateDefinitionContracts(
+  def: WirePipelineDefinitionV2,
+  patch: DefinitionContractPatch
+): WirePipelineDefinitionV2 {
+  if (patch.inputs !== undefined) assertNamedContractRows('definition input', patch.inputs);
+  if (patch.artifacts !== undefined) assertNamedContractRows('definition artifact', patch.artifacts);
+  if (patch.outcomes !== undefined) assertNamedOutcomes('definition', patch.outcomes);
+  if (patch.limits) {
+    for (const [key, value] of Object.entries(patch.limits)) {
+      if (value !== null && typeof value === 'number' && (!Number.isSafeInteger(value) || value <= 0)) {
+        throw new Error(`Definition limit '${key}' must be a positive integer.`);
+      }
+    }
+  }
+  const next: WirePipelineDefinitionV2 = {
+    ...def,
+    ...(patch.inputs !== undefined ? { inputs: patch.inputs } : {}),
+    ...(patch.artifacts !== undefined ? { artifacts: patch.artifacts } : {}),
+    ...(patch.outcomes !== undefined ? { outcomes: patch.outcomes } : {}),
+  };
+  if (patch.limits === null) delete next.limits;
+  else if (patch.limits !== undefined) {
+    const limits = { ...(def.limits ?? {}) };
+    for (const [key, value] of Object.entries(patch.limits)) {
+      if (value === null) delete limits[key];
+      else limits[key] = value;
+    }
+    if (Object.keys(limits).length === 0) delete next.limits;
+    else next.limits = limits;
+  }
+  return next;
+}
+
+/**
+ * Appends one name to the definition's named-outcome contract. The thin
+ * "declare one more outcome" wrapper: `updateDefinitionContracts` stays the
+ * sole rule site (a blank or already-declared name is refused with that
+ * family's own message), and the wrapper only assembles the append so no
+ * call site (the loop review's inline declare) re-implements the guard.
+ */
+export function declareDefinitionOutcome(
+  def: WirePipelineDefinitionV2,
+  name: string
+): WirePipelineDefinitionV2 {
+  return updateDefinitionContracts(def, { outcomes: [...def.outcomes, name.trim()] });
+}
+
+export interface BoundedLoopContractPatch {
+  body?: string;
+  goalCycleVariant?: WireGoalCycleVariant | null;
+  limits?: {
+    maxIterations?: number;
+    maxActions?: number | null;
+    budget?: number | null;
+  };
+  lifecycle?: {
+    thresholds?: Partial<WireBoundedLoopLifecyclePolicyV1['thresholds']>;
+    strategy?: {
+      maxAttempts?: number;
+      requireMaterialChange?: true;
+      capability?: { id: string; version: string } | null;
+    };
+    exits?: Partial<WireBoundedLoopLifecyclePolicyV1['exits']>;
+  };
+  exits?: Record<
+    string,
+    { action: 'continue' } | { action: 'exit'; outcome: string }
+  >;
+}
+
+/** Visible starter values for a complete authored lifecycle; not runtime inference. */
+export function createDefaultBoundedLoopLifecycle(): WireBoundedLoopLifecyclePolicyV1 {
+  return {
+    version: 1,
+    thresholds: { stallIterations: 2, sameBlockerAttempts: 2 },
+    strategy: { maxAttempts: 0, requireMaterialChange: true },
+    exits: {
+      iterationLimit: { action: 'exit', outcome: 'iteration-limit' },
+      actionLimit: { action: 'fail', outcome: 'action-limit' },
+      budgetLimit: { action: 'fail', outcome: 'budget-limit' },
+      stalled: { action: 'escalate', outcome: 'stalled' },
+      blocked: { action: 'human-required', outcome: 'blocked' },
+      strategyExhausted: { action: 'fail', outcome: 'strategy-exhausted' },
+    },
+  };
+}
+
+/**
+ * Every exit-ACTION outcome value a loop's exit mappings can emit — the
+ * union of `exits` and `lifecycle.exits` values with `action: 'exit'`. This
+ * is exactly the set the engine reads as a BoundedLoop's OUTPUT ports
+ * (`contractForNode`), and therefore exactly the set of definition outcomes
+ * a minted loop needs declared (its unconsumed outputs are terminal
+ * outcomes of the owner graph). The fail/escalate/human-required entries
+ * produce no control output and never enter the set.
+ */
+function loopExitOutcomeValues(
+  exits: WireBoundedLoopNode['exits'],
+  lifecycle: WireBoundedLoopLifecyclePolicyV1 | undefined
+): string[] {
+  // The lifecycle map's index signature types `Object.values` as `unknown[]`
+  // even though every declared entry is an exit shape — narrow by hand.
+  const lifecycleExits = lifecycle
+    ? (Object.values(lifecycle.exits) as WireLoopLifecycleBlockedExit[])
+    : [];
+  return [...Object.values(exits), ...lifecycleExits]
+    .filter(
+      (exit): exit is { action: 'exit'; outcome: string } =>
+        exit.action === 'exit'
+    )
+    .map((exit) => exit.outcome);
+}
+
+/**
+ * The default lifecycle's exit-action outcome values — under
+ * {@link createDefaultBoundedLoopLifecycle} exactly `['iteration-limit']`.
+ * Exported for the loop review's declare-notice line (the names confirming
+ * will declare) so the panel renders model truth instead of hardcoding the
+ * lifecycle's vocabulary a second time.
+ */
+export function defaultBoundedLoopExitOutcomeValues(): readonly string[] {
+  return loopExitOutcomeValues({}, createDefaultBoundedLoopLifecycle());
+}
+
+/**
+ * Declares, in the definition's outcome contract, every outcome the minted
+ * loop can emit as an exit that the definition does not already declare —
+ * through {@link declareDefinitionOutcome}, the single rule site (round-2's
+ * single-home verdict; no local append). Called by BOTH loop-minting paths
+ * (`synthesizeBoundedLoopFromBackedge`, `addBoundedLoopOverDeclaration`) so
+ * the drawn back-edge and the palette gesture declare identically. Without
+ * this, every canvas-synthesized loop leaves the root graph reporting the
+ * default lifecycle's `iteration-limit` as an undeclared terminal outcome —
+ * the class-3 defect canvas-loop-validate-clean-synthesis fixes.
+ * Already-declared names are left alone (the rule site would refuse the
+ * duplicate anyway).
+ */
+export function ensureLoopExitOutcomesDeclared(
+  def: WirePipelineDefinitionV2,
+  loop: WireBoundedLoopNode
+): WirePipelineDefinitionV2 {
+  let next = def;
+  for (const outcome of loopExitOutcomeValues(loop.exits, loop.lifecycle)) {
+    if (!next.outcomes.includes(outcome)) {
+      next = declareDefinitionOutcome(next, outcome);
+    }
+  }
+  return next;
+}
+
+/**
+ * Rebuilds one loop's domain exits against the outcomes reachable from its
+ * body contract. Retained outcomes keep their authored mapping, retired
+ * outcomes disappear, and newly reachable outcomes receive a deterministic
+ * visible default without manufacturing duplicate terminal exits.
+ */
+function reconcileBoundedLoopExits(
+  current: WireBoundedLoopNode['exits'],
+  nextOutcomes: readonly string[],
+  defaultExitOutcome: string
+): WireBoundedLoopNode['exits'] {
+  const keepsTerminalExit = nextOutcomes.some(
+    (outcome) => current[outcome]?.action === 'exit'
+  );
+  return Object.fromEntries(
+    nextOutcomes.map((outcome, index) => [
+      outcome,
+      current[outcome] ??
+        (!keepsTerminalExit && index === nextOutcomes.length - 1
+          ? {
+              action: 'exit' as const,
+              outcome: defaultExitOutcome,
+            }
+          : { action: 'continue' as const }),
+    ])
+  );
+}
+
+/** Patches loop domain and mechanical contracts while preserving every sibling. */
+export function updateBoundedLoopContract(
+  def: WirePipelineDefinitionV2,
+  id: string,
+  patch: BoundedLoopContractPatch
+): WirePipelineDefinitionV2 {
+  const node = def.root.nodes.find((candidate) => candidate.id === id);
+  if (!node || node.kind !== 'BoundedLoop') {
+    throw new Error(`BoundedLoop '${id}' does not exist.`);
+  }
+  const next: WireBoundedLoopNode = {
+    ...node,
+    ...(patch.body !== undefined ? { body: patch.body } : {}),
+  };
+  let exits = node.exits;
+  if (patch.body !== undefined && patch.body !== node.body) {
+    const nextDeclaration = def.declarations.find(
+      (declaration) => declaration.id === patch.body
+    );
+    if (nextDeclaration) {
+      exits = reconcileBoundedLoopExits(
+        node.exits,
+        nextDeclaration.outcomes,
+        def.outcomes[0] ?? 'done'
+      );
+    }
+  }
+  if (patch.exits !== undefined) {
+    exits = { ...exits, ...patch.exits };
+  }
+  next.exits = exits;
+  if (patch.limits !== undefined) {
+    const limits = { ...node.limits };
+    for (const [key, value] of Object.entries(patch.limits)) {
+      if (value === null) delete limits[key as 'maxActions' | 'budget'];
+      else limits[key as keyof typeof limits] = value;
+    }
+    next.limits = limits;
+  }
+  if (patch.goalCycleVariant === null) delete next.goalCycleVariant;
+  else if (patch.goalCycleVariant !== undefined) {
+    next.goalCycleVariant = patch.goalCycleVariant;
+  }
+  if (patch.lifecycle !== undefined) {
+    const currentLifecycle = node.lifecycle ?? createDefaultBoundedLoopLifecycle();
+    const strategy: WireBoundedLoopLifecyclePolicyV1['strategy'] = {
+      ...currentLifecycle.strategy,
+    };
+    if (patch.lifecycle.strategy?.maxAttempts !== undefined) {
+      strategy.maxAttempts = patch.lifecycle.strategy.maxAttempts;
+    }
+    if (patch.lifecycle.strategy?.requireMaterialChange !== undefined) {
+      strategy.requireMaterialChange = patch.lifecycle.strategy.requireMaterialChange;
+    }
+    if (patch.lifecycle.strategy?.capability === null) delete strategy.capability;
+    else if (patch.lifecycle.strategy?.capability !== undefined) {
+      strategy.capability = patch.lifecycle.strategy.capability;
+    }
+    next.lifecycle = {
+      ...currentLifecycle,
+      thresholds: {
+        ...currentLifecycle.thresholds,
+        ...(patch.lifecycle.thresholds ?? {}),
+      },
+      strategy,
+      exits: {
+        ...currentLifecycle.exits,
+        ...(patch.lifecycle.exits ?? {}),
+      },
+    };
+  }
+  return updateV2NodeFields(def, id, next);
+}
+
+/** Keeps Gate decisions unique, ordered, and in one-to-one disposition sync. */
+export function updateGateDecisions(
+  def: WirePipelineDefinitionV2,
+  id: string,
+  decisions: readonly string[]
+): WirePipelineDefinitionV2 {
+  const node = def.root.nodes.find((candidate) => candidate.id === id);
+  if (!node || node.kind !== 'Gate') throw new Error(`Gate '${id}' does not exist.`);
+  const outcomes = Array.from(new Set(decisions.map((value) => value.trim()).filter(Boolean)));
+  const dispositions = Object.fromEntries(
+    outcomes.map((outcome) => [outcome, node.dispositions[outcome] ?? 'proceed'])
+  ) as WireGateNode['dispositions'];
+  return updateV2NodeFields(def, id, { outcomes, dispositions } as Partial<WireGateNode>);
+}
+
+export function updateGateDisposition(
+  def: WirePipelineDefinitionV2,
+  id: string,
+  decision: string,
+  disposition: WireGateNode['dispositions'][string]
+): WirePipelineDefinitionV2 {
+  const node = def.root.nodes.find((candidate) => candidate.id === id);
+  if (!node || node.kind !== 'Gate') throw new Error(`Gate '${id}' does not exist.`);
+  if (!node.outcomes.includes(decision)) {
+    throw new Error(`Gate decision '${decision}' does not exist on '${id}'.`);
+  }
+  return updateV2NodeFields(def, id, {
+    dispositions: { ...node.dispositions, [decision]: disposition },
+  } as Partial<WireGateNode>);
+}
+
+export type V2EditableNodeKind = WireDefinitionNode['kind'];
 
 const V2_EDITABLE_NODE_KINDS = new Set<WireDefinitionNode['kind']>([
   'AtomicStage',
-  'Gate',
-  'Choice',
-  'Finish',
   'CompositeRef',
   'BoundedLoop',
+  'Choice',
+  'FanOut',
+  'Join',
+  'Gate',
+  'Finish',
 ]);
 
 /** The deliberately bounded v2 vocabulary this Canvas slice may mutate. */
@@ -324,20 +814,6 @@ export function isV2EditableNodeKind(
 ): kind is V2EditableNodeKind {
   return V2_EDITABLE_NODE_KINDS.has(kind as WireDefinitionNode['kind']);
 }
-
-/**
- * The kinds the ROOT palette offers — the editable vocabulary, in display
- * order. FanOut/Join are absent: ECP-4 promises display and legality feedback
- * for them, not root authoring.
- */
-export const V2_ROOT_PALETTE_KINDS: readonly V2EditableNodeKind[] = [
-  'AtomicStage',
-  'Gate',
-  'Choice',
-  'Finish',
-  'CompositeRef',
-  'BoundedLoop',
-];
 
 /**
  * The kinds a DECLARATION BODY palette offers (ECP-2 task 8.6): `AtomicStage`
@@ -353,21 +829,148 @@ export const V2_ROOT_PALETTE_KINDS: readonly V2EditableNodeKind[] = [
 export const V2_BODY_PALETTE_KINDS: readonly V2EditableNodeKind[] = ['AtomicStage'];
 
 /**
- * The declaration a root-level `CompositeRef` may reference, if any: a custom
- * declaration, or a built-in one that actually carries a body graph.
- *
- * Exported so the palette's availability and the insertion itself read the SAME
- * rule — a palette that decided this for itself would be a second
- * implementation of "can a CompositeRef be inserted right now", and the two
- * would drift.
+ * The author-meaningful gestures the ROOT palette offers (design D2). This
+ * replaces `V2_ROOT_PALETTE_KINDS`, which mirrored the eight IR node kinds
+ * 1:1 — an author never types "FanOut" or "Join", and the v2 Canvas should
+ * not make them learn to. Lives beside `V2_BODY_PALETTE_KINDS` for the same
+ * "one home" reason that comment already states: this portfolio has already
+ * paid for drifting encodings of "which vocabulary is offered where", and a
+ * `V2_ROOT_PALETTE_KINDS` left behind alongside this would be exactly that
+ * drift again.
  */
-export function referenceableDeclaration(
-  def: WirePipelineDefinitionV2
-): WireCompositeDeclaration | undefined {
-  return (def.declarations ?? []).find(
-    (declaration) =>
-      declaration.provenance !== 'built-in' || declaration.graph.nodes.length > 0
-  );
+export type V2RootGesture = 'stage' | 'parallel' | 'loop' | 'finish';
+
+export const V2_ROOT_PALETTE_GESTURES: readonly V2RootGesture[] = [
+  'stage',
+  'parallel',
+  'loop',
+  'finish',
+];
+
+/**
+ * Whether the Stage gesture may bind this catalog skill: it must be enabled in
+ * the active profile AND carry an exact capability revision.
+ *
+ * Exported so the palette's card greying and the page's `exactCapabilities()`
+ * — which is what produces the `stage` entry in `unavailableRootGestures`
+ * below — read the SAME rule. Two encodings of "may this skill be bound" in
+ * two modules is precisely the drift this module's vocabulary comment warns
+ * about, and it is how `PalettePanel.tsx` came to contradict its own doc
+ * comment in the first place.
+ */
+export function isBindableSkill(skill: PipelineCatalogSkill): boolean {
+  return Boolean(skill.enabled && skill.capability);
+}
+
+/**
+ * The gestures this draft cannot accept right now, and why — one rule read
+ * by BOTH the palette's enablement and the insertion helpers below, so the
+ * two can never drift the way `PalettePanel.tsx:48-51`'s hardcoded check
+ * used to drift from its own doc comment.
+ */
+export function unavailableRootGestures(
+  def: WirePipelineDefinitionV2,
+  input: { exactCapabilities: readonly { id: string; version: string }[] }
+): readonly V2RootGesture[] {
+  const unavailable: V2RootGesture[] = [];
+  if (input.exactCapabilities.length === 0) unavailable.push('stage');
+  if (!def.root.nodes.some((node) => node.kind === 'AtomicStage')) {
+    unavailable.push('parallel');
+  }
+  if (!loopBodyDeclaration(def)) unavailable.push('loop');
+  return unavailable;
+}
+
+/**
+ * The common core stages, pinned to the top of the palette in PIPELINE order
+ * (propose, apply, review, ship, archive). These are exact installed skill
+ * template names, verified against the template sources — NOT workflow ids
+ * (`propose`, `apply`... live server-side in `CORE_WORKFLOW_IDS` and are a
+ * different namespace; coupling them would need an id translation the UI does
+ * not otherwise have). A core id the catalog does not deliver simply does not
+ * render; the constant names ids whose renames are repo-wide events, and the
+ * real-browser gate renders against the real catalog, so a rename surfaces
+ * there as a missing core entry.
+ */
+export const CORE_PALETTE_SKILL_IDS: readonly string[] = [
+  'rasen-propose',
+  'rasen-apply-change',
+  'rasen-review-cycle',
+  'rasen-ship',
+  'rasen-archive-change',
+];
+
+/** The ordered palette group identities `groupPaletteSkills` produces. */
+export type PaletteSectionId = 'core' | 'workflows' | 'experts' | 'internal';
+
+/** One ordered palette group produced by `groupPaletteSkills`. */
+export interface PaletteSkillSection {
+  /** Stable section identity — the panel derives its heading testid from it. */
+  id: PaletteSectionId;
+  skills: PipelineCatalogSkill[];
+}
+
+/**
+ * The ONE grouping rule for the assembly palette (canvas-palette-grouping
+ * design D2): core stages first in `CORE_PALETTE_SKILL_IDS` order, then the
+ * ordinary workflows (kinds `task` and `driver`), then the experts in their
+ * own visually distinct section, then the internal workflows — grouped, not
+ * hidden, so nothing becomes unreachable. Within every section the catalog's
+ * own order is preserved (deterministic given the same catalog), EXCEPT core,
+ * whose order is the constant's pipeline order. Grouping rests exclusively on
+ * the kind the catalog wire delivers — this helper never infers a kind from a
+ * name or any other heuristic. A skill without a kind (older server) falls
+ * into workflows, the registry's own default semantics. Sections with no
+ * members are omitted, so an absent core id (or a kind-less catalog with no
+ * experts) renders nothing rather than an empty heading.
+ *
+ * Both palette branches (the v1 skill cards and the v2 Stage expansion) render
+ * this same output; the panel calls the helper and decides nothing, the same
+ * read-only-rule posture as `isBindableSkill` above.
+ */
+export function groupPaletteSkills(
+  skills: readonly PipelineCatalogSkill[]
+): readonly PaletteSkillSection[] {
+  const coreIds = new Set(CORE_PALETTE_SKILL_IDS);
+  const workflows: PipelineCatalogSkill[] = [];
+  const experts: PipelineCatalogSkill[] = [];
+  const internal: PipelineCatalogSkill[] = [];
+  const core: PipelineCatalogSkill[] = [];
+  for (const skill of skills) {
+    if (coreIds.has(skill.id)) {
+      core.push(skill);
+      continue;
+    }
+    if (skill.kind === 'expert') experts.push(skill);
+    else if (skill.kind === 'internal') internal.push(skill);
+    else workflows.push(skill);
+  }
+  // Core renders in the CONSTANT's pipeline order, whatever order the catalog
+  // delivered the five in; ids the catalog never delivered stay absent.
+  const coreInPipelineOrder = CORE_PALETTE_SKILL_IDS.map((id) =>
+    core.find((skill) => skill.id === id)
+  ).filter((skill): skill is PipelineCatalogSkill => Boolean(skill));
+  const sections: PaletteSkillSection[] = [];
+  if (coreInPipelineOrder.length > 0) sections.push({ id: 'core', skills: coreInPipelineOrder });
+  if (workflows.length > 0) sections.push({ id: 'workflows', skills: workflows });
+  if (experts.length > 0) sections.push({ id: 'experts', skills: experts });
+  if (internal.length > 0) sections.push({ id: 'internal', skills: internal });
+  return sections;
+}
+
+/**
+ * Whether a declaration may be referenced by a root-level `CompositeRef`: a
+ * custom declaration, or a built-in one that actually carries a body graph.
+ *
+ * Exported so a declaration row's insert action and `insertCompositeRef`
+ * itself read the SAME rule — two independent readings of "can this
+ * declaration be referenced right now" is exactly the drift this module's
+ * vocabulary comment warns about.
+ */
+export function isReferenceableDeclaration(
+  declaration: WireCompositeDeclaration
+): boolean {
+  return declaration.provenance !== 'built-in' || declaration.graph.nodes.length > 0;
 }
 
 /**
@@ -380,6 +983,123 @@ export function loopBodyDeclaration(
   return (def.declarations ?? []).find(
     (declaration) => declaration.graph.nodes.length > 0
   );
+}
+
+/**
+ * Gesture → IR composition (design D3). Each composes exactly the IR shape
+ * the ROOT palette used to build inline in `PipelineCanvasPage.tsx`'s
+ * `addV2RootNode` switch, now owned here so no panel re-decides a rule the
+ * model owns. Each throws a plain `Error` with an author-readable message on
+ * refusal; the page surfaces it as a toast.
+ */
+
+/** Stage gesture: one `AtomicStage` bound to the author's chosen capability. */
+export function addAtomicStageForCapability(
+  def: WirePipelineDefinitionV2,
+  capability: { id: string; version: string }
+): WirePipelineDefinitionV2 {
+  const id = v2NodeIdFor('AtomicStage', def);
+  const node: WireAtomicStageNode = {
+    id,
+    kind: 'AtomicStage',
+    capability: { id: capability.id, version: capability.version },
+    execution: {
+      version: 1,
+      role: 'implementer',
+      workspace: { access: 'write' },
+    },
+  };
+  return addV2Node(def, node);
+}
+
+/**
+ * Parallel gesture: a complete fan-out + join frontier over every root
+ * `AtomicStage`, created as one transaction via `createParallelPair`.
+ */
+export function addParallelFrontier(
+  def: WirePipelineDefinitionV2
+): WirePipelineDefinitionV2 {
+  const members = def.root.nodes
+    .filter((node): node is WireAtomicStageNode => node.kind === 'AtomicStage')
+    .map((node) => node.id);
+  if (members.length === 0) {
+    throw new Error('Add an AtomicStage before authoring a parallel frontier.');
+  }
+  const fanOutId = v2NodeIdFor('FanOut', def);
+  const joinId = v2NodeIdFor('Join', def);
+  return createParallelPair(def, {
+    fanOutId,
+    joinId,
+    memberNodeIds: members,
+    requiredMemberIds: [members[0]!],
+    concurrencyCap: Math.max(1, Math.min(3, members.length)),
+    budget: Math.max(1, members.length),
+    outcomes: {
+      proceed: def.outcomes[0] ?? 'done',
+      failed: def.outcomes[1] ?? 'failed',
+    },
+  });
+}
+
+/**
+ * Loop gesture: a `BoundedLoop` over the first declaration carrying a body
+ * graph. The gesture runs through the same declare-on-synthesis step as the
+ * back-edge path (`ensureLoopExitOutcomesDeclared`, canvas-loop-validate-
+ * clean-synthesis D3): under the default lifecycle that appends
+ * `iteration-limit`, plus the exit value itself when the definition declared
+ * no outcomes (`def.outcomes[0] ?? 'done'`), so a palette-gesture loop
+ * validates clean without contract repair too.
+ */
+export function addBoundedLoopOverDeclaration(
+  def: WirePipelineDefinitionV2
+): WirePipelineDefinitionV2 {
+  const declaration = loopBodyDeclaration(def);
+  if (!declaration) {
+    throw new Error('No declaration is available for a loop body.');
+  }
+  const id = v2NodeIdFor('BoundedLoop', def);
+  const node: WireBoundedLoopNode = {
+    id,
+    kind: 'BoundedLoop',
+    body: declaration.id,
+    limits: { maxIterations: 3, maxActions: 12, budget: 12 },
+    lifecycle: createDefaultBoundedLoopLifecycle(),
+    exits: Object.fromEntries(
+      declaration.outcomes.map((outcome, index) => [
+        outcome,
+        index === declaration.outcomes.length - 1
+          ? { action: 'exit' as const, outcome: def.outcomes[0] ?? 'done' }
+          : { action: 'continue' as const },
+      ])
+    ),
+  };
+  return ensureLoopExitOutcomesDeclared(addV2Node(def, node), node);
+}
+
+/** Finish gesture: a terminal node mapped to the definition's first outcome. */
+export function addFinishNode(def: WirePipelineDefinitionV2): WirePipelineDefinitionV2 {
+  const id = v2NodeIdFor('Finish', def);
+  return addV2Node(def, { id, kind: 'Finish', outcome: def.outcomes[0] ?? 'done' });
+}
+
+/**
+ * Declaration-row gesture (design D6): inserts a `CompositeRef` referencing
+ * the CHOSEN declaration — the author picks the row, not the editor picking
+ * the first referenceable one on their behalf.
+ */
+export function insertCompositeRef(
+  def: WirePipelineDefinitionV2,
+  declarationId: string
+): WirePipelineDefinitionV2 {
+  const declaration = (def.declarations ?? []).find((d) => d.id === declarationId);
+  if (!declaration) {
+    throw new Error(`Declaration '${declarationId}' does not exist.`);
+  }
+  if (!isReferenceableDeclaration(declaration)) {
+    throw new Error(`Declaration '${declarationId}' has no body graph to reference.`);
+  }
+  const id = v2NodeIdFor('CompositeRef', def);
+  return addV2Node(def, { id, kind: 'CompositeRef', declarationId: declaration.id });
 }
 
 /** Appends one authored v2 root node without touching declarations or graph extensions. */
@@ -396,16 +1116,303 @@ export function addV2Node(
   };
 }
 
-/** Removes a v2 root node and every incident connection. */
-export function removeV2Node(
+export interface CreateParallelPairInput {
+  fanOutId: string;
+  joinId: string;
+  memberNodeIds: readonly string[];
+  requiredMemberIds?: readonly string[];
+  concurrencyCap: number;
+  budget: number;
+  outcomes: WireJoinNode['outcomes'];
+}
+
+function parallelPair(
   def: WirePipelineDefinitionV2,
-  id: string
+  fanOutId: string
+): { fanOut: WireFanOutNode; join: WireJoinNode } {
+  const fanOut = def.root.nodes.find(
+    (node): node is WireFanOutNode => node.id === fanOutId && node.kind === 'FanOut'
+  );
+  if (!fanOut) throw new Error(`FanOut '${fanOutId}' does not exist.`);
+  const join = def.root.nodes.find(
+    (node): node is WireJoinNode =>
+      node.id === fanOut.joinNodeId && node.kind === 'Join'
+  );
+  if (!join) {
+    throw new Error(
+      `FanOut '${fanOutId}' references missing paired Join '${fanOut.joinNodeId}'.`
+    );
+  }
+  return { fanOut, join };
+}
+
+/** Creates both structural halves of one parallel frontier as one transaction. */
+export function createParallelPair(
+  def: WirePipelineDefinitionV2,
+  input: CreateParallelPairInput
 ): WirePipelineDefinitionV2 {
+  const fanOutId = input.fanOutId.trim();
+  const joinId = input.joinId.trim();
+  if (!fanOutId || !joinId) throw new Error('Parallel node ids cannot be blank.');
+  if (fanOutId === joinId) throw new Error('FanOut and Join ids must be distinct.');
+  const existing = new Set(def.root.nodes.map((node) => node.id));
+  if (existing.has(fanOutId) || existing.has(joinId)) {
+    throw new Error('Parallel node id already exists.');
+  }
+  const memberNodeIds = Array.from(
+    new Set(input.memberNodeIds.map((id) => id.trim()).filter(Boolean))
+  );
+  if (memberNodeIds.length === 0) {
+    throw new Error('A parallel contract requires at least one member.');
+  }
+  for (const id of memberNodeIds) {
+    const node = def.root.nodes.find((candidate) => candidate.id === id);
+    if (!node || node.kind !== 'AtomicStage') {
+      throw new Error(`Parallel member '${id}' must be a root AtomicStage.`);
+    }
+  }
+  if (!Number.isFinite(input.concurrencyCap) || input.concurrencyCap <= 0) {
+    throw new Error('Parallel concurrency cap must be positive.');
+  }
+  if (!Number.isFinite(input.budget) || input.budget <= 0) {
+    throw new Error('Parallel budget must be positive.');
+  }
+  const required = new Set(input.requiredMemberIds ?? memberNodeIds);
+  for (const id of required) {
+    if (!memberNodeIds.includes(id)) {
+      throw new Error(`Required parallel member '${id}' is not selected.`);
+    }
+  }
+  const fanOut: WireFanOutNode = {
+    id: fanOutId,
+    kind: 'FanOut',
+    branches: [...memberNodeIds],
+    concurrencyCap: input.concurrencyCap,
+    budget: input.budget,
+    joinNodeId: joinId,
+    members: memberNodeIds.map((id) => ({
+      id,
+      hierarchicalPath: id,
+      required: required.has(id),
+      condition: 'always',
+    })),
+  };
+  const join: WireJoinNode = {
+    id: joinId,
+    kind: 'Join',
+    inputs: [...memberNodeIds],
+    requiredMembers: memberNodeIds.filter((id) => required.has(id)),
+    optionalMembers: memberNodeIds.filter((id) => !required.has(id)),
+    outcomes: { ...input.outcomes },
+  };
   return {
     ...def,
     root: {
       ...def.root,
-      nodes: def.root.nodes.filter((node) => node.id !== id),
+      nodes: [...def.root.nodes, fanOut, join],
+    },
+  };
+}
+
+export interface ParallelMemberPatch {
+  required?: boolean;
+  condition?: string;
+  hierarchicalPath?: string;
+}
+
+/** Replaces ordered membership while preserving existing member metadata. */
+export function setParallelMembers(
+  def: WirePipelineDefinitionV2,
+  fanOutId: string,
+  memberNodeIds: readonly string[]
+): WirePipelineDefinitionV2 {
+  const { fanOut, join } = parallelPair(def, fanOutId);
+  const ids = Array.from(
+    new Set(memberNodeIds.map((id) => id.trim()).filter(Boolean))
+  );
+  if (ids.length === 0) throw new Error('A parallel contract cannot have empty membership.');
+  for (const id of ids) {
+    const node = def.root.nodes.find((candidate) => candidate.id === id);
+    if (!node || node.kind !== 'AtomicStage') {
+      throw new Error(`Parallel member '${id}' must be a root AtomicStage.`);
+    }
+  }
+  const previous = new Map(fanOut.members.map((member) => [member.id, member]));
+  const members = ids.map(
+    (id, index) =>
+      previous.get(id) ?? {
+        id,
+        hierarchicalPath: id,
+        required: index === 0,
+        condition: 'always',
+      }
+  );
+  const requiredMembers = members.filter((member) => member.required).map((member) => member.id);
+  const optionalMembers = members.filter((member) => !member.required).map((member) => member.id);
+  return {
+    ...def,
+    root: {
+      ...def.root,
+      nodes: def.root.nodes.map((node) => {
+        if (node.id === fanOut.id) {
+          return { ...fanOut, branches: ids, members };
+        }
+        if (node.id === join.id) {
+          return { ...join, inputs: ids, requiredMembers, optionalMembers };
+        }
+        return node;
+      }),
+    },
+  };
+}
+
+/** Updates a member and both required/optional partitions atomically. */
+export function updateParallelMember(
+  def: WirePipelineDefinitionV2,
+  fanOutId: string,
+  memberId: string,
+  patch: ParallelMemberPatch
+): WirePipelineDefinitionV2 {
+  const { fanOut, join } = parallelPair(def, fanOutId);
+  const current = fanOut.members.find((member) => member.id === memberId);
+  if (!current) throw new Error(`Parallel member '${memberId}' does not exist.`);
+  const members = fanOut.members.map((member) =>
+    member.id === memberId ? { ...member, ...patch } : member
+  );
+  const requiredMembers = members.filter((member) => member.required).map((member) => member.id);
+  const optionalMembers = members.filter((member) => !member.required).map((member) => member.id);
+  return {
+    ...def,
+    root: {
+      ...def.root,
+      nodes: def.root.nodes.map((node) => {
+        if (node.id === fanOut.id) return { ...fanOut, members };
+        if (node.id === join.id) return { ...join, requiredMembers, optionalMembers };
+        return node;
+      }),
+    },
+  };
+}
+
+export interface ParallelContractPatch {
+  concurrencyCap?: number;
+  budget?: number;
+  joinId?: string;
+  outcomes?: Partial<WireJoinNode['outcomes']>;
+}
+
+/** Updates pair-owned limits, Join identity, and terminal outcomes atomically. */
+export function updateParallelContract(
+  def: WirePipelineDefinitionV2,
+  fanOutId: string,
+  patch: ParallelContractPatch
+): WirePipelineDefinitionV2 {
+  let next = def;
+  let pair = parallelPair(next, fanOutId);
+  if (patch.joinId !== undefined && patch.joinId.trim() !== pair.join.id) {
+    next = renameV2Node(next, pair.join.id, patch.joinId.trim());
+    pair = parallelPair(next, fanOutId);
+  }
+  if (patch.concurrencyCap !== undefined && patch.concurrencyCap <= 0) {
+    throw new Error('Parallel concurrency cap must be positive.');
+  }
+  if (patch.budget !== undefined && patch.budget <= 0) {
+    throw new Error('Parallel budget must be positive.');
+  }
+  return {
+    ...next,
+    root: {
+      ...next.root,
+      nodes: next.root.nodes.map((node) => {
+        if (node.id === pair.fanOut.id) {
+          return {
+            ...pair.fanOut,
+            ...(patch.concurrencyCap !== undefined
+              ? { concurrencyCap: patch.concurrencyCap }
+              : {}),
+            ...(patch.budget !== undefined ? { budget: patch.budget } : {}),
+          };
+        }
+        if (node.id === pair.join.id) {
+          return {
+            ...pair.join,
+            ...(patch.outcomes !== undefined
+              ? { outcomes: { ...pair.join.outcomes, ...patch.outcomes } }
+              : {}),
+          };
+        }
+        return node;
+      }),
+    },
+  };
+}
+
+/** Explicitly removes the paired FanOut and Join, including incident connections. */
+export function removeParallelPair(
+  def: WirePipelineDefinitionV2,
+  fanOutId: string
+): WirePipelineDefinitionV2 {
+  const { fanOut, join } = parallelPair(def, fanOutId);
+  const ids = new Set([fanOut.id, join.id]);
+  return {
+    ...def,
+    root: {
+      ...def.root,
+      nodes: def.root.nodes.filter((node) => !ids.has(node.id)),
+      connections: def.root.connections.filter(
+        (connection) => !ids.has(connection.from.node) && !ids.has(connection.to.node)
+      ),
+    },
+  };
+}
+
+/** Removes a root node while protecting Gate and paired-parallel references. */
+export function removeV2Node(
+  def: WirePipelineDefinitionV2,
+  id: string
+): WirePipelineDefinitionV2 {
+  const removed = def.root.nodes.find((node) => node.id === id);
+  if (!removed) return def;
+  if (removed.kind === 'FanOut' || removed.kind === 'Join') {
+    throw new Error('FanOut and Join require explicit paired deletion.');
+  }
+  const targetingGate = def.root.nodes.find(
+    (node) => node.kind === 'Gate' && node.target === id
+  );
+  if (targetingGate) {
+    throw new Error(`Node '${id}' is still targeted by Gate '${targetingGate.id}'.`);
+  }
+  for (const node of def.root.nodes) {
+    if (node.kind !== 'FanOut' || !node.members.some((member) => member.id === id)) continue;
+    if (node.members.length === 1) {
+      throw new Error(`Node '${id}' is the only parallel member of '${node.id}'.`);
+    }
+  }
+  const nodes = def.root.nodes
+    .filter((node) => node.id !== id)
+    .map((node): WireDefinitionNode => {
+      if (node.kind === 'FanOut' && node.members.some((member) => member.id === id)) {
+        return {
+          ...node,
+          branches: node.branches.filter((member) => member !== id),
+          members: node.members.filter((member) => member.id !== id),
+        };
+      }
+      if (node.kind === 'Join' && node.inputs.includes(id)) {
+        return {
+          ...node,
+          inputs: node.inputs.filter((member) => member !== id),
+          requiredMembers: node.requiredMembers.filter((member) => member !== id),
+          optionalMembers: node.optionalMembers.filter((member) => member !== id),
+        };
+      }
+      return node;
+    });
+  return {
+    ...def,
+    root: {
+      ...def.root,
+      nodes,
       connections: def.root.connections.filter(
         (connection) =>
           connection.from.node !== id && connection.to.node !== id
@@ -414,30 +1421,225 @@ export function removeV2Node(
   };
 }
 
-/** Renames a v2 root node and rewrites both typed connection endpoints. */
+export interface V2NodeRemovalRefusal {
+  id: string;
+  reason: string;
+}
+
+export interface V2NodeRemovalPlan {
+  next: WirePipelineDefinitionV2;
+  /** Every root node id actually gone from `next`, in draft order — including co-deleted barriers a pair removal carried away unselected. */
+  removedIds: string[];
+  refused: readonly V2NodeRemovalRefusal[];
+}
+
+/**
+ * Best-effort batch removal over a set of selected root node ids
+ * (canvas-multi-selection design D5). One call owns the whole delete:
+ *
+ * - A selected `FanOut` routes through `removeParallelPair` — its `Join`
+ *   travels with it whether or not the Join was also selected.
+ * - A lone selected `Join` (its FanOut not selected) is refused with
+ *   `removeV2Node`'s existing paired-deletion message; same for a
+ *   Gate-targeted node and a parallel pair's last member — every refusal
+ *   reuses `removeV2Node`'s own thrown message verbatim, so this helper
+ *   adds no new vocabulary.
+ * - Kinds outside the editable vocabulary (a future engine node the UI
+ *   does not know) are skipped silently and are NOT refusals — they were
+ *   never selectable-editable.
+ *
+ * Best-effort, not atomic: eligible nodes delete while refusals collect.
+ * The caller reports `refused` as ONE summary for the whole deletion.
+ */
+export function removeV2Nodes(
+  def: WirePipelineDefinitionV2,
+  ids: ReadonlySet<string>
+): V2NodeRemovalPlan {
+  const refusals: V2NodeRemovalRefusal[] = [];
+  let next = def;
+  // Selected FanOuts go FIRST: their pair removal deletes the whole
+  // parallel unit's structure, so any selected members that follow are
+  // judged as plain nodes instead of being refused as "the only parallel
+  // member" of a FanOut the same batch is already deleting (an order
+  // artifact a box-select of a frontier + its members would otherwise hit).
+  for (const pass of ['pairs', 'rest'] as const) {
+    for (const node of def.root.nodes) {
+      if (!ids.has(node.id)) continue;
+      if (pass === 'pairs' ? node.kind !== 'FanOut' : node.kind === 'FanOut') {
+        continue;
+      }
+      // A pair removal can carry away an unselected (or not-yet-iterated)
+      // Join before its own turn arrives.
+      if (!next.root.nodes.some((candidate) => candidate.id === node.id)) {
+        continue;
+      }
+      if (!isV2EditableNodeKind(node.kind)) continue;
+      if (node.kind === 'FanOut') {
+        try {
+          next = removeParallelPair(next, node.id);
+        } catch (error) {
+          refusals.push({
+            id: node.id,
+            reason: removalRefusalMessage(node.id, error),
+          });
+        }
+        continue;
+      }
+      if (node.kind === 'Join') {
+        // Its FanOut is also selected: the pair is (or was) handled as one
+        // unit at the FanOut, so this half is neither refused nor re-removed.
+        const ownerSelected = def.root.nodes.some(
+          (candidate) =>
+            candidate.kind === 'FanOut' &&
+            candidate.joinNodeId === node.id &&
+            ids.has(candidate.id)
+        );
+        if (ownerSelected) continue;
+        try {
+          next = removeV2Node(next, node.id);
+        } catch (error) {
+          refusals.push({
+            id: node.id,
+            reason: removalRefusalMessage(node.id, error),
+          });
+        }
+        continue;
+      }
+      try {
+        next = removeV2Node(next, node.id);
+      } catch (error) {
+        refusals.push({
+          id: node.id,
+          reason: removalRefusalMessage(node.id, error),
+        });
+      }
+    }
+  }
+  // "Actually deleted" is the before/after difference in draft order, so a
+  // co-deleted barrier (or a member a pair removal carried away after its
+  // own refusal was recorded) is reported as removed, and...
+  const removedIds = def.root.nodes
+    .map((node) => node.id)
+    .filter((id) => !next.root.nodes.some((node) => node.id === id));
+  // ...a refusal whose node no longer exists is not a refusal — a later
+  // pair removal in the same batch resolved it.
+  const refused = refusals.filter((refusal) =>
+    next.root.nodes.some((node) => node.id === refusal.id)
+  );
+  return { next, removedIds, refused };
+}
+
+function removalRefusalMessage(id: string, error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : `Node '${id}' could not be removed.`;
+}
+
+/**
+ * Gate as a stage property (design D4). `GateNode` already *names* the stage
+ * it guards (`target`), which is why it reads naturally as that stage's
+ * property — in v1 it literally was one (`gate: boolean`).
+ */
+
+/** The `Gate` node targeting this stage, if any. */
+export function gateForStage(
+  def: WirePipelineDefinitionV2,
+  stageId: string
+): WireGateNode | undefined {
+  return def.root.nodes.find(
+    (node): node is WireGateNode => node.kind === 'Gate' && node.target === stageId
+  );
+}
+
+/**
+ * Turns approval on or off for a root `AtomicStage`. Enabling appends a
+ * `Gate` with the Canvas's own default decision vocabulary
+ * (`approved`/`rejected`, NOT `normalizeV1`'s `approve`/`reject`) so no
+ * definition previously authored in the Canvas changes meaning. Disabling
+ * routes through `removeV2Node`, which already drops the Gate's incident
+ * connections. Enabling twice, or disabling with no gate present, is a no-op.
+ */
+export function setStageGate(
+  def: WirePipelineDefinitionV2,
+  stageId: string,
+  enabled: boolean
+): WirePipelineDefinitionV2 {
+  const stage = def.root.nodes.find((node) => node.id === stageId);
+  if (!stage || stage.kind !== 'AtomicStage') {
+    throw new Error(`'${stageId}' is not a root AtomicStage.`);
+  }
+  const existing = gateForStage(def, stageId);
+  if (enabled) {
+    if (existing) return def;
+    const id = v2NodeIdFor('Gate', def);
+    const gate: WireGateNode = {
+      id,
+      kind: 'Gate',
+      target: stageId,
+      outcomes: ['approved', 'rejected'],
+      dispositions: { approved: 'proceed', rejected: 'escalate' },
+    };
+    return addV2Node(def, gate);
+  }
+  if (!existing) return def;
+  return removeV2Node(def, existing.id);
+}
+
+/** Renames a root node and every structured reference owned by the draft. */
 export function renameV2Node(
   def: WirePipelineDefinitionV2,
   oldId: string,
   newId: string
 ): WirePipelineDefinitionV2 {
+  const trimmed = newId.trim();
+  if (!trimmed) throw new Error('A root node id cannot be blank.');
+  if (!def.root.nodes.some((node) => node.id === oldId)) {
+    throw new Error(`Root node '${oldId}' does not exist.`);
+  }
+  if (trimmed !== oldId && def.root.nodes.some((node) => node.id === trimmed)) {
+    throw new Error(`Root node id '${trimmed}' already exists.`);
+  }
+  const rewrite = (value: string) => (value === oldId ? trimmed : value);
   return {
     ...def,
     root: {
       ...def.root,
-      nodes: def.root.nodes.map((node) =>
-        node.id === oldId
-          ? ({ ...node, id: newId } as WireDefinitionNode)
-          : node
-      ),
+      nodes: def.root.nodes.map((node): WireDefinitionNode => {
+        const renamed = node.id === oldId ? { ...node, id: trimmed } : node;
+        if (renamed.kind === 'Gate') {
+          return { ...renamed, target: rewrite(renamed.target) };
+        }
+        if (renamed.kind === 'FanOut') {
+          return {
+            ...renamed,
+            branches: renamed.branches.map(rewrite),
+            joinNodeId: rewrite(renamed.joinNodeId),
+            members: renamed.members.map((member) => ({
+              ...member,
+              id: rewrite(member.id),
+              hierarchicalPath: rewrite(member.hierarchicalPath),
+            })),
+          };
+        }
+        if (renamed.kind === 'Join') {
+          return {
+            ...renamed,
+            inputs: renamed.inputs.map(rewrite),
+            requiredMembers: renamed.requiredMembers.map(rewrite),
+            optionalMembers: renamed.optionalMembers.map(rewrite),
+          };
+        }
+        return renamed as WireDefinitionNode;
+      }),
       connections: def.root.connections.map((connection) => ({
         ...connection,
         from:
           connection.from.node === oldId
-            ? { ...connection.from, node: newId }
+            ? { ...connection.from, node: trimmed }
             : connection.from,
         to:
           connection.to.node === oldId
-            ? { ...connection.to, node: newId }
+            ? { ...connection.to, node: trimmed }
             : connection.to,
       })),
     },
@@ -481,13 +1683,150 @@ export function removeV2Connection(
   };
 }
 
+/**
+ * Choice as a connection condition (design D5). Splicing rewrites one
+ * connection `A:pOut -> B:pIn` into a branch point: `A:pOut -> choice:input`
+ * and `choice:matched -> B:pIn`. Shape and vocabulary deliberately match what
+ * `normalizeV1()` writes for a v1 `condition:` (`definition.ts:3581-3590`),
+ * with ONE deliberate omission: `legacyRuntimeOwner` is never written.
+ * `orchestrationEvaluatorCapabilityFor()` (`definition.ts:220-228`) reads its
+ * ABSENCE as "authored, therefore requires a `choice-select` evaluator" —
+ * forging it would silently exempt an authored Choice from that requirement.
+ */
+export function spliceConditionOntoConnection(
+  def: WirePipelineDefinitionV2,
+  connectionId: string,
+  expression: string
+): WirePipelineDefinitionV2 {
+  const connection = def.root.connections.find((c) => c.id === connectionId);
+  if (!connection) {
+    throw new Error(`Connection '${connectionId}' does not exist.`);
+  }
+  const trimmed = expression.trim();
+  if (!trimmed) {
+    throw new Error('A branch condition cannot be blank.');
+  }
+  const sourceNode = def.root.nodes.find((n) => n.id === connection.from.node);
+  const targetNode = def.root.nodes.find((n) => n.id === connection.to.node);
+  if (
+    !sourceNode ||
+    !targetNode ||
+    !isV2EditableNodeKind(sourceNode.kind) ||
+    !isV2EditableNodeKind(targetNode.kind)
+  ) {
+    throw new Error('This connection touches a preserved read-only node.');
+  }
+  const choiceId = v2NodeIdFor('Choice', def);
+  // `expression` is carried through `WireDefinitionNodeBase`'s index
+  // signature, the same mechanism `normalizeV1()` relies on — no typed
+  // interface change is needed and none is made.
+  const choice: WireDefinitionNode = {
+    id: choiceId,
+    kind: 'Choice',
+    outcomes: ['matched', 'skipped'],
+    expression: trimmed,
+  } as WireDefinitionNode;
+  let next = removeV2Connection(def, connectionId);
+  next = addV2Node(next, choice);
+  const intoChoice: WireDefinitionConnection = {
+    id: v2ConnectionIdFor(next, {
+      source: connection.from.node,
+      sourcePort: connection.from.port,
+      target: choiceId,
+      targetPort: CONTROL_TARGET_PORT,
+    }),
+    from: { node: connection.from.node, port: connection.from.port },
+    to: { node: choiceId, port: CONTROL_TARGET_PORT },
+  };
+  next = addV2Connection(next, intoChoice);
+  const outOfChoice: WireDefinitionConnection = {
+    id: v2ConnectionIdFor(next, {
+      source: choiceId,
+      sourcePort: 'matched',
+      target: connection.to.node,
+      targetPort: connection.to.port,
+    }),
+    from: { node: choiceId, port: 'matched' },
+    to: { node: connection.to.node, port: connection.to.port },
+  };
+  return addV2Connection(next, outOfChoice);
+}
+
+/**
+ * Removes a spliced Choice and restores the direct connection from its
+ * inbound source to its `matched` destination. Refuses, naming the wired
+ * branch, when any outbound connection uses a port other than `matched` —
+ * clearing the condition must never silently discard a wired `skipped`
+ * branch.
+ *
+ * The arity guards below COUNT rather than `find`, and that is load-bearing:
+ * `removeV2Node` drops EVERY connection incident on the Choice, while only one
+ * inbound/`matched` pair can be restored. `onConnect` imposes no per-port arity
+ * limit and `v2ConnectionIdFor` keys on both endpoints, so a second inbound
+ * edge — or a `matched` port fanning out to a second target — is genuinely
+ * reachable through ordinary drags, and a `find`-based restore would delete it
+ * with no refusal and no toast. That is exactly the silent discard this
+ * capability's own SHALL forbids.
+ */
+export function unspliceChoice(
+  def: WirePipelineDefinitionV2,
+  choiceId: string
+): WirePipelineDefinitionV2 {
+  const choice = def.root.nodes.find((node) => node.id === choiceId);
+  if (!choice || choice.kind !== 'Choice') {
+    throw new Error(`'${choiceId}' is not a Choice node.`);
+  }
+  const inboundAll = def.root.connections.filter((c) => c.to.node === choiceId);
+  const outbound = def.root.connections.filter((c) => c.from.node === choiceId);
+  const matchedAll = outbound.filter((c) => c.from.port === 'matched');
+  const strayOut = outbound.filter((c) => c.from.port !== 'matched');
+  if (strayOut.length > 0) {
+    throw new Error(
+      `Cannot remove this condition: branch '${strayOut[0]!.from.port}' is still wired to '${strayOut[0]!.to.node}'.`
+    );
+  }
+  if (inboundAll.length > 1) {
+    throw new Error(
+      `Cannot remove this condition: '${choiceId}' has ${inboundAll.length} incoming connections (${inboundAll
+        .map((c) => `'${c.from.node}'`)
+        .join(', ')}); only one can be restored, so disconnect the others first.`
+    );
+  }
+  if (matchedAll.length > 1) {
+    throw new Error(
+      `Cannot remove this condition: branch 'matched' is wired to ${matchedAll.length} targets (${matchedAll
+        .map((c) => `'${c.to.node}'`)
+        .join(', ')}); only one can be restored, so disconnect the others first.`
+    );
+  }
+  const inbound = inboundAll[0];
+  const matchedOut = matchedAll[0];
+  let next = removeV2Node(def, choiceId);
+  if (inbound && matchedOut) {
+    const restored: WireDefinitionConnection = {
+      id: v2ConnectionIdFor(next, {
+        source: inbound.from.node,
+        sourcePort: inbound.from.port,
+        target: matchedOut.to.node,
+        targetPort: matchedOut.to.port,
+      }),
+      from: { node: inbound.from.node, port: inbound.from.port },
+      to: { node: matchedOut.to.node, port: matchedOut.to.port },
+    };
+    next = addV2Connection(next, restored);
+  }
+  return next;
+}
+
 const V2_NODE_ID_BASE: Record<V2EditableNodeKind, string> = {
   AtomicStage: 'atomic-stage',
-  Gate: 'gate',
-  Choice: 'choice',
-  Finish: 'finish',
   CompositeRef: 'composite-ref',
   BoundedLoop: 'bounded-loop',
+  Choice: 'choice',
+  FanOut: 'fan-out',
+  Join: 'join',
+  Gate: 'gate',
+  Finish: 'finish',
 };
 
 /** Generates a stable, human-readable, graph-local identity for a new v2 node. */
@@ -549,6 +1888,112 @@ export function isDirty(draft: WirePipelineDefinition, loaded: WirePipelineDefin
   return !deepEqual(draft, loaded);
 }
 
+// ===== Consultation binding draft helpers =====
+
+/** Reads the consultations array from a v1 or v2 definition, defaulting to empty. */
+function readConsultations(def: WirePipelineDefinition): WireConsultationBinding[] {
+  return Array.isArray(def.consultations) ? def.consultations : [];
+}
+
+/** Writes the consultations array onto a new immutable copy of the definition. */
+function writeConsultations<T extends WirePipelineDefinition>(
+  def: T,
+  consultations: WireConsultationBinding[]
+): T {
+  const next = { ...def } as T;
+  if (consultations.length === 0) {
+    delete (next as Record<string, unknown>).consultations;
+  } else {
+    (next as unknown as { consultations: WireConsultationBinding[] }).consultations = consultations;
+  }
+  return next;
+}
+
+/**
+ * Partial consultation binding edit. Every field is optional — the patcher
+ * merges only the named fields, preserving the rest of the binding verbatim.
+ */
+export interface ConsultationBindingPatch {
+  teacherSkill?: string;
+  maxConsultationsPerInvocation?: number;
+  maxTeacherAttemptsPerConsultation?: number;
+  limits?: Partial<WireConsultationBinding['limits']> | null;
+}
+
+/**
+ * Appends a new consultation binding to the pipeline-level `consultations`
+ * array. If a binding for the same `sourceStage` already exists, it is
+ * replaced (one binding per source stage). Handles both v1 and v2 definitions.
+ */
+export function addConsultationBinding<T extends WirePipelineDefinition>(
+  def: T,
+  binding: WireConsultationBinding
+): T {
+  const existing = readConsultations(def);
+  const filtered = existing.filter((b) => b.sourceStage !== binding.sourceStage);
+  return writeConsultations(def, [...filtered, binding]);
+}
+
+/**
+ * Patches a consultation binding by `sourceStage` id, preserving unpatched
+ * fields. When `limits` is `null`, clears the limits sub-object; when an
+ * object, merges its keys into the existing limits. When the binding does not
+ * exist, returns the definition unchanged.
+ */
+export function updateConsultationBinding<T extends WirePipelineDefinition>(
+  def: T,
+  sourceStage: string,
+  patch: ConsultationBindingPatch
+): T {
+  const existing = readConsultations(def);
+  let found = false;
+  const next = existing.map((b) => {
+    if (b.sourceStage !== sourceStage) return b;
+    found = true;
+    const merged: WireConsultationBinding = { ...b };
+    if (patch.teacherSkill !== undefined) merged.teacherSkill = patch.teacherSkill;
+    if (patch.maxConsultationsPerInvocation !== undefined) {
+      merged.maxConsultationsPerInvocation = patch.maxConsultationsPerInvocation;
+    }
+    if (patch.maxTeacherAttemptsPerConsultation !== undefined) {
+      merged.maxTeacherAttemptsPerConsultation = patch.maxTeacherAttemptsPerConsultation;
+    }
+    if (patch.limits === null) {
+      delete merged.limits;
+    } else if (patch.limits !== undefined) {
+      merged.limits = { ...(b.limits ?? {}), ...patch.limits };
+    }
+    return merged;
+  });
+  if (!found) return def;
+  return writeConsultations(def, next);
+}
+
+/**
+ * Removes the consultation binding whose `sourceStage` matches, if any.
+ * When no binding exists, returns the definition unchanged.
+ */
+export function removeConsultationBinding<T extends WirePipelineDefinition>(
+  def: T,
+  sourceStage: string
+): T {
+  const existing = readConsultations(def);
+  const filtered = existing.filter((b) => b.sourceStage !== sourceStage);
+  if (filtered.length === existing.length) return def;
+  return writeConsultations(def, filtered);
+}
+
+/**
+ * Returns the consultation binding whose `sourceStage` matches the given stage
+ * id, or `undefined` when no binding exists for that stage.
+ */
+export function getConsultationBindingForStage(
+  def: WirePipelineDefinition,
+  stageId: string
+): WireConsultationBinding | undefined {
+  return readConsultations(def).find((b) => b.sourceStage === stageId);
+}
+
 /** A validation issue mapped onto a concrete draft stage. */
 export interface IssueTarget {
   stageIndex: number;
@@ -556,6 +2001,10 @@ export interface IssueTarget {
 }
 
 export type DefinitionIssueTarget =
+  | {
+      kind: 'definition';
+      field?: string;
+    }
   | {
       kind: 'node';
       index: number;
@@ -567,7 +2016,113 @@ export type DefinitionIssueTarget =
       index: number;
       id: string;
       field?: string;
+    }
+  | {
+      kind: 'declaration';
+      index: number;
+      id: string;
+      field?: string;
+    }
+  | {
+      kind: 'body-node';
+      declarationIndex: number;
+      declarationId: string;
+      index: number;
+      id: string;
+      field?: string;
+    }
+  | {
+      kind: 'body-connection';
+      declarationIndex: number;
+      declarationId: string;
+      index: number;
+      id: string;
+      field?: string;
+    }
+  | {
+      kind: 'consultation';
+      index: number;
+      sourceStage: string;
+      field?: string;
     };
+
+// ===== Canvas selection model (canvas-multi-selection design D1/D2) =====
+
+/**
+ * The canvas editor's selection: a set of node ids and a set of connection
+ * ids, never a single chosen element. React Flow owns the interaction truth
+ * (`node.selected`/`edge.selected`, driven by its Shift+drag box-select and
+ * multi-select-key augmentation); the page keeps exactly ONE derived mirror
+ * of this shape, written by `onSelectionChange` (user actions) and by the
+ * explicit programmatic replacers at the gesture/rename/issue handlers.
+ * Panels and the later portfolio children (subgraph extraction, loop
+ * inference, frontier inference) consume `nodeIds` — never a re-derived
+ * "what is selected" of their own.
+ *
+ * Lives here, beside `DefinitionIssueTarget`, because `draft.ts` is the one
+ * home for canvas model vocabulary: a second encoding of "what does this
+ * selection mean" in a panel would be exactly the drift this module's
+ * vocabulary comments warn about.
+ */
+export interface CanvasSelection {
+  nodeIds: ReadonlySet<string>;
+  connectionIds: ReadonlySet<string>;
+}
+
+export const EMPTY_CANVAS_SELECTION: CanvasSelection = {
+  nodeIds: new Set<string>(),
+  connectionIds: new Set<string>(),
+};
+
+/**
+ * The one selected node when the selection is exactly one node and nothing
+ * else; `null` for every other shape (this is how singleton panel behavior
+ * is preserved by derivation — a mixed or multi selection is not a node
+ * selection).
+ */
+export function singletonNodeId(selection: CanvasSelection): string | null {
+  if (selection.nodeIds.size !== 1 || selection.connectionIds.size > 0) {
+    return null;
+  }
+  return [...selection.nodeIds][0]!;
+}
+
+/** The one selected connection when the selection is exactly one connection and nothing else; `null` otherwise. */
+export function singletonConnectionId(selection: CanvasSelection): string | null {
+  if (selection.connectionIds.size !== 1 || selection.nodeIds.size > 0) {
+    return null;
+  }
+  return [...selection.connectionIds][0]!;
+}
+
+/**
+ * Which right-column panel a selection opens: exactly one node → the node
+ * panel; exactly one connection → the connection panel; two or more
+ * elements, or any node+connection mix → the selection summary; nothing →
+ * none. The page never re-derives this.
+ */
+export function selectionPanelMode(
+  selection: CanvasSelection
+): 'empty' | 'node' | 'connection' | 'multi' {
+  const total = selection.nodeIds.size + selection.connectionIds.size;
+  if (total === 0) return 'empty';
+  if (total === 1) return selection.nodeIds.size === 1 ? 'node' : 'connection';
+  return 'multi';
+}
+
+function jsonPointerSegments(path: string): string[] | null {
+  if (!path.startsWith('/')) return null;
+  if (path === '/') return [];
+  const raw = path.slice(1).split('/');
+  if (raw.some((segment) => /~(?![01])/u.test(segment))) return null;
+  return raw.map((segment) => segment.replace(/~1/gu, '/').replace(/~0/gu, '~'));
+}
+
+function arrayIndex(segment: string | undefined, length: number): number | null {
+  if (segment === undefined || !/^(0|[1-9]\d*)$/u.test(segment)) return null;
+  const index = Number(segment);
+  return Number.isSafeInteger(index) && index < length ? index : null;
+}
 
 /**
  * Maps a validation issue's JSON-pointer-ish `path` (e.g. `/stages/2/skill`)
@@ -590,9 +2145,9 @@ export function issuePathTarget(path: string, stageCount?: number): IssueTarget 
 }
 
 /**
- * Maps the shared diagnostic JSON Pointer onto the exact authored Canvas
- * element. Declaration/definition-level and malformed paths intentionally
- * return null so callers retain them as fully-qualified unmapped issues.
+ * Maps the shared diagnostic JSON Pointer onto the exact authored owner.
+ * Malformed, out-of-range, and unknown top-level paths intentionally remain
+ * unmapped so the issue list never points at a different control.
  */
 export function definitionIssuePathTarget(
   def: WirePipelineDefinition,
@@ -601,7 +2156,23 @@ export function definitionIssuePathTarget(
   if (isV1Definition(def)) {
     const stages = Array.isArray(def.stages) ? def.stages : [];
     const target = issuePathTarget(path, stages.length);
-    if (!target) return null;
+    if (!target) {
+      // Consultation diagnostic: /consultations/<index>/<field>
+      const consultationMatch = /^\/consultations\/(\d+)(?:\/(.+))?$/.exec(path);
+      if (consultationMatch) {
+        const index = Number(consultationMatch[1]);
+        const consultations = Array.isArray(def.consultations) ? def.consultations : [];
+        const sourceStage = consultations[index]?.sourceStage;
+        if (!sourceStage) return null;
+        return {
+          kind: 'consultation',
+          index,
+          sourceStage,
+          ...(consultationMatch[2] ? { field: consultationMatch[2] } : {}),
+        };
+      }
+      return null;
+    }
     const id = stages[target.stageIndex]?.id;
     if (!id) return null;
     return {
@@ -611,46 +2182,93 @@ export function definitionIssuePathTarget(
       ...(target.field ? { field: target.field } : {}),
     };
   }
+  const segments = jsonPointerSegments(path);
+  if (!segments || segments.length === 0) return null;
+  const field = (tail: readonly string[]) =>
+    tail.length > 0 ? { field: tail.join('/') } : {};
 
-  const root =
-    def.root !== null && typeof def.root === 'object' && !Array.isArray(def.root)
-      ? (def.root as {
-          nodes?: { id?: unknown }[];
-          connections?: { id?: unknown }[];
-        })
-      : {};
-  const nodes = Array.isArray(root.nodes) ? root.nodes : [];
-  const connections = Array.isArray(root.connections)
-    ? root.connections
-    : [];
-  const nodeMatch = /^\/root\/nodes\/(\d+)(?:\/(.+))?$/.exec(path);
-  if (nodeMatch) {
-    const index = Number(nodeMatch[1]);
-    const id = nodes[index]?.id;
-    if (!Number.isInteger(index) || index < 0 || typeof id !== 'string') {
-      return null;
-    }
+  // Consultation diagnostic: /consultations/<index>/<field>
+  if (segments[0] === 'consultations') {
+    const index = arrayIndex(segments[1], (def.consultations ?? []).length);
+    if (index === null) return null;
+    const sourceStage = def.consultations?.[index]?.sourceStage;
+    if (!sourceStage) return null;
     return {
-      kind: 'node',
+      kind: 'consultation',
       index,
-      id,
-      ...(nodeMatch[2] ? { field: nodeMatch[2] } : {}),
+      sourceStage,
+      ...field(segments.slice(2)),
     };
   }
 
-  const connectionMatch =
-    /^\/root\/connections\/(\d+)(?:\/(.+))?$/.exec(path);
-  if (!connectionMatch) return null;
-  const index = Number(connectionMatch[1]);
-  const id = connections[index]?.id;
-  if (!Number.isInteger(index) || index < 0 || typeof id !== 'string') {
-    return null;
+  const definitionFields = new Set([
+    'version',
+    'id',
+    'sourceId',
+    'name',
+    'description',
+    'inputs',
+    'artifacts',
+    'outcomes',
+    'limits',
+  ]);
+  if (definitionFields.has(segments[0]!)) {
+    return { kind: 'definition', ...field(segments) };
+  }
+
+  if (segments[0] === 'root' && segments[1] === 'nodes') {
+    const index = arrayIndex(segments[2], def.root.nodes.length);
+    if (index === null) return null;
+    const id = def.root.nodes[index]?.id;
+    if (typeof id !== 'string') return null;
+    return { kind: 'node', index, id, ...field(segments.slice(3)) };
+  }
+  if (segments[0] === 'root' && segments[1] === 'connections') {
+    const index = arrayIndex(segments[2], def.root.connections.length);
+    if (index === null) return null;
+    const id = def.root.connections[index]?.id;
+    if (typeof id !== 'string') return null;
+    return { kind: 'connection', index, id, ...field(segments.slice(3)) };
+  }
+  if (segments[0] !== 'declarations') return null;
+  const declarationIndex = arrayIndex(segments[1], def.declarations.length);
+  if (declarationIndex === null) return null;
+  const declaration = def.declarations[declarationIndex];
+  if (!declaration || typeof declaration.id !== 'string') return null;
+  const tail = segments.slice(2);
+  if (tail[0] === 'graph' && tail[1] === 'nodes') {
+    const index = arrayIndex(tail[2], declaration.graph.nodes.length);
+    if (index === null) return null;
+    const id = declaration.graph.nodes[index]?.id;
+    if (typeof id !== 'string') return null;
+    return {
+      kind: 'body-node',
+      declarationIndex,
+      declarationId: declaration.id,
+      index,
+      id,
+      ...field(tail.slice(3)),
+    };
+  }
+  if (tail[0] === 'graph' && tail[1] === 'connections') {
+    const index = arrayIndex(tail[2], declaration.graph.connections.length);
+    if (index === null) return null;
+    const id = declaration.graph.connections[index]?.id;
+    if (typeof id !== 'string') return null;
+    return {
+      kind: 'body-connection',
+      declarationIndex,
+      declarationId: declaration.id,
+      index,
+      id,
+      ...field(tail.slice(3)),
+    };
   }
   return {
-    kind: 'connection',
-    index,
-    id,
-    ...(connectionMatch[2] ? { field: connectionMatch[2] } : {}),
+    kind: 'declaration',
+    index: declarationIndex,
+    id: declaration.id,
+    ...field(tail),
   };
 }
 
@@ -701,7 +2319,9 @@ export function addDeclaration(
 }
 
 /**
- * Update a declaration's scalar fields (inputs, artifacts, outcomes).
+ * Update a declaration's scalar fields (inputs, artifacts, outcomes). An
+ * outcome edit also rebuilds every referencing root BoundedLoop exit map as
+ * part of the same immutable mutation.
  */
 export function updateDeclaration(
   def: WirePipelineDefinitionV2,
@@ -712,11 +2332,72 @@ export function updateDeclaration(
     outcomes: string[];
   }>
 ): WirePipelineDefinitionV2 {
+  if (patch.inputs !== undefined) assertNamedContractRows('declaration input', patch.inputs);
+  if (patch.artifacts !== undefined) assertNamedContractRows('declaration artifact', patch.artifacts);
+  if (patch.outcomes !== undefined) assertNamedOutcomes('declaration', patch.outcomes);
+  const declarationExists = def.declarations.some((declaration) => declaration.id === id);
+  const nextOutcomes = patch.outcomes;
+  const declarations = def.declarations.map((declaration) =>
+    declaration.id === id ? { ...declaration, ...patch } : declaration
+  );
   return {
     ...def,
-    declarations: def.declarations.map((d) =>
-      d.id === id ? { ...d, ...patch } : d
+    declarations,
+    ...(declarationExists && nextOutcomes !== undefined
+      ? {
+          root: {
+            ...def.root,
+            nodes: def.root.nodes.map((node): WireDefinitionNode =>
+              node.kind === 'BoundedLoop' && node.body === id
+                ? {
+                    ...node,
+                    exits: reconcileBoundedLoopExits(
+                      node.exits,
+                      nextOutcomes,
+                      def.outcomes[0] ?? 'done'
+                    ),
+                  }
+                : node
+            ),
+          },
+        }
+      : {}),
+  };
+}
+
+/** Renames one custom declaration and every root reference to it. */
+export function renameDeclaration(
+  def: WirePipelineDefinitionV2,
+  oldId: string,
+  newId: string
+): WirePipelineDefinitionV2 {
+  const declaration = def.declarations.find((candidate) => candidate.id === oldId);
+  if (!declaration) throw new Error(`Declaration '${oldId}' does not exist.`);
+  if (declaration.provenance === 'built-in') {
+    throw new Error(`Built-in declaration '${oldId}' cannot be renamed.`);
+  }
+  const trimmed = newId.trim();
+  if (!trimmed) throw new Error('A declaration id cannot be blank.');
+  if (trimmed !== oldId && !isDeclarationIdUnique(def, trimmed)) {
+    throw new Error(`Declaration id '${trimmed}' already exists.`);
+  }
+  return {
+    ...def,
+    declarations: def.declarations.map((candidate) =>
+      candidate.id === oldId ? { ...candidate, id: trimmed } : candidate
     ),
+    root: {
+      ...def.root,
+      nodes: def.root.nodes.map((node): WireDefinitionNode => {
+        if (node.kind === 'CompositeRef' && node.declarationId === oldId) {
+          return { ...node, declarationId: trimmed };
+        }
+        if (node.kind === 'BoundedLoop' && node.body === oldId) {
+          return { ...node, body: trimmed };
+        }
+        return node;
+      }),
+    },
   };
 }
 
@@ -728,6 +2409,10 @@ export function removeDeclaration(
   def: WirePipelineDefinitionV2,
   id: string
 ): WirePipelineDefinitionV2 {
+  const declaration = def.declarations.find((candidate) => candidate.id === id);
+  if (declaration?.provenance === 'built-in') {
+    throw new Error(`Built-in declaration '${id}' cannot be deleted.`);
+  }
   const referenced = def.root.nodes.some(
     (node) =>
       (node.kind === 'CompositeRef' && node.declarationId === id) ||
@@ -742,15 +2427,27 @@ export function removeDeclaration(
   };
 }
 
-/**
- * Add an AtomicStage node to a declaration's body graph.
- * The body palette is constrained to AtomicStage only.
- */
+export interface BodyAtomicStageInput {
+  id: string;
+  capability: { id: string; version: string };
+  execution?: WireAtomicStageExecutionV1;
+  reviewCyclePhase?: WireReviewCyclePhase;
+  goalCyclePhase?: WireGoalCyclePhase;
+  [key: string]: unknown;
+}
+
+/** Add an AtomicStage node to a declaration's body graph. */
 export function addBodyStage(
   def: WirePipelineDefinitionV2,
   declarationId: string,
-  stage: { id: string; capability: { id: string; version: string } }
+  stage: BodyAtomicStageInput
 ): WirePipelineDefinitionV2 {
+  const declaration = def.declarations.find((candidate) => candidate.id === declarationId);
+  if (!declaration) throw new Error(`Declaration '${declarationId}' does not exist.`);
+  if (!stage.id.trim()) throw new Error('A body stage id cannot be blank.');
+  if (declaration.graph.nodes.some((candidate) => candidate.id === stage.id)) {
+    throw new Error(`Body stage id '${stage.id}' already exists in '${declarationId}'.`);
+  }
   return {
     ...def,
     declarations: def.declarations.map((d) => {
@@ -782,7 +2479,7 @@ export function updateBodyStage(
   def: WirePipelineDefinitionV2,
   declarationId: string,
   stageId: string,
-  patch: Partial<{ id: string; capability: { id: string; version: string } }>
+  patch: Partial<BodyAtomicStageInput>
 ): WirePipelineDefinitionV2 {
   const declaration = (def.declarations ?? []).find((d) => d.id === declarationId);
   if (declaration === undefined) {
@@ -830,6 +2527,58 @@ export function updateBodyStage(
   };
 }
 
+/** Patches one declaration-body AtomicStage execution without rebuilding its node. */
+export function updateBodyStageExecution(
+  def: WirePipelineDefinitionV2,
+  declarationId: string,
+  stageId: string,
+  patch: AtomicStageExecutionPatch
+): WirePipelineDefinitionV2 {
+  const declaration = def.declarations.find((candidate) => candidate.id === declarationId);
+  const node = declaration?.graph.nodes.find((candidate) => candidate.id === stageId);
+  if (!node || node.kind !== 'AtomicStage') {
+    throw new Error(`Body AtomicStage '${stageId}' does not exist in '${declarationId}'.`);
+  }
+  const current: WireAtomicStageExecutionV1 = node.execution ?? {
+    version: 1,
+    role: 'implementer',
+    workspace: { access: 'write' },
+  };
+  const next: WireAtomicStageExecutionV1 = {
+    ...current,
+    ...(patch.role !== undefined ? { role: patch.role } : {}),
+    workspace:
+      patch.workspace === undefined
+        ? current.workspace
+        : { ...current.workspace, ...patch.workspace },
+  };
+  const optionalKeys = [
+    'leadReview',
+    'verifyPolicy',
+    'runtime',
+    'model',
+    'effort',
+    'sandbox',
+    'sessionReuse',
+  ] as const;
+  for (const key of optionalKeys) {
+    const value = patch[key];
+    if (value === undefined) continue;
+    if (value === null) delete next[key];
+    else next[key] = value as never;
+  }
+  if (patch.handoff === null) delete next.handoff;
+  else if (patch.handoff !== undefined) {
+    const handoff = { ...(current.handoff ?? {}) };
+    for (const [key, value] of Object.entries(patch.handoff)) {
+      if (value === null) delete handoff[key];
+      else handoff[key] = value;
+    }
+    next.handoff = handoff;
+  }
+  return updateBodyStage(def, declarationId, stageId, { execution: next });
+}
+
 /**
  * Remove a body stage and all incident body connections.
  */
@@ -845,6 +2594,7 @@ export function removeBodyStage(
       return {
         ...d,
         graph: {
+          ...d.graph,
           nodes: d.graph.nodes.filter((n) => n.id !== stageId),
           connections: d.graph.connections.filter(
             (c) => c.from.node !== stageId && c.to.node !== stageId
@@ -955,4 +2705,1073 @@ export function removeBodyConnection(
       };
     }),
   };
+}
+
+// ===== Subgraph extraction (canvas-subgraph-extraction design D1-D3) =====
+
+/**
+ * The prefix the engine's v1 normalizer writes into cross-node structural
+ * references (`Gate.target`, `Join.inputs`, `FanOut.members[].hierarchicalPath`
+ * — `src/core/pipeline-registry/definition.ts:3599`, `:3681-3692`) while
+ * authored v2 writes raw ids. Reference checks below test BOTH forms, plus the
+ * reverse hybrid (a prefixed node id referenced raw — the shape a definition
+ * carrying definition-level consultations over v1-normalized nodes produces,
+ * since `consultations[].sourceStage` mirrors the v1 stage id, not the node id).
+ */
+const STAGE_REFERENCE_PREFIX = 'stage:';
+
+/**
+ * Resolves a structural reference against the selected node ids, accepting
+ * both authored forms. Returns the SELECTED node id the reference points at
+ * (the id as it appears in the draft — what a refusal should name), or null.
+ */
+function referencedSelectedStage(
+  reference: string,
+  selected: ReadonlySet<string>
+): string | null {
+  if (selected.has(reference)) return reference;
+  if (reference.startsWith(STAGE_REFERENCE_PREFIX)) {
+    const raw = reference.slice(STAGE_REFERENCE_PREFIX.length);
+    if (selected.has(raw)) return raw;
+  }
+  const prefixed = `${STAGE_REFERENCE_PREFIX}${reference}`;
+  if (selected.has(prefixed)) return prefixed;
+  return null;
+}
+
+/**
+ * Why a selection cannot be packaged into a reusable declaration (design D3) —
+ * empty array means extractable. Each entry is one author-readable blocker,
+ * and the MODEL owns every rule:
+ *
+ * 1. The selection is non-empty and every selected node is an `AtomicStage`
+ *    (`V2_BODY_PALETTE_KINDS` — the body vocabulary a spec forbids widening);
+ *    any other kind is named.
+ * 2. No OUTSIDE `Gate` targets a selected stage — a disposition cannot cross
+ *    a declaration boundary, so a cut that would sever it is refused, not
+ *    migrated.
+ * 3. No OUTSIDE `FanOut` counts a selected stage among its branches or
+ *    members (id or hierarchicalPath) — same boundary rule for parallel pairs.
+ * 4. No OUTSIDE `Join` lists a selected stage in its inputs or member sets.
+ * 5. No consultation binding names a selected stage as its source.
+ *
+ * "Outside" only matters for kinds rule 1 already refuses, but the checks are
+ * written structurally so they hold regardless of what is selected.
+ */
+export function subgraphExtractionRefusals(
+  def: WirePipelineDefinitionV2,
+  selection: CanvasSelection
+): string[] {
+  return subgraphExtractionRefusalsForNodeIds(def, selection.nodeIds);
+}
+
+function subgraphExtractionRefusalsForNodeIds(
+  def: WirePipelineDefinitionV2,
+  selected: ReadonlySet<string>
+): string[] {
+  const refusals: string[] = [];
+  if (selected.size === 0) {
+    refusals.push('Select at least one stage to package into a reusable block.');
+    return refusals;
+  }
+  for (const id of selected) {
+    const node = def.root.nodes.find((candidate) => candidate.id === id);
+    if (!node) {
+      refusals.push(`Node '${id}' does not exist in this draft.`);
+      continue;
+    }
+    if (!V2_BODY_PALETTE_KINDS.includes(node.kind)) {
+      refusals.push(
+        `Only plain stages can be packaged into a reusable block — '${id}' is a ${node.kind}.`
+      );
+    }
+  }
+  for (const node of def.root.nodes) {
+    if (selected.has(node.id)) continue;
+    if (node.kind === 'Gate') {
+      const hit = referencedSelectedStage(node.target, selected);
+      if (hit) {
+        refusals.push(
+          `Stage '${hit}' is targeted by Gate '${node.id}' outside the selection.`
+        );
+      }
+      continue;
+    }
+    if (node.kind === 'FanOut') {
+      const references = [
+        ...node.branches,
+        ...node.members.flatMap((member) => [member.id, member.hierarchicalPath]),
+      ];
+      const hit = references
+        .map((reference) => referencedSelectedStage(reference, selected))
+        .find((hit): hit is string => hit !== null);
+      if (hit) {
+        refusals.push(
+          `Stage '${hit}' is a branch or member of FanOut '${node.id}' outside the selection.`
+        );
+      }
+      continue;
+    }
+    if (node.kind === 'Join') {
+      const references = [
+        ...node.inputs,
+        ...node.requiredMembers,
+        ...node.optionalMembers,
+      ];
+      const hit = references
+        .map((reference) => referencedSelectedStage(reference, selected))
+        .find((hit): hit is string => hit !== null);
+      if (hit) {
+        refusals.push(
+          `Stage '${hit}' is an input of Join '${node.id}' outside the selection.`
+        );
+      }
+    }
+  }
+  for (const binding of readConsultations(def)) {
+    const hit = referencedSelectedStage(binding.sourceStage, selected);
+    if (hit) {
+      refusals.push(`Stage '${hit}' is referenced by a consultation binding.`);
+    }
+  }
+  return refusals;
+}
+
+/** The derived contract a review dialog opens with (design D2) — review-editable defaults. */
+export interface DerivedSubgraphContract {
+  inputs: WireDefinitionPort[];
+  artifacts: WireDefinitionArtifact[];
+  outcomes: string[];
+}
+
+/** Joins node and port with the U+0000 separator below, so ids containing `stage:`-style colons cannot forge key collisions. */
+const CUT_KEY_SEPARATOR = String.fromCharCode(0);
+function cutKey(node: string, port: string): string {
+  return node + CUT_KEY_SEPARATOR + port;
+}
+
+/**
+ * Enumerates the cut a node set implies, in draft connection order: the
+ * distinct severed-incoming `(target stage, target port)` pairs and the
+ * distinct severed-outgoing `(source stage, source port)` pairs. Parallel to
+ * the rows {@link deriveSubgraphContract} derives and the mapping
+ * {@link extractSubgraph} rewires through — one enumeration, three readers.
+ */
+function computeSubgraphCut(
+  def: WirePipelineDefinitionV2,
+  nodeIds: ReadonlySet<string>
+): { incomingKeys: string[]; outgoingKeys: string[] } {
+  const incomingKeys: string[] = [];
+  const outgoingKeys: string[] = [];
+  for (const connection of def.root.connections) {
+    if (nodeIds.has(connection.to.node) && !nodeIds.has(connection.from.node)) {
+      const key = cutKey(connection.to.node, connection.to.port);
+      if (!incomingKeys.includes(key)) incomingKeys.push(key);
+    } else if (
+      nodeIds.has(connection.from.node) &&
+      !nodeIds.has(connection.to.node)
+    ) {
+      const key = cutKey(connection.from.node, connection.from.port);
+      if (!outgoingKeys.includes(key)) outgoingKeys.push(key);
+    }
+  }
+  return { incomingKeys, outgoingKeys };
+}
+
+/** `base`, then `base-2`, `base-3`, … — the `v2NodeIdFor` suffix convention. */
+function suffixedName(base: string, used: Set<string>): string {
+  if (!used.has(base)) {
+    used.add(base);
+    return base;
+  }
+  let suffix = 2;
+  while (used.has(`${base}-${suffix}`)) suffix += 1;
+  const name = `${base}-${suffix}`;
+  used.add(name);
+  return name;
+}
+
+/**
+ * Derives the declaration contract a cut implies (design D2), all defaults the
+ * review may edit:
+ *
+ * - One input port per distinct severed-incoming `(target stage, port)`,
+ *   named after the target stage (suffixed on collision), typed by the severed
+ *   edge's target port (typically `CONTROL_TARGET_PORT`), `required` unset.
+ * - One outcome per distinct severed-outgoing `(source stage, port)`, named
+ *   after the source stage (suffixed on collision); when no outgoing edge is
+ *   severed, the single default outcome `'done'` (`addDeclaration`'s own).
+ * - Artifacts default to `[]` — control edges carry no artifact semantics.
+ */
+export function deriveSubgraphContract(
+  def: WirePipelineDefinitionV2,
+  nodeIds: ReadonlySet<string>
+): DerivedSubgraphContract {
+  const { incomingKeys, outgoingKeys } = computeSubgraphCut(def, nodeIds);
+  const usedInputNames = new Set<string>();
+  const inputs = incomingKeys.map((key) => {
+    const [node, port] = key.split(CUT_KEY_SEPARATOR);
+    return {
+      name: suffixedName(node!, usedInputNames),
+      type: port!,
+    };
+  });
+  const usedOutcomeNames = new Set<string>();
+  const outcomes = outgoingKeys.map((key) =>
+    suffixedName(key.split(CUT_KEY_SEPARATOR)[0]!, usedOutcomeNames)
+  );
+  return {
+    inputs,
+    artifacts: [],
+    outcomes: outcomes.length > 0 ? outcomes : ['done'],
+  };
+}
+
+/**
+ * The catalog slice the loop-body derivations resolve capabilities from.
+ * Structurally satisfied by `PipelineCatalogResponse`, so the page passes
+ * its catalog whole; tests build `{ skills: [...] }` directly.
+ */
+export interface LoopBodyCatalogSlice {
+  skills: readonly PipelineCatalogSkill[];
+}
+
+/**
+ * Resolves a stage's exact capability revision in the catalog, the same
+ * `(id, version)` lookup the engine's descriptor resolution uses. `enabled`
+ * is deliberately NOT consulted: the engine resolves a disabled-but-listed
+ * capability's contract the same way, and a bound stage's producible
+ * outcomes do not depend on profile enablement.
+ */
+function catalogCapabilityFor(
+  catalog: LoopBodyCatalogSlice | null | undefined,
+  capability: { id: string; version: string }
+) {
+  return catalog?.skills.find(
+    (skill) =>
+      skill.capability?.id === capability.id &&
+      skill.capability.version === capability.version
+  )?.capability;
+}
+
+/**
+ * Browser-safe mirror of the engine's `loopPhaseOutcomeNames`
+ * (`src/core/pipeline-registry/definition.ts`): a phase-tagged stage's
+ * capability outcomes are REPLACED by the closed control ports its cycle
+ * consumes — review→`findings`, triage→`ready`, fix→`fixed`,
+ * re-review→`clean`+`needs_fix`, goal work→`ready`, goal judge→
+ * `clean`+`needs_fix`. The mirror exists because ignoring phases would
+ * silently derive unproducible names; a unit test pins every projection.
+ */
+function loopPhaseOutcomeNamesMirror(
+  node: WireAtomicStageNode
+): readonly string[] | undefined {
+  switch (node.reviewCyclePhase) {
+    case 'review':
+      return ['findings'];
+    case 'triage':
+      return ['ready'];
+    case 'fix':
+      return ['fixed'];
+    case 're-review':
+      return ['clean', 'needs_fix'];
+  }
+  switch (node.goalCyclePhase) {
+    case 'work':
+      return ['ready'];
+    case 'judge':
+      return ['clean', 'needs_fix'];
+  }
+  return undefined;
+}
+
+/**
+ * Derives a loop body's PRODUCIBLE terminal outcomes (canvas-loop-validate-
+ * clean-synthesis D1) — the names the engine's
+ * `resolveGraphTerminalOutcomes` computes over the body graph, mirrored over
+ * the AtomicStage-only shapes the extraction refusals guarantee:
+ *
+ * - per region stage, its capability's `outcomes` (resolved in the catalog
+ *   by `(id, version)`), REPLACED by the engine's loop-phase projection when
+ *   the node carries a phase tag;
+ * - minus every outcome an INTERNAL region connection consumes (outcome
+ *   ports are the control edges a body carries; `(from.node, from.port)` of
+ *   each internal edge, mirroring the engine's control-edge consumption);
+ * - distinct, in body-node order then descriptor order, first occurrence
+ *   kept — deterministic.
+ *
+ * The engine's exact-cover rule (`validateOwnerTerminalOutcomes`) accepts
+ * only this set as the declaration's outcome rows, both directions: a
+ * producible name left out is "not declared", an unproducible name added is
+ * "cannot be produced". A stage whose capability is missing from the
+ * catalog contributes nothing here and is reported by
+ * {@link underivableBodyStages} instead — never left for Validate.
+ */
+export function bodyTerminalOutcomes(
+  def: WirePipelineDefinitionV2,
+  region: ReadonlySet<string>,
+  catalog: LoopBodyCatalogSlice | null | undefined
+): string[] {
+  const nodes = def.root.nodes.filter(
+    (node): node is WireAtomicStageNode =>
+      region.has(node.id) && node.kind === 'AtomicStage'
+  );
+  const consumed = new Set<string>();
+  for (const connection of def.root.connections) {
+    if (region.has(connection.from.node) && region.has(connection.to.node)) {
+      consumed.add(cutKey(connection.from.node, connection.from.port));
+    }
+  }
+  const outcomes: string[] = [];
+  for (const node of nodes) {
+    const descriptor = catalogCapabilityFor(catalog, node.capability);
+    if (!descriptor) continue;
+    const produced =
+      loopPhaseOutcomeNamesMirror(node) ?? descriptor.outcomes;
+    for (const name of produced) {
+      if (consumed.has(cutKey(node.id, name))) continue;
+      if (!outcomes.includes(name)) outcomes.push(name);
+    }
+  }
+  return outcomes;
+}
+
+/**
+ * The region stages whose exact capability revision the catalog does not
+ * carry — the probe behind the loop review's underivable-capability refusal
+ * and the confirm-time re-check (the review is not trusted). A null catalog
+ * reports every region stage: without the catalog the producible outcomes
+ * cannot be derived, and an honest refusal beats a loop that validates red.
+ */
+export function underivableBodyStages(
+  def: WirePipelineDefinitionV2,
+  region: ReadonlySet<string>,
+  catalog: LoopBodyCatalogSlice | null | undefined
+): string[] {
+  return def.root.nodes
+    .filter(
+      (node): node is WireAtomicStageNode =>
+        region.has(node.id) && node.kind === 'AtomicStage'
+    )
+    .filter((node) => !catalogCapabilityFor(catalog, node.capability))
+    .map((node) => node.id);
+}
+
+/**
+ * The refusal strings for {@link underivableBodyStages} — one per stage,
+ * naming the stage and its capability. Composed here (not in the page) so
+ * the review-open refusal list and the model's confirm-time throw render
+ * the same words from one home.
+ */
+export function underivableBodyStageRefusals(
+  def: WirePipelineDefinitionV2,
+  region: ReadonlySet<string>,
+  catalog: LoopBodyCatalogSlice | null | undefined
+): string[] {
+  return def.root.nodes
+    .filter(
+      (node): node is WireAtomicStageNode =>
+        region.has(node.id) && node.kind === 'AtomicStage'
+    )
+    .filter((node) => !catalogCapabilityFor(catalog, node.capability))
+    .map(
+      (node) =>
+        `Stage '${node.id}' binds capability '${node.capability.id}' that is not in the catalog, so the loop's exit outcomes cannot be derived.`
+    );
+}
+
+/**
+ * Derives the loop body's contract for a refused back-edge draw
+ * (canvas-loop-port-inference D1/D2, superseded in part by
+ * canvas-loop-validate-clean-synthesis):
+ *
+ * - INPUT rows keep the boundary naming convention on every side — a side
+ *   whose extraction severs connections keeps the severed names VERBATIM
+ *   ({@link deriveSubgraphContract}'s), a side that severs none falls back
+ *   to the back-edge's target `to` (the body's unique root: the draft is
+ *   acyclic — the back-edge was refused precisely because it would close a
+ *   cycle — so no internal edge can enter `to`, and it is where control
+ *   re-enters each iteration). Every row, severed or fallback, is TYPED
+ *   {@link CONTROL_PORT_TYPE}: the engine gives a declaration's input rows
+ *   no control-port widening, so a connection onto the row validates only
+ *   with the engine's control type (the class-2 fix; round one and child-1
+ *   both typed rows with the port name, engine-red by construction).
+ * - OUTCOME rows are {@link bodyTerminalOutcomes} on EVERY side alike
+ *   (the class-1 fix): the engine's exact cover
+ *   (`validateOwnerTerminalOutcomes`) requires the declaration's outcomes to
+ *   BE the body's producible terminal outcomes, both directions, so
+ *   round-one's severed stage-id names and child-1's back-edge-source
+ *   fallback are superseded DELIBERATELY here — they were unproducible by
+ *   construction. The severed/fallback distinction now governs INPUT naming
+ *   only, which is also why the derivation no longer needs the back-edge's
+ *   source.
+ *
+ * A body stage whose capability is missing from the catalog contributes no
+ * outcome here; the review surfaces {@link underivableBodyStageRefusals}
+ * for it and the confirm transaction re-checks (the review is not trusted).
+ * The extract/CompositeRef path never calls this: it has no back-edge to
+ * derive from (explicit non-goal) and keeps `deriveSubgraphContract`
+ * directly, byte-identical.
+ */
+export function deriveBackedgeLoopContract(
+  def: WirePipelineDefinitionV2,
+  region: ReadonlySet<string>,
+  to: string,
+  catalog: LoopBodyCatalogSlice | null | undefined
+): DerivedSubgraphContract {
+  const base = deriveSubgraphContract(def, region);
+  const { incomingKeys } = computeSubgraphCut(def, region);
+  return {
+    ...base,
+    inputs:
+      incomingKeys.length > 0
+        ? base.inputs.map((row) => ({ ...row, type: CONTROL_PORT_TYPE }))
+        : [{ name: to, type: CONTROL_PORT_TYPE }],
+    outcomes: bodyTerminalOutcomes(def, region, catalog),
+  };
+}
+
+/** The reviewed contract plus which nodes move — {@link extractSubgraph}'s input. */
+export interface SubgraphExtractionInput {
+  nodeIds: ReadonlySet<string>;
+  id: string;
+  inputs: WireDefinitionPort[];
+  artifacts: WireDefinitionArtifact[];
+  outcomes: string[];
+}
+
+export interface SubgraphExtractionResult {
+  next: WirePipelineDefinitionV2;
+  declarationId: string;
+  refId: string;
+}
+
+/**
+ * The one extraction transaction (design D1): moves the selected plain stages
+ * into a new custom Composite declaration, replaces them in the root graph
+ * with one `CompositeRef`, and rewires every severed crossing connection onto
+ * the ref's mapped ports. Pure — returns the next definition, never mutates.
+ *
+ * The dialog is not trusted: refusals are re-run here, the reviewed id is
+ * validated by the same blank/unique rules `addDeclaration` enforces, and the
+ * reviewed rows by `assertNamedContractRows`/`assertNamedOutcomes`. Severed
+ * edges map onto reviewed rows POSITIONALLY in derivation order — a renamed
+ * row renames the port its edge lands on; a deleted derived row leaves its
+ * edge on the derived default name (and the definition may then validate red —
+ * the Validate button stays the authority, the design's stated posture).
+ *
+ * Content preservation: moved stages and internal connections are the SAME
+ * values (verbatim, ids included — body ids are declaration-scoped); crossing
+ * connections keep every extension field via the spread, with only identity
+ * and the rewritten endpoint changed (`v2ConnectionIdFor` convention). Nothing
+ * is stamped `legacyRuntimeOwner` — the ref is built by `insertCompositeRef`
+ * with exactly `{ id, kind, declarationId }`.
+ *
+ * Internally two steps (canvas-backedge-loop-inference design D3) —
+ * {@link extractSubgraphIntoDeclaration} (validate + declare + remove from
+ * root) and {@link rewireCrossingsOnto} (the positional cut rewire,
+ * parameterized by the replacement node) — so the back-edge loop path reuses
+ * the same rules with a `BoundedLoop` as the replacement instead of
+ * duplicating them. One implementation of every rule; only the replacement
+ * node differs.
+ */
+export function extractSubgraph(
+  def: WirePipelineDefinitionV2,
+  input: SubgraphExtractionInput
+): SubgraphExtractionResult {
+  const derived = deriveSubgraphContract(def, input.nodeIds);
+  const { next: declared, declarationId } = extractSubgraphIntoDeclaration(def, input);
+  // Appended through the same gesture `insertCompositeRef` runs, so its
+  // existence/referenceability checks execute against the just-created
+  // declaration; the id minted here is the one it appends (same root state).
+  const refId = v2NodeIdFor('CompositeRef', declared);
+  const next = rewireCrossingsOnto(
+    insertCompositeRef(declared, declarationId),
+    def,
+    input.nodeIds,
+    refId,
+    input,
+    derived
+  );
+  return { next, declarationId, refId };
+}
+
+/**
+ * Extraction step one: re-run every refusal and id/row rule, then move the
+ * node set into a new custom Composite declaration and out of the root graph
+ * (verbatim values, ids included). Leaves the replacement to the caller —
+ * `extractSubgraph` inserts a `CompositeRef`, the back-edge loop path mints a
+ * `BoundedLoop`.
+ */
+function extractSubgraphIntoDeclaration(
+  def: WirePipelineDefinitionV2,
+  input: SubgraphExtractionInput
+): { next: WirePipelineDefinitionV2; declarationId: string } {
+  const refusals = subgraphExtractionRefusalsForNodeIds(def, input.nodeIds);
+  if (refusals.length > 0) {
+    throw new Error(refusals.join(' '));
+  }
+  if (input.id.trim().length === 0) {
+    throw new Error('A declaration id cannot be blank.');
+  }
+  if (!isDeclarationIdUnique(def, input.id)) {
+    throw new Error(`Declaration id '${input.id}' already exists.`);
+  }
+  assertNamedContractRows('declaration input', input.inputs);
+  assertNamedContractRows('declaration artifact', input.artifacts);
+  assertNamedOutcomes('declaration', input.outcomes);
+
+  const declaration: WireCompositeDeclaration = {
+    id: input.id,
+    kind: 'Composite',
+    provenance: 'custom',
+    inputs: input.inputs,
+    artifacts: input.artifacts,
+    outcomes: input.outcomes,
+    graph: {
+      nodes: def.root.nodes.filter((node) => input.nodeIds.has(node.id)),
+      connections: def.root.connections.filter(
+        (connection) =>
+          input.nodeIds.has(connection.from.node) &&
+          input.nodeIds.has(connection.to.node)
+      ),
+    },
+  };
+  const next: WirePipelineDefinitionV2 = {
+    ...def,
+    declarations: [...def.declarations, declaration],
+    root: {
+      ...def.root,
+      nodes: def.root.nodes.filter((node) => !input.nodeIds.has(node.id)),
+      connections: def.root.connections.filter(
+        (connection) =>
+          !input.nodeIds.has(connection.from.node) &&
+          !input.nodeIds.has(connection.to.node)
+      ),
+    },
+  };
+  return { next, declarationId: input.id };
+}
+
+/**
+ * Extraction step two: rewire every root connection that crossed the moved
+ * node set onto the REPLACEMENT node's mapped ports — positionally onto the
+ * reviewed rows in derivation order, with the derived names as fallback
+ * (`extractSubgraph`'s documented rule, unchanged for the extract path).
+ * `preExtractionDef` is the definition the cut was taken from (the caller's
+ * pre-state); `next` is the post-declaration state the rewired connections
+ * land on.
+ *
+ * `outgoingPortOverride` (canvas-loop-validate-clean-synthesis D4) is the
+ * loop path's alone: a BoundedLoop's OUTPUT ports are its exit-ACTION
+ * outcome values (the engine's `contractForNode`), not its declaration's
+ * outcome row names, so every outgoing crossing rewires onto the one
+ * supplied port — the review's exit outcome. The extract path passes
+ * nothing and keeps the positional row mapping byte-identically.
+ */
+function rewireCrossingsOnto(
+  next: WirePipelineDefinitionV2,
+  preExtractionDef: WirePipelineDefinitionV2,
+  nodeIds: ReadonlySet<string>,
+  replacementId: string,
+  rows: {
+    inputs: readonly WireDefinitionPort[];
+    outcomes: readonly string[];
+  },
+  derived: {
+    inputs: readonly WireDefinitionPort[];
+    outcomes: readonly string[];
+  },
+  outgoingPortOverride?: string
+): WirePipelineDefinitionV2 {
+  const { incomingKeys, outgoingKeys } = computeSubgraphCut(preExtractionDef, nodeIds);
+  let result = next;
+  for (const connection of preExtractionDef.root.connections) {
+    if (nodeIds.has(connection.to.node) && !nodeIds.has(connection.from.node)) {
+      const index = incomingKeys.indexOf(cutKey(connection.to.node, connection.to.port));
+      const port = rows.inputs[index]?.name ?? derived.inputs[index]!.name;
+      const id = v2ConnectionIdFor(result, {
+        source: connection.from.node,
+        sourcePort: connection.from.port,
+        target: replacementId,
+        targetPort: port,
+      });
+      result = addV2Connection(result, {
+        ...connection,
+        id,
+        to: { node: replacementId, port },
+      });
+    } else if (
+      nodeIds.has(connection.from.node) &&
+      !nodeIds.has(connection.to.node)
+    ) {
+      const index = outgoingKeys.indexOf(
+        cutKey(connection.from.node, connection.from.port)
+      );
+      const port =
+        outgoingPortOverride ?? rows.outcomes[index] ?? derived.outcomes[index]!;
+      const id = v2ConnectionIdFor(result, {
+        source: replacementId,
+        sourcePort: port,
+        target: connection.to.node,
+        targetPort: connection.to.port,
+      });
+      result = addV2Connection(result, {
+        ...connection,
+        id,
+        from: { node: replacementId, port },
+      });
+    }
+  }
+  return result;
+}
+
+// ===== Back-edge loop synthesis (canvas-backedge-loop-inference design D3-D5) =====
+
+/** The reviewed loop synthesis — {@link synthesizeBoundedLoopFromBackedge}'s input. */
+export interface BackedgeLoopSynthesisInput {
+  /** The drawn back-edge's source node (the edge was never written to the draft). */
+  from: string;
+  /** The drawn back-edge's target node. */
+  to: string;
+  id: string;
+  inputs: WireDefinitionPort[];
+  artifacts: WireDefinitionArtifact[];
+  outcomes: string[];
+  /** The author's iteration bound — a positive integer. */
+  maxIterations: number;
+  /** The definition outcome the loop's exit resolves to. */
+  exitOutcome: string;
+}
+
+export interface BackedgeLoopSynthesisResult {
+  next: WirePipelineDefinitionV2;
+  declarationId: string;
+  loopId: string;
+}
+
+/**
+ * The one loop-synthesis transaction (design D3/D4, extended by
+ * canvas-loop-validate-clean-synthesis D3/D4): turns a refused
+ * cycle-closing draw into a `BoundedLoop` over the region the edge closes.
+ * Region -> refusals -> declare (child-2's extraction, via
+ * `extractSubgraphIntoDeclaration`) -> mint the loop exactly like
+ * `addBoundedLoopOverDeclaration` except `body` = the just-extracted
+ * declaration and `limits.maxIterations` = the author's bound -> declare
+ * every outcome the loop can emit as an exit
+ * (`ensureLoopExitOutcomesDeclared`) -> rewire the crossings onto the
+ * loop's ports (`rewireCrossingsOnto`, outgoing side onto the exit
+ * outcome). No `CompositeRef` is inserted — the loop IS the replacement.
+ * Pure; never mutates.
+ *
+ * The drawn back-edge itself never entered the draft (`onConnect` refuses it
+ * before writing), so nothing must be excluded from the body move: the
+ * connections that move are the region's internal edges, all acyclic. The
+ * back-edge exists only as loop semantics.
+ *
+ * The review is not trusted: the region is recomputed from the endpoints,
+ * the child-2 refusals/id/row validators re-run, the bound must be a
+ * positive integer (the review's integer field blocks confirm client-side;
+ * the model re-owns the rule), the exit outcome must be a DECLARED
+ * definition outcome (the review's select only offers declared ones, so the
+ * zero-edit flow never trips this; the model owns the rule for programmatic
+ * callers), and every body stage's capability must resolve in the catalog
+ * (`underivableBodyStageRefusals` — the same check the review-open refusal
+ * list rendered). Nothing is stamped `legacyRuntimeOwner`.
+ */
+export function synthesizeBoundedLoopFromBackedge(
+  def: WirePipelineDefinitionV2,
+  input: BackedgeLoopSynthesisInput,
+  catalog: LoopBodyCatalogSlice | null | undefined
+): BackedgeLoopSynthesisResult {
+  if (!def.outcomes.includes(input.exitOutcome)) {
+    throw new Error(
+      `Exit outcome '${input.exitOutcome}' is not a declared definition outcome.`
+    );
+  }
+  if (!Number.isSafeInteger(input.maxIterations) || input.maxIterations <= 0) {
+    throw new Error('Loop maximum iterations must be a positive integer.');
+  }
+  const region = backedgeRegion(def, input.from, input.to);
+  const underivable = underivableBodyStageRefusals(def, region, catalog);
+  if (underivable.length > 0) {
+    throw new Error(underivable.join(' '));
+  }
+  const { next: declared, declarationId } = extractSubgraphIntoDeclaration(def, {
+    nodeIds: region,
+    id: input.id,
+    inputs: input.inputs,
+    artifacts: input.artifacts,
+    outcomes: input.outcomes,
+  });
+  const declaration = declared.declarations.find((d) => d.id === declarationId)!;
+  const loopId = v2NodeIdFor('BoundedLoop', declared);
+  const loopNode: WireBoundedLoopNode = {
+    id: loopId,
+    kind: 'BoundedLoop',
+    body: declarationId,
+    limits: { maxIterations: input.maxIterations, maxActions: 12, budget: 12 },
+    lifecycle: createDefaultBoundedLoopLifecycle(),
+    exits: Object.fromEntries(
+      declaration.outcomes.map((outcome, index) => [
+        outcome,
+        index === declaration.outcomes.length - 1
+          ? { action: 'exit' as const, outcome: input.exitOutcome }
+          : { action: 'continue' as const },
+      ])
+    ),
+  };
+  const next = rewireCrossingsOnto(
+    ensureLoopExitOutcomesDeclared(addV2Node(declared, loopNode), loopNode),
+    def,
+    region,
+    loopId,
+    input,
+    deriveBackedgeLoopContract(def, region, input.to, catalog),
+    input.exitOutcome
+  );
+  return { next, declarationId, loopId };
+}
+
+// --- Parallel frontier inference (canvas-parallel-frontier-inference D1/D2) --
+
+/** One detected drawn frontier: the sandwich between `source` and `target`. */
+export interface ParallelFrontier {
+  source: string;
+  target: string;
+  /** The clean branch ids, in the draft's node order. */
+  branches: readonly string[];
+}
+
+/**
+ * Detects drawn parallel frontiers over the root graph (design D1): for each
+ * ordered pair (S, T), S ≠ T, both editable kinds and neither a FanOut nor a
+ * Join (an already-paired endpoint means the IR structure exists), the branch
+ * set is `{m | S→m ∈ conns ∧ m→T ∈ conns ∧ in(m) = {S} ∧ out(m) = {T} ∧ m is
+ * an AtomicStage}` — exactly the sandwich the `FanOut`/`Join` pair encodes. A
+ * frontier exists iff at least two branches are clean.
+ *
+ * Strictness is the honesty rule: `FanOut.members`/`Join.inputs` semantics
+ * presume the pair dispatches every branch and the barrier collects them, so
+ * a branch with any other edge is EXCLUDED (not repaired). The adjacency is
+ * the SAME `buildAdjacency` the cycle check and `backedgeRegion` use — one
+ * builder, no second reachability; the predecessor map is derived from it.
+ * Pure; deterministic (branch order follows the draft's node order).
+ */
+export function detectParallelFrontiers(
+  def: WirePipelineDefinitionV2
+): ParallelFrontier[] {
+  const forward = buildAdjacency(def);
+  const backward = new Map<string, string[]>();
+  for (const [from, tos] of forward) {
+    for (const to of tos) {
+      const arr = backward.get(to) ?? [];
+      arr.push(from);
+      backward.set(to, arr);
+    }
+  }
+  const eligible = (node: WireDefinitionNode): boolean =>
+    node.kind !== 'FanOut' &&
+    node.kind !== 'Join' &&
+    isV2EditableNodeKind(node.kind);
+  const frontiers: ParallelFrontier[] = [];
+  const cleanBranches = new Set<string>();
+  for (const source of def.root.nodes) {
+    if (!eligible(source)) continue;
+    for (const target of def.root.nodes) {
+      if (target.id === source.id || !eligible(target)) continue;
+      for (const member of forward.get(source.id) ?? []) {
+        if (
+          member !== source.id &&
+          member !== target.id &&
+          (forward.get(member) ?? []).includes(target.id) &&
+          setEquals(backward.get(member) ?? [], [source.id]) &&
+          setEquals(forward.get(member) ?? [], [target.id]) &&
+          def.root.nodes.some(
+            (node) => node.id === member && node.kind === 'AtomicStage'
+          )
+        ) {
+          cleanBranches.add(member);
+        }
+      }
+      if (cleanBranches.size >= 2) {
+        // Branch order follows the draft's node order (the backedgeRegion
+        // determinism discipline).
+        frontiers.push({
+          source: source.id,
+          target: target.id,
+          branches: def.root.nodes
+            .filter((node) => cleanBranches.has(node.id))
+            .map((node) => node.id),
+        });
+      }
+      cleanBranches.clear();
+    }
+  }
+  return frontiers;
+}
+
+function setEquals(actual: readonly string[], expected: readonly string[]): boolean {
+  if (actual.length !== expected.length) return false;
+  return expected.every((id) => actual.includes(id));
+}
+
+/**
+ * The completing-connect hook (design D1): detection over the POST-connect
+ * draft, filtered to the frontier whose branch-edge set contains the
+ * just-drawn connection — the connection is an S→m dispatch half (its target
+ * is a branch) or an m→T barrier half (its source is a branch). Ports do not
+ * participate: detection is node-level, exactly like the adjacency it reads.
+ */
+export function completedFrontier(
+  def: WirePipelineDefinitionV2,
+  connection: { source: string; target: string }
+): ParallelFrontier | null {
+  return (
+    detectParallelFrontiers(def).find(
+      (frontier) =>
+        (frontier.source === connection.source &&
+          frontier.branches.includes(connection.target)) ||
+        (frontier.target === connection.target &&
+          frontier.branches.includes(connection.source))
+    ) ?? null
+  );
+}
+
+export interface ParallelFrontierMemberReview {
+  id: string;
+  required: boolean;
+}
+
+export interface ParallelFrontierSynthesisInput {
+  source: string;
+  target: string;
+  /** The reviewed membership: one required/optional choice per branch. */
+  members: readonly ParallelFrontierMemberReview[];
+  concurrencyCap: number;
+  budget: number;
+  outcomes: WireJoinNode['outcomes'];
+}
+
+export interface ParallelFrontierSynthesisResult {
+  next: WirePipelineDefinitionV2;
+  fanOutId: string;
+  joinId: string;
+}
+
+/**
+ * The one frontier-synthesis transaction (design D2): turns the drawn
+ * fan-out/reconverge sandwich into the `FanOut`/`Join` pair via
+ * `createParallelPair`-shaped machinery. Steps: (1) re-detect from
+ * `(source, target)` on the live draft — the review is not trusted
+ * (child-2/3's rule) and the reviewed membership must still be exactly the
+ * detected branches; (2) consume the drawn sandwich — every S→m and m→T
+ * connection is removed, never surviving alongside the pair (the author's
+ * transient plain edges, mirroring how the back-edge died at draw time in
+ * child 3); (3) mint the pair through `createParallelPair` with
+ * `v2NodeIdFor` ids — its own validators are the refusal surface, reused
+ * verbatim; (4) add the wiring on the rendered handle ids
+ * (`layout.ts`: FanOut input 'input', one output per branch named by the
+ * member id; Join inputs named by member id, outputs from the outcome
+ * values): S@drawnSourcePort → FanOut@input, per member FanOut@<m> → m@input
+ * and m@done → Join@<m>, Join@<proceed> → T@input. Pure; never mutates;
+ * stamps nothing (`createParallelPair` and `addV2Connection` never write
+ * `legacyRuntimeOwner`).
+ */
+export function synthesizeParallelFrontier(
+  def: WirePipelineDefinitionV2,
+  input: ParallelFrontierSynthesisInput
+): ParallelFrontierSynthesisResult {
+  const frontier = detectParallelFrontiers(def).find(
+    (candidate) =>
+      candidate.source === input.source && candidate.target === input.target
+  );
+  if (!frontier) {
+    throw new Error(
+      'This frontier is no longer a clean fan-out and reconverge shape.'
+    );
+  }
+  const branchSet = new Set(frontier.branches);
+  const reviewedRequired = new Map(
+    input.members.map((member) => [member.id, member.required])
+  );
+  if (
+    reviewedRequired.size !== frontier.branches.length ||
+    frontier.branches.some((id) => !reviewedRequired.has(id))
+  ) {
+    throw new Error(
+      'The frontier branches changed while reviewing them — reopen the review.'
+    );
+  }
+  // The drawn source port dies with the consumed S→m edges, so read it before
+  // the filter: the author drew from that handle, and the S→FanOut edge is its
+  // replacement (first drawn S→m in draft-connection order, deterministic).
+  const drawnSourcePort =
+    def.root.connections.find(
+      (connection) =>
+        connection.from.node === input.source && branchSet.has(connection.to.node)
+    )?.from.port ?? CONTROL_SOURCE_PORT;
+  const consumed: WirePipelineDefinitionV2 = {
+    ...def,
+    root: {
+      ...def.root,
+      connections: def.root.connections.filter(
+        (connection) =>
+          !(
+            (connection.from.node === input.source &&
+              branchSet.has(connection.to.node)) ||
+            (branchSet.has(connection.from.node) &&
+              connection.to.node === input.target)
+          )
+      ),
+    },
+  };
+  const fanOutId = v2NodeIdFor('FanOut', consumed);
+  const joinId = v2NodeIdFor('Join', consumed);
+  let next = createParallelPair(consumed, {
+    fanOutId,
+    joinId,
+    memberNodeIds: frontier.branches,
+    requiredMemberIds: frontier.branches.filter((id) => reviewedRequired.get(id)),
+    concurrencyCap: input.concurrencyCap,
+    budget: input.budget,
+    outcomes: input.outcomes,
+  });
+  next = addV2Connection(next, {
+    id: v2ConnectionIdFor(next, {
+      source: input.source,
+      sourcePort: drawnSourcePort,
+      target: fanOutId,
+      targetPort: CONTROL_TARGET_PORT,
+    }),
+    from: { node: input.source, port: drawnSourcePort },
+    to: { node: fanOutId, port: CONTROL_TARGET_PORT },
+  });
+  for (const member of frontier.branches) {
+    next = addV2Connection(next, {
+      id: v2ConnectionIdFor(next, {
+        source: fanOutId,
+        sourcePort: member,
+        target: member,
+        targetPort: CONTROL_TARGET_PORT,
+      }),
+      from: { node: fanOutId, port: member },
+      to: { node: member, port: CONTROL_TARGET_PORT },
+    });
+    next = addV2Connection(next, {
+      id: v2ConnectionIdFor(next, {
+        source: member,
+        sourcePort: CONTROL_SOURCE_PORT,
+        target: joinId,
+        targetPort: member,
+      }),
+      from: { node: member, port: CONTROL_SOURCE_PORT },
+      to: { node: joinId, port: member },
+    });
+  }
+  next = addV2Connection(next, {
+    id: v2ConnectionIdFor(next, {
+      source: joinId,
+      sourcePort: input.outcomes.proceed,
+      target: input.target,
+      targetPort: CONTROL_TARGET_PORT,
+    }),
+    from: { node: joinId, port: input.outcomes.proceed },
+    to: { node: input.target, port: CONTROL_TARGET_PORT },
+  });
+  return { next, fanOutId, joinId };
+}
+
+// ===== Sink promotion (canvas-sink-finish-inference design D1-D3) =========
+
+/**
+ * The promotable terminal kinds (design D1): exactly the two whose authored
+ * terminal wiring the surface already draws — a plain stage's control-out and
+ * a barrier's outcome-valued output are the handles the renderer paints, so
+ * the promotion's edge lands on a real handle. Every other sink kind (a
+ * loop's end, a composite reference, a gate, a branch point) keeps the
+ * explicit Finish gesture; per-kind rendered-port resolution is deferred.
+ * A FanOut can never qualify alone by construction: its pair's collector is
+ * the Join.
+ */
+const PROMOTABLE_SINK_KINDS: ReadonlySet<WireDefinitionNode['kind']> = new Set([
+  'AtomicStage',
+  'Join',
+]);
+
+/**
+ * Whether `node` is a promotable terminal node (design D1): it exists in the
+ * ROOT graph (a declaration body's sinks are that declaration's own outcome
+ * contract, not this rule's territory), the ROOT node's kind is promotable,
+ * and NO root connection leaves it. The out-edge scan rides `buildAdjacency`
+ * — the same root-connection enumeration `wouldCreateCycle` and
+ * `detectParallelFrontiers` read — so "terminal" can never disagree with the
+ * rules that recognize loop and parallel shapes.
+ */
+export function isPromotableSink(
+  def: WirePipelineDefinitionV2,
+  node: WireDefinitionNode
+): boolean {
+  const root = def.root.nodes.find((candidate) => candidate.id === node.id);
+  if (!root || !PROMOTABLE_SINK_KINDS.has(root.kind)) return false;
+  return (buildAdjacency(def).get(root.id) ?? []).length === 0;
+}
+
+export interface SinkPromotionResult {
+  next: WirePipelineDefinitionV2;
+  finishId: string;
+}
+
+/**
+ * The one sink-promotion transaction (design D3): appends a Finish carrying
+ * the author's PICKED outcome and wires the sink to it. Steps: (1)
+ * re-validate — the panel is not trusted; the node must still be a promotable
+ * sink and the outcome a non-blank member of `def.outcomes` (the select only
+ * offers those, but the model owns the rule); (2) append the Finish with
+ * exactly `addFinishNode`'s node shape but the picked outcome — nothing else
+ * is stamped, so the promoted node is indistinguishable from an authored one;
+ * (3) wire sink→Finish via the `addV2Connection`/`v2ConnectionIdFor`
+ * convention with the sink's rendered control-out handle: an `AtomicStage`
+ * sources `CONTROL_SOURCE_PORT`, a `Join` sources its `outcomes.proceed`
+ * VALUE (the barrier's rendered output port, `layout.ts`'s Join output
+ * mapping — the same rendered-id discipline children 2-4 used); the Finish's
+ * input is its control port. The sink node itself is untouched — no move, no
+ * rewrite; its extension fields and execution settings survive verbatim by
+ * construction. Pure; never mutates; stamps nothing.
+ */
+export function promoteSinkToFinish(
+  def: WirePipelineDefinitionV2,
+  sinkId: string,
+  outcome: string
+): SinkPromotionResult {
+  const node = def.root.nodes.find((candidate) => candidate.id === sinkId);
+  if (!node) {
+    throw new Error(`Node '${sinkId}' does not exist.`);
+  }
+  if (!isPromotableSink(def, node)) {
+    throw new Error(
+      'This node is no longer a terminal plain stage or parallel barrier.'
+    );
+  }
+  const picked = outcome.trim();
+  if (!picked || !def.outcomes.includes(picked)) {
+    throw new Error(
+      `Outcome '${picked}' is not one of this definition's named outcomes.`
+    );
+  }
+  const finishId = v2NodeIdFor('Finish', def);
+  let next = addV2Node(def, { id: finishId, kind: 'Finish', outcome: picked });
+  const sourcePort =
+    node.kind === 'Join' ? node.outcomes.proceed : CONTROL_SOURCE_PORT;
+  next = addV2Connection(next, {
+    id: v2ConnectionIdFor(next, {
+      source: sinkId,
+      sourcePort,
+      target: finishId,
+      targetPort: CONTROL_TARGET_PORT,
+    }),
+    from: { node: sinkId, port: sourcePort },
+    to: { node: finishId, port: CONTROL_TARGET_PORT },
+  });
+  return { next, finishId };
 }

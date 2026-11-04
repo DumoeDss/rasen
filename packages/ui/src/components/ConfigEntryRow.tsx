@@ -14,7 +14,7 @@ import {
 } from '../config/controls.js';
 import { errorSurface } from '../config/errors.js';
 import { labelFor } from '../config/labels.js';
-import { spaceHref } from '../store/use-space.js';
+import { spaceHref, storeSpaceFromRef } from '../store/use-space.js';
 import { useT } from '../i18n/store.js';
 import { ValueDisplay, ValueSummary } from './ui/ValueDisplay.js';
 
@@ -378,7 +378,7 @@ export function ConfigEntryRow({
                 <a
                   class="config-entry__store-edit"
                   href={spaceHref(
-                    { type: 'store', id: storeRef.id, selector: `store:${storeRef.id}` },
+                    storeSpaceFromRef(storeRef),
                     'config'
                   )}
                 >

@@ -1,6 +1,10 @@
 import type { ChildProcess } from 'node:child_process';
 import { FileSystemUtils } from '../../utils/file-system.js';
-import { BoundedUtf8Capture } from '../agent-diagnostics.js';
+import {
+  BoundedUtf8Capture,
+  sanitizeAgentDiagnostic,
+  sanitizeAgentDiagnosticValue,
+} from '../agent-diagnostics.js';
 import { spawnAgentCli } from '../agent-cli-process.js';
 import { killProcessTree } from '../management-api/kill-tree.js';
 import type { WorkerContract } from '../worker-contracts.js';
@@ -31,6 +35,8 @@ export interface RunClaudePrintOptions {
   timeoutMs?: number;
   maxOutputBytes?: number;
   env?: NodeJS.ProcessEnv;
+  signal?: AbortSignal;
+  secretValues?: Iterable<string>;
   spawn?: typeof spawnAgentCli;
   sessionStateDir?: string;
 }
@@ -39,14 +45,22 @@ function diagnostics(
   stdout: string,
   stderr: string,
   exitCode?: number | null,
-  signal?: NodeJS.Signals | null
+  signal?: NodeJS.Signals | null,
+  secrets: readonly string[] = []
 ) {
   return {
     ...(typeof exitCode === 'number' ? { exitCode } : {}),
     ...(signal ? { signal } : {}),
-    ...(stdout ? { stdout: sanitizeClaudeDiagnostic(stdout) } : {}),
-    ...(stderr ? { stderr: sanitizeClaudeDiagnostic(stderr) } : {}),
+    ...(stdout ? { stdout: sanitizeAgentDiagnostic(stdout, undefined, secrets) } : {}),
+    ...(stderr ? { stderr: sanitizeAgentDiagnostic(stderr, undefined, secrets) } : {}),
   };
+}
+
+function abortFailureKind(signal: AbortSignal): 'cancelled' | 'route-lease-lost' {
+  return signal.reason && typeof signal.reason === 'object' &&
+    (signal.reason as { kind?: unknown }).kind === 'omnicross-route-lost'
+    ? 'route-lease-lost'
+    : 'cancelled';
 }
 
 function sessionFailureReceipt(
@@ -94,6 +108,15 @@ export async function runClaudePrint(
   } = options;
   const canonicalCwd = FileSystemUtils.canonicalizeExistingPath(cwd);
   const contract: WorkerContract = invocation.contract;
+  const secrets = [...(options.secretValues ?? [])];
+  if (options.signal?.aborted) {
+    return claudeFailureReceipt(
+      contract,
+      abortFailureKind(options.signal),
+      'The Claude worker was cancelled before spawn.',
+      { cwd: canonicalCwd }
+    );
+  }
   const resumeId = invocation.args.includes('--resume')
     ? invocation.args[invocation.args.indexOf('--resume') + 1]
     : undefined;
@@ -129,11 +152,14 @@ export async function runClaudePrint(
     let settled = false;
     let killCancel: (() => void) | undefined;
     let timer: NodeJS.Timeout | undefined;
+    let aborted = false;
+    let abortListener: (() => void) | undefined;
 
     const finish = async (receipt: ClaudeDispatchReceipt) => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
+      if (abortListener) options.signal?.removeEventListener('abort', abortListener);
       killCancel?.();
       await writerClaim?.release();
 
@@ -156,7 +182,7 @@ export async function runClaudePrint(
           return;
         }
       }
-      resolve(receipt);
+      resolve(sanitizeAgentDiagnosticValue(receipt, secrets));
     };
 
     const terminate = (cancellable = true) => {
@@ -188,6 +214,13 @@ export async function runClaudePrint(
       );
       return;
     }
+
+    abortListener = () => {
+      aborted = true;
+      terminate();
+    };
+    if (options.signal?.aborted) abortListener();
+    else options.signal?.addEventListener('abort', abortListener, { once: true });
 
     try {
       if (writerClaim) {
@@ -264,7 +297,7 @@ export async function runClaudePrint(
           {
             ...(resumeId ? { sessionId: resumeId } : {}),
             cwd: canonicalCwd,
-            diagnostics: diagnostics(stdout, stderr),
+            diagnostics: diagnostics(stdout, stderr, undefined, undefined, secrets),
           }
         )
       );
@@ -272,6 +305,23 @@ export async function runClaudePrint(
     child.on('close', (code, signal) => {
       const stdout = stdoutCapture.finish();
       const stderr = stderrCapture.finish();
+      if (aborted && options.signal) {
+        void finish(
+          claudeFailureReceipt(
+            contract,
+            abortFailureKind(options.signal),
+            abortFailureKind(options.signal) === 'route-lease-lost'
+              ? 'The Claude worker was terminated because its OmniCross route lease was lost.'
+              : 'The Claude worker was cancelled.',
+            {
+              ...(resumeId ? { sessionId: resumeId } : {}),
+              cwd: canonicalCwd,
+              diagnostics: diagnostics(stdout, stderr, code, signal, secrets),
+            }
+          )
+        );
+        return;
+      }
       if (timedOut) {
         void finish(
           claudeFailureReceipt(
@@ -281,7 +331,7 @@ export async function runClaudePrint(
             {
               ...(resumeId ? { sessionId: resumeId } : {}),
               cwd: canonicalCwd,
-              diagnostics: diagnostics(stdout, stderr, code, signal),
+              diagnostics: diagnostics(stdout, stderr, code, signal, secrets),
             }
           )
         );
@@ -296,7 +346,7 @@ export async function runClaudePrint(
             {
               ...(resumeId ? { sessionId: resumeId } : {}),
               cwd: canonicalCwd,
-              diagnostics: diagnostics(stdout, stderr, code, signal),
+              diagnostics: diagnostics(stdout, stderr, code, signal, secrets),
             }
           )
         );
@@ -311,7 +361,7 @@ export async function runClaudePrint(
             {
               ...(resumeId ? { sessionId: resumeId } : {}),
               cwd: canonicalCwd,
-              diagnostics: diagnostics(stdout, stderr, code, signal),
+              diagnostics: diagnostics(stdout, stderr, code, signal, secrets),
             }
           )
         );
@@ -321,7 +371,7 @@ export async function runClaudePrint(
       if (!receipt.ok && stderr) {
         receipt.diagnostics = {
           ...(receipt.diagnostics ?? {}),
-          stderr: sanitizeClaudeDiagnostic(stderr),
+          stderr: sanitizeAgentDiagnostic(stderr, undefined, secrets),
         };
       }
       void finish(receipt);

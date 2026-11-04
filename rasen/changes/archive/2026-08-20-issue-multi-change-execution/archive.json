@@ -1,0 +1,38 @@
+{
+  "change": "issue-multi-change-execution",
+  "archivedAt": "2026-08-20T09:48:16.909Z",
+  "codeCommit": "30b25dd6df84e23d762a6329aab58228e3fcf2a9",
+  "planningBranch": "phase2-close",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/close-4-3-projection-3of3-review.json",
+      "sha256": "413185b2d18cedd8175ff416d531be75f40e4d929363e5d0510aab6d967145f9"
+    },
+    {
+      "path": "evidence/close-4-4-acceptance-record.json",
+      "sha256": "ddc689518e2badfcfdcf393275b35dfc757328bf17ca818576af1d7dfe6df69c"
+    },
+    {
+      "path": "evidence/close-4-4-final-done.json",
+      "sha256": "75da7c7a7507c8ca39bc8f27d883e1286d2514a2975144bbca81b52d4221acfa"
+    },
+    {
+      "path": "evidence/close-summary.md",
+      "sha256": "5427227d36adafcef46cfaebe508f2a43907cff696b26edb1b61b512c95ca529"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "f66d9edd87d8056c6b6785306d447283d5a5aef4585543bfb917dabd0114fdd3"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [
+    "auto-run.json",
+    "portfolio-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

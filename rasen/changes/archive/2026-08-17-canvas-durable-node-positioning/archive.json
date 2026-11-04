@@ -1,0 +1,70 @@
+{
+  "change": "canvas-durable-node-positioning",
+  "archivedAt": "2026-08-17T05:41:03.400Z",
+  "codeCommit": "7677ff779d632e79b3d4025c1cb5f51ac4c5b637",
+  "planningBranch": "feat/canvas-authoring-followups",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/01-after-drag.png",
+      "sha256": "e80c66929751dea282f2642d339ae1666d3e449e5a8a80740ccf2251b522fcc9"
+    },
+    {
+      "path": "evidence/02-after-followup-add.png",
+      "sha256": "4485fd815070fe9506175705d7bacf35676733e72bba32991ec98bc9bc220a62"
+    },
+    {
+      "path": "evidence/03-after-rename.png",
+      "sha256": "d2556fca3b92fa47d8938dfa1d414efa7d94365367d08fa21bec3e35b5eb4361"
+    },
+    {
+      "path": "evidence/04-after-relayout.png",
+      "sha256": "afb9e8e72079cbf1f57ea5d5bcc95009e5fbd0caa377fa901cfbf55702ae0f0b"
+    },
+    {
+      "path": "evidence/05-after-fifth-add-no-resurrection.png",
+      "sha256": "4b0e00a0ef3f381c44df0ce1de30eb0a0dffd2be1de6cdbe8a56dfcd6359d944"
+    },
+    {
+      "path": "evidence/cdp-durable-positioning-check.mjs",
+      "sha256": "21fb377dfb11935614c2ad343be7f153ea9553860f54edb551b2f2644403a759"
+    },
+    {
+      "path": "evidence/cdp-results.json",
+      "sha256": "413de369d5e911609f2cc7155532d05541747ecae637b527d021c2299650f42d"
+    },
+    {
+      "path": "evidence/cdp-transcript.md",
+      "sha256": "672f7ebcf1d7554b8787605d762eece3775a1b0f98e4702793f8028747119c11"
+    },
+    {
+      "path": "evidence/gates-6.md",
+      "sha256": "5b27fa0cc7d2c20fe1aafa90e90f9c567dc73312624cf3370bab9cf1937952de"
+    },
+    {
+      "path": "evidence/handoff/implementer-1.md",
+      "sha256": "64a25e2a063357efa01c84323585defabd749ae6dabdfc0920085146b01a269b"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "c8fd27c29ffffd5c5e6d6a52dd4a8ab7089e8d25bf51e9861e381645c5678f8b"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "af4e25714cb05e9327dcfb76cddbb707a918924a341d0b7e81a0a802e5892435"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [
+    {
+      "file": "handoff/implementer-1.md",
+      "outcome": "preserved"
+    }
+  ],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

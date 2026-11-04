@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import {
   buildClaudePrintInvocation,
   claimClaudeSessionWriter,
+  ClaudeSessionBusyError,
   getClaudeSessionStatePaths,
   isClaudeSessionWriterClaimed,
   parseClaudeResultEnvelope,
@@ -67,7 +68,9 @@ function runClaude(
 }
 
 async function waitUntil(check: () => Promise<boolean>): Promise<void> {
-  const deadline = Date.now() + 2000;
+  // Exact Windows process-instance capture uses CIM before publishing the
+  // claim. Allow that OS probe to complete under a busy integration runner.
+  const deadline = Date.now() + 10_000;
   while (!(await check())) {
     if (Date.now() >= deadline) throw new Error('Timed out waiting for condition.');
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -398,6 +401,15 @@ describe('bounded Claude process runner', () => {
     const stateOptions = {
       stateDir: sessionStateDir(),
       processTreeProbe: () => false,
+      processInstanceProbe: {
+        capture: (pid: number) => `test-process:${pid}`,
+        inspect: (pid: number, expected: string) =>
+          pid === 2_147_483_647
+            ? ('absent' as const)
+            : expected === `test-process:${pid}`
+              ? ('same' as const)
+              : ('different' as const),
+      },
     };
     const paths = getClaudeSessionStatePaths(sessionId, stateOptions);
     const staleClaim = await claimClaudeSessionWriter(
@@ -418,11 +430,48 @@ describe('bounded Claude process runner', () => {
     expect(fs.existsSync(paths.writerPath)).toBe(false);
   });
 
+  it('keeps a POSIX writer busy when its exact root changed but its process group survives', async () => {
+    const sessionId = 'surviving-posix-group';
+    const workerPid = 2_147_483_646;
+    const stateOptions = {
+      stateDir: sessionStateDir(),
+      platform: 'darwin' as const,
+      processTreeProbe: (rootPid: number) => rootPid === workerPid,
+      processInstanceProbe: {
+        capture: (pid: number) => `test-process:${pid}`,
+        inspect: (pid: number) =>
+          pid === workerPid ? ('different' as const) : ('absent' as const),
+      },
+    };
+    const paths = getClaudeSessionStatePaths(sessionId, stateOptions);
+    const staleClaim = await claimClaudeSessionWriter(sessionId, cwd, stateOptions);
+    staleClaim.bindWorker(workerPid);
+    const staleToken = JSON.parse(
+      fs.readFileSync(paths.writerPath, 'utf8')
+    ) as Record<string, unknown>;
+    staleToken.bridgePid = 2_147_483_647;
+    fs.writeFileSync(paths.writerPath, `${JSON.stringify(staleToken)}\n`, 'utf8');
+
+    await expect(
+      claimClaudeSessionWriter(sessionId, cwd, stateOptions)
+    ).rejects.toBeInstanceOf(ClaudeSessionBusyError);
+    expect(fs.existsSync(paths.writerPath)).toBe(true);
+  });
+
   it('serializes multi-contender stale recovery without displacing the replacement owner', async () => {
     const sessionId = 'multi-contender-stale-session';
     const stateOptions = {
       stateDir: sessionStateDir(),
       processTreeProbe: () => false,
+      processInstanceProbe: {
+        capture: (pid: number) => `test-process:${pid}`,
+        inspect: (pid: number, expected: string) =>
+          pid === 2_147_483_647
+            ? ('absent' as const)
+            : expected === `test-process:${pid}`
+              ? ('same' as const)
+              : ('different' as const),
+      },
     };
     const paths = getClaudeSessionStatePaths(sessionId, stateOptions);
     const staleClaim = await claimClaudeSessionWriter(

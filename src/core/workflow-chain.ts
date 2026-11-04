@@ -19,7 +19,7 @@ import { getCommandFileId } from './shared/retired-command-paths.js';
 import { getLocaleCatalog, formatLocaleMessage } from '../locales/index.js';
 import type { CliLocale } from '../utils/locale.js';
 import { getGlobalConfig } from './global-config.js';
-import { resolveDesiredWorkflowSelection } from './profiles.js';
+import { resolvePublicWorkflowSelection } from './profiles.js';
 import { loadWorkflowCatalog } from './workflow-registry/index.js';
 
 /**
@@ -181,7 +181,8 @@ export function isBuiltInWorkflowId(id: string): id is BuiltInWorkflowId {
  * Resolves the workflow ids currently selected for install, mirroring
  * `update.ts:140-181`'s desired-set computation: `getGlobalConfig()` for
  * the profile/custom-workflow-list, `loadWorkflowCatalog()`, then
- * `resolveDesiredWorkflowSelection(...).ids`.
+ * the public profile selection. Execution-only capability owners installed to
+ * make required pipelines runnable must not become workflow suggestions.
  *
  * This is the ONLY sanctioned source for the installed-workflow set that
  * feeds `resolveNextSteps` (design D5 / spec "Installed set derives from
@@ -195,7 +196,7 @@ export function resolveInstalledWorkflowIds(): string[] {
   const profile = globalConfig.profile ?? 'full';
   const expertSelectionExplicit = globalConfig.expertSelectionExplicit === true;
   const catalog = loadWorkflowCatalog();
-  const { ids } = resolveDesiredWorkflowSelection(
+  const { ids } = resolvePublicWorkflowSelection(
     catalog,
     profile,
     globalConfig.workflows,

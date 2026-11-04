@@ -542,8 +542,23 @@ describe('store identity CLI surface', () => {
         '## Purpose\n\nBilling.\n'
       );
 
+      // Adopt writes a project PARTITION, so the target store has to declare
+      // planning layout version 2 (spec store-adopt, "Adopt into a legacy flat
+      // store is refused"). Declared on the twin only: this case is about
+      // resolving the store by permanent identity, not about the layout.
+      fs.writeFileSync(
+        path.join(twinRoot, '.rasen-store', 'store.yaml'),
+        `version: 2
+uid: ${twinUid}
+id: team-store
+layoutVersion: 2
+`
+      );
+
       const adopted = await runCLI(
-        ['store', 'adopt', appRepo, '--to', twinUid, '--json'],
+        // `--archive leave` keeps the empty repo archive where it is, so this
+        // case needs no target-line catalog to state a fact it is not testing.
+        ['store', 'adopt', appRepo, '--to', twinUid, '--archive', 'leave', '--json'],
         { cwd: tempDir, env: env() }
       );
       expect(adopted.exitCode, adopted.stdout || adopted.stderr).toBe(0);

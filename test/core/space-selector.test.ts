@@ -10,7 +10,10 @@ import {
 import { deriveSpaceFromCwd } from '../../src/core/root-selection.js';
 import { registerProject } from '../../src/core/project-registry.js';
 import { registerStore } from '../../src/core/store/registry.js';
-import { getStoreMetadataPath } from '../../src/core/store/foundation.js';
+import {
+  getStoreMetadataPath,
+  writeStoreMetadataState,
+} from '../../src/core/store/foundation.js';
 import { FileSystemUtils } from '../../src/utils/file-system.js';
 import { createOpenSpecRoot } from '../helpers/rasen-fixtures.js';
 
@@ -120,6 +123,20 @@ describe('planning-space selector (planning-space-addressing design D1/D2/D5)', 
         expect(result.message).toContain('project namespace');
       }
     });
+
+    it('resolves (no planning_selection_conflict) when the config records the registered id in a different case', async () => {
+      const registeredId = '11111111-2222-4333-8444-555555555555';
+      const root = makePlanningRoot(tempDir, 'proj-case-identity');
+      await registerProject({ projectRoot: root, projectId: registeredId, mode: 'in-repo' }, { globalDataDir: dataDir });
+      // A hand-edit in the wild: the config carries the SAME identity in
+      // uppercase. Canonical-form agreement (converge-projectid-mint D5)
+      // means this is the same project, not a planning-selection conflict.
+      writeProjectId(root, registeredId.toUpperCase());
+
+      const result = await resolveSpaceSelector(`project:${registeredId}`);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.space.id).toBe(registeredId);
+    });
   });
 
   describe('resolveSpaceSelector — store namespace', () => {
@@ -139,14 +156,12 @@ describe('planning-space selector (planning-space-addressing design D1/D2/D5)', 
 
     it('resolves a registered store by permanent identity, reporting its display name', async () => {
       const storeRoot = makePlanningRoot(tempDir, 'identified-store');
-      await registerStore({ id: 'identified', localPath: storeRoot, globalDataDir: dataDir });
-      // Registration records an identity; give this one a v2 metadata file so
-      // it has one to be addressed by.
       const uid = '2b7f4c1a-5d3e-4a91-8c0b-6e2f9d7a1c34';
-      fs.writeFileSync(
-        getStoreMetadataPath(storeRoot),
-        `version: 2\nuid: ${uid}\nid: identified\n`
-      );
+      // Register the permanent identity atomically with the checkout. Replacing
+      // metadata after registration would correctly make the registry and
+      // checkout disagree and must not be used as a positive identity fixture.
+      await writeStoreMetadataState(storeRoot, { version: 2, uid, id: 'identified' });
+      await registerStore({ id: 'identified', localPath: storeRoot, globalDataDir: dataDir });
 
       const result = await resolveSpaceSelector(`store:${uid}`);
 
@@ -155,6 +170,7 @@ describe('planning-space selector (planning-space-addressing design D1/D2/D5)', 
         // The identity addresses it; the space still reports the store's own
         // display name, never the selector that was used.
         expect(result.space.id).toBe('identified');
+        expect(result.space.uid).toBe(uid);
         expect(result.space.root).toBe(FileSystemUtils.canonicalizeExistingPath(storeRoot));
       }
     });
@@ -242,14 +258,16 @@ describe('planning-space selector (planning-space-addressing design D1/D2/D5)', 
       expect(space).toBeNull();
     });
 
-    it('derives a store space from a pointer repo whose store is registered', async () => {
+    it('derives a Store space by permanent uid from a legacy-alias pointer', async () => {
       const storeRoot = makePlanningRoot(tempDir, 'pointer-target-store');
+      const uid = '11111111-2222-4333-8444-555555555555';
+      await writeStoreMetadataState(storeRoot, { version: 2, uid, id: 'team' });
       await registerStore({ id: 'team', localPath: storeRoot, globalDataDir: dataDir });
       const pointerRepo = makePointerRepo(tempDir, 'pointer-repo', 'team');
 
       const space = await deriveSpaceFromCwd(pointerRepo, { globalDataDir: dataDir });
       expect(space?.type).toBe('store');
-      expect(space?.id).toBe('team');
+      expect(space?.id).toBe(uid);
       expect(space?.root).toBe(FileSystemUtils.canonicalizeExistingPath(storeRoot));
     });
 

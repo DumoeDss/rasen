@@ -5,108 +5,161 @@ Make the management UI shell space-aware: the URL is the source of truth for the
 ## Requirements
 ### Requirement: The URL is the source of truth for the selected planning space
 
-The management UI SHALL carry the selected planning space in the URL path — `/p/<projectId>/…` for a project space and `/s/<storeId>/…` for a store space — and SHALL derive the active space from the current route, not from any in-memory store. A refresh, a deep link, or a second browser tab SHALL each resolve their own space from their own URL independently, with no shared mutable space state between them. Every space-scoped view (board, config, archive, task detail) SHALL live under a space-prefixed route so it always renders for a resolved space.
+The management UI SHALL carry the selected planning space in the URL path — `/p/<projectId>/…`
+for a project space and `/s/<storeUid>/…` for a Store space — and SHALL derive the active space from
+the current route, not from any in-memory store. A refresh, a deep link, or a second browser tab
+SHALL each resolve their own space from their own URL independently, with no shared mutable space
+state between them. Project Board and Task Detail SHALL live only under project prefixes; Issue
+Board/Detail, Store Operations, and Unlinked Changes SHALL live only under Store prefixes; common
+Config, Archive, and Pipelines views SHALL remain addressable in either namespace. New Store routes
+SHALL use the permanent Store uid returned by the spaces catalog, and canonical Issue Detail routes
+SHALL use the permanent Issue UID returned by the Issue catalog. A compatible Store alias or Issue
+key/slug/legacy-id deep link SHALL remain accepted when it resolves exactly one resource, but the
+shell SHALL never guess among several matches.
 
 #### Scenario: Deep link resolves its own space
 
-- **WHEN** the user opens `/p/<projectId>/board` directly
-- **THEN** the board renders scoped to that project without depending on any prior selection
+- **WHEN** the user opens `/p/<projectId>/board` or `/p/<projectId>/task/<change>` directly
+- **THEN** the project Board or Task Detail renders scoped to that project without depending on any prior selection
+
+#### Scenario: Store deep link resolves its own space
+
+- **WHEN** the user opens `/s/<storeUid>/issues/<issueUid>` directly
+- **THEN** the requested Issue Detail renders for those exact authoritative identities
+- **AND** no project-space mirror or filesystem locator is used
+
+#### Scenario: Unique legacy Store alias deep link remains compatible
+
+- **WHEN** the user opens `/s/<alias>/issues` and exactly one listed Store carries that alias
+- **THEN** that Store's Issue Board renders
+- **AND** subsequent generated navigation for it uses `/s/<uid>/…`
+
+#### Scenario: Compatible Issue selector canonicalizes after resolution
+
+- **WHEN** the user opens an Issue detail link with a generated key, unique slug, or legacy identifier
+- **THEN** the matching Issue renders when exactly one UID resolves
+- **AND** subsequent generated navigation uses `/s/<storeUid>/issues/<issueUid>`
+
+#### Scenario: Ambiguous legacy alias deep link is not guessed
+
+- **WHEN** a Store alias or Issue convenience selector in a deep link matches more than one resource
+- **THEN** the shell does not select a candidate and presents the unresolved or ambiguous state
 
 #### Scenario: Two tabs hold independent spaces
 
-- **WHEN** one tab is on `/p/<a>/board` and another on `/s/<b>/board`
+- **WHEN** one tab is on `/p/<a>/board` and another on `/s/<b>/issues`
 - **THEN** each tab's data is scoped to its own space and neither tab's navigation changes the other
 
 #### Scenario: Refresh preserves the space
 
-- **WHEN** the user reloads while on a space-prefixed route
-- **THEN** the same space renders, resolved from the unchanged URL
+- **WHEN** the user reloads while on a canonical space-prefixed Issue route
+- **THEN** the same Store, Issue UID, and surface render from the unchanged URL
 
 ### Requirement: The launch URL's space query bootstraps to a canonical space route
 
-On load the shell SHALL read the `space` query parameter emitted by `rasen ui` (`?space=project:<id>` or `?space=store:<id>`), translate it to the canonical space route (`/p/<id>/board` or `/s/<id>/board`), and navigate there by replacing history so the launch query does not remain in the address bar or become a back-button entry. The id portion after the namespace prefix SHALL be used verbatim as an opaque token — the shell SHALL NOT normalize, re-case, or path-canonicalize it — so it round-trips unchanged into the route and back into every API call. When the URL carries no `space` query, the shell SHALL resolve a default space (the server's launch project when the health endpoint reports one, otherwise the first space returned by the spaces listing) and redirect to it; when no space is resolvable at all, it SHALL render an explicit empty state directing the user to run `rasen ui` inside a Rasen project, never a blank page or spinner.
+On load the shell SHALL read the `space` query parameter emitted by `rasen ui`
+(`?space=project:<id>` or `?space=store:<uid>` for an upgraded Store), translate a project to
+`/p/<id>/board` and a Store to `/s/<uid>/issues`, and navigate there by replacing history so the
+launch query does not remain in the address bar or become a back-button entry. A project id or
+canonical Store uid after the namespace prefix SHALL be used verbatim as an opaque token — the shell
+SHALL NOT normalize, re-case, or path-canonicalize it — so it round-trips unchanged into the route
+and back into every API call. A legacy alias-valued Store query SHALL instead be resolved through
+the catalog only when it is unique, after which generated navigation SHALL use the uid. When the URL carries no `space` query, the shell SHALL use the server's launch project
+when available, otherwise the first listed space and that space type's canonical home. When no
+space is resolvable at all, it SHALL render an explicit empty state directing the user to run
+`rasen ui` inside a Rasen project.
 
 #### Scenario: Launch query becomes a clean space route
 
-- **WHEN** the browser opens `…/?space=project:<id>#token=<t>` as printed by `rasen ui`
-- **THEN** the app authenticates with the token and lands on `/p/<id>/board`, and the `?space=` query no longer appears in the address bar
+- **WHEN** the browser opens the token-free `…/?space=project:<id>` URL printed by `rasen ui`
+- **THEN** the server establishes the browser session, the app lands on `/p/<id>/board`, and removes the `?space=` query
 
-#### Scenario: Store launch query resolves to a store route
+#### Scenario: Expired daemon session renews automatically
 
-- **WHEN** the launch URL carries `?space=store:<id>`
-- **THEN** the app lands on `/s/<id>/board`
+- **WHEN** an open UI tab receives 401 because the daemon restarted and rotated its internal token
+- **THEN** the client refreshes its HttpOnly browser session once and retries the original request
+- **AND** it shows the re-launch notice only if the refreshed request is still unauthorized
 
-#### Scenario: Opaque id round-trips unchanged
+#### Scenario: Store launch query resolves to a uid route
 
-- **WHEN** the launch query's id differs from a normalized form only by case or separators
-- **THEN** the id appears byte-for-byte identical in the route and in the space selector sent to the API, with no client-side canonicalization
+- **WHEN** the launch URL carries `?space=store:<uid>`
+- **THEN** the app lands on `/s/<uid>/issues` and never renders the superseded Store Task board
+
+#### Scenario: Canonical opaque id round-trips unchanged
+
+- **WHEN** a launch query carries an already-canonical project id or Store uid
+- **THEN** that token appears byte-for-byte identical after route escaping/decoding and in the selector
+  sent to the API
 
 #### Scenario: No space query falls back to the launch project
 
-- **WHEN** the app loads at `/` with no `space` query and the health endpoint reports a launch project
+- **WHEN** the app loads at `/` with no `space` query and the health endpoint reports a launch
+  project
 - **THEN** the app redirects to that project's `/p/<id>/board`
+
+#### Scenario: First listed Store uses its Issue home
+
+- **WHEN** there is no launch project and the first listed space is a Store
+- **THEN** the app redirects to that Store's `/s/<uid>/issues`
 
 #### Scenario: No resolvable space shows an explicit empty state
 
 - **WHEN** the app loads with no space query, no launch project, and no registered spaces
-- **THEN** the app shows a message telling the user to run `rasen ui` inside a Rasen project, not a blank page
+- **THEN** the app shows a message telling the user to run `rasen ui` inside a Rasen project, not a
+  blank page or indefinite spinner
 
 ### Requirement: The space switcher lists both namespaces and re-scopes by navigation
 
-The shell SHALL present a space switcher fed by `GET /api/v1/spaces` that lists registered spaces in two type-tagged groups — projects and stores — with the space of the current route shown as selected. Selecting a space SHALL re-scope the app by navigating to that space's route for the current section (board, config, or archive), and navigation SHALL be the switcher's only effect — it SHALL NOT write any workspace or configuration state. The switcher SHALL NOT offer a "no space" / global-only option; when the spaces listing is empty it SHALL show an explicit hint rather than an empty control.
+The shell SHALL present a space switcher fed by `GET /api/v1/spaces` that lists registered spaces
+in two type-tagged groups — projects and Stores — with the current route's space selected. Selecting
+a space SHALL navigate to a route valid for the destination namespace: Config, Archive, and
+Pipelines SHALL be preserved across namespaces; Issues, Operations, and Unlinked Changes SHALL be
+preserved only for Store-to-Store switches; every other switch SHALL fall back to the destination's
+canonical home. Store options SHALL display `name`/the alias but navigate and issue selectors with
+the permanent uid whenever it is present. Navigation SHALL be the switcher's only effect. The switcher SHALL NOT offer a
+no-space option; an empty listing SHALL show an explicit registration hint.
 
 #### Scenario: Both namespaces grouped and tagged
 
-- **WHEN** the machine has registered projects and stores and the user opens the switcher
-- **THEN** projects and stores appear in separate, type-tagged groups with the current route's space selected
+- **WHEN** the machine has registered projects and Stores and the user opens the switcher
+- **THEN** projects and Stores appear in separate type-tagged groups with the current route's space
+  selected
 
 #### Scenario: Selecting a space re-scopes the current section
 
-- **WHEN** the user is on `/p/<a>/config` and selects store `<b>` in the switcher
-- **THEN** the app navigates to `/s/<b>/config` and the config view re-scopes to that store
+- **WHEN** the user is on `/p/<a>/config` and selects Store `<b>`
+- **THEN** the app navigates to `/s/<b>/config`
+
+#### Scenario: A Store-only section survives Store to Store
+
+- **WHEN** the user is on `/s/<a>/operations` and selects Store `<b>`
+- **THEN** the app navigates to `/s/<b>/operations`
+
+#### Scenario: A Store-only section falls back for a project
+
+- **WHEN** the user is on `/s/<a>/issues`, `/operations`, or `/unlinked-changes` and selects project
+  `<b>`
+- **THEN** the app navigates to `/p/<b>/board` and never constructs a dead project mirror
+
+#### Scenario: Project Board switches to the Store Issue home
+
+- **WHEN** the user is on `/p/<a>/board` and selects Store `<b>`
+- **THEN** the app navigates to `/s/<b>/issues`
 
 #### Scenario: Switching writes only the URL
 
 - **WHEN** the user selects a different space
-- **THEN** the only effect is client-side navigation; no configuration or workspace write is issued
+- **THEN** the only effect is client-side navigation; no configuration, workspace, Issue, Change,
+  Run, or Session write is issued
 
 #### Scenario: No spaces shows a hint, not an empty dropdown
 
 - **WHEN** the spaces listing is empty
-- **THEN** the switcher shows a hint to register a space via `rasen ui` instead of an empty selectable control
-
-### Requirement: A header running-run summary scopes to the current space and links to task detail
-
-The shell's header SHALL show a running-run summary for the current space: a `⦿ N running` control, hidden when the space has no live runs, fed by `GET /api/v1/sessions` filtered to the current space's selector and to live run states. Opening it SHALL list each live run's task, its stage, and its elapsed duration, and each entry that is associated with a change SHALL link to that change's task detail route within the current space. The summary SHALL re-poll only while at least one run is live and SHALL reset when the current space changes. This running-run summary SHALL be the shell's only session surface — there SHALL be no top-level Sessions navigation entry or page.
-
-#### Scenario: Running count reflects the current space only
-
-- **WHEN** the current space has two live runs and another space has one
-- **THEN** the header shows `⦿ 2 running`, counting only the current space's live runs
-
-#### Scenario: Summary hidden when nothing is live
-
-- **WHEN** the current space has no live runs
-- **THEN** the `⦿ N running` control is not shown
-
-#### Scenario: Entry links to task detail
-
-- **WHEN** a live run associated with change `<c>` is listed and the user activates its entry
-- **THEN** the app navigates to that change's task detail route within the current space
-
-#### Scenario: Space switch resets the summary
-
-- **WHEN** the user switches to a different space
-- **THEN** the running-run summary re-fetches for the new space and stops reflecting the previous space
-
-#### Scenario: No top-level Sessions surface
-
-- **WHEN** the user inspects the shell's navigation
-- **THEN** no top-level Sessions entry or page is offered; live runs are reachable only through the header running-run summary
+- **THEN** the switcher shows a hint to register a space via `rasen ui` instead of an empty control
 
 ### Requirement: Space-scoped API calls thread the current route's selector through the shared client seam
 
-Every space-scoped management read and write the UI issues (active changes, run state, session listing, session launch) SHALL carry the current route's space selector, built as `<type>:<id>` from the route and passed through the UI package's single API client seam. Omitting the selector SHALL remain valid and SHALL preserve the server's launch-project fallback, so a call made before a space is resolved behaves exactly as it did before this capability. The selector SHALL be URL-encoded once at the client seam and SHALL NOT be re-derived from anything other than the route.
+Every space-scoped management read and write the UI issues (active changes, run state, session listing, session launch) SHALL carry the current route's space selector, built as `<type>:<id>` from the route and passed through the UI package's single API client seam. For a newly generated Store route that id SHALL be the permanent uid; a uniquely resolved legacy alias route remains a compatibility input only. Omitting the selector SHALL remain valid and SHALL preserve the server's launch-project fallback, so a call made before a space is resolved behaves exactly as it did before this capability. The selector SHALL be URL-encoded once at the client seam and SHALL NOT be re-derived from anything other than the route.
 
 #### Scenario: Board reads scope to the route's space
 
@@ -116,7 +169,7 @@ Every space-scoped management read and write the UI issues (active changes, run 
 #### Scenario: Session launch targets the current space
 
 - **WHEN** a session is launched from a view scoped to store `<id>`
-- **THEN** the launch request carries the `store:<id>` selector so the run starts in that space
+- **THEN** the launch request carries the `store:<uid>` selector so the run starts in that space
 
 #### Scenario: Selector-less call keeps the fallback
 
@@ -138,4 +191,44 @@ The management UI shell SHALL expose an Audit navigation entry at the global `/a
 #### Scenario: Audit navigation is read-only to workspace selection
 - **WHEN** the user enters or leaves `/audit`
 - **THEN** navigation changes only the URL/view and issues no workspace/configuration write
+
+### Requirement: Store-scoped calls address their Store by stable identity through the same client seam
+
+Every Store-scoped call the operations UI makes SHALL address its Store by the Store's stable
+identity, and SHALL go through the same client seam every other call uses, so authentication, error
+reporting, and base-address resolution behave identically. A Store SHALL NOT be addressed by a
+filesystem path, a display name, or a position in a list.
+
+#### Scenario: A Store is addressed by identity
+
+- **WHEN** the UI issues any Store-scoped call
+- **THEN** the Store is identified by its stable identity
+- **AND** no filesystem path, display name, or list position is used to address it
+
+#### Scenario: Store-scoped calls share the common client behavior
+
+- **WHEN** a Store-scoped call fails authentication or cannot reach the server
+- **THEN** it reports the failure the same way every other call in the shell does
+
+### Requirement: Execution access follows the scope that owns its truth
+
+The shell SHALL route Store-level execution work through Store Operations and project-level
+Change/Run work through project Task Detail. It SHALL offer no independent header Session summary
+and no Store Task Detail route, so execution is not presented through competing scope or
+attribution models.
+
+#### Scenario: Store execution is reached through Operations
+
+- **WHEN** a viewer is in a Store space
+- **THEN** navigation offers Store Operations as the Store's Session/Run surface
+
+#### Scenario: Project execution remains in Task Detail
+
+- **WHEN** a viewer follows a Change/Task from a project Board
+- **THEN** project Task Detail remains available with its Run detail and controls
+
+#### Scenario: No duplicate header execution surface remains
+
+- **WHEN** a viewer inspects the authenticated shell in any space
+- **THEN** no independently polling running-Session menu appears in the header
 

@@ -18,6 +18,7 @@ vi.mock('../../src/api/client.js', () => ({
 import { SpaceSwitcher } from '../../src/components/SpaceSwitcher.js';
 import * as client from '../../src/api/client.js';
 import { resetSpaceCatalogForTests } from '../../src/store/space-catalog.js';
+import { getRecentSpaces } from '../../src/store/recent-spaces.js';
 
 const SPACES = {
   spaces: [
@@ -94,6 +95,33 @@ describe('SpaceSwitcher', () => {
     expect(container.querySelector('option[value=""]')).toBeNull();
   });
 
+  it('selects a legacy alias route by uid and records the canonical uid as recent', async () => {
+    const uid = '11111111-2222-4333-8444-555555555555';
+    (client.listSpaces as any).mockResolvedValue({
+      spaces: [
+        ...SPACES.spaces.slice(0, 2),
+        {
+          type: 'store',
+          id: 'Shared Name',
+          uid,
+          name: 'Shared Name',
+          root: '/shared',
+          members: [],
+        },
+      ],
+    });
+    (client.getKey as any).mockResolvedValue({
+      entry: { value: ['store:Shared Name'] },
+    });
+
+    await mountAt(container, '/s/Shared%20Name/config');
+
+    const select = container.querySelector('select') as HTMLSelectElement;
+    expect(select.value).toBe(`store:${uid}`);
+    expect(spaceOptions(select).map((option) => option.value)).toContain(`store:${uid}`);
+    expect(getRecentSpaces()[0]).toBe(`store:${uid}`);
+  });
+
   it('selecting a space navigates to that space route for the current section (its only effect)', async () => {
     (client.listSpaces as any).mockResolvedValue(SPACES);
     await mountAt(container, '/p/proj_a/config');
@@ -109,6 +137,44 @@ describe('SpaceSwitcher', () => {
 
     // Re-scoped to the store, staying on the same section.
     expect(window.location.pathname).toBe('/s/store_x/config');
+  });
+
+  it.each(['issues', 'operations', 'unlinked-changes'])(
+    'preserves Store-only %s for Store-to-Store and falls back to project Board',
+    async (section) => {
+      const spaces = {
+        spaces: [
+          ...SPACES.spaces,
+          { type: 'store', id: 'store_y', name: 'Store Y', root: '/y', members: [] },
+        ],
+      };
+      (client.listSpaces as any).mockResolvedValue(spaces);
+      await mountAt(container, `/s/store_x/${section}`);
+
+      const select = container.querySelector('select') as HTMLSelectElement;
+      await act(async () => {
+        select.value = 'store:store_y';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      expect(window.location.pathname).toBe(`/s/store_y/${section}`);
+
+      await act(async () => {
+        select.value = 'project:proj_a';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      expect(window.location.pathname).toBe('/p/proj_a/board');
+    }
+  );
+
+  it('switches a project Board to the Store Issues home', async () => {
+    (client.listSpaces as any).mockResolvedValue(SPACES);
+    await mountAt(container, '/p/proj_a/board');
+    const select = container.querySelector('select') as HTMLSelectElement;
+    await act(async () => {
+      select.value = 'store:store_x';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(window.location.pathname).toBe('/s/store_x/issues');
   });
 
   it('shows a hint instead of an empty selectable control when no spaces are registered', async () => {

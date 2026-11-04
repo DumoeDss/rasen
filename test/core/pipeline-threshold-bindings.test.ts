@@ -190,13 +190,16 @@ stages:
     });
   });
 
+  // `row` is stated per case rather than derived, so the table asserts the
+  // expected runtime row instead of restating the production fallback rule.
   it.each([
-    ['claude', 'claude-code', 'claude-policy', 0.52],
-    ['codex', 'codex-thread-id', 'codex-policy', 0.61],
-    ['unknown', 'unknown', 'claude-policy', 0.52],
+    ['claude', 'claude-code', 'claude', 'claude-policy', 0.52],
+    ['codex', 'codex-thread-id', 'codex', 'codex-policy', 0.61],
+    ['unknown', 'unknown', 'claude', 'claude-policy', 0.52],
+    ['omp', 'omp-code', 'claude', 'claude-policy', 0.52],
   ] as const)(
     'uses the %s host-derived runtime row for implicit stages and reuse roles',
-    (runtime, source, scheme, threshold) => {
+    (runtime, source, row, scheme, threshold) => {
       const implicit = parsePipeline(`
 name: host-bound
 stages:
@@ -225,10 +228,10 @@ stages:
         )
       ).toMatchObject({
         threshold,
-        binding: { row: runtime === 'unknown' ? 'claude' : runtime, scheme },
+        binding: { row, scheme },
       });
       expect(resolvePipelineReuseConfig(implicit, hostContext).bindings?.roles?.planner)
-        .toMatchObject({ row: runtime === 'unknown' ? 'claude' : runtime, scheme });
+        .toMatchObject({ row, scheme });
     }
   );
 });

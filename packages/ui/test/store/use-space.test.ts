@@ -7,13 +7,91 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  canonicalizeSpaceSelectors,
   isPipelineCanvasPath,
   parseSelector,
   parseSpacePath,
+  spaceEntryForSelector,
+  spaceEntryMatchesSelector,
+  spaceFromEntry,
   spaceHref,
+  spaceHomeHref,
+  spaceSelectorOfEntry,
   spaceRouteFromSelector,
   spaceSection,
+  spaceSwitchHref,
 } from '../../src/store/use-space.js';
+import type { SpaceEntry } from '../../src/api/types.js';
+
+const PROJECT = { type: 'project' as const, id: 'Proj:A b', selector: 'project:Proj:A b' };
+const STORE = { type: 'store' as const, id: 'Store:B/c', selector: 'store:Store:B/c' };
+const IDENTIFIED_STORE: SpaceEntry = {
+  type: 'store',
+  id: '研发计划.v2',
+  uid: '11111111-2222-4333-8444-555555555555',
+  name: '研发计划.v2',
+  root: '/stores/研发计划.v2',
+  members: [],
+};
+
+describe('catalog identity bridging', () => {
+  it('uses a Store uid for new selectors and routes while retaining the alias as display data', () => {
+    expect(spaceSelectorOfEntry(IDENTIFIED_STORE)).toBe(
+      'store:11111111-2222-4333-8444-555555555555'
+    );
+    expect(spaceHomeHref(spaceFromEntry(IDENTIFIED_STORE))).toBe(
+      '/s/11111111-2222-4333-8444-555555555555/issues'
+    );
+    expect(IDENTIFIED_STORE.id).toBe('研发计划.v2');
+  });
+
+  it('resolves legacy alias selectors and canonicalizes known pins to the uid', () => {
+    expect(spaceEntryMatchesSelector(IDENTIFIED_STORE, 'store:研发计划.v2')).toBe(true);
+    expect(spaceEntryForSelector([IDENTIFIED_STORE], 'store:研发计划.v2')).toBe(
+      IDENTIFIED_STORE
+    );
+    expect(
+      canonicalizeSpaceSelectors(
+        ['store:研发计划.v2', 'project:dead'],
+        [IDENTIFIED_STORE]
+      )
+    ).toEqual(['store:11111111-2222-4333-8444-555555555555', 'project:dead']);
+  });
+
+  it('does not guess when one legacy alias names multiple permanent Stores', () => {
+    const duplicate: SpaceEntry = {
+      ...IDENTIFIED_STORE,
+      uid: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      root: '/stores/other',
+    };
+    expect(
+      spaceEntryForSelector([IDENTIFIED_STORE, duplicate], 'store:研发计划.v2')
+    ).toBeNull();
+    expect(
+      canonicalizeSpaceSelectors(
+        ['store:研发计划.v2'],
+        [IDENTIFIED_STORE, duplicate]
+      )
+    ).toEqual(['store:研发计划.v2']);
+  });
+
+  it('treats a UUID-shaped Store selector as identity, never as a display alias', () => {
+    const uid = IDENTIFIED_STORE.uid!;
+    const aliasCollision: SpaceEntry = {
+      type: 'store',
+      id: uid,
+      uid: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      name: uid,
+      root: '/stores/uuid-shaped-alias',
+      members: [],
+    };
+
+    expect(spaceEntryForSelector([aliasCollision, IDENTIFIED_STORE], `store:${uid}`)).toBe(
+      IDENTIFIED_STORE
+    );
+    expect(spaceEntryMatchesSelector(aliasCollision, `store:${uid}`)).toBe(false);
+  });
+});
 
 describe('parseSpacePath', () => {
   it('parses a project space route', () => {
@@ -110,14 +188,46 @@ describe('isPipelineCanvasPath', () => {
 });
 
 describe('spaceRouteFromSelector', () => {
-  it('maps a launch selector to the canonical board route, encoding the id for path safety', () => {
+  it('maps a launch selector to the namespace-aware home, encoding the id for path safety', () => {
     expect(spaceRouteFromSelector('project:proj_x')).toBe('/p/proj_x/board');
-    expect(spaceRouteFromSelector('store:my-store')).toBe('/s/my-store/board');
+    expect(spaceRouteFromSelector('store:my-store')).toBe('/s/my-store/issues');
     expect(spaceRouteFromSelector('project:a b')).toBe('/p/a%20b/board');
+    expect(spaceRouteFromSelector('store:a:b')).toBe('/s/a%3Ab/issues');
   });
 
   it('returns null for a malformed selector', () => {
     expect(spaceRouteFromSelector('no-prefix')).toBeNull();
     expect(spaceRouteFromSelector('unknown:x')).toBeNull();
+  });
+});
+
+describe('canonical homes and switch matrix', () => {
+  it('uses Board for projects and Issues for Stores while preserving opaque ids', () => {
+    expect(spaceHomeHref(PROJECT)).toBe('/p/Proj%3AA%20b/board');
+    expect(spaceHomeHref(STORE)).toBe('/s/Store%3AB%2Fc/issues');
+  });
+
+  it.each(['config', 'archive', 'pipelines'])('preserves common %s across namespaces', (section) => {
+    expect(spaceSwitchHref(`/p/source/${section}`, STORE)).toBe(`/s/Store%3AB%2Fc/${section}`);
+    expect(spaceSwitchHref(`/s/source/${section}`, PROJECT)).toBe(`/p/Proj%3AA%20b/${section}`);
+  });
+
+  it.each(['issues', 'operations', 'unlinked-changes'])(
+    'preserves Store-only %s only for a Store destination',
+    (section) => {
+      expect(spaceSwitchHref(`/s/source/${section}`, STORE)).toBe(`/s/Store%3AB%2Fc/${section}`);
+      expect(spaceSwitchHref(`/s/source/${section}`, PROJECT)).toBe('/p/Proj%3AA%20b/board');
+    }
+  );
+
+  it('treats Project Issues as transitional when switching spaces', () => {
+    expect(spaceSwitchHref('/p/source/issues', STORE)).toBe('/s/Store%3AB%2Fc/issues');
+    expect(spaceSwitchHref('/p/source/issues', PROJECT)).toBe('/p/Proj%3AA%20b/board');
+  });
+
+  it('falls back to the destination home for Board, Task Detail, and unknown sections', () => {
+    expect(spaceSwitchHref('/p/source/board', STORE)).toBe('/s/Store%3AB%2Fc/issues');
+    expect(spaceSwitchHref('/s/source/task/change', PROJECT)).toBe('/p/Proj%3AA%20b/board');
+    expect(spaceSwitchHref('/s/source/unknown', STORE)).toBe('/s/Store%3AB%2Fc/issues');
   });
 });

@@ -1,0 +1,32 @@
+$ robocopy <real> <temp>/copy-pristine /E   -> ROBOCOPY_EXIT=1 (0-7 = success; 27 dirs / 36 files copied)
+
+### The copy preserves the real store's uncommitted drift
+$ git -C <copy> status --porcelain
+ M .rasen-store/store.yaml
+ M rasen/config.yaml
+$ cat <copy>/.rasen-store/store.yaml
+version: 2
+uid: f35acc7d-e088-4186-9ad6-b4b770649b0b
+id: rasen-store
+$ git -C <copy> log --oneline --all
+254b265 Initialize Rasen store rasen-store
+$ git -C <copy> rev-parse HEAD
+254b265cb4750e2fd7e5fe6caa1e1ffb219a3e4a
+
+### Copy is byte-identical to the real store's working tree
+$ sha256sum <copy>/.rasen-store/store.yaml <copy>/rasen/config.yaml
+3aab228b3b79484cc62324d7a633661de04f975e9a4fbcd6ea1346c96e1eac22 *<copy>/.rasen-store/store.yaml
+88811da1daf8ba64f2a68ea9c173a85530599fa0a63e2c7f958b72c8fde829ca *<copy>/rasen/config.yaml
+# real store baseline (recorded before any rehearsal step):
+3aab228b3b79484cc62324d7a633661de04f975e9a4fbcd6ea1346c96e1eac22  <real>/.rasen-store/store.yaml
+88811da1daf8ba64f2a68ea9c173a85530599fa0a63e2c7f958b72c8fde829ca  <real>/rasen/config.yaml
+
+### The real store is untouched by the copy (read-only verification)
+$ git -C <real> status --porcelain
+ M .rasen-store/store.yaml
+ M rasen/config.yaml
+$ sha256sum <real>/.rasen-store/store.yaml <real>/rasen/config.yaml
+3aab228b3b79484cc62324d7a633661de04f975e9a4fbcd6ea1346c96e1eac22 *<real>/.rasen-store/store.yaml
+88811da1daf8ba64f2a68ea9c173a85530599fa0a63e2c7f958b72c8fde829ca *<real>/rasen/config.yaml
+$ git -C <real> rev-parse HEAD
+254b265cb4750e2fd7e5fe6caa1e1ffb219a3e4a

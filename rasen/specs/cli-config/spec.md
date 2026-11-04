@@ -300,7 +300,7 @@ The config command SHALL reserve the `--scope` flag for future extensibility.
 
 ### Requirement: Project scope configuration operations
 
-With `--scope project`, the config command SHALL read and write the project's `rasen/config.yaml` with the same subcommand UX as global scope: `path` prints the project config file location, `list` shows the parsed project configuration, `get` prints a single value, `set` writes a registry-validated value, and `unset` removes a key. Writes SHALL preserve existing comments, key ordering, and fields not being edited. Project-scope `set` SHALL reject keys the registry does not list for project scope (no `--allow-unknown` bypass).
+With `--scope project`, the config command SHALL read and write the project's resolved `rasen/config.yaml` with the same subcommand UX as global scope: `path` prints the project config file location, `list` shows the parsed project configuration, `get` prints a single value, `set` writes a registry-validated value, and `unset` removes a key. A directory SHALL count as a config project only when the existing project config-path resolver identifies an existing project configuration file there; an unrelated ancestor that merely contains a directory named `rasen` SHALL remain outside-project. Writes SHALL preserve existing comments, key ordering, and fields not being edited. Project-scope `set` SHALL reject keys the registry does not list for project scope (no `--allow-unknown` bypass).
 
 #### Scenario: Project scope set writes config.yaml
 
@@ -322,9 +322,15 @@ With `--scope project`, the config command SHALL read and write the project's `r
 
 #### Scenario: Project scope outside a Rasen project
 
-- **WHEN** user executes a `--scope project` operation outside any Rasen project
+- **WHEN** user executes a `--scope project` operation outside any initialized Rasen project
 - **THEN** fail with guidance that no `rasen/` project was found
 - **AND** exit with a non-zero code
+
+#### Scenario: Ambient data directory is not a config project
+
+- **WHEN** the nearest ancestor contains an unrelated `rasen/` directory but no project configuration file
+- **THEN** project-scope config operations report that no initialized project was found
+- **AND** no file beneath the ambient directory is read or written as project config
 
 #### Scenario: Unknown project keys are rejected
 
@@ -334,7 +340,7 @@ With `--scope project`, the config command SHALL read and write the project's `r
 
 ### Requirement: Interactive full-view configuration editor
 
-The no-arg interactive editor SHALL present every registered configuration key grouped by area, each row showing the key, its current effective value, and a source annotation (`default`, `global`, `project`, or `env-override`). Selecting a key SHALL prompt for a new value appropriate to its type (choice list for enums and booleans, validated input for numbers and strings), write it to the appropriate scope, refresh the view, and continue until the user exits. Keys settable in both scopes SHALL prompt for the target scope when inside a project. Cancellation (Ctrl+C) SHALL exit cleanly with code 130, consistent with the `config profile` picker.
+The no-arg interactive editor SHALL present every registered configuration key grouped by area, each row showing the key, its current effective value, and a source annotation (`default`, `global`, `project`, or `env-override`). Selecting a key SHALL prompt for a new value appropriate to its type (choice list for enums and booleans, validated input for numbers and strings), write it to the appropriate scope, refresh the view, and continue until the user exits. Keys settable in both scopes SHALL prompt for the target scope only when an initialized project configuration is present. Cancellation (Ctrl+C) SHALL exit cleanly with code 130, consistent with the `config profile` picker.
 
 #### Scenario: Editor shows values with source annotations
 
@@ -356,9 +362,10 @@ The no-arg interactive editor SHALL present every registered configuration key g
 
 #### Scenario: Project-scoped keys outside a project
 
-- **WHEN** the editor opens outside a Rasen project
+- **WHEN** the editor opens outside an initialized Rasen project, including beneath an ancestor with only an unrelated `rasen/` data directory
 - **THEN** project-only keys are shown as unavailable (requiring a Rasen project) or omitted
 - **AND** global keys remain fully editable
+- **AND** no project-scope prompt is shown
 
 #### Scenario: Cancel exits cleanly
 

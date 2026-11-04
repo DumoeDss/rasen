@@ -1,0 +1,18 @@
+### MANDATORY PRE-FLIGHT (tasks.md 1.4) — stage 2 enriched
+$ rasen store list --json
+{
+  "stores": [
+    {
+      "id": "rasen-store",
+      "root": "<temp>\\copy-enriched",
+      "uid": "f35acc7d-e088-4186-9ad6-b4b770649b0b",
+      "type": "store"
+    }
+  ],
+  "status": []
+}
+
+$ h_preflight
+PREFLIGHT-OK: 1 registered entr(ies), all inside <temp>
+  rasen-store [uid f35acc7d-e088-4186-9ad6-b4b770649b0b] -> <temp>\copy-enriched
+[preflight exit code: 0]

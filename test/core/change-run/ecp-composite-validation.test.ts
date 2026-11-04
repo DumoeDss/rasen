@@ -14,6 +14,7 @@ import {
   EcpDefinitionModule,
   createCapabilityCatalogSnapshot,
 } from '../../../src/core/pipeline-registry/index.js';
+import { fixtureLoopLifecycle } from './bounded-loop-fixture.js';
 
 function mkDescriptor(id: string): CapabilityDescriptor {
   return {
@@ -28,6 +29,11 @@ function mkDescriptor(id: string): CapabilityDescriptor {
 }
 
 const SKILLS = ['skill:propose', 'skill:apply', 'skill:ship'].map(mkDescriptor);
+const COMPLETE_EXECUTION = {
+  version: 1,
+  role: 'implementer',
+  workspace: { access: 'write' },
+} as const;
 
 function tryPrepare(
   def: DefinitionSourceV2
@@ -69,8 +75,8 @@ describe('ECP-2 static validation — custom-authored shapes', () => {
           outcomes: ['done'],
           graph: {
             nodes: [
-              { id: 'a', kind: 'AtomicStage', capability: { id: 'skill:propose', version: '1' } },
-              { id: 'b', kind: 'AtomicStage', capability: { id: 'skill:apply', version: '1' } },
+              { id: 'a', kind: 'AtomicStage', capability: { id: 'skill:propose', version: '1' }, execution: COMPLETE_EXECUTION },
+              { id: 'b', kind: 'AtomicStage', capability: { id: 'skill:apply', version: '1' }, execution: COMPLETE_EXECUTION },
             ],
             connections: [
               { id: 'ab', from: { node: 'a', port: 'done' }, to: { node: 'b', port: 'input' } },
@@ -116,7 +122,7 @@ describe('ECP-2 static validation — custom-authored shapes', () => {
           outcomes: ['done'],
           graph: {
             nodes: [
-              { id: 'a', kind: 'AtomicStage', capability: { id: 'skill:nonexistent', version: '1' } },
+              { id: 'a', kind: 'AtomicStage', capability: { id: 'skill:nonexistent', version: '1' }, execution: COMPLETE_EXECUTION },
             ],
             connections: [],
           },
@@ -153,8 +159,8 @@ describe('ECP-2 static validation — custom-authored shapes', () => {
           outcomes: ['done'],
           graph: {
             nodes: [
-              { id: 'a', kind: 'AtomicStage', capability: { id: 'skill:propose', version: '1' } },
-              { id: 'b', kind: 'AtomicStage', capability: { id: 'skill:apply', version: '1' } },
+              { id: 'a', kind: 'AtomicStage', capability: { id: 'skill:propose', version: '1' }, execution: COMPLETE_EXECUTION },
+              { id: 'b', kind: 'AtomicStage', capability: { id: 'skill:apply', version: '1' }, execution: COMPLETE_EXECUTION },
             ],
             connections: [
               // 'string' artifact port mismatched to 'ecp/control' input port
@@ -194,8 +200,8 @@ describe('ECP-2 static validation — custom-authored shapes', () => {
           outcomes: ['done'],
           graph: {
             nodes: [
-              { id: 'a', kind: 'AtomicStage', capability: { id: 'skill:propose', version: '1' } },
-              { id: 'b', kind: 'AtomicStage', capability: { id: 'skill:apply', version: '1' } },
+              { id: 'a', kind: 'AtomicStage', capability: { id: 'skill:propose', version: '1' }, execution: COMPLETE_EXECUTION },
+              { id: 'b', kind: 'AtomicStage', capability: { id: 'skill:apply', version: '1' }, execution: COMPLETE_EXECUTION },
             ],
             connections: [
               { id: 'ab', from: { node: 'a', port: 'done' }, to: { node: 'b', port: 'input' } },
@@ -235,7 +241,7 @@ describe('ECP-2 static validation — custom-authored shapes', () => {
           outcomes: ['done'],
           graph: {
             nodes: [
-              { id: 'a', kind: 'AtomicStage', capability: { id: 'skill:propose', version: '1' } },
+              { id: 'a', kind: 'AtomicStage', capability: { id: 'skill:propose', version: '1' }, execution: COMPLETE_EXECUTION },
             ],
             connections: [],
           },
@@ -247,7 +253,8 @@ describe('ECP-2 static validation — custom-authored shapes', () => {
             id: 'loop',
             kind: 'BoundedLoop',
             body: 'loop-body',
-            limits: { maxIterations: 3 },
+            limits: { maxIterations: 3, maxActions: 6, budget: 6 },
+            lifecycle: fixtureLoopLifecycle('exhausted'),
             exits: {
               nonexistent: { action: 'exit', outcome: 'success' },
             },

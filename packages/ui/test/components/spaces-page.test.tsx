@@ -26,8 +26,13 @@ vi.mock('../../src/api/client.js', async () => {
 });
 
 import { SpacesPage } from '../../src/components/SpacesPage.js';
+import { CreateSpaceDialog } from '../../src/components/CreateSpaceDialog.js';
 import * as client from '../../src/api/client.js';
 import { ApiError } from '../../src/api/client.js';
+import {
+  __resetLocaleForTesting,
+  setLocale,
+} from '../../src/i18n/store.js';
 import {
   publishSpace,
   refreshSpaceCatalog,
@@ -104,6 +109,7 @@ describe('SpacesPage', () => {
   let container: HTMLElement;
 
   beforeEach(() => {
+    __resetLocaleForTesting();
     resetSpaceCatalogForTests();
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -122,6 +128,7 @@ describe('SpacesPage', () => {
   afterEach(() => {
     document.body.removeChild(container);
     vi.resetAllMocks();
+    __resetLocaleForTesting();
     window.history.replaceState({}, '', '/');
   });
 
@@ -132,6 +139,12 @@ describe('SpacesPage', () => {
     expect(selectors).toContain('project:proj_a');
     expect(selectors).toContain('store:store_x');
     expect(container.querySelector('[data-testid="space-members"]')?.textContent).toContain('Member One');
+    expect(container.querySelector('[data-selector="project:proj_a"] .space-row__link')?.getAttribute('href')).toBe(
+      '/p/proj_a/board'
+    );
+    expect(container.querySelector('[data-selector="store:store_x"] .space-row__link')?.getAttribute('href')).toBe(
+      '/s/store_x/issues'
+    );
   });
 
   it('shows a worktree badge on a multi-worktree project and none otherwise (spaces-ui spec)', async () => {
@@ -205,6 +218,32 @@ describe('SpacesPage', () => {
     });
   });
 
+  it('recognizes a legacy alias pin and migrates it to the Store uid on the next write', async () => {
+    const uid = '11111111-2222-4333-8444-555555555555';
+    (client.listSpaces as any).mockResolvedValue({
+      spaces: [
+        SPACES.spaces[0],
+        { ...SPACES.spaces[1], id: 'Shared Name', name: 'Shared Name', uid },
+      ],
+    });
+    (client.getKey as any).mockResolvedValue({
+      entry: { value: ['store:Shared Name'] },
+    });
+    await mount(container);
+
+    const storeRow = container.querySelector(`[data-selector="store:${uid}"]`)!;
+    expect(storeRow.querySelector('[data-testid="pin-toggle"]')?.getAttribute('aria-pressed')).toBe(
+      'true'
+    );
+
+    const projectRow = container.querySelector('[data-selector="project:proj_a"]')!;
+    await click(projectRow.querySelector('[data-testid="pin-toggle"]'));
+    expect(client.putKey).toHaveBeenCalledWith('ui.pinnedSpaces', {
+      scope: 'global',
+      value: [`store:${uid}`, 'project:proj_a'],
+    });
+  });
+
   it('marks git repositories, keeps "Up" disabled at the home floor, and navigates by entry, parent, and typed path', async () => {
     // Distinct listings per path so navigation is observable.
     (client.listLocalPaths as any).mockImplementation((p?: string) => {
@@ -216,8 +255,14 @@ describe('SpacesPage', () => {
     await mount(container);
     await click(container.querySelector('[data-testid="new-space"]'));
 
-    // Git repos are visibly marked.
-    expect(container.querySelector('[data-testid="git-badge"]')).not.toBeNull();
+    // The default English picker contract remains unchanged for Spaces.
+    const picker = container.querySelector('[data-testid="path-picker"]') as HTMLElement;
+    const pathInput = container.querySelector('.create-space-dialog__path-input') as HTMLInputElement;
+    expect(picker.querySelector('[data-testid="choose-directory"]')?.textContent).toBe('Choose directory');
+    expect(pathInput.getAttribute('aria-label')).toBe('Server-local path');
+    expect(pathInput.getAttribute('placeholder')).toBe('Type an absolute server-local path');
+    expect(picker.querySelector('[data-testid="path-resolved"]')?.textContent?.trim()).toBe('resolved');
+    expect(container.querySelector('[data-testid="git-badge"]')?.textContent).toBe('git');
 
     const upButton = () =>
       Array.from(container.querySelectorAll('.create-space-dialog__pathbar button')).find(
@@ -241,7 +286,6 @@ describe('SpacesPage', () => {
     expect(client.listLocalPaths).toHaveBeenCalledWith('/home/user');
 
     // A typed absolute path is honored (the sole escape above home).
-    const pathInput = container.querySelector('.create-space-dialog__path-input') as HTMLInputElement;
     await act(async () => {
       pathInput.value = '/some/abs/path';
       pathInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -311,10 +355,41 @@ describe('SpacesPage', () => {
     expect(banner?.querySelector('button')?.textContent).toContain('Retry');
   });
 
-  it('creates a Store explicitly from parent plus required id', async () => {
+  it('does not let a list request started before publication erase the new Store', async () => {
+    let resolveOld!: (value: typeof SPACES) => void;
+    (client.listSpaces as any).mockReturnValueOnce(
+      new Promise<typeof SPACES>((resolve) => {
+        resolveOld = resolve;
+      })
+    );
+    await mount(container);
+
+    await act(async () => {
+      publishSpace({
+        type: 'store',
+        id: 'published-late',
+        name: 'Published Late',
+        root: '/stores/published-late',
+        members: [],
+      });
+      resolveOld(SPACES);
+      await flushMicrotasks();
+    });
+
+    expect(container.querySelector('[data-selector="store:published-late"]')).not.toBeNull();
+  });
+
+  it('creates a Store from a readable non-kebab display name and routes by permanent uid', async () => {
     (client.createSpace as any).mockResolvedValue({
       operation: 'store-setup',
-      space: { type: 'store', id: 'team-store', name: 'Team', root: '/home/user/team-store', members: [] },
+      space: {
+        type: 'store',
+        id: '研发计划.v2',
+        uid: '11111111-2222-4333-8444-555555555555',
+        name: '研发计划.v2',
+        root: '/home/user/研发计划.v2',
+        members: [],
+      },
     });
     await mount(container);
     await click(container.querySelector('[data-testid="new-space"]'));
@@ -323,21 +398,266 @@ describe('SpacesPage', () => {
     ).find((button) => button.textContent === 'Create new Store');
     await click(createMode ?? null);
     await act(async () => {
-      const input = container.querySelector('input[name="storeId"]') as HTMLInputElement;
-      input.value = 'team-store';
+      const input = container.querySelector('input[name="storeName"]') as HTMLInputElement;
+      input.value = '研发计划.v2';
       input.dispatchEvent(new Event('input', { bubbles: true }));
       await flushMicrotasks();
     });
     expect(container.querySelector('[data-testid="derived-store-root"]')?.textContent).toContain(
-      '/home/user/team-store'
+      '/home/user/研发计划.v2'
     );
     await click(container.querySelector('.create-space-dialog__actions button[type="submit"]'));
     expect(client.createSpace).toHaveBeenCalledWith({
       op: 'create-store',
       parent: '/home/user',
-      id: 'team-store',
+      id: '研发计划.v2',
     });
-    expect(window.location.pathname).toBe('/s/team-store/board');
+    expect(window.location.pathname).toBe('/s/11111111-2222-4333-8444-555555555555/issues');
+  });
+
+  it('preserves surrounding whitespace so the authoritative Store-name validator can reject it', async () => {
+    (client.createSpace as any).mockRejectedValue(
+      new ApiError(400, {
+        error: {
+          code: 'invalid_input',
+          message: 'Store name must not start or end with whitespace',
+        },
+      })
+    );
+    await mount(container);
+    await click(container.querySelector('[data-testid="new-space"]'));
+    const createMode = Array.from(
+      container.querySelectorAll('.create-space-dialog__kind-btn')
+    ).find((button) => button.textContent === 'Create new Store');
+    await click(createMode ?? null);
+
+    await act(async () => {
+      const input = container.querySelector('input[name="storeName"]') as HTMLInputElement;
+      input.value = '  研发计划.v2  ';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await flushMicrotasks();
+    });
+    await click(container.querySelector('.create-space-dialog__actions button[type="submit"]'));
+
+    expect(client.createSpace).toHaveBeenCalledWith({
+      op: 'create-store',
+      parent: '/home/user',
+      id: '  研发计划.v2  ',
+    });
+    expect(container.querySelector('[data-testid="create-error"]')?.textContent).toContain(
+      'Store name must not start or end with whitespace'
+    );
+  });
+
+  it('clears a stale Store-name validation error when the user edits the name', async () => {
+    (client.createSpace as any).mockRejectedValue(
+      new ApiError(400, {
+        error: {
+          code: 'invalid_input',
+          message: 'Store name must not contain path separators',
+        },
+      })
+    );
+    await mount(container);
+    await click(container.querySelector('[data-testid="new-space"]'));
+    const createMode = Array.from(
+      container.querySelectorAll('.create-space-dialog__kind-btn')
+    ).find((button) => button.textContent === 'Create new Store');
+    await click(createMode ?? null);
+
+    const input = container.querySelector('input[name="storeName"]') as HTMLInputElement;
+    await act(async () => {
+      input.value = 'Bad/Name';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await flushMicrotasks();
+    });
+    await click(container.querySelector('.create-space-dialog__actions button[type="submit"]'));
+    expect(container.querySelector('[data-testid="create-error"]')?.textContent).toContain(
+      'Store name must not contain path separators'
+    );
+
+    await act(async () => {
+      input.value = 'teststore';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await flushMicrotasks();
+    });
+    expect(container.querySelector('[data-testid="create-error"]')).toBeNull();
+  });
+
+  it('keeps all three operations in the standalone Spaces-page dialog', async () => {
+    await mount(container);
+    await click(container.querySelector('[data-testid="new-space"]'));
+    expect(container.querySelectorAll('.create-space-dialog__kind-btn')).toHaveLength(3);
+    expect(container.querySelector('[data-testid="space-operation-chooser"]')).not.toBeNull();
+  });
+
+  it('fixes the controlled dialog to Store creation and hands fresh success back without navigation', async () => {
+    const result = {
+      operation: 'store-setup' as const,
+      space: {
+        type: 'store' as const,
+        id: 'controlled-store',
+        name: 'Controlled',
+        root: '/home/user/controlled-store',
+        members: [],
+      },
+    };
+    (client.createSpace as any).mockResolvedValue(result);
+    const onSuccess = vi.fn();
+    window.history.replaceState({}, '', '/p/proj_a/issues');
+    await act(async () => {
+      render(
+        <LocationProvider>
+          <CreateSpaceDialog
+            fixedOperation="create-store"
+            onCancel={() => {}}
+            onSuccess={onSuccess}
+          />
+        </LocationProvider>,
+        container
+      );
+      await flushMicrotasks();
+    });
+    await act(async () => {
+      const input = container.querySelector('input[name="storeName"]') as HTMLInputElement;
+      input.value = 'controlled-store';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await flushMicrotasks();
+    });
+
+    expect(container.querySelector('[data-testid="space-operation-chooser"]')).toBeNull();
+    expect(container.querySelectorAll('.create-space-dialog__kind-btn')).toHaveLength(0);
+    await click(container.querySelector('.create-space-dialog__actions button[type="submit"]'));
+
+    expect(client.createSpace).toHaveBeenCalledWith({
+      op: 'create-store',
+      parent: '/home/user',
+      id: 'controlled-store',
+    });
+    expect(onSuccess).toHaveBeenCalledWith(result);
+    expect(window.location.pathname).toBe('/p/proj_a/issues');
+    expect(client.listSpaces).toHaveBeenCalled();
+  });
+
+  it('localizes fixed Store creation and picker copy in Japanese, including name and UID guidance', async () => {
+    setLocale('ja');
+    window.history.replaceState({}, '', '/p/proj_a/issues');
+    await act(async () => {
+      render(
+        <LocationProvider>
+          <CreateSpaceDialog
+            fixedOperation="create-store"
+            onCancel={() => {}}
+            onSuccess={() => {}}
+          />
+        </LocationProvider>,
+        container
+      );
+      await flushMicrotasks();
+    });
+
+    const dialog = container.querySelector('.create-space-dialog') as HTMLFormElement;
+    expect(dialog.getAttribute('aria-label')).toBe('スペースを作成');
+    expect(dialog.textContent).toContain('新しいStoreの親ディレクトリを選択してください。');
+    expect(container.querySelector('[data-testid="current-path"]')?.textContent).toContain('親ディレクトリ');
+    expect(container.querySelector('.create-space-dialog__field span')?.textContent).toBe('Store名');
+    expect(dialog.textContent).toContain('永続UIDはRasenが自動生成します');
+    expect(container.querySelector('.create-space-dialog__actions .btn--ghost')?.textContent).toBe('キャンセル');
+    expect(container.querySelector('.create-space-dialog__actions .btn--primary')?.textContent).toBe('Storeを作成');
+
+    const picker = container.querySelector('[data-testid="path-picker"]') as HTMLElement;
+    const pathInput = picker.querySelector('input') as HTMLInputElement;
+    const pickerButtons = Array.from(picker.querySelectorAll('.create-space-dialog__pathbar button'));
+    expect(picker.querySelector('[data-testid="choose-directory"]')?.textContent).toBe('ディレクトリを選択');
+    expect(pathInput.getAttribute('aria-label')).toBe('サーバー上のローカルパス');
+    expect(pathInput.getAttribute('placeholder')).toBe('サーバー上の絶対ローカルパスを入力');
+    expect(pickerButtons.map((button) => button.textContent)).toEqual(['移動', '上へ']);
+    expect(picker.querySelector('[data-testid="path-resolved"]')?.textContent?.trim()).toBe('解決済み');
+    expect(picker.textContent).not.toContain('Choose directory');
+    expect(picker.textContent).not.toContain('Native choice unavailable');
+
+    (client.chooseLocalPath as any).mockResolvedValueOnce({ status: 'cancelled' });
+    await click(picker.querySelector('[data-testid="choose-directory"]'));
+    expect(picker.querySelector('[data-testid="chooser-fallback"]')?.textContent).toBe(
+      '選択をキャンセルしました。現在のパスは保持されています。'
+    );
+    await click(picker.querySelector('[data-testid="choose-directory"]'));
+    expect(picker.querySelector('[data-testid="chooser-fallback"]')?.textContent).toBe(
+      'ネイティブ選択を使用できません。下のサーバーブラウザーを使用してください。'
+    );
+
+    await act(async () => {
+      dialog.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await flushMicrotasks();
+    });
+    expect(container.querySelector('[data-testid="create-error"]')?.textContent).toBe('Store名は必須です。');
+  });
+
+  it('localizes fixed Store creation and picker copy in Simplified Chinese without English fallback', async () => {
+    setLocale('zh-cn');
+    window.history.replaceState({}, '', '/p/proj_a/issues');
+    await act(async () => {
+      render(
+        <LocationProvider>
+          <CreateSpaceDialog
+            fixedOperation="create-store"
+            onCancel={() => {}}
+            onSuccess={() => {}}
+          />
+        </LocationProvider>,
+        container
+      );
+      await flushMicrotasks();
+    });
+
+    const dialog = container.querySelector('.create-space-dialog') as HTMLFormElement;
+    expect(dialog.getAttribute('aria-label')).toBe('创建空间');
+    expect(dialog.textContent).toContain('请选择新 Store 的父目录。');
+    expect(container.querySelector('[data-testid="current-path"]')?.textContent).toContain('父目录');
+    expect(container.querySelector('.create-space-dialog__field span')?.textContent).toBe('Store 名称');
+    expect(dialog.textContent).toContain('永久 UID 由 Rasen 自动生成');
+    expect(container.querySelector('.create-space-dialog__actions .btn--ghost')?.textContent).toBe('取消');
+    expect(container.querySelector('.create-space-dialog__actions .btn--primary')?.textContent).toBe('创建 Store');
+
+    const picker = container.querySelector('[data-testid="path-picker"]') as HTMLElement;
+    const pathInput = picker.querySelector('input') as HTMLInputElement;
+    const pickerButtons = Array.from(picker.querySelectorAll('.create-space-dialog__pathbar button'));
+    expect(picker.querySelector('[data-testid="choose-directory"]')?.textContent).toBe('选择目录');
+    expect(pathInput.getAttribute('aria-label')).toBe('服务器本地路径');
+    expect(pathInput.getAttribute('placeholder')).toBe('输入服务器上的绝对本地路径');
+    expect(pickerButtons.map((button) => button.textContent)).toEqual(['前往', '上一级']);
+    expect(picker.querySelector('[data-testid="path-resolved"]')?.textContent?.trim()).toBe('已解析');
+    expect(picker.textContent).not.toContain('Choose directory');
+    expect(picker.textContent).not.toContain('Native choice unavailable');
+
+    await click(picker.querySelector('[data-testid="choose-directory"]'));
+    expect(picker.querySelector('[data-testid="chooser-fallback"]')?.textContent).toBe(
+      '无法使用系统选择器；请使用下方的服务器浏览器。'
+    );
+  });
+
+  it('registers an existing Store and routes to its Issue Board', async () => {
+    (client.createSpace as any).mockResolvedValue({
+      operation: 'store-register',
+      space: {
+        type: 'store',
+        id: 'Registered Store',
+        uid: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        name: 'Registered Store',
+        root: '/home/user',
+        members: [],
+      },
+    });
+    await mount(container);
+    await click(container.querySelector('[data-testid="new-space"]'));
+    const registerMode = Array.from(
+      container.querySelectorAll('.create-space-dialog__kind-btn')
+    ).find((button) => button.textContent === 'Register existing Store');
+    await click(registerMode ?? null);
+    await click(container.querySelector('.create-space-dialog__actions button[type="submit"]'));
+
+    expect(client.createSpace).toHaveBeenCalledWith({ op: 'register-store', path: '/home/user' });
+    expect(window.location.pathname).toBe('/s/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee/issues');
   });
 
   it('registers an existing Store explicitly and preserves a CLI refusal verbatim', async () => {
@@ -375,7 +695,7 @@ describe('SpacesPage', () => {
     ).find((button) => button.textContent === 'Create new Store');
     await click(createMode ?? null);
     await act(async () => {
-      const input = container.querySelector('input[name="storeId"]') as HTMLInputElement;
+      const input = container.querySelector('input[name="storeName"]') as HTMLInputElement;
       input.value = 'team-store';
       input.dispatchEvent(new Event('input', { bubbles: true }));
       await flushMicrotasks();

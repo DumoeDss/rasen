@@ -1,0 +1,53 @@
+{
+  "change": "store-planning-contract-v2",
+  "archivedAt": "2026-08-15T08:23:50.307Z",
+  "codeCommit": "af259a8109f32ae385c221937ad3c48e16a5defd",
+  "planningBranch": "chore/archive-store-v2-slice-1",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/fix-round-1-mutation-proofs.md",
+      "sha256": "1ba19e9be78a64b0e7bf7da33ef4dd3eafa4575aea8b0b17079ed0257705cbdb"
+    },
+    {
+      "path": "evidence/fix-round-2-mutation-proofs.md",
+      "sha256": "a624c80ae1690fa63678b621f7709f2e1fda71b34e745273c45960722f744c0e"
+    },
+    {
+      "path": "evidence/fix-round-3-mutation-proofs.md",
+      "sha256": "3509f3564168dc5613375e7875b391798cb2d9172e33e490a7d4f208c53b6e31"
+    },
+    {
+      "path": "evidence/purity-guard-mutation-proof.md",
+      "sha256": "6ce4e4976dd7494a97b9b674f051fca9c05cb008b8fa6375ac243c35d682f9ea"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "bfcc0fa70ef2ed1e3078a579b4b69008a83ca6713b62e6c8d29e3112e32c1610"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "df97b7da6052085510a2edcc802be006db135ccac9dea4126d89807c3f02bacf"
+    },
+    {
+      "path": "evidence/task-6-4-baseline-flake-analysis.md",
+      "sha256": "54431b3c21649fc74cc121eeff6267a7e0463a86daeea80df79cbfd407d79f73"
+    },
+    {
+      "path": "evidence/task-6-5-windows-ci-verification.md",
+      "sha256": "0dc38925ac8fb2ba2d03326772fa0421b12fdcd001df7921d08113cfe4501b86"
+    },
+    {
+      "path": "evidence/task-6-7-diff-scope-audit.md",
+      "sha256": "49524e7529bec98b272229cf59693f15d9a6eec05bb524e8ec9dd05b522f7bda"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

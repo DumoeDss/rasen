@@ -1,0 +1,56 @@
+{
+  "pipeline": "auto-decompose",
+  "classification": "auto-decompose",
+  "tier": "A",
+  "gatePolicy": {
+    "effective": "off",
+    "source": "global"
+  },
+  "baseline": {
+    "command": "pnpm exec vitest run test/core/store test/core/change-run test/commands/store.test.ts test/commands/store-root-selection.test.ts test/cli-e2e/store-lifecycle.test.ts",
+    "result": "green",
+    "testFiles": 104,
+    "tests": 1264,
+    "skipped": 1,
+    "durationSec": 468,
+    "gitTreeFingerprint": "964a7c62d0c838360c62f68c7e1e2ee81a431f03",
+    "note": "Pre-change no-regression baseline on feat/store-v2-foundation off origin/dev/0.2.0 (657c546d)."
+  },
+  "stages": {
+    "decompose": {
+      "status": "done",
+      "decision": "taken",
+      "audit": "LEAD self-audit passed: 3 slices, strict serial DAG (every dependency edge grepped and independently re-verified), each independently shippable and testable. No parallel cohort is claimed, so no positive independence proof is required. Slicing mirrors 0.1.7's own proven 9-change delivery order.",
+      "children": [
+        "store-planning-contract-v2",
+        "store-worktree-bindings-v2",
+        "store-issue-resources"
+      ]
+    },
+    "propose": {
+      "status": "delegated",
+      "note": "Parent is a planning container; this stage runs per child."
+    },
+    "apply": {
+      "status": "delegated",
+      "note": "Parent is a planning container; this stage runs per child."
+    },
+    "verify": {
+      "status": "delegated",
+      "note": "Parent is a planning container; this stage runs per child."
+    },
+    "review-loop": {
+      "status": "delegated",
+      "note": "Parent is a planning container; this stage runs per child."
+    },
+    "ship": {
+      "status": "pending",
+      "note": "Portfolio-level single delivery after all three children are terminal."
+    },
+    "archive": {
+      "status": "pending"
+    }
+  },
+  "rounds": 0,
+  "openFindings": []
+}

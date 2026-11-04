@@ -1,0 +1,4946 @@
+{
+  "schemaVersion": 2,
+  "transactionId": "e89432e1-ec1b-42c9-9c7a-2876d233ee03",
+  "planHash": "a58708a0fe4932ebdd993e4ac7861aa4bb3850caf8d25c28ec4813197985304b",
+  "change": "issue-plan-publication",
+  "phase": "complete",
+  "activePath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\rasen\\changes\\issue-plan-publication",
+  "stagePath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\rasen\\changes\\archive\\.rasen-archive-stage-e89432e1-ec1b-42c9-9c7a-2876d233ee03",
+  "finalPath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\rasen\\changes\\archive\\2026-08-20-issue-plan-publication",
+  "ephemeraDisposed": [],
+  "phaseFingerprints": {
+    "payload-copied": {
+      "state": "verified",
+      "scope": "stage",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "590b62e052f0b47cdde09484a6f82c80af9a0811d969d1b4634aea9fcac120d7",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "727fc3b35bb3eb09ccede6d08cbc829ea0044b031816d47842ec2573bff99290"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11254",
+            "sha256": "da8d1595a12846f3c4aaba1ff57c5ed96082c7927e136938e31f401abe515a05"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "executable": false,
+            "size": "21819",
+            "sha256": "f5a4b3479779783ec312b452ab427b94821e7c7852a8e065f55dc6eb2e7d999c"
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "10419",
+            "sha256": "3bc0ec6a42b1169d21e00e0c7a917a74a6258a670b0cc63c6bbaefe4d2335dc2"
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "8741",
+            "sha256": "6c3c063378e284ad54705472d29892b2d3bd02a6e8c03471cc25535f70419086"
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "4408",
+            "sha256": "11a094523fcbf0c12344259144a9f38c05028a39b4f1c2be9cc176df13fe9085"
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3062",
+            "sha256": "18cc19c1825494a6c71312e015f7cb7693b5dd54805b4065959965ff0d4d8fd9"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "13029",
+            "sha256": "0be4ca75d4a807915e8ba73c1e845f3a588f397bdff95381d246ef748966e040"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3455",
+            "sha256": "e9c4ee980e04a92781c190db40e7f4c93981b439c7c795bb2b5e6981fd54272e"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3768",
+            "sha256": "2ee792bb0a82cf64d10662d9451bf2b75d71385047650e4f564b4dd3361e2181"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6725",
+            "sha256": "7b14f9b61e36b9fa965609373702ce7f624e3a07fefc29965fdffb536bb9c7fa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4777",
+            "sha256": "ffaa9d6405031412f5aebbb680d9e8562c18ee1e7c7a562b0c05ca1aeb33a657"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "4503599631633162",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "50b3ff68a38f764c2fcde9374dd7aa6d81c67cef5a13a734d781e5535239ff6d",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599631633161",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1787184259820390400",
+              "ctimeNs": "1787184259829088200"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174702646992",
+              "mode": "33206",
+              "size": "11254",
+              "mtimeNs": "1787184847391113000",
+              "ctimeNs": "1787184847397466600"
+            }
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "6473924469908281",
+              "mode": "33206",
+              "size": "21819",
+              "mtimeNs": "1787197233483810500",
+              "ctimeNs": "1787197233483810500"
+            }
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699726090982",
+              "mode": "33206",
+              "size": "10419",
+              "mtimeNs": "1787187583509716600",
+              "ctimeNs": "1787187583509716600"
+            }
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699726090989",
+              "mode": "33206",
+              "size": "8741",
+              "mtimeNs": "1787187602613905100",
+              "ctimeNs": "1787187602613905100"
+            }
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649679512299",
+              "mode": "33206",
+              "size": "4408",
+              "mtimeNs": "1787187661439496400",
+              "ctimeNs": "1787187661439496400"
+            }
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5066549586196575",
+              "mode": "33206",
+              "size": "3062",
+              "mtimeNs": "1787198431299935900",
+              "ctimeNs": "1787198431301519100"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4222124656064584",
+              "mode": "33206",
+              "size": "13029",
+              "mtimeNs": "1787198584869647200",
+              "ctimeNs": "1787198584869647200"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600510",
+              "mode": "33206",
+              "size": "3455",
+              "mtimeNs": "1787198884150477300",
+              "ctimeNs": "1787198884151535200"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174702801634",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5910974514223466",
+              "mode": "33206",
+              "size": "3768",
+              "mtimeNs": "1787184791802750000",
+              "ctimeNs": "1787184791803803200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699725936334",
+              "mode": "33206",
+              "size": "6725",
+              "mtimeNs": "1787184807783131300",
+              "ctimeNs": "1787184807789537200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699725936333",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174702646988",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699725936337",
+              "mode": "33206",
+              "size": "4777",
+              "mtimeNs": "1787197233327504400",
+              "ctimeNs": "1787197233327504400"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "590b62e052f0b47cdde09484a6f82c80af9a0811d969d1b4634aea9fcac120d7",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "727fc3b35bb3eb09ccede6d08cbc829ea0044b031816d47842ec2573bff99290"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11254",
+            "sha256": "da8d1595a12846f3c4aaba1ff57c5ed96082c7927e136938e31f401abe515a05"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "executable": false,
+            "size": "21819",
+            "sha256": "f5a4b3479779783ec312b452ab427b94821e7c7852a8e065f55dc6eb2e7d999c"
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "10419",
+            "sha256": "3bc0ec6a42b1169d21e00e0c7a917a74a6258a670b0cc63c6bbaefe4d2335dc2"
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "8741",
+            "sha256": "6c3c063378e284ad54705472d29892b2d3bd02a6e8c03471cc25535f70419086"
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "4408",
+            "sha256": "11a094523fcbf0c12344259144a9f38c05028a39b4f1c2be9cc176df13fe9085"
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3062",
+            "sha256": "18cc19c1825494a6c71312e015f7cb7693b5dd54805b4065959965ff0d4d8fd9"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "13029",
+            "sha256": "0be4ca75d4a807915e8ba73c1e845f3a588f397bdff95381d246ef748966e040"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3455",
+            "sha256": "e9c4ee980e04a92781c190db40e7f4c93981b439c7c795bb2b5e6981fd54272e"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3768",
+            "sha256": "2ee792bb0a82cf64d10662d9451bf2b75d71385047650e4f564b4dd3361e2181"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6725",
+            "sha256": "7b14f9b61e36b9fa965609373702ce7f624e3a07fefc29965fdffb536bb9c7fa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4777",
+            "sha256": "ffaa9d6405031412f5aebbb680d9e8562c18ee1e7c7a562b0c05ca1aeb33a657"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "9851624190285760",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "63041121b1f95ee542bfc249664c4008b8218974af2124c2368ccd6a9d9923c3",
+        "authorityEntries": [
+          {
+            "path": ".rasen-archive-stage-owner.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600514",
+              "mode": "33206",
+              "size": "380",
+              "mtimeNs": "1787199055296103000",
+              "ctimeNs": "1787199055296103000"
+            }
+          },
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600515",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1787184259820390400",
+              "ctimeNs": "1787184259829088200"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7881299353311173",
+              "mode": "33206",
+              "size": "11254",
+              "mtimeNs": "1787184847391113000",
+              "ctimeNs": "1787184847397466600"
+            }
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600519",
+              "mode": "33206",
+              "size": "21819",
+              "mtimeNs": "1787197233483810500",
+              "ctimeNs": "1787197233483810500"
+            }
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600520",
+              "mode": "33206",
+              "size": "10419",
+              "mtimeNs": "1787187583509716600",
+              "ctimeNs": "1787187583509716600"
+            }
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889865",
+              "mode": "33206",
+              "size": "8741",
+              "mtimeNs": "1787187602613905100",
+              "ctimeNs": "1787187602613905100"
+            }
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889866",
+              "mode": "33206",
+              "size": "4408",
+              "mtimeNs": "1787187661439496400",
+              "ctimeNs": "1787187661439496400"
+            }
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889867",
+              "mode": "33206",
+              "size": "3062",
+              "mtimeNs": "1787198431299935900",
+              "ctimeNs": "1787198431301519100"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889868",
+              "mode": "33206",
+              "size": "13029",
+              "mtimeNs": "1787198584869647200",
+              "ctimeNs": "1787198584869647200"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889869",
+              "mode": "33206",
+              "size": "3455",
+              "mtimeNs": "1787198884150477300",
+              "ctimeNs": "1787198884151535200"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600518",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889870",
+              "mode": "33206",
+              "size": "3768",
+              "mtimeNs": "1787184791802750000",
+              "ctimeNs": "1787184791803803200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889873",
+              "mode": "33206",
+              "size": "6725",
+              "mtimeNs": "1787184807783131300",
+              "ctimeNs": "1787184807789537200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889872",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889871",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889874",
+              "mode": "33206",
+              "size": "4777",
+              "mtimeNs": "1787197233327504400",
+              "ctimeNs": "1787197233327504400"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "590b62e052f0b47cdde09484a6f82c80af9a0811d969d1b4634aea9fcac120d7",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "727fc3b35bb3eb09ccede6d08cbc829ea0044b031816d47842ec2573bff99290"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11254",
+            "sha256": "da8d1595a12846f3c4aaba1ff57c5ed96082c7927e136938e31f401abe515a05"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "executable": false,
+            "size": "21819",
+            "sha256": "f5a4b3479779783ec312b452ab427b94821e7c7852a8e065f55dc6eb2e7d999c"
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "10419",
+            "sha256": "3bc0ec6a42b1169d21e00e0c7a917a74a6258a670b0cc63c6bbaefe4d2335dc2"
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "8741",
+            "sha256": "6c3c063378e284ad54705472d29892b2d3bd02a6e8c03471cc25535f70419086"
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "4408",
+            "sha256": "11a094523fcbf0c12344259144a9f38c05028a39b4f1c2be9cc176df13fe9085"
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3062",
+            "sha256": "18cc19c1825494a6c71312e015f7cb7693b5dd54805b4065959965ff0d4d8fd9"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "13029",
+            "sha256": "0be4ca75d4a807915e8ba73c1e845f3a588f397bdff95381d246ef748966e040"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3455",
+            "sha256": "e9c4ee980e04a92781c190db40e7f4c93981b439c7c795bb2b5e6981fd54272e"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3768",
+            "sha256": "2ee792bb0a82cf64d10662d9451bf2b75d71385047650e4f564b4dd3361e2181"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6725",
+            "sha256": "7b14f9b61e36b9fa965609373702ce7f624e3a07fefc29965fdffb536bb9c7fa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4777",
+            "sha256": "ffaa9d6405031412f5aebbb680d9e8562c18ee1e7c7a562b0c05ca1aeb33a657"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "9851624190285760",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "63041121b1f95ee542bfc249664c4008b8218974af2124c2368ccd6a9d9923c3",
+        "authorityEntries": [
+          {
+            "path": ".rasen-archive-stage-owner.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600514",
+              "mode": "33206",
+              "size": "380",
+              "mtimeNs": "1787199055296103000",
+              "ctimeNs": "1787199055296103000"
+            }
+          },
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600515",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1787184259820390400",
+              "ctimeNs": "1787184259829088200"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7881299353311173",
+              "mode": "33206",
+              "size": "11254",
+              "mtimeNs": "1787184847391113000",
+              "ctimeNs": "1787184847397466600"
+            }
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600519",
+              "mode": "33206",
+              "size": "21819",
+              "mtimeNs": "1787197233483810500",
+              "ctimeNs": "1787197233483810500"
+            }
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600520",
+              "mode": "33206",
+              "size": "10419",
+              "mtimeNs": "1787187583509716600",
+              "ctimeNs": "1787187583509716600"
+            }
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889865",
+              "mode": "33206",
+              "size": "8741",
+              "mtimeNs": "1787187602613905100",
+              "ctimeNs": "1787187602613905100"
+            }
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889866",
+              "mode": "33206",
+              "size": "4408",
+              "mtimeNs": "1787187661439496400",
+              "ctimeNs": "1787187661439496400"
+            }
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889867",
+              "mode": "33206",
+              "size": "3062",
+              "mtimeNs": "1787198431299935900",
+              "ctimeNs": "1787198431301519100"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889868",
+              "mode": "33206",
+              "size": "13029",
+              "mtimeNs": "1787198584869647200",
+              "ctimeNs": "1787198584869647200"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889869",
+              "mode": "33206",
+              "size": "3455",
+              "mtimeNs": "1787198884150477300",
+              "ctimeNs": "1787198884151535200"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600518",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889870",
+              "mode": "33206",
+              "size": "3768",
+              "mtimeNs": "1787184791802750000",
+              "ctimeNs": "1787184791803803200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889873",
+              "mode": "33206",
+              "size": "6725",
+              "mtimeNs": "1787184807783131300",
+              "ctimeNs": "1787184807789537200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889872",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889871",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889874",
+              "mode": "33206",
+              "size": "4777",
+              "mtimeNs": "1787197233327504400",
+              "ctimeNs": "1787197233327504400"
+            }
+          }
+        ]
+      }
+    },
+    "handoff-finalized": {
+      "state": "verified",
+      "scope": "stage",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "590b62e052f0b47cdde09484a6f82c80af9a0811d969d1b4634aea9fcac120d7",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "727fc3b35bb3eb09ccede6d08cbc829ea0044b031816d47842ec2573bff99290"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11254",
+            "sha256": "da8d1595a12846f3c4aaba1ff57c5ed96082c7927e136938e31f401abe515a05"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "executable": false,
+            "size": "21819",
+            "sha256": "f5a4b3479779783ec312b452ab427b94821e7c7852a8e065f55dc6eb2e7d999c"
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "10419",
+            "sha256": "3bc0ec6a42b1169d21e00e0c7a917a74a6258a670b0cc63c6bbaefe4d2335dc2"
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "8741",
+            "sha256": "6c3c063378e284ad54705472d29892b2d3bd02a6e8c03471cc25535f70419086"
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "4408",
+            "sha256": "11a094523fcbf0c12344259144a9f38c05028a39b4f1c2be9cc176df13fe9085"
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3062",
+            "sha256": "18cc19c1825494a6c71312e015f7cb7693b5dd54805b4065959965ff0d4d8fd9"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "13029",
+            "sha256": "0be4ca75d4a807915e8ba73c1e845f3a588f397bdff95381d246ef748966e040"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3455",
+            "sha256": "e9c4ee980e04a92781c190db40e7f4c93981b439c7c795bb2b5e6981fd54272e"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3768",
+            "sha256": "2ee792bb0a82cf64d10662d9451bf2b75d71385047650e4f564b4dd3361e2181"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6725",
+            "sha256": "7b14f9b61e36b9fa965609373702ce7f624e3a07fefc29965fdffb536bb9c7fa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4777",
+            "sha256": "ffaa9d6405031412f5aebbb680d9e8562c18ee1e7c7a562b0c05ca1aeb33a657"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "9851624190285760",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "63041121b1f95ee542bfc249664c4008b8218974af2124c2368ccd6a9d9923c3",
+        "authorityEntries": [
+          {
+            "path": ".rasen-archive-stage-owner.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600514",
+              "mode": "33206",
+              "size": "380",
+              "mtimeNs": "1787199055296103000",
+              "ctimeNs": "1787199055296103000"
+            }
+          },
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600515",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1787184259820390400",
+              "ctimeNs": "1787184259829088200"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7881299353311173",
+              "mode": "33206",
+              "size": "11254",
+              "mtimeNs": "1787184847391113000",
+              "ctimeNs": "1787184847397466600"
+            }
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600519",
+              "mode": "33206",
+              "size": "21819",
+              "mtimeNs": "1787197233483810500",
+              "ctimeNs": "1787197233483810500"
+            }
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600520",
+              "mode": "33206",
+              "size": "10419",
+              "mtimeNs": "1787187583509716600",
+              "ctimeNs": "1787187583509716600"
+            }
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889865",
+              "mode": "33206",
+              "size": "8741",
+              "mtimeNs": "1787187602613905100",
+              "ctimeNs": "1787187602613905100"
+            }
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889866",
+              "mode": "33206",
+              "size": "4408",
+              "mtimeNs": "1787187661439496400",
+              "ctimeNs": "1787187661439496400"
+            }
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889867",
+              "mode": "33206",
+              "size": "3062",
+              "mtimeNs": "1787198431299935900",
+              "ctimeNs": "1787198431301519100"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889868",
+              "mode": "33206",
+              "size": "13029",
+              "mtimeNs": "1787198584869647200",
+              "ctimeNs": "1787198584869647200"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889869",
+              "mode": "33206",
+              "size": "3455",
+              "mtimeNs": "1787198884150477300",
+              "ctimeNs": "1787198884151535200"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600518",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889870",
+              "mode": "33206",
+              "size": "3768",
+              "mtimeNs": "1787184791802750000",
+              "ctimeNs": "1787184791803803200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889873",
+              "mode": "33206",
+              "size": "6725",
+              "mtimeNs": "1787184807783131300",
+              "ctimeNs": "1787184807789537200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889872",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889871",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889874",
+              "mode": "33206",
+              "size": "4777",
+              "mtimeNs": "1787197233327504400",
+              "ctimeNs": "1787197233327504400"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "590b62e052f0b47cdde09484a6f82c80af9a0811d969d1b4634aea9fcac120d7",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "727fc3b35bb3eb09ccede6d08cbc829ea0044b031816d47842ec2573bff99290"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11254",
+            "sha256": "da8d1595a12846f3c4aaba1ff57c5ed96082c7927e136938e31f401abe515a05"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "executable": false,
+            "size": "21819",
+            "sha256": "f5a4b3479779783ec312b452ab427b94821e7c7852a8e065f55dc6eb2e7d999c"
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "10419",
+            "sha256": "3bc0ec6a42b1169d21e00e0c7a917a74a6258a670b0cc63c6bbaefe4d2335dc2"
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "8741",
+            "sha256": "6c3c063378e284ad54705472d29892b2d3bd02a6e8c03471cc25535f70419086"
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "4408",
+            "sha256": "11a094523fcbf0c12344259144a9f38c05028a39b4f1c2be9cc176df13fe9085"
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3062",
+            "sha256": "18cc19c1825494a6c71312e015f7cb7693b5dd54805b4065959965ff0d4d8fd9"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "13029",
+            "sha256": "0be4ca75d4a807915e8ba73c1e845f3a588f397bdff95381d246ef748966e040"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3455",
+            "sha256": "e9c4ee980e04a92781c190db40e7f4c93981b439c7c795bb2b5e6981fd54272e"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3768",
+            "sha256": "2ee792bb0a82cf64d10662d9451bf2b75d71385047650e4f564b4dd3361e2181"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6725",
+            "sha256": "7b14f9b61e36b9fa965609373702ce7f624e3a07fefc29965fdffb536bb9c7fa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4777",
+            "sha256": "ffaa9d6405031412f5aebbb680d9e8562c18ee1e7c7a562b0c05ca1aeb33a657"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "9851624190285760",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "63041121b1f95ee542bfc249664c4008b8218974af2124c2368ccd6a9d9923c3",
+        "authorityEntries": [
+          {
+            "path": ".rasen-archive-stage-owner.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600514",
+              "mode": "33206",
+              "size": "380",
+              "mtimeNs": "1787199055296103000",
+              "ctimeNs": "1787199055296103000"
+            }
+          },
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600515",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1787184259820390400",
+              "ctimeNs": "1787184259829088200"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7881299353311173",
+              "mode": "33206",
+              "size": "11254",
+              "mtimeNs": "1787184847391113000",
+              "ctimeNs": "1787184847397466600"
+            }
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600519",
+              "mode": "33206",
+              "size": "21819",
+              "mtimeNs": "1787197233483810500",
+              "ctimeNs": "1787197233483810500"
+            }
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600520",
+              "mode": "33206",
+              "size": "10419",
+              "mtimeNs": "1787187583509716600",
+              "ctimeNs": "1787187583509716600"
+            }
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889865",
+              "mode": "33206",
+              "size": "8741",
+              "mtimeNs": "1787187602613905100",
+              "ctimeNs": "1787187602613905100"
+            }
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889866",
+              "mode": "33206",
+              "size": "4408",
+              "mtimeNs": "1787187661439496400",
+              "ctimeNs": "1787187661439496400"
+            }
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889867",
+              "mode": "33206",
+              "size": "3062",
+              "mtimeNs": "1787198431299935900",
+              "ctimeNs": "1787198431301519100"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889868",
+              "mode": "33206",
+              "size": "13029",
+              "mtimeNs": "1787198584869647200",
+              "ctimeNs": "1787198584869647200"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889869",
+              "mode": "33206",
+              "size": "3455",
+              "mtimeNs": "1787198884150477300",
+              "ctimeNs": "1787198884151535200"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600518",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889870",
+              "mode": "33206",
+              "size": "3768",
+              "mtimeNs": "1787184791802750000",
+              "ctimeNs": "1787184791803803200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889873",
+              "mode": "33206",
+              "size": "6725",
+              "mtimeNs": "1787184807783131300",
+              "ctimeNs": "1787184807789537200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889872",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889871",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889874",
+              "mode": "33206",
+              "size": "4777",
+              "mtimeNs": "1787197233327504400",
+              "ctimeNs": "1787197233327504400"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "590b62e052f0b47cdde09484a6f82c80af9a0811d969d1b4634aea9fcac120d7",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "727fc3b35bb3eb09ccede6d08cbc829ea0044b031816d47842ec2573bff99290"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11254",
+            "sha256": "da8d1595a12846f3c4aaba1ff57c5ed96082c7927e136938e31f401abe515a05"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "executable": false,
+            "size": "21819",
+            "sha256": "f5a4b3479779783ec312b452ab427b94821e7c7852a8e065f55dc6eb2e7d999c"
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "10419",
+            "sha256": "3bc0ec6a42b1169d21e00e0c7a917a74a6258a670b0cc63c6bbaefe4d2335dc2"
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "8741",
+            "sha256": "6c3c063378e284ad54705472d29892b2d3bd02a6e8c03471cc25535f70419086"
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "4408",
+            "sha256": "11a094523fcbf0c12344259144a9f38c05028a39b4f1c2be9cc176df13fe9085"
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3062",
+            "sha256": "18cc19c1825494a6c71312e015f7cb7693b5dd54805b4065959965ff0d4d8fd9"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "13029",
+            "sha256": "0be4ca75d4a807915e8ba73c1e845f3a588f397bdff95381d246ef748966e040"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3455",
+            "sha256": "e9c4ee980e04a92781c190db40e7f4c93981b439c7c795bb2b5e6981fd54272e"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3768",
+            "sha256": "2ee792bb0a82cf64d10662d9451bf2b75d71385047650e4f564b4dd3361e2181"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6725",
+            "sha256": "7b14f9b61e36b9fa965609373702ce7f624e3a07fefc29965fdffb536bb9c7fa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4777",
+            "sha256": "ffaa9d6405031412f5aebbb680d9e8562c18ee1e7c7a562b0c05ca1aeb33a657"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "9851624190285760",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "63041121b1f95ee542bfc249664c4008b8218974af2124c2368ccd6a9d9923c3",
+        "authorityEntries": [
+          {
+            "path": ".rasen-archive-stage-owner.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600514",
+              "mode": "33206",
+              "size": "380",
+              "mtimeNs": "1787199055296103000",
+              "ctimeNs": "1787199055296103000"
+            }
+          },
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600515",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1787184259820390400",
+              "ctimeNs": "1787184259829088200"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7881299353311173",
+              "mode": "33206",
+              "size": "11254",
+              "mtimeNs": "1787184847391113000",
+              "ctimeNs": "1787184847397466600"
+            }
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600519",
+              "mode": "33206",
+              "size": "21819",
+              "mtimeNs": "1787197233483810500",
+              "ctimeNs": "1787197233483810500"
+            }
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600520",
+              "mode": "33206",
+              "size": "10419",
+              "mtimeNs": "1787187583509716600",
+              "ctimeNs": "1787187583509716600"
+            }
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889865",
+              "mode": "33206",
+              "size": "8741",
+              "mtimeNs": "1787187602613905100",
+              "ctimeNs": "1787187602613905100"
+            }
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889866",
+              "mode": "33206",
+              "size": "4408",
+              "mtimeNs": "1787187661439496400",
+              "ctimeNs": "1787187661439496400"
+            }
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889867",
+              "mode": "33206",
+              "size": "3062",
+              "mtimeNs": "1787198431299935900",
+              "ctimeNs": "1787198431301519100"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889868",
+              "mode": "33206",
+              "size": "13029",
+              "mtimeNs": "1787198584869647200",
+              "ctimeNs": "1787198584869647200"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889869",
+              "mode": "33206",
+              "size": "3455",
+              "mtimeNs": "1787198884150477300",
+              "ctimeNs": "1787198884151535200"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600518",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889870",
+              "mode": "33206",
+              "size": "3768",
+              "mtimeNs": "1787184791802750000",
+              "ctimeNs": "1787184791803803200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889873",
+              "mode": "33206",
+              "size": "6725",
+              "mtimeNs": "1787184807783131300",
+              "ctimeNs": "1787184807789537200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889872",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889871",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889874",
+              "mode": "33206",
+              "size": "4777",
+              "mtimeNs": "1787197233327504400",
+              "ctimeNs": "1787197233327504400"
+            }
+          }
+        ]
+      }
+    },
+    "evidence-finalized": {
+      "state": "verified",
+      "scope": "stage",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "590b62e052f0b47cdde09484a6f82c80af9a0811d969d1b4634aea9fcac120d7",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "727fc3b35bb3eb09ccede6d08cbc829ea0044b031816d47842ec2573bff99290"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11254",
+            "sha256": "da8d1595a12846f3c4aaba1ff57c5ed96082c7927e136938e31f401abe515a05"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "executable": false,
+            "size": "21819",
+            "sha256": "f5a4b3479779783ec312b452ab427b94821e7c7852a8e065f55dc6eb2e7d999c"
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "10419",
+            "sha256": "3bc0ec6a42b1169d21e00e0c7a917a74a6258a670b0cc63c6bbaefe4d2335dc2"
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "8741",
+            "sha256": "6c3c063378e284ad54705472d29892b2d3bd02a6e8c03471cc25535f70419086"
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "4408",
+            "sha256": "11a094523fcbf0c12344259144a9f38c05028a39b4f1c2be9cc176df13fe9085"
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3062",
+            "sha256": "18cc19c1825494a6c71312e015f7cb7693b5dd54805b4065959965ff0d4d8fd9"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "13029",
+            "sha256": "0be4ca75d4a807915e8ba73c1e845f3a588f397bdff95381d246ef748966e040"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3455",
+            "sha256": "e9c4ee980e04a92781c190db40e7f4c93981b439c7c795bb2b5e6981fd54272e"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3768",
+            "sha256": "2ee792bb0a82cf64d10662d9451bf2b75d71385047650e4f564b4dd3361e2181"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6725",
+            "sha256": "7b14f9b61e36b9fa965609373702ce7f624e3a07fefc29965fdffb536bb9c7fa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4777",
+            "sha256": "ffaa9d6405031412f5aebbb680d9e8562c18ee1e7c7a562b0c05ca1aeb33a657"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "9851624190285760",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "63041121b1f95ee542bfc249664c4008b8218974af2124c2368ccd6a9d9923c3",
+        "authorityEntries": [
+          {
+            "path": ".rasen-archive-stage-owner.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600514",
+              "mode": "33206",
+              "size": "380",
+              "mtimeNs": "1787199055296103000",
+              "ctimeNs": "1787199055296103000"
+            }
+          },
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600515",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1787184259820390400",
+              "ctimeNs": "1787184259829088200"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7881299353311173",
+              "mode": "33206",
+              "size": "11254",
+              "mtimeNs": "1787184847391113000",
+              "ctimeNs": "1787184847397466600"
+            }
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600519",
+              "mode": "33206",
+              "size": "21819",
+              "mtimeNs": "1787197233483810500",
+              "ctimeNs": "1787197233483810500"
+            }
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600520",
+              "mode": "33206",
+              "size": "10419",
+              "mtimeNs": "1787187583509716600",
+              "ctimeNs": "1787187583509716600"
+            }
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889865",
+              "mode": "33206",
+              "size": "8741",
+              "mtimeNs": "1787187602613905100",
+              "ctimeNs": "1787187602613905100"
+            }
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889866",
+              "mode": "33206",
+              "size": "4408",
+              "mtimeNs": "1787187661439496400",
+              "ctimeNs": "1787187661439496400"
+            }
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889867",
+              "mode": "33206",
+              "size": "3062",
+              "mtimeNs": "1787198431299935900",
+              "ctimeNs": "1787198431301519100"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889868",
+              "mode": "33206",
+              "size": "13029",
+              "mtimeNs": "1787198584869647200",
+              "ctimeNs": "1787198584869647200"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889869",
+              "mode": "33206",
+              "size": "3455",
+              "mtimeNs": "1787198884150477300",
+              "ctimeNs": "1787198884151535200"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600518",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889870",
+              "mode": "33206",
+              "size": "3768",
+              "mtimeNs": "1787184791802750000",
+              "ctimeNs": "1787184791803803200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889873",
+              "mode": "33206",
+              "size": "6725",
+              "mtimeNs": "1787184807783131300",
+              "ctimeNs": "1787184807789537200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889872",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889871",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889874",
+              "mode": "33206",
+              "size": "4777",
+              "mtimeNs": "1787197233327504400",
+              "ctimeNs": "1787197233327504400"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "c27a3a0d7717984618d66158185f0a670fd0c5d9a1ef8e0b7041624862bc0a9a",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "1f36ba9e9e05113a2d93ef38914e7093dc551a348a0cc9ec73b93cb7c081dc0f"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11254",
+            "sha256": "da8d1595a12846f3c4aaba1ff57c5ed96082c7927e136938e31f401abe515a05"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "executable": false,
+            "size": "21819",
+            "sha256": "f5a4b3479779783ec312b452ab427b94821e7c7852a8e065f55dc6eb2e7d999c"
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "10419",
+            "sha256": "3bc0ec6a42b1169d21e00e0c7a917a74a6258a670b0cc63c6bbaefe4d2335dc2"
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "8741",
+            "sha256": "6c3c063378e284ad54705472d29892b2d3bd02a6e8c03471cc25535f70419086"
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "4408",
+            "sha256": "11a094523fcbf0c12344259144a9f38c05028a39b4f1c2be9cc176df13fe9085"
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3062",
+            "sha256": "18cc19c1825494a6c71312e015f7cb7693b5dd54805b4065959965ff0d4d8fd9"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "13029",
+            "sha256": "0be4ca75d4a807915e8ba73c1e845f3a588f397bdff95381d246ef748966e040"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3797",
+            "sha256": "210ebef093fc45b4f81be443a21f86e2ef1ffc3f9921d2b6013759b78ee68615"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3768",
+            "sha256": "2ee792bb0a82cf64d10662d9451bf2b75d71385047650e4f564b4dd3361e2181"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6725",
+            "sha256": "7b14f9b61e36b9fa965609373702ce7f624e3a07fefc29965fdffb536bb9c7fa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4777",
+            "sha256": "ffaa9d6405031412f5aebbb680d9e8562c18ee1e7c7a562b0c05ca1aeb33a657"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "9851624190285760",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "f1209e58c75db120ba85310ad1e731ef836d04fd8b4a99307270dfc676135843",
+        "authorityEntries": [
+          {
+            "path": ".rasen-archive-stage-owner.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600514",
+              "mode": "33206",
+              "size": "380",
+              "mtimeNs": "1787199055296103000",
+              "ctimeNs": "1787199055296103000"
+            }
+          },
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600515",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1787199055766722500",
+              "ctimeNs": "1787199055766722500"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7881299353311173",
+              "mode": "33206",
+              "size": "11254",
+              "mtimeNs": "1787184847391113000",
+              "ctimeNs": "1787184847397466600"
+            }
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600519",
+              "mode": "33206",
+              "size": "21819",
+              "mtimeNs": "1787197233483810500",
+              "ctimeNs": "1787197233483810500"
+            }
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600520",
+              "mode": "33206",
+              "size": "10419",
+              "mtimeNs": "1787187583509716600",
+              "ctimeNs": "1787187583509716600"
+            }
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889865",
+              "mode": "33206",
+              "size": "8741",
+              "mtimeNs": "1787187602613905100",
+              "ctimeNs": "1787187602613905100"
+            }
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889866",
+              "mode": "33206",
+              "size": "4408",
+              "mtimeNs": "1787187661439496400",
+              "ctimeNs": "1787187661439496400"
+            }
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889867",
+              "mode": "33206",
+              "size": "3062",
+              "mtimeNs": "1787198431299935900",
+              "ctimeNs": "1787198431301519100"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889868",
+              "mode": "33206",
+              "size": "13029",
+              "mtimeNs": "1787198584869647200",
+              "ctimeNs": "1787198584869647200"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889869",
+              "mode": "33206",
+              "size": "3797",
+              "mtimeNs": "1787199055760854300",
+              "ctimeNs": "1787199055760854300"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600518",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889870",
+              "mode": "33206",
+              "size": "3768",
+              "mtimeNs": "1787184791802750000",
+              "ctimeNs": "1787184791803803200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889873",
+              "mode": "33206",
+              "size": "6725",
+              "mtimeNs": "1787184807783131300",
+              "ctimeNs": "1787184807789537200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889872",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889871",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889874",
+              "mode": "33206",
+              "size": "4777",
+              "mtimeNs": "1787197233327504400",
+              "ctimeNs": "1787197233327504400"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "c27a3a0d7717984618d66158185f0a670fd0c5d9a1ef8e0b7041624862bc0a9a",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "1f36ba9e9e05113a2d93ef38914e7093dc551a348a0cc9ec73b93cb7c081dc0f"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11254",
+            "sha256": "da8d1595a12846f3c4aaba1ff57c5ed96082c7927e136938e31f401abe515a05"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "executable": false,
+            "size": "21819",
+            "sha256": "f5a4b3479779783ec312b452ab427b94821e7c7852a8e065f55dc6eb2e7d999c"
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "10419",
+            "sha256": "3bc0ec6a42b1169d21e00e0c7a917a74a6258a670b0cc63c6bbaefe4d2335dc2"
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "8741",
+            "sha256": "6c3c063378e284ad54705472d29892b2d3bd02a6e8c03471cc25535f70419086"
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "4408",
+            "sha256": "11a094523fcbf0c12344259144a9f38c05028a39b4f1c2be9cc176df13fe9085"
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3062",
+            "sha256": "18cc19c1825494a6c71312e015f7cb7693b5dd54805b4065959965ff0d4d8fd9"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "13029",
+            "sha256": "0be4ca75d4a807915e8ba73c1e845f3a588f397bdff95381d246ef748966e040"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3797",
+            "sha256": "210ebef093fc45b4f81be443a21f86e2ef1ffc3f9921d2b6013759b78ee68615"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3768",
+            "sha256": "2ee792bb0a82cf64d10662d9451bf2b75d71385047650e4f564b4dd3361e2181"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6725",
+            "sha256": "7b14f9b61e36b9fa965609373702ce7f624e3a07fefc29965fdffb536bb9c7fa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4777",
+            "sha256": "ffaa9d6405031412f5aebbb680d9e8562c18ee1e7c7a562b0c05ca1aeb33a657"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "9851624190285760",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "f1209e58c75db120ba85310ad1e731ef836d04fd8b4a99307270dfc676135843",
+        "authorityEntries": [
+          {
+            "path": ".rasen-archive-stage-owner.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600514",
+              "mode": "33206",
+              "size": "380",
+              "mtimeNs": "1787199055296103000",
+              "ctimeNs": "1787199055296103000"
+            }
+          },
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600515",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1787199055766722500",
+              "ctimeNs": "1787199055766722500"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7881299353311173",
+              "mode": "33206",
+              "size": "11254",
+              "mtimeNs": "1787184847391113000",
+              "ctimeNs": "1787184847397466600"
+            }
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600519",
+              "mode": "33206",
+              "size": "21819",
+              "mtimeNs": "1787197233483810500",
+              "ctimeNs": "1787197233483810500"
+            }
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600520",
+              "mode": "33206",
+              "size": "10419",
+              "mtimeNs": "1787187583509716600",
+              "ctimeNs": "1787187583509716600"
+            }
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889865",
+              "mode": "33206",
+              "size": "8741",
+              "mtimeNs": "1787187602613905100",
+              "ctimeNs": "1787187602613905100"
+            }
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889866",
+              "mode": "33206",
+              "size": "4408",
+              "mtimeNs": "1787187661439496400",
+              "ctimeNs": "1787187661439496400"
+            }
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889867",
+              "mode": "33206",
+              "size": "3062",
+              "mtimeNs": "1787198431299935900",
+              "ctimeNs": "1787198431301519100"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889868",
+              "mode": "33206",
+              "size": "13029",
+              "mtimeNs": "1787198584869647200",
+              "ctimeNs": "1787198584869647200"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889869",
+              "mode": "33206",
+              "size": "3797",
+              "mtimeNs": "1787199055760854300",
+              "ctimeNs": "1787199055760854300"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600518",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889870",
+              "mode": "33206",
+              "size": "3768",
+              "mtimeNs": "1787184791802750000",
+              "ctimeNs": "1787184791803803200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889873",
+              "mode": "33206",
+              "size": "6725",
+              "mtimeNs": "1787184807783131300",
+              "ctimeNs": "1787184807789537200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889872",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889871",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889874",
+              "mode": "33206",
+              "size": "4777",
+              "mtimeNs": "1787197233327504400",
+              "ctimeNs": "1787197233327504400"
+            }
+          }
+        ]
+      }
+    },
+    "final-reserved": {
+      "state": "verified",
+      "scope": "final",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "c27a3a0d7717984618d66158185f0a670fd0c5d9a1ef8e0b7041624862bc0a9a",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "1f36ba9e9e05113a2d93ef38914e7093dc551a348a0cc9ec73b93cb7c081dc0f"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11254",
+            "sha256": "da8d1595a12846f3c4aaba1ff57c5ed96082c7927e136938e31f401abe515a05"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "executable": false,
+            "size": "21819",
+            "sha256": "f5a4b3479779783ec312b452ab427b94821e7c7852a8e065f55dc6eb2e7d999c"
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "10419",
+            "sha256": "3bc0ec6a42b1169d21e00e0c7a917a74a6258a670b0cc63c6bbaefe4d2335dc2"
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "8741",
+            "sha256": "6c3c063378e284ad54705472d29892b2d3bd02a6e8c03471cc25535f70419086"
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "4408",
+            "sha256": "11a094523fcbf0c12344259144a9f38c05028a39b4f1c2be9cc176df13fe9085"
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3062",
+            "sha256": "18cc19c1825494a6c71312e015f7cb7693b5dd54805b4065959965ff0d4d8fd9"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "13029",
+            "sha256": "0be4ca75d4a807915e8ba73c1e845f3a588f397bdff95381d246ef748966e040"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3797",
+            "sha256": "210ebef093fc45b4f81be443a21f86e2ef1ffc3f9921d2b6013759b78ee68615"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3768",
+            "sha256": "2ee792bb0a82cf64d10662d9451bf2b75d71385047650e4f564b4dd3361e2181"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6725",
+            "sha256": "7b14f9b61e36b9fa965609373702ce7f624e3a07fefc29965fdffb536bb9c7fa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4777",
+            "sha256": "ffaa9d6405031412f5aebbb680d9e8562c18ee1e7c7a562b0c05ca1aeb33a657"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "9851624190285760",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "f1209e58c75db120ba85310ad1e731ef836d04fd8b4a99307270dfc676135843",
+        "authorityEntries": [
+          {
+            "path": ".rasen-archive-stage-owner.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600514",
+              "mode": "33206",
+              "size": "380",
+              "mtimeNs": "1787199055296103000",
+              "ctimeNs": "1787199055296103000"
+            }
+          },
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600515",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1787199055766722500",
+              "ctimeNs": "1787199055766722500"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7881299353311173",
+              "mode": "33206",
+              "size": "11254",
+              "mtimeNs": "1787184847391113000",
+              "ctimeNs": "1787184847397466600"
+            }
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600519",
+              "mode": "33206",
+              "size": "21819",
+              "mtimeNs": "1787197233483810500",
+              "ctimeNs": "1787197233483810500"
+            }
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600520",
+              "mode": "33206",
+              "size": "10419",
+              "mtimeNs": "1787187583509716600",
+              "ctimeNs": "1787187583509716600"
+            }
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889865",
+              "mode": "33206",
+              "size": "8741",
+              "mtimeNs": "1787187602613905100",
+              "ctimeNs": "1787187602613905100"
+            }
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889866",
+              "mode": "33206",
+              "size": "4408",
+              "mtimeNs": "1787187661439496400",
+              "ctimeNs": "1787187661439496400"
+            }
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889867",
+              "mode": "33206",
+              "size": "3062",
+              "mtimeNs": "1787198431299935900",
+              "ctimeNs": "1787198431301519100"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889868",
+              "mode": "33206",
+              "size": "13029",
+              "mtimeNs": "1787198584869647200",
+              "ctimeNs": "1787198584869647200"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889869",
+              "mode": "33206",
+              "size": "3797",
+              "mtimeNs": "1787199055760854300",
+              "ctimeNs": "1787199055760854300"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824376600518",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889870",
+              "mode": "33206",
+              "size": "3768",
+              "mtimeNs": "1787184791802750000",
+              "ctimeNs": "1787184791803803200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889873",
+              "mode": "33206",
+              "size": "6725",
+              "mtimeNs": "1787184807783131300",
+              "ctimeNs": "1787184807789537200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889872",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889871",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7318349399889874",
+              "mode": "33206",
+              "size": "4777",
+              "mtimeNs": "1787197233327504400",
+              "ctimeNs": "1787197233327504400"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "c27a3a0d7717984618d66158185f0a670fd0c5d9a1ef8e0b7041624862bc0a9a",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "1f36ba9e9e05113a2d93ef38914e7093dc551a348a0cc9ec73b93cb7c081dc0f"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11254",
+            "sha256": "da8d1595a12846f3c4aaba1ff57c5ed96082c7927e136938e31f401abe515a05"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "executable": false,
+            "size": "21819",
+            "sha256": "f5a4b3479779783ec312b452ab427b94821e7c7852a8e065f55dc6eb2e7d999c"
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "10419",
+            "sha256": "3bc0ec6a42b1169d21e00e0c7a917a74a6258a670b0cc63c6bbaefe4d2335dc2"
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "8741",
+            "sha256": "6c3c063378e284ad54705472d29892b2d3bd02a6e8c03471cc25535f70419086"
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "4408",
+            "sha256": "11a094523fcbf0c12344259144a9f38c05028a39b4f1c2be9cc176df13fe9085"
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3062",
+            "sha256": "18cc19c1825494a6c71312e015f7cb7693b5dd54805b4065959965ff0d4d8fd9"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "13029",
+            "sha256": "0be4ca75d4a807915e8ba73c1e845f3a588f397bdff95381d246ef748966e040"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3797",
+            "sha256": "210ebef093fc45b4f81be443a21f86e2ef1ffc3f9921d2b6013759b78ee68615"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3768",
+            "sha256": "2ee792bb0a82cf64d10662d9451bf2b75d71385047650e4f564b4dd3361e2181"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6725",
+            "sha256": "7b14f9b61e36b9fa965609373702ce7f624e3a07fefc29965fdffb536bb9c7fa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4777",
+            "sha256": "ffaa9d6405031412f5aebbb680d9e8562c18ee1e7c7a562b0c05ca1aeb33a657"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "10977524097128405",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "db1800c3adf9f5c8720b68a0c42594f0e80c296fd4bd1bc9ef1a1464054583b3",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707096",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1787199055766722500",
+              "ctimeNs": "1787199055766722500"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10977524097128409",
+              "mode": "33206",
+              "size": "11254",
+              "mtimeNs": "1787184847391113000",
+              "ctimeNs": "1787184847397466600"
+            }
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285787",
+              "mode": "33206",
+              "size": "21819",
+              "mtimeNs": "1787197233483810500",
+              "ctimeNs": "1787197233483810500"
+            }
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707100",
+              "mode": "33206",
+              "size": "10419",
+              "mtimeNs": "1787187583509716600",
+              "ctimeNs": "1787187583509716600"
+            }
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10696049120417757",
+              "mode": "33206",
+              "size": "8741",
+              "mtimeNs": "1787187602613905100",
+              "ctimeNs": "1787187602613905100"
+            }
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707102",
+              "mode": "33206",
+              "size": "4408",
+              "mtimeNs": "1787187661439496400",
+              "ctimeNs": "1787187661439496400"
+            }
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707103",
+              "mode": "33206",
+              "size": "3062",
+              "mtimeNs": "1787198431299935900",
+              "ctimeNs": "1787198431301519100"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707104",
+              "mode": "33206",
+              "size": "13029",
+              "mtimeNs": "1787198584869647200",
+              "ctimeNs": "1787198584869647200"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707105",
+              "mode": "33206",
+              "size": "3797",
+              "mtimeNs": "1787199055760854300",
+              "ctimeNs": "1787199055760854300"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10133099166996442",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10696049120417762",
+              "mode": "33206",
+              "size": "3768",
+              "mtimeNs": "1787184791802750000",
+              "ctimeNs": "1787184791803803200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285797",
+              "mode": "33206",
+              "size": "6725",
+              "mtimeNs": "1787184807783131300",
+              "ctimeNs": "1787184807789537200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285796",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285795",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285798",
+              "mode": "33206",
+              "size": "4777",
+              "mtimeNs": "1787197233327504400",
+              "ctimeNs": "1787197233327504400"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "c27a3a0d7717984618d66158185f0a670fd0c5d9a1ef8e0b7041624862bc0a9a",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "1f36ba9e9e05113a2d93ef38914e7093dc551a348a0cc9ec73b93cb7c081dc0f"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11254",
+            "sha256": "da8d1595a12846f3c4aaba1ff57c5ed96082c7927e136938e31f401abe515a05"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "executable": false,
+            "size": "21819",
+            "sha256": "f5a4b3479779783ec312b452ab427b94821e7c7852a8e065f55dc6eb2e7d999c"
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "10419",
+            "sha256": "3bc0ec6a42b1169d21e00e0c7a917a74a6258a670b0cc63c6bbaefe4d2335dc2"
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "8741",
+            "sha256": "6c3c063378e284ad54705472d29892b2d3bd02a6e8c03471cc25535f70419086"
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "4408",
+            "sha256": "11a094523fcbf0c12344259144a9f38c05028a39b4f1c2be9cc176df13fe9085"
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3062",
+            "sha256": "18cc19c1825494a6c71312e015f7cb7693b5dd54805b4065959965ff0d4d8fd9"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "13029",
+            "sha256": "0be4ca75d4a807915e8ba73c1e845f3a588f397bdff95381d246ef748966e040"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3797",
+            "sha256": "210ebef093fc45b4f81be443a21f86e2ef1ffc3f9921d2b6013759b78ee68615"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3768",
+            "sha256": "2ee792bb0a82cf64d10662d9451bf2b75d71385047650e4f564b4dd3361e2181"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6725",
+            "sha256": "7b14f9b61e36b9fa965609373702ce7f624e3a07fefc29965fdffb536bb9c7fa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4777",
+            "sha256": "ffaa9d6405031412f5aebbb680d9e8562c18ee1e7c7a562b0c05ca1aeb33a657"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "10977524097128405",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "db1800c3adf9f5c8720b68a0c42594f0e80c296fd4bd1bc9ef1a1464054583b3",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707096",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1787199055766722500",
+              "ctimeNs": "1787199055766722500"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10977524097128409",
+              "mode": "33206",
+              "size": "11254",
+              "mtimeNs": "1787184847391113000",
+              "ctimeNs": "1787184847397466600"
+            }
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285787",
+              "mode": "33206",
+              "size": "21819",
+              "mtimeNs": "1787197233483810500",
+              "ctimeNs": "1787197233483810500"
+            }
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707100",
+              "mode": "33206",
+              "size": "10419",
+              "mtimeNs": "1787187583509716600",
+              "ctimeNs": "1787187583509716600"
+            }
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10696049120417757",
+              "mode": "33206",
+              "size": "8741",
+              "mtimeNs": "1787187602613905100",
+              "ctimeNs": "1787187602613905100"
+            }
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707102",
+              "mode": "33206",
+              "size": "4408",
+              "mtimeNs": "1787187661439496400",
+              "ctimeNs": "1787187661439496400"
+            }
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707103",
+              "mode": "33206",
+              "size": "3062",
+              "mtimeNs": "1787198431299935900",
+              "ctimeNs": "1787198431301519100"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707104",
+              "mode": "33206",
+              "size": "13029",
+              "mtimeNs": "1787198584869647200",
+              "ctimeNs": "1787198584869647200"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707105",
+              "mode": "33206",
+              "size": "3797",
+              "mtimeNs": "1787199055760854300",
+              "ctimeNs": "1787199055760854300"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10133099166996442",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10696049120417762",
+              "mode": "33206",
+              "size": "3768",
+              "mtimeNs": "1787184791802750000",
+              "ctimeNs": "1787184791803803200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285797",
+              "mode": "33206",
+              "size": "6725",
+              "mtimeNs": "1787184807783131300",
+              "ctimeNs": "1787184807789537200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285796",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285795",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285798",
+              "mode": "33206",
+              "size": "4777",
+              "mtimeNs": "1787197233327504400",
+              "ctimeNs": "1787197233327504400"
+            }
+          }
+        ]
+      }
+    },
+    "accounting-finalized": {
+      "state": "verified",
+      "scope": "final",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "c27a3a0d7717984618d66158185f0a670fd0c5d9a1ef8e0b7041624862bc0a9a",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "1f36ba9e9e05113a2d93ef38914e7093dc551a348a0cc9ec73b93cb7c081dc0f"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11254",
+            "sha256": "da8d1595a12846f3c4aaba1ff57c5ed96082c7927e136938e31f401abe515a05"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "executable": false,
+            "size": "21819",
+            "sha256": "f5a4b3479779783ec312b452ab427b94821e7c7852a8e065f55dc6eb2e7d999c"
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "10419",
+            "sha256": "3bc0ec6a42b1169d21e00e0c7a917a74a6258a670b0cc63c6bbaefe4d2335dc2"
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "8741",
+            "sha256": "6c3c063378e284ad54705472d29892b2d3bd02a6e8c03471cc25535f70419086"
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "4408",
+            "sha256": "11a094523fcbf0c12344259144a9f38c05028a39b4f1c2be9cc176df13fe9085"
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3062",
+            "sha256": "18cc19c1825494a6c71312e015f7cb7693b5dd54805b4065959965ff0d4d8fd9"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "13029",
+            "sha256": "0be4ca75d4a807915e8ba73c1e845f3a588f397bdff95381d246ef748966e040"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3797",
+            "sha256": "210ebef093fc45b4f81be443a21f86e2ef1ffc3f9921d2b6013759b78ee68615"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3768",
+            "sha256": "2ee792bb0a82cf64d10662d9451bf2b75d71385047650e4f564b4dd3361e2181"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6725",
+            "sha256": "7b14f9b61e36b9fa965609373702ce7f624e3a07fefc29965fdffb536bb9c7fa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4777",
+            "sha256": "ffaa9d6405031412f5aebbb680d9e8562c18ee1e7c7a562b0c05ca1aeb33a657"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "10977524097128405",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "db1800c3adf9f5c8720b68a0c42594f0e80c296fd4bd1bc9ef1a1464054583b3",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707096",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1787199055766722500",
+              "ctimeNs": "1787199055766722500"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10977524097128409",
+              "mode": "33206",
+              "size": "11254",
+              "mtimeNs": "1787184847391113000",
+              "ctimeNs": "1787184847397466600"
+            }
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285787",
+              "mode": "33206",
+              "size": "21819",
+              "mtimeNs": "1787197233483810500",
+              "ctimeNs": "1787197233483810500"
+            }
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707100",
+              "mode": "33206",
+              "size": "10419",
+              "mtimeNs": "1787187583509716600",
+              "ctimeNs": "1787187583509716600"
+            }
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10696049120417757",
+              "mode": "33206",
+              "size": "8741",
+              "mtimeNs": "1787187602613905100",
+              "ctimeNs": "1787187602613905100"
+            }
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707102",
+              "mode": "33206",
+              "size": "4408",
+              "mtimeNs": "1787187661439496400",
+              "ctimeNs": "1787187661439496400"
+            }
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707103",
+              "mode": "33206",
+              "size": "3062",
+              "mtimeNs": "1787198431299935900",
+              "ctimeNs": "1787198431301519100"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707104",
+              "mode": "33206",
+              "size": "13029",
+              "mtimeNs": "1787198584869647200",
+              "ctimeNs": "1787198584869647200"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707105",
+              "mode": "33206",
+              "size": "3797",
+              "mtimeNs": "1787199055760854300",
+              "ctimeNs": "1787199055760854300"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10133099166996442",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10696049120417762",
+              "mode": "33206",
+              "size": "3768",
+              "mtimeNs": "1787184791802750000",
+              "ctimeNs": "1787184791803803200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285797",
+              "mode": "33206",
+              "size": "6725",
+              "mtimeNs": "1787184807783131300",
+              "ctimeNs": "1787184807789537200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285796",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285795",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285798",
+              "mode": "33206",
+              "size": "4777",
+              "mtimeNs": "1787197233327504400",
+              "ctimeNs": "1787197233327504400"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "bc90f063df5334ca676fde25eede77840d37fa960627a6a311124aa243e50246",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "1f36ba9e9e05113a2d93ef38914e7093dc551a348a0cc9ec73b93cb7c081dc0f"
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "executable": false,
+            "size": "1351",
+            "sha256": "3da06595fae64417d3458d7596426a57c2f72796ca6ce6c4f5a1fea5f83f3ae6"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11254",
+            "sha256": "da8d1595a12846f3c4aaba1ff57c5ed96082c7927e136938e31f401abe515a05"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "executable": false,
+            "size": "21819",
+            "sha256": "f5a4b3479779783ec312b452ab427b94821e7c7852a8e065f55dc6eb2e7d999c"
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "10419",
+            "sha256": "3bc0ec6a42b1169d21e00e0c7a917a74a6258a670b0cc63c6bbaefe4d2335dc2"
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "8741",
+            "sha256": "6c3c063378e284ad54705472d29892b2d3bd02a6e8c03471cc25535f70419086"
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "4408",
+            "sha256": "11a094523fcbf0c12344259144a9f38c05028a39b4f1c2be9cc176df13fe9085"
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3062",
+            "sha256": "18cc19c1825494a6c71312e015f7cb7693b5dd54805b4065959965ff0d4d8fd9"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "13029",
+            "sha256": "0be4ca75d4a807915e8ba73c1e845f3a588f397bdff95381d246ef748966e040"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3797",
+            "sha256": "210ebef093fc45b4f81be443a21f86e2ef1ffc3f9921d2b6013759b78ee68615"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3768",
+            "sha256": "2ee792bb0a82cf64d10662d9451bf2b75d71385047650e4f564b4dd3361e2181"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6725",
+            "sha256": "7b14f9b61e36b9fa965609373702ce7f624e3a07fefc29965fdffb536bb9c7fa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4777",
+            "sha256": "ffaa9d6405031412f5aebbb680d9e8562c18ee1e7c7a562b0c05ca1aeb33a657"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "10977524097128405",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "9baae8986fa1aaeb7538629515ee123a91d68af1a52072bedfea1bee7f64879f",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707096",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1787199055766722500",
+              "ctimeNs": "1787199055766722500"
+            }
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10133099166996456",
+              "mode": "33206",
+              "size": "1351",
+              "mtimeNs": "1787199057680368100",
+              "ctimeNs": "1787199057725868000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10977524097128409",
+              "mode": "33206",
+              "size": "11254",
+              "mtimeNs": "1787184847391113000",
+              "ctimeNs": "1787184847397466600"
+            }
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285787",
+              "mode": "33206",
+              "size": "21819",
+              "mtimeNs": "1787197233483810500",
+              "ctimeNs": "1787197233483810500"
+            }
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707100",
+              "mode": "33206",
+              "size": "10419",
+              "mtimeNs": "1787187583509716600",
+              "ctimeNs": "1787187583509716600"
+            }
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10696049120417757",
+              "mode": "33206",
+              "size": "8741",
+              "mtimeNs": "1787187602613905100",
+              "ctimeNs": "1787187602613905100"
+            }
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707102",
+              "mode": "33206",
+              "size": "4408",
+              "mtimeNs": "1787187661439496400",
+              "ctimeNs": "1787187661439496400"
+            }
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707103",
+              "mode": "33206",
+              "size": "3062",
+              "mtimeNs": "1787198431299935900",
+              "ctimeNs": "1787198431301519100"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707104",
+              "mode": "33206",
+              "size": "13029",
+              "mtimeNs": "1787198584869647200",
+              "ctimeNs": "1787198584869647200"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707105",
+              "mode": "33206",
+              "size": "3797",
+              "mtimeNs": "1787199055760854300",
+              "ctimeNs": "1787199055760854300"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10133099166996442",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10696049120417762",
+              "mode": "33206",
+              "size": "3768",
+              "mtimeNs": "1787184791802750000",
+              "ctimeNs": "1787184791803803200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285797",
+              "mode": "33206",
+              "size": "6725",
+              "mtimeNs": "1787184807783131300",
+              "ctimeNs": "1787184807789537200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285796",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285795",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285798",
+              "mode": "33206",
+              "size": "4777",
+              "mtimeNs": "1787197233327504400",
+              "ctimeNs": "1787197233327504400"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "bc90f063df5334ca676fde25eede77840d37fa960627a6a311124aa243e50246",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "1f36ba9e9e05113a2d93ef38914e7093dc551a348a0cc9ec73b93cb7c081dc0f"
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "executable": false,
+            "size": "1351",
+            "sha256": "3da06595fae64417d3458d7596426a57c2f72796ca6ce6c4f5a1fea5f83f3ae6"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "11254",
+            "sha256": "da8d1595a12846f3c4aaba1ff57c5ed96082c7927e136938e31f401abe515a05"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "executable": false,
+            "size": "21819",
+            "sha256": "f5a4b3479779783ec312b452ab427b94821e7c7852a8e065f55dc6eb2e7d999c"
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "10419",
+            "sha256": "3bc0ec6a42b1169d21e00e0c7a917a74a6258a670b0cc63c6bbaefe4d2335dc2"
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "8741",
+            "sha256": "6c3c063378e284ad54705472d29892b2d3bd02a6e8c03471cc25535f70419086"
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "executable": false,
+            "size": "4408",
+            "sha256": "11a094523fcbf0c12344259144a9f38c05028a39b4f1c2be9cc176df13fe9085"
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3062",
+            "sha256": "18cc19c1825494a6c71312e015f7cb7693b5dd54805b4065959965ff0d4d8fd9"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "13029",
+            "sha256": "0be4ca75d4a807915e8ba73c1e845f3a588f397bdff95381d246ef748966e040"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3797",
+            "sha256": "210ebef093fc45b4f81be443a21f86e2ef1ffc3f9921d2b6013759b78ee68615"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3768",
+            "sha256": "2ee792bb0a82cf64d10662d9451bf2b75d71385047650e4f564b4dd3361e2181"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6725",
+            "sha256": "7b14f9b61e36b9fa965609373702ce7f624e3a07fefc29965fdffb536bb9c7fa"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4777",
+            "sha256": "ffaa9d6405031412f5aebbb680d9e8562c18ee1e7c7a562b0c05ca1aeb33a657"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "10977524097128405",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "9baae8986fa1aaeb7538629515ee123a91d68af1a52072bedfea1bee7f64879f",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707096",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1787199055766722500",
+              "ctimeNs": "1787199055766722500"
+            }
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10133099166996456",
+              "mode": "33206",
+              "size": "1351",
+              "mtimeNs": "1787199057680368100",
+              "ctimeNs": "1787199057725868000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10977524097128409",
+              "mode": "33206",
+              "size": "11254",
+              "mtimeNs": "1787184847391113000",
+              "ctimeNs": "1787184847397466600"
+            }
+          },
+          {
+            "path": "evidence/affected-set-gate.log",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285787",
+              "mode": "33206",
+              "size": "21819",
+              "mtimeNs": "1787197233483810500",
+              "ctimeNs": "1787197233483810500"
+            }
+          },
+          {
+            "path": "evidence/dogfood-1-publish-0001.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707100",
+              "mode": "33206",
+              "size": "10419",
+              "mtimeNs": "1787187583509716600",
+              "ctimeNs": "1787187583509716600"
+            }
+          },
+          {
+            "path": "evidence/dogfood-2-republish-0002.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10696049120417757",
+              "mode": "33206",
+              "size": "8741",
+              "mtimeNs": "1787187602613905100",
+              "ctimeNs": "1787187602613905100"
+            }
+          },
+          {
+            "path": "evidence/dogfood-3-teardown.txt",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707102",
+              "mode": "33206",
+              "size": "4408",
+              "mtimeNs": "1787187661439496400",
+              "ctimeNs": "1787187661439496400"
+            }
+          },
+          {
+            "path": "evidence/fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707103",
+              "mode": "33206",
+              "size": "3062",
+              "mtimeNs": "1787198431299935900",
+              "ctimeNs": "1787198431301519100"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707104",
+              "mode": "33206",
+              "size": "13029",
+              "mtimeNs": "1787198584869647200",
+              "ctimeNs": "1787198584869647200"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10414574143707105",
+              "mode": "33206",
+              "size": "3797",
+              "mtimeNs": "1787199055760854300",
+              "ctimeNs": "1787199055760854300"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10133099166996442",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "10696049120417762",
+              "mode": "33206",
+              "size": "3768",
+              "mtimeNs": "1787184791802750000",
+              "ctimeNs": "1787184791803803200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285797",
+              "mode": "33206",
+              "size": "6725",
+              "mtimeNs": "1787184807783131300",
+              "ctimeNs": "1787184807789537200"
+            }
+          },
+          {
+            "path": "specs/issue-plan-publication",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285796",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285795",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9851624190285798",
+              "mode": "33206",
+              "size": "4777",
+              "mtimeNs": "1787197233327504400",
+              "ctimeNs": "1787197233327504400"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "finalReservation": {
+    "state": "owned",
+    "identity": {
+      "dev": "3122291782",
+      "ino": "10977524097128405",
+      "mode": "16822",
+      "size": "0",
+      "mtimeNs": "0",
+      "ctimeNs": "0"
+    },
+    "entries": [
+      {
+        "path": ".openspec.yaml",
+        "kind": "file",
+        "expected": {
+          "path": ".openspec.yaml",
+          "kind": "file",
+          "executable": false,
+          "size": "134",
+          "sha256": "1f36ba9e9e05113a2d93ef38914e7093dc551a348a0cc9ec73b93cb7c081dc0f"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "10414574143707096",
+          "mode": "33206",
+          "size": "134",
+          "mtimeNs": "1787199055766722500",
+          "ctimeNs": "1787199055766722500"
+        }
+      },
+      {
+        "path": ".rasen-archive-owner.json",
+        "kind": "file",
+        "state": "copied",
+        "expected": {
+          "path": ".rasen-archive-owner.json",
+          "kind": "file",
+          "executable": false,
+          "size": "358",
+          "sha256": "ccf5e498fa39417938760d3268ffd7c82a5564244e7462ce4850597f582389c1"
+        },
+        "identity": {
+          "dev": "3122291782",
+          "ino": "10977524097128406",
+          "mode": "33206",
+          "size": "358",
+          "mtimeNs": "1787199056163250700",
+          "ctimeNs": "1787199056163250700"
+        }
+      },
+      {
+        "path": "design.md",
+        "kind": "file",
+        "expected": {
+          "path": "design.md",
+          "kind": "file",
+          "executable": false,
+          "size": "11254",
+          "sha256": "da8d1595a12846f3c4aaba1ff57c5ed96082c7927e136938e31f401abe515a05"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "10977524097128409",
+          "mode": "33206",
+          "size": "11254",
+          "mtimeNs": "1787184847391113000",
+          "ctimeNs": "1787184847397466600"
+        }
+      },
+      {
+        "path": "evidence",
+        "kind": "directory",
+        "expected": {
+          "path": "evidence",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "10133099166996442",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "evidence/affected-set-gate.log",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/affected-set-gate.log",
+          "kind": "file",
+          "executable": false,
+          "size": "21819",
+          "sha256": "f5a4b3479779783ec312b452ab427b94821e7c7852a8e065f55dc6eb2e7d999c"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "9851624190285787",
+          "mode": "33206",
+          "size": "21819",
+          "mtimeNs": "1787197233483810500",
+          "ctimeNs": "1787197233483810500"
+        }
+      },
+      {
+        "path": "evidence/dogfood-1-publish-0001.txt",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/dogfood-1-publish-0001.txt",
+          "kind": "file",
+          "executable": false,
+          "size": "10419",
+          "sha256": "3bc0ec6a42b1169d21e00e0c7a917a74a6258a670b0cc63c6bbaefe4d2335dc2"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "10414574143707100",
+          "mode": "33206",
+          "size": "10419",
+          "mtimeNs": "1787187583509716600",
+          "ctimeNs": "1787187583509716600"
+        }
+      },
+      {
+        "path": "evidence/dogfood-2-republish-0002.txt",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/dogfood-2-republish-0002.txt",
+          "kind": "file",
+          "executable": false,
+          "size": "8741",
+          "sha256": "6c3c063378e284ad54705472d29892b2d3bd02a6e8c03471cc25535f70419086"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "10696049120417757",
+          "mode": "33206",
+          "size": "8741",
+          "mtimeNs": "1787187602613905100",
+          "ctimeNs": "1787187602613905100"
+        }
+      },
+      {
+        "path": "evidence/dogfood-3-teardown.txt",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/dogfood-3-teardown.txt",
+          "kind": "file",
+          "executable": false,
+          "size": "4408",
+          "sha256": "11a094523fcbf0c12344259144a9f38c05028a39b4f1c2be9cc176df13fe9085"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "10414574143707102",
+          "mode": "33206",
+          "size": "4408",
+          "mtimeNs": "1787187661439496400",
+          "ctimeNs": "1787187661439496400"
+        }
+      },
+      {
+        "path": "evidence/fix-round-1.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/fix-round-1.md",
+          "kind": "file",
+          "executable": false,
+          "size": "3062",
+          "sha256": "18cc19c1825494a6c71312e015f7cb7693b5dd54805b4065959965ff0d4d8fd9"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "10414574143707103",
+          "mode": "33206",
+          "size": "3062",
+          "mtimeNs": "1787198431299935900",
+          "ctimeNs": "1787198431301519100"
+        }
+      },
+      {
+        "path": "evidence/review-report.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/review-report.md",
+          "kind": "file",
+          "executable": false,
+          "size": "13029",
+          "sha256": "0be4ca75d4a807915e8ba73c1e845f3a588f397bdff95381d246ef748966e040"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "10414574143707104",
+          "mode": "33206",
+          "size": "13029",
+          "mtimeNs": "1787198584869647200",
+          "ctimeNs": "1787198584869647200"
+        }
+      },
+      {
+        "path": "evidence/ship-log.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/ship-log.md",
+          "kind": "file",
+          "executable": false,
+          "size": "3797",
+          "sha256": "210ebef093fc45b4f81be443a21f86e2ef1ffc3f9921d2b6013759b78ee68615"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "10414574143707105",
+          "mode": "33206",
+          "size": "3797",
+          "mtimeNs": "1787199055760854300",
+          "ctimeNs": "1787199055760854300"
+        }
+      },
+      {
+        "path": "proposal.md",
+        "kind": "file",
+        "expected": {
+          "path": "proposal.md",
+          "kind": "file",
+          "executable": false,
+          "size": "3768",
+          "sha256": "2ee792bb0a82cf64d10662d9451bf2b75d71385047650e4f564b4dd3361e2181"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "10696049120417762",
+          "mode": "33206",
+          "size": "3768",
+          "mtimeNs": "1787184791802750000",
+          "ctimeNs": "1787184791803803200"
+        }
+      },
+      {
+        "path": "specs",
+        "kind": "directory",
+        "expected": {
+          "path": "specs",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "9851624190285795",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "specs/issue-plan-publication",
+        "kind": "directory",
+        "expected": {
+          "path": "specs/issue-plan-publication",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "9851624190285796",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "specs/issue-plan-publication/spec.md",
+        "kind": "file",
+        "expected": {
+          "path": "specs/issue-plan-publication/spec.md",
+          "kind": "file",
+          "executable": false,
+          "size": "6725",
+          "sha256": "7b14f9b61e36b9fa965609373702ce7f624e3a07fefc29965fdffb536bb9c7fa"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "9851624190285797",
+          "mode": "33206",
+          "size": "6725",
+          "mtimeNs": "1787184807783131300",
+          "ctimeNs": "1787184807789537200"
+        }
+      },
+      {
+        "path": "tasks.md",
+        "kind": "file",
+        "expected": {
+          "path": "tasks.md",
+          "kind": "file",
+          "executable": false,
+          "size": "4777",
+          "sha256": "ffaa9d6405031412f5aebbb680d9e8562c18ee1e7c7a562b0c05ca1aeb33a657"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "9851624190285798",
+          "mode": "33206",
+          "size": "4777",
+          "mtimeNs": "1787197233327504400",
+          "ctimeNs": "1787197233327504400"
+        }
+      }
+    ]
+  },
+  "specProgress": [
+    {
+      "actionId": "d57707b8013351f413cc6bbbc304d7d5971a9e0c6d71ac1b2832df6113475111",
+      "action": "create",
+      "target": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\rasen\\specs\\issue-plan-publication\\spec.md",
+      "backupOrQuarantine": null,
+      "temporary": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\rasen\\specs\\issue-plan-publication\\.rasen-archive-spec-e89432e1-ec1b-42c9-9c7a-2876d233ee03-d57707b80133\\result.tmp",
+      "state": "complete",
+      "claimIdentity": {
+        "dev": "3122291782",
+        "ino": "9570149213575124",
+        "mode": "16822",
+        "size": "0",
+        "mtimeNs": "0",
+        "ctimeNs": "0"
+      },
+      "temporaryIdentity": {
+        "dev": "3122291782",
+        "ino": "9288674236864452",
+        "mode": "33206",
+        "size": "6858",
+        "mtimeNs": "1787199055915999500",
+        "ctimeNs": "1787199055915999500"
+      },
+      "publishedIdentity": {
+        "dev": "3122291782",
+        "ino": "9288674236864452",
+        "mode": "33206",
+        "size": "6858",
+        "mtimeNs": "1787199055915999500",
+        "ctimeNs": "1787199055966413000"
+      }
+    }
+  ],
+  "cleanerProgress": [],
+  "sourceProgress": {
+    "state": "removed",
+    "quarantine": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\rasen\\changes\\.rasen-archive-source-e89432e1-ec1b-42c9-9c7a-2876d233ee03\\issue-plan-publication",
+    "claimIdentity": {
+      "dev": "3122291782",
+      "ino": "17451448561473495",
+      "mode": "16822",
+      "size": "0",
+      "mtimeNs": "0",
+      "ctimeNs": "0"
+    }
+  },
+  "updatedAt": "2026-08-20T04:10:58.130Z"
+}

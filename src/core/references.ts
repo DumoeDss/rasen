@@ -1,7 +1,7 @@
 /**
  * Referenced-store index assembly (slice 3.1).
  *
- * A root's `openspec/config.yaml` may declare `references:` — store ids
+ * A root's `openspec/config.yaml` may declare `references:` — Store aliases
  * whose specs the root's work draws on. Instructions output carries an
  * INDEX of those stores' specs (id, one-line summary, fetch recipe via
  * `--store`), built live from the registered checkouts at assembly time.
@@ -19,6 +19,7 @@ import {
   listStoreRegistryEntries,
   readStoreRegistryState,
 } from './store/foundation.js';
+import { isKebabId } from './id.js';
 import { getStoreRootForBackend } from './store/registry.js';
 import { inspectRegisteredStore, type ResolvedOpenSpecRoot } from './root-selection.js';
 import { getSpecIds } from '../utils/item-discovery.js';
@@ -318,7 +319,8 @@ export async function assembleReferenceIndex(
     // invalid id (and a self-reference is omittable) even when the
     // registry is corrupt. The declared remote is only consulted after
     // the id passes grammar.
-    if (!isValidStoreId(id)) {
+    const validReference = type === 'project' ? isKebabId(id) : isValidStoreId(id);
+    if (!validReference) {
       entries.push({
         store_id: id,
         type,
@@ -326,7 +328,9 @@ export async function assembleReferenceIndex(
           warning(
             'reference_invalid_id',
             `Reference '${id}' is not a valid ${noun} id.`,
-            `Use kebab-case ${noun} ids in the references list.`
+            type === 'project'
+              ? 'Use a kebab-case project id in the references list.'
+              : 'Use a Store name without leading or trailing whitespace, path separators, or control characters.'
           ),
         ],
       });

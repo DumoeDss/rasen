@@ -1,36 +1,169 @@
-version: 1
+version: 2
+id: builtin:bug-fix
+sourceId: package:bug-fix
 name: bug-fix
 description: >-
-  Minimal bug-fix pipeline: propose, apply, an adaptive verification, then ship
-  and archive.
-stages:
-  - id: propose
-    skill: rasen-propose
-    role: planner
-    requires: []
-    gate: true
-
-  - id: apply
-    skill: rasen-apply-change
-    role: implementer
-    requires: [propose]
-    gate: true
-
-  - id: verify
-    skill: rasen-review
-    role: reviewer
-    requires: [apply]
-    verifyPolicy: adaptive
-
-  - id: ship
-    skill: rasen-ship
-    role: shipper
-    requires: [verify]
-    gate: true
-    model: sonnet
-
-  - id: archive
-    skill: rasen-archive-change
-    role: shipper
-    requires: [ship]
-    model: sonnet
+  Minimal bug-fix pipeline: propose, apply, an adaptive bounded ReviewCycle,
+  then ship and archive.
+inputs: []
+artifacts: []
+outcomes: [approved, rejected, completed]
+limits: { maxActions: 64, budget: 64 }
+declarations:
+  - id: review-cycle-body
+    kind: Composite
+    provenance: built-in
+    inputs:
+      - { name: start, type: ecp/control }
+    artifacts: []
+    outcomes: [clean, needs_fix]
+    graph:
+      nodes:
+        - id: review
+          kind: AtomicStage
+          capability:
+            id: skill:rasen-review
+            version: sha256:281717f5e3164dca91e21d9329ae812b8ee1263f656d605ef8b1d3d6bba0c7fc
+          execution:
+            version: 1
+            role: reviewer
+            workspace: { access: read }
+            verifyPolicy: adaptive
+          reviewCyclePhase: review
+        - id: triage
+          kind: AtomicStage
+          capability:
+            id: skill:rasen-review
+            version: sha256:281717f5e3164dca91e21d9329ae812b8ee1263f656d605ef8b1d3d6bba0c7fc
+          execution:
+            version: 1
+            role: reviewer
+            workspace: { access: read }
+          reviewCyclePhase: triage
+        - id: fix
+          kind: AtomicStage
+          capability:
+            id: skill:rasen-review-fix
+            version: sha256:fa102c0d009739407f98afffff477d336966b5c58b0f76dd9d16b50bab19476b
+          execution:
+            version: 1
+            role: fixer
+            workspace: { access: write }
+          reviewCyclePhase: fix
+        - id: re-review
+          kind: AtomicStage
+          capability:
+            id: skill:rasen-review
+            version: sha256:281717f5e3164dca91e21d9329ae812b8ee1263f656d605ef8b1d3d6bba0c7fc
+          execution:
+            version: 1
+            role: reviewer
+            workspace: { access: read }
+          reviewCyclePhase: re-review
+      connections:
+        - id: review-to-triage
+          from: { node: review, port: findings }
+          to: { node: triage, port: start }
+        - id: triage-to-fix
+          from: { node: triage, port: ready }
+          to: { node: fix, port: start }
+        - id: fix-to-re-review
+          from: { node: fix, port: fixed }
+          to: { node: re-review, port: start }
+root:
+  nodes:
+    - id: propose
+      kind: AtomicStage
+      capability:
+        id: skill:rasen-propose
+        version: sha256:950fbdbff5734ef2760fc9c04d60399e43caaf869a7f24ba11ddcbb2d6bb1907
+      execution:
+        version: 1
+        role: planner
+        workspace: { access: write }
+    - id: gate:propose
+      kind: Gate
+      outcomes: [approved, rejected]
+      dispositions: { approved: proceed, rejected: escalate }
+      target: propose
+    - id: apply
+      kind: AtomicStage
+      capability:
+        id: skill:rasen-apply-change
+        version: sha256:dd1b0845380d232d173d7c28873738aff2a798defc13b83bf1041a39d6a6a79f
+      execution:
+        version: 1
+        role: implementer
+        workspace: { access: write }
+    - id: gate:apply
+      kind: Gate
+      outcomes: [approved, rejected]
+      dispositions: { approved: proceed, rejected: escalate }
+      target: apply
+    - id: verify
+      kind: BoundedLoop
+      body: review-cycle-body
+      limits: { maxIterations: 3, maxActions: 48, budget: 48 }
+      lifecycle:
+        version: 1
+        thresholds: { stallIterations: 2, sameBlockerAttempts: 3 }
+        strategy:
+          maxAttempts: 1
+          requireMaterialChange: true
+          capability:
+            id: skill:rasen-review-cycle
+            version: sha256:2689d5c85df54bf702f34337db8a51c90faf321d6c18b9e829f79dca89ea6e05
+        exits:
+          iterationLimit: { action: strategy }
+          actionLimit: { action: fail, outcome: review-action-limit }
+          budgetLimit: { action: fail, outcome: review-budget-limit }
+          stalled: { action: strategy }
+          blocked: { action: human-required, outcome: review-human-required }
+          strategyExhausted: { action: fail, outcome: review-strategy-exhausted }
+      exits:
+        clean: { action: exit, outcome: review-clean }
+        needs_fix: { action: continue }
+    - id: ship
+      kind: AtomicStage
+      capability:
+        id: skill:rasen-ship
+        version: sha256:35615d0bfd09e3fadef419a6ba6f28fe15f278fa981ec3af45beaacc6be1d965
+      execution:
+        version: 1
+        role: shipper
+        workspace: { access: write }
+        model: sonnet
+    - id: gate:ship
+      kind: Gate
+      outcomes: [approved, rejected]
+      dispositions: { approved: proceed, rejected: escalate }
+      target: ship
+    - id: archive
+      kind: AtomicStage
+      capability:
+        id: skill:rasen-archive-change
+        version: sha256:bf36a873d7af835e3622da50a45e391aecc70b908ce9b51b19567c847b9dfdd8
+      execution:
+        version: 1
+        role: shipper
+        workspace: { access: write }
+        model: sonnet
+    - id: finish
+      kind: Finish
+      outcome: completed
+  connections:
+    - id: propose-to-apply
+      from: { node: propose, port: done }
+      to: { node: apply, port: start }
+    - id: apply-to-verify
+      from: { node: apply, port: done }
+      to: { node: verify, port: start }
+    - id: verify-to-ship
+      from: { node: verify, port: review-clean }
+      to: { node: ship, port: start }
+    - id: ship-to-archive
+      from: { node: ship, port: done }
+      to: { node: archive, port: start }
+    - id: archive-to-finish
+      from: { node: archive, port: done }
+      to: { node: finish, port: start }

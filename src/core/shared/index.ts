@@ -30,3 +30,10 @@ export {
   generateSkillContent,
   copySkillSidecars,
 } from './skill-generation.js';
+
+export {
+  type LocalBuildInfo,
+  localBuildInfoPath,
+  readLocalBuildInfo,
+  formatCliVersion,
+} from './build-info.js';

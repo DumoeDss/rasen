@@ -12,7 +12,7 @@ import type {
   WirePipeline,
   WirePipelineStage,
 } from '../api/types.js';
-import { useSpace, spaceHref } from '../store/use-space.js';
+import { useSpace, spaceHref, storeSpaceFromRef } from '../store/use-space.js';
 import { setPendingDraft } from '../canvas/pending-draft.js';
 import { validatePipelineName } from '../canvas/pipeline-name.js';
 import {
@@ -639,7 +639,7 @@ function StoreInheritedCell({ entry, storeRef }: { entry: WireConfigEntry; store
       </span>
       <a
         class="config-entry__store-edit"
-        href={spaceHref({ type: 'store', id: storeRef.id, selector: `store:${storeRef.id}` }, 'config')}
+        href={spaceHref(storeSpaceFromRef(storeRef), 'config')}
       >
         Edit in store {storeRef.id} →
       </a>

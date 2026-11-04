@@ -35,6 +35,13 @@ export interface SessionSpace {
   type: 'project' | 'store';
   id: string;
   root: string;
+  /** Stable Store-project facts only; no capability token or derived child path. */
+  planning?: {
+    storeUid?: string;
+    storeId?: string;
+    projectId?: string;
+    targetLineId?: string;
+  };
 }
 
 /**
@@ -114,7 +121,16 @@ export interface SessionRegistry {
 function copy(record: SessionRecord): SessionRecord {
   return {
     ...record,
-    ...(record.space !== undefined ? { space: { ...record.space } } : {}),
+    ...(record.space !== undefined
+      ? {
+          space: {
+            ...record.space,
+            ...(record.space.planning === undefined
+              ? {}
+              : { planning: { ...record.space.planning } }),
+          },
+        }
+      : {}),
     ...(record.execution !== undefined ? { execution: { ...record.execution } } : {}),
   };
 }

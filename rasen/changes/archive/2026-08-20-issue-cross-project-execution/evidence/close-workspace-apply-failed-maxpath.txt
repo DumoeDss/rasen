@@ -1,0 +1,26 @@
+# First apply attempt — failed on Windows MAX_PATH (receipt reconstructed from
+# the captured command output; the successful retry overwrote the original file)
+
+  node bin/rasen.js store workspace apply --apply-plan 9e42dc246f59cb8fd3b94f187aa580f1fbb85a544c033a5fa499c4e41b88151c --json
+
+exit 1, workspace: null, status[0]:
+
+  severity: error
+  code: workspace_git_failed
+  target: git worktree add -b change/line-0.2/6ca78b98-777f-45bc-8d9b-b84c34e1a531/document-multi-project-issues E:\...\rasen-issue-store--document-multi-project-issues 2583bf86630801f4ac6af1241346151bc85abf42
+  message: git failed (exit 128): Preparing worktree (new branch ...) then a run of
+    error: unable to create file rasen/projects/e2ee72ed-.../changes/archive/line-0.2/2026-08-20-issue-cross-project-gating/evidence/dogfood-temp/{0..10}-*.txt: Filename too long
+    fatal: cannot create directory at 'rasen/projects/e2ee72ed-.../changes/archive/line-0.2/2026-08-20-issue-cross-project-gating/specs/issue-execution-binding': Filename too long
+  fix: "Resolve the Git failure reported above and retry. Rasen never retries, forces, or works around a failing Git command."
+
+Cause: the default planning destination beside the store checkout adds 31 chars
+("--document-multi-project-issues") to a root that already carries the store's
+deepest tracked paths (182 chars in-repo), pushing totals to ~281 > MAX_PATH.
+Residue after the failure: one branch (zero commits, at store main 2583bf8);
+git itself rolled back the worktree registration. The residue branch was
+deleted (git branch -d, lossless) before the retry.
+
+Retry: re-planned with the designed --planning-worktree parameter pointing at
+a short root E:\rasen-pairs\dmpi (plan ec3cfb6a1812970f7ac2d259d8ed70c41cd8061ec7a9ebc41a05730907c42360,
+all preconditions satisfied) and applied — see close-workspace-plan-short-root.json
+and close-workspace-apply.json.

@@ -473,14 +473,17 @@ export class InitCommand {
           catalog,
           override.profile,
           globalConfig.workflows,
-          expertSelectionExplicit
+          expertSelectionExplicit,
+          { projectRoot: projectPath }
         ),
         mode: 'profile',
       };
     } else {
       const definition = resolveProfileDefinition(override.name);
       const { known, unknown } = filterKnownWorkflowRoots(catalog, definition.workflows);
-      const ids = resolveEffectiveWorkflowInstallSelection(catalog, known).map(
+      const ids = resolveEffectiveWorkflowInstallSelection(catalog, known, {
+        projectRoot: projectPath,
+      }).map(
         (workflowDefinition) => workflowDefinition.id
       );
       result = { ids, unknown, mode: 'locked-profile', lockedProfile: override.name };

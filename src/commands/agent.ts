@@ -29,6 +29,7 @@ import {
   type HandoffThresholdReport,
 } from '../core/agent-context.js';
 import { resolveAgentCliBinary } from '../core/agent-cli-process.js';
+import { DISPATCH_ADAPTERS } from '../core/runtimes/dispatch-adapters.js';
 import {
   buildClaudePrintInvocation,
   claudeFailureReceipt,
@@ -77,6 +78,16 @@ import type { WorkerContract } from '../core/worker-contracts.js';
 import { runAudit } from '../core/token-audit/audit.js';
 import { TranscriptFormatError } from '../core/token-audit/errors.js';
 import { isCodexAuditResult, isZedAuditResult, type AuditResult } from '../core/token-audit/types.js';
+import {
+  OmniCrossRouteError,
+  buildRoutedChildEnvironment,
+  createOmniCrossRouteLeaseClient,
+  crossCheckInferenceFile,
+  readInferenceFile,
+  resolveOmniCrossControlAuthority,
+  withOmniCrossRoute,
+  type RuntimeRouteBinding,
+} from '../core/omnicross/index.js';
 
 /** Human-readable rendering of a dual-form threshold for the text-mode verdict line. */
 function formatThresholdDisplay(threshold: ThresholdValue): string {
@@ -124,6 +135,7 @@ export interface AgentDispatchOptions {
   cwd?: string;
   timeoutMs?: number;
   resume?: string;
+  inferenceFile?: string;
   json?: boolean;
 }
 
@@ -351,10 +363,19 @@ export class AgentCommand {
     if (options.runtime !== 'claude' && options.runtime !== 'codex') {
       return invalid('--runtime must be "claude" or "codex".');
     }
-    if (rawContract !== 'leaf' && rawContract !== 'evaluate') {
-      return invalid('--contract must be "leaf" or "evaluate".');
+    if (
+      rawContract !== 'leaf' &&
+      rawContract !== 'consultable-leaf' &&
+      rawContract !== 'evaluate'
+    ) {
+      return invalid('--contract must be "leaf", "consultable-leaf", or "evaluate".');
     }
     const contract = rawContract as WorkerContract;
+    if (options.runtime === 'codex' && contract === 'consultable-leaf') {
+      return invalid(
+        'Codex does not provide the stable hosted continuation authority required by --contract consultable-leaf.'
+      );
+    }
     if (options.sandbox !== 'read-only' && options.sandbox !== 'workspace-write') {
       return invalid('--sandbox must be "read-only" or "workspace-write".');
     }
@@ -375,6 +396,30 @@ export class AgentCommand {
     const timeoutMs = options.timeoutMs ?? 30 * 60 * 1000;
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 24 * 60 * 60 * 1000) {
       return invalid('--timeout-ms must be an integer between 1 and 86400000.');
+    }
+
+    let inferenceFile: ReturnType<typeof readInferenceFile> | undefined;
+    if (options.inferenceFile !== undefined) {
+      try {
+        inferenceFile = readInferenceFile(path.resolve(options.inferenceFile));
+        crossCheckInferenceFile(inferenceFile, {
+          runtime: options.runtime,
+          model: options.model,
+          ...(options.resume ? { resumeSessionId: options.resume } : {}),
+        });
+      } catch (error) {
+        if (error instanceof OmniCrossRouteError) {
+          return emit({
+            ok: false,
+            runtime: options.runtime,
+            dispatchMode: 'exec-bridge',
+            bridge: options.runtime === 'codex' ? 'codex-exec' : 'claude-print',
+            contract,
+            failure: error.failure,
+          });
+        }
+        return invalid(error instanceof Error ? error.message : String(error));
+      }
     }
 
     if (!options.promptFile?.trim()) {
@@ -401,9 +446,16 @@ export class AgentCommand {
     }
 
     const isCodex = options.runtime === 'codex';
+    // L4 tail: the claude-print path's binary facts (env var, default binary,
+    // install hint, label) come from the DISPATCH_ADAPTERS registry, so they
+    // can never disagree with the registry the rest of the dispatch surface
+    // reads. The codex branch keeps this line's own RASEN_CODEX_BIN surface:
+    // the registry's codex entry deliberately declares no `binaryEnvVar`
+    // (playbook-owned — Rasen never resolves the binary).
+    const claudeAdapter = DISPATCH_ADAPTERS.claude;
     const binary = resolveAgentCliBinary({
-      envVar: isCodex ? 'RASEN_CODEX_BIN' : 'RASEN_CLAUDE_BIN',
-      binaryName: isCodex ? 'codex' : 'claude',
+      envVar: isCodex ? 'RASEN_CODEX_BIN' : claudeAdapter.binaryEnvVar,
+      binaryName: isCodex ? 'codex' : claudeAdapter.defaultBinary,
     });
     if (!binary) {
       return emit(isCodex
@@ -416,7 +468,7 @@ export class AgentCommand {
         : claudeFailureReceipt(
           contract,
           'runtime-unavailable',
-          'Claude Code CLI is unavailable. Install Claude Code or set RASEN_CLAUDE_BIN.',
+          `${claudeAdapter.installHint} is unavailable. Install ${claudeAdapter.cliLabel} or set ${claudeAdapter.binaryEnvVar}.`,
           { cwd }
         )
       );
@@ -431,10 +483,22 @@ export class AgentCommand {
       );
     }
 
-    try {
+    const runRuntime = async (
+      binding?: RuntimeRouteBinding,
+      signal?: AbortSignal
+    ): Promise<ClaudeDispatchReceipt | CodexDispatchReceipt> => {
+      const routedEnv = binding && inferenceFile
+        ? buildRoutedChildEnvironment(
+            process.env,
+            inferenceFile.route.connection.controlTokenEnv,
+            binding.env
+          )
+        : undefined;
       if (isCodex) {
-        return emit(
-          await runCodexExec({
+        if (binding && binding.runtime !== 'codex') {
+          throw new Error('OmniCross returned a Claude binding for a Codex dispatch.');
+        }
+        return runCodexExec({
             binary,
             prompt,
             contract,
@@ -444,8 +508,14 @@ export class AgentCommand {
             ...(options.model ? { model: options.model } : {}),
             ...(options.effort ? { effort: options.effort as LeafEffort } : {}),
             ...(options.resume ? { resumeThreadId: options.resume } : {}),
-          })
-        );
+            ...(binding ? { providerOverride: binding.providerOverride } : {}),
+            ...(routedEnv ? { env: routedEnv } : {}),
+            ...(signal ? { signal } : {}),
+            ...(binding ? { secretValues: binding.secretValues } : {}),
+          });
+      }
+      if (binding && binding.runtime !== 'claude') {
+        throw new Error('OmniCross returned a Codex binding for a Claude dispatch.');
       }
       const invocation = buildClaudePrintInvocation({
         prompt,
@@ -457,15 +527,66 @@ export class AgentCommand {
           : {}),
         ...(options.resume ? { resumeSessionId: options.resume } : {}),
       });
-      return emit(
-        await runClaudePrint({
+      return runClaudePrint({
           binary,
           invocation,
           cwd,
           timeoutMs,
-        })
+          ...(routedEnv ? { env: routedEnv } : {}),
+          ...(signal ? { signal } : {}),
+          ...(binding ? { secretValues: binding.secretValues } : {}),
+        });
+    };
+
+    try {
+      if (!inferenceFile) return emit(await runRuntime());
+
+      const authority = resolveOmniCrossControlAuthority(
+        inferenceFile.route.connection
       );
+      const routed = await withOmniCrossRoute({
+        route: inferenceFile.route,
+        attempt: inferenceFile.attempt,
+        client: createOmniCrossRouteLeaseClient({ authority }),
+        secretValues: [authority.controlToken],
+        run: runRuntime,
+      });
+      if (!routed.ok) {
+        return emit({
+          ok: false,
+          runtime: options.runtime,
+          dispatchMode: 'exec-bridge',
+          bridge: options.runtime === 'codex' ? 'codex-exec' : 'claude-print',
+          contract,
+          failure: routed.failure,
+          ...(routed.route ? { route: routed.route } : {}),
+          ...(routed.warnings ? { warnings: routed.warnings } : {}),
+        });
+      }
+      const receipt = routed.value as unknown as Record<string, unknown>;
+      return emit({
+        ...receipt,
+        route: routed.route,
+        ...((routed.warnings?.length ?? 0) > 0
+          ? {
+              warnings: [
+                ...(Array.isArray(receipt.warnings) ? receipt.warnings : []),
+                ...routed.warnings!,
+              ],
+            }
+          : {}),
+      });
     } catch (error) {
+      if (error instanceof OmniCrossRouteError) {
+        return emit({
+          ok: false,
+          runtime: options.runtime,
+          dispatchMode: 'exec-bridge',
+          bridge: options.runtime === 'codex' ? 'codex-exec' : 'claude-print',
+          contract,
+          failure: error.failure,
+        });
+      }
       return invalid(error instanceof Error ? error.message : String(error));
     }
   }
@@ -634,7 +755,9 @@ export class AgentCommand {
     transcript: string;
     threshold: ThresholdValue;
     thresholdSource: string;
-    shouldHandoff: boolean;
+    // Optional since the L4 port: an unmeasurable window leaves the verdict
+    // unset rather than defaulting it to false (0.1.7's semantics).
+    shouldHandoff: boolean | undefined;
   } {
     return {
       available: true,

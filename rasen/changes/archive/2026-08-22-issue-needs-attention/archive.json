@@ -1,0 +1,89 @@
+{
+  "change": "issue-needs-attention",
+  "archivedAt": "2026-08-22T11:35:42.498Z",
+  "codeCommit": "60366c1fae5df61145e31577cfc83108dc8fbe54",
+  "planningBranch": "feat/issue-phase5",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/binned-suite-adjudication.md",
+      "sha256": "5d69be0d6d05c2e34908200fa821bdc34ca73a0ccbbe50c16e196edac0d46319"
+    },
+    {
+      "path": "evidence/implementer-findings.md",
+      "sha256": "43186ed301131c45aa1a939409dbf4c62e00af19984bfb916e802659a97593ed"
+    },
+    {
+      "path": "evidence/issue-4-acceptance-conditions.yaml",
+      "sha256": "34c30e0a6f6e71344e7b44d9f0e058344bdb73fcea6bcda8b02bc639d24c19b5"
+    },
+    {
+      "path": "evidence/issue-4-close-staged.md",
+      "sha256": "5d8e0398b3d80217192d77082392dcccf7601b712afa5ddcb5a4b96248736abb"
+    },
+    {
+      "path": "evidence/issue-4-decomposition.yaml",
+      "sha256": "14e31649ab62612424ef912f160915b95686d5f3b21aeb3808dc678bcc97c485"
+    },
+    {
+      "path": "evidence/issue-4-receipt-1-authoring.txt",
+      "sha256": "42bb63a7cf24d8b39aa876d76e02b1f0cec511bc6a3e880f06680f94a6da95aa"
+    },
+    {
+      "path": "evidence/issue-4-receipt-2-confirm.txt",
+      "sha256": "c611a6b82978d27e045b5d5c1687b301bd0bd4ee5579670f2c70a9e379820765"
+    },
+    {
+      "path": "evidence/issue-4-receipt-3-inflight.json",
+      "sha256": "acdfec670d15465d95d099fc0c23ae8e75b3caa6ea038067d8c84a4561e77d32"
+    },
+    {
+      "path": "evidence/issue-4-receipt-3-inflight.txt",
+      "sha256": "48e9e6b44e5f25d01dc96dd03c868af7bb54400bbad073f191d9d3fe02c99d26"
+    },
+    {
+      "path": "evidence/issue-4-receipt-4-show.txt",
+      "sha256": "41e95e2a8a443a8094727432ee965ac6002e9411907c6de47d2f97d652b550e6"
+    },
+    {
+      "path": "evidence/issue-4-receipt-5-staged-close.txt",
+      "sha256": "48e9e6b44e5f25d01dc96dd03c868af7bb54400bbad073f191d9d3fe02c99d26"
+    },
+    {
+      "path": "evidence/issue-4-receipt-6-temp-store-failure.txt",
+      "sha256": "2b44680b961db8aef7e8318a5f37ad2c1fdb52261bf8f8f2793bd5b1c2762a35"
+    },
+    {
+      "path": "evidence/issue-4-revision-0002-nodes.yaml",
+      "sha256": "2e2e9668affd97667a4599d0672468f3da4887bcf756371212cf52bde80d6b26"
+    },
+    {
+      "path": "evidence/local-gates.md",
+      "sha256": "7073408c221d4fe1f2a8124cc72dd6a725bd4216a5b67dd87975df4d72bc8693"
+    },
+    {
+      "path": "evidence/p5-exit-criteria.md",
+      "sha256": "f00c401cd7c84eeb807b2aa17d8602cc00d7ef4609d123e3b34471c28c3522a1"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "e205256790250986ad26f66518b98f4a293fb147bff518dc49e76b1323511677"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "8fb5e6061596d8fabe0ce2300d9f66e35a5db14c271f6cff17c5dfe94ab2b4b8"
+    },
+    {
+      "path": "evidence/validate.txt",
+      "sha256": "e09874cfba27c78dbe47ac7b65cf448ed29ac082e5d984c4e868845b8a88ab1d"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

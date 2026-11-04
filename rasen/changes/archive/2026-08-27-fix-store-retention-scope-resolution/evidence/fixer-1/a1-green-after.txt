@@ -1,0 +1,11 @@
+
+ RUN  v3.2.6 E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code
+
+ ✓ test/core/store/identity.test.ts (52 tests) 1633ms
+
+ Test Files  1 passed (1)
+      Tests  52 passed (52)
+   Start at  16:51:30
+   Duration  4.33s (transform 656ms, setup 51ms, collect 1.95s, tests 1.63s, environment 0ms, prepare 197ms)
+
+EXIT=0

@@ -22,7 +22,7 @@ import {
   type SpaceType,
 } from '../config/controls.js';
 import { useT } from '../i18n/store.js';
-import { spaceHref } from '../store/use-space.js';
+import { spaceHref, storeSpaceFromRef } from '../store/use-space.js';
 
 const HANDOFF_ROLES = ['planner', 'implementer', 'reviewer', 'fixer', 'shipper'] as const;
 const REUSE_ROLES = ['planner', 'implementer'] as const;
@@ -470,7 +470,7 @@ function BindingRailRow({
         {inherited && storeRef && (
           <a
             href={spaceHref(
-              { type: 'store', id: storeRef.id, selector: `store:${storeRef.id}` },
+              storeSpaceFromRef(storeRef),
               'pipelines'
             )}
           >

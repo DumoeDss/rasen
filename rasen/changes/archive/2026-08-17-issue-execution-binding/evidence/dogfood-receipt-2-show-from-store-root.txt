@@ -1,0 +1,20 @@
+﻿Issue issue-layer-phase1
+  state: open
+  title: Issue layer phase 1 (dogfood)
+  revisions: 0001
+  latest plan: revision 0001
+  plan digest: 06cab0d8a7290ab33625137ccf3f8fe594991ca11065160386042e2f47893e76
+  status:
+    phase: ready
+    health: healthy
+    progress: 0/3
+    run-state: none visible from this directory
+    nodes:
+      g-001 change issue-status-projection — not-started
+        pipeline: small-feature (located by workspace-index)
+        evidence: C:\Users\Sayo\AppData\Local\Temp\rasen-issue-layer-dogfood\rasen\projects\e2ee72ed-04a1-4395-86aa-7e77d2b83ec7\changes\issue-status-projection\evidence
+      g-002 change issue-execution-binding — not-started (blockedBy g-001)
+        pipeline: small-feature (located by workspace-index)
+        evidence: C:\Users\Sayo\AppData\Local\Temp\rasen-issue-layer-dogfood\rasen\projects\e2ee72ed-04a1-4395-86aa-7e77d2b83ec7\changes\issue-execution-binding\evidence
+      g-003 change issue-acceptance-close — not-started (blockedBy g-001, g-002)
+        evidence: C:\Users\Sayo\AppData\Local\Temp\rasen-issue-layer-dogfood\rasen\projects\e2ee72ed-04a1-4395-86aa-7e77d2b83ec7\changes\issue-acceptance-close\evidence

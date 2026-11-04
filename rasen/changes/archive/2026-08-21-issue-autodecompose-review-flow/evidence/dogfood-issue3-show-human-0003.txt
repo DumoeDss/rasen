@@ -1,0 +1,23 @@
+Issue issue-autodecompose-uplift
+  state: open
+  title: Issue layer Phase 4: auto-decompose uplift (reviewable decomposition dispatch)
+  revisions: 0001, 0002, 0003
+  latest plan: revision 0003
+  plan digest: 788e37945465149602daf432fd49a6561bbfff779607b08c92825066f9b1dc6d
+  status:
+    phase: ready
+    health: healthy
+    progress: 0/1
+    run-state: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer
+    nodes:
+      project rasen (e2ee72ed-04a1-4395-86aa-7e77d2b83ec7): 0/1
+      issue-autodecompose-graph change e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 2026-08-21-issue-autodecompose-graph — not-started (suggest: small-feature) (rationale: promoted from intent to Change now that the child's committed Store instance exists (seeded archived evidence, repo archive 15b60a63); its work shipped and archived, so no dependent waits on it)
+      issue-autodecompose-review-flow intent e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 — not-started (suggest: small-feature) (rationale: 0002's uncertainty is decided — a fresh node's launch contract adopts the node's recorded suggestedPipeline when no --pipeline is given, resolved as flag over run-state recording over suggestion, with the contract naming which source supplied the pipeline)
+
+  revision delta: 0003 over 0002
+    ~ edges issue-autodecompose-review-flow (-issue-autodecompose-graph)
+
+  acceptance:
+    conditions: (none published)
+    gate: not eligible — the Issue has no readable acceptance conditions — no acceptance conditions revision exists for it.
+    record: (not accepted)

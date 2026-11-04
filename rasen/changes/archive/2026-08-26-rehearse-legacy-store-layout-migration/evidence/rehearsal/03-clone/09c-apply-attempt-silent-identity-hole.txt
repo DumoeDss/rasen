@@ -1,0 +1,73 @@
+$ (cd <temp>/copy-clone-noactive) rasen store migrate-layout rasen-store --mapping migration-mapping-noactive.yaml --apply
+Store rasen-store — planning layout migration preview
+  plan id: c4a141bccbb8ec5faef8aa7189876df6c69c43d73b983b9d85f75c7930ee34ef
+  ref:     refs/heads/noactive
+
+  Items
+    [resolved] archive-entry 2026-01-01-archive-recorded -> 11111111-1111-4111-8111-111111111111
+        source:      rasen/changes/archive/2026-01-01-archive-recorded
+        destination: rasen/projects/11111111-1111-4111-8111-111111111111/changes/archive/main/2026-01-01-archive-recorded
+        target line: main
+        reason:      owner determined and destination computed
+        evidence:    E1-recorded-identity (derived) 11111111-1111-4111-8111-111111111111 <- rasen/changes/archive/2026-01-01-archive-recorded/archive.json
+    [resolved] archive-entry 2026-01-02-archive-bare -> 22222222-2222-4222-8222-222222222222
+        source:      rasen/changes/archive/2026-01-02-archive-bare
+        destination: rasen/projects/22222222-2222-4222-8222-222222222222/changes/archive/main/2026-01-02-archive-bare
+        target line: main
+        reason:      owner determined and destination computed
+        evidence:    E4-explicit-mapping (asserted) 22222222-2222-4222-8222-222222222222 <- migration-mapping-noactive.yaml
+    [resolved] archive-entry 2026-02-01-alpha-shared -> 11111111-1111-4111-8111-111111111111
+        source:      rasen/changes/archive/2026-02-01-alpha-shared
+        destination: rasen/projects/11111111-1111-4111-8111-111111111111/changes/archive/main/2026-02-01-alpha-shared
+        target line: main
+        reason:      owner determined and destination computed
+        evidence:    E1-recorded-identity (derived) 11111111-1111-4111-8111-111111111111 <- rasen/changes/archive/2026-02-01-alpha-shared/archive.json
+    [resolved] archive-entry 2026-02-02-beta-shared -> 22222222-2222-4222-8222-222222222222
+        source:      rasen/changes/archive/2026-02-02-beta-shared
+        destination: rasen/projects/22222222-2222-4222-8222-222222222222/changes/archive/main/2026-02-02-beta-shared
+        target line: main
+        reason:      owner determined and destination computed
+        evidence:    E1-recorded-identity (derived) 22222222-2222-4222-8222-222222222222 <- rasen/changes/archive/2026-02-02-beta-shared/archive.json
+    [resolved] design-doc store-overview.md
+        source:      rasen/design-docs/store-overview.md
+        destination: rasen/design-docs/store-overview.md
+        reason:      retained at the Store-level design-doc address; a design document carries no ownership evidence
+        repair:      Assign it with designDocs.store-overview.md in the mapping file if it belongs to one project.
+    [resolved] membership-record 11111111-1111-4111-8111-111111111111.yaml -> 11111111-1111-4111-8111-111111111111
+        source:      .rasen-store/projects/11111111-1111-4111-8111-111111111111.yaml
+        destination: .rasen-store/projects/11111111-1111-4111-8111-111111111111.yaml
+        reason:      upgraded in place to a v2 project catalog with a bound planning binding
+    [resolved] membership-record 22222222-2222-4222-8222-222222222222.yaml -> 22222222-2222-4222-8222-222222222222
+        source:      .rasen-store/projects/22222222-2222-4222-8222-222222222222.yaml
+        destination: .rasen-store/projects/22222222-2222-4222-8222-222222222222.yaml
+        reason:      upgraded in place to a v2 project catalog with a unbound planning binding
+    [resolved] membership-record 33333333-3333-4333-8333-333333333333.yaml -> 33333333-3333-4333-8333-333333333333
+        source:      .rasen-store/projects/33333333-3333-4333-8333-333333333333.yaml
+        destination: .rasen-store/projects/33333333-3333-4333-8333-333333333333.yaml
+        reason:      upgraded in place to a v2 project catalog with a unbound planning binding
+    [resolved] spec 中文能力 -> 11111111-1111-4111-8111-111111111111
+        source:      rasen/specs/中文能力
+        destination: rasen/projects/11111111-1111-4111-8111-111111111111/specs/中文能力
+        reason:      owner determined and destination computed
+        evidence:    E2-store-records (derived) 11111111-1111-4111-8111-111111111111 <- .rasen-store/projects/11111111-1111-4111-8111-111111111111.yaml
+    [resolved] spec alpha-only-capability -> 11111111-1111-4111-8111-111111111111
+        source:      rasen/specs/alpha-only-capability
+        destination: rasen/projects/11111111-1111-4111-8111-111111111111/specs/alpha-only-capability
+        reason:      owner determined and destination computed
+        evidence:    spec-provenance (derived) 11111111-1111-4111-8111-111111111111 <- provenance:alpha-only-capability
+    [resolved] spec shared-capability -> 11111111-1111-4111-8111-111111111111
+        source:      rasen/specs/shared-capability
+        destination: rasen/projects/11111111-1111-4111-8111-111111111111/specs/shared-capability
+        reason:      owner determined and destination computed
+        evidence:    E4-explicit-mapping (asserted) 11111111-1111-4111-8111-111111111111 <- mapping
+
+  Retained Store-level design docs (unclassified by decision, not omission)
+    rasen/design-docs/store-overview.md
+
+  Other local refs that still carry flat planning content
+    refs/heads/master — rasen store migrate-layout rasen-store --apply  # from a worktree with refs/heads/master checked out
+    Migrating this ref does not migrate the others.
+
+  Ready to apply. Re-run with --apply.
+
+[exit code: 1]

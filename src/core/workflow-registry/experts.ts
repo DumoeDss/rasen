@@ -10,6 +10,7 @@ import {
   getOfficeHoursSkillTemplate,
   getQaSkillTemplate,
   getReviewSkillTemplate,
+  getTeacherAdvisorSkillTemplate,
   getWorkflowAuthorSkillTemplate,
 } from '../templates/skill-templates.js';
 import type { SkillTemplate } from '../templates/types.js';
@@ -35,6 +36,7 @@ export function getExpertSkillDefinitions(): ExpertSkillDefinition[] {
     { id: 'office-hours', dirName: 'rasen-office-hours', template: getOfficeHoursSkillTemplate() },
     { id: 'qa', dirName: 'rasen-qa', template: getQaSkillTemplate() },
     { id: 'review', dirName: 'rasen-review', template: getReviewSkillTemplate() },
+    { id: 'teacher-advisor', dirName: 'rasen-teacher-advisor', template: getTeacherAdvisorSkillTemplate() },
     { id: 'workflow-author', dirName: 'rasen-workflow-author', template: getWorkflowAuthorSkillTemplate() },
   ];
 }

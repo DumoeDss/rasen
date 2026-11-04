@@ -1,4 +1,5 @@
 import type {
+  AgentTurnInputCandidate,
   ChangeRef,
   ChangeRunControlRequest,
   ChangeRunReceipt,
@@ -10,9 +11,29 @@ import type {
   Digest,
   RunId,
 } from './contracts.js';
+import type {
+  ConsultationContinuationSettlement,
+  ConsultationTeacherFailureSettlement,
+  ConsultationStepSubmission,
+} from './consultation-contracts.js';
 
 export interface RuntimeMutationContext {
   readonly deliveryMode: 'grant' | 'defer';
+}
+
+export interface AdmitAgentCandidatesContext {
+  /** Agent admission is one atomic admit-and-grant operation. */
+  readonly deliveryMode: 'grant';
+  /**
+   * Trusted driver-owned base-prompt material for an exact quiescent candidate.
+   * The callback supplies already-rendered bytes; Action construction computes
+   * authority and never accepts a digest or byte length from this boundary.
+   */
+  readonly resolveAgentTurnInput: (
+    candidate: Readonly<AgentTurnInputCandidate>
+  ) => string;
+  /** Called before mutation so the transport can reject unused manifest entries. */
+  readonly finalizeAgentTurnInputs?: () => void;
 }
 
 export interface StartChangePipeline {
@@ -35,8 +56,24 @@ export interface ChangePipelineRuntime {
     request: ResumeChangePipeline,
     context: RuntimeMutationContext
   ): Promise<ChangeRunReceipt>;
+  admit(
+    request: ResumeChangePipeline,
+    context: AdmitAgentCandidatesContext
+  ): Promise<ChangeRunReceipt>;
   complete(
     request: CompleteRunAction,
+    context: RuntimeMutationContext
+  ): Promise<ChangeRunReceipt>;
+  consult(
+    request: ConsultationStepSubmission,
+    context: RuntimeMutationContext
+  ): Promise<ChangeRunReceipt>;
+  settleConsultationContinuation(
+    request: ConsultationContinuationSettlement,
+    context: RuntimeMutationContext
+  ): Promise<ChangeRunReceipt>;
+  settleConsultationTeacherFailure(
+    request: ConsultationTeacherFailureSettlement,
     context: RuntimeMutationContext
   ): Promise<ChangeRunReceipt>;
   inspect(ref: ExactChangeRunRef): Promise<ChangeRunView>;
@@ -59,6 +96,7 @@ export type ChangeRunRuntimeErrorCode =
   | 'record_version_conflict'
   | 'wait_identity_conflict'
   | 'receipt_conflict'
+  | 'candidate_stale'
   | 'workspace-scope-mismatch'
   | 'change_instance_inactive'
   | 'engine_owner_conflict'

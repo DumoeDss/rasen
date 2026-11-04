@@ -1,0 +1,3596 @@
+{
+  "schemaVersion": 2,
+  "transactionId": "6acd2d1c-5e1b-4ee8-923e-d95f68ac1592",
+  "planHash": "795047c657a354e159c5f1eeef2b537c26a9c89f6c8096b8c20af1edd57b07b9",
+  "change": "teacher-advisor-workflow",
+  "phase": "complete",
+  "activePath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code-wt-teacher-advisor\\rasen\\changes\\teacher-advisor-workflow",
+  "stagePath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code-wt-teacher-advisor\\rasen\\changes\\archive\\.rasen-archive-stage-6acd2d1c-5e1b-4ee8-923e-d95f68ac1592",
+  "finalPath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code-wt-teacher-advisor\\rasen\\changes\\archive\\2026-08-10-teacher-advisor-workflow",
+  "ephemeraDisposed": [
+    "auto-run.json"
+  ],
+  "phaseFingerprints": {
+    "payload-copied": {
+      "state": "verified",
+      "scope": "stage",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "ee8fdd00437f6e33f1595201b25a9c25bcb2a22d5575552b1e755d01731dbb47",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "165c19261c3cb160f2c3b746659293a5fa5b588016a558238012d1fa32a42c20"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8152",
+            "sha256": "809b713ad979dd16ab5d3982f0be853bbee43f115c09a70640172c09db40138d"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8197",
+            "sha256": "bea2a7e44067660c8a16b7972165a615062e79c23dab63f592424aa4c16fef13"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3562",
+            "sha256": "704ac18f12c04979b9abdeae71c529a793b2871cc07ecca1b93112088c903b1d"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3940",
+            "sha256": "33706f9276ea98c43a96d318224440ef3b05a66d0bc7610b6d14e2675bc63708"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "183",
+            "sha256": "a92762c1ba2a94d7932caa5e4ff2fb0b2e381f565b41fd8899207721ef8a7dff"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8288",
+            "sha256": "4e5b9b477f0d7fa23cba02898f101c829a0ddde210c11a64fd83e53a84b04565"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7482",
+            "sha256": "1b13cb645be24596acaea913b2f319302d6785972ad83124b3429e9dc192f333"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "1688849870558935",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "a9c6a49db1083fa6c7b54883f8dee2c7bf9ae9e75b6e01eed30de3338ac56a9d",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870558933",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1786268283603780700",
+              "ctimeNs": "1786315802370801700"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799824375648",
+              "mode": "33206",
+              "size": "8152",
+              "mtimeNs": "1786360153102773900",
+              "ctimeNs": "1786360153109858400"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849871075804",
+              "mode": "33206",
+              "size": "8197",
+              "mtimeNs": "1786362136700429100",
+              "ctimeNs": "1786362136705457500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699731224999",
+              "mode": "33206",
+              "size": "3562",
+              "mtimeNs": "1786362560988335700",
+              "ctimeNs": "1786362561068296500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1407374894365147",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1407374894347790",
+              "mode": "33206",
+              "size": "3940",
+              "mtimeNs": "1786360071564156600",
+              "ctimeNs": "1786360071570655100"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870558934",
+              "mode": "33206",
+              "size": "183",
+              "mtimeNs": "1786268283604919200",
+              "ctimeNs": "1786315802371341300"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4222124661460208",
+              "mode": "33206",
+              "size": "8288",
+              "mtimeNs": "1786360123959452500",
+              "ctimeNs": "1786360123963440800"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1407374894353647",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "76561193666807480",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "21110623264105759",
+              "mode": "33206",
+              "size": "7482",
+              "mtimeNs": "1786361599981445400",
+              "ctimeNs": "1786361599988110000"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "ee8fdd00437f6e33f1595201b25a9c25bcb2a22d5575552b1e755d01731dbb47",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "165c19261c3cb160f2c3b746659293a5fa5b588016a558238012d1fa32a42c20"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8152",
+            "sha256": "809b713ad979dd16ab5d3982f0be853bbee43f115c09a70640172c09db40138d"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8197",
+            "sha256": "bea2a7e44067660c8a16b7972165a615062e79c23dab63f592424aa4c16fef13"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3562",
+            "sha256": "704ac18f12c04979b9abdeae71c529a793b2871cc07ecca1b93112088c903b1d"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3940",
+            "sha256": "33706f9276ea98c43a96d318224440ef3b05a66d0bc7610b6d14e2675bc63708"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "183",
+            "sha256": "a92762c1ba2a94d7932caa5e4ff2fb0b2e381f565b41fd8899207721ef8a7dff"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8288",
+            "sha256": "4e5b9b477f0d7fa23cba02898f101c829a0ddde210c11a64fd83e53a84b04565"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7482",
+            "sha256": "1b13cb645be24596acaea913b2f319302d6785972ad83124b3429e9dc192f333"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "6755399442731571",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "af845f40b4575b18c65ed3082e4d0907406462aa28935bbe7982c4f8a3c03ec4",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1407374894250423",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1786268283603780700",
+              "ctimeNs": "1786315802370801700"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829113",
+              "mode": "33206",
+              "size": "8152",
+              "mtimeNs": "1786360153102773900",
+              "ctimeNs": "1786360153109858400"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829116",
+              "mode": "33206",
+              "size": "8197",
+              "mtimeNs": "1786362136700429100",
+              "ctimeNs": "1786362136705457500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829118",
+              "mode": "33206",
+              "size": "3562",
+              "mtimeNs": "1786362560988335700",
+              "ctimeNs": "1786362561068296500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829115",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829119",
+              "mode": "33206",
+              "size": "3940",
+              "mtimeNs": "1786360071564156600",
+              "ctimeNs": "1786360071570655100"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829120",
+              "mode": "33206",
+              "size": "183",
+              "mtimeNs": "1786268283604919200",
+              "ctimeNs": "1786315802371341300"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829123",
+              "mode": "33206",
+              "size": "8288",
+              "mtimeNs": "1786360123959452500",
+              "ctimeNs": "1786360123963440800"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829122",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829121",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829124",
+              "mode": "33206",
+              "size": "7482",
+              "mtimeNs": "1786361599981445400",
+              "ctimeNs": "1786361599988110000"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "ee8fdd00437f6e33f1595201b25a9c25bcb2a22d5575552b1e755d01731dbb47",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "165c19261c3cb160f2c3b746659293a5fa5b588016a558238012d1fa32a42c20"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8152",
+            "sha256": "809b713ad979dd16ab5d3982f0be853bbee43f115c09a70640172c09db40138d"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8197",
+            "sha256": "bea2a7e44067660c8a16b7972165a615062e79c23dab63f592424aa4c16fef13"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3562",
+            "sha256": "704ac18f12c04979b9abdeae71c529a793b2871cc07ecca1b93112088c903b1d"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3940",
+            "sha256": "33706f9276ea98c43a96d318224440ef3b05a66d0bc7610b6d14e2675bc63708"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "183",
+            "sha256": "a92762c1ba2a94d7932caa5e4ff2fb0b2e381f565b41fd8899207721ef8a7dff"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8288",
+            "sha256": "4e5b9b477f0d7fa23cba02898f101c829a0ddde210c11a64fd83e53a84b04565"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7482",
+            "sha256": "1b13cb645be24596acaea913b2f319302d6785972ad83124b3429e9dc192f333"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "6755399442731571",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "af845f40b4575b18c65ed3082e4d0907406462aa28935bbe7982c4f8a3c03ec4",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1407374894250423",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1786268283603780700",
+              "ctimeNs": "1786315802370801700"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829113",
+              "mode": "33206",
+              "size": "8152",
+              "mtimeNs": "1786360153102773900",
+              "ctimeNs": "1786360153109858400"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829116",
+              "mode": "33206",
+              "size": "8197",
+              "mtimeNs": "1786362136700429100",
+              "ctimeNs": "1786362136705457500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829118",
+              "mode": "33206",
+              "size": "3562",
+              "mtimeNs": "1786362560988335700",
+              "ctimeNs": "1786362561068296500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829115",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829119",
+              "mode": "33206",
+              "size": "3940",
+              "mtimeNs": "1786360071564156600",
+              "ctimeNs": "1786360071570655100"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829120",
+              "mode": "33206",
+              "size": "183",
+              "mtimeNs": "1786268283604919200",
+              "ctimeNs": "1786315802371341300"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829123",
+              "mode": "33206",
+              "size": "8288",
+              "mtimeNs": "1786360123959452500",
+              "ctimeNs": "1786360123963440800"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829122",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829121",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829124",
+              "mode": "33206",
+              "size": "7482",
+              "mtimeNs": "1786361599981445400",
+              "ctimeNs": "1786361599988110000"
+            }
+          }
+        ]
+      }
+    },
+    "handoff-finalized": {
+      "state": "verified",
+      "scope": "stage",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "ee8fdd00437f6e33f1595201b25a9c25bcb2a22d5575552b1e755d01731dbb47",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "165c19261c3cb160f2c3b746659293a5fa5b588016a558238012d1fa32a42c20"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8152",
+            "sha256": "809b713ad979dd16ab5d3982f0be853bbee43f115c09a70640172c09db40138d"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8197",
+            "sha256": "bea2a7e44067660c8a16b7972165a615062e79c23dab63f592424aa4c16fef13"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3562",
+            "sha256": "704ac18f12c04979b9abdeae71c529a793b2871cc07ecca1b93112088c903b1d"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3940",
+            "sha256": "33706f9276ea98c43a96d318224440ef3b05a66d0bc7610b6d14e2675bc63708"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "183",
+            "sha256": "a92762c1ba2a94d7932caa5e4ff2fb0b2e381f565b41fd8899207721ef8a7dff"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8288",
+            "sha256": "4e5b9b477f0d7fa23cba02898f101c829a0ddde210c11a64fd83e53a84b04565"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7482",
+            "sha256": "1b13cb645be24596acaea913b2f319302d6785972ad83124b3429e9dc192f333"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "6755399442731571",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "af845f40b4575b18c65ed3082e4d0907406462aa28935bbe7982c4f8a3c03ec4",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1407374894250423",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1786268283603780700",
+              "ctimeNs": "1786315802370801700"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829113",
+              "mode": "33206",
+              "size": "8152",
+              "mtimeNs": "1786360153102773900",
+              "ctimeNs": "1786360153109858400"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829116",
+              "mode": "33206",
+              "size": "8197",
+              "mtimeNs": "1786362136700429100",
+              "ctimeNs": "1786362136705457500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829118",
+              "mode": "33206",
+              "size": "3562",
+              "mtimeNs": "1786362560988335700",
+              "ctimeNs": "1786362561068296500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829115",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829119",
+              "mode": "33206",
+              "size": "3940",
+              "mtimeNs": "1786360071564156600",
+              "ctimeNs": "1786360071570655100"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829120",
+              "mode": "33206",
+              "size": "183",
+              "mtimeNs": "1786268283604919200",
+              "ctimeNs": "1786315802371341300"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829123",
+              "mode": "33206",
+              "size": "8288",
+              "mtimeNs": "1786360123959452500",
+              "ctimeNs": "1786360123963440800"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829122",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829121",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829124",
+              "mode": "33206",
+              "size": "7482",
+              "mtimeNs": "1786361599981445400",
+              "ctimeNs": "1786361599988110000"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "ee8fdd00437f6e33f1595201b25a9c25bcb2a22d5575552b1e755d01731dbb47",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "165c19261c3cb160f2c3b746659293a5fa5b588016a558238012d1fa32a42c20"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8152",
+            "sha256": "809b713ad979dd16ab5d3982f0be853bbee43f115c09a70640172c09db40138d"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8197",
+            "sha256": "bea2a7e44067660c8a16b7972165a615062e79c23dab63f592424aa4c16fef13"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3562",
+            "sha256": "704ac18f12c04979b9abdeae71c529a793b2871cc07ecca1b93112088c903b1d"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3940",
+            "sha256": "33706f9276ea98c43a96d318224440ef3b05a66d0bc7610b6d14e2675bc63708"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "183",
+            "sha256": "a92762c1ba2a94d7932caa5e4ff2fb0b2e381f565b41fd8899207721ef8a7dff"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8288",
+            "sha256": "4e5b9b477f0d7fa23cba02898f101c829a0ddde210c11a64fd83e53a84b04565"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7482",
+            "sha256": "1b13cb645be24596acaea913b2f319302d6785972ad83124b3429e9dc192f333"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "6755399442731571",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "af845f40b4575b18c65ed3082e4d0907406462aa28935bbe7982c4f8a3c03ec4",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1407374894250423",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1786268283603780700",
+              "ctimeNs": "1786315802370801700"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829113",
+              "mode": "33206",
+              "size": "8152",
+              "mtimeNs": "1786360153102773900",
+              "ctimeNs": "1786360153109858400"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829116",
+              "mode": "33206",
+              "size": "8197",
+              "mtimeNs": "1786362136700429100",
+              "ctimeNs": "1786362136705457500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829118",
+              "mode": "33206",
+              "size": "3562",
+              "mtimeNs": "1786362560988335700",
+              "ctimeNs": "1786362561068296500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829115",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829119",
+              "mode": "33206",
+              "size": "3940",
+              "mtimeNs": "1786360071564156600",
+              "ctimeNs": "1786360071570655100"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829120",
+              "mode": "33206",
+              "size": "183",
+              "mtimeNs": "1786268283604919200",
+              "ctimeNs": "1786315802371341300"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829123",
+              "mode": "33206",
+              "size": "8288",
+              "mtimeNs": "1786360123959452500",
+              "ctimeNs": "1786360123963440800"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829122",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829121",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829124",
+              "mode": "33206",
+              "size": "7482",
+              "mtimeNs": "1786361599981445400",
+              "ctimeNs": "1786361599988110000"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "ee8fdd00437f6e33f1595201b25a9c25bcb2a22d5575552b1e755d01731dbb47",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "165c19261c3cb160f2c3b746659293a5fa5b588016a558238012d1fa32a42c20"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8152",
+            "sha256": "809b713ad979dd16ab5d3982f0be853bbee43f115c09a70640172c09db40138d"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8197",
+            "sha256": "bea2a7e44067660c8a16b7972165a615062e79c23dab63f592424aa4c16fef13"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3562",
+            "sha256": "704ac18f12c04979b9abdeae71c529a793b2871cc07ecca1b93112088c903b1d"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3940",
+            "sha256": "33706f9276ea98c43a96d318224440ef3b05a66d0bc7610b6d14e2675bc63708"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "183",
+            "sha256": "a92762c1ba2a94d7932caa5e4ff2fb0b2e381f565b41fd8899207721ef8a7dff"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8288",
+            "sha256": "4e5b9b477f0d7fa23cba02898f101c829a0ddde210c11a64fd83e53a84b04565"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7482",
+            "sha256": "1b13cb645be24596acaea913b2f319302d6785972ad83124b3429e9dc192f333"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "6755399442731571",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "af845f40b4575b18c65ed3082e4d0907406462aa28935bbe7982c4f8a3c03ec4",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1407374894250423",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1786268283603780700",
+              "ctimeNs": "1786315802370801700"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829113",
+              "mode": "33206",
+              "size": "8152",
+              "mtimeNs": "1786360153102773900",
+              "ctimeNs": "1786360153109858400"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829116",
+              "mode": "33206",
+              "size": "8197",
+              "mtimeNs": "1786362136700429100",
+              "ctimeNs": "1786362136705457500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829118",
+              "mode": "33206",
+              "size": "3562",
+              "mtimeNs": "1786362560988335700",
+              "ctimeNs": "1786362561068296500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829115",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829119",
+              "mode": "33206",
+              "size": "3940",
+              "mtimeNs": "1786360071564156600",
+              "ctimeNs": "1786360071570655100"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829120",
+              "mode": "33206",
+              "size": "183",
+              "mtimeNs": "1786268283604919200",
+              "ctimeNs": "1786315802371341300"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829123",
+              "mode": "33206",
+              "size": "8288",
+              "mtimeNs": "1786360123959452500",
+              "ctimeNs": "1786360123963440800"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829122",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829121",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829124",
+              "mode": "33206",
+              "size": "7482",
+              "mtimeNs": "1786361599981445400",
+              "ctimeNs": "1786361599988110000"
+            }
+          }
+        ]
+      }
+    },
+    "evidence-finalized": {
+      "state": "verified",
+      "scope": "stage",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "ee8fdd00437f6e33f1595201b25a9c25bcb2a22d5575552b1e755d01731dbb47",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "165c19261c3cb160f2c3b746659293a5fa5b588016a558238012d1fa32a42c20"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8152",
+            "sha256": "809b713ad979dd16ab5d3982f0be853bbee43f115c09a70640172c09db40138d"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8197",
+            "sha256": "bea2a7e44067660c8a16b7972165a615062e79c23dab63f592424aa4c16fef13"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3562",
+            "sha256": "704ac18f12c04979b9abdeae71c529a793b2871cc07ecca1b93112088c903b1d"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3940",
+            "sha256": "33706f9276ea98c43a96d318224440ef3b05a66d0bc7610b6d14e2675bc63708"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "183",
+            "sha256": "a92762c1ba2a94d7932caa5e4ff2fb0b2e381f565b41fd8899207721ef8a7dff"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8288",
+            "sha256": "4e5b9b477f0d7fa23cba02898f101c829a0ddde210c11a64fd83e53a84b04565"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7482",
+            "sha256": "1b13cb645be24596acaea913b2f319302d6785972ad83124b3429e9dc192f333"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "6755399442731571",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "af845f40b4575b18c65ed3082e4d0907406462aa28935bbe7982c4f8a3c03ec4",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1407374894250423",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1786268283603780700",
+              "ctimeNs": "1786315802370801700"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829113",
+              "mode": "33206",
+              "size": "8152",
+              "mtimeNs": "1786360153102773900",
+              "ctimeNs": "1786360153109858400"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829116",
+              "mode": "33206",
+              "size": "8197",
+              "mtimeNs": "1786362136700429100",
+              "ctimeNs": "1786362136705457500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829118",
+              "mode": "33206",
+              "size": "3562",
+              "mtimeNs": "1786362560988335700",
+              "ctimeNs": "1786362561068296500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829115",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829119",
+              "mode": "33206",
+              "size": "3940",
+              "mtimeNs": "1786360071564156600",
+              "ctimeNs": "1786360071570655100"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829120",
+              "mode": "33206",
+              "size": "183",
+              "mtimeNs": "1786268283604919200",
+              "ctimeNs": "1786315802371341300"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829123",
+              "mode": "33206",
+              "size": "8288",
+              "mtimeNs": "1786360123959452500",
+              "ctimeNs": "1786360123963440800"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829122",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829121",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829124",
+              "mode": "33206",
+              "size": "7482",
+              "mtimeNs": "1786361599981445400",
+              "ctimeNs": "1786361599988110000"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "f4a55df03683238e3582c2f71d4987e2fe4f97854968fadb6171b8fd75fb4d84",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "beef683affd3aca4780e3307e380f4fa5feda2818f8451332d9fb6229764a1c2"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8152",
+            "sha256": "809b713ad979dd16ab5d3982f0be853bbee43f115c09a70640172c09db40138d"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8197",
+            "sha256": "bea2a7e44067660c8a16b7972165a615062e79c23dab63f592424aa4c16fef13"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3895",
+            "sha256": "45f4794c1208f7f289234bf0c7845f0e047a44b55c515408be3972a4223ee14d"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3940",
+            "sha256": "33706f9276ea98c43a96d318224440ef3b05a66d0bc7610b6d14e2675bc63708"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "183",
+            "sha256": "a92762c1ba2a94d7932caa5e4ff2fb0b2e381f565b41fd8899207721ef8a7dff"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8288",
+            "sha256": "4e5b9b477f0d7fa23cba02898f101c829a0ddde210c11a64fd83e53a84b04565"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7482",
+            "sha256": "1b13cb645be24596acaea913b2f319302d6785972ad83124b3429e9dc192f333"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "6755399442731571",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "61c55ec016e484040f47cc70227c4f94856908a3ec2ea5e38adc4e139aec1506",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1407374894250423",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786362628347556000",
+              "ctimeNs": "1786362628347556000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829113",
+              "mode": "33206",
+              "size": "8152",
+              "mtimeNs": "1786360153102773900",
+              "ctimeNs": "1786360153109858400"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829116",
+              "mode": "33206",
+              "size": "8197",
+              "mtimeNs": "1786362136700429100",
+              "ctimeNs": "1786362136705457500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829118",
+              "mode": "33206",
+              "size": "3895",
+              "mtimeNs": "1786362628343315700",
+              "ctimeNs": "1786362628343315700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829115",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829119",
+              "mode": "33206",
+              "size": "3940",
+              "mtimeNs": "1786360071564156600",
+              "ctimeNs": "1786360071570655100"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829120",
+              "mode": "33206",
+              "size": "183",
+              "mtimeNs": "1786268283604919200",
+              "ctimeNs": "1786315802371341300"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829123",
+              "mode": "33206",
+              "size": "8288",
+              "mtimeNs": "1786360123959452500",
+              "ctimeNs": "1786360123963440800"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829122",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829121",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829124",
+              "mode": "33206",
+              "size": "7482",
+              "mtimeNs": "1786361599981445400",
+              "ctimeNs": "1786361599988110000"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "f4a55df03683238e3582c2f71d4987e2fe4f97854968fadb6171b8fd75fb4d84",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "beef683affd3aca4780e3307e380f4fa5feda2818f8451332d9fb6229764a1c2"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8152",
+            "sha256": "809b713ad979dd16ab5d3982f0be853bbee43f115c09a70640172c09db40138d"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8197",
+            "sha256": "bea2a7e44067660c8a16b7972165a615062e79c23dab63f592424aa4c16fef13"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3895",
+            "sha256": "45f4794c1208f7f289234bf0c7845f0e047a44b55c515408be3972a4223ee14d"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3940",
+            "sha256": "33706f9276ea98c43a96d318224440ef3b05a66d0bc7610b6d14e2675bc63708"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "183",
+            "sha256": "a92762c1ba2a94d7932caa5e4ff2fb0b2e381f565b41fd8899207721ef8a7dff"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8288",
+            "sha256": "4e5b9b477f0d7fa23cba02898f101c829a0ddde210c11a64fd83e53a84b04565"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7482",
+            "sha256": "1b13cb645be24596acaea913b2f319302d6785972ad83124b3429e9dc192f333"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "6755399442731571",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "61c55ec016e484040f47cc70227c4f94856908a3ec2ea5e38adc4e139aec1506",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1407374894250423",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786362628347556000",
+              "ctimeNs": "1786362628347556000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829113",
+              "mode": "33206",
+              "size": "8152",
+              "mtimeNs": "1786360153102773900",
+              "ctimeNs": "1786360153109858400"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829116",
+              "mode": "33206",
+              "size": "8197",
+              "mtimeNs": "1786362136700429100",
+              "ctimeNs": "1786362136705457500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829118",
+              "mode": "33206",
+              "size": "3895",
+              "mtimeNs": "1786362628343315700",
+              "ctimeNs": "1786362628343315700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829115",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829119",
+              "mode": "33206",
+              "size": "3940",
+              "mtimeNs": "1786360071564156600",
+              "ctimeNs": "1786360071570655100"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829120",
+              "mode": "33206",
+              "size": "183",
+              "mtimeNs": "1786268283604919200",
+              "ctimeNs": "1786315802371341300"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829123",
+              "mode": "33206",
+              "size": "8288",
+              "mtimeNs": "1786360123959452500",
+              "ctimeNs": "1786360123963440800"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829122",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829121",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829124",
+              "mode": "33206",
+              "size": "7482",
+              "mtimeNs": "1786361599981445400",
+              "ctimeNs": "1786361599988110000"
+            }
+          }
+        ]
+      }
+    },
+    "final-reserved": {
+      "state": "verified",
+      "scope": "final",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "f4a55df03683238e3582c2f71d4987e2fe4f97854968fadb6171b8fd75fb4d84",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "beef683affd3aca4780e3307e380f4fa5feda2818f8451332d9fb6229764a1c2"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8152",
+            "sha256": "809b713ad979dd16ab5d3982f0be853bbee43f115c09a70640172c09db40138d"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8197",
+            "sha256": "bea2a7e44067660c8a16b7972165a615062e79c23dab63f592424aa4c16fef13"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3895",
+            "sha256": "45f4794c1208f7f289234bf0c7845f0e047a44b55c515408be3972a4223ee14d"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3940",
+            "sha256": "33706f9276ea98c43a96d318224440ef3b05a66d0bc7610b6d14e2675bc63708"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "183",
+            "sha256": "a92762c1ba2a94d7932caa5e4ff2fb0b2e381f565b41fd8899207721ef8a7dff"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8288",
+            "sha256": "4e5b9b477f0d7fa23cba02898f101c829a0ddde210c11a64fd83e53a84b04565"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7482",
+            "sha256": "1b13cb645be24596acaea913b2f319302d6785972ad83124b3429e9dc192f333"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "6755399442731571",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "61c55ec016e484040f47cc70227c4f94856908a3ec2ea5e38adc4e139aec1506",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1407374894250423",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786362628347556000",
+              "ctimeNs": "1786362628347556000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829113",
+              "mode": "33206",
+              "size": "8152",
+              "mtimeNs": "1786360153102773900",
+              "ctimeNs": "1786360153109858400"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829116",
+              "mode": "33206",
+              "size": "8197",
+              "mtimeNs": "1786362136700429100",
+              "ctimeNs": "1786362136705457500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829118",
+              "mode": "33206",
+              "size": "3895",
+              "mtimeNs": "1786362628343315700",
+              "ctimeNs": "1786362628343315700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829115",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829119",
+              "mode": "33206",
+              "size": "3940",
+              "mtimeNs": "1786360071564156600",
+              "ctimeNs": "1786360071570655100"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829120",
+              "mode": "33206",
+              "size": "183",
+              "mtimeNs": "1786268283604919200",
+              "ctimeNs": "1786315802371341300"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829123",
+              "mode": "33206",
+              "size": "8288",
+              "mtimeNs": "1786360123959452500",
+              "ctimeNs": "1786360123963440800"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829122",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829121",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940829124",
+              "mode": "33206",
+              "size": "7482",
+              "mtimeNs": "1786361599981445400",
+              "ctimeNs": "1786361599988110000"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "f4a55df03683238e3582c2f71d4987e2fe4f97854968fadb6171b8fd75fb4d84",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "beef683affd3aca4780e3307e380f4fa5feda2818f8451332d9fb6229764a1c2"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8152",
+            "sha256": "809b713ad979dd16ab5d3982f0be853bbee43f115c09a70640172c09db40138d"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8197",
+            "sha256": "bea2a7e44067660c8a16b7972165a615062e79c23dab63f592424aa4c16fef13"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3895",
+            "sha256": "45f4794c1208f7f289234bf0c7845f0e047a44b55c515408be3972a4223ee14d"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3940",
+            "sha256": "33706f9276ea98c43a96d318224440ef3b05a66d0bc7610b6d14e2675bc63708"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "183",
+            "sha256": "a92762c1ba2a94d7932caa5e4ff2fb0b2e381f565b41fd8899207721ef8a7dff"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8288",
+            "sha256": "4e5b9b477f0d7fa23cba02898f101c829a0ddde210c11a64fd83e53a84b04565"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7482",
+            "sha256": "1b13cb645be24596acaea913b2f319302d6785972ad83124b3429e9dc192f333"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "1970324847671750",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "236810a95fcf33ed7e8ec3cec07ec8eb88621ed7e1e58d8645bed3e7ccb61424",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961100",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786362628347556000",
+              "ctimeNs": "1786362628347556000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961101",
+              "mode": "33206",
+              "size": "8152",
+              "mtimeNs": "1786360153102773900",
+              "ctimeNs": "1786360153109858400"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961103",
+              "mode": "33206",
+              "size": "8197",
+              "mtimeNs": "1786362136700429100",
+              "ctimeNs": "1786362136705457500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961104",
+              "mode": "33206",
+              "size": "3895",
+              "mtimeNs": "1786362628343315700",
+              "ctimeNs": "1786362628343315700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961102",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961106",
+              "mode": "33206",
+              "size": "3940",
+              "mtimeNs": "1786360071564156600",
+              "ctimeNs": "1786360071570655100"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961107",
+              "mode": "33206",
+              "size": "183",
+              "mtimeNs": "1786268283604919200",
+              "ctimeNs": "1786315802371341300"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917539798",
+              "mode": "33206",
+              "size": "8288",
+              "mtimeNs": "1786360123959452500",
+              "ctimeNs": "1786360123963440800"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917539797",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961108",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917539800",
+              "mode": "33206",
+              "size": "7482",
+              "mtimeNs": "1786361599981445400",
+              "ctimeNs": "1786361599988110000"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "f4a55df03683238e3582c2f71d4987e2fe4f97854968fadb6171b8fd75fb4d84",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "beef683affd3aca4780e3307e380f4fa5feda2818f8451332d9fb6229764a1c2"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8152",
+            "sha256": "809b713ad979dd16ab5d3982f0be853bbee43f115c09a70640172c09db40138d"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8197",
+            "sha256": "bea2a7e44067660c8a16b7972165a615062e79c23dab63f592424aa4c16fef13"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3895",
+            "sha256": "45f4794c1208f7f289234bf0c7845f0e047a44b55c515408be3972a4223ee14d"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3940",
+            "sha256": "33706f9276ea98c43a96d318224440ef3b05a66d0bc7610b6d14e2675bc63708"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "183",
+            "sha256": "a92762c1ba2a94d7932caa5e4ff2fb0b2e381f565b41fd8899207721ef8a7dff"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8288",
+            "sha256": "4e5b9b477f0d7fa23cba02898f101c829a0ddde210c11a64fd83e53a84b04565"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7482",
+            "sha256": "1b13cb645be24596acaea913b2f319302d6785972ad83124b3429e9dc192f333"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "1970324847671750",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "236810a95fcf33ed7e8ec3cec07ec8eb88621ed7e1e58d8645bed3e7ccb61424",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961100",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786362628347556000",
+              "ctimeNs": "1786362628347556000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961101",
+              "mode": "33206",
+              "size": "8152",
+              "mtimeNs": "1786360153102773900",
+              "ctimeNs": "1786360153109858400"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961103",
+              "mode": "33206",
+              "size": "8197",
+              "mtimeNs": "1786362136700429100",
+              "ctimeNs": "1786362136705457500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961104",
+              "mode": "33206",
+              "size": "3895",
+              "mtimeNs": "1786362628343315700",
+              "ctimeNs": "1786362628343315700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961102",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961106",
+              "mode": "33206",
+              "size": "3940",
+              "mtimeNs": "1786360071564156600",
+              "ctimeNs": "1786360071570655100"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961107",
+              "mode": "33206",
+              "size": "183",
+              "mtimeNs": "1786268283604919200",
+              "ctimeNs": "1786315802371341300"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917539798",
+              "mode": "33206",
+              "size": "8288",
+              "mtimeNs": "1786360123959452500",
+              "ctimeNs": "1786360123963440800"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917539797",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961108",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917539800",
+              "mode": "33206",
+              "size": "7482",
+              "mtimeNs": "1786361599981445400",
+              "ctimeNs": "1786361599988110000"
+            }
+          }
+        ]
+      }
+    },
+    "accounting-finalized": {
+      "state": "verified",
+      "scope": "final",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "f4a55df03683238e3582c2f71d4987e2fe4f97854968fadb6171b8fd75fb4d84",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "beef683affd3aca4780e3307e380f4fa5feda2818f8451332d9fb6229764a1c2"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8152",
+            "sha256": "809b713ad979dd16ab5d3982f0be853bbee43f115c09a70640172c09db40138d"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8197",
+            "sha256": "bea2a7e44067660c8a16b7972165a615062e79c23dab63f592424aa4c16fef13"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3895",
+            "sha256": "45f4794c1208f7f289234bf0c7845f0e047a44b55c515408be3972a4223ee14d"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3940",
+            "sha256": "33706f9276ea98c43a96d318224440ef3b05a66d0bc7610b6d14e2675bc63708"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "183",
+            "sha256": "a92762c1ba2a94d7932caa5e4ff2fb0b2e381f565b41fd8899207721ef8a7dff"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8288",
+            "sha256": "4e5b9b477f0d7fa23cba02898f101c829a0ddde210c11a64fd83e53a84b04565"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7482",
+            "sha256": "1b13cb645be24596acaea913b2f319302d6785972ad83124b3429e9dc192f333"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "1970324847671750",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "236810a95fcf33ed7e8ec3cec07ec8eb88621ed7e1e58d8645bed3e7ccb61424",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961100",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786362628347556000",
+              "ctimeNs": "1786362628347556000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961101",
+              "mode": "33206",
+              "size": "8152",
+              "mtimeNs": "1786360153102773900",
+              "ctimeNs": "1786360153109858400"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961103",
+              "mode": "33206",
+              "size": "8197",
+              "mtimeNs": "1786362136700429100",
+              "ctimeNs": "1786362136705457500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961104",
+              "mode": "33206",
+              "size": "3895",
+              "mtimeNs": "1786362628343315700",
+              "ctimeNs": "1786362628343315700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961102",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961106",
+              "mode": "33206",
+              "size": "3940",
+              "mtimeNs": "1786360071564156600",
+              "ctimeNs": "1786360071570655100"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961107",
+              "mode": "33206",
+              "size": "183",
+              "mtimeNs": "1786268283604919200",
+              "ctimeNs": "1786315802371341300"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917539798",
+              "mode": "33206",
+              "size": "8288",
+              "mtimeNs": "1786360123959452500",
+              "ctimeNs": "1786360123963440800"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917539797",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961108",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917539800",
+              "mode": "33206",
+              "size": "7482",
+              "mtimeNs": "1786361599981445400",
+              "ctimeNs": "1786361599988110000"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "a860a775ff6a8f659baac8234213f88d7c0b7de0e406c34d3752c36dae4e975e",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "beef683affd3aca4780e3307e380f4fa5feda2818f8451332d9fb6229764a1c2"
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "executable": false,
+            "size": "664",
+            "sha256": "dc27f4b2bd6cc48f761dc07eac40393f701f87b1b40cdac44007ea27f9f78f63"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8152",
+            "sha256": "809b713ad979dd16ab5d3982f0be853bbee43f115c09a70640172c09db40138d"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8197",
+            "sha256": "bea2a7e44067660c8a16b7972165a615062e79c23dab63f592424aa4c16fef13"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3895",
+            "sha256": "45f4794c1208f7f289234bf0c7845f0e047a44b55c515408be3972a4223ee14d"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3940",
+            "sha256": "33706f9276ea98c43a96d318224440ef3b05a66d0bc7610b6d14e2675bc63708"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "183",
+            "sha256": "a92762c1ba2a94d7932caa5e4ff2fb0b2e381f565b41fd8899207721ef8a7dff"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8288",
+            "sha256": "4e5b9b477f0d7fa23cba02898f101c829a0ddde210c11a64fd83e53a84b04565"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7482",
+            "sha256": "1b13cb645be24596acaea913b2f319302d6785972ad83124b3429e9dc192f333"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "1970324847671750",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "0f7eb270af75e78b02444442f905354ac93a765f3318752504d95f9702eb1a21",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961100",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786362628347556000",
+              "ctimeNs": "1786362628347556000"
+            }
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224754514344",
+              "mode": "33206",
+              "size": "664",
+              "mtimeNs": "1786362628642257500",
+              "ctimeNs": "1786362628643435000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961101",
+              "mode": "33206",
+              "size": "8152",
+              "mtimeNs": "1786360153102773900",
+              "ctimeNs": "1786360153109858400"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961103",
+              "mode": "33206",
+              "size": "8197",
+              "mtimeNs": "1786362136700429100",
+              "ctimeNs": "1786362136705457500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961104",
+              "mode": "33206",
+              "size": "3895",
+              "mtimeNs": "1786362628343315700",
+              "ctimeNs": "1786362628343315700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961102",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961106",
+              "mode": "33206",
+              "size": "3940",
+              "mtimeNs": "1786360071564156600",
+              "ctimeNs": "1786360071570655100"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961107",
+              "mode": "33206",
+              "size": "183",
+              "mtimeNs": "1786268283604919200",
+              "ctimeNs": "1786315802371341300"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917539798",
+              "mode": "33206",
+              "size": "8288",
+              "mtimeNs": "1786360123959452500",
+              "ctimeNs": "1786360123963440800"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917539797",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961108",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917539800",
+              "mode": "33206",
+              "size": "7482",
+              "mtimeNs": "1786361599981445400",
+              "ctimeNs": "1786361599988110000"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "a860a775ff6a8f659baac8234213f88d7c0b7de0e406c34d3752c36dae4e975e",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "beef683affd3aca4780e3307e380f4fa5feda2818f8451332d9fb6229764a1c2"
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "executable": false,
+            "size": "664",
+            "sha256": "dc27f4b2bd6cc48f761dc07eac40393f701f87b1b40cdac44007ea27f9f78f63"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8152",
+            "sha256": "809b713ad979dd16ab5d3982f0be853bbee43f115c09a70640172c09db40138d"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8197",
+            "sha256": "bea2a7e44067660c8a16b7972165a615062e79c23dab63f592424aa4c16fef13"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3895",
+            "sha256": "45f4794c1208f7f289234bf0c7845f0e047a44b55c515408be3972a4223ee14d"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3940",
+            "sha256": "33706f9276ea98c43a96d318224440ef3b05a66d0bc7610b6d14e2675bc63708"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "183",
+            "sha256": "a92762c1ba2a94d7932caa5e4ff2fb0b2e381f565b41fd8899207721ef8a7dff"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "8288",
+            "sha256": "4e5b9b477f0d7fa23cba02898f101c829a0ddde210c11a64fd83e53a84b04565"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7482",
+            "sha256": "1b13cb645be24596acaea913b2f319302d6785972ad83124b3429e9dc192f333"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "1970324847671750",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "0f7eb270af75e78b02444442f905354ac93a765f3318752504d95f9702eb1a21",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961100",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786362628347556000",
+              "ctimeNs": "1786362628347556000"
+            }
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224754514344",
+              "mode": "33206",
+              "size": "664",
+              "mtimeNs": "1786362628642257500",
+              "ctimeNs": "1786362628643435000"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961101",
+              "mode": "33206",
+              "size": "8152",
+              "mtimeNs": "1786360153102773900",
+              "ctimeNs": "1786360153109858400"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961103",
+              "mode": "33206",
+              "size": "8197",
+              "mtimeNs": "1786362136700429100",
+              "ctimeNs": "1786362136705457500"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961104",
+              "mode": "33206",
+              "size": "3895",
+              "mtimeNs": "1786362628343315700",
+              "ctimeNs": "1786362628343315700"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961102",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961106",
+              "mode": "33206",
+              "size": "3940",
+              "mtimeNs": "1786360071564156600",
+              "ctimeNs": "1786360071570655100"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961107",
+              "mode": "33206",
+              "size": "183",
+              "mtimeNs": "1786268283604919200",
+              "ctimeNs": "1786315802371341300"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917539798",
+              "mode": "33206",
+              "size": "8288",
+              "mtimeNs": "1786360123959452500",
+              "ctimeNs": "1786360123963440800"
+            }
+          },
+          {
+            "path": "specs/teacher-advisor-workflow",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917539797",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849870961108",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917539800",
+              "mode": "33206",
+              "size": "7482",
+              "mtimeNs": "1786361599981445400",
+              "ctimeNs": "1786361599988110000"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "finalReservation": {
+    "identity": {
+      "dev": "3122291782",
+      "ino": "1970324847671750",
+      "mode": "16822",
+      "size": "0",
+      "mtimeNs": "0",
+      "ctimeNs": "0"
+    },
+    "entries": [
+      {
+        "path": ".openspec.yaml",
+        "kind": "file",
+        "expected": {
+          "path": ".openspec.yaml",
+          "kind": "file",
+          "executable": false,
+          "size": "134",
+          "sha256": "beef683affd3aca4780e3307e380f4fa5feda2818f8451332d9fb6229764a1c2"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1688849870961100",
+          "mode": "33206",
+          "size": "134",
+          "mtimeNs": "1786362628347556000",
+          "ctimeNs": "1786362628347556000"
+        }
+      },
+      {
+        "path": "design.md",
+        "kind": "file",
+        "expected": {
+          "path": "design.md",
+          "kind": "file",
+          "executable": false,
+          "size": "8152",
+          "sha256": "809b713ad979dd16ab5d3982f0be853bbee43f115c09a70640172c09db40138d"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1688849870961101",
+          "mode": "33206",
+          "size": "8152",
+          "mtimeNs": "1786360153102773900",
+          "ctimeNs": "1786360153109858400"
+        }
+      },
+      {
+        "path": "evidence",
+        "kind": "directory",
+        "expected": {
+          "path": "evidence",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1688849870961102",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "evidence/review-report.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/review-report.md",
+          "kind": "file",
+          "executable": false,
+          "size": "8197",
+          "sha256": "bea2a7e44067660c8a16b7972165a615062e79c23dab63f592424aa4c16fef13"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1688849870961103",
+          "mode": "33206",
+          "size": "8197",
+          "mtimeNs": "1786362136700429100",
+          "ctimeNs": "1786362136705457500"
+        }
+      },
+      {
+        "path": "evidence/ship-log.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/ship-log.md",
+          "kind": "file",
+          "executable": false,
+          "size": "3895",
+          "sha256": "45f4794c1208f7f289234bf0c7845f0e047a44b55c515408be3972a4223ee14d"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1688849870961104",
+          "mode": "33206",
+          "size": "3895",
+          "mtimeNs": "1786362628343315700",
+          "ctimeNs": "1786362628343315700"
+        }
+      },
+      {
+        "path": "proposal.md",
+        "kind": "file",
+        "expected": {
+          "path": "proposal.md",
+          "kind": "file",
+          "executable": false,
+          "size": "3940",
+          "sha256": "33706f9276ea98c43a96d318224440ef3b05a66d0bc7610b6d14e2675bc63708"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1688849870961106",
+          "mode": "33206",
+          "size": "3940",
+          "mtimeNs": "1786360071564156600",
+          "ctimeNs": "1786360071570655100"
+        }
+      },
+      {
+        "path": "README.md",
+        "kind": "file",
+        "expected": {
+          "path": "README.md",
+          "kind": "file",
+          "executable": false,
+          "size": "183",
+          "sha256": "a92762c1ba2a94d7932caa5e4ff2fb0b2e381f565b41fd8899207721ef8a7dff"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1688849870961107",
+          "mode": "33206",
+          "size": "183",
+          "mtimeNs": "1786268283604919200",
+          "ctimeNs": "1786315802371341300"
+        }
+      },
+      {
+        "path": "specs",
+        "kind": "directory",
+        "expected": {
+          "path": "specs",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1688849870961108",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "specs/teacher-advisor-workflow",
+        "kind": "directory",
+        "expected": {
+          "path": "specs/teacher-advisor-workflow",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1125899917539797",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "specs/teacher-advisor-workflow/spec.md",
+        "kind": "file",
+        "expected": {
+          "path": "specs/teacher-advisor-workflow/spec.md",
+          "kind": "file",
+          "executable": false,
+          "size": "8288",
+          "sha256": "4e5b9b477f0d7fa23cba02898f101c829a0ddde210c11a64fd83e53a84b04565"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1125899917539798",
+          "mode": "33206",
+          "size": "8288",
+          "mtimeNs": "1786360123959452500",
+          "ctimeNs": "1786360123963440800"
+        }
+      },
+      {
+        "path": "tasks.md",
+        "kind": "file",
+        "expected": {
+          "path": "tasks.md",
+          "kind": "file",
+          "executable": false,
+          "size": "7482",
+          "sha256": "1b13cb645be24596acaea913b2f319302d6785972ad83124b3429e9dc192f333"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1125899917539800",
+          "mode": "33206",
+          "size": "7482",
+          "mtimeNs": "1786361599981445400",
+          "ctimeNs": "1786361599988110000"
+        }
+      }
+    ]
+  },
+  "specProgress": [
+    {
+      "actionId": "a65755fb3961ce6d19688eee7cd761247da2cc1bfbd41bbb774c61460f4180ad",
+      "action": "create",
+      "target": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code-wt-teacher-advisor\\rasen\\specs\\teacher-advisor-workflow\\spec.md",
+      "backupOrQuarantine": null,
+      "temporary": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code-wt-teacher-advisor\\rasen\\specs\\teacher-advisor-workflow\\.rasen-archive-spec-6acd2d1c-5e1b-4ee8-923e-d95f68ac1592-a65755fb3961\\result.tmp",
+      "state": "complete",
+      "claimIdentity": {
+        "dev": "3122291782",
+        "ino": "1407374894250438",
+        "mode": "16822",
+        "size": "0",
+        "mtimeNs": "0",
+        "ctimeNs": "0"
+      },
+      "temporaryIdentity": {
+        "dev": "3122291782",
+        "ino": "2533274801093048",
+        "mode": "33206",
+        "size": "8425",
+        "mtimeNs": "1786362628371715100",
+        "ctimeNs": "1786362628371715100"
+      },
+      "publishedIdentity": {
+        "dev": "3122291782",
+        "ino": "2533274801093048",
+        "mode": "33206",
+        "size": "8425",
+        "mtimeNs": "1786362628371715100",
+        "ctimeNs": "1786362628377990400"
+      }
+    }
+  ],
+  "cleanerProgress": [
+    {
+      "path": "auto-run.json",
+      "state": "deleted"
+    }
+  ],
+  "sourceProgress": {
+    "state": "removed",
+    "quarantine": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code-wt-teacher-advisor\\rasen\\changes\\.rasen-archive-source-6acd2d1c-5e1b-4ee8-923e-d95f68ac1592\\teacher-advisor-workflow"
+  },
+  "updatedAt": "2026-08-10T11:50:28.726Z"
+}

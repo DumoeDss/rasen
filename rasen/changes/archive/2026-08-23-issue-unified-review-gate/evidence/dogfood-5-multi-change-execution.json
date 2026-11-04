@@ -1,0 +1,697 @@
+{
+  "issue": {
+    "issueId": "issue-multi-change-execution",
+    "record": {
+      "version": 1,
+      "id": "issue-multi-change-execution",
+      "title": "Issue layer Phase 2: single Issue, single project, multi-Change execution",
+      "state": "resolved",
+      "reason": null,
+      "createdAt": "2026-08-20T06:43:21.537Z"
+    },
+    "diagnostic": null,
+    "divergence": null,
+    "revisionIds": [
+      "0001"
+    ],
+    "latestRevisionId": "0001",
+    "refs": [
+      "refs/heads/main"
+    ],
+    "uncommitted": false
+  },
+  "plan": {
+    "issueId": "issue-multi-change-execution",
+    "revisionId": "0001",
+    "revision": {
+      "version": 1,
+      "issueId": "issue-multi-change-execution",
+      "revisionId": "0001",
+      "supersedes": null,
+      "createdAt": "2026-08-20T06:43:50.874Z",
+      "contentSha256": "e9b0cd65883cd390480f235d35088f64c9e6d447fd1b4aab9e557aae7dcfbbe0",
+      "nodes": [
+        {
+          "nodeId": "issue-node-lifecycle",
+          "kind": "change",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "changeInstanceId": "ci_8740087b798d080a086d4e18ee283efe44bd4de1205e8cb5247a70cabcb36d7e",
+          "changeAlias": "issue-node-lifecycle",
+          "dependsOn": [
+            "issue-plan-publication"
+          ]
+        },
+        {
+          "nodeId": "issue-persistent-baseline",
+          "kind": "change",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "changeInstanceId": "ci_31ac4af911fefd06c65efd8a8d4da5ec4193b3795133a7d41a0fc87544bd9e7d",
+          "changeAlias": "issue-persistent-baseline",
+          "dependsOn": [
+            "issue-node-lifecycle",
+            "issue-plan-publication"
+          ]
+        },
+        {
+          "nodeId": "issue-plan-publication",
+          "kind": "change",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "changeInstanceId": "ci_d94c1e6a7563e9d815f100867eb717cba9a8ebddf332ff6257f2c41c128dda03",
+          "changeAlias": "issue-plan-publication",
+          "dependsOn": []
+        }
+      ]
+    },
+    "diagnostic": null,
+    "readiness": {
+      "nodes": [
+        {
+          "node": {
+            "nodeId": "issue-node-lifecycle",
+            "kind": "change",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "changeInstanceId": "ci_8740087b798d080a086d4e18ee283efe44bd4de1205e8cb5247a70cabcb36d7e",
+            "changeAlias": "issue-node-lifecycle",
+            "dependsOn": [
+              "issue-plan-publication"
+            ]
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "2026-08-20-issue-node-lifecycle",
+                "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+                "targetLineId": "line-0.2",
+                "foundAtRef": "refs/heads/main",
+                "archived": true
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": true,
+            "outcomeBasis": "legacy",
+            "outcomeBasisReason": null,
+            "outcomeBasisPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-20-issue-node-lifecycle/archive.json",
+            "delivery": {
+              "basis": "legacy",
+              "archivedAt": "2026-08-20T05:56:26.013Z",
+              "codeCommit": "31d0b6440a453a128af29b900329c5389e52cf30",
+              "planningBranch": "feat/issue-phase2",
+              "outcome": null,
+              "evidence": [
+                {
+                  "path": "evidence/affected-set-gate.log",
+                  "sha256": "90c3923bc6a4e8750dc841773442ae3902075755283806cfc1d701d35592d5b9"
+                },
+                {
+                  "path": "evidence/dogfood-1-publish-0001.txt",
+                  "sha256": "f1166d645e9f6a2c2555e56b68c8e0c3968f1ee3d68c0761c186ca0d03981ce7"
+                },
+                {
+                  "path": "evidence/dogfood-2-republish-0002.txt",
+                  "sha256": "ca05009cd6325ebb225627ca0465985cead496fe2c33a7bdf2d5504c1780b652"
+                },
+                {
+                  "path": "evidence/dogfood-3-teardown.txt",
+                  "sha256": "02355c13dbf91b939a90d97646d57e7094b6df5511d30af32db3355eecc23913"
+                },
+                {
+                  "path": "evidence/fix-round-1.md",
+                  "sha256": "dbe52e3392489be32014dbcab4314ee4f7cfae412ec685b059f8a749fb7b1094"
+                },
+                {
+                  "path": "evidence/review-report.md",
+                  "sha256": "e35fc46a458386c338272506b6f72458a1e9fa5e402634fd082f1e563bd98ff5"
+                },
+                {
+                  "path": "evidence/ship-log.md",
+                  "sha256": "80b354dee0f58c16c9442070dce8a074b2c49765e24c83da688d17bc1b185491"
+                }
+              ],
+              "missing": [
+                "verification-report"
+              ],
+              "entryName": "2026-08-20-issue-node-lifecycle",
+              "foundAtRef": "refs/heads/main",
+              "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-20-issue-node-lifecycle/archive.json"
+            }
+          },
+          "readiness": "blocked",
+          "blockedBy": [
+            "issue-plan-publication"
+          ]
+        },
+        {
+          "node": {
+            "nodeId": "issue-persistent-baseline",
+            "kind": "change",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "changeInstanceId": "ci_31ac4af911fefd06c65efd8a8d4da5ec4193b3795133a7d41a0fc87544bd9e7d",
+            "changeAlias": "issue-persistent-baseline",
+            "dependsOn": [
+              "issue-node-lifecycle",
+              "issue-plan-publication"
+            ]
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "issue-persistent-baseline",
+                "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+                "targetLineId": "line-0.2",
+                "foundAtRef": "refs/heads/main",
+                "archived": false
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": false
+          },
+          "readiness": "blocked",
+          "blockedBy": [
+            "issue-node-lifecycle",
+            "issue-plan-publication"
+          ]
+        },
+        {
+          "node": {
+            "nodeId": "issue-plan-publication",
+            "kind": "change",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "changeInstanceId": "ci_d94c1e6a7563e9d815f100867eb717cba9a8ebddf332ff6257f2c41c128dda03",
+            "changeAlias": "issue-plan-publication",
+            "dependsOn": []
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "2026-08-20-issue-plan-publication",
+                "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+                "targetLineId": "line-0.2",
+                "foundAtRef": "refs/heads/main",
+                "archived": true
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": true,
+            "outcomeBasis": "legacy",
+            "outcomeBasisReason": null,
+            "outcomeBasisPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-20-issue-plan-publication/archive.json",
+            "delivery": {
+              "basis": "legacy",
+              "archivedAt": "2026-08-20T04:10:32.134Z",
+              "codeCommit": "bfb63865d0d9ec8c5d46c0893ae1052edff09799",
+              "planningBranch": "feat/issue-phase2",
+              "outcome": null,
+              "evidence": [
+                {
+                  "path": "evidence/affected-set-gate.log",
+                  "sha256": "f5a4b3479779783ec312b452ab427b94821e7c7852a8e065f55dc6eb2e7d999c"
+                },
+                {
+                  "path": "evidence/dogfood-1-publish-0001.txt",
+                  "sha256": "3bc0ec6a42b1169d21e00e0c7a917a74a6258a670b0cc63c6bbaefe4d2335dc2"
+                },
+                {
+                  "path": "evidence/dogfood-2-republish-0002.txt",
+                  "sha256": "6c3c063378e284ad54705472d29892b2d3bd02a6e8c03471cc25535f70419086"
+                },
+                {
+                  "path": "evidence/dogfood-3-teardown.txt",
+                  "sha256": "11a094523fcbf0c12344259144a9f38c05028a39b4f1c2be9cc176df13fe9085"
+                },
+                {
+                  "path": "evidence/fix-round-1.md",
+                  "sha256": "18cc19c1825494a6c71312e015f7cb7693b5dd54805b4065959965ff0d4d8fd9"
+                },
+                {
+                  "path": "evidence/review-report.md",
+                  "sha256": "0be4ca75d4a807915e8ba73c1e845f3a588f397bdff95381d246ef748966e040"
+                },
+                {
+                  "path": "evidence/ship-log.md",
+                  "sha256": "210ebef093fc45b4f81be443a21f86e2ef1ffc3f9921d2b6013759b78ee68615"
+                }
+              ],
+              "missing": [
+                "verification-report"
+              ],
+              "entryName": "2026-08-20-issue-plan-publication",
+              "foundAtRef": "refs/heads/main",
+              "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-20-issue-plan-publication/archive.json"
+            }
+          },
+          "readiness": "in-progress",
+          "blockedBy": []
+        }
+      ],
+      "readyToResolve": false
+    },
+    "unsearchedRefs": [],
+    "problems": [],
+    "complete": true
+  },
+  "status": {
+    "phase": "done",
+    "health": "healthy",
+    "progress": {
+      "completed": 3,
+      "total": 3
+    },
+    "nodes": [
+      {
+        "nodeId": "issue-node-lifecycle",
+        "kind": "change",
+        "alias": "2026-08-20-issue-node-lifecycle",
+        "observation": "finalized",
+        "diagnostic": "finalized on a legacy archive record (no v2 outcome was ever recorded)",
+        "runStatePath": null,
+        "locatedBy": null,
+        "attribution": {
+          "pipeline": null,
+          "sessions": [],
+          "evidenceLocator": null
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": "required",
+        "reason": null,
+        "suggestedPipeline": null,
+        "rationale": null,
+        "uncertainty": null,
+        "delivery": {
+          "state": "record",
+          "basis": "legacy",
+          "archivedAt": "2026-08-20T05:56:26.013Z",
+          "codeCommit": "31d0b6440a453a128af29b900329c5389e52cf30",
+          "planningBranch": "feat/issue-phase2",
+          "outcome": null,
+          "evidence": [
+            {
+              "path": "evidence/affected-set-gate.log",
+              "sha256": "90c3923bc6a4e8750dc841773442ae3902075755283806cfc1d701d35592d5b9"
+            },
+            {
+              "path": "evidence/dogfood-1-publish-0001.txt",
+              "sha256": "f1166d645e9f6a2c2555e56b68c8e0c3968f1ee3d68c0761c186ca0d03981ce7"
+            },
+            {
+              "path": "evidence/dogfood-2-republish-0002.txt",
+              "sha256": "ca05009cd6325ebb225627ca0465985cead496fe2c33a7bdf2d5504c1780b652"
+            },
+            {
+              "path": "evidence/dogfood-3-teardown.txt",
+              "sha256": "02355c13dbf91b939a90d97646d57e7094b6df5511d30af32db3355eecc23913"
+            },
+            {
+              "path": "evidence/fix-round-1.md",
+              "sha256": "dbe52e3392489be32014dbcab4314ee4f7cfae412ec685b059f8a749fb7b1094"
+            },
+            {
+              "path": "evidence/review-report.md",
+              "sha256": "e35fc46a458386c338272506b6f72458a1e9fa5e402634fd082f1e563bd98ff5"
+            },
+            {
+              "path": "evidence/ship-log.md",
+              "sha256": "80b354dee0f58c16c9442070dce8a074b2c49765e24c83da688d17bc1b185491"
+            }
+          ],
+          "missing": [
+            "verification-report"
+          ],
+          "entryName": "2026-08-20-issue-node-lifecycle",
+          "foundAtRef": "refs/heads/main",
+          "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-20-issue-node-lifecycle/archive.json"
+        },
+        "blockedBy": []
+      },
+      {
+        "nodeId": "issue-persistent-baseline",
+        "kind": "change",
+        "alias": "issue-persistent-baseline",
+        "observation": "run-terminal",
+        "diagnostic": null,
+        "runStatePath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\.rasen\\changes\\issue-persistent-baseline\\ephemera\\auto-run.json",
+        "locatedBy": "execution-root",
+        "attribution": {
+          "pipeline": "small-feature",
+          "sessions": [],
+          "evidenceLocator": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store\\rasen\\projects\\e2ee72ed-04a1-4395-86aa-7e77d2b83ec7\\changes\\issue-persistent-baseline\\evidence"
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": "required",
+        "reason": null,
+        "suggestedPipeline": null,
+        "rationale": null,
+        "uncertainty": null,
+        "delivery": {
+          "state": "not-archived"
+        },
+        "blockedBy": []
+      },
+      {
+        "nodeId": "issue-plan-publication",
+        "kind": "change",
+        "alias": "2026-08-20-issue-plan-publication",
+        "observation": "finalized",
+        "diagnostic": "finalized on a legacy archive record (no v2 outcome was ever recorded)",
+        "runStatePath": null,
+        "locatedBy": null,
+        "attribution": {
+          "pipeline": null,
+          "sessions": [],
+          "evidenceLocator": null
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": "required",
+        "reason": null,
+        "suggestedPipeline": null,
+        "rationale": null,
+        "uncertainty": null,
+        "delivery": {
+          "state": "record",
+          "basis": "legacy",
+          "archivedAt": "2026-08-20T04:10:32.134Z",
+          "codeCommit": "bfb63865d0d9ec8c5d46c0893ae1052edff09799",
+          "planningBranch": "feat/issue-phase2",
+          "outcome": null,
+          "evidence": [
+            {
+              "path": "evidence/affected-set-gate.log",
+              "sha256": "f5a4b3479779783ec312b452ab427b94821e7c7852a8e065f55dc6eb2e7d999c"
+            },
+            {
+              "path": "evidence/dogfood-1-publish-0001.txt",
+              "sha256": "3bc0ec6a42b1169d21e00e0c7a917a74a6258a670b0cc63c6bbaefe4d2335dc2"
+            },
+            {
+              "path": "evidence/dogfood-2-republish-0002.txt",
+              "sha256": "6c3c063378e284ad54705472d29892b2d3bd02a6e8c03471cc25535f70419086"
+            },
+            {
+              "path": "evidence/dogfood-3-teardown.txt",
+              "sha256": "11a094523fcbf0c12344259144a9f38c05028a39b4f1c2be9cc176df13fe9085"
+            },
+            {
+              "path": "evidence/fix-round-1.md",
+              "sha256": "18cc19c1825494a6c71312e015f7cb7693b5dd54805b4065959965ff0d4d8fd9"
+            },
+            {
+              "path": "evidence/review-report.md",
+              "sha256": "0be4ca75d4a807915e8ba73c1e845f3a588f397bdff95381d246ef748966e040"
+            },
+            {
+              "path": "evidence/ship-log.md",
+              "sha256": "210ebef093fc45b4f81be443a21f86e2ef1ffc3f9921d2b6013759b78ee68615"
+            }
+          ],
+          "missing": [
+            "verification-report"
+          ],
+          "entryName": "2026-08-20-issue-plan-publication",
+          "foundAtRef": "refs/heads/main",
+          "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-20-issue-plan-publication/archive.json"
+        },
+        "blockedBy": []
+      }
+    ],
+    "delta": null,
+    "projects": [
+      {
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "alias": "rasen",
+        "nodeIds": [
+          "issue-node-lifecycle",
+          "issue-persistent-baseline",
+          "issue-plan-publication"
+        ],
+        "progress": {
+          "completed": 3,
+          "total": 3
+        }
+      }
+    ],
+    "problems": [],
+    "runStateVisibility": {
+      "kind": "execution-root",
+      "executionRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer"
+    },
+    "complete": true,
+    "acceptance": {
+      "conditions": {
+        "revision": {
+          "version": 1,
+          "issueId": "issue-multi-change-execution",
+          "revisionId": "0001",
+          "supersedes": null,
+          "createdAt": "2026-08-20T06:45:03.639Z",
+          "contentSha256": "3dfb336c61eecc6920a02638e491f92e8cda9b97da8e4a2c3810a62b27058166",
+          "conditions": [
+            {
+              "id": "acceptance-gate-holds-until-close",
+              "requirement": "The acceptance gate holds while any required node's work is un-terminal, and the Issue is accepted only at portfolio close through the recorded acceptance",
+              "verification": "staged gate-holds capture (this change) + the portfolio-close accept record (LEAD-driven)"
+            },
+            {
+              "id": "each-change-runs-and-verifies-independently",
+              "requirement": "Every change node reaches a terminal run (ship + archive for g-001/g-002; g-003 closes with this baseline persisted), each through its own small-feature pipeline with its own verification gates",
+              "verification": "per-child run-states under the worktree ephemera + the repo's archived changes"
+            },
+            {
+              "id": "persistent-store-is-the-registry",
+              "requirement": "The loop runs against the persistent store issue-registry (not a temp store) and the store survives this change as the machine's Issue registry",
+              "verification": "this change's evidence receipts + the store's own git history"
+            },
+            {
+              "id": "plan-published-from-real-portfolio",
+              "requirement": "Revision 0001 names every portfolio child as an explicit change reference (no name-prefix inference) with the serial dependsOn DAG intact",
+              "verification": "store issue plan --from-portfolio receipt (4-1-plan-0001.json) over the worktree's real portfolio run-state"
+            },
+            {
+              "id": "tri-axis-live-through-completion",
+              "requirement": "The projection shows progress moving 2/3 to 3/3 and phase reaching review as g-003 completes, derived from real evidence rather than fixtures",
+              "verification": "store issue show captures from the worktree cwd (4-2 receipt pre-close, portfolio-close receipt final)"
+            }
+          ]
+        },
+        "revisionId": "0001",
+        "diagnostic": null,
+        "path": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store\\rasen\\issues\\issue-multi-change-execution\\acceptance\\0001.yaml"
+      },
+      "gate": {
+        "eligible": false,
+        "refusalCode": "issue_accept_already_accepted",
+        "blockers": [],
+        "message": "the Issue already carries an acceptance record; an acceptance is never rewritten.",
+        "exclusions": [],
+        "optionalNodes": []
+      },
+      "record": {
+        "version": 1,
+        "issueId": "issue-multi-change-execution",
+        "acceptedAt": "2026-08-20T09:46:11.369Z",
+        "conditionsRevisionId": "0001",
+        "conditionsSha256": "3dfb336c61eecc6920a02638e491f92e8cda9b97da8e4a2c3810a62b27058166",
+        "gate": {
+          "completed": 3,
+          "total": 3,
+          "health": "waiting-human",
+          "problemsStanding": 0
+        },
+        "note": null,
+        "contentSha256": "e6e78c50ea87ca24f7f5d8dcba2ec64ef3347a38cb843bdc650da42ac098ed8b"
+      }
+    }
+  },
+  "delivery": {
+    "revisionId": "0001",
+    "entries": [
+      {
+        "nodeId": "issue-node-lifecycle",
+        "alias": "2026-08-20-issue-node-lifecycle",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "lifecycle": "required",
+        "observation": "finalized",
+        "delivery": {
+          "state": "record",
+          "basis": "legacy",
+          "archivedAt": "2026-08-20T05:56:26.013Z",
+          "codeCommit": "31d0b6440a453a128af29b900329c5389e52cf30",
+          "planningBranch": "feat/issue-phase2",
+          "outcome": null,
+          "evidence": [
+            {
+              "path": "evidence/affected-set-gate.log",
+              "sha256": "90c3923bc6a4e8750dc841773442ae3902075755283806cfc1d701d35592d5b9"
+            },
+            {
+              "path": "evidence/dogfood-1-publish-0001.txt",
+              "sha256": "f1166d645e9f6a2c2555e56b68c8e0c3968f1ee3d68c0761c186ca0d03981ce7"
+            },
+            {
+              "path": "evidence/dogfood-2-republish-0002.txt",
+              "sha256": "ca05009cd6325ebb225627ca0465985cead496fe2c33a7bdf2d5504c1780b652"
+            },
+            {
+              "path": "evidence/dogfood-3-teardown.txt",
+              "sha256": "02355c13dbf91b939a90d97646d57e7094b6df5511d30af32db3355eecc23913"
+            },
+            {
+              "path": "evidence/fix-round-1.md",
+              "sha256": "dbe52e3392489be32014dbcab4314ee4f7cfae412ec685b059f8a749fb7b1094"
+            },
+            {
+              "path": "evidence/review-report.md",
+              "sha256": "e35fc46a458386c338272506b6f72458a1e9fa5e402634fd082f1e563bd98ff5"
+            },
+            {
+              "path": "evidence/ship-log.md",
+              "sha256": "80b354dee0f58c16c9442070dce8a074b2c49765e24c83da688d17bc1b185491"
+            }
+          ],
+          "missing": [
+            "verification-report"
+          ],
+          "entryName": "2026-08-20-issue-node-lifecycle",
+          "foundAtRef": "refs/heads/main",
+          "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-20-issue-node-lifecycle/archive.json"
+        }
+      },
+      {
+        "nodeId": "issue-persistent-baseline",
+        "alias": "issue-persistent-baseline",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "lifecycle": "required",
+        "observation": "run-terminal",
+        "delivery": {
+          "state": "not-archived"
+        }
+      },
+      {
+        "nodeId": "issue-plan-publication",
+        "alias": "2026-08-20-issue-plan-publication",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "lifecycle": "required",
+        "observation": "finalized",
+        "delivery": {
+          "state": "record",
+          "basis": "legacy",
+          "archivedAt": "2026-08-20T04:10:32.134Z",
+          "codeCommit": "bfb63865d0d9ec8c5d46c0893ae1052edff09799",
+          "planningBranch": "feat/issue-phase2",
+          "outcome": null,
+          "evidence": [
+            {
+              "path": "evidence/affected-set-gate.log",
+              "sha256": "f5a4b3479779783ec312b452ab427b94821e7c7852a8e065f55dc6eb2e7d999c"
+            },
+            {
+              "path": "evidence/dogfood-1-publish-0001.txt",
+              "sha256": "3bc0ec6a42b1169d21e00e0c7a917a74a6258a670b0cc63c6bbaefe4d2335dc2"
+            },
+            {
+              "path": "evidence/dogfood-2-republish-0002.txt",
+              "sha256": "6c3c063378e284ad54705472d29892b2d3bd02a6e8c03471cc25535f70419086"
+            },
+            {
+              "path": "evidence/dogfood-3-teardown.txt",
+              "sha256": "11a094523fcbf0c12344259144a9f38c05028a39b4f1c2be9cc176df13fe9085"
+            },
+            {
+              "path": "evidence/fix-round-1.md",
+              "sha256": "18cc19c1825494a6c71312e015f7cb7693b5dd54805b4065959965ff0d4d8fd9"
+            },
+            {
+              "path": "evidence/review-report.md",
+              "sha256": "0be4ca75d4a807915e8ba73c1e845f3a588f397bdff95381d246ef748966e040"
+            },
+            {
+              "path": "evidence/ship-log.md",
+              "sha256": "210ebef093fc45b4f81be443a21f86e2ef1ffc3f9921d2b6013759b78ee68615"
+            }
+          ],
+          "missing": [
+            "verification-report"
+          ],
+          "entryName": "2026-08-20-issue-plan-publication",
+          "foundAtRef": "refs/heads/main",
+          "blobPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-20-issue-plan-publication/archive.json"
+        }
+      }
+    ],
+    "counts": {
+      "record": 2,
+      "no-record": 0,
+      "not-archived": 1,
+      "unreadable": 0,
+      "unattributed": 0
+    }
+  },
+  "review": {
+    "issueId": "issue-multi-change-execution",
+    "revisionId": "0001",
+    "determination": {
+      "kind": "accepted",
+      "acceptedAt": "2026-08-20T09:46:11.369Z",
+      "conditionsRevisionId": "0001"
+    },
+    "threads": [
+      {
+        "kind": "archive-pending",
+        "nodeId": "issue-persistent-baseline",
+        "observation": "run-terminal"
+      },
+      {
+        "kind": "evidence-missing",
+        "nodeId": "issue-node-lifecycle",
+        "names": [
+          "verification-report"
+        ]
+      },
+      {
+        "kind": "evidence-missing",
+        "nodeId": "issue-plan-publication",
+        "names": [
+          "verification-report"
+        ]
+      }
+    ],
+    "verification": {
+      "progress": {
+        "completed": 3,
+        "total": 3
+      },
+      "delivery": {
+        "record": 2,
+        "no-record": 0,
+        "not-archived": 1,
+        "unreadable": 0,
+        "unattributed": 0
+      }
+    }
+  },
+  "complete": true,
+  "unsearchedRefs": [],
+  "problems": []
+}

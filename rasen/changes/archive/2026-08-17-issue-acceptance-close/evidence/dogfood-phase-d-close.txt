@@ -1,0 +1,31 @@
+$ node bin/rasen.js store issue accept issue-layer-phase1 --store issue-layer-dogfood --note "All three children archived with landed outcomes"
+
+Issue issue-layer-phase1 accepted (resolved)
+  conditions: revision 0001 (8988bccd639494439dbdfaf964a4ab34c814c3c95bbf3f603a70c5fba30c5f2b)
+  gate: 3/3 waiting-human, 0 problems standing
+  note: All three children archived with landed outcomes
+
+  Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing.
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-issue-layer-dogfood add rasen/issues/issue-layer-phase1/accepted.yaml rasen/issues/issue-layer-phase1/issue.yaml
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-issue-layer-dogfood commit -m "chore(store): accept issue issue-layer-phase1"
+$ node bin/rasen.js store issue show issue-layer-phase1 --store issue-layer-dogfood   (after committing the acceptance — the query prefers committed copies)
+
+  state: resolved
+    phase: done
+    health: healthy
+    progress: 3/3
+    run-state: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer
+  acceptance:
+    gate: not eligible — the Issue already carries an acceptance record; an acceptance is never rewritten.
+    record: accepted 2026-08-17T01:56:38.385Z under revision 0001 (gate 3/3 waiting-human)
+
+$ node bin/rasen.js store issue list --store issue-layer-dogfood
+
+issue-layer-phase1  [resolved]  done/healthy 3/3  Issue layer phase 1: status projection, execution binding, acceptance close
+
+Run-state visible at: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer
+
+$ node bin/rasen.js store issue accept issue-layer-phase1 --store issue-layer-dogfood   (second accept)
+
+Error: Accepting Issue 'issue-layer-phase1' is refused: the Issue already carries an acceptance record; an acceptance is never rewritten.
+Fix: An acceptance record is never rewritten. Open a new Issue for follow-up work.

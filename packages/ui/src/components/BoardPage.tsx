@@ -7,18 +7,14 @@ import type {
   ChangeRunEntry,
   ChangeSummary,
   SessionListEntry,
-  SpaceEntry,
-  SpaceMember,
   SpaceWorktreeEntry,
 } from '../api/types.js';
 import {
   BOARD_COLUMNS,
   groupIntoTasks,
-  tasksForMember,
   type BoardColumn as BoardColumnId,
 } from '../board/columns.js';
 import { BoardColumn, type BoardColumnEntry } from './BoardColumn.js';
-import { MemberChips } from './MemberChips.js';
 import { WorktreePanel } from './WorktreePanel.js';
 import { NewChangeDialog } from './NewChangeDialog.js';
 import { PageHeader } from './ui/PageHeader.js';
@@ -42,13 +38,12 @@ const COLUMN_LABEL_KEYS: Record<BoardColumnId, string> = {
 const DONE_COLUMN_LIMIT = 5;
 
 /**
- * The board page (ui-space-redesign-task-board design D6): three space-scoped
+ * The project Board page: three project-scoped
  * calls — `listChanges` + `listRuns` + `listSessions` — render the whole
  * board, scoped to the current route's planning space, grouped into Tasks
  * (portfolio containers and implicit single-item bare changes) and placed into
  * lifecycle columns by the pure `groupIntoTasks` / `deriveTaskColumn`
- * functions. Live sessions drive the `⦿` indicator and, in a store space, the
- * member-chip filter (session-provenance attribution). Never shows
+ * functions. Live sessions drive the `⦿` indicator and worktree counts. Never shows
  * placeholder/fabricated changes (board-ui spec) — loading/error/empty are
  * distinct explicit states.
  */
@@ -74,7 +69,6 @@ export function BoardPage() {
   const [loadErrors, setLoadErrors] = useState<ChangeLoadError[]>([]);
   const [runs, setRuns] = useState<ChangeRunEntry[]>([]);
   const [sessions, setSessions] = useState<SessionListEntry[]>([]);
-  const [spaces, setSpaces] = useState<SpaceEntry[]>([]);
   const [worktrees, setWorktrees] = useState<SpaceWorktreeEntry[]>([]);
   const [pageError, setPageError] = useState<{ message: string; fix?: string } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -90,10 +84,6 @@ export function BoardPage() {
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [highlightedName, setHighlightedName] = useState<string | null>(null);
-  // The selected member chip (a member's projectId), or null for the "All"
-  // rollup. Reset whenever the space changes so a stale member never carries
-  // across a space switch.
-  const [selectedMember, setSelectedMember] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,7 +91,6 @@ export function BoardPage() {
     if (backgroundRefresh) setRefreshing(true);
     else setLoading(true);
     setPageError(null);
-    setSelectedMember(null);
     Promise.all([client.listChanges(dataSelector), client.listRuns(dataSelector), client.listSessions(selector)])
       .then(([changesRes, runsRes, sessionsRes]) => {
         if (cancelled) return;
@@ -161,28 +150,6 @@ export function BoardPage() {
       cancelled = true;
     };
   }, [space?.type, space?.id, selector, refreshNonce]);
-
-  // The member chip row is store-only chrome (design D4). Fetch the spaces
-  // listing best-effort — a failure just leaves the chip row empty rather than
-  // failing the board, and a project space never needs it.
-  useEffect(() => {
-    if (space?.type !== 'store') {
-      setSpaces([]);
-      return;
-    }
-    let cancelled = false;
-    client
-      .listSpaces()
-      .then((res) => {
-        if (!cancelled) setSpaces(res.spaces);
-      })
-      .catch(() => {
-        if (!cancelled) setSpaces([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [space?.type, space?.id, refreshNonce]);
 
   function refresh() {
     setHighlightedName(null);
@@ -280,21 +247,7 @@ export function BoardPage() {
   }
 
   const runsByName = new Map(runs.map((r) => [r.name, r]));
-  const allTasks = groupIntoTasks(changes, runsByName, sessions);
-
-  // Member chips render only for a store space (design D4). The current
-  // store's members come from the spaces listing, matched by opaque id.
-  const storeMembers: SpaceMember[] =
-    space?.type === 'store'
-      ? (spaces.find((s) => s.type === 'store' && s.id === space.id) as
-          | { members: SpaceMember[] }
-          | undefined)?.members ?? []
-      : [];
-  const memberRoot =
-    selectedMember !== null
-      ? storeMembers.find((m) => m.projectId === selectedMember)?.root ?? null
-      : null;
-  const tasks = tasksForMember(allTasks, sessions, memberRoot);
+  const tasks = groupIntoTasks(changes, runsByName, sessions);
 
   const grouped = new Map<BoardColumnId, BoardColumnEntry[]>(BOARD_COLUMNS.map((c) => [c.id, []]));
   for (const task of tasks) {
@@ -320,9 +273,6 @@ export function BoardPage() {
           </>
         }
       />
-      {space?.type === 'store' && (
-        <MemberChips members={storeMembers} selected={selectedMember} onSelect={setSelectedMember} />
-      )}
       {worktreePanel}
       {brokenChanges}
       {changes.length > 0 && (

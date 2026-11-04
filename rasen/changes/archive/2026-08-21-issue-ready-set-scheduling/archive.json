@@ -1,0 +1,49 @@
+{
+  "change": "issue-ready-set-scheduling",
+  "archivedAt": "2026-08-21T23:21:10.521Z",
+  "codeCommit": "3f06549614ad5e738cd9a3ed33c5f17be552df24",
+  "planningBranch": "feat/issue-phase5",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/bin-summaries.txt",
+      "sha256": "f0c0f538d5b52126121f00b457cd5ab38b8a2af024a911a054037203234ef54e"
+    },
+    {
+      "path": "evidence/fix-round-1.md",
+      "sha256": "561a2e9c838334e60d48d634a9b12f7256faadcd2de84fd4924a47287432dd2a"
+    },
+    {
+      "path": "evidence/implementer-findings.md",
+      "sha256": "df02977a054efbd3b692c69c5a8d4116c092b68251f127c754b2a097333b77ca"
+    },
+    {
+      "path": "evidence/local-gates.md",
+      "sha256": "3cb7555b0ca13feff6ecf54bb29c46039f995e7668557d504468fda1ac7eec65"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "c9685a171140b286e2520ad86410ee473fd1c8dff592ea7f11b73ca1e2e0b2df"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "e56f447fd71190dcdb204782f41ce0ec1aa6b32bcd97326d3386d8927d212e09"
+    },
+    {
+      "path": "evidence/validate.txt",
+      "sha256": "40f36b189dbeb39d85e2320c436dcab2a097d0455166b864549f13c1fe532afd"
+    },
+    {
+      "path": "evidence/zero-mirror-acceptance.txt",
+      "sha256": "eb6b081df85e2abedb61367616988a030bf4879917a18faab496d93e54e4c138"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

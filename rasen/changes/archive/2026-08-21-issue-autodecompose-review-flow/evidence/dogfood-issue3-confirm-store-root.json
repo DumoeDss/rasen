@@ -1,0 +1,42 @@
+{
+  "issueId": "issue-autodecompose-uplift",
+  "revisionId": "0003",
+  "report": {
+    "issueId": "issue-autodecompose-uplift",
+    "revisionId": "0003",
+    "contracts": [
+      {
+        "issueId": "issue-autodecompose-uplift",
+        "nodeId": "issue-autodecompose-graph",
+        "changeInstanceId": "ci_96db06e16c62383fc2c4218874cb00e6e2a93a9b3c5415206bb8c568d267ab42",
+        "alias": "2026-08-21-issue-autodecompose-graph",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "launch": {
+          "form": "project-checkout",
+          "cwd": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code",
+          "attachedRoots": [
+            "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store"
+          ]
+        },
+        "pipeline": "small-feature",
+        "pipelineSource": "suggestion",
+        "mode": "fresh",
+        "runStatePath": null,
+        "locatedBy": null
+      }
+    ],
+    "pendingChanges": [
+      {
+        "nodeId": "issue-autodecompose-review-flow",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "summary": "Human review, revision, and confirm-to-start flow over decomposition revisions",
+        "suggestedPipeline": "small-feature",
+        "lifecycle": "required"
+      }
+    ],
+    "waiting": [],
+    "unprepared": []
+  }
+}

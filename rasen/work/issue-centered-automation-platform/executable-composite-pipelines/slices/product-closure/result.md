@@ -1,5 +1,11 @@
 # ECP-5 `ecp-product-closure` — evidence ledger
 
+> Direction reconciliation（2026-08-01）：**partial**。下方 ledger 准确记录了
+> 当时 implementation portfolio 的测试、dogfood 和 review 证据，但不能覆盖其自身
+> 记录的 FanOut/Join 只读 residual，也不能证明 v2 默认创作、完整公共 loop policy、
+> 独立 Session executor、后续真实 Change 自宿主和当前 HEAD 发布审查。剩余验收已
+> 进入 Roadmap ECP-6..8；历史 evidence 不改写。
+
 Per design D7. This file is built up as the change lands. It now covers
 **Sections 1–3** (engine selection policy, the one v2-migration predicate, the
 `rasen-auto` / playbook convergence) and **Sections 6–9** (product wording and

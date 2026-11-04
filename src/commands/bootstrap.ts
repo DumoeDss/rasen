@@ -36,6 +36,7 @@ import {
   type BootstrapStoreEntry,
 } from '../core/store/bootstrap.js';
 import type { StoreDiagnostic } from '../core/store/errors.js';
+import { isValidStoreUid, normalizeStoreUid } from '../core/store/identity-types.js';
 import {
   getBootstrapMessages,
   type BootstrapMessages,
@@ -83,8 +84,7 @@ export function parseSuppliedPaths(
     if (selector.length === 0 || target.length === 0) {
       throw new BootstrapUsageError(messages.pathFormat(value), 'bootstrap_path_format');
     }
-    parsed.set(selector, target);
-    parsed.set(selector.toLowerCase(), target);
+    parsed.set(isValidStoreUid(selector) ? normalizeStoreUid(selector) : selector, target);
   }
   return parsed;
 }

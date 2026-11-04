@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TEST_ATTESTATION_AUTHORITY } from '../../fixtures/trusted-completion.js';
 
 import {
   EcpDefinitionModule,
@@ -103,7 +104,12 @@ function profileFor(prepared: PreparedDefinition) {
       effects: [
         { slot: 'workspace', kind: 'workspace' as const, resource: 'worktree', recovery: 'suspend-if-ambiguous' as const },
       ],
-      adapter: { id: `adapter:${node.skill}`, version: '1', contentDigest: `sha256:${'6'.repeat(64)}` },
+      adapter: {
+        id: `adapter:${node.skill}`,
+        version: '1',
+        contentDigest: `sha256:${'6'.repeat(64)}`,
+        attestationAuthority: TEST_ATTESTATION_AUTHORITY,
+      },
     })),
     policy: {
       format: 'effective-run-policy/1',
@@ -161,7 +167,7 @@ describe('simple bug-fix dogfood through the facade (11.5/11.6)', () => {
     const store = createInMemoryRunStore();
     const capabilityByPath = new Map(profile.capabilities.map((c) => [c.nodeId, c] as const));
     const stageByPath = new Map(profile.policy.stages.map((s) => [s.nodeId, s] as const));
-    const buildAction = (descriptor: { nodeId: string; occurrence: number; admissionKind: 'agent' | 'command' | 'host' }): RunAction => {
+    const buildAction = (descriptor: { nodeId: string; occurrence: number; admissionKind: 'agent' | 'command' | 'host'; renderedTurnInput?: string }): RunAction => {
       const node = plan.nodes.find((n) => n.nodeId === descriptor.nodeId)!;
       const capability = capabilityByPath.get(node.hierarchicalPath)!;
       const stage = stageByPath.get(node.hierarchicalPath)!;
@@ -179,7 +185,11 @@ describe('simple bug-fix dogfood through the facade (11.5/11.6)', () => {
           attemptOrdinal: 0,
           expectedBeforeWorkspace: workspaceRevision,
         },
-        { input: { change: 'fixture-change' } as never }
+        {
+          renderedTurnInput:
+            descriptor.renderedTurnInput ?? 'trusted fixture prompt',
+          input: { change: 'fixture-change' } as never,
+        }
       );
     };
 

@@ -4,11 +4,14 @@ import {
   ensureProjectIdInConfig,
   hasStoreDeclaration,
   readProjectConfig,
+  reconcileProjectIdInConfig,
 } from './project-config.js';
 import {
   deriveProjectDisplayName,
+  findProjectRegistryEntry,
   getProjectHomeDir,
   readProjectRegistryState,
+  refreshRegisteredProject,
   registerProject,
   resolveRegistrationRoot,
   type ProjectMode,
@@ -16,6 +19,7 @@ import {
 } from './project-registry.js';
 import { SKILL_NAMES, extractGeneratedByVersion, getConfiguredTools } from './shared/tool-detection.js';
 import { AI_TOOLS } from './config.js';
+import { normalizeProjectIdentity, sameProjectIdentity } from './store/project-records.js';
 import { resolveToolSkillsRoot } from './shared/tool-detection.js';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
@@ -98,7 +102,10 @@ function deriveProjectMode(projectRoot: string): ProjectMode {
 /**
  * Resolves the machine-local home for `projectRoot` (a directory containing
  * `rasen/`, either a repo root or a store root). `ensure: true` (default)
- * mints identity and registers the project, creating `homeDir` if absent.
+ * mints identity and registers the project, creating `homeDir` if absent;
+ * it also CONVERGES identity - a mint adopts the registry's id for a
+ * registered path, and a config id that still disagrees with the registry
+ * after registration is reconciled toward it (converge-projectid-mint).
  * `ensure: false` is a non-mutating probe: it creates neither config
  * changes, registry entries, nor directories, and returns null when the
  * project has no identity or registry entry yet.
@@ -117,19 +124,15 @@ export async function resolveProjectHome(
       return null;
     }
 
-    const canonicalPath = FileSystemUtils.canonicalizeExistingPath(projectRoot);
-    const state = await readProjectRegistryState(pathOptions);
-    // Path-exact first (a fallback-registered worktree entry is keyed at the
-    // worktree path), then a pierced-root retry (D1): a probe from a linked
-    // worktree finds the MAIN checkout's entry with no worktree-keyed entry.
-    let entry = state?.projects[canonicalPath];
-    if (!entry) {
-      const pierced = await resolveRegistrationRoot(canonicalPath);
-      if (pierced !== canonicalPath) {
-        entry = state?.projects[pierced];
-      }
+    const registered = await findProjectRegistryEntry(projectRoot, pathOptions);
+    if (!registered) {
+      return null;
     }
-    if (!entry) {
+    const { entry } = registered;
+    if (
+      normalizeProjectIdentity(entry.projectId) !==
+      normalizeProjectIdentity(config.projectId)
+    ) {
       return null;
     }
 
@@ -137,8 +140,21 @@ export async function resolveProjectHome(
   }
 
   const mode = deriveProjectMode(projectRoot);
-  const projectId = await ensureProjectIdInConfig(projectRoot, pathOptions);
-  const { entry } = await registerProject({ projectRoot, projectId, mode }, pathOptions);
+  const configProjectId = await ensureProjectIdInConfig(projectRoot, pathOptions);
+  const { entry } = await registerProject(
+    { projectRoot, projectId: configProjectId, mode },
+    pathOptions
+  );
+  // Convergence check (converge-projectid-mint design D3): registration is
+  // the sticky authority for a registered path, so when it kept a different
+  // identity than the config carried (an already-diverged config id), the
+  // config is reconciled toward the registry's id here - both truths are in
+  // hand, and every identity-asserting command funnels through this ensure
+  // path. Canonical-form-equal ids never trigger a rewrite; a conflicted
+  // registry never reaches here (registration refused above).
+  if (!sameProjectIdentity(configProjectId, entry.projectId)) {
+    await reconcileProjectIdInConfig(projectRoot, entry.projectId, pathOptions);
+  }
   return buildProjectHome(entry.projectId, entry.name, entry.mode, entry.home, pathOptions);
 }
 
@@ -256,7 +272,7 @@ export async function touchProjectRegistry(
     }
 
     const cacheChanged = cacheInputs.tools !== undefined || cacheInputs.installedVersion !== undefined;
-    await registerProject(
+    await refreshRegisteredProject(
       {
         projectRoot,
         projectId: config.projectId,

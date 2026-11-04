@@ -162,11 +162,13 @@ export async function createAdmittedAction(input) {
   const [
     registryModule,
     profileModule,
+    executionProfileModule,
     runtimeModule,
     identityModule,
   ] = await Promise.all([
     import(dist('core', 'pipeline-registry', 'prepared-registry.js')),
     import(dist('core', 'pipeline-registry', 'profile-resolver.js')),
+    import(dist('core', 'pipeline-registry', 'execution-plan-internal.js')),
     import(dist('core', 'change-run', 'internal', 'runtime-context.js')),
     import(dist('core', 'change-run', 'internal', 'identity.js')),
   ]);
@@ -177,15 +179,19 @@ export async function createAdmittedAction(input) {
   const resolution = registry.load('bug-fix');
   const prepared = resolution.prepared;
   const authored = prepared.authoredSource;
+  const isV2Authored = prepared.authoredVersion === 2;
+  const sourceDisplayName = isV2Authored
+    ? prepared.definition.name
+    : authored.name;
   const sourceDigest = `sha256:${prepared.digests.source}`;
   const sourceRevision = {
     layer: resolution.source,
     kind: 'pipeline-yaml',
-    sourceId: `${resolution.source}:${authored.name}`,
+    sourceId: `${resolution.source}:${sourceDisplayName}`,
     authoredContentDigest: sourceDigest,
     semanticDigest: sourceDigest,
   };
-  const policyStages = authored.stages.map((stage) => ({
+  const policyStages = isV2Authored ? [] : authored.stages.map((stage) => ({
     nodeId: `stage:${stage.id}`,
     role: stage.role ?? 'implementer',
     model: stage.model ?? 'default',
@@ -211,13 +217,38 @@ export async function createAdmittedAction(input) {
       reuseRoundLimit: 'acceptance',
     },
   }));
-  const profile = profileModule.resolveRuntimeExecutionProfile(
+  const resolvedProfile = profileModule.resolveRuntimeExecutionProfile(
     prepared,
     registry.catalog,
     policyStages,
     sourceRevision,
     { maxAttempts: 32, maxActions: 128 }
   );
+  // The physical cache portfolio deliberately exercises reusable turns. The
+  // old v1 helper supplied this acceptance policy through policyStages; native
+  // v2 profiles resolve authored stages internally, so recreate the sealed
+  // profile with the same test-only policy and fresh canonical digests.
+  const profile = isV2Authored
+    ? executionProfileModule.createRuntimeExecutionProfile({
+        sourceRevision: resolvedProfile.sourceRevision,
+        capabilities: resolvedProfile.capabilities,
+        policy: {
+          ...resolvedProfile.policy,
+          stages: resolvedProfile.policy.stages.map((stage) => ({
+            ...stage,
+            sessionReuse: 'same-invocation',
+            handoffTokenLimit: 10_000,
+            reuseRoundLimit: 8,
+            provenance: {
+              ...stage.provenance,
+              sessionReuse: 'acceptance',
+              handoffTokenLimit: 'acceptance',
+              reuseRoundLimit: 'acceptance',
+            },
+          })),
+        },
+      })
+    : resolvedProfile;
   // The workspace belongs in the Run identity, not just in the launch request.
   // Deriving the Run from candidate+arm alone made two isolated workspaces
   // collide on one Run id while their launch digests differed, which the
@@ -252,7 +283,32 @@ export async function createAdmittedAction(input) {
     projectRoot: input.workspace,
     changeId: `cache-${input.armId.replace(/[^a-z0-9]+/gu, '-')}`,
   };
-  let receipt = await context.facade.start(
+  const admitPreview = async (preview) => {
+    if (preview.candidates.length === 0) return preview;
+    const pending = new Set(preview.candidates.map((candidate) => candidate.candidateId));
+    return context.facade.admit(
+      { change, runId },
+      {
+        deliveryMode: 'grant',
+        resolveAgentTurnInput: (candidate) => {
+          if (!pending.delete(candidate.candidateId)) {
+            throw new Error('canonical_agent_candidate_not_previewed');
+          }
+          return [
+            'rasen trusted physical acceptance driver turn input',
+            `candidate=${candidate.candidateId}`,
+            `node=${candidate.nodeId}`,
+            `occurrence=${candidate.occurrence}`,
+            `input=${JSON.stringify(candidate.input ?? null)}`,
+          ].join('\n');
+        },
+        finalizeAgentTurnInputs: () => {
+          if (pending.size !== 0) throw new Error('canonical_agent_candidate_unused');
+        },
+      }
+    );
+  };
+  let receipt = await admitPreview(await context.facade.start(
     {
       change,
       pipeline: 'bug-fix',
@@ -261,7 +317,7 @@ export async function createAdmittedAction(input) {
       inputs,
     },
     { deliveryMode: 'grant' }
-  );
+  ));
   let action;
   for (let step = 0; step < 32 && action === undefined; step += 1) {
     action = receipt.actions.find(
@@ -278,17 +334,22 @@ export async function createAdmittedAction(input) {
     const decisionId = gate.decisionIds[0];
     await context.facade.control(
       {
-        kind: 'decide-gate',
-        waitId: gate.waitId,
-        decisionId,
-        outcome: decisionId,
+        format: 'change-run-control/1',
+        ref: { change, runId },
+        expectedRecordVersion: record.recordVersion,
+        command: {
+          kind: 'decision',
+          waitId: gate.waitId,
+          decisionId,
+          outcome: decisionId,
+        },
       },
       { deliveryMode: 'grant' }
     );
-    receipt = await context.facade.resume(
+    receipt = await admitPreview(await context.facade.resume(
       { change, runId },
       { deliveryMode: 'grant' }
-    );
+    ));
   }
   if (action === undefined) throw new Error('canonical_agent_action_not_admitted');
   return { runId, action };

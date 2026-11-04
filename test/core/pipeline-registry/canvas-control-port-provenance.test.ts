@@ -53,6 +53,11 @@ describe('Canvas control-port provenance', () => {
     id,
     kind: 'AtomicStage' as const,
     capability: { id: 'skill:rasen-apply-change', version: 'sha256:abc' },
+    execution: {
+      version: 1 as const,
+      role: 'implementer' as const,
+      workspace: { access: 'write' as const },
+    },
   });
 
   const definitionWith = (

@@ -7,19 +7,44 @@
  * shape, before the two route groups became the server's composition seam).
  */
 import type * as http from 'node:http';
+import * as path from 'node:path';
 
 import type { ConfigApiContext } from '../config-api/router.js';
-import { resolveSpaceSelector } from '../config-api/project-addressing.js';
+import { ISSUE_STATES } from '../store/issues/index.js';
+import {
+  resolveProjectPlanningSpaceFromRoot,
+  resolveSpaceSelector,
+  type ResolvedSpace,
+} from '../config-api/project-addressing.js';
 import type { ProjectHome } from '../project-home.js';
 import {
   getProjectRegistryPath,
   parseProjectRegistryState,
 } from '../project-registry.js';
-import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { derivePlanningSpaceId } from '../change-run/internal/identity.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { handleChanges } from './changes.js';
 import { handleArchive } from './archive.js';
+import {
+  resolveStoreSpace,
+  handleStoreProjects,
+  handleStoreTargetLines,
+  handleStoreChanges,
+  handleStoreIssues,
+  handleStoreIssue,
+  handleStoreIssueReferences,
+  handleStoreExecutionPlan,
+  handleStoreIssueProjections,
+  handleStoreIssueProjection,
+  handleStoreIssueAttention,
+  handleStoreChangeIssueLinks,
+  handleStoreIssueCreate,
+  handleStoreIssueSetState,
+  handleStorePublishPlan,
+  type StoreChangesFilter,
+} from './stores.js';
+import { resolveRunStateContext } from '../issue-read/index.js';
 import { handleRuns, handleRunDetail } from './runs.js';
 import { handleRunControl, createProductionRunControlSpawner, type RunControlSpawner } from './run-control.js';
 import { handleTaskDetail } from './task-detail.js';
@@ -35,6 +60,31 @@ import { resolveLocalPath } from './local-path-resolver.js';
 import { createLocalPathChooser } from './local-path-chooser.js';
 import { createSessionRegistry } from './session-registry.js';
 import { createAgentCliResolver, createSessionSupervisor, type SessionSupervisor } from './supervisor.js';
+import { createSessionHost } from '../session-host/host.js';
+import { createSessionHostRegistry } from '../session-host/registry.js';
+import { createClaudeSessionBackend } from '../session-host/claude-backend.js';
+import { createSessionHostOwnership } from '../session-host/ownership.js';
+import { createHostedProcessScope } from '../session-host/process-capsule/hosted-process-scope.js';
+import type {
+  ExactTeacherAttemptPhaseCommitter,
+  SessionHost,
+  SessionHostCommand,
+} from '../session-host/contracts.js';
+import {
+  createExactTeacherAttemptJournal,
+  createExactTeacherAttemptPersistence,
+  type ExactTeacherAuthorityPolicy,
+  type TrustedCompletionProducerResolver,
+} from '../frozen-action-executor/index.js';
+import type { WorkspaceReservationRegistry } from '../change-run/internal/reservations.js';
+import {
+  handleHostedSessionDispatch,
+  hostedSessionToWire,
+} from './hosted-sessions.js';
+import {
+  handleFrozenActionContinuation,
+  handleFrozenActionDispatch,
+} from './frozen-action-executor.js';
 import {
   createReusableSessionService,
   reusableSessionHttpStatus,
@@ -42,6 +92,20 @@ import {
   type ReusableSessionService,
 } from './reusable-session-api.js';
 import { createChangeSubmitter } from './submit.js';
+import {
+  createChangeFinalizer,
+  type ChangeFinalizerOptions,
+  type FinalizeChangePathScope,
+  type FinalizeChangeRequestBody,
+} from './finalize.js';
+import { isStoreAggregateSpace } from './project-space.js';
+import {
+  createStoreMutator,
+  matchStoreRoute,
+  serveStoreRead,
+  storeRouteAdmitsMethod,
+  type StoreMutationBody,
+} from './stores-routes.js';
 import { createSpaceCreator } from './create-space.js';
 import {
   handleWorkflowDependenciesRead,
@@ -77,12 +141,13 @@ import {
   type AuditManagementOptions,
 } from '../token-audit/management.js';
 import { hasRuntimeCapability } from '../runtime-adapters.js';
+import { getGlobalDataDir } from '../global-config.js';
 
 /**
  * Extended resolution for the runs endpoints, which additionally accept a
- * `planning:<PlanningSpaceId>` selector that bypasses root resolution (design
- * §13). When `planningSpaceId` is set, the handler filters by PlanningSpaceId
- * match instead of by derived WorkspaceInstanceId.
+ * `planning:<PlanningSpaceId>` selector (design §13). The selector is resolved
+ * through the registered project homes to one canonical physical root before
+ * list, detail, or control authorization is evaluated.
  */
 type RunsSpaceResolution =
   | { ok: true; root: string | undefined; planningSpaceId?: string }
@@ -90,7 +155,7 @@ type RunsSpaceResolution =
 
 /** Resolution of a request's optional `space` selector to a planning-space root (planning-space-addressing design D2). */
 type RequestSpaceResolution =
-  | { ok: true; root: string | undefined }
+  | { ok: true; root: string | undefined; space?: ResolvedSpace }
   | { ok: false; status: number; code: string; message: string };
 
 /**
@@ -108,16 +173,77 @@ function checkProjectAmbiguity(projectId: string): { ambiguous: boolean; candida
   } catch {
     return { ambiguous: false, candidates: [] };
   }
-  const matchingRoots = Object.entries(state.projects)
+  const matchingEntries = Object.entries(state.projects)
     .filter(([, entry]) => entry.projectId === projectId)
-    .map(([root]) => root);
-  if (matchingRoots.length <= 1) return { ambiguous: false, candidates: [] };
+  if (matchingEntries.length <= 1) return { ambiguous: false, candidates: [] };
   // Derive the PlanningSpaceId for each matching root (same chain as CLI).
-  const candidates = matchingRoots.map((root) => {
-    const home = `project-${createHash('sha256').update(root).digest('hex').slice(0, 12)}`;
-    return `planning-space:${createHash('sha256').update('planning-space/1' + home).digest('hex')}`;
-  });
+  const candidates = [...new Set(
+    matchingEntries.map(([, entry]) => derivePlanningSpaceId(entry.name) as string)
+  )].sort();
   return { ambiguous: true, candidates };
+}
+
+function resolvePlanningSelector(planningSpaceId: string): RunsSpaceResolution {
+  if (!/^planning-space:[0-9a-f]{64}$/.test(planningSpaceId)) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'planning_selector_invalid',
+      message: 'planning selector must contain one full PlanningSpaceId.',
+    };
+  }
+  const registryPath = getProjectRegistryPath();
+  if (!existsSync(registryPath)) {
+    return {
+      ok: false,
+      status: 404,
+      code: 'planning_selector_unavailable',
+      message: `PlanningSpaceId ${planningSpaceId} is not registered on this machine.`,
+    };
+  }
+  let state;
+  try {
+    state = parseProjectRegistryState(readFileSync(registryPath, 'utf8'));
+  } catch {
+    return {
+      ok: false,
+      status: 503,
+      code: 'planning_registry_unavailable',
+      message: 'The project registry cannot resolve an exact planning root.',
+    };
+  }
+  const roots = new Set<string>();
+  for (const [registeredRoot, entry] of Object.entries(state.projects)) {
+    if (derivePlanningSpaceId(entry.name) !== planningSpaceId) continue;
+    try {
+      if (!statSync(registeredRoot).isDirectory()) continue;
+      roots.add(FileSystemUtils.canonicalizeExistingPath(registeredRoot));
+    } catch {
+      // A missing/unreadable registration is unavailable authority, never a
+      // cwd or registry-order fallback.
+    }
+  }
+  if (roots.size === 0) {
+    return {
+      ok: false,
+      status: 404,
+      code: 'planning_selector_unavailable',
+      message: `PlanningSpaceId ${planningSpaceId} has no available registered root.`,
+    };
+  }
+  if (roots.size > 1) {
+    return {
+      ok: false,
+      status: 409,
+      code: 'planning_selector_ambiguous',
+      message: `PlanningSpaceId ${planningSpaceId} maps to multiple registered roots.`,
+    };
+  }
+  return {
+    ok: true,
+    root: [...roots][0]!,
+    planningSpaceId,
+  };
 }
 
 function canonicalizeOrResolve(target: string): string {
@@ -136,6 +262,28 @@ export interface ManagementRouterOptions {
   resolveAgentCliOverride?: () => Promise<string | null>;
   maxConcurrentSessions?: number;
   sessionKillGraceMs?: number;
+  /** Test/embedded-host override for the change finalizer (CLI entry injection). */
+  finalizer?: ChangeFinalizerOptions;
+  /** Test override for the durable hosted lifecycle; production constructs one per daemon/server. */
+  sessionHostOverride?: SessionHost;
+  /** Test-only parent data directory for the durable hosted registry. */
+  sessionHostStateDir?: string;
+  /** Server-owned exact Teacher provider policy; never accepted from HTTP. */
+  exactTeacherAuthorityPolicy?: ExactTeacherAuthorityPolicy;
+  /** Test-only exact Teacher host override. Production constructs a separate host. */
+  exactTeacherSessionHostOverride?: SessionHost;
+  /** Test-only phase committer paired with the exact Teacher host override. */
+  exactTeacherAttemptCommitterOverride?: ExactTeacherAttemptPhaseCommitter;
+  /** Dedicated durable registry root for the exact Teacher lane. */
+  exactTeacherSessionHostStateDir?: string;
+  /** Daemon-owned signer lookup; never accepted from an HTTP request body. */
+  frozenActionProducerResolver?: TrustedCompletionProducerResolver;
+  /** Daemon-owned RunStore root used by frozen Action execution. */
+  frozenActionStoreRoot?: string;
+  /** Test-only deterministic observer for exact Teacher workspace fencing. */
+  frozenActionWorkspaceObserver?: (cwd: string) => string;
+  /** Optional daemon-scoped override shared by every reopened Run context. */
+  workspaceReservationRegistry?: WorkspaceReservationRegistry;
   /** Test/daemon override for native runtime homes and the Rasen machine-data directory. */
   audit?: AuditManagementOptions;
   /**
@@ -145,6 +293,8 @@ export interface ManagementRouterOptions {
    * canned receipt.
    */
   runControlSpawner?: RunControlSpawner;
+  /** Test/daemon override captured once for every Run list/detail/control request. */
+  runsRoot?: string;
   /** Test-only replacement for the durable reusable-session service. */
   reusableSessionService?: ReusableSessionService;
 }
@@ -152,6 +302,8 @@ export interface ManagementRouterOptions {
 export interface ManagementRouterHandle {
   handle: (req: http.IncomingMessage, res: http.ServerResponse, pathname: string) => Promise<void>;
   supervisor: SessionSupervisor;
+  sessionHost: SessionHost;
+  exactTeacherSessionHost?: SessionHost;
   reusableSessionService: ReusableSessionService;
   shutdownReusableSessions: () => Promise<ReusableSessionOwnerShutdownResult>;
   shutdownPathChooser: () => Promise<void>;
@@ -159,6 +311,7 @@ export interface ManagementRouterHandle {
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
 const MAX_BODY_BYTES = 64 * 1024;
+const MAX_HOSTED_BODY_BYTES = 2 * 1024 * 1024 + 16 * 1024;
 const MAX_REUSABLE_SESSION_BODY_BYTES = 2 * 1024 * 1024;
 
 /** The management endpoints with no path parameter, canonical (no trailing slash) form. */
@@ -168,6 +321,8 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/archive',
   '/api/v1/runs',
   '/api/v1/sessions',
+  '/api/v1/hosted-sessions',
+  '/api/v1/hosted-sessions/execute',
   '/api/v1/reusable-sessions',
   '/api/v1/reusable-sessions/wake',
   '/api/v1/reusable-sessions/retire',
@@ -191,9 +346,65 @@ const MANAGEMENT_PATHS = new Set([
   '/api/v1/audits/import',
   '/api/v1/themes',
   '/api/v1/themes/import',
+  '/api/v1/frozen-action-executor/dispatch',
+  '/api/v1/frozen-action-executor/continue',
+  '/api/v1/stores/projects',
+  '/api/v1/stores/target-lines',
+  '/api/v1/stores/changes',
+  '/api/v1/stores/issues',
+  '/api/v1/stores/issue',
+  '/api/v1/stores/issue-state',
+  '/api/v1/stores/issue-references',
+  '/api/v1/stores/execution-plan',
+  '/api/v1/stores/issue-projections',
+  '/api/v1/stores/issue-projection',
+  '/api/v1/stores/issue-attention',
+  '/api/v1/stores/change-issue-links',
 ]);
 
 const SESSION_ID_PATH_PREFIX = '/api/v1/sessions/';
+const HOSTED_SESSION_PATH_PREFIX = '/api/v1/hosted-sessions/';
+
+const STORE_FINALIZE_PATH_PREFIX = '/api/v1/stores/';
+
+/**
+ * Matches
+ * `/api/v1/stores/<storeUid>/projects/<projectId>/lines/<targetLineId>/changes/<instance>/finalize`
+ * and nothing shorter, longer, or differently shaped (L3+L5: the Store
+ * change-finalization route). A partial prefix is not a management path and
+ * falls through to the rest of the server's routing, so an incomplete scope
+ * can never be answered by this route group at all.
+ */
+function matchStoreFinalizePath(pathname: string): FinalizeChangePathScope | null {
+  if (!pathname.startsWith(STORE_FINALIZE_PATH_PREFIX)) return null;
+  const parts = pathname.slice(STORE_FINALIZE_PATH_PREFIX.length).split('/');
+  if (parts.length !== 8) return null;
+  const [storeUid, projects, projectId, lines, targetLineId, changes, instance, finalize] =
+    parts as [string, string, string, string, string, string, string, string];
+  if (
+    projects !== 'projects' ||
+    lines !== 'lines' ||
+    changes !== 'changes' ||
+    finalize !== 'finalize'
+  ) {
+    return null;
+  }
+  const decoded = [storeUid, projectId, targetLineId, instance].map((value) => {
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return null;
+    }
+  });
+  if (decoded.some((value) => value === null)) return null;
+  return {
+    storeUid: decoded[0] as string,
+    projectId: decoded[1] as string,
+    targetLineId: decoded[2] as string,
+    changeInstanceId: decoded[3] as string,
+  };
+}
+
 const TASK_ID_PATH_PREFIX = '/api/v1/tasks/';
 const WORKFLOW_ID_PATH_PREFIX = '/api/v1/workflows/';
 const PIPELINE_ID_PATH_PREFIX = '/api/v1/pipelines/';
@@ -322,8 +533,29 @@ function matchSessionIdPath(pathname: string): string | null {
   return rest;
 }
 
+function matchHostedSessionPath(
+  pathname: string
+): { sessionId: string; operation?: 'cancel' | 'restart' | 'retire' } | null {
+  if (!pathname.startsWith(HOSTED_SESSION_PATH_PREFIX)) return null;
+  const rest = pathname.slice(HOSTED_SESSION_PATH_PREFIX.length);
+  const segments = rest.split('/');
+  if (segments.length < 1 || segments.length > 2 || !UUID_PATTERN.test(segments[0] ?? '')) {
+    return null;
+  }
+  if (segments.length === 1) return { sessionId: segments[0]! };
+  const operation = segments[1];
+  if (operation !== 'cancel' && operation !== 'restart' && operation !== 'retire') return null;
+  return { sessionId: segments[0]!, operation };
+}
+
 /** Methods admitted per management path (design D1/D4; space-creation D5): everywhere GETs, `/changes`, `/sessions`, and `/spaces` also POST, session-id paths also DELETE. */
 function isMethodAdmitted(pathname: string, method: string | undefined): boolean {
+  if (matchStoreFinalizePath(pathname) !== null) {
+    // L3+L5: the finalize path is POST-only; GET/PUT/DELETE are all 405.
+    return method === 'POST';
+  }
+  const storeRoute = matchStoreRoute(pathname);
+  if (storeRoute !== null) return storeRouteAdmitsMethod(storeRoute, method);
   if (pathname === '/api/v1/local-paths/resolve') return method === 'GET';
   if (pathname === '/api/v1/local-paths/choose') return method === 'POST';
   if (pathname === '/api/v1/themes') return method === 'GET';
@@ -332,6 +564,8 @@ function isMethodAdmitted(pathname: string, method: string | undefined): boolean
   if (pathname === '/api/v1/audits') return method === 'GET' || method === 'POST';
   if (pathname === '/api/v1/audits/sessions') return method === 'GET';
   if (pathname === '/api/v1/audits/import') return method === 'POST';
+  const hostedSession = matchHostedSessionPath(pathname);
+  if (hostedSession) return hostedSession.operation ? method === 'POST' : method === 'GET';
   if (pathname === '/api/v1/reusable-sessions') return method === 'GET';
   if (
     pathname === '/api/v1/reusable-sessions/wake'
@@ -378,6 +612,16 @@ function isMethodAdmitted(pathname: string, method: string | undefined): boolean
   if (pathname === '/api/v1/sessions') {
     return method === 'GET' || method === 'POST';
   }
+  if (pathname === '/api/v1/hosted-sessions') return method === 'GET';
+  if (pathname === '/api/v1/hosted-sessions/execute') return method === 'POST';
+  if (pathname === '/api/v1/frozen-action-executor/dispatch') return method === 'POST';
+  if (pathname === '/api/v1/frozen-action-executor/continue') return method === 'POST';
+  // The maintained flat Store family has three mutations. They share paths
+  // with GET reads where noted, so the global admission gate must let the
+  // request reach the method-specific branches below.
+  if (pathname === '/api/v1/stores/issues') return method === 'GET' || method === 'POST';
+  if (pathname === '/api/v1/stores/issue-state') return method === 'POST';
+  if (pathname === '/api/v1/stores/execution-plan') return method === 'GET' || method === 'POST';
   if (pathname === '/api/v1/pipelines') {
     return method === 'GET' || method === 'POST';
   }
@@ -489,11 +733,14 @@ export function isManagementPath(pathname: string): boolean {
   return (
     MANAGEMENT_PATHS.has(stripped) ||
     matchSessionIdPath(stripped) !== null ||
+    matchHostedSessionPath(stripped) !== null ||
     matchTaskIdPath(stripped) !== null ||
     matchWorkflowIdPath(stripped) !== null ||
     matchPipelineIdPath(stripped) !== null ||
     matchAuditIdPath(stripped) !== null ||
-    matchRunDetailPath(stripped) !== null
+    matchRunDetailPath(stripped) !== null ||
+    matchStoreFinalizePath(stripped) !== null ||
+    matchStoreRoute(stripped) !== null
   );
 }
 
@@ -502,8 +749,22 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
   res.end(JSON.stringify(body));
 }
 
-function sendError(res: http.ServerResponse, status: number, code: string, message: string, fix?: string): void {
-  sendJson(res, status, { error: { code, message, ...(fix ? { fix } : {}) } });
+function sendError(
+  res: http.ServerResponse,
+  status: number,
+  code: string,
+  message: string,
+  fix?: string,
+  recovery?: unknown
+): void {
+  sendJson(res, status, {
+    error: {
+      code,
+      message,
+      ...(fix ? { fix } : {}),
+      ...(recovery === undefined ? {} : { recovery }),
+    },
+  });
 }
 
 function sendReusableSessionError(
@@ -543,9 +804,17 @@ export function createManagementRouter(
   resolveHomeForRoot: (root: string | null) => Promise<ProjectHome | null>,
   options: ManagementRouterOptions = {}
 ): ManagementRouterHandle {
+  const runsRoot = options.runsRoot ?? path.join(getGlobalDataDir(), 'runs');
   // One submitter per server instance (design D3's cap-1 concurrency is
   // per-server state, closed over here rather than module-scoped).
   const submitChange = createChangeSubmitter(context);
+  // The Store aggregate route family's mutation bridge (L7): every store
+  // mutation writes only by spawning the CLI through the bounded whitelist.
+  const mutateStore = createStoreMutator(context);
+  // The Store change-finalization bridge (L3+L5): spawns the same bounded-cli
+  // `finalize-change` op the CLI itself runs, so its refusals arrive here
+  // structurally rather than by duplication.
+  const finalizeChange = createChangeFinalizer(context, options.finalizer);
 
   // One space creator per server instance (space-creation design D5): its own
   // cap-1 concurrency, independent of change submission's cap.
@@ -579,9 +848,93 @@ export function createManagementRouter(
     maxConcurrent: options.maxConcurrentSessions,
     killGraceMs: options.sessionKillGraceMs,
   });
+  const sessionHostRegistry = options.sessionHostOverride
+    ? undefined
+    : createSessionHostRegistry({
+        ...(options.sessionHostStateDir ? { stateDir: options.sessionHostStateDir } : {}),
+      });
+  const sessionProcessScope = options.sessionHostOverride
+    ? undefined
+    : createHostedProcessScope();
+  const sessionHost =
+    options.sessionHostOverride ??
+    createSessionHost({
+      registry: sessionHostRegistry!,
+      ownership: createSessionHostOwnership({
+        stateDir: path.join(sessionHostRegistry!.paths.root, 'owners'),
+      }),
+      processScope: sessionProcessScope!,
+      backends: [
+        createClaudeSessionBackend({
+          processScope: sessionProcessScope!,
+          ...(options.resolveAgentCliOverride
+            ? { resolveBinary: options.resolveAgentCliOverride }
+            : {}),
+        }),
+      ],
+    });
+  const exactTeacherAuthority = options.exactTeacherAuthorityPolicy?.resolve();
+  let exactTeacherSessionHost = exactTeacherAuthority?.state === 'available'
+    ? options.exactTeacherSessionHostOverride
+    : undefined;
+  let exactTeacherAttemptCommitter = exactTeacherAuthority?.state === 'available'
+    ? options.exactTeacherAttemptCommitterOverride
+    : undefined;
+  if (
+    exactTeacherSessionHost === undefined &&
+    exactTeacherAttemptCommitter !== undefined
+  ) {
+    throw new TypeError(
+      'An exact Teacher attempt committer override requires its paired SessionHost override.'
+    );
+  }
+  if (
+    exactTeacherSessionHost === undefined &&
+    exactTeacherAuthority?.state === 'available'
+  ) {
+    const stateDir = options.exactTeacherSessionHostStateDir ??
+      (sessionHostRegistry === undefined
+        ? undefined
+        : path.join(sessionHostRegistry.paths.root, 'exact-teacher'));
+    if (stateDir === undefined) {
+      throw new TypeError(
+        'The available exact Teacher lane requires a dedicated SessionHost state directory.'
+      );
+    }
+    const registry = createSessionHostRegistry({ stateDir });
+    exactTeacherAttemptCommitter = createExactTeacherAttemptPersistence({
+      journal: createExactTeacherAttemptJournal({
+        root: path.join(stateDir, 'attempt-journal'),
+      }),
+      sessionRegistry: registry,
+    });
+    const processScope = exactTeacherAuthority.lane.processScope;
+    exactTeacherSessionHost = createSessionHost({
+      registry,
+      ownership: createSessionHostOwnership({
+        stateDir: path.join(registry.paths.root, 'owners'),
+      }),
+      processScope,
+      exactRetirementAuthority: 'coordinator-authenticated',
+      exactTeacherAttemptCommitter,
+      backends: [
+        createClaudeSessionBackend({
+          processScope,
+          ...(options.resolveAgentCliOverride
+            ? { resolveBinary: options.resolveAgentCliOverride }
+            : {}),
+        }),
+      ],
+    });
+  }
+  if (exactTeacherSessionHost === sessionHost) {
+    throw new TypeError(
+      'The exact Teacher SessionHost must be separate from the ordinary/source SessionHost.'
+    );
+  }
   const reusableSessionService =
     options.reusableSessionService
-    ?? createReusableSessionService({ supervisor });
+    ?? createReusableSessionService({ supervisor, runsRoot });
 
   // Resolves a request's optional `space` selector to a planning-space root
   // (design D2): an explicit selector resolves through the machine registries,
@@ -589,25 +942,47 @@ export function createManagementRouter(
   // pre-space clients). Read-only — resolution never mutates any registry.
   const resolveRequestSpace = async (selector: string | undefined): Promise<RequestSpaceResolution> => {
     if (!selector) {
-      return { ok: true, root: context.launchProjectRoot ?? undefined };
+      // Omitted selector falls back to the launch project, resolved as a
+      // planning space (0.1.7's shape): a bound execution checkout reads its
+      // STORE's partition, not its own stale local tree, and the space object
+      // (not the bare root) carries the planning facts downstream handlers
+      // partition reads with.
+      if (!context.launchProjectRoot) return { ok: true, root: undefined };
+      const launchResolved = await resolveProjectPlanningSpaceFromRoot(context.launchProjectRoot);
+      return launchResolved.ok
+        ? { ok: true, root: launchResolved.space.root, space: launchResolved.space }
+        : launchResolved;
     }
     const resolved = await resolveSpaceSelector(selector);
     if (!resolved.ok) return resolved;
-    return { ok: true, root: resolved.space.root };
+    // Every project-content endpoint this resolver serves answers one
+    // project's planning content; a Store aggregate cannot select a project
+    // implicitly (L7, planning-space-addressing D6), so it is refused here —
+    // once — rather than per endpoint.
+    if (isStoreAggregateSpace(resolved.space)) {
+      return {
+        ok: false,
+        status: 400,
+        code: 'project_scope_required',
+        message: 'Project content requires a project planning scope; a Store aggregate cannot select a project implicitly.',
+      };
+    }
+    return { ok: true, root: resolved.space.root, space: resolved.space };
   };
 
   /**
    * Runs-specific space resolution (design §13). Extends the standard resolver
    * with two runs-only behaviors:
-   * 1. `planning:<PlanningSpaceId>` — bypasses registry resolution and returns
-   *    the exact PlanningSpaceId for Run filtering (no root needed).
+   * 1. `planning:<PlanningSpaceId>` — resolves the exact identifier through the
+   *    registry to one canonical physical root, or fails closed when unavailable
+   *    or ambiguous.
    * 2. `project:<projectId>` — checks for duplicate clone homes before
    *    delegating; returns `project_selector_ambiguous` with candidate
    *    PlanningSpaceIds when multiple homes share the projectId.
    */
   const resolveRunsSpace = async (selector: string | undefined): Promise<RunsSpaceResolution> => {
     if (selector?.startsWith('planning:')) {
-      return { ok: true, root: undefined, planningSpaceId: selector.slice('planning:'.length) };
+      return resolvePlanningSelector(selector.slice('planning:'.length));
     }
     if (selector?.startsWith('project:')) {
       const projectId = selector.slice('project:'.length);
@@ -816,6 +1191,98 @@ export function createManagementRouter(
       return;
     }
 
+    // The Store change-finalization route (L3+L5): the complete scope comes
+    // from the PATH and from nowhere else — no `space` selector, no query
+    // filter, no session, no launch-project fallback for any scope field.
+    // GET, PUT, and DELETE on the finalize path are all 405: the path is a
+    // management path (the gate admits it), so it must be answered here
+    // rather than falling through to the static/UI routing.
+    // The Store aggregate route family (L7, path-scoped by store uid). Every
+    // scope segment comes from the PATH. The `space` selector, the query
+    // filters, the session, and the launch project are all read from nowhere
+    // for scope here — the only query parameters consulted are the aggregate
+    // read's own narrowing filters, which never reach a mutation.
+    const storeRoute = matchStoreRoute(pathname);
+    if (storeRoute !== null) {
+      const sendStoreResult = (result: Awaited<ReturnType<typeof serveStoreRead>>): void => {
+        if (!result.ok) {
+          res.writeHead(result.status, JSON_HEADERS);
+          res.end(
+            JSON.stringify({
+              error: {
+                code: result.code,
+                message: result.message,
+                ...(result.fix === undefined ? {} : { fix: result.fix }),
+                ...(result.cliExitCode === undefined ? {} : { cliExitCode: result.cliExitCode }),
+                ...(result.stderr === undefined ? {} : { stderr: result.stderr }),
+                ...(result.recovery === undefined ? {} : { recovery: result.recovery }),
+              },
+            })
+          );
+          return;
+        }
+        sendJson(res, result.status, result.response);
+      };
+
+      if (req.method === 'GET') {
+        const outcomes = url.searchParams.getAll('outcome');
+        const state = url.searchParams.get('state');
+        sendStoreResult(
+          await serveStoreRead(storeRoute, {
+            ...(outcomes.length === 0 ? {} : { outcomes }),
+            ...(state === null ? {} : { state }),
+          })
+        );
+        return;
+      }
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      sendStoreResult(await mutateStore(storeRoute, (body.value ?? {}) as StoreMutationBody));
+      return;
+    }
+
+    const finalizeScope = matchStoreFinalizePath(pathname);
+    if (finalizeScope !== null && req.method !== 'POST') {
+      res.writeHead(405, JSON_HEADERS);
+      res.end(JSON.stringify({ error: { code: 'method_not_allowed', message: 'Use POST.' } }));
+      return;
+    }
+    if (finalizeScope !== null && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      const result = await finalizeChange(
+        finalizeScope,
+        (body.value ?? {}) as FinalizeChangeRequestBody
+      );
+      if (!result.ok) {
+        res.writeHead(result.status, JSON_HEADERS);
+        res.end(
+          JSON.stringify({
+            error: {
+              code: result.code,
+              message: result.message,
+              ...(result.cliExitCode !== undefined ? { cliExitCode: result.cliExitCode } : {}),
+              ...(result.stderr !== undefined ? { stderr: result.stderr } : {}),
+              ...(result.finalization !== undefined
+                ? { finalization: result.finalization }
+                : {}),
+            },
+          })
+        );
+        return;
+      }
+      sendJson(res, result.status, result.response);
+      return;
+    }
+
     if (pathname === '/api/v1/changes' && req.method === 'POST') {
       const body = await readJsonBody(req);
       if (!body.ok) {
@@ -837,16 +1304,28 @@ export function createManagementRouter(
         sendError(res, 400, 'invalid_input', 'space must be a string.');
         return;
       }
-      let submitRoot: string | undefined;
+      let submitTarget: ResolvedSpace | string | undefined;
       if (typeof request.space === 'string' && request.space !== '') {
         const resolvedSpace = await resolveRequestSpace(request.space);
         if (!resolvedSpace.ok) {
           sendError(res, resolvedSpace.status, resolvedSpace.code, resolvedSpace.message);
           return;
         }
-        submitRoot = resolvedSpace.root;
+        // A Store aggregate cannot select a project implicitly; refuse before
+        // anything is spawned. The submission target that works in layout v2
+        // is the bound project space.
+        if (isStoreAggregateSpace(resolvedSpace.space)) {
+          sendError(
+            res,
+            400,
+            'project_scope_required',
+            'Change submission requires a project planning scope; a Store aggregate cannot select a project implicitly.'
+          );
+          return;
+        }
+        submitTarget = resolvedSpace.space;
       }
-      const result = await submitChange(request.name, request.description, submitRoot);
+      const result = await submitChange(request.name, request.description, submitTarget);
       if (!result.ok) {
         res.writeHead(result.status, JSON_HEADERS);
         res.end(
@@ -967,7 +1446,7 @@ export function createManagementRouter(
         return;
       }
       const home = await resolveHomeForRoot(space.root ?? null);
-      const result = await handleChanges(space.root, home);
+      const result = await handleChanges(space.space ?? space.root, home);
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
         return;
@@ -985,7 +1464,307 @@ export function createManagementRouter(
         return;
       }
       const home = await resolveHomeForRoot(space.root ?? null);
-      const result = await handleArchive(space.root, home);
+      const result = await handleArchive(space.space ?? space.root, home);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    // Store aggregate paths (store-issue-resources): reads and Issue/Execution
+    // Plan mutations scoped to a Store's stable identity, never a display
+    // alias — `resolveStoreSpace` (not `resolveRequestSpace`, which discards
+    // `uid`) resolves the `space=store:<id>` selector and carries the uid
+    // through to every handler below.
+    if (pathname === '/api/v1/stores/projects') {
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const result = await handleStoreProjects(space.space);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/target-lines') {
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const result = await handleStoreTargetLines(space.space);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/changes') {
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const filter: StoreChangesFilter = {
+        ...(url.searchParams.getAll('project').length > 0
+          ? { projects: url.searchParams.getAll('project') }
+          : {}),
+        ...(url.searchParams.getAll('targetLine').length > 0
+          ? { targetLines: url.searchParams.getAll('targetLine') }
+          : {}),
+        ...(url.searchParams.getAll('outcome').length > 0
+          ? { outcomes: url.searchParams.getAll('outcome') as StoreChangesFilter['outcomes'] }
+          : {}),
+        ...(url.searchParams.get('state') === 'active' || url.searchParams.get('state') === 'archived'
+          ? { state: url.searchParams.get('state') as 'active' | 'archived' }
+          : {}),
+      };
+      const result = await handleStoreChanges(space.space, filter);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/issues' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const result = await handleStoreIssueCreate(
+        space.space,
+        (body.value ?? {}) as { issueId?: unknown; title?: unknown; readme?: unknown }
+      );
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message, undefined, result.recovery);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/issues') {
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const stateParam = url.searchParams.get('state') ?? undefined;
+      const state =
+        stateParam === 'open' || stateParam === 'resolved' || stateParam === 'dropped' ? stateParam : undefined;
+      const result = await handleStoreIssues(space.space, state);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/issue') {
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const result = await handleStoreIssue(space.space, url.searchParams.get('issueId') ?? undefined);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/issue-state' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const result = await handleStoreIssueSetState(
+        space.space,
+        (body.value ?? {}) as { issueId?: unknown; state?: unknown; reason?: unknown }
+      );
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/issue-references') {
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const result = await handleStoreIssueReferences(
+        space.space,
+        url.searchParams.get('changeInstanceId') ?? undefined
+      );
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/execution-plan' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const result = await handleStorePublishPlan(
+        space.space,
+        (body.value ?? {}) as {
+          issueId?: unknown;
+          nodes?: unknown;
+          expectedRevisionId?: unknown;
+        }
+      );
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/execution-plan') {
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const result = await handleStoreExecutionPlan(
+        space.space,
+        url.searchParams.get('issueId') ?? undefined,
+        url.searchParams.get('revisionId') ?? undefined
+      );
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    // The Issue projection reads (`issue-read-surface` design D2). Each is a
+    // passthrough of one core composition — the same one the command line
+    // prints — and each re-derives from Store evidence on every request: the
+    // run-state context is resolved per request rather than cached, so a
+    // mutation between two identical GETs is reflected with no invalidation
+    // step, because there is nothing to invalidate.
+    if (pathname === '/api/v1/stores/issue-projections') {
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const stateParam = url.searchParams.get('state');
+      if (stateParam !== null && !(ISSUE_STATES as readonly string[]).includes(stateParam)) {
+        sendError(
+          res,
+          400,
+          'issue_state_undefined',
+          `'${stateParam}' is not a defined Issue state.`,
+          `Filter with state=${ISSUE_STATES.join('|')}, or omit state.`
+        );
+        return;
+      }
+      const state = stateParam === null ? undefined : stateParam as (typeof ISSUE_STATES)[number];
+      const result = await handleStoreIssueProjections(
+        space.space,
+        await resolveRunStateContext(context.launchProjectRoot ?? undefined),
+        state
+      );
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/change-issue-links') {
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const result = await handleStoreChangeIssueLinks(space.space);
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/issue-projection') {
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const result = await handleStoreIssueProjection(
+        space.space,
+        await resolveRunStateContext(context.launchProjectRoot ?? undefined),
+        url.searchParams.get('issueId') ?? undefined
+      );
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/stores/issue-attention') {
+      const space = await resolveStoreSpace(spaceSelector);
+      if (!space.ok) {
+        sendError(res, space.status, space.code, space.message);
+        return;
+      }
+      const result = await handleStoreIssueAttention(
+        space.space,
+        await resolveRunStateContext(context.launchProjectRoot ?? undefined),
+        url.searchParams.get('issueId') ?? undefined
+      );
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
         return;
@@ -1216,12 +1995,163 @@ export function createManagementRouter(
         return;
       }
       const home = await resolveHomeForRoot(space.root ?? null);
-      const result = await handleTaskDetail(space.root, home, taskId);
+      const result = await handleTaskDetail(space.space ?? space.root, home, taskId);
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
         return;
       }
       sendJson(res, 200, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/hosted-sessions/execute' && req.method === 'POST') {
+      const body = await readJsonBody(req, MAX_HOSTED_BODY_BYTES);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      if (typeof body.value !== 'object' || body.value === null || Array.isArray(body.value)) {
+        sendError(res, 400, 'invalid-input', 'Hosted Session execute body must be an object.');
+        return;
+      }
+      const value = body.value as Record<string, unknown>;
+      const result = await handleHostedSessionDispatch(sessionHost, {
+        ...value,
+        op: 'execute',
+      } as SessionHostCommand);
+      sendJson(res, result.status, result.response);
+      return;
+    }
+
+    if (pathname === '/api/v1/frozen-action-executor/dispatch' && req.method === 'POST') {
+      const body = await readJsonBody(req, MAX_HOSTED_BODY_BYTES);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      const result = await handleFrozenActionDispatch({
+        host: sessionHost,
+        ...(exactTeacherSessionHost === undefined
+          ? {}
+          : { exactTeacherHost: exactTeacherSessionHost }),
+        ...(options.exactTeacherAuthorityPolicy === undefined
+          ? {}
+          : { exactTeacherAuthorityPolicy: options.exactTeacherAuthorityPolicy }),
+        ...(exactTeacherAttemptCommitter === undefined
+          ? {}
+          : { exactTeacherAttemptCommitter }),
+        hostPlatform: process.platform,
+        body: body.value,
+        ...(options.frozenActionStoreRoot === undefined
+          ? {}
+          : { storeRoot: options.frozenActionStoreRoot }),
+        ...(options.frozenActionProducerResolver === undefined
+          ? {}
+          : { producerFor: options.frozenActionProducerResolver }),
+        ...(options.workspaceReservationRegistry === undefined
+          ? {}
+          : { reservationRegistry: options.workspaceReservationRegistry }),
+        ...(options.frozenActionWorkspaceObserver === undefined
+          ? {}
+          : { workspaceObserver: options.frozenActionWorkspaceObserver }),
+      });
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, result.status, result.result);
+      return;
+    }
+
+    if (pathname === '/api/v1/frozen-action-executor/continue' && req.method === 'POST') {
+      const body = await readJsonBody(req, MAX_HOSTED_BODY_BYTES);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      const result = await handleFrozenActionContinuation({
+        host: sessionHost,
+        ...(exactTeacherSessionHost === undefined
+          ? {}
+          : { exactTeacherHost: exactTeacherSessionHost }),
+        ...(options.exactTeacherAuthorityPolicy === undefined
+          ? {}
+          : { exactTeacherAuthorityPolicy: options.exactTeacherAuthorityPolicy }),
+        ...(exactTeacherAttemptCommitter === undefined
+          ? {}
+          : { exactTeacherAttemptCommitter }),
+        hostPlatform: process.platform,
+        body: body.value,
+        ...(options.frozenActionStoreRoot === undefined
+          ? {}
+          : { storeRoot: options.frozenActionStoreRoot }),
+        ...(options.frozenActionProducerResolver === undefined
+          ? {}
+          : { producerFor: options.frozenActionProducerResolver }),
+        ...(options.workspaceReservationRegistry === undefined
+          ? {}
+          : { reservationRegistry: options.workspaceReservationRegistry }),
+        ...(options.frozenActionWorkspaceObserver === undefined
+          ? {}
+          : { workspaceObserver: options.frozenActionWorkspaceObserver }),
+      });
+      if (!result.ok) {
+        sendError(res, result.status, result.code, result.message);
+        return;
+      }
+      sendJson(res, result.status, result.result);
+      return;
+    }
+
+    if (pathname === '/api/v1/hosted-sessions' && req.method === 'GET') {
+      sendJson(res, 200, { sessions: sessionHost.list() });
+      return;
+    }
+
+    const hostedSession = matchHostedSessionPath(pathname);
+    if (hostedSession && !hostedSession.operation && req.method === 'GET') {
+      const session = sessionHost.inspect(hostedSession.sessionId);
+      if (!session) {
+        sendError(res, 404, 'session-not-found', `No hosted Session with id ${hostedSession.sessionId}.`);
+        return;
+      }
+      sendJson(res, 200, { session });
+      return;
+    }
+
+    if (hostedSession?.operation && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.ok) {
+        sendError(res, body.status, body.code, body.message);
+        req.destroy();
+        return;
+      }
+      if (typeof body.value !== 'object' || body.value === null || Array.isArray(body.value)) {
+        sendError(res, 400, 'invalid-input', 'Hosted Session control body must be an object.');
+        return;
+      }
+      const value = body.value as Record<string, unknown>;
+      const allowedKeys = hostedSession.operation === 'restart' ? [] : ['reason'];
+      if (Object.keys(value).some((key) => !allowedKeys.includes(key))) {
+        sendError(res, 400, 'invalid-input', 'Hosted Session control body contains an unsupported field.');
+        return;
+      }
+      const command: SessionHostCommand =
+        hostedSession.operation === 'restart'
+          ? { op: 'restart', sessionId: hostedSession.sessionId }
+          : {
+              op: hostedSession.operation,
+              sessionId: hostedSession.sessionId,
+              reason:
+                typeof value.reason === 'string' && value.reason.trim()
+                  ? value.reason
+                  : 'requested-by-local-control',
+            };
+      const result = await handleHostedSessionDispatch(sessionHost, command);
+      sendJson(res, result.status, result.response);
       return;
     }
 
@@ -1338,6 +2268,9 @@ export function createManagementRouter(
         filterRoot = canonicalizeOrResolve(resolved.space.root);
       }
       const response = await handleListSessions(supervisor, filterRoot, (root) => resolveHomeForRoot(root));
+      for (const hosted of sessionHost.list()) {
+        response.sessions.push({ session: hostedSessionToWire(hosted), runState: { kind: 'absent' } });
+      }
       sendJson(res, 200, response);
       return;
     }
@@ -1346,6 +2279,14 @@ export function createManagementRouter(
     if (sessionId !== null && req.method === 'GET') {
       const result = handleGetSession(supervisor, sessionId);
       if (!result.ok) {
+        const hosted = sessionHost.inspect(sessionId);
+        if (hosted) {
+          sendJson(res, 200, {
+            session: hostedSessionToWire(hosted),
+            tails: { stdout: '', stderr: '' },
+          });
+          return;
+        }
         sendError(res, 404, 'not_found', `No session with id ${sessionId}.`);
         return;
       }
@@ -1356,6 +2297,16 @@ export function createManagementRouter(
     if (sessionId !== null && req.method === 'DELETE') {
       const result = handleKillSession(supervisor, sessionId);
       if (!result.ok) {
+        const hosted = sessionHost.inspect(sessionId);
+        if (hosted) {
+          const cancelled = await sessionHost.dispatch({
+            op: 'cancel',
+            sessionId,
+            reason: 'legacy-management-delete',
+          });
+          sendJson(res, cancelled.ok ? 202 : 409, cancelled);
+          return;
+        }
         sendError(res, 404, 'not_found', `No session with id ${sessionId}.`);
         return;
       }
@@ -1393,7 +2344,8 @@ export function createManagementRouter(
         space.root,
         home,
         body.value,
-        runControlSpawner
+        runControlSpawner,
+        { runsRoot }
       );
       if (!result.ok) {
         res.writeHead(result.status, JSON_HEADERS);
@@ -1427,7 +2379,13 @@ export function createManagementRouter(
         return;
       }
       const home = space.root ? await resolveHomeForRoot(space.root) : null;
-      const result = await handleRunDetail(runDetail.changeId, runDetail.runId, space.root, home);
+      const result = await handleRunDetail(
+        runDetail.changeId,
+        runDetail.runId,
+        space.root,
+        home,
+        runsRoot
+      );
       if (!result.ok) {
         sendError(res, result.status, result.code, result.message);
         return;
@@ -1459,6 +2417,7 @@ export function createManagementRouter(
           ...(cursor !== undefined ? { cursor } : {}),
           ...(limit !== undefined && Number.isFinite(limit) ? { limit } : {}),
           planningSpaceId: space.planningSpaceId,
+          runsRoot,
         });
         sendJson(res, 200, runsResponse);
         return;
@@ -1478,6 +2437,8 @@ export function createManagementRouter(
       const runsResponse = await handleRuns(space.root, home, {
         ...(cursor !== undefined ? { cursor } : {}),
         ...(limit !== undefined && Number.isFinite(limit) ? { limit } : {}),
+        ...(space.planningSpaceId ? { planningSpaceId: space.planningSpaceId } : {}),
+        runsRoot,
       });
       sendJson(res, 200, runsResponse);
       return;
@@ -1487,6 +2448,8 @@ export function createManagementRouter(
   return {
     handle,
     supervisor,
+    sessionHost,
+    ...(exactTeacherSessionHost === undefined ? {} : { exactTeacherSessionHost }),
     reusableSessionService,
     shutdownReusableSessions: () => reusableSessionService.ownerShutdown(),
     shutdownPathChooser: pathChooser.shutdown,

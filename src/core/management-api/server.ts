@@ -18,6 +18,10 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createRouter as createConfigRouter } from '../config-api/router.js';
+import type { ChangeFinalizerOptions } from './finalize.js';
+import { getGlobalDataDir } from '../global-config.js';
+import { createTrustedExecutionAdapterProducerResolver } from '../pipeline-registry/trusted-execution-adapters.js';
+import { createProductionExactTeacherAuthorityPolicy } from '../frozen-action-executor/index.js';
 import { resolveProjectHome, type ProjectHome } from '../project-home.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import {
@@ -34,6 +38,10 @@ export interface StartManagementServerOptions {
   context: ManagementApiContext;
   /** Ephemeral (OS-assigned) when omitted or 0. */
   port?: number;
+  /** Test/embedded-host override; production uses the Rasen machine-data root. */
+  hostStateRoot?: string;
+  /** Test/embedded-host override for the change finalizer (L3+L5). */
+  finalizer?: ChangeFinalizerOptions;
   /** Test/daemon-only overrides for the sessions supervisor (design D1's injectable resolver, task 3.3's fixture CLI override). */
   sessions?: ManagementRouterOptions;
 }
@@ -67,6 +75,41 @@ const SESSION_SHUTDOWN_GUARD_MS = 8000;
 
 const LOOPBACK_HOST = '127.0.0.1';
 export const AUDIT_VIEWER_ASSET_PATH = '/assets/audit-viewer.html';
+export const BROWSER_SESSION_PATH = '/api/v1/auth/session';
+const BROWSER_SESSION_COOKIE = 'rasen_session';
+
+function hasLoopbackHost(req: http.IncomingMessage): boolean {
+  const rawHost = req.headers.host;
+  if (!rawHost || Array.isArray(rawHost)) return false;
+  try {
+    const hostname = new URL(`http://${rawHost}`).hostname.toLowerCase();
+    return hostname === LOOPBACK_HOST || hostname === 'localhost' || hostname === '[::1]';
+  } catch {
+    return false;
+  }
+}
+
+function browserSessionCookie(req: http.IncomingMessage): string | null {
+  const rawCookie = req.headers.cookie;
+  if (!rawCookie) return null;
+  for (const part of rawCookie.split(';')) {
+    const separator = part.indexOf('=');
+    if (separator < 0 || part.slice(0, separator).trim() !== BROWSER_SESSION_COOKIE) continue;
+    try {
+      return decodeURIComponent(part.slice(separator + 1).trim());
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function issueBrowserSession(res: http.ServerResponse, token: string): void {
+  res.setHeader(
+    'Set-Cookie',
+    `${BROWSER_SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/`
+  );
+}
 
 function auditViewerFile(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../viewer/audit.html');
@@ -110,14 +153,93 @@ export function startManagementServer(
   // handles its own paths, now including the sessions route group. The
   // server owns the dispatch.
   const configHandler = createConfigRouter(context);
+  const hostStateRoot = options.hostStateRoot ?? getGlobalDataDir();
+  const sessions: ManagementRouterOptions = {
+    ...options.sessions,
+    exactTeacherAuthorityPolicy:
+      options.sessions?.exactTeacherAuthorityPolicy ??
+      createProductionExactTeacherAuthorityPolicy({
+        hostPlatform: process.platform,
+        hostStateRoot,
+      }),
+    exactTeacherSessionHostStateDir:
+      options.sessions?.exactTeacherSessionHostStateDir ??
+      path.join(hostStateRoot, 'exact-teacher-session-host'),
+    frozenActionProducerResolver:
+      options.sessions?.frozenActionProducerResolver ??
+      createTrustedExecutionAdapterProducerResolver(hostStateRoot),
+    frozenActionStoreRoot:
+      options.sessions?.frozenActionStoreRoot ?? path.join(hostStateRoot, 'runs'),
+  };
   const {
     handle: managementHandler,
+    sessionHost,
+    exactTeacherSessionHost,
     shutdownReusableSessions,
     shutdownPathChooser,
-  } = createManagementRouter(context, resolveHomeForRoot, options.sessions);
+  } = createManagementRouter(context, resolveHomeForRoot, {
+    ...sessions,
+    // L3+L5: the Store change-finalization bridge options pass through
+    // unchanged; production leaves them unset (the finalizer resolves its own
+    // CLI entry) and tests inject a fixture CLI.
+    ...(options.finalizer === undefined ? {} : { finalizer: options.finalizer }),
+  });
 
   const handler = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
     const pathname = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;
+
+    // A cookie bootstrap is safe only for an explicitly loopback Host. The
+    // socket bind alone does not stop DNS rebinding: a hostile hostname can
+    // resolve to 127.0.0.1 while retaining its attacker-controlled origin.
+    if (!hasLoopbackHost(req)) {
+      res.writeHead(403, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ error: { code: 'forbidden_host', message: 'Loopback Host required.' } }));
+      return;
+    }
+
+    if (pathname === BROWSER_SESSION_PATH) {
+      if (req.method !== 'GET') {
+        res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8', Allow: 'GET' });
+        res.end('Method not allowed');
+        return;
+      }
+      issueBrowserSession(res, context.token);
+      res.writeHead(204, { 'Cache-Control': 'no-store' });
+      res.end();
+      return;
+    }
+
+    // Route handlers retain their existing Bearer-token contract. A valid
+    // HttpOnly browser session is translated at this composition boundary so
+    // browser and CLI callers share one authorization decision downstream.
+    if (browserSessionCookie(req) === context.token) {
+      req.headers.authorization = `Bearer ${context.token}`;
+    }
+
+    // Stable single-project entry point. The daemon's launch project is the
+    // only unambiguous meaning of a project-less path; canonical multi-project
+    // routes remain unchanged after this one redirect.
+    if (pathname === '/p/config' && req.method === 'GET') {
+      issueBrowserSession(res, context.token);
+      if (!context.launchProjectRef) {
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.end('No launch project is available for /p/config.');
+        return;
+      }
+      res.writeHead(302, {
+        Location: `/p/${encodeURIComponent(context.launchProjectRef.projectId)}/config`,
+        'Cache-Control': 'no-store',
+      });
+      res.end();
+      return;
+    }
+
+    // The initial HTML navigation establishes a session before the SPA makes
+    // its first API request. Static assets are harmlessly covered as well.
+    if (req.method === 'GET' && !pathname.startsWith('/api/')) {
+      issueBrowserSession(res, context.token);
+    }
+
     if (pathname === AUDIT_VIEWER_ASSET_PATH) {
       if (req.method !== 'GET') {
         res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8', Allow: 'GET' });
@@ -183,10 +305,11 @@ export function startManagementServer(
   });
 
   let stopped = false;
+  let stopPromise: Promise<void> | undefined;
   const stopServer = (): Promise<void> => {
     if (stopped) return Promise.resolve();
-    stopped = true;
-    return (async () => {
+    if (stopPromise) return stopPromise;
+    stopPromise = (async () => {
       // Reap every live supervised session before the process actually
       // exits (design D6): the in-memory registry has no adopter in this
       // child-1 world, so anything still running past this point would be
@@ -194,49 +317,65 @@ export function startManagementServer(
       // Covers both a clean `server.close()` and the SIGINT/SIGTERM path
       // (`ui-launch.ts` calls this same `stopServer`), bounded so a
       // SIGTERM-resistant session can never hang shutdown indefinitely.
-      const reusableDrain = shutdownReusableSessions();
+      // Each supervisor/host tree cleanup owns a bounded graceful/forced
+      // deadline. Bound only the reusable coordinator override here; the
+      // hosted Session trees keep their own full close-authority contracts.
+      // Start every owner before observing any result so one rejection cannot
+      // skip another lane's shutdown. The reusable owner remains the sole
+      // caller of supervisor shutdown.
+      let reusableGuard: NodeJS.Timeout | undefined;
+      const reusableDrain = Promise.race([
+        shutdownReusableSessions(),
+        new Promise<never>((_resolve, reject) => {
+          reusableGuard = setTimeout(
+            () => reject(new Error('Reusable-session owner shutdown exceeded the bounded server drain.')),
+            SESSION_SHUTDOWN_GUARD_MS
+          );
+          reusableGuard.unref?.();
+        }),
+      ]).finally(() => {
+        if (reusableGuard !== undefined) clearTimeout(reusableGuard);
+      });
+      const hostedDrain = sessionHost.shutdown('server-shutdown');
+      const exactTeacherDrain = exactTeacherSessionHost?.shutdown('server-shutdown');
       const pathChooserDrain = shutdownPathChooser();
       const drain = Promise.allSettled([
         reusableDrain,
+        hostedDrain,
+        exactTeacherDrain ?? Promise.resolve(),
         pathChooserDrain,
       ]);
-      const drainOutcome = await Promise.race([
-        drain.then((results) => ({ kind: 'settled' as const, results })),
-        new Promise<{ kind: 'timeout' }>((resolve) => {
-          const t = setTimeout(
-            () => resolve({ kind: 'timeout' }),
-            SESSION_SHUTDOWN_GUARD_MS
-          );
-          t.unref?.();
-        }),
-      ]);
+      const drainOutcome = await drain;
       let shutdownError: Error | undefined;
-      if (drainOutcome.kind === 'timeout') {
-        shutdownError = new Error(
-          'Reusable-session owner shutdown exceeded the bounded server drain.'
+      const [reusableResult, hostedResult, exactTeacherResult, pathChooserResult] = drainOutcome;
+      if (reusableResult.status === 'rejected') {
+        shutdownError =
+          reusableResult.reason instanceof Error
+            ? reusableResult.reason
+            : new Error(String(reusableResult.reason));
+      } else if (!reusableResult.value.ok) {
+        shutdownError = new ManagementServerOwnerShutdownError(
+          reusableResult.value.message,
+          reusableResult.value.failures
         );
-      } else {
-        const [reusableResult, pathChooserResult] = drainOutcome.results;
-        if (reusableResult.status === 'rejected') {
-          shutdownError =
-            reusableResult.reason instanceof Error
-              ? reusableResult.reason
-              : new Error(String(reusableResult.reason));
-        } else if (!reusableResult.value.ok) {
-          shutdownError = new ManagementServerOwnerShutdownError(
-            reusableResult.value.message,
-            reusableResult.value.failures
-          );
-        }
-        if (
-          shutdownError === undefined
-          && pathChooserResult.status === 'rejected'
-        ) {
-          shutdownError =
-            pathChooserResult.reason instanceof Error
-              ? pathChooserResult.reason
-              : new Error(String(pathChooserResult.reason));
-        }
+      }
+      if (shutdownError === undefined && hostedResult.status === 'rejected') {
+        shutdownError =
+          hostedResult.reason instanceof Error
+            ? hostedResult.reason
+            : new Error(String(hostedResult.reason));
+      }
+      if (shutdownError === undefined && exactTeacherResult.status === 'rejected') {
+        shutdownError =
+          exactTeacherResult.reason instanceof Error
+            ? exactTeacherResult.reason
+            : new Error(String(exactTeacherResult.reason));
+      }
+      if (shutdownError === undefined && pathChooserResult.status === 'rejected') {
+        shutdownError =
+          pathChooserResult.reason instanceof Error
+            ? pathChooserResult.reason
+            : new Error(String(pathChooserResult.reason));
       }
 
       await new Promise<void>((resolve) => {
@@ -255,17 +394,41 @@ export function startManagementServer(
         }
       });
       if (shutdownError) throw shutdownError;
-    })();
+      stopped = true;
+    })().finally(() => {
+      if (!stopped) stopPromise = undefined;
+    });
+    return stopPromise;
   };
 
-  return new Promise((resolve, reject) => {
-    const onError = (error: Error) => reject(error);
-    server.once('error', onError);
-    server.listen(options.port ?? 0, LOOPBACK_HOST, () => {
-      server.removeListener('error', onError);
-      const address = server.address();
-      const port = typeof address === 'object' && address ? address.port : (options.port ?? 0);
-      resolve({ server, port, stopServer });
+  return (async () => {
+    const recovery = await sessionHost.reconcileOnStart();
+    if (!recovery.ready) {
+      throw new Error(
+        `Hosted Session registry reconciliation failed${recovery.diagnostics.length ? `: ${recovery.diagnostics.join('; ')}` : '.'}`
+      );
+    }
+    if (exactTeacherSessionHost !== undefined) {
+      const exactRecovery = await exactTeacherSessionHost.reconcileOnStart();
+      if (!exactRecovery.ready) {
+        throw new Error(
+          `Exact Teacher Session registry reconciliation failed${
+            exactRecovery.diagnostics.length
+              ? `: ${exactRecovery.diagnostics.join('; ')}`
+              : '.'
+          }`
+        );
+      }
+    }
+    return new Promise((resolve, reject) => {
+      const onError = (error: Error) => reject(error);
+      server.once('error', onError);
+      server.listen(options.port ?? 0, LOOPBACK_HOST, () => {
+        server.removeListener('error', onError);
+        const address = server.address();
+        const port = typeof address === 'object' && address ? address.port : (options.port ?? 0);
+        resolve({ server, port, stopServer });
+      });
     });
-  });
+  })();
 }

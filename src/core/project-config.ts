@@ -3,10 +3,16 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs
 import { promises as fsPromises } from 'fs';
 import { randomUUID } from 'crypto';
 import path from 'path';
-import { parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml';
+import { parse as parseYaml, parseDocument, stringify as stringifyYaml, YAMLMap } from 'yaml';
 import { z } from 'zod';
 
-import { withProjectRegistryLock, type ProjectPathOptions } from './project-registry.js';
+import {
+  findAdoptableProjectIdentity,
+  withProjectRegistryLock,
+  type AdoptableProjectIdentity,
+  type ProjectPathOptions,
+} from './project-registry.js';
+import { sameProjectIdentity } from './store/project-records.js';
 import {
   makeLockErrorFactory,
   machineLockPath,
@@ -14,6 +20,7 @@ import {
   withOwnerAwareFileLock,
 } from './file-state.js';
 import { isKebabId } from './id.js';
+import { isValidStoreId } from './store/foundation.js';
 import {
   LEAF_EFFORTS,
   LeafEffortSchema,
@@ -192,6 +199,33 @@ export const ProjectConfigSchema = z.object({
     })
     .optional()
     .describe('Run engine policy configuration'),
+
+  omnicross: z
+    .object({
+      endpoint: z.string().min(1).optional(),
+      controlTokenEnv: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/).optional(),
+      requestTimeoutMs: z.number().int().min(100).max(60_000).optional(),
+      leaseTtlSeconds: z.number().int().min(30).max(3_600).optional(),
+    })
+    .optional()
+    .describe('Resident loopback OmniCross daemon connection settings'),
+
+  // Optional: session reuse/handoff/touch/retire policy
+  // (session-policy-and-control-parity). Supplies the frozen-action executor's
+  // policy block numeric limits with `authored` provenance through the existing
+  // config chain (project > store > global > the shipped
+  // DEFAULT_EXECUTOR_POLICY_BLOCK default). Mirrors the runs/handoff precedent.
+  // Each numeric value is a positive bounded integer; the source resolver
+  // re-validates and rejects a safety-disabling value.
+  sessionPolicy: z
+    .object({
+      handoffTokenLimit: z.number().int().positive().max(1_000_000).optional(),
+      reuseRoundLimit: z.number().int().positive().max(1_000_000).optional(),
+      touchMaxIdleMs: z.number().int().positive().max(24 * 60 * 60 * 1000).optional(),
+      retireReasonLabel: z.string().min(1).max(200).optional(),
+    })
+    .optional()
+    .describe('Session reuse/handoff/touch/retire policy configuration'),
 
   // Optional: context-handoff threshold. Project scope wins over the global
   // config value of the same name (see effective-config.ts); both fall back
@@ -413,7 +447,7 @@ export interface StoreMembershipHint {
 export function storeMembershipHintKey(hint: StoreMembershipHint): string {
   return hint.uid !== undefined
     ? `uid:${hint.uid.trim().toLowerCase()}`
-    : `id:${(hint.id ?? '').trim().toLowerCase()}`;
+    : `id:${hint.id ?? ''}`;
 }
 
 /** The alias, else the identity — never an empty string. */
@@ -576,7 +610,7 @@ function parseStoreMembershipList(
       const value = entry.trim();
       if (isValidStoreUid(value)) {
         hint = { uid: value };
-      } else if (isKebabId(value)) {
+      } else if (isValidStoreId(value)) {
         hint = { id: value };
       }
     } else if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
@@ -586,7 +620,7 @@ function parseStoreMembershipList(
           ? candidate.uid.trim()
           : undefined;
       const id =
-        typeof candidate.id === 'string' && candidate.id.length > 0 && isKebabId(candidate.id)
+        typeof candidate.id === 'string' && isValidStoreId(candidate.id)
           ? candidate.id
           : undefined;
       const remote =
@@ -807,6 +841,28 @@ export function readProjectConfig(
 ): ProjectConfig | null {
   const result = readProjectConfigWithDiagnostics(projectRoot, options);
   return result.status === 'ok' ? result.config : null;
+}
+
+/**
+ * Reads a scope-resolved planning config file directly. Store v2 project
+ * configs live at `<projectHome>/config.yaml`, so forcing them through the
+ * legacy `<projectRoot>/rasen/config.yaml` lookup would recreate a second
+ * root-routing algorithm in every consumer.
+ */
+export function readProjectConfigAtPath(
+  configPath: string,
+  options: { reporter?: ConfigDiagnosticReporter } = {}
+): ProjectConfig | null {
+  try {
+    if (!existsSync(configPath)) return null;
+    return parseProjectConfigContent(
+      readFileSync(configPath, 'utf-8'),
+      path.dirname(configPath),
+      options.reporter
+    );
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -1305,6 +1361,150 @@ function parseProjectConfigContent(
           {
             key: 'invalidRuns',
             fallback: `Invalid 'runs' field in config (must be an object)`,
+          },
+          reporter
+        );
+      }
+    }
+
+    // Parse OmniCross connection settings leaf-by-leaf. The control credential
+    // itself is deliberately not a config field; only its environment-variable
+    // name is persisted.
+    if (raw.omnicross !== undefined) {
+      if (raw.omnicross && typeof raw.omnicross === 'object' && !Array.isArray(raw.omnicross)) {
+        const omniRaw = raw.omnicross as Record<string, unknown>;
+        const omnicross: NonNullable<ProjectConfig['omnicross']> = {};
+        if (omniRaw.endpoint !== undefined) {
+          if (typeof omniRaw.endpoint === 'string' && omniRaw.endpoint.trim().length > 0) {
+            omnicross.endpoint = omniRaw.endpoint;
+          } else {
+            console.warn(`Invalid 'omnicross.endpoint' field in config (must be a non-empty string)`);
+          }
+        }
+        if (omniRaw.controlTokenEnv !== undefined) {
+          if (
+            typeof omniRaw.controlTokenEnv === 'string' &&
+            /^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(omniRaw.controlTokenEnv)
+          ) {
+            omnicross.controlTokenEnv = omniRaw.controlTokenEnv;
+          } else {
+            console.warn(`Invalid 'omnicross.controlTokenEnv' field in config (must be an environment variable name)`);
+          }
+        }
+        if (omniRaw.requestTimeoutMs !== undefined) {
+          if (
+            typeof omniRaw.requestTimeoutMs === 'number' &&
+            Number.isInteger(omniRaw.requestTimeoutMs) &&
+            omniRaw.requestTimeoutMs >= 100 &&
+            omniRaw.requestTimeoutMs <= 60_000
+          ) {
+            omnicross.requestTimeoutMs = omniRaw.requestTimeoutMs;
+          } else {
+            console.warn(`Invalid 'omnicross.requestTimeoutMs' field in config (must be an integer between 100 and 60000)`);
+          }
+        }
+        if (omniRaw.leaseTtlSeconds !== undefined) {
+          if (
+            typeof omniRaw.leaseTtlSeconds === 'number' &&
+            Number.isInteger(omniRaw.leaseTtlSeconds) &&
+            omniRaw.leaseTtlSeconds >= 30 &&
+            omniRaw.leaseTtlSeconds <= 3_600
+          ) {
+            omnicross.leaseTtlSeconds = omniRaw.leaseTtlSeconds;
+          } else {
+            console.warn(`Invalid 'omnicross.leaseTtlSeconds' field in config (must be an integer between 30 and 3600)`);
+          }
+        }
+        config.omnicross = omnicross;
+      } else {
+        console.warn(`Invalid 'omnicross' field in config (must be an object)`);
+      }
+    }
+
+    // Parse sessionPolicy field (session-policy-and-control-parity): an optional
+    // map supplying the executor policy block numeric limits. Resilient exactly
+    // like `runs` — a non-map drops the whole block with a warning; an obviously
+    // malformed leaf (non-integer, non-positive, non-string) is dropped with a
+    // warning and siblings still parse. The authoritative bounded validation
+    // (and the safety-disabling rejection) lives in `resolveSessionPolicySource`
+    // (`src/core/session-policy-parity/policy-source.ts`), which re-validates
+    // the selected value; this parser only drops what is clearly malformed so a
+    // hand-edited config never fails parsing.
+    if (raw.sessionPolicy !== undefined) {
+      if (
+        raw.sessionPolicy &&
+        typeof raw.sessionPolicy === 'object' &&
+        !Array.isArray(raw.sessionPolicy)
+      ) {
+        const spRaw = raw.sessionPolicy as Record<string, unknown>;
+        const sessionPolicy: ProjectConfig['sessionPolicy'] = {};
+        if (spRaw.handoffTokenLimit !== undefined) {
+          if (
+            Number.isInteger(spRaw.handoffTokenLimit) &&
+            (spRaw.handoffTokenLimit as number) > 0
+          ) {
+            sessionPolicy.handoffTokenLimit = spRaw.handoffTokenLimit as number;
+          } else {
+            warnConfig(
+              {
+                key: 'invalidSessionPolicyHandoffTokenLimit',
+                fallback: `Invalid 'sessionPolicy.handoffTokenLimit' in config (must be a positive integer)`,
+              },
+              reporter
+            );
+          }
+        }
+        if (spRaw.reuseRoundLimit !== undefined) {
+          if (
+            Number.isInteger(spRaw.reuseRoundLimit) &&
+            (spRaw.reuseRoundLimit as number) > 0
+          ) {
+            sessionPolicy.reuseRoundLimit = spRaw.reuseRoundLimit as number;
+          } else {
+            warnConfig(
+              {
+                key: 'invalidSessionPolicyReuseRoundLimit',
+                fallback: `Invalid 'sessionPolicy.reuseRoundLimit' in config (must be a positive integer)`,
+              },
+              reporter
+            );
+          }
+        }
+        if (spRaw.touchMaxIdleMs !== undefined) {
+          if (
+            Number.isInteger(spRaw.touchMaxIdleMs) &&
+            (spRaw.touchMaxIdleMs as number) > 0
+          ) {
+            sessionPolicy.touchMaxIdleMs = spRaw.touchMaxIdleMs as number;
+          } else {
+            warnConfig(
+              {
+                key: 'invalidSessionPolicyTouchMaxIdleMs',
+                fallback: `Invalid 'sessionPolicy.touchMaxIdleMs' in config (must be a positive integer)`,
+              },
+              reporter
+            );
+          }
+        }
+        if (spRaw.retireReasonLabel !== undefined) {
+          if (typeof spRaw.retireReasonLabel === 'string' && spRaw.retireReasonLabel.length > 0) {
+            sessionPolicy.retireReasonLabel = spRaw.retireReasonLabel;
+          } else {
+            warnConfig(
+              {
+                key: 'invalidSessionPolicyRetireReasonLabel',
+                fallback: `Invalid 'sessionPolicy.retireReasonLabel' in config (must be a non-empty string)`,
+              },
+              reporter
+            );
+          }
+        }
+        config.sessionPolicy = sessionPolicy;
+      } else {
+        warnConfig(
+          {
+            key: 'invalidSessionPolicy',
+            fallback: `Invalid 'sessionPolicy' field in config (must be an object)`,
           },
           reporter
         );
@@ -1847,19 +2047,26 @@ function isDirectorySync(candidatePath: string): boolean {
  * Reads (or mints) the project's stable `projectId`.
  *
  * If the config already carries a `projectId` (any string), it is returned
- * unchanged (a lock-free read - the common case after the first run).
- * Otherwise a new `crypto.randomUUID()` is minted and APPENDED to the config
- * file as a single `projectId: <uuid>` line, preserving the file's existing
- * content and comments verbatim. Minting is serialized under the project
- * registry lock (MINOR-3): two concurrent first-ever runs would otherwise
- * both mint distinct ids and race their appends, leaving the config and the
- * registry permanently divergent. The append always lands on its own line (a
+ * unchanged (a lock-free read - the common case after the first run, never
+ * touching the registry). Otherwise the machine project registry is consulted
+ * FIRST, under the lock the mint already holds (converge-projectid-mint D2):
+ * when the machine holds an unambiguous entry for the project's canonical
+ * root, that entry's `projectId` is ADOPTED and written to the config, so a
+ * registered path can never acquire a second identity. Only when no registry
+ * entry exists (or the registry's live aliases for the root conflict on fixed
+ * ownership metadata - a state this mint must not resolve) is a fresh
+ * `crypto.randomUUID()` minted. The id is APPENDED to the config file as a
+ * single `projectId: <id>` line, preserving the file's existing content and
+ * comments verbatim. Minting is serialized under the project registry lock
+ * (MINOR-3): two concurrent first-ever runs would otherwise both mint
+ * distinct ids and race their appends, leaving the config and the registry
+ * permanently divergent. The append always lands on its own line (a
  * guaranteed leading newline, regardless of the file's trailing whitespace),
  * and the write is re-read and validated; a failed validation reverts the
  * file to its original content.
  *
  * Throws when no config file exists (`rasen init` has not run) or when the
- * config file cannot be written.
+ * config file cannot be written - never for registry reasons.
  */
 export async function ensureProjectIdInConfig(
   projectRoot: string,
@@ -1887,10 +2094,22 @@ export async function ensureProjectIdInConfig(
       return idUnderLock;
     }
 
-    const projectId = randomUUID();
-    const trimmed = contentUnderLock.replace(/\n+$/u, '');
-    const appended =
-      trimmed.length > 0 ? `${trimmed}\nprojectId: ${projectId}\n` : `projectId: ${projectId}\n`;
+    // A registered path adopts the registry's identity instead of minting
+    // (D2). The lookup runs inside the lock the mint already holds; a
+    // conflicted registry is not adoptable, and an UNREADABLE one offers no
+    // identity to adopt - in both cases minting proceeds fresh exactly as
+    // before, because the mint's contract is to never throw for registry
+    // reasons (the registration that follows surfaces real registry errors
+    // through its own path).
+    let adoption: AdoptableProjectIdentity = { adoptable: false, reason: 'unregistered' };
+    try {
+      adoption = await findAdoptableProjectIdentity(projectRoot, options);
+    } catch {
+      // A registry the mint cannot read is treated as holding no adoptable
+      // identity for this root.
+    }
+    const projectId = adoption.adoptable ? adoption.projectId : randomUUID();
+    const appended = appendProjectIdLine(contentUnderLock, projectId);
 
     try {
       await fsPromises.writeFile(configPath, appended, 'utf-8');
@@ -1911,6 +2130,91 @@ export async function ensureProjectIdInConfig(
     }
 
     return projectId;
+  }, options);
+}
+
+/** The outcome of {@link reconcileProjectIdInConfig}. */
+export interface ReconciledProjectId {
+  configPath: string;
+  /** false when the config already carried the expected identity (no write). */
+  changed: boolean;
+}
+
+/**
+ * Rewrites the config's `projectId` toward `expectedId` in place
+ * (converge-projectid-mint design D4): the value on the existing
+ * `projectId:` line is replaced (located through the parsed YAML document -
+ * the same explicit field lookup the mint uses, never a pattern match over
+ * the file), or the line is APPENDED with the mint's exact append discipline
+ * when the field is absent. Every other byte and comment in the file is
+ * preserved, the write is re-read and validated, and a failed validation
+ * reverts the file to its original content - the same write discipline the
+ * mint proved, so the tracked file is never left corrupt.
+ *
+ * An id that is already the same project identity in canonical form (trim +
+ * case-insensitive) is a byte-identical no-op: a config recording the id in
+ * uppercase against a lowercase registry id is NOT rewritten.
+ *
+ * Runs under the project registry lock, serializing against concurrent
+ * mints/adoptions/reconciliations (all writers target the registry id, so
+ * concurrent convergence is idempotent).
+ *
+ * Throws when no config file exists or when the config file cannot be
+ * written or validated.
+ */
+export async function reconcileProjectIdInConfig(
+  projectRoot: string,
+  expectedId: string,
+  options: ProjectPathOptions = {}
+): Promise<ReconciledProjectId> {
+  const configPath = resolveConfigFilePath(projectRoot);
+  if (configPath === null) {
+    throw new Error(
+      `No Rasen config found at ${path.join(projectRoot, WORKSPACE_DIR_NAME)}; run 'rasen init' first.`
+    );
+  }
+
+  return withProjectRegistryLock(async () => {
+    // Read INSIDE the lock so a concurrent mint/repair is absorbed rather
+    // than clobbered (same discipline as the mint's re-read).
+    const original = await fsPromises.readFile(configPath, 'utf-8');
+    const currentId = extractProjectIdField(original);
+    if (currentId !== undefined && sameProjectIdentity(currentId, expectedId)) {
+      return { configPath, changed: false };
+    }
+
+    let next: string;
+    if (currentId === undefined) {
+      next = appendProjectIdLine(original, expectedId);
+    } else {
+      const replaced = replaceProjectIdFieldValue(original, expectedId);
+      if (replaced === null) {
+        throw new Error(
+          `Could not rewrite the existing projectId field in ${configPath}; edit 'projectId: <id>' manually or fix the file's YAML.`
+        );
+      }
+      next = replaced;
+    }
+
+    try {
+      await fsPromises.writeFile(configPath, next, 'utf-8');
+    } catch (error) {
+      throw new Error(
+        `Could not write projectId to ${configPath} (${error instanceof Error ? error.message : String(error)}).`
+      );
+    }
+
+    const verifyContent = await fsPromises.readFile(configPath, 'utf-8');
+    if (extractProjectIdField(verifyContent) !== expectedId) {
+      // The rewrite did not validate (e.g. an unexpected YAML edge case) -
+      // revert rather than leave a config the parser cannot trust.
+      await fsPromises.writeFile(configPath, original, 'utf-8');
+      throw new Error(
+        `Reconciling projectId in ${configPath} did not validate after write; reverted the file. Edit 'projectId: <id>' manually or fix the file's YAML.`
+      );
+    }
+
+    return { configPath, changed: true };
   }, options);
 }
 
@@ -2539,4 +2843,37 @@ function extractProjectIdField(content: string): string | undefined {
   }
   const value = (raw as Record<string, unknown>).projectId;
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+/**
+ * Appends a single `projectId: <id>` line to raw config content, preserving
+ * everything already there verbatim. The line always lands on its own line
+ * (a guaranteed leading newline, regardless of the file's trailing
+ * whitespace). The one append discipline shared by the lazy mint and the
+ * identity-reconcile helper, so the two writers can never diverge.
+ */
+function appendProjectIdLine(content: string, projectId: string): string {
+  const trimmed = content.replace(/\n+$/u, '');
+  return trimmed.length > 0 ? `${trimmed}\nprojectId: ${projectId}\n` : `projectId: ${projectId}\n`;
+}
+
+/**
+ * Replaces ONLY the value of the top-level `projectId` field in `content`
+ * with `projectId`, splicing exactly the parsed scalar's source range so
+ * every other byte (comments included) survives verbatim. The field is
+ * located through the parsed YAML document - the same explicit lookup the
+ * mint's reader uses, never a pattern match over the file. Returns null when
+ * no top-level `projectId` scalar with a spliceable range exists.
+ */
+function replaceProjectIdFieldValue(content: string, projectId: string): string | null {
+  const root = parseDocument(content).contents;
+  if (!(root instanceof YAMLMap)) return null;
+  for (const pair of root.items) {
+    if (pair.key?.toJSON() !== 'projectId') continue;
+    const value = pair.value;
+    if (value === null || value.range === undefined) return null;
+    const [start, end] = value.range;
+    return content.slice(0, start) + projectId + content.slice(end);
+  }
+  return null;
 }

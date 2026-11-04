@@ -1,0 +1,16 @@
+Issue issue-autodecompose-uplift — confirm report (revision 0003)
+  launchable: 1
+
+Issue issue-autodecompose-uplift node issue-autodecompose-graph — fresh launch
+  change: 2026-08-21-issue-autodecompose-graph (ci_96db06e16c62383fc2c4218874cb00e6e2a93a9b3c5415206bb8c568d267ab42)
+  project: e2ee72ed-04a1-4395-86aa-7e77d2b83ec7  target-line: line-0.2
+  binding: project-checkout
+    cwd: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code
+    attached: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-issue-store
+  pipeline: small-feature (from the plan’s suggestion)
+
+  pending Change creation: 1
+    issue-autodecompose-review-flow: e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/line-0.2 — suggest: small-feature
+      Human review, revision, and confirm-to-start flow over decomposition revisions
+
+  wrote nothing — confirm composes; starting a node remains a per-node act.

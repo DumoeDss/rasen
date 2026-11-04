@@ -1,0 +1,71 @@
+Issue issue-cross-project-execution
+  state: resolved
+  title: Issue layer Phase 3: one Issue across member projects
+  revisions: 0001, 0002
+  latest plan: revision 0002
+  plan digest: d9d4d63ec4cfe8b6583c916ae2b47505f03e5b28beecd9e4ee1c94ff8a9f1db8
+  status:
+    phase: done
+    health: healthy
+    progress: 4/4
+    run-state: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer
+    nodes:
+      project rasen-site (6ca78b98-777f-45bc-8d9b-b84c34e1a531): 1/1
+      document-multi-project-issues change 6ca78b98-777f-45bc-8d9b-b84c34e1a531 document-multi-project-issues — run-terminal
+        pipeline: manual (located by workspace-index)
+        evidence: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-issue-store\rasen\projects\6ca78b98-777f-45bc-8d9b-b84c34e1a531\changes\document-multi-project-issues\evidence
+      project rasen (e2ee72ed-04a1-4395-86aa-7e77d2b83ec7): 3/3
+      issue-cross-project-gating change e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 2026-08-20-issue-cross-project-gating — finalized (finalized on a legacy archive record (no v2 outcome was ever recorded))
+      issue-project-grouped-views change e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 2026-08-20-issue-project-grouped-views — finalized (finalized on a legacy archive record (no v2 outcome was ever recorded))
+      issue-target-project-binding change e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 2026-08-20-issue-target-project-binding — finalized (finalized on a legacy archive record (no v2 outcome was ever recorded))
+
+  revision delta: 0002 over 0001
+
+  acceptance:
+    conditions: revision 0001 (4 condition(s))
+      children-delivered: All three Phase-3 children shipped and archived on dev/0.2.0 via merged PR #172 (merge 4bac13d7, CI first-run green): target-project binding, cross-project gating, grouped views.
+      cross-project-gating-verified: Cross-project dependency gating proven on real evidence: a named refusal while the upstream node was un-terminal, and release on real terminal work (receipts close-site-refusal-at-0002.json, close-site-release.txt).
+      grouped-views-accurate: Project-grouped lanes accurate from the aggregating root: 4/4 across two lanes, the site node located through the workspace-index route (close-aggregated-show-worktree).
+      site-node-genuine: The rasen-site node driven genuinely terminal by real work: docs/issues.md plus docs index committed on rasen-site main (2dc9e31), site build and tests green, honest run-state including its two recorded openFindings.
+    gate: not eligible — the Issue already carries an acceptance record; an acceptance is never rewritten.
+    record: accepted 2026-08-20T18:03:54.626Z under revision 0001 (gate 4/4 waiting-human)
+      note: Phase 3 cross-project execution verified: PR #172 merged, gating proven refusal-then-release on real work, site node genuinely terminal, lanes accurate 4/4 via workspace-index
+
+  delivery evidence:
+    document-multi-project-issues document-multi-project-issues@rasen-site — run-terminal — not-archived
+      delivery evidence will exist when the Change archives
+    issue-cross-project-gating 2026-08-20-issue-cross-project-gating@rasen — finalized — record (legacy)
+      archived: 2026-08-20T13:12:21.782Z
+      code commit: 8a1a2d3166cb14d52b87c07290d14d1327757500
+      planning branch: feat/issue-phase3
+      outcome: (none recorded on this legacy record basis)
+      evidence: 16 file(s)
+      ship-log: evidence/ship-log.md (sha256 66a661885eb5)
+      missing: verification-report
+    issue-project-grouped-views 2026-08-20-issue-project-grouped-views@rasen — finalized — record (legacy)
+      archived: 2026-08-20T15:43:44.047Z
+      code commit: 3dbf7ffc4647e60d73dc6b706ee13d18007c06e6
+      planning branch: feat/issue-phase3
+      outcome: (none recorded on this legacy record basis)
+      evidence: 20 file(s)
+      ship-log: evidence/ship-log.md (sha256 9cfe8719f2ff)
+      missing: verification-report
+    issue-target-project-binding 2026-08-20-issue-target-project-binding@rasen — finalized — record (legacy)
+      archived: 2026-08-20T11:30:15.630Z
+      code commit: 1049453bb5c1552f7b9223adc39f5b37c7653d10
+      planning branch: feat/issue-phase3
+      outcome: (none recorded on this legacy record basis)
+      evidence: 18 file(s)
+      ship-log: evidence/ship-log.md (sha256 40bdfaa0ebfd)
+      missing: verification-report
+    counts: 3 record, 0 no-record, 1 not-archived, 0 unreadable, 0 unattributed
+
+  review:
+    determination: accepted (record 2026-08-20T18:03:54.626Z under revision 0001)
+    threads: 4
+      archive-pending document-multi-project-issues (run-terminal — evidence will exist when the Change archives)
+      evidence-missing issue-cross-project-gating: verification-report
+      evidence-missing issue-project-grouped-views: verification-report
+      evidence-missing issue-target-project-binding: verification-report
+    verification: required 4/4, delivery 3 record / 0 no-record / 1 not-archived / 0 unreadable / 0 unattributed
+    review derives; accepting remains the operator's act.

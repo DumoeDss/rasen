@@ -27,6 +27,8 @@ import { findRepoPlanningRootSync } from '../core/planning-home.js';
 interface AdoptOptions {
   to?: string;
   archive?: string;
+  /** Required with `--archive move`: layout v2 partitions archives by line. */
+  targetLine?: string;
   dryRun?: boolean;
   json?: boolean;
   verifyHash?: boolean;
@@ -45,6 +47,8 @@ interface EjectOptions {
 
 interface RelocateOptions {
   to?: string;
+  /** Required for `--to store` against a layout v2 store. */
+  targetLine?: string;
   dryRun?: boolean;
   json?: boolean;
   verifyHash?: boolean;
@@ -53,15 +57,6 @@ interface RelocateOptions {
 interface HomePruneOptions {
   apply?: boolean;
   json?: boolean;
-}
-
-function failJson(error: unknown, code: string): void {
-  const diagnostic =
-    error instanceof StoreError
-      ? error.diagnostic
-      : { severity: 'error' as const, code, message: asErrorMessage(error) };
-  printJson({ status: [diagnostic] });
-  process.exitCode = 1;
 }
 
 function reportSuggestedCommits(commits: AdoptResult['suggestedCommits']): void {
@@ -114,6 +109,7 @@ export async function runAdopt(sourcePath: string | undefined, options: AdoptOpt
       sourcePath: resolvedSource,
       storeId: options.to,
       archive: archiveMode,
+      ...(options.targetLine === undefined ? {} : { targetLine: options.targetLine }),
       ...(options.dryRun ? { dryRun: true } : {}),
       ...(options.verifyHash ? { verifyHash: true } : {}),
     });
@@ -124,11 +120,15 @@ export async function runAdopt(sourcePath: string | undefined, options: AdoptOpt
     }
     printAdoptHuman(result);
   } catch (error) {
-    if (options.json) {
-      failJson(error, 'adopt_error');
-      return;
-    }
-    throw error;
+    // Rendered through the shared failure contract in BOTH modes, exactly as
+    // `runEject` below already does. Rethrowing in human mode let the error
+    // escape to `runCli()`, which has no top-level catch, so an ordinary
+    // refusal reached the user as a raw Node unhandled-rejection dump naming
+    // `dist/` paths -- with the diagnostic's own message and Fix line buried
+    // inside it. Measured on `rasen store adopt` hitting
+    // `legacy_flat_store_requires_migration` against a real legacy flat Store
+    // (change `rehearse-legacy-store-layout-migration`, triage O5).
+    emitFailure(options.json, {}, error, 'adopt_error');
   }
 }
 
@@ -320,6 +320,7 @@ export async function runRelocate(options: RelocateOptions): Promise<void> {
     const result = await relocateArchive({
       projectRoot: findRepoPlanningRootSync(process.cwd()) ?? process.cwd(),
       to: to as RelocateTarget,
+      ...(options.targetLine === undefined ? {} : { targetLine: options.targetLine }),
       ...(options.dryRun ? { dryRun: true } : {}),
       ...(options.verifyHash ? { verifyHash: true } : {}),
     });
@@ -330,11 +331,15 @@ export async function runRelocate(options: RelocateOptions): Promise<void> {
     }
     printRelocateHuman(result);
   } catch (error) {
-    if (options.json) {
-      failJson(error, 'relocate_error');
-      return;
-    }
-    throw error;
+    // Rendered through the shared failure contract in BOTH modes, exactly as
+    // `runEject` below already does. Rethrowing in human mode let the error
+    // escape to `runCli()`, which has no top-level catch, so an ordinary
+    // refusal reached the user as a raw Node unhandled-rejection dump naming
+    // `dist/` paths -- with the diagnostic's own message and Fix line buried
+    // inside it. Measured on `rasen archive relocate` hitting
+    // `legacy_flat_store_requires_migration` against a real legacy flat Store
+    // (change `rehearse-legacy-store-layout-migration`, triage O5).
+    emitFailure(options.json, {}, error, 'relocate_error');
   }
 }
 
@@ -384,11 +389,15 @@ export async function runHomePrune(options: HomePruneOptions): Promise<void> {
     }
     printHomePruneHuman(result);
   } catch (error) {
-    if (options.json) {
-      failJson(error, 'home_prune_error');
-      return;
-    }
-    throw error;
+    // Rendered through the shared failure contract in BOTH modes, exactly as
+    // `runEject` below already does. Rethrowing in human mode let the error
+    // escape to `runCli()`, which has no top-level catch, so an ordinary
+    // refusal reached the user as a raw Node unhandled-rejection dump naming
+    // `dist/` paths -- with the diagnostic's own message and Fix line buried
+    // inside it. Measured on `rasen home prune` hitting
+    // `legacy_flat_store_requires_migration` against a real legacy flat Store
+    // (change `rehearse-legacy-store-layout-migration`, triage O5).
+    emitFailure(options.json, {}, error, 'home_prune_error');
   }
 }
 
@@ -443,6 +452,7 @@ export function registerArchiveRelocateSubcommand(archiveCommand: Command): void
     .command('relocate')
     .description('')
     .requiredOption('--to <dest>', '')
+    .option('--target-line <id>', '')
     .option('--dry-run', '')
     .option('--verify-hash', '')
     .option('--json', '')

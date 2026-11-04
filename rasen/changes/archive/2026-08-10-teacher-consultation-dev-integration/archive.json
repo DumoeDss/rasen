@@ -1,0 +1,33 @@
+{
+  "change": "teacher-consultation-dev-integration",
+  "archivedAt": "2026-08-10T10:50:34.249Z",
+  "codeCommit": "c7221341e7d3694e48835cbaa5afa5a0edcab284",
+  "planningBranch": "feat/teacher-advisor-workflow",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/claude-integration-verification.md",
+      "sha256": "b49768522ca7889d5b5e6700381b1c3094a106eea938ac75655338f5345a554a"
+    },
+    {
+      "path": "evidence/implementer-2-verification.md",
+      "sha256": "29b671a633d66b20930bb58289cad82f192efd924e84ec138b3b19bf359148f8"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "4b920c74d3468bdef5d4611131ac3ea6d46be849d2fafe28d81df8d90e884f69"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "df034ce2842237061dd04a4b8785659bc1e54f04d35961aad46e6f1788e1216f"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

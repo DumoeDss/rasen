@@ -8,8 +8,37 @@ import { agentAction, startRecord } from './reconciler-fixture.js';
 import type { RuntimePlan } from '../../../src/core/change-run/internal/runtime-plan.js';
 import { digestLaunchIntent } from '../../../src/core/change-run/internal/identity.js';
 import { createCanonicalRunRecord } from '../../../src/core/change-run/internal/record.js';
+import { deriveAgentTurnInputBinding } from '../../../src/core/change-run/internal/actions.js';
+import type { RunAction } from '../../../src/core/change-run/contracts.js';
 
 const branded = <T>(value: string): T => value as T;
+
+function buildBoundAgentAction(
+  plan: RuntimePlan,
+  descriptor: {
+    readonly nodeId: string;
+    readonly occurrence: number;
+    readonly renderedTurnInput?: string;
+  }
+): RunAction {
+  if (descriptor.renderedTurnInput === undefined) {
+    throw new Error('trusted rendered turn input required');
+  }
+  const node = plan.nodes.find((entry) => entry.nodeId === descriptor.nodeId)!;
+  const action = agentAction(
+    plan,
+    node.hierarchicalPath,
+    descriptor.occurrence
+  );
+  if (action.kind !== 'agent') throw new Error('expected agent Action');
+  return {
+    ...action,
+    agent: {
+      ...action.agent,
+      turnInput: deriveAgentTurnInputBinding(descriptor.renderedTurnInput),
+    },
+  };
+}
 
 function linearPlan(): RuntimePlan {
   return createRuntimePlan({
@@ -42,40 +71,84 @@ describe('ChangePipelineRuntime facade (10.1/10.2)', () => {
       store,
       plan,
       initialRecord: initial,
-      buildAction: (descriptor) => {
-        const node = plan.nodes.find((n) => n.nodeId === descriptor.nodeId)!;
-        return agentAction(plan, node.hierarchicalPath, descriptor.occurrence);
-      },
+      buildAction: (descriptor) => buildBoundAgentAction(plan, descriptor),
     });
-    const launchDigest = digestLaunchIntent({ pipeline: 'linear', inputs: {} });
-
-    const started = await runtime.start(
-      {
-        change: {
-          projectRoot: '/root',
-          changeId: 'fixture-change',
-        },
-        pipeline: 'linear',
-        launchRequestId: branded(`launch:${'1'.repeat(60)}1111`),
-        launchRequestDigest: launchDigest,
+    const launchIntent = {
+      pipeline: 'linear',
+      engine: 'reconciler' as const,
+      inputs: {},
+    };
+    const launchDigest = digestLaunchIntent(launchIntent);
+    const launchRequest = {
+      change: {
+        projectRoot: '/root',
+        changeId: 'fixture-change',
       },
-      { deliveryMode: 'grant' }
-    );
+      ...launchIntent,
+      launchRequestId: branded(`launch:${'1'.repeat(60)}1111`),
+      launchRequestDigest: launchDigest,
+    };
+
+    const started = await runtime.start(launchRequest, {
+      deliveryMode: 'grant',
+    });
     expect(started.disposition).toBe('created');
-    expect(started.actions).toHaveLength(1); // root/a admitted + granted
-    expect(started.actions[0]!.nodeId).toBe(plan.nodes[0]!.nodeId);
+    expect(started.actions).toEqual([]);
+    expect(started.candidates).toHaveLength(1);
+    expect(started.candidates[0]).toMatchObject({
+      format: 'change-run-agent-candidate/1',
+      runId: plan.runId,
+      nodeId: plan.nodes[0]!.nodeId,
+      occurrence: 0,
+      recordVersion: initial.recordVersion,
+    });
+    expect(started.candidates[0]).not.toHaveProperty('agent');
+    expect(started.candidates[0]).not.toHaveProperty('prompt');
+    expect(store.load(plan.runId)).toEqual(initial);
 
-    const reused = await runtime.start(
-      {
-        change: { projectRoot: '/root', changeId: 'fixture-change' },
-        pipeline: 'linear',
-        launchRequestId: branded(`launch:${'1'.repeat(60)}1111`),
-        launchRequestDigest: launchDigest,
-      },
-      { deliveryMode: 'grant' }
-    );
+    const reused = await runtime.start(launchRequest, {
+      deliveryMode: 'grant',
+    });
     expect(reused.disposition).toBe('reused');
     expect(reused.actions).toEqual([]);
+    expect(reused.candidates).toEqual(started.candidates);
+    expect(store.load(plan.runId)).toEqual(initial);
+
+    const resumed = await runtime.resume(
+      { change: launchRequest.change, runId: plan.runId },
+      { deliveryMode: 'grant' }
+    );
+    expect(resumed.disposition).toBe('advanced');
+    expect(resumed.actions).toEqual([]);
+    expect(resumed.candidates).toEqual(started.candidates);
+    expect(store.load(plan.runId)).toEqual(initial);
+
+    const prompt = 'trusted start prompt\n雪';
+    const admitted = await runtime.admit(
+      { change: launchRequest.change, runId: plan.runId },
+      {
+        deliveryMode: 'grant',
+        resolveAgentTurnInput: (candidate) => {
+          expect(candidate).toEqual(started.candidates[0]);
+          return prompt;
+        },
+      }
+    );
+    expect(admitted.disposition).toBe('advanced');
+    expect(admitted.actions).toHaveLength(1);
+    expect(admitted.actions[0]).toMatchObject({
+      kind: 'agent',
+      nodeId: plan.nodes[0]!.nodeId,
+      agent: { turnInput: deriveAgentTurnInputBinding(prompt) },
+    });
+    expect(Object.keys(store.load(plan.runId).actions)).toHaveLength(1);
+    expect(() =>
+      runtime.admit(
+        { change: launchRequest.change, runId: plan.runId },
+        { deliveryMode: 'grant', resolveAgentTurnInput: () => prompt }
+      )
+    ).toThrowError(expect.objectContaining({ code: 'candidate_stale' }));
+
     const beforeConflict = store.load(plan.runId);
 
     expect(() =>
@@ -119,26 +192,56 @@ describe('ChangePipelineRuntime facade (10.1/10.2)', () => {
     expect(view.status).toBe('running');
   });
 
-  it('resume grants a ready admit candidate (advanced)', async () => {
+  it('resume previews a ready candidate before explicit trusted admission', async () => {
     const plan = linearPlan();
     const store = createInMemoryRunStore();
-    store.create(plan.runId, startRecord(plan));
+    const initial = startRecord(plan);
+    store.create(plan.runId, initial);
     const runtime = createChangePipelineRuntime({
       store,
       plan,
-      initialRecord: startRecord(plan),
-      buildAction: (descriptor) => {
-        const node = plan.nodes.find((n) => n.nodeId === descriptor.nodeId)!;
-        return agentAction(plan, node.hierarchicalPath, descriptor.occurrence);
+      initialRecord: initial,
+      buildAction: (descriptor) => buildBoundAgentAction(plan, descriptor),
+    });
+    const runRef = {
+      change: { projectRoot: '/root', changeId: 'fixture-change' },
+      runId: plan.runId,
+    };
+    const resumed = await runtime.resume(runRef, { deliveryMode: 'grant' });
+    expect(resumed.disposition).toBe('advanced');
+    expect(resumed.actions).toEqual([]);
+    expect(resumed.candidates).toHaveLength(1);
+    expect(resumed.candidates[0]).not.toHaveProperty('agent');
+    expect(resumed.candidates[0]).not.toHaveProperty('prompt');
+    expect(store.load(plan.runId)).toEqual(initial);
+
+    const repeated = await runtime.resume(runRef, { deliveryMode: 'grant' });
+    expect(repeated.actions).toEqual([]);
+    expect(repeated.candidates).toEqual(resumed.candidates);
+    expect(store.load(plan.runId)).toEqual(initial);
+
+    const prompt = 'trusted resume prompt\n雪';
+    const admitted = await runtime.admit(runRef, {
+      deliveryMode: 'grant',
+      resolveAgentTurnInput: (candidate) => {
+        expect(candidate).toEqual(resumed.candidates[0]);
+        return prompt;
       },
     });
-    const resumed = await runtime.resume(
-      { change: { projectRoot: '/root', changeId: 'fixture-change' }, runId: plan.runId },
-      { deliveryMode: 'grant' }
-    );
-    // root/a is ready and not yet admitted -> resume grants it (advanced).
-    expect(resumed.disposition).toBe('advanced');
-    expect(resumed.actions).toHaveLength(1);
+    expect(admitted.disposition).toBe('advanced');
+    expect(admitted.actions).toHaveLength(1);
+    expect(admitted.actions[0]).toMatchObject({
+      kind: 'agent',
+      nodeId: plan.nodes[0]!.nodeId,
+      agent: { turnInput: deriveAgentTurnInputBinding(prompt) },
+    });
+    expect(Object.keys(store.load(plan.runId).actions)).toHaveLength(1);
+    expect(() =>
+      runtime.admit(runRef, {
+        deliveryMode: 'grant',
+        resolveAgentTurnInput: () => prompt,
+      })
+    ).toThrowError(expect.objectContaining({ code: 'candidate_stale' }));
   });
 
   it('normalizes input key order and derives non-empty launch identity inside the facade', async () => {
@@ -173,10 +276,7 @@ describe('ChangePipelineRuntime facade (10.1/10.2)', () => {
       store,
       plan,
       initialRecord: initial,
-      buildAction: (descriptor) => {
-        const node = plan.nodes.find((n) => n.nodeId === descriptor.nodeId)!;
-        return agentAction(plan, node.hierarchicalPath, descriptor.occurrence);
-      },
+      buildAction: (descriptor) => buildBoundAgentAction(plan, descriptor),
     });
     const request = {
       change: { projectRoot: '/root', changeId: 'fixture-change' },

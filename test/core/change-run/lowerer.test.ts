@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TEST_ATTESTATION_AUTHORITY } from '../../fixtures/trusted-completion.js';
 
 import {
   EcpDefinitionModule,
@@ -27,6 +28,7 @@ import {
   createRuntimePlan,
   type RuntimePlan,
 } from '../../../src/core/change-run/internal/runtime-plan.js';
+import { fixtureLoopLifecycle } from './bounded-loop-fixture.js';
 
 const BUG_FIX = {
   version: 1,
@@ -118,6 +120,7 @@ function profileFor(prepared: PreparedDefinition) {
           id: `adapter:${stage.skill}`,
           version: '1',
           contentDigest: `sha256:${'6'.repeat(64)}`,
+          attestationAuthority: TEST_ATTESTATION_AUTHORITY,
         },
       })
     ),
@@ -240,6 +243,7 @@ function bugFixV2Profile(prepared: PreparedDefinition) {
           id: `adapter:${skill}`,
           version: '1',
           contentDigest: `sha256:${'6'.repeat(64)}`,
+          attestationAuthority: TEST_ATTESTATION_AUTHORITY,
         },
       };
     }),
@@ -334,6 +338,7 @@ function smallFeatureV2Profile(prepared: PreparedDefinition) {
           id: `adapter:${skill}`,
           version: '1',
           contentDigest: `sha256:${'6'.repeat(64)}`,
+          attestationAuthority: TEST_ATTESTATION_AUTHORITY,
         },
       };
     }),
@@ -400,24 +405,28 @@ const REVIEW_CAPABILITIES = [
   {
     phase: 'review',
     id: 'review-cycle:review',
+    phaseContract: 'review-cycle/review',
     inputs: [],
     outcomes: ['clean', 'findings'],
   },
   {
     phase: 'triage',
     id: 'review-cycle:triage',
+    phaseContract: 'review-cycle/triage',
     inputs: [{ name: 'start', type: 'ecp/control', required: true }],
     outcomes: ['ready'],
   },
   {
     phase: 'fix',
     id: 'review-cycle:fix',
+    phaseContract: 'review-cycle/fix',
     inputs: [{ name: 'start', type: 'ecp/control', required: true }],
     outcomes: ['fixed'],
   },
   {
     phase: 're-review',
     id: 'review-cycle:re-review',
+    phaseContract: 'review-cycle/re-review',
     inputs: [{ name: 'start', type: 'ecp/control', required: true }],
     outcomes: ['clean', 'needs_fix'],
   },
@@ -444,6 +453,13 @@ const REVIEW_CYCLE_V2: DefinitionSourceV2 = {
           id: capability.phase,
           kind: 'AtomicStage' as const,
           capability: { id: capability.id, version: '1' },
+          execution: {
+            version: 1 as const,
+            role: capability.phase === 'fix' ? 'fixer' as const : 'reviewer' as const,
+            workspace: {
+              access: capability.phase === 'fix' ? 'write' as const : 'read' as const,
+            },
+          },
           reviewCyclePhase: capability.phase,
         })),
         connections: [
@@ -472,15 +488,23 @@ const REVIEW_CYCLE_V2: DefinitionSourceV2 = {
         id: 'review-loop',
         kind: 'BoundedLoop',
         body: 'review-cycle-body',
-        limits: { maxIterations: 3, maxActions: 12 },
+        limits: { maxIterations: 3, maxActions: 12, budget: 12 },
+        lifecycle: fixtureLoopLifecycle('exhausted'),
         exits: {
           clean: { action: 'exit', outcome: 'clean' },
           needs_fix: { action: 'continue' },
         },
         exhaustedOutcome: 'exhausted',
       },
+      { id: 'finish', kind: 'Finish', outcome: 'clean' },
     ],
-    connections: [],
+    connections: [
+      {
+        id: 'review-loop-to-finish',
+        from: { node: 'review-loop', port: 'clean' },
+        to: { node: 'finish', port: 'start' },
+      },
+    ],
   },
 };
 
@@ -496,6 +520,7 @@ function prepareReviewCycleV2(): PreparedDefinition {
         artifacts: [],
         outcomes: capability.outcomes,
         limits: { maxActions: 8 },
+        phaseContracts: [capability.phaseContract],
       }))
     )
   );
@@ -542,6 +567,7 @@ function reviewCycleProfile() {
         id: `adapter:${capability.id}`,
         version: '1',
         contentDigest: `sha256:${'6'.repeat(64)}`,
+        attestationAuthority: TEST_ATTESTATION_AUTHORITY,
       },
     })),
     policy: {
@@ -617,7 +643,7 @@ describe('runtime plan lowerer (3.2)', () => {
       'fix',
       're-review',
     ]);
-    expect(loop.maxIterations).toBe(3);
+    expect(loop.limits.maxIterations).toBe(3);
     expect(plan.implicitFinishOutcome).toBe('bug-fix-completed');
   });
 
@@ -662,12 +688,12 @@ describe('runtime plan lowerer (3.2)', () => {
     });
     const plan = lowerRuntimePlan(prepared, profile, runId);
 
-    expect(plan.nodes).toHaveLength(1);
-    const loop = plan.nodes[0]!;
+    expect(plan.nodes).toHaveLength(2);
+    const loop = plan.nodes.find((node) => node.kind === 'bounded-loop')!;
     expect(loop).toMatchObject({
       kind: 'bounded-loop',
       hierarchicalPath: 'root:review-loop',
-      maxIterations: 3,
+      limits: { maxIterations: 3, maxActions: 12, budget: 12 },
       outcomes: { clean: 'clean', exhausted: 'exhausted' },
     });
     if (loop.kind !== 'bounded-loop') return;
@@ -902,7 +928,12 @@ function parallelV2Profile(
           slot: 'workspace', kind: 'workspace' as const,
           resource: 'worktree', recovery: 'suspend-if-ambiguous' as const,
         }],
-        adapter: { id: `adapter:${skill}`, version: '1', contentDigest: `sha256:${'6'.repeat(64)}` },
+        adapter: {
+          id: `adapter:${skill}`,
+          version: '1',
+          contentDigest: `sha256:${'6'.repeat(64)}`,
+          attestationAuthority: TEST_ATTESTATION_AUTHORITY,
+        },
       };
     }),
     policy: {

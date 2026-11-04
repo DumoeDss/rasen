@@ -1,5 +1,6 @@
 import type {
   CompleteRunAction,
+  JsonValue,
   NodeId,
 } from '../contracts.js';
 import { deriveNodeId } from './identity.js';
@@ -9,6 +10,7 @@ import type {
 } from './record.js';
 import {
   applyGoalCycleEvent,
+  decodeGoalCycleResult,
   initialGoalCycleState,
   reduceGoalCycleEvents,
   GoalCycleDomainError,
@@ -23,6 +25,13 @@ import type {
   RuntimePlanBoundedLoopNode,
   RuntimePlanGoalCyclePhase,
 } from './runtime-plan.js';
+import {
+  latestAttemptForDomainInvocation,
+  strategyIterationLimitAllowance,
+  strategyRecoveryInvocationPath,
+  type LoopDomainSnapshot,
+  type LoopProgressEntry,
+} from './bounded-loop-lifecycle.js';
 
 // ---------------------------------------------------------------------------
 // Invocation descriptor + progress type
@@ -34,6 +43,7 @@ export interface GoalCycleInvocationDescriptor
   readonly round: number;
   readonly hierarchicalPath: string;
   readonly nodeId: NodeId;
+  readonly recoveryAttempt?: number;
 }
 
 export type GoalCycleProgress =
@@ -95,12 +105,34 @@ export function goalCycleInvocation(
 // Record → events extraction (mirrors eventsFromRecord)
 // ---------------------------------------------------------------------------
 
-function actionForNode(
+function actionForInvocation(
+  plan: RuntimePlan,
+  loop: RuntimePlanBoundedLoopNode,
   record: CanonicalRunRecord,
-  nodeId: NodeId
+  descriptor: GoalCycleInvocationDescriptor
 ): CommittedAction | undefined {
-  return Object.values(record.actions).find(
-    (action) => action.action.nodeId === nodeId
+  const hierarchicalPath = goalCycleInvocationPath(
+    loop.hierarchicalPath,
+    descriptor.round,
+    descriptor.phase
+  );
+  return latestAttemptForDomainInvocation(
+    plan,
+    loop,
+    record,
+    deriveNodeId(plan.runId, hierarchicalPath),
+    hierarchicalPath
+  );
+}
+
+function effectiveIterationLimit(
+  plan: RuntimePlan,
+  loop: RuntimePlanBoundedLoopNode,
+  record: CanonicalRunRecord
+): number {
+  return (
+    loop.limits.maxIterations +
+    strategyIterationLimitAllowance(plan, loop, record)
   );
 }
 
@@ -137,10 +169,11 @@ function eventsFromRecord(
 ): readonly GoalCycleEvent[] {
   if (loop.body.kind !== 'goal-cycle') return Object.freeze([]);
   const events: GoalCycleEvent[] = [];
-  for (let round = 1; round <= loop.maxIterations; round += 1) {
+  const iterationLimit = effectiveIterationLimit(plan, loop, record);
+  for (let round = 1; round <= iterationLimit; round += 1) {
     for (const phase of loop.body.phases) {
       const descriptor = goalCycleInvocation(plan, loop, round, phase);
-      const action = actionForNode(record, descriptor.nodeId);
+      const action = actionForInvocation(plan, loop, record, descriptor);
       if (action === undefined) continue;
       const event = successfulEvent(round, phase.phase, action);
       if (event !== null) events.push(event);
@@ -192,12 +225,13 @@ export function projectGoalCycleProgress(
 ): GoalCycleProgress {
   const variant = loopVariant(loop);
   const events = eventsFromRecord(plan, loop, record);
+  const iterationLimit = effectiveIterationLimit(plan, loop, record);
   const state =
     events.length === 0
       ? initialGoalCycleState(variant)
       : reduceGoalCycleEvents(
           events,
-          loop.maxIterations,
+          iterationLimit,
           variant,
           plan.pipeline === 'task-loop' ? 'task-loop' : 'strict'
         );
@@ -213,7 +247,7 @@ export function projectGoalCycleProgress(
     state.round,
     phaseFor(loop, state.phase)
   );
-  const action = actionForNode(record, next.nodeId);
+  const action = actionForInvocation(plan, loop, record, next);
   if (action === undefined) {
     return Object.freeze({ kind: 'ready', state, next });
   }
@@ -223,21 +257,148 @@ export function projectGoalCycleProgress(
   return Object.freeze({ kind: 'waiting', state, next, action });
 }
 
+function goalProgressMaterial(
+  variant: GoalCycleVariant,
+  result: GoalCycleDomainResult
+): JsonValue {
+  if (variant === 'measure' && result.contract === 'goal-cycle/measure-judge/1') {
+    return {
+      variant,
+      direction: result.direction,
+      score: result.score,
+      satisfied: result.passed,
+    };
+  }
+  if (
+    result.contract === 'goal-cycle/evaluate-judge/1' ||
+    result.contract === 'goal-cycle/research-judge/1'
+  ) {
+    return {
+      variant,
+      satisfied: result.satisfied,
+      gaps: [...new Set(result.gaps)].sort(),
+    };
+  }
+  return { variant, phase: 'work' };
+}
+
+/** Domain adapter for the shared bounded-loop lifecycle reducer. */
+export function projectGoalCycleDomainSnapshot(
+  plan: RuntimePlan,
+  loop: RuntimePlanBoundedLoopNode,
+  record: CanonicalRunRecord
+): LoopDomainSnapshot {
+  const variant = loopVariant(loop);
+  const events = eventsFromRecord(plan, loop, record);
+  const iterationLimit = effectiveIterationLimit(plan, loop, record);
+  const decodeMode = plan.pipeline === 'task-loop' ? 'task-loop' : 'strict';
+  let state = initialGoalCycleState(variant);
+  const progressHistory: LoopProgressEntry[] = [];
+  for (const event of events) {
+    const decoded = decodeGoalCycleResult(
+      event.phase,
+      variant,
+      event.result,
+      decodeMode
+    );
+    state = applyGoalCycleEvent(
+      state,
+      event,
+      iterationLimit,
+      decodeMode
+    );
+    if (event.phase === 'judge') {
+      progressHistory.push({
+        iteration: event.round,
+        material: goalProgressMaterial(variant, decoded),
+      });
+    }
+  }
+  const progress = projectGoalCycleProgress(plan, loop, record);
+  const ownedNodeIds = new Set<NodeId>();
+  const ownedInvocations: LoopDomainSnapshot['ownedInvocations'][number][] = [];
+  for (let round = 1; round <= iterationLimit; round += 1) {
+    for (const phase of loop.body.kind === 'goal-cycle' ? loop.body.phases : []) {
+      const invocation = goalCycleInvocation(plan, loop, round, phase);
+      ownedNodeIds.add(invocation.nodeId);
+      ownedInvocations.push({
+        nodeId: invocation.nodeId,
+        hierarchicalPath: invocation.hierarchicalPath,
+        profilePath: invocation.profilePath,
+        admissionKind: invocation.admissionKind,
+        access: invocation.workspace.access,
+        iteration: invocation.round,
+        phase: invocation.phase,
+      });
+    }
+  }
+  const next = 'next' in progress ? progress.next : undefined;
+  return Object.freeze({
+    bodyKind: 'goal-cycle',
+    iteration: state.round,
+    phase: next?.phase ?? state.phase,
+    ...(state.outcome === 'satisfied'
+      ? { completionOutcome: loop.outcomes.clean }
+      : {}),
+    continueRequested:
+      state.outcome === 'exhausted' ||
+      (events.at(-1)?.phase === 'judge' && state.outcome !== 'satisfied'),
+    progressHistory: Object.freeze(progressHistory),
+    ...(next === undefined
+      ? {}
+      : {
+          nextInvocation: {
+            nodeId: next.nodeId,
+            hierarchicalPath: next.hierarchicalPath,
+            profilePath: next.profilePath,
+            admissionKind: next.admissionKind,
+            access: next.workspace.access,
+            iteration: next.round,
+            phase: next.phase,
+          },
+        }),
+    ownedNodeIds,
+    ownedInvocations: Object.freeze(ownedInvocations),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Locate (mirrors locateReviewCycleInvocation)
 // ---------------------------------------------------------------------------
 
 export function locateGoalCycleInvocation(
   plan: RuntimePlan,
+  record: CanonicalRunRecord,
   nodeId: NodeId
 ): GoalCycleInvocationDescriptor | null {
   for (const node of plan.nodes) {
     if (node.kind !== 'bounded-loop') continue;
     if (node.body.kind !== 'goal-cycle') continue;
-    for (let round = 1; round <= node.maxIterations; round += 1) {
+    const iterationLimit = effectiveIterationLimit(plan, node, record);
+    for (let round = 1; round <= iterationLimit; round += 1) {
       for (const phase of node.body.phases) {
         const descriptor = goalCycleInvocation(plan, node, round, phase);
         if (descriptor.nodeId === nodeId) return descriptor;
+        for (
+          let attempt = 1;
+          attempt <= node.lifecycle.strategy.maxAttempts;
+          attempt += 1
+        ) {
+          const hierarchicalPath = strategyRecoveryInvocationPath(
+            node.hierarchicalPath,
+            attempt,
+            descriptor.hierarchicalPath
+          );
+          const recoveryDescriptor = Object.freeze({
+            ...descriptor,
+            hierarchicalPath,
+            nodeId: deriveNodeId(plan.runId, hierarchicalPath),
+            recoveryAttempt: attempt,
+          });
+          if (recoveryDescriptor.nodeId === nodeId) {
+            return recoveryDescriptor;
+          }
+        }
       }
     }
   }
@@ -262,6 +423,7 @@ export function validateGoalCycleCompletion(
   if (committed === undefined) return;
   const descriptor = locateGoalCycleInvocation(
     plan,
+    record,
     committed.action.nodeId as NodeId
   );
   if (descriptor === null) return;
@@ -272,12 +434,14 @@ export function validateGoalCycleCompletion(
     );
   }
   const progress = projectGoalCycleProgress(plan, descriptor.loop, record);
-  if (
-    (progress.kind !== 'waiting' && progress.kind !== 'ready') ||
-    progress.next.nodeId !== descriptor.nodeId ||
-    progress.next.round !== descriptor.round ||
-    progress.next.phase !== descriptor.phase
-  ) {
+  const addressesExpectedInvocation =
+    (progress.kind === 'ready' || progress.kind === 'waiting') &&
+    progress.next.round === descriptor.round &&
+    progress.next.phase === descriptor.phase &&
+    (progress.kind === 'ready'
+      ? progress.next.nodeId === descriptor.nodeId
+      : progress.action.action.nodeId === descriptor.nodeId);
+  if (!addressesExpectedInvocation) {
     throw new GoalCycleDomainError(
       'invalid_goal_cycle_transition',
       'Completion does not address the currently expected GoalCycle phase.'
@@ -295,7 +459,7 @@ export function validateGoalCycleCompletion(
       result: request.result,
       evidence: request.evidence,
     },
-    descriptor.loop.maxIterations,
+    effectiveIterationLimit(plan, descriptor.loop, record),
     plan.pipeline === 'task-loop' ? 'task-loop' : 'strict'
   );
 }
@@ -336,7 +500,7 @@ export function projectGoalRunJson(
 
   // Iterate rounds, collecting work+judge results.
   const rounds: GoalRunRoundRecord[] = [];
-  for (let round = 1; round <= loop.maxIterations; round += 1) {
+  for (let round = 1; round <= loop.limits.maxIterations; round += 1) {
     const roundRecord = projectGoalRunRound(plan, loop, record, round);
     if (roundRecord !== null) rounds.push(roundRecord);
   }
@@ -361,7 +525,7 @@ function projectGoalRunRound(
 
   for (const phase of loop.body.phases) {
     const descriptor = goalCycleInvocation(plan, loop, round, phase);
-    const action = actionForNode(record, descriptor.nodeId);
+    const action = actionForInvocation(plan, loop, record, descriptor);
     if (action === undefined || action.result === undefined) continue;
     if (action.result.status !== 'succeeded') continue;
 

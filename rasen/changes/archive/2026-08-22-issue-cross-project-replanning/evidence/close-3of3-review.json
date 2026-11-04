@@ -1,0 +1,360 @@
+{
+  "issue": {
+    "issueId": "issue-cross-project-replanning",
+    "record": {
+      "version": 1,
+      "id": "issue-cross-project-replanning",
+      "title": "Issue layer Phase 5: cross-project replanning (ready set, history preservation, needs-attention)",
+      "state": "open",
+      "reason": null,
+      "createdAt": "2026-08-22T08:44:39.103Z"
+    },
+    "diagnostic": null,
+    "divergence": null,
+    "revisionIds": [
+      "0001",
+      "0002"
+    ],
+    "latestRevisionId": "0002",
+    "refs": [
+      "refs/heads/main"
+    ],
+    "uncommitted": false
+  },
+  "plan": {
+    "issueId": "issue-cross-project-replanning",
+    "revisionId": "0002",
+    "revision": {
+      "version": 1,
+      "issueId": "issue-cross-project-replanning",
+      "revisionId": "0002",
+      "supersedes": "0001",
+      "createdAt": "2026-08-22T08:47:38.733Z",
+      "contentSha256": "37e0a09b0e16547b27ea7c285e5c40aabaec70ac0783c63230622a257dd93d33",
+      "nodes": [
+        {
+          "nodeId": "issue-needs-attention",
+          "kind": "change",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "changeInstanceId": "ci_6680a8bfed77fe5b5225e6203580165e768e73a43f3ecc3d72bb06beccad26e5",
+          "changeAlias": "issue-needs-attention",
+          "suggestedPipeline": "small-feature",
+          "rationale": "the finale, bound to its active seeded instance and honestly in flight in the repo worktree executing it (this very change's apply stage); it becomes the Issue's last un-terminal node until it ships",
+          "dependsOn": [
+            "issue-ready-set-scheduling",
+            "issue-revision-history-preservation"
+          ]
+        },
+        {
+          "nodeId": "issue-ready-set-scheduling",
+          "kind": "change",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "changeInstanceId": "ci_720f005056ac205062fe6df97795ce8c34df19bfdbb1bb6b79251e9dc406108a",
+          "changeAlias": "issue-ready-set-scheduling",
+          "suggestedPipeline": "small-feature",
+          "rationale": "promoted from intent to Change against its seeded archived Store instance; the work shipped as repo ship 3f065496 and the node reads terminal on the committed archive evidence, so no dependent waits",
+          "dependsOn": []
+        },
+        {
+          "nodeId": "issue-revision-history-preservation",
+          "kind": "change",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "changeInstanceId": "ci_f1f9efb27efa440f4e927cbf54aca67aabbcc4f7ea7738839346992aae758342",
+          "changeAlias": "issue-revision-history-preservation",
+          "suggestedPipeline": "small-feature",
+          "rationale": "promoted from intent to Change against its seeded archived Store instance; the work shipped as repo ship c0ace35e and the node reads terminal on the committed archive evidence",
+          "dependsOn": [
+            "issue-ready-set-scheduling"
+          ]
+        }
+      ]
+    },
+    "diagnostic": null,
+    "readiness": {
+      "nodes": [
+        {
+          "node": {
+            "nodeId": "issue-needs-attention",
+            "kind": "change",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "changeInstanceId": "ci_6680a8bfed77fe5b5225e6203580165e768e73a43f3ecc3d72bb06beccad26e5",
+            "changeAlias": "issue-needs-attention",
+            "suggestedPipeline": "small-feature",
+            "rationale": "the finale, bound to its active seeded instance and honestly in flight in the repo worktree executing it (this very change's apply stage); it becomes the Issue's last un-terminal node until it ships",
+            "dependsOn": [
+              "issue-ready-set-scheduling",
+              "issue-revision-history-preservation"
+            ]
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "issue-needs-attention",
+                "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+                "targetLineId": "line-0.2",
+                "foundAtRef": "refs/heads/main",
+                "archived": false
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": false
+          },
+          "readiness": "blocked",
+          "blockedBy": [
+            "issue-ready-set-scheduling",
+            "issue-revision-history-preservation"
+          ]
+        },
+        {
+          "node": {
+            "nodeId": "issue-ready-set-scheduling",
+            "kind": "change",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "changeInstanceId": "ci_720f005056ac205062fe6df97795ce8c34df19bfdbb1bb6b79251e9dc406108a",
+            "changeAlias": "issue-ready-set-scheduling",
+            "suggestedPipeline": "small-feature",
+            "rationale": "promoted from intent to Change against its seeded archived Store instance; the work shipped as repo ship 3f065496 and the node reads terminal on the committed archive evidence, so no dependent waits",
+            "dependsOn": []
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "2026-08-21-issue-ready-set-scheduling",
+                "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+                "targetLineId": "line-0.2",
+                "foundAtRef": "refs/heads/main",
+                "archived": true
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": true,
+            "outcomeBasis": "legacy",
+            "outcomeBasisReason": null,
+            "outcomeBasisPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-21-issue-ready-set-scheduling/archive.json"
+          },
+          "readiness": "in-progress",
+          "blockedBy": []
+        },
+        {
+          "node": {
+            "nodeId": "issue-revision-history-preservation",
+            "kind": "change",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "changeInstanceId": "ci_f1f9efb27efa440f4e927cbf54aca67aabbcc4f7ea7738839346992aae758342",
+            "changeAlias": "issue-revision-history-preservation",
+            "suggestedPipeline": "small-feature",
+            "rationale": "promoted from intent to Change against its seeded archived Store instance; the work shipped as repo ship c0ace35e and the node reads terminal on the committed archive evidence",
+            "dependsOn": [
+              "issue-ready-set-scheduling"
+            ]
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "2026-08-22-issue-revision-history-preservation",
+                "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+                "targetLineId": "line-0.2",
+                "foundAtRef": "refs/heads/main",
+                "archived": true
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": true,
+            "outcomeBasis": "legacy",
+            "outcomeBasisReason": null,
+            "outcomeBasisPath": "rasen/projects/e2ee72ed-04a1-4395-86aa-7e77d2b83ec7/changes/archive/line-0.2/2026-08-22-issue-revision-history-preservation/archive.json"
+          },
+          "readiness": "blocked",
+          "blockedBy": [
+            "issue-ready-set-scheduling"
+          ]
+        }
+      ],
+      "readyToResolve": false
+    },
+    "unsearchedRefs": [],
+    "problems": [],
+    "complete": true
+  },
+  "status": {
+    "phase": "review",
+    "health": "waiting-human",
+    "progress": {
+      "completed": 3,
+      "total": 3
+    },
+    "nodes": [
+      {
+        "nodeId": "issue-needs-attention",
+        "kind": "change",
+        "alias": "issue-needs-attention",
+        "observation": "run-terminal",
+        "diagnostic": null,
+        "runStatePath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\.rasen\\changes\\issue-needs-attention\\ephemera\\auto-run.json",
+        "locatedBy": "execution-root",
+        "attribution": {
+          "pipeline": "small-feature",
+          "sessions": [],
+          "evidenceLocator": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store\\rasen\\projects\\e2ee72ed-04a1-4395-86aa-7e77d2b83ec7\\changes\\issue-needs-attention\\evidence"
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": "required",
+        "reason": null,
+        "suggestedPipeline": "small-feature",
+        "rationale": "the finale, bound to its active seeded instance and honestly in flight in the repo worktree executing it (this very change's apply stage); it becomes the Issue's last un-terminal node until it ships",
+        "uncertainty": null,
+        "blockedBy": []
+      },
+      {
+        "nodeId": "issue-ready-set-scheduling",
+        "kind": "change",
+        "alias": "2026-08-21-issue-ready-set-scheduling",
+        "observation": "finalized",
+        "diagnostic": "finalized on a legacy archive record (no v2 outcome was ever recorded)",
+        "runStatePath": null,
+        "locatedBy": null,
+        "attribution": {
+          "pipeline": null,
+          "sessions": [],
+          "evidenceLocator": null
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": "required",
+        "reason": null,
+        "suggestedPipeline": "small-feature",
+        "rationale": "promoted from intent to Change against its seeded archived Store instance; the work shipped as repo ship 3f065496 and the node reads terminal on the committed archive evidence, so no dependent waits",
+        "uncertainty": null,
+        "blockedBy": []
+      },
+      {
+        "nodeId": "issue-revision-history-preservation",
+        "kind": "change",
+        "alias": "2026-08-22-issue-revision-history-preservation",
+        "observation": "finalized",
+        "diagnostic": "finalized on a legacy archive record (no v2 outcome was ever recorded)",
+        "runStatePath": null,
+        "locatedBy": null,
+        "attribution": {
+          "pipeline": null,
+          "sessions": [],
+          "evidenceLocator": null
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": "required",
+        "reason": null,
+        "suggestedPipeline": "small-feature",
+        "rationale": "promoted from intent to Change against its seeded archived Store instance; the work shipped as repo ship c0ace35e and the node reads terminal on the committed archive evidence",
+        "uncertainty": null,
+        "blockedBy": []
+      }
+    ],
+    "delta": {
+      "revisionId": "0002",
+      "supersedes": "0001",
+      "added": [],
+      "removed": [],
+      "retargeted": [],
+      "edgeChanges": [],
+      "lifecycleChanges": [],
+      "suggestionChanges": []
+    },
+    "projects": [
+      {
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "alias": "rasen",
+        "nodeIds": [
+          "issue-needs-attention",
+          "issue-ready-set-scheduling",
+          "issue-revision-history-preservation"
+        ],
+        "progress": {
+          "completed": 3,
+          "total": 3
+        }
+      }
+    ],
+    "problems": [],
+    "runStateVisibility": {
+      "kind": "execution-root",
+      "executionRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer"
+    },
+    "complete": true,
+    "acceptance": {
+      "conditions": {
+        "revision": {
+          "version": 1,
+          "issueId": "issue-cross-project-replanning",
+          "revisionId": "0001",
+          "supersedes": null,
+          "createdAt": "2026-08-22T08:50:11.265Z",
+          "contentSha256": "99b35b53fc8b48b65ecd041f9b3194a35745a299712980ea2fbeb0b3bca867e4",
+          "conditions": [
+            {
+              "id": "attention-aggregation-entry-ships",
+              "requirement": "The needs-attention aggregation entry ships — the attention derivation with its closed five-kind vocabulary, the honest absence discipline, and the store-level read verb, with the unmasked-failure guarantee pinned by an integration receipt",
+              "verification": "repo ship of issue-needs-attention with test/commands/store-attention-cli.test.ts and test/core/issue-status/issue-attention.test.ts green, plus the receipts under this change's evidence/"
+            },
+            {
+              "id": "children-terminal-and-finale-honest",
+              "requirement": "The Issue's plan carries the two shipped children reading terminal on their seeded Store evidence and the finale reading honestly in flight until it ships, with every stage receipted through the new aggregation verb",
+              "verification": "evidence receipts issue-4-receipt-1..4 (authoring scan, confirm, in-flight scan, show) and the store-side commits seeding the children and publishing revisions 0001/0002"
+            },
+            {
+              "id": "exit-criteria-evidenced-from-one-place",
+              "requirement": "Roadmap Phase 5 section 8's three receipts — replanning-preserves-history, failure-not-masked, and the aggregation entry — read from this change's evidence directory as one set",
+              "verification": "evidence/p5-exit-criteria.md citing g-002's shipped pins (not recreated), the unmasking integration test, and the dogfood receipts"
+            },
+            {
+              "id": "suites-green",
+              "requirement": "The focused suites covering the change are green — attention units, the attention CLI, the issue-status family, completions, and the locale catalog — with the full failure list adjudicated, not assumed",
+              "verification": "evidence/focused-summaries.txt and the binned full-suite run per the store-family recipe"
+            }
+          ]
+        },
+        "revisionId": "0001",
+        "diagnostic": null,
+        "path": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store\\rasen\\issues\\issue-cross-project-replanning\\acceptance\\0001.yaml"
+      },
+      "gate": {
+        "eligible": true,
+        "conditionsRevisionId": "0001",
+        "snapshot": {
+          "completed": 3,
+          "total": 3,
+          "health": "waiting-human",
+          "problemsStanding": 0
+        },
+        "exclusions": [],
+        "optionalNodes": []
+      },
+      "record": null
+    }
+  },
+  "complete": true,
+  "unsearchedRefs": [],
+  "problems": []
+}

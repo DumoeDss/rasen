@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import type {
   Digest,
   EvidenceRef,
+  LegacyEvidenceRefV1,
 } from '../contracts.js';
 import { domainDigest } from './identity.js';
 
@@ -12,7 +13,9 @@ export type EvidenceErrorCode =
   | 'evidence_identity_mismatch'
   | 'evidence_binding_mismatch'
   | 'evidence_budget_exceeded'
-  | 'evidence_claim_conflict';
+  | 'evidence_claim_conflict'
+  | 'evidence_store_corrupt'
+  | 'evidence_path_unsafe';
 
 export class EvidenceError extends Error {
   constructor(
@@ -61,7 +64,7 @@ export function computeEvidenceContentDigest(content: Uint8Array): Digest {
  * it carries digests only, never a filesystem path.
  */
 export function computeEvidenceRefDigest(
-  ref: Omit<EvidenceRef, 'evidenceDigest'>
+  ref: Omit<LegacyEvidenceRefV1, 'evidenceDigest'>
 ): Digest {
   return domainDigest('change-run-evidence-ref/1', ref);
 }
@@ -91,7 +94,10 @@ export function verifyEvidenceContent(
   ref: EvidenceRef,
   content: Uint8Array
 ): void {
-  if (ref.size !== content.byteLength) {
+  const size = ref.format === 'change-run-evidence-ref/2'
+    ? ref.sizeBytes
+    : ref.size;
+  if (size !== content.byteLength) {
     throw new EvidenceError(
       'evidence_size_mismatch',
       'Evidence content size does not match the recorded ref.'
@@ -107,6 +113,11 @@ export function verifyEvidenceContent(
 
 /** Verify the ref's identity digest matches its canonical fields (anti-tamper). */
 export function verifyEvidenceRefIdentity(ref: EvidenceRef): void {
+  if (ref.format === 'change-run-evidence-ref/2') {
+    // V2 identity includes the authority-bound signature proof and is verified
+    // by the attestation module, which owns that versioned preimage.
+    return;
+  }
   const { evidenceDigest: _omit, ...rest } = ref;
   if (ref.evidenceDigest !== computeEvidenceRefDigest(rest)) {
     throw new EvidenceError(
@@ -114,6 +125,10 @@ export function verifyEvidenceRefIdentity(ref: EvidenceRef): void {
       'EvidenceRef evidenceDigest does not match its canonical identity.'
     );
   }
+}
+
+export function evidenceSizeBytes(ref: EvidenceRef): number {
+  return ref.format === 'change-run-evidence-ref/2' ? ref.sizeBytes : ref.size;
 }
 
 /** Verify the ref binds to the exact Run/Action/context it claims. */

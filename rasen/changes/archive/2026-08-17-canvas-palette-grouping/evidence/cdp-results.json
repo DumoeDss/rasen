@@ -1,0 +1,130 @@
+{
+  "allOk": true,
+  "results": [
+    {
+      "name": "the real catalog wire carries kind for every skill (the pass-through, live)",
+      "ok": true,
+      "detail": "40 skills, kinds: driver/expert/internal/task"
+    },
+    {
+      "name": "the palette renders exactly the four sections in order core -> workflows -> experts -> internal",
+      "ok": true,
+      "detail": "core -> workflows -> experts -> internal"
+    },
+    {
+      "name": "A. the five core skills lead, in PIPELINE order, ahead of every other skill",
+      "ok": true,
+      "detail": "rendered [rasen-propose, rasen-apply-change, rasen-review-cycle, rasen-ship, rasen-archive-change]; expected [rasen-propose, rasen-apply-change, rasen-review-cycle, rasen-ship, rasen-archive-change]"
+    },
+    {
+      "name": "B. the experts section contains exactly the real expert-kind skills, after the ordinary workflows",
+      "ok": true,
+      "detail": "13 experts (expected 13): rasen-benchmark, rasen-careful, rasen-chrome-use, rasen-codex…"
+    },
+    {
+      "name": "C. internals render in their own TRAILING section, after experts",
+      "ok": true,
+      "detail": "7 internals (expected 7)"
+    },
+    {
+      "name": "the workflows section holds the remaining ordinary workflows in stable catalog order",
+      "ok": true,
+      "detail": "15 workflows (expected 15)"
+    },
+    {
+      "name": "D. no skill the flat list used to show has disappeared (rendered union == real catalog set)",
+      "ok": true,
+      "detail": "rendered 40 / catalog 40 skills"
+    },
+    {
+      "name": "B (visual). the experts heading renders with a DISTINCT on-screen treatment",
+      "ok": true,
+      "detail": "experts color rgb(230, 25, 25) + underline vs workflows rgb(138, 138, 135)"
+    },
+    {
+      "name": "the section headings name their groups on screen",
+      "ok": true,
+      "detail": "Workflows / Experts"
+    },
+    {
+      "name": "E. the real disabled skill (rasen-teacher-advisor, kind expert) stays listed, visibly disabled, inside its group",
+      "ok": true,
+      "detail": "{\"insideItsGroup\":true,\"greyed\":true,\"stateLabel\":\"disabled\"}"
+    },
+    {
+      "name": "tab is alive after the full pass (no listener freeze)",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "rendered": [
+    {
+      "id": "core",
+      "entries": [
+        "rasen-propose",
+        "rasen-apply-change",
+        "rasen-review-cycle",
+        "rasen-ship",
+        "rasen-archive-change"
+      ]
+    },
+    {
+      "id": "workflows",
+      "entries": [
+        "rasen-explore",
+        "rasen-new-change",
+        "rasen-continue-change",
+        "rasen-sync-specs",
+        "rasen-bulk-archive-change",
+        "rasen-verify-change",
+        "rasen-onboard",
+        "rasen-help",
+        "rasen-direction",
+        "rasen-office-hours-command",
+        "rasen-verify-enhanced",
+        "rasen-auto",
+        "rasen-handoff",
+        "rasen-goal",
+        "rasen-audit"
+      ]
+    },
+    {
+      "id": "experts",
+      "entries": [
+        "rasen-benchmark",
+        "rasen-careful",
+        "rasen-chrome-use",
+        "rasen-codex",
+        "rasen-cso",
+        "rasen-design-consultation",
+        "rasen-design-review",
+        "rasen-investigate",
+        "rasen-office-hours",
+        "rasen-qa",
+        "rasen-review",
+        "rasen-teacher-advisor",
+        "rasen-workflow-author"
+      ]
+    },
+    {
+      "id": "internal",
+      "entries": [
+        "rasen-retain",
+        "rasen-review-fix",
+        "rasen-goal-plan",
+        "rasen-goal-iterate",
+        "rasen-goal-judge",
+        "rasen-task-loop",
+        "rasen-goal-report"
+      ]
+    }
+  ],
+  "expectedCore": [
+    "rasen-propose",
+    "rasen-apply-change",
+    "rasen-review-cycle",
+    "rasen-ship",
+    "rasen-archive-change"
+  ],
+  "catalogSize": 40
+}

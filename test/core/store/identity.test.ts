@@ -34,6 +34,7 @@ import {
   remoteCarriesCredentials,
 } from '../../../src/core/store/remote.js';
 import {
+  findRegisteredStoreAtRoot,
   resolveStoreBinding,
   type StoreBindingResolution,
 } from '../../../src/core/store/identity.js';
@@ -708,4 +709,201 @@ describe('store identity', () => {
       expect(resolution).toEqual({ kind: 'absent' });
     });
   });
+
+  // ------------------------------------------------------------ D2 seam
+
+  /**
+   * `store-scope-resolution` D2 — root-to-registry matching by repository
+   * identity when path equality misses.
+   *
+   * The probe is injected here so the fallback's DECISION is what gets tested,
+   * independent of whether the temporary directories happen to be git working
+   * trees. Real linked worktrees are exercised end to end in
+   * `test/core/store-planning/store-scope-resolution-e2e.test.ts`.
+   */
+  describe('registered-store matching by repository identity', () => {
+    it('matches a non-registered root that shares the entry repository', async () => {
+      const storeRoot = await makeStore('main-checkout', { id: 'wt-store', uid: UID_A });
+      await register('wt-store', storeRoot);
+      const worktree = await makeStore('linked-worktree', { id: 'wt-store', uid: UID_A });
+
+      const matched = await findRegisteredStoreAtRoot(worktree, {
+        globalDataDir: dataDir,
+        repositoryIdentity: async () => path.join(storeRoot, '.git'),
+      });
+
+      expect(matched).toMatchObject({ type: 'store', id: 'wt-store', uid: UID_A });
+      // The entry's own root still resolves by path, with no probe consulted.
+      expect(
+        await findRegisteredStoreAtRoot(storeRoot, {
+          globalDataDir: dataDir,
+          repositoryIdentity: async () => {
+            throw new Error('the path fast path must not probe');
+          },
+        })
+      ).toMatchObject({ id: 'wt-store' });
+    });
+
+    it('refuses a shared repository whose Store metadata identity disagrees', async () => {
+      const storeRoot = await makeStore('main-b', { id: 'b-store', uid: UID_A });
+      await register('b-store', storeRoot);
+      const impostor = await makeStore('impostor', { id: 'b-store', uid: UID_B });
+
+      expect(
+        await findRegisteredStoreAtRoot(impostor, {
+          globalDataDir: dataDir,
+          repositoryIdentity: async () => path.join(storeRoot, '.git'),
+        })
+      ).toBeNull();
+    });
+
+    it('leaves matching unchanged when the probe cannot answer', async () => {
+      const storeRoot = await makeStore('main-c', { id: 'c-store', uid: UID_A });
+      await register('c-store', storeRoot);
+      const worktree = await makeStore('worktree-c', { id: 'c-store', uid: UID_A });
+
+      expect(
+        await findRegisteredStoreAtRoot(worktree, {
+          globalDataDir: dataDir,
+          repositoryIdentity: async () => null,
+        })
+      ).toBeNull();
+    });
+
+    it('refuses a different repository that carries the same Store metadata', async () => {
+      // A `cp -r` copy of a Store checkout is not that Store's worktree, and a
+      // matching uid must not make it one.
+      const storeRoot = await makeStore('main-d', { id: 'd-store', uid: UID_A });
+      await register('d-store', storeRoot);
+      const copy = await makeStore('copy-d', { id: 'd-store', uid: UID_A });
+
+      expect(
+        await findRegisteredStoreAtRoot(copy, {
+          globalDataDir: dataDir,
+          repositoryIdentity: async (root) => path.join(root, '.git'),
+        })
+      ).toBeNull();
+    });
+
+    it('spawns the repository probe at most once per path when a cache is shared', async () => {
+      const storeRoot = await makeStore('main-f', { id: 'f-store', uid: UID_A });
+      await register('f-store', storeRoot);
+      const worktreeA = await makeStore('worktree-f1', { id: 'f-store', uid: UID_A });
+      const worktreeB = await makeStore('worktree-f2', { id: 'f-store', uid: UID_A });
+
+      const probed: string[] = [];
+      const cache = new Map<string, string | null>();
+      const options = {
+        globalDataDir: dataDir,
+        repositoryIdentity: async (root: string) => {
+          probed.push(root);
+          return path.join(storeRoot, '.git');
+        },
+        repositoryIdentityCache: cache,
+      };
+
+      // Three resolutions across two distinct worktrees. Without the cache
+      // this is six spawns; with it, one per DISTINCT path.
+      expect(await findRegisteredStoreAtRoot(worktreeA, options)).toMatchObject({ id: 'f-store' });
+      expect(await findRegisteredStoreAtRoot(worktreeA, options)).toMatchObject({ id: 'f-store' });
+      expect(await findRegisteredStoreAtRoot(worktreeB, options)).toMatchObject({ id: 'f-store' });
+
+      expect(new Set(probed).size).toBe(probed.length);
+      expect(probed.length).toBe(3); // worktreeA, storeRoot, worktreeB
+    });
+
+    it('memoizes a null probe result rather than re-spawning to relearn it', async () => {
+      const storeRoot = await makeStore('main-g', { id: 'g-store', uid: UID_A });
+      await register('g-store', storeRoot);
+      const worktree = await makeStore('worktree-g', { id: 'g-store', uid: UID_A });
+
+      let calls = 0;
+      const options = {
+        globalDataDir: dataDir,
+        repositoryIdentity: async () => {
+          calls += 1;
+          return null;
+        },
+        repositoryIdentityCache: new Map<string, string | null>(),
+      };
+
+      expect(await findRegisteredStoreAtRoot(worktree, options)).toBeNull();
+      const afterFirst = calls;
+      expect(await findRegisteredStoreAtRoot(worktree, options)).toBeNull();
+
+      expect(calls).toBe(afterFirst);
+    });
+
+    it('is unchanged when no cache is supplied', async () => {
+      const storeRoot = await makeStore('main-h', { id: 'h-store', uid: UID_A });
+      await register('h-store', storeRoot);
+      const worktree = await makeStore('worktree-h', { id: 'h-store', uid: UID_A });
+
+      let calls = 0;
+      const options = {
+        globalDataDir: dataDir,
+        repositoryIdentity: async () => {
+          calls += 1;
+          return path.join(storeRoot, '.git');
+        },
+      };
+
+      expect(await findRegisteredStoreAtRoot(worktree, options)).toMatchObject({ id: 'h-store' });
+      expect(await findRegisteredStoreAtRoot(worktree, options)).toMatchObject({ id: 'h-store' });
+
+      // Two resolutions, two probes each: the cache is opt-in and its absence
+      // must not silently change behaviour.
+      expect(calls).toBe(4);
+    });
+
+    it('keeps a worktree of a registered Store from inheriting its own declaration', async () => {
+      const storeRoot = await makeStore('main-e', { id: 'e-store', uid: UID_A });
+      await register('e-store', storeRoot);
+      const worktree = await makeStore('worktree-e', { id: 'e-store', uid: UID_A });
+
+      // No-transitivity now covers the worktree seat too: the Store's own
+      // declaration is inert there, exactly as it is at the main checkout.
+      expect(
+        await resolveStoreBinding({
+          declaration: { form: 'durable', uid: UID_A, id: 'e-store' },
+          projectRoot: worktree,
+          globalDataDir: dataDir,
+          repositoryIdentity: async () => path.join(storeRoot, '.git'),
+        })
+      ).toEqual({ kind: 'absent' });
+    });
+
+    it('threads a caller-supplied probe cache through resolveStoreBinding', async () => {
+      const storeRoot = await makeStore('main-i', { id: 'i-store', uid: UID_A });
+      await register('i-store', storeRoot);
+      const worktree = await makeStore('worktree-i', { id: 'i-store', uid: UID_A });
+
+      const probed: string[] = [];
+      const cache = new Map<string, string | null>();
+      const input = {
+        declaration: { form: 'durable' as const, uid: UID_A, id: 'i-store' },
+        projectRoot: worktree,
+        globalDataDir: dataDir,
+        repositoryIdentity: async (root: string) => {
+          probed.push(root);
+          return path.join(storeRoot, '.git');
+        },
+        repositoryIdentityCache: cache,
+      };
+
+      expect(await resolveStoreBinding(input)).toEqual({ kind: 'absent' });
+      expect(await resolveStoreBinding(input)).toEqual({ kind: 'absent' });
+      expect(await resolveStoreBinding(input)).toEqual({ kind: 'absent' });
+
+      // The cache is declared on `ResolveStoreBindingInput`, so a caller may
+      // pass one HERE and not only to `findRegisteredStoreAtRoot`. Three
+      // resolutions touch two distinct paths — the worktree and the entry's
+      // main checkout — and each is probed exactly once. Forwarding only
+      // `repositoryIdentity` and dropping the cache makes this six spawns,
+      // which is design.md D2's "cached per invocation" claim being inert.
+      expect(probed).toEqual([worktree, storeRoot]);
+      expect(cache.size).toBe(2);
+    });
+  });
+
 });

@@ -1,0 +1,42 @@
+Mutation proof - review finding A-2 (planning-bound gate, multi-pair shape)
+File: src/core/store-planning/internal/resolver.ts (assertProjectPlanningBound)
+
+WHY A MUTATION AND NOT A RED-BEFORE RUN
+A-2 was resolved by narrowing the DELTA, not by changing behaviour: the shipped
+gate already admits on any fully agreeing pair, which is the semantics judged
+correct (see tasks.md 7.3 and design.md D3). The new tests therefore pass
+against the shipped loop - a1-01-against-shipped-code.txt, 7 passed - so they
+cannot be run red against a pre-fix defect. Their discriminating power is
+established by flipping the code to the REJECTED alternative instead.
+
+LANDING SITES (verified unique before flipping)
+  site 1 count = 1   "if (pairSideAgrees(marker, pair) && pairSideAgrees(association, pair)) {"
+                     "  agreed = true;" / "  break;" / "}"
+  site 2 count = 1   "    if (agreed) return;"
+
+MUTATION (option (a): refuse whenever ANY recorded pair for the same
+project+target-line disagrees, even when another pair fully agrees)
+  site 1:  break;                -> continue;
+  site 2:  if (agreed) return;   -> if (agreed && disagreements.length === 0) return;
+
+FILE HASHES (sha256 of the file bytes, CRLF as on disk)
+  chosen  72801580b64697a6be4b56b6bf938639053e4459501b6c92a29065572e406182
+  mutated 1d6a713917e6815e4b25ebdbe0ff9cfed0fb0afb19b2c66106f4141f1c921ab8
+
+RESULT UNDER THE MUTATION (a2-03-mutation-option-a-red.txt, EXIT=1)
+  Tests  1 failed | 50 passed (51)
+  FAIL  the planning-bound gate > admits an agreeing pair while a sibling pair
+        for the same line is torn
+  PlanningScopeError: The recorded workspace pair for project 'project-a'
+  disagrees with itself: planning-worktree-marker at ...\sibling-planning names
+  project 'project-zeta', the index entry names 'project-a'.
+
+  The two torn-pair REFUSAL tests stayed green under the mutation, as they must:
+  they exercise the path where no pair agrees, which both options answer the
+  same way. Exactly one test separates the two candidate semantics, and it is
+  the one that pins the decision.
+
+REVERT
+  File restored byte-identical to the chosen version (sha256 72801580..., a
+  byte comparison against the pre-mutation copy returned true), suite re-run
+  green: a2-04-after-revert-green.txt, 51 passed, EXIT=0.

@@ -1,0 +1,3596 @@
+{
+  "schemaVersion": 2,
+  "transactionId": "310072a5-603b-466d-a4f0-0f80d26af343",
+  "planHash": "65b74bb7a4205fafd034aad906f1a53bc5c9c3ca8cf46cb8f5270659ff1ad681",
+  "change": "teacher-consultation-canvas",
+  "phase": "complete",
+  "activePath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code-wt-teacher-advisor\\rasen\\changes\\teacher-consultation-canvas",
+  "stagePath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code-wt-teacher-advisor\\rasen\\changes\\archive\\.rasen-archive-stage-310072a5-603b-466d-a4f0-0f80d26af343",
+  "finalPath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code-wt-teacher-advisor\\rasen\\changes\\archive\\2026-08-10-teacher-consultation-canvas",
+  "ephemeraDisposed": [
+    "auto-run.json"
+  ],
+  "phaseFingerprints": {
+    "payload-copied": {
+      "state": "verified",
+      "scope": "stage",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "b92602cee3cdb28066db5524a20da9e54b60baf9cdb363d92ea05563e0e7d4a8",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "165c19261c3cb160f2c3b746659293a5fa5b588016a558238012d1fa32a42c20"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "12030",
+            "sha256": "6934b3f53ec007d61f7ca134fe05d6518e2e0b9e14c38cf93fa0fc08d420620e"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "5940",
+            "sha256": "e62725504445a98cd8ceb085c32b464425436a141776b88ecaa38bd2e1cc8bf9"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3507",
+            "sha256": "6510d8ec57b379c3487bbace13125dad61dd39066bea79c439d3f1094c1236b1"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3311",
+            "sha256": "37b080308aa6479caa15114a563adf0ffbbd719e2dc0b1600a15bbd1006d785d"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "172",
+            "sha256": "02a04a0cfdff7b5faed0c8a0cb957f52b8f09c5b252425042c836ea176dc22a9"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7737",
+            "sha256": "6d1de32205fcce1dab1eba1cf8ef0462befb2e50cabc5c75c27a957cd316cc4c"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6440",
+            "sha256": "48d471f9a9b4876f83ea32365e2057e4eeff4b0e70193120b37560332392e1a1"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "1970324847269554",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "b86cb829113614c183b6d9b726095e483818a51395a368133cd5c749bfe32c3c",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847269552",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1786268285981981300",
+              "ctimeNs": "1786315802371905100"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799824480479",
+              "mode": "33206",
+              "size": "12030",
+              "mtimeNs": "1786363201768847400",
+              "ctimeNs": "1786363201778122200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964242929",
+              "mode": "33206",
+              "size": "5940",
+              "mtimeNs": "1786366095250637000",
+              "ctimeNs": "1786366095264853300"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224754514372",
+              "mode": "33206",
+              "size": "3507",
+              "mtimeNs": "1786366293613424800",
+              "ctimeNs": "1786366293697185500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964239286",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "18858823443873037",
+              "mode": "33206",
+              "size": "3311",
+              "mtimeNs": "1786363257762821200",
+              "ctimeNs": "1786363257776519700"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847269553",
+              "mode": "33206",
+              "size": "172",
+              "mtimeNs": "1786268285982981500",
+              "ctimeNs": "1786315802371905100"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917648320",
+              "mode": "33206",
+              "size": "7737",
+              "mtimeNs": "1786363228395815500",
+              "ctimeNs": "1786363228403592000"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1407374894358934",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324847780244",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1688849871068620",
+              "mode": "33206",
+              "size": "6440",
+              "mtimeNs": "1786364196869857600",
+              "ctimeNs": "1786364196876280300"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "b92602cee3cdb28066db5524a20da9e54b60baf9cdb363d92ea05563e0e7d4a8",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "165c19261c3cb160f2c3b746659293a5fa5b588016a558238012d1fa32a42c20"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "12030",
+            "sha256": "6934b3f53ec007d61f7ca134fe05d6518e2e0b9e14c38cf93fa0fc08d420620e"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "5940",
+            "sha256": "e62725504445a98cd8ceb085c32b464425436a141776b88ecaa38bd2e1cc8bf9"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3507",
+            "sha256": "6510d8ec57b379c3487bbace13125dad61dd39066bea79c439d3f1094c1236b1"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3311",
+            "sha256": "37b080308aa6479caa15114a563adf0ffbbd719e2dc0b1600a15bbd1006d785d"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "172",
+            "sha256": "02a04a0cfdff7b5faed0c8a0cb957f52b8f09c5b252425042c836ea176dc22a9"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7737",
+            "sha256": "6d1de32205fcce1dab1eba1cf8ef0462befb2e50cabc5c75c27a957cd316cc4c"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6440",
+            "sha256": "48d471f9a9b4876f83ea32365e2057e4eeff4b0e70193120b37560332392e1a1"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "844424940959323",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "95f9f509929be7bca5c28cc4fd914de914045395efec7ed7302aeaaddbcf53f5",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917669994",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1786268285981981300",
+              "ctimeNs": "1786315802371905100"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248684",
+              "mode": "33206",
+              "size": "12030",
+              "mtimeNs": "1786363201768847400",
+              "ctimeNs": "1786363201778122200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248686",
+              "mode": "33206",
+              "size": "5940",
+              "mtimeNs": "1786366095250637000",
+              "ctimeNs": "1786366095264853300"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248687",
+              "mode": "33206",
+              "size": "3507",
+              "mtimeNs": "1786366293613424800",
+              "ctimeNs": "1786366293697185500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248685",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248688",
+              "mode": "33206",
+              "size": "3311",
+              "mtimeNs": "1786363257762821200",
+              "ctimeNs": "1786363257776519700"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248689",
+              "mode": "33206",
+              "size": "172",
+              "mtimeNs": "1786268285982981500",
+              "ctimeNs": "1786315802371905100"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248692",
+              "mode": "33206",
+              "size": "7737",
+              "mtimeNs": "1786363228395815500",
+              "ctimeNs": "1786363228403592000"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248691",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248690",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248693",
+              "mode": "33206",
+              "size": "6440",
+              "mtimeNs": "1786364196869857600",
+              "ctimeNs": "1786364196876280300"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "b92602cee3cdb28066db5524a20da9e54b60baf9cdb363d92ea05563e0e7d4a8",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "165c19261c3cb160f2c3b746659293a5fa5b588016a558238012d1fa32a42c20"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "12030",
+            "sha256": "6934b3f53ec007d61f7ca134fe05d6518e2e0b9e14c38cf93fa0fc08d420620e"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "5940",
+            "sha256": "e62725504445a98cd8ceb085c32b464425436a141776b88ecaa38bd2e1cc8bf9"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3507",
+            "sha256": "6510d8ec57b379c3487bbace13125dad61dd39066bea79c439d3f1094c1236b1"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3311",
+            "sha256": "37b080308aa6479caa15114a563adf0ffbbd719e2dc0b1600a15bbd1006d785d"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "172",
+            "sha256": "02a04a0cfdff7b5faed0c8a0cb957f52b8f09c5b252425042c836ea176dc22a9"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7737",
+            "sha256": "6d1de32205fcce1dab1eba1cf8ef0462befb2e50cabc5c75c27a957cd316cc4c"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6440",
+            "sha256": "48d471f9a9b4876f83ea32365e2057e4eeff4b0e70193120b37560332392e1a1"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "844424940959323",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "95f9f509929be7bca5c28cc4fd914de914045395efec7ed7302aeaaddbcf53f5",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917669994",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1786268285981981300",
+              "ctimeNs": "1786315802371905100"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248684",
+              "mode": "33206",
+              "size": "12030",
+              "mtimeNs": "1786363201768847400",
+              "ctimeNs": "1786363201778122200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248686",
+              "mode": "33206",
+              "size": "5940",
+              "mtimeNs": "1786366095250637000",
+              "ctimeNs": "1786366095264853300"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248687",
+              "mode": "33206",
+              "size": "3507",
+              "mtimeNs": "1786366293613424800",
+              "ctimeNs": "1786366293697185500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248685",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248688",
+              "mode": "33206",
+              "size": "3311",
+              "mtimeNs": "1786363257762821200",
+              "ctimeNs": "1786363257776519700"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248689",
+              "mode": "33206",
+              "size": "172",
+              "mtimeNs": "1786268285982981500",
+              "ctimeNs": "1786315802371905100"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248692",
+              "mode": "33206",
+              "size": "7737",
+              "mtimeNs": "1786363228395815500",
+              "ctimeNs": "1786363228403592000"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248691",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248690",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248693",
+              "mode": "33206",
+              "size": "6440",
+              "mtimeNs": "1786364196869857600",
+              "ctimeNs": "1786364196876280300"
+            }
+          }
+        ]
+      }
+    },
+    "handoff-finalized": {
+      "state": "verified",
+      "scope": "stage",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "b92602cee3cdb28066db5524a20da9e54b60baf9cdb363d92ea05563e0e7d4a8",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "165c19261c3cb160f2c3b746659293a5fa5b588016a558238012d1fa32a42c20"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "12030",
+            "sha256": "6934b3f53ec007d61f7ca134fe05d6518e2e0b9e14c38cf93fa0fc08d420620e"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "5940",
+            "sha256": "e62725504445a98cd8ceb085c32b464425436a141776b88ecaa38bd2e1cc8bf9"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3507",
+            "sha256": "6510d8ec57b379c3487bbace13125dad61dd39066bea79c439d3f1094c1236b1"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3311",
+            "sha256": "37b080308aa6479caa15114a563adf0ffbbd719e2dc0b1600a15bbd1006d785d"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "172",
+            "sha256": "02a04a0cfdff7b5faed0c8a0cb957f52b8f09c5b252425042c836ea176dc22a9"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7737",
+            "sha256": "6d1de32205fcce1dab1eba1cf8ef0462befb2e50cabc5c75c27a957cd316cc4c"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6440",
+            "sha256": "48d471f9a9b4876f83ea32365e2057e4eeff4b0e70193120b37560332392e1a1"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "844424940959323",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "95f9f509929be7bca5c28cc4fd914de914045395efec7ed7302aeaaddbcf53f5",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917669994",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1786268285981981300",
+              "ctimeNs": "1786315802371905100"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248684",
+              "mode": "33206",
+              "size": "12030",
+              "mtimeNs": "1786363201768847400",
+              "ctimeNs": "1786363201778122200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248686",
+              "mode": "33206",
+              "size": "5940",
+              "mtimeNs": "1786366095250637000",
+              "ctimeNs": "1786366095264853300"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248687",
+              "mode": "33206",
+              "size": "3507",
+              "mtimeNs": "1786366293613424800",
+              "ctimeNs": "1786366293697185500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248685",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248688",
+              "mode": "33206",
+              "size": "3311",
+              "mtimeNs": "1786363257762821200",
+              "ctimeNs": "1786363257776519700"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248689",
+              "mode": "33206",
+              "size": "172",
+              "mtimeNs": "1786268285982981500",
+              "ctimeNs": "1786315802371905100"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248692",
+              "mode": "33206",
+              "size": "7737",
+              "mtimeNs": "1786363228395815500",
+              "ctimeNs": "1786363228403592000"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248691",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248690",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248693",
+              "mode": "33206",
+              "size": "6440",
+              "mtimeNs": "1786364196869857600",
+              "ctimeNs": "1786364196876280300"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "b92602cee3cdb28066db5524a20da9e54b60baf9cdb363d92ea05563e0e7d4a8",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "165c19261c3cb160f2c3b746659293a5fa5b588016a558238012d1fa32a42c20"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "12030",
+            "sha256": "6934b3f53ec007d61f7ca134fe05d6518e2e0b9e14c38cf93fa0fc08d420620e"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "5940",
+            "sha256": "e62725504445a98cd8ceb085c32b464425436a141776b88ecaa38bd2e1cc8bf9"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3507",
+            "sha256": "6510d8ec57b379c3487bbace13125dad61dd39066bea79c439d3f1094c1236b1"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3311",
+            "sha256": "37b080308aa6479caa15114a563adf0ffbbd719e2dc0b1600a15bbd1006d785d"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "172",
+            "sha256": "02a04a0cfdff7b5faed0c8a0cb957f52b8f09c5b252425042c836ea176dc22a9"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7737",
+            "sha256": "6d1de32205fcce1dab1eba1cf8ef0462befb2e50cabc5c75c27a957cd316cc4c"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6440",
+            "sha256": "48d471f9a9b4876f83ea32365e2057e4eeff4b0e70193120b37560332392e1a1"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "844424940959323",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "95f9f509929be7bca5c28cc4fd914de914045395efec7ed7302aeaaddbcf53f5",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917669994",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1786268285981981300",
+              "ctimeNs": "1786315802371905100"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248684",
+              "mode": "33206",
+              "size": "12030",
+              "mtimeNs": "1786363201768847400",
+              "ctimeNs": "1786363201778122200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248686",
+              "mode": "33206",
+              "size": "5940",
+              "mtimeNs": "1786366095250637000",
+              "ctimeNs": "1786366095264853300"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248687",
+              "mode": "33206",
+              "size": "3507",
+              "mtimeNs": "1786366293613424800",
+              "ctimeNs": "1786366293697185500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248685",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248688",
+              "mode": "33206",
+              "size": "3311",
+              "mtimeNs": "1786363257762821200",
+              "ctimeNs": "1786363257776519700"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248689",
+              "mode": "33206",
+              "size": "172",
+              "mtimeNs": "1786268285982981500",
+              "ctimeNs": "1786315802371905100"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248692",
+              "mode": "33206",
+              "size": "7737",
+              "mtimeNs": "1786363228395815500",
+              "ctimeNs": "1786363228403592000"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248691",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248690",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248693",
+              "mode": "33206",
+              "size": "6440",
+              "mtimeNs": "1786364196869857600",
+              "ctimeNs": "1786364196876280300"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "b92602cee3cdb28066db5524a20da9e54b60baf9cdb363d92ea05563e0e7d4a8",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "165c19261c3cb160f2c3b746659293a5fa5b588016a558238012d1fa32a42c20"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "12030",
+            "sha256": "6934b3f53ec007d61f7ca134fe05d6518e2e0b9e14c38cf93fa0fc08d420620e"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "5940",
+            "sha256": "e62725504445a98cd8ceb085c32b464425436a141776b88ecaa38bd2e1cc8bf9"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3507",
+            "sha256": "6510d8ec57b379c3487bbace13125dad61dd39066bea79c439d3f1094c1236b1"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3311",
+            "sha256": "37b080308aa6479caa15114a563adf0ffbbd719e2dc0b1600a15bbd1006d785d"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "172",
+            "sha256": "02a04a0cfdff7b5faed0c8a0cb957f52b8f09c5b252425042c836ea176dc22a9"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7737",
+            "sha256": "6d1de32205fcce1dab1eba1cf8ef0462befb2e50cabc5c75c27a957cd316cc4c"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6440",
+            "sha256": "48d471f9a9b4876f83ea32365e2057e4eeff4b0e70193120b37560332392e1a1"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "844424940959323",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "95f9f509929be7bca5c28cc4fd914de914045395efec7ed7302aeaaddbcf53f5",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917669994",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1786268285981981300",
+              "ctimeNs": "1786315802371905100"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248684",
+              "mode": "33206",
+              "size": "12030",
+              "mtimeNs": "1786363201768847400",
+              "ctimeNs": "1786363201778122200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248686",
+              "mode": "33206",
+              "size": "5940",
+              "mtimeNs": "1786366095250637000",
+              "ctimeNs": "1786366095264853300"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248687",
+              "mode": "33206",
+              "size": "3507",
+              "mtimeNs": "1786366293613424800",
+              "ctimeNs": "1786366293697185500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248685",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248688",
+              "mode": "33206",
+              "size": "3311",
+              "mtimeNs": "1786363257762821200",
+              "ctimeNs": "1786363257776519700"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248689",
+              "mode": "33206",
+              "size": "172",
+              "mtimeNs": "1786268285982981500",
+              "ctimeNs": "1786315802371905100"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248692",
+              "mode": "33206",
+              "size": "7737",
+              "mtimeNs": "1786363228395815500",
+              "ctimeNs": "1786363228403592000"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248691",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248690",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248693",
+              "mode": "33206",
+              "size": "6440",
+              "mtimeNs": "1786364196869857600",
+              "ctimeNs": "1786364196876280300"
+            }
+          }
+        ]
+      }
+    },
+    "evidence-finalized": {
+      "state": "verified",
+      "scope": "stage",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "b92602cee3cdb28066db5524a20da9e54b60baf9cdb363d92ea05563e0e7d4a8",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "165c19261c3cb160f2c3b746659293a5fa5b588016a558238012d1fa32a42c20"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "12030",
+            "sha256": "6934b3f53ec007d61f7ca134fe05d6518e2e0b9e14c38cf93fa0fc08d420620e"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "5940",
+            "sha256": "e62725504445a98cd8ceb085c32b464425436a141776b88ecaa38bd2e1cc8bf9"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3507",
+            "sha256": "6510d8ec57b379c3487bbace13125dad61dd39066bea79c439d3f1094c1236b1"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3311",
+            "sha256": "37b080308aa6479caa15114a563adf0ffbbd719e2dc0b1600a15bbd1006d785d"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "172",
+            "sha256": "02a04a0cfdff7b5faed0c8a0cb957f52b8f09c5b252425042c836ea176dc22a9"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7737",
+            "sha256": "6d1de32205fcce1dab1eba1cf8ef0462befb2e50cabc5c75c27a957cd316cc4c"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6440",
+            "sha256": "48d471f9a9b4876f83ea32365e2057e4eeff4b0e70193120b37560332392e1a1"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "844424940959323",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "95f9f509929be7bca5c28cc4fd914de914045395efec7ed7302aeaaddbcf53f5",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917669994",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1786268285981981300",
+              "ctimeNs": "1786315802371905100"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248684",
+              "mode": "33206",
+              "size": "12030",
+              "mtimeNs": "1786363201768847400",
+              "ctimeNs": "1786363201778122200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248686",
+              "mode": "33206",
+              "size": "5940",
+              "mtimeNs": "1786366095250637000",
+              "ctimeNs": "1786366095264853300"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248687",
+              "mode": "33206",
+              "size": "3507",
+              "mtimeNs": "1786366293613424800",
+              "ctimeNs": "1786366293697185500"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248685",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248688",
+              "mode": "33206",
+              "size": "3311",
+              "mtimeNs": "1786363257762821200",
+              "ctimeNs": "1786363257776519700"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248689",
+              "mode": "33206",
+              "size": "172",
+              "mtimeNs": "1786268285982981500",
+              "ctimeNs": "1786315802371905100"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248692",
+              "mode": "33206",
+              "size": "7737",
+              "mtimeNs": "1786363228395815500",
+              "ctimeNs": "1786363228403592000"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248691",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248690",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248693",
+              "mode": "33206",
+              "size": "6440",
+              "mtimeNs": "1786364196869857600",
+              "ctimeNs": "1786364196876280300"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "f447bceb2da6eacccbfc3a069ce917cf97e6c059c6111069f2c8128707721fc4",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "14e433899b8183377a9b9b9854249a3c6c2db35d4d01236f2221b3f8a4aec52b"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "12030",
+            "sha256": "6934b3f53ec007d61f7ca134fe05d6518e2e0b9e14c38cf93fa0fc08d420620e"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "5940",
+            "sha256": "e62725504445a98cd8ceb085c32b464425436a141776b88ecaa38bd2e1cc8bf9"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3843",
+            "sha256": "b5a64ea84eb111738849953c5de592011706e3cc96155f05b42e8e76622ff807"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3311",
+            "sha256": "37b080308aa6479caa15114a563adf0ffbbd719e2dc0b1600a15bbd1006d785d"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "172",
+            "sha256": "02a04a0cfdff7b5faed0c8a0cb957f52b8f09c5b252425042c836ea176dc22a9"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7737",
+            "sha256": "6d1de32205fcce1dab1eba1cf8ef0462befb2e50cabc5c75c27a957cd316cc4c"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6440",
+            "sha256": "48d471f9a9b4876f83ea32365e2057e4eeff4b0e70193120b37560332392e1a1"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "844424940959323",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "6210e445861ee9f148f575b429c3960d1d5da1a7309cf6d3bd2226afb5aadb85",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917669994",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786366466417731200",
+              "ctimeNs": "1786366466417731200"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248684",
+              "mode": "33206",
+              "size": "12030",
+              "mtimeNs": "1786363201768847400",
+              "ctimeNs": "1786363201778122200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248686",
+              "mode": "33206",
+              "size": "5940",
+              "mtimeNs": "1786366095250637000",
+              "ctimeNs": "1786366095264853300"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248687",
+              "mode": "33206",
+              "size": "3843",
+              "mtimeNs": "1786366466289573400",
+              "ctimeNs": "1786366466289573400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248685",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248688",
+              "mode": "33206",
+              "size": "3311",
+              "mtimeNs": "1786363257762821200",
+              "ctimeNs": "1786363257776519700"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248689",
+              "mode": "33206",
+              "size": "172",
+              "mtimeNs": "1786268285982981500",
+              "ctimeNs": "1786315802371905100"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248692",
+              "mode": "33206",
+              "size": "7737",
+              "mtimeNs": "1786363228395815500",
+              "ctimeNs": "1786363228403592000"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248691",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248690",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248693",
+              "mode": "33206",
+              "size": "6440",
+              "mtimeNs": "1786364196869857600",
+              "ctimeNs": "1786364196876280300"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "f447bceb2da6eacccbfc3a069ce917cf97e6c059c6111069f2c8128707721fc4",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "14e433899b8183377a9b9b9854249a3c6c2db35d4d01236f2221b3f8a4aec52b"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "12030",
+            "sha256": "6934b3f53ec007d61f7ca134fe05d6518e2e0b9e14c38cf93fa0fc08d420620e"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "5940",
+            "sha256": "e62725504445a98cd8ceb085c32b464425436a141776b88ecaa38bd2e1cc8bf9"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3843",
+            "sha256": "b5a64ea84eb111738849953c5de592011706e3cc96155f05b42e8e76622ff807"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3311",
+            "sha256": "37b080308aa6479caa15114a563adf0ffbbd719e2dc0b1600a15bbd1006d785d"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "172",
+            "sha256": "02a04a0cfdff7b5faed0c8a0cb957f52b8f09c5b252425042c836ea176dc22a9"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7737",
+            "sha256": "6d1de32205fcce1dab1eba1cf8ef0462befb2e50cabc5c75c27a957cd316cc4c"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6440",
+            "sha256": "48d471f9a9b4876f83ea32365e2057e4eeff4b0e70193120b37560332392e1a1"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "844424940959323",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "6210e445861ee9f148f575b429c3960d1d5da1a7309cf6d3bd2226afb5aadb85",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917669994",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786366466417731200",
+              "ctimeNs": "1786366466417731200"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248684",
+              "mode": "33206",
+              "size": "12030",
+              "mtimeNs": "1786363201768847400",
+              "ctimeNs": "1786363201778122200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248686",
+              "mode": "33206",
+              "size": "5940",
+              "mtimeNs": "1786366095250637000",
+              "ctimeNs": "1786366095264853300"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248687",
+              "mode": "33206",
+              "size": "3843",
+              "mtimeNs": "1786366466289573400",
+              "ctimeNs": "1786366466289573400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248685",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248688",
+              "mode": "33206",
+              "size": "3311",
+              "mtimeNs": "1786363257762821200",
+              "ctimeNs": "1786363257776519700"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248689",
+              "mode": "33206",
+              "size": "172",
+              "mtimeNs": "1786268285982981500",
+              "ctimeNs": "1786315802371905100"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248692",
+              "mode": "33206",
+              "size": "7737",
+              "mtimeNs": "1786363228395815500",
+              "ctimeNs": "1786363228403592000"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248691",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248690",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248693",
+              "mode": "33206",
+              "size": "6440",
+              "mtimeNs": "1786364196869857600",
+              "ctimeNs": "1786364196876280300"
+            }
+          }
+        ]
+      }
+    },
+    "final-reserved": {
+      "state": "verified",
+      "scope": "final",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "f447bceb2da6eacccbfc3a069ce917cf97e6c059c6111069f2c8128707721fc4",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "14e433899b8183377a9b9b9854249a3c6c2db35d4d01236f2221b3f8a4aec52b"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "12030",
+            "sha256": "6934b3f53ec007d61f7ca134fe05d6518e2e0b9e14c38cf93fa0fc08d420620e"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "5940",
+            "sha256": "e62725504445a98cd8ceb085c32b464425436a141776b88ecaa38bd2e1cc8bf9"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3843",
+            "sha256": "b5a64ea84eb111738849953c5de592011706e3cc96155f05b42e8e76622ff807"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3311",
+            "sha256": "37b080308aa6479caa15114a563adf0ffbbd719e2dc0b1600a15bbd1006d785d"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "172",
+            "sha256": "02a04a0cfdff7b5faed0c8a0cb957f52b8f09c5b252425042c836ea176dc22a9"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7737",
+            "sha256": "6d1de32205fcce1dab1eba1cf8ef0462befb2e50cabc5c75c27a957cd316cc4c"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6440",
+            "sha256": "48d471f9a9b4876f83ea32365e2057e4eeff4b0e70193120b37560332392e1a1"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "844424940959323",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "6210e445861ee9f148f575b429c3960d1d5da1a7309cf6d3bd2226afb5aadb85",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917669994",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786366466417731200",
+              "ctimeNs": "1786366466417731200"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248684",
+              "mode": "33206",
+              "size": "12030",
+              "mtimeNs": "1786363201768847400",
+              "ctimeNs": "1786363201778122200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248686",
+              "mode": "33206",
+              "size": "5940",
+              "mtimeNs": "1786366095250637000",
+              "ctimeNs": "1786366095264853300"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248687",
+              "mode": "33206",
+              "size": "3843",
+              "mtimeNs": "1786366466289573400",
+              "ctimeNs": "1786366466289573400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248685",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248688",
+              "mode": "33206",
+              "size": "3311",
+              "mtimeNs": "1786363257762821200",
+              "ctimeNs": "1786363257776519700"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248689",
+              "mode": "33206",
+              "size": "172",
+              "mtimeNs": "1786268285982981500",
+              "ctimeNs": "1786315802371905100"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248692",
+              "mode": "33206",
+              "size": "7737",
+              "mtimeNs": "1786363228395815500",
+              "ctimeNs": "1786363228403592000"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248691",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248690",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964248693",
+              "mode": "33206",
+              "size": "6440",
+              "mtimeNs": "1786364196869857600",
+              "ctimeNs": "1786364196876280300"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "f447bceb2da6eacccbfc3a069ce917cf97e6c059c6111069f2c8128707721fc4",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "14e433899b8183377a9b9b9854249a3c6c2db35d4d01236f2221b3f8a4aec52b"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "12030",
+            "sha256": "6934b3f53ec007d61f7ca134fe05d6518e2e0b9e14c38cf93fa0fc08d420620e"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "5940",
+            "sha256": "e62725504445a98cd8ceb085c32b464425436a141776b88ecaa38bd2e1cc8bf9"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3843",
+            "sha256": "b5a64ea84eb111738849953c5de592011706e3cc96155f05b42e8e76622ff807"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3311",
+            "sha256": "37b080308aa6479caa15114a563adf0ffbbd719e2dc0b1600a15bbd1006d785d"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "172",
+            "sha256": "02a04a0cfdff7b5faed0c8a0cb957f52b8f09c5b252425042c836ea176dc22a9"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7737",
+            "sha256": "6d1de32205fcce1dab1eba1cf8ef0462befb2e50cabc5c75c27a957cd316cc4c"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6440",
+            "sha256": "48d471f9a9b4876f83ea32365e2057e4eeff4b0e70193120b37560332392e1a1"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "1407374894381109",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "2e37d3e99793cc9088e8e12d50a313eac47e1c67600afc7b05bf1bf53949993f",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670456",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786366466417731200",
+              "ctimeNs": "1786366466417731200"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670457",
+              "mode": "33206",
+              "size": "12030",
+              "mtimeNs": "1786363201768847400",
+              "ctimeNs": "1786363201778122200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670460",
+              "mode": "33206",
+              "size": "5940",
+              "mtimeNs": "1786366095250637000",
+              "ctimeNs": "1786366095264853300"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670461",
+              "mode": "33206",
+              "size": "3843",
+              "mtimeNs": "1786366466289573400",
+              "ctimeNs": "1786366466289573400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670459",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670462",
+              "mode": "33206",
+              "size": "3311",
+              "mtimeNs": "1786363257762821200",
+              "ctimeNs": "1786363257776519700"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670463",
+              "mode": "33206",
+              "size": "172",
+              "mtimeNs": "1786268285982981500",
+              "ctimeNs": "1786315802371905100"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940959811",
+              "mode": "33206",
+              "size": "7737",
+              "mtimeNs": "1786363228395815500",
+              "ctimeNs": "1786363228403592000"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940959810",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670464",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940959812",
+              "mode": "33206",
+              "size": "6440",
+              "mtimeNs": "1786364196869857600",
+              "ctimeNs": "1786364196876280300"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "f447bceb2da6eacccbfc3a069ce917cf97e6c059c6111069f2c8128707721fc4",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "14e433899b8183377a9b9b9854249a3c6c2db35d4d01236f2221b3f8a4aec52b"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "12030",
+            "sha256": "6934b3f53ec007d61f7ca134fe05d6518e2e0b9e14c38cf93fa0fc08d420620e"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "5940",
+            "sha256": "e62725504445a98cd8ceb085c32b464425436a141776b88ecaa38bd2e1cc8bf9"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3843",
+            "sha256": "b5a64ea84eb111738849953c5de592011706e3cc96155f05b42e8e76622ff807"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3311",
+            "sha256": "37b080308aa6479caa15114a563adf0ffbbd719e2dc0b1600a15bbd1006d785d"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "172",
+            "sha256": "02a04a0cfdff7b5faed0c8a0cb957f52b8f09c5b252425042c836ea176dc22a9"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7737",
+            "sha256": "6d1de32205fcce1dab1eba1cf8ef0462befb2e50cabc5c75c27a957cd316cc4c"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6440",
+            "sha256": "48d471f9a9b4876f83ea32365e2057e4eeff4b0e70193120b37560332392e1a1"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "1407374894381109",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "2e37d3e99793cc9088e8e12d50a313eac47e1c67600afc7b05bf1bf53949993f",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670456",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786366466417731200",
+              "ctimeNs": "1786366466417731200"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670457",
+              "mode": "33206",
+              "size": "12030",
+              "mtimeNs": "1786363201768847400",
+              "ctimeNs": "1786363201778122200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670460",
+              "mode": "33206",
+              "size": "5940",
+              "mtimeNs": "1786366095250637000",
+              "ctimeNs": "1786366095264853300"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670461",
+              "mode": "33206",
+              "size": "3843",
+              "mtimeNs": "1786366466289573400",
+              "ctimeNs": "1786366466289573400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670459",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670462",
+              "mode": "33206",
+              "size": "3311",
+              "mtimeNs": "1786363257762821200",
+              "ctimeNs": "1786363257776519700"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670463",
+              "mode": "33206",
+              "size": "172",
+              "mtimeNs": "1786268285982981500",
+              "ctimeNs": "1786315802371905100"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940959811",
+              "mode": "33206",
+              "size": "7737",
+              "mtimeNs": "1786363228395815500",
+              "ctimeNs": "1786363228403592000"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940959810",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670464",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940959812",
+              "mode": "33206",
+              "size": "6440",
+              "mtimeNs": "1786364196869857600",
+              "ctimeNs": "1786364196876280300"
+            }
+          }
+        ]
+      }
+    },
+    "accounting-finalized": {
+      "state": "verified",
+      "scope": "final",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "f447bceb2da6eacccbfc3a069ce917cf97e6c059c6111069f2c8128707721fc4",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "14e433899b8183377a9b9b9854249a3c6c2db35d4d01236f2221b3f8a4aec52b"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "12030",
+            "sha256": "6934b3f53ec007d61f7ca134fe05d6518e2e0b9e14c38cf93fa0fc08d420620e"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "5940",
+            "sha256": "e62725504445a98cd8ceb085c32b464425436a141776b88ecaa38bd2e1cc8bf9"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3843",
+            "sha256": "b5a64ea84eb111738849953c5de592011706e3cc96155f05b42e8e76622ff807"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3311",
+            "sha256": "37b080308aa6479caa15114a563adf0ffbbd719e2dc0b1600a15bbd1006d785d"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "172",
+            "sha256": "02a04a0cfdff7b5faed0c8a0cb957f52b8f09c5b252425042c836ea176dc22a9"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7737",
+            "sha256": "6d1de32205fcce1dab1eba1cf8ef0462befb2e50cabc5c75c27a957cd316cc4c"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6440",
+            "sha256": "48d471f9a9b4876f83ea32365e2057e4eeff4b0e70193120b37560332392e1a1"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "1407374894381109",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "2e37d3e99793cc9088e8e12d50a313eac47e1c67600afc7b05bf1bf53949993f",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670456",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786366466417731200",
+              "ctimeNs": "1786366466417731200"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670457",
+              "mode": "33206",
+              "size": "12030",
+              "mtimeNs": "1786363201768847400",
+              "ctimeNs": "1786363201778122200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670460",
+              "mode": "33206",
+              "size": "5940",
+              "mtimeNs": "1786366095250637000",
+              "ctimeNs": "1786366095264853300"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670461",
+              "mode": "33206",
+              "size": "3843",
+              "mtimeNs": "1786366466289573400",
+              "ctimeNs": "1786366466289573400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670459",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670462",
+              "mode": "33206",
+              "size": "3311",
+              "mtimeNs": "1786363257762821200",
+              "ctimeNs": "1786363257776519700"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670463",
+              "mode": "33206",
+              "size": "172",
+              "mtimeNs": "1786268285982981500",
+              "ctimeNs": "1786315802371905100"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940959811",
+              "mode": "33206",
+              "size": "7737",
+              "mtimeNs": "1786363228395815500",
+              "ctimeNs": "1786363228403592000"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940959810",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670464",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940959812",
+              "mode": "33206",
+              "size": "6440",
+              "mtimeNs": "1786364196869857600",
+              "ctimeNs": "1786364196876280300"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "dc8e44db0f4be91e93658927c217e3e5f30aea019d498f5b0666e68bfedb117f",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "14e433899b8183377a9b9b9854249a3c6c2db35d4d01236f2221b3f8a4aec52b"
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "executable": false,
+            "size": "667",
+            "sha256": "0f33df9ca675de921678d427aaa99e9d37b2c487323e34b24925cefc1f67eb46"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "12030",
+            "sha256": "6934b3f53ec007d61f7ca134fe05d6518e2e0b9e14c38cf93fa0fc08d420620e"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "5940",
+            "sha256": "e62725504445a98cd8ceb085c32b464425436a141776b88ecaa38bd2e1cc8bf9"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3843",
+            "sha256": "b5a64ea84eb111738849953c5de592011706e3cc96155f05b42e8e76622ff807"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3311",
+            "sha256": "37b080308aa6479caa15114a563adf0ffbbd719e2dc0b1600a15bbd1006d785d"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "172",
+            "sha256": "02a04a0cfdff7b5faed0c8a0cb957f52b8f09c5b252425042c836ea176dc22a9"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7737",
+            "sha256": "6d1de32205fcce1dab1eba1cf8ef0462befb2e50cabc5c75c27a957cd316cc4c"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6440",
+            "sha256": "48d471f9a9b4876f83ea32365e2057e4eeff4b0e70193120b37560332392e1a1"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "1407374894381109",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "813c5b6e1877cf89879298ec31e21e38c61e6058c84dd7b8c1fd99b861474f35",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670456",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786366466417731200",
+              "ctimeNs": "1786366466417731200"
+            }
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "21673573217417357",
+              "mode": "33206",
+              "size": "667",
+              "mtimeNs": "1786366469660201500",
+              "ctimeNs": "1786366469664128200"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670457",
+              "mode": "33206",
+              "size": "12030",
+              "mtimeNs": "1786363201768847400",
+              "ctimeNs": "1786363201778122200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670460",
+              "mode": "33206",
+              "size": "5940",
+              "mtimeNs": "1786366095250637000",
+              "ctimeNs": "1786366095264853300"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670461",
+              "mode": "33206",
+              "size": "3843",
+              "mtimeNs": "1786366466289573400",
+              "ctimeNs": "1786366466289573400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670459",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670462",
+              "mode": "33206",
+              "size": "3311",
+              "mtimeNs": "1786363257762821200",
+              "ctimeNs": "1786363257776519700"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670463",
+              "mode": "33206",
+              "size": "172",
+              "mtimeNs": "1786268285982981500",
+              "ctimeNs": "1786315802371905100"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940959811",
+              "mode": "33206",
+              "size": "7737",
+              "mtimeNs": "1786363228395815500",
+              "ctimeNs": "1786363228403592000"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940959810",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670464",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940959812",
+              "mode": "33206",
+              "size": "6440",
+              "mtimeNs": "1786364196869857600",
+              "ctimeNs": "1786364196876280300"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "dc8e44db0f4be91e93658927c217e3e5f30aea019d498f5b0666e68bfedb117f",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "134",
+            "sha256": "14e433899b8183377a9b9b9854249a3c6c2db35d4d01236f2221b3f8a4aec52b"
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "executable": false,
+            "size": "667",
+            "sha256": "0f33df9ca675de921678d427aaa99e9d37b2c487323e34b24925cefc1f67eb46"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "12030",
+            "sha256": "6934b3f53ec007d61f7ca134fe05d6518e2e0b9e14c38cf93fa0fc08d420620e"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "5940",
+            "sha256": "e62725504445a98cd8ceb085c32b464425436a141776b88ecaa38bd2e1cc8bf9"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3843",
+            "sha256": "b5a64ea84eb111738849953c5de592011706e3cc96155f05b42e8e76622ff807"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3311",
+            "sha256": "37b080308aa6479caa15114a563adf0ffbbd719e2dc0b1600a15bbd1006d785d"
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "executable": false,
+            "size": "172",
+            "sha256": "02a04a0cfdff7b5faed0c8a0cb957f52b8f09c5b252425042c836ea176dc22a9"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "7737",
+            "sha256": "6d1de32205fcce1dab1eba1cf8ef0462befb2e50cabc5c75c27a957cd316cc4c"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "6440",
+            "sha256": "48d471f9a9b4876f83ea32365e2057e4eeff4b0e70193120b37560332392e1a1"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "1407374894381109",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "813c5b6e1877cf89879298ec31e21e38c61e6058c84dd7b8c1fd99b861474f35",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670456",
+              "mode": "33206",
+              "size": "134",
+              "mtimeNs": "1786366466417731200",
+              "ctimeNs": "1786366466417731200"
+            }
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "21673573217417357",
+              "mode": "33206",
+              "size": "667",
+              "mtimeNs": "1786366469660201500",
+              "ctimeNs": "1786366469664128200"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670457",
+              "mode": "33206",
+              "size": "12030",
+              "mtimeNs": "1786363201768847400",
+              "ctimeNs": "1786363201778122200"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670460",
+              "mode": "33206",
+              "size": "5940",
+              "mtimeNs": "1786366095250637000",
+              "ctimeNs": "1786366095264853300"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670461",
+              "mode": "33206",
+              "size": "3843",
+              "mtimeNs": "1786366466289573400",
+              "ctimeNs": "1786366466289573400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670459",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670462",
+              "mode": "33206",
+              "size": "3311",
+              "mtimeNs": "1786363257762821200",
+              "ctimeNs": "1786363257776519700"
+            }
+          },
+          {
+            "path": "README.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670463",
+              "mode": "33206",
+              "size": "172",
+              "mtimeNs": "1786268285982981500",
+              "ctimeNs": "1786315802371905100"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940959811",
+              "mode": "33206",
+              "size": "7737",
+              "mtimeNs": "1786363228395815500",
+              "ctimeNs": "1786363228403592000"
+            }
+          },
+          {
+            "path": "specs/teacher-consultation-canvas",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940959810",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899917670464",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "844424940959812",
+              "mode": "33206",
+              "size": "6440",
+              "mtimeNs": "1786364196869857600",
+              "ctimeNs": "1786364196876280300"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "finalReservation": {
+    "identity": {
+      "dev": "3122291782",
+      "ino": "1407374894381109",
+      "mode": "16822",
+      "size": "0",
+      "mtimeNs": "0",
+      "ctimeNs": "0"
+    },
+    "entries": [
+      {
+        "path": ".openspec.yaml",
+        "kind": "file",
+        "expected": {
+          "path": ".openspec.yaml",
+          "kind": "file",
+          "executable": false,
+          "size": "134",
+          "sha256": "14e433899b8183377a9b9b9854249a3c6c2db35d4d01236f2221b3f8a4aec52b"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1125899917670456",
+          "mode": "33206",
+          "size": "134",
+          "mtimeNs": "1786366466417731200",
+          "ctimeNs": "1786366466417731200"
+        }
+      },
+      {
+        "path": "design.md",
+        "kind": "file",
+        "expected": {
+          "path": "design.md",
+          "kind": "file",
+          "executable": false,
+          "size": "12030",
+          "sha256": "6934b3f53ec007d61f7ca134fe05d6518e2e0b9e14c38cf93fa0fc08d420620e"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1125899917670457",
+          "mode": "33206",
+          "size": "12030",
+          "mtimeNs": "1786363201768847400",
+          "ctimeNs": "1786363201778122200"
+        }
+      },
+      {
+        "path": "evidence",
+        "kind": "directory",
+        "expected": {
+          "path": "evidence",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1125899917670459",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "evidence/review-report.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/review-report.md",
+          "kind": "file",
+          "executable": false,
+          "size": "5940",
+          "sha256": "e62725504445a98cd8ceb085c32b464425436a141776b88ecaa38bd2e1cc8bf9"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1125899917670460",
+          "mode": "33206",
+          "size": "5940",
+          "mtimeNs": "1786366095250637000",
+          "ctimeNs": "1786366095264853300"
+        }
+      },
+      {
+        "path": "evidence/ship-log.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/ship-log.md",
+          "kind": "file",
+          "executable": false,
+          "size": "3843",
+          "sha256": "b5a64ea84eb111738849953c5de592011706e3cc96155f05b42e8e76622ff807"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1125899917670461",
+          "mode": "33206",
+          "size": "3843",
+          "mtimeNs": "1786366466289573400",
+          "ctimeNs": "1786366466289573400"
+        }
+      },
+      {
+        "path": "proposal.md",
+        "kind": "file",
+        "expected": {
+          "path": "proposal.md",
+          "kind": "file",
+          "executable": false,
+          "size": "3311",
+          "sha256": "37b080308aa6479caa15114a563adf0ffbbd719e2dc0b1600a15bbd1006d785d"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1125899917670462",
+          "mode": "33206",
+          "size": "3311",
+          "mtimeNs": "1786363257762821200",
+          "ctimeNs": "1786363257776519700"
+        }
+      },
+      {
+        "path": "README.md",
+        "kind": "file",
+        "expected": {
+          "path": "README.md",
+          "kind": "file",
+          "executable": false,
+          "size": "172",
+          "sha256": "02a04a0cfdff7b5faed0c8a0cb957f52b8f09c5b252425042c836ea176dc22a9"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1125899917670463",
+          "mode": "33206",
+          "size": "172",
+          "mtimeNs": "1786268285982981500",
+          "ctimeNs": "1786315802371905100"
+        }
+      },
+      {
+        "path": "specs",
+        "kind": "directory",
+        "expected": {
+          "path": "specs",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1125899917670464",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "specs/teacher-consultation-canvas",
+        "kind": "directory",
+        "expected": {
+          "path": "specs/teacher-consultation-canvas",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "844424940959810",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "specs/teacher-consultation-canvas/spec.md",
+        "kind": "file",
+        "expected": {
+          "path": "specs/teacher-consultation-canvas/spec.md",
+          "kind": "file",
+          "executable": false,
+          "size": "7737",
+          "sha256": "6d1de32205fcce1dab1eba1cf8ef0462befb2e50cabc5c75c27a957cd316cc4c"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "844424940959811",
+          "mode": "33206",
+          "size": "7737",
+          "mtimeNs": "1786363228395815500",
+          "ctimeNs": "1786363228403592000"
+        }
+      },
+      {
+        "path": "tasks.md",
+        "kind": "file",
+        "expected": {
+          "path": "tasks.md",
+          "kind": "file",
+          "executable": false,
+          "size": "6440",
+          "sha256": "48d471f9a9b4876f83ea32365e2057e4eeff4b0e70193120b37560332392e1a1"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "844424940959812",
+          "mode": "33206",
+          "size": "6440",
+          "mtimeNs": "1786364196869857600",
+          "ctimeNs": "1786364196876280300"
+        }
+      }
+    ]
+  },
+  "specProgress": [
+    {
+      "actionId": "1c16f0ad35beb4d2aafcd7c056b4e99612163c35daa860f9d877aa7938f9a63f",
+      "action": "create",
+      "target": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code-wt-teacher-advisor\\rasen\\specs\\teacher-consultation-canvas\\spec.md",
+      "backupOrQuarantine": null,
+      "temporary": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code-wt-teacher-advisor\\rasen\\specs\\teacher-consultation-canvas\\.rasen-archive-spec-310072a5-603b-466d-a4f0-0f80d26af343-1c16f0ad35be\\result.tmp",
+      "state": "complete",
+      "claimIdentity": {
+        "dev": "3122291782",
+        "ino": "844424940959797",
+        "mode": "16822",
+        "size": "0",
+        "mtimeNs": "0",
+        "ctimeNs": "0"
+      },
+      "temporaryIdentity": {
+        "dev": "3122291782",
+        "ino": "1407374894381108",
+        "mode": "33206",
+        "size": "7880",
+        "mtimeNs": "1786366466810120700",
+        "ctimeNs": "1786366466810120700"
+      },
+      "publishedIdentity": {
+        "dev": "3122291782",
+        "ino": "1407374894381108",
+        "mode": "33206",
+        "size": "7880",
+        "mtimeNs": "1786366466810120700",
+        "ctimeNs": "1786366466823483900"
+      }
+    }
+  ],
+  "cleanerProgress": [
+    {
+      "path": "auto-run.json",
+      "state": "deleted"
+    }
+  ],
+  "sourceProgress": {
+    "state": "removed",
+    "quarantine": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code-wt-teacher-advisor\\rasen\\changes\\.rasen-archive-source-310072a5-603b-466d-a4f0-0f80d26af343\\teacher-consultation-canvas"
+  },
+  "updatedAt": "2026-08-10T12:54:30.062Z"
+}

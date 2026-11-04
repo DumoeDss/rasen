@@ -1,0 +1,20 @@
+version: 1
+id: issue-centered-automation-platform
+status: active
+authority:
+  northStar: north-star.md
+targetState: goal.md
+roadmap: roadmap.md
+# No activeSlice: the Phase 2-7 campaign closed 2026-08-24 (roadmap §14.7/§14.8).
+# Phase 8 stays Later by design; the ECP tail (self-hosting vertical proof + ECP-8)
+# stays deferred per the operator's 2026-08-26 decision (testing period). The next
+# frontier awaits an explicit operator call.
+campaign:
+  mode: sequential-phase-portfolios
+  operatorMandate: 2026-08-20 — advance every remaining Issue-layer slice (Phase 2-7); LEAD activates each slice at direction level and drives it via rasen-auto; delivery per portfolio follows the PR #168 pattern (PR -> CI watch -> merge on green)
+  deliveryPattern: pr-merge-on-green
+  outcome: completed 2026-08-24 — six phase portfolios merged (PRs #171-#176, after #168); Issues #1-#6 golden-closed; registry 6/6 done, attention scan zero items
+lastReconciled:
+  at: 2026-08-26T02:26:00+08:00
+  revision: 2a283646
+  note: phase-7 closed by issue-ui-convergence (PR #176; Issue #6 done 3/3); campaign terminal (§14.8); ECP tail stays deferred (operator, testing period); no activeSlice — holding for next-frontier decision

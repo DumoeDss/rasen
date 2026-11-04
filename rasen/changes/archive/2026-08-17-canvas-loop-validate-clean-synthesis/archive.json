@@ -1,0 +1,40 @@
+{
+  "change": "canvas-loop-validate-clean-synthesis",
+  "archivedAt": "2026-08-17T14:11:22.568Z",
+  "codeCommit": "f18a811cfffa055ad25eb137e7c945d9979331e9",
+  "planningBranch": "feat/canvas-loop-ux",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/browser-gate.md",
+      "sha256": "5d17d12b4afa982abb4064b0be4249ed4ce5f2de0134c762da921b0c80b95cb2"
+    },
+    {
+      "path": "evidence/constraint-sweep.md",
+      "sha256": "1ece86df0acf2784219568ed61a85d239ae0b380eedc52295187a7bdaaab54b7"
+    },
+    {
+      "path": "evidence/handoff/implementer-1.md",
+      "sha256": "2ef14523aa5b96284ecc09e7df0a833c4eae409d413072695e6155d33aac1ef5"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "2409bde9432b393897137ac9fe478acfeea70b3595c9674d1a3ab3d1e290dc3b"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "5137d01cfda93912b4f4c5760cac0f5bf70c6151b54ea61ed48c773333963d09"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [
+    {
+      "file": "handoff/implementer-1.md",
+      "outcome": "preserved"
+    }
+  ],
+  "ephemeraDiscarded": [],
+  "missing": [
+    "verification-report"
+  ]
+}

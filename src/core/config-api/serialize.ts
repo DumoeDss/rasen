@@ -21,6 +21,11 @@ const RANGE_CONSTRAINTS: Record<string, { gt: number; lte: number }> = {
   'handoff.threshold': { gt: 0, lte: 1 },
 };
 
+const INTEGER_RANGE_CONSTRAINTS: Record<string, { min: number; max: number }> = {
+  'omnicross.requestTimeoutMs': { min: 100, max: 60_000 },
+  'omnicross.leaseTtlSeconds': { min: 30, max: 3_600 },
+};
+
 /**
  * `remainingTokensGt` for `type: 'threshold'` keys — the absolute-form
  * companion to `RANGE_CONSTRAINTS` above. Today only `handoff.threshold`.
@@ -46,6 +51,7 @@ function deriveConstraints(definition: ConfigKeyDefinition): WireConstraints {
     enumValues: definition.enumValues,
     enumValuesByScope,
     range: RANGE_CONSTRAINTS[definition.key],
+    integerRange: INTEGER_RANGE_CONSTRAINTS[definition.key],
     remainingTokensGt:
       definition.type === 'threshold' ? REMAINING_TOKENS_CONSTRAINTS[definition.key] : undefined,
   };

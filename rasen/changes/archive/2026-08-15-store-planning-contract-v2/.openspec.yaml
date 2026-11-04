@@ -1,0 +1,9 @@
+schema: spec-driven
+created: 2026-08-12
+quality:
+  files:
+    - evidence/review-report.md
+    - evidence/task-6-7-diff-scope-audit.md
+  metrics:
+    evidence/review-report.md: 0
+    evidence/task-6-7-diff-scope-audit.md: 0

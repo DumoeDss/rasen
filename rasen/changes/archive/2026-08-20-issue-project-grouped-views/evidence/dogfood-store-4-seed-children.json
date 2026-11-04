@@ -1,0 +1,14 @@
+{
+  "seeded": [
+    {
+      "entry": "2026-08-20-issue-target-project-binding",
+      "changeId": "issue-target-project-binding",
+      "instanceId": "ci_114dc062aed6b5c7b7a2aa2860e8ffa29e356ced35baadfa0901052fccc859ec"
+    },
+    {
+      "entry": "2026-08-20-issue-cross-project-gating",
+      "changeId": "issue-cross-project-gating",
+      "instanceId": "ci_3682f3979e67a6b1ac48fd1c4cec6abd65d6ad783dc7bf3c70f0d807827818be"
+    }
+  ]
+}

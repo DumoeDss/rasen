@@ -1,0 +1,74 @@
+{
+  "allOk": true,
+  "m2Probe": {
+    "attempts": [
+      {
+        "label": "middle pair",
+        "geometryOk": true,
+        "targets": [
+          "atomic-stage-2",
+          "atomic-stage-3"
+        ],
+        "selected": [
+          "atomic-stage-2",
+          "atomic-stage-3"
+        ],
+        "fullMembership": true
+      },
+      {
+        "label": "singleton",
+        "geometryOk": true,
+        "targets": [
+          "atomic-stage-3"
+        ],
+        "selected": [
+          "atomic-stage-3"
+        ],
+        "fullMembership": true
+      },
+      {
+        "label": "region triple",
+        "geometryOk": true,
+        "targets": [
+          "atomic-stage-2",
+          "atomic-stage-3",
+          "atomic-stage-4"
+        ],
+        "selected": [
+          "atomic-stage-2",
+          "atomic-stage-3",
+          "atomic-stage-4"
+        ],
+        "fullMembership": true
+      }
+    ],
+    "reproduced": false
+  },
+  "results": [
+    {
+      "name": "four handle-to-handle drags produced the chained edges",
+      "ok": true,
+      "detail": "[\"atomic-stage:done->atomic-stage-2:input\",\"atomic-stage-2:done->atomic-stage-3:input\",\"atomic-stage-3:done->atomic-stage-4:input\",\"atomic-stage-4:done->finish:input\"]"
+    },
+    {
+      "name": "m2 repeat-probe ran three verified rectangles",
+      "ok": true,
+      "detail": "middle pair:full=true; singleton:full=true; region triple:full=true"
+    },
+    {
+      "name": "m2 repeat-probe: FULL membership on every rectangle (containment fix verified)",
+      "ok": true,
+      "detail": "[{\"label\":\"middle pair\",\"selected\":[\"atomic-stage-2\",\"atomic-stage-3\"]},{\"label\":\"singleton\",\"selected\":[\"atomic-stage-3\"]},{\"label\":\"region triple\",\"selected\":[\"atomic-stage-2\",\"atomic-stage-3\",\"atomic-stage-4\"]}]"
+    },
+    {
+      "name": "the singleton rectangle selects its node (overlap, not containment)",
+      "ok": true,
+      "detail": "[\"atomic-stage-3\"]"
+    },
+    {
+      "name": "tab is alive after the full pass (no listener freeze)",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

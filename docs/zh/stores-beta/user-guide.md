@@ -245,7 +245,7 @@ workset 被有意设计成*非*共享状态。它们只存在于你的机器上�
 ## 已知限制
 
 - **Beta 形态。** 本页的一切都可能在版本之间变化 —— 名字、flag、文件格式、JSON key。
-- **每台机器上每个 store id 只能有一个 checkout。** 在同一 id 下注册第二个 checkout 会失败，并提示先 `store unregister`。
+- **每台机器上每个永久 Store UID 只能有一个 checkout。** 显示名称可以重复；注册同一身份的第二个 checkout 会失败，并提示先 `store unregister`。
 - **永不同步 —— 这是设计如此。** OpenSpec 从不 clone、pull 或 push。陈旧的 checkout 会显示陈旧的 spec，直到*你*自己 pull；reference 则实时地从磁盘上现有的内容建立索引。
 - **某些命令留在原地。** `view`、`templates`、`schemas` 只作用于当前目录 —— 没有 `--store`。
 - **每机状态就是每机的事。** store 注册表和 workset 都是本地设置。你机器布局的任何信息都永远不会被提交到共享规划中。

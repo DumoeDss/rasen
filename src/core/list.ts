@@ -20,6 +20,9 @@ interface ListOptions {
   json?: boolean;
   long?: boolean;
   root?: RootOutput;
+  changesDir?: string;
+  specsDir?: string;
+  schemasDir?: string;
 }
 
 function extractChangeTitle(content: string, changeName: string): string {
@@ -107,7 +110,7 @@ export class ListCommand {
     const { sort = 'recent', json = false, long = false, root } = options;
 
     if (mode === 'changes') {
-      const changesDir = path.join(targetPath, WORKSPACE_DIR_NAME, 'changes');
+      const changesDir = options.changesDir ?? path.join(targetPath, WORKSPACE_DIR_NAME, 'changes');
 
       // Get all directories in changes (excluding archive)
       const entries = await readChangeDirectoryEntries(changesDir);
@@ -128,7 +131,12 @@ export class ListCommand {
       const changes: ChangeInfo[] = [];
 
       for (const changeDir of changeDirs) {
-        const progress = await getTaskProgressForChange(changesDir, changeDir, targetPath);
+        const progress = await getTaskProgressForChange(
+          changesDir,
+          changeDir,
+          targetPath,
+          options.schemasDir
+        );
         const changePath = path.join(changesDir, changeDir);
         const lastModified = await getLastModified(changePath);
         changes.push({
@@ -192,7 +200,7 @@ export class ListCommand {
     }
 
     // specs mode
-    const specsDir = path.join(targetPath, WORKSPACE_DIR_NAME, 'specs');
+    const specsDir = options.specsDir ?? path.join(targetPath, WORKSPACE_DIR_NAME, 'specs');
     try {
       await fs.access(specsDir);
     } catch {

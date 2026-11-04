@@ -5,6 +5,7 @@
  */
 import { getToken, markUnauthorized } from './token.js';
 import type {
+  AddProjectToStoreResponse,
   ApiErrorBody,
   AuditReportDetailResponse,
   AuditReportsResponse,
@@ -44,6 +45,23 @@ import type {
   SpacesResponse,
   SpaceWorktreesResponse,
   StatusResponse,
+  StoreChangesResponse,
+  StoreChangeIssueLinksResponse,
+  StoreExecutionPlanPublishRequest,
+  StoreExecutionPlanPublishResponse,
+  StoreExecutionPlanResponse,
+  StoreIssueAttentionResponse,
+  StoreIssueCreateRequest,
+  StoreIssueDetailResponse,
+  StoreIssueProjectionResponse,
+  StoreIssueProjectionsResponse,
+  StoreIssueRecordResponse,
+  StoreIssueReferencesResponse,
+  StoreIssuesResponse,
+  StoreIssueSetStateRequest,
+  StoreIssueState,
+  StoreProjectsResponse,
+  StoreTargetLinesResponse,
   SubmitChangeRequest,
   SubmitChangeResponse,
   TaskDetailResponse,
@@ -75,6 +93,7 @@ export class ApiError extends Error {
    */
   state?: unknown;
   details?: ApiErrorBody['error']['details'];
+  recovery?: ApiErrorBody['error']['recovery'];
 
   constructor(status: number, body: ApiErrorBody & { state?: unknown }) {
     super(body.error.message);
@@ -84,6 +103,7 @@ export class ApiError extends Error {
     this.fix = body.error.fix;
     this.state = body.state;
     this.details = body.error.details;
+    this.recovery = body.error.recovery;
   }
 }
 
@@ -110,7 +130,26 @@ async function request<T>(
   if (token) finalHeaders['Authorization'] = `Bearer ${token}`;
   if (json) finalHeaders['Content-Type'] = 'application/json';
 
-  const res = await fetch(path, { ...rest, headers: finalHeaders });
+  const fetchInit: RequestInit = { ...rest, headers: finalHeaders };
+  let res = await fetch(path, fetchInit);
+
+  if (res.status === 401) {
+    // The daemon token rotates when the daemon restarts. Refresh the opaque
+    // HttpOnly cookie once, then replay the original request exactly once;
+    // only a second 401 becomes a user-visible re-launch state.
+    try {
+      const refreshed = await fetch('/api/v1/auth/session', {
+        method: 'GET',
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      if (refreshed.ok) {
+        res = await fetch(path, fetchInit);
+      }
+    } catch {
+      // Preserve the original 401 below when the daemon cannot be reached.
+    }
+  }
 
   if (res.status === 401) {
     markUnauthorized();
@@ -451,6 +490,15 @@ export function createSpace(body: CreateSpaceRequest): Promise<CreateSpaceRespon
   });
 }
 
+/** Establishes Store membership without supplying a path or changing the Project's planning Store. */
+export function addProjectToStore(projectId: string, storeId: string): Promise<AddProjectToStoreResponse> {
+  return request<AddProjectToStoreResponse>('/api/v1/spaces', {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify({ op: 'add-project-to-store', projectId, storeId }),
+  });
+}
+
 /**
  * One Task's full roster — active + archived children and portfolio dependency
  * hints (ui-space-redesign-task-detail design D1). The `id` is the polymorphic
@@ -598,6 +646,196 @@ export function listProfiles(): Promise<ProfileListResponse> {
  */
 export function mutateProfile(body: ProfileMutationRequest): Promise<ProfileMutationResponse> {
   return request<ProfileMutationResponse>('/api/v1/profiles', {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify(body),
+  });
+}
+
+// ---- Store aggregate (store-issue-resources) ----
+// Cross-project reads (Issues, Execution Plans, project/target-line rollups,
+// grouped Changes) plus the three Issue/Plan mutations, every one addressed
+// through the same `space` selector every other call in this file uses — a
+// Store is addressed by its stable identity, never a filesystem path or
+// display alias (management-ui-shell). Reads are lock-free and never mutate
+// (management-http-api); the two write endpoints below (`createStoreIssue`,
+// `setStoreIssueState`) take no project/target line at all, since an Issue is
+// Store-level intent — only `publishStoreExecutionPlan` carries per-node
+// scope, and the caller is responsible for never submitting an incomplete one
+// (board-ui: "An aggregate view never submits a mutation with an incomplete
+// scope").
+
+/** Every project the Store's catalog declares, with its role flags and Change counts. */
+export function getStoreProjects(space?: string): Promise<StoreProjectsResponse> {
+  return request<StoreProjectsResponse>(`/api/v1/stores/projects${spaceQuery(space)}`);
+}
+
+/** Every target line the Store's catalog declares, with its owning projects and Change counts. */
+export function getStoreTargetLines(space?: string): Promise<StoreTargetLinesResponse> {
+  return request<StoreTargetLinesResponse>(`/api/v1/stores/target-lines${spaceQuery(space)}`);
+}
+
+export interface StoreChangesFilter {
+  projects?: string[];
+  targetLines?: string[];
+  outcomes?: string[];
+  state?: 'active' | 'archived';
+}
+
+/**
+ * Changes grouped by project AND target line (board-ui: the same Change alias
+ * in two projects is two board entries). Filters narrow; an empty
+ * project/target-line group in the response is a group that exists and has no
+ * Changes yet — the caller renders it, never hides it.
+ */
+export function getStoreChanges(space?: string, filter?: StoreChangesFilter): Promise<StoreChangesResponse> {
+  const params = new URLSearchParams();
+  if (space) params.set('space', space);
+  for (const project of filter?.projects ?? []) params.append('project', project);
+  for (const targetLine of filter?.targetLines ?? []) params.append('targetLine', targetLine);
+  for (const outcome of filter?.outcomes ?? []) params.append('outcome', outcome);
+  if (filter?.state) params.set('state', filter.state);
+  const query = params.toString();
+  return request<StoreChangesResponse>(query ? `/api/v1/stores/changes?${query}` : '/api/v1/stores/changes');
+}
+
+/** Every Store-level Issue, optionally narrowed by state. */
+export function getStoreIssues(space?: string, state?: StoreIssueState): Promise<StoreIssuesResponse> {
+  const params = new URLSearchParams();
+  if (space) params.set('space', space);
+  if (state) params.set('state', state);
+  const query = params.toString();
+  return request<StoreIssuesResponse>(query ? `/api/v1/stores/issues?${query}` : '/api/v1/stores/issues');
+}
+
+/**
+ * One Issue's full detail: its record plus its resolved current Execution
+ * Plan (board-ui: each Issue shows the Changes its plan references, each with
+ * its owning project; a reference the Store cannot read is reported
+ * unreadable with the reason, never omitted).
+ */
+export function getStoreIssue(issueSelector: string, space?: string): Promise<StoreIssueDetailResponse> {
+  const params = new URLSearchParams({ issueId: issueSelector });
+  if (space) params.set('space', space);
+  return request<StoreIssueDetailResponse>(`/api/v1/stores/issue?${params.toString()}`);
+}
+
+/**
+ * The Issue PROJECTION reads (issue-read-surface). Each is a passthrough of
+ * the same core composition `rasen store issue list|show` and
+ * `rasen store attention` print, re-derived on every request: there is no
+ * cache on either side of this call, so a refresh is a re-derivation and
+ * nothing here holds a second copy of any status fact.
+ */
+
+/** Every Issue with its projected status, optionally narrowed by lifecycle state. */
+export function getStoreIssueProjections(
+  space?: string,
+  state?: StoreIssueState
+): Promise<StoreIssueProjectionsResponse> {
+  const params = new URLSearchParams();
+  if (space) params.set('space', space);
+  if (state) params.set('state', state);
+  const query = params.toString();
+  return request<StoreIssueProjectionsResponse>(
+    query ? `/api/v1/stores/issue-projections?${query}` : '/api/v1/stores/issue-projections'
+  );
+}
+
+/** One Issue's whole read: status, delivery evidence, and review from one derivation. */
+export function getStoreIssueProjection(
+  issueSelector: string,
+  space?: string
+): Promise<StoreIssueProjectionResponse> {
+  const params = new URLSearchParams({ issueId: issueSelector });
+  if (space) params.set('space', space);
+  return request<StoreIssueProjectionResponse>(`/api/v1/stores/issue-projection?${params.toString()}`);
+}
+
+/**
+ * The Store-wide needs-attention scan, optionally narrowed to one Issue. An
+ * unknown narrowing id is REFUSED by the server (404), never answered with an
+ * empty scan — the empty state is a claim about scanned Issues.
+ */
+export function getStoreIssueAttention(
+  space?: string,
+  issueSelector?: string
+): Promise<StoreIssueAttentionResponse> {
+  const params = new URLSearchParams();
+  if (space) params.set('space', space);
+  if (issueSelector) params.set('issueId', issueSelector);
+  const query = params.toString();
+  return request<StoreIssueAttentionResponse>(
+    query ? `/api/v1/stores/issue-attention?${query}` : '/api/v1/stores/issue-attention'
+  );
+}
+
+/** Fresh Store-wide Change-to-Issue association read; no client cache/index. */
+export function getStoreChangeIssueLinks(
+  space?: string
+): Promise<StoreChangeIssueLinksResponse> {
+  return request<StoreChangeIssueLinksResponse>(
+    `/api/v1/stores/change-issue-links${spaceQuery(space)}`
+  );
+}
+
+/** The derived reverse lookup: which Issues reference a given Change instance. */
+export function getStoreIssueReferences(
+  changeInstanceId: string,
+  space?: string
+): Promise<StoreIssueReferencesResponse> {
+  const params = new URLSearchParams({ changeInstanceId });
+  if (space) params.set('space', space);
+  return request<StoreIssueReferencesResponse>(`/api/v1/stores/issue-references?${params.toString()}`);
+}
+
+/** One Issue's resolved Execution Plan; omitted `revisionId` selects the latest published revision. */
+export function getStoreExecutionPlan(
+  issueSelector: string,
+  space?: string,
+  revisionId?: string
+): Promise<StoreExecutionPlanResponse> {
+  const params = new URLSearchParams({ issueId: issueSelector });
+  if (space) params.set('space', space);
+  if (revisionId) params.set('revisionId', revisionId);
+  return request<StoreExecutionPlanResponse>(`/api/v1/stores/execution-plan?${params.toString()}`);
+}
+
+/** Create a new Store-level Issue. Takes no project or target line — an Issue is Store-level intent. */
+export function createStoreIssue(
+  body: StoreIssueCreateRequest,
+  space?: string
+): Promise<StoreIssueRecordResponse> {
+  return request<StoreIssueRecordResponse>(`/api/v1/stores/issues${spaceQuery(space)}`, {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify(body),
+  });
+}
+
+/** Declare an Issue's lifecycle state. `reason` is required by the server for `dropped`. */
+export function setStoreIssueState(
+  body: StoreIssueSetStateRequest,
+  space?: string
+): Promise<StoreIssueRecordResponse> {
+  return request<StoreIssueRecordResponse>(`/api/v1/stores/issue-state${spaceQuery(space)}`, {
+    method: 'POST',
+    json: true,
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * Publish a new Execution Plan revision for an Issue. Every node the caller
+ * builds MUST already carry a complete `projectId` + `targetLineId` — the
+ * server refuses the whole request otherwise (`store_query_scope_incomplete`)
+ * and this client makes no attempt to fill a missing part itself.
+ */
+export function publishStoreExecutionPlan(
+  body: StoreExecutionPlanPublishRequest,
+  space?: string
+): Promise<StoreExecutionPlanPublishResponse> {
+  return request<StoreExecutionPlanPublishResponse>(`/api/v1/stores/execution-plan${spaceQuery(space)}`, {
     method: 'POST',
     json: true,
     body: JSON.stringify(body),

@@ -16,6 +16,8 @@ import {
   type DefinitionPlanPayload,
 } from './definition-plan-internal.js';
 import type { PipelineYaml, Stage } from './types.js';
+import { FrozenInferenceRouteSchema } from '../omnicross/contracts.js';
+import { WorkerContractZodSchema } from '../worker-contracts.js';
 
 export type PlanIntegrityErrorCode =
   | 'unsupported_plan_version'
@@ -175,6 +177,9 @@ export function openDefinitionPlan(value: unknown): OpenedDefinitionPlan {
 }
 
 const DigestSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/);
+const BrandedDigestSchema = DigestSchema.transform(
+  (value): Digest => value as Digest
+);
 const SourceRevisionSchema = z.strictObject({
   layer: z.enum(['project', 'user', 'package']),
   kind: z.string().min(1).max(128),
@@ -189,7 +194,20 @@ const ArtifactSchema = z.strictObject({
   contentDigest: DigestSchema,
 });
 
-const RuntimeCapabilityBindingSchema = z.strictObject({
+const AttestationAuthoritySchema = z.strictObject({
+  format: z.literal('change-run-attestation-authority/1'),
+  algorithm: z.literal('ed25519'),
+  keyId: z.string().min(1).max(256),
+  keyVersion: z.string().min(1).max(128),
+  publicKey: z.strictObject({
+    format: z.literal('spki-der'),
+    encoding: z.literal('base64'),
+    value: z.string().min(1).max(4096),
+    digest: DigestSchema,
+  }),
+});
+
+const RuntimeCapabilityBindingBaseShape = {
   nodeId: z.string().min(1).max(512),
   authoredCapability: z.strictObject({
     id: z.string().min(1).max(256),
@@ -200,7 +218,6 @@ const RuntimeCapabilityBindingSchema = z.strictObject({
     version: z.string().min(1).max(128),
     digest: DigestSchema,
   }),
-  actionKind: z.enum(['agent', 'command', 'host']),
   resultContract: z.strictObject({
     id: z.string().min(1).max(256),
     version: z.string().min(1).max(128),
@@ -226,8 +243,42 @@ const RuntimeCapabilityBindingSchema = z.strictObject({
       })
     )
     .max(64),
-  adapter: ArtifactSchema,
-});
+  adapter: ArtifactSchema.extend({
+    attestationAuthority: AttestationAuthoritySchema,
+  }).strict(),
+} as const;
+
+const RuntimeCapabilityBindingSchema = z.discriminatedUnion('actionKind', [
+  z.strictObject({
+    ...RuntimeCapabilityBindingBaseShape,
+    actionKind: z.literal('agent'),
+  }),
+  z.strictObject({
+    ...RuntimeCapabilityBindingBaseShape,
+    actionKind: z.literal('command'),
+    command: z.strictObject({
+      executable: z.strictObject({
+        identity: z.string().min(1).max(256),
+        contentDigest: BrandedDigestSchema,
+      }),
+      argv: z.array(z.string().max(64 * 1024)).max(256),
+      env: z.record(z.string().max(128), z.string().max(64 * 1024)),
+      workingDirectory: z
+        .string()
+        .min(1)
+        .max(1024)
+        .refine((value) => !value.startsWith('/') && !value.includes('\\')),
+      timeoutMs: z.number().int().positive().safe(),
+    }),
+  }),
+  z.strictObject({
+    ...RuntimeCapabilityBindingBaseShape,
+    actionKind: z.literal('host'),
+    host: z.strictObject({
+      operation: z.enum(['workspace-apply', 'verify', 'ship', 'archive']),
+    }),
+  }),
+]);
 
 const PolicyProvenanceSchema = z.strictObject({
   role: z.string().min(1).max(128),
@@ -277,15 +328,51 @@ const EffectiveRunPolicySchema = z.strictObject({
         .optional(),
       handoffTokenLimit: z.number().int().nonnegative().safe(),
       reuseRoundLimit: z.number().int().nonnegative().safe(),
+      /**
+       * Structured worker return selected from immutable Definition semantics.
+       * Optional only for decoding profiles written before this authority existed.
+       */
+      workerContract: WorkerContractZodSchema.optional(),
+      /** Credential-free logical route frozen at admission. */
+      inference: FrozenInferenceRouteSchema.optional(),
       provenance: PolicyProvenanceSchema,
     })
   ),
 });
 
+const ConsultationPositiveBound = z.number().int().positive().safe();
+
+/**
+ * Frozen opt-in mapping from one source profile path to one exact advisory
+ * Teacher profile path. The collection is optional and undefined-dropped so a
+ * legacy profile preserves its serialized shape and every pre-change digest.
+ */
+export const RuntimeConsultationBindingZodSchema = z.strictObject({
+  sourceProfilePath: z.string().min(1).max(1024).refine((value) => !value.includes('\\')),
+  teacherProfilePath: z.string().min(1).max(1024).refine((value) => !value.includes('\\')),
+  maxConsultationsPerInvocation: ConsultationPositiveBound.max(64),
+  maxTeacherAttemptsPerConsultation: ConsultationPositiveBound.max(16),
+  limits: z.strictObject({
+    maxQuestionBytes: ConsultationPositiveBound.max(64 * 1024),
+    maxAdviceBytes: ConsultationPositiveBound.max(128 * 1024),
+    maxAttemptedApproaches: ConsultationPositiveBound.max(32),
+    maxConstraints: ConsultationPositiveBound.max(32),
+    maxEvidencePointers: ConsultationPositiveBound.max(64),
+    maxAdviceSteps: ConsultationPositiveBound.max(64),
+    maxCautions: ConsultationPositiveBound.max(32),
+    maxEvidenceNotes: ConsultationPositiveBound.max(64),
+  }),
+});
+
+export type RuntimeConsultationBinding = Readonly<
+  z.infer<typeof RuntimeConsultationBindingZodSchema>
+>;
+
 const RuntimeExecutionProfileInputSchema = z.strictObject({
   sourceRevision: SourceRevisionSchema,
   capabilities: z.array(RuntimeCapabilityBindingSchema),
   policy: EffectiveRunPolicySchema,
+  consultations: z.array(RuntimeConsultationBindingZodSchema).max(256).optional(),
 });
 
 const RuntimeExecutionProfileSchema = RuntimeExecutionProfileInputSchema.extend({
@@ -357,10 +444,85 @@ function normalizeProfileInput(
       compareStrings(left.nodeId, right.nodeId)
     ),
   };
+  const consultations = parsed.data.consultations?.slice().sort((left, right) =>
+    compareStrings(left.sourceProfilePath, right.sourceProfilePath)
+  );
+  if (consultations !== undefined) {
+    const capabilityByPath = new Map(
+      capabilities.map((binding) => [binding.nodeId, binding] as const)
+    );
+    const policyByPath = new Map(
+      policy.stages.map((stage) => [stage.nodeId, stage] as const)
+    );
+    const sourcePaths = new Set<string>();
+    const teacherPaths = new Set<string>();
+    for (const binding of consultations) {
+      if (sourcePaths.has(binding.sourceProfilePath)) {
+        throw new PlanIntegrityError(
+          'unsupported_execution_profile',
+          `Consultation source path ${binding.sourceProfilePath} is bound more than once.`
+        );
+      }
+      sourcePaths.add(binding.sourceProfilePath);
+      teacherPaths.add(binding.teacherProfilePath);
+      if (binding.sourceProfilePath === binding.teacherProfilePath) {
+        throw new PlanIntegrityError(
+          'unsupported_execution_profile',
+          'A consultation source and Teacher profile path must be distinct.'
+        );
+      }
+      const sourceCapability = capabilityByPath.get(binding.sourceProfilePath);
+      const sourcePolicy = policyByPath.get(binding.sourceProfilePath);
+      const teacherCapability = capabilityByPath.get(binding.teacherProfilePath);
+      const teacherPolicy = policyByPath.get(binding.teacherProfilePath);
+      if (sourceCapability === undefined || sourcePolicy === undefined) {
+        throw new PlanIntegrityError(
+          'unsupported_execution_profile',
+          `Consultation source profile path ${binding.sourceProfilePath} is not frozen in the execution profile.`
+        );
+      }
+      if (
+        sourceCapability.actionKind !== 'agent' ||
+        sourcePolicy.sessionReuse !== 'same-invocation'
+      ) {
+        throw new PlanIntegrityError(
+          'unsupported_execution_profile',
+          `Consultation source ${binding.sourceProfilePath} must be a same-invocation agent Action.`
+        );
+      }
+      if (teacherCapability === undefined || teacherPolicy === undefined) {
+        throw new PlanIntegrityError(
+          'unsupported_execution_profile',
+          `Consultation Teacher profile path ${binding.teacherProfilePath} is not frozen in the execution profile.`
+        );
+      }
+      if (
+        teacherCapability.actionKind !== 'agent' ||
+        teacherPolicy.sandbox !== 'read-only' ||
+        (teacherCapability.workspace.access !== 'none' &&
+          teacherCapability.workspace.access !== 'read') ||
+        teacherCapability.effects.length !== 0
+      ) {
+        throw new PlanIntegrityError(
+          'unsupported_execution_profile',
+          `Consultation Teacher ${binding.teacherProfilePath} must be an effect-free read-only agent with none/read workspace authority.`
+        );
+      }
+    }
+    for (const teacherPath of teacherPaths) {
+      if (sourcePaths.has(teacherPath)) {
+        throw new PlanIntegrityError(
+          'unsupported_execution_profile',
+          'A consultation Teacher cannot itself be an eligible consultation source.'
+        );
+      }
+    }
+  }
   return {
     sourceRevision: parsed.data.sourceRevision,
     capabilities,
     policy,
+    ...(consultations === undefined ? {} : { consultations }),
   };
 }
 
@@ -370,7 +532,12 @@ export function createRuntimeExecutionProfile(
   const normalized = normalizeProfileInput(input);
   const capabilityProfileDigest = domainDigest(
     'runtime-capability-profile/1',
-    normalized.capabilities
+    normalized.consultations === undefined
+      ? normalized.capabilities
+      : {
+          capabilities: normalized.capabilities,
+          consultations: normalized.consultations,
+        }
   );
   const policyDigest = domainDigest(
     'effective-run-policy/1',
@@ -397,6 +564,9 @@ function decodeRuntimeProfile(value: unknown): RuntimeExecutionProfile {
     sourceRevision: parsed.data.sourceRevision,
     capabilities: parsed.data.capabilities,
     policy: parsed.data.policy,
+    ...(parsed.data.consultations === undefined
+      ? {}
+      : { consultations: parsed.data.consultations }),
   });
   if (
     recreated.capabilityProfileDigest !==
@@ -410,6 +580,18 @@ function decodeRuntimeProfile(value: unknown): RuntimeExecutionProfile {
     );
   }
   return recreated;
+}
+
+/**
+ * Re-open a persisted public execution profile and recompute every digest.
+ * This is intentionally a verifier, not a permissive cast: Run resume uses it
+ * to recover the launch-time trust root without consulting the mutable host
+ * catalog and must fail closed if the stored profile was changed.
+ */
+export function openRuntimeExecutionProfile(
+  value: unknown
+): RuntimeExecutionProfile {
+  return decodeRuntimeProfile(value);
 }
 
 export function sealRuntimeExecutionPlan(
@@ -596,6 +778,15 @@ function hasUnsupportedSemantics(pipeline: PipelineYaml): boolean {
   );
 }
 
+/**
+ * Whether a v1 definition carries a `kind: decompose` stage — the
+ * Dispatch-domain construct whose engine verdict is the semantics boundary,
+ * not a profile availability (see the `requiresV2` branch above).
+ */
+function hasDecomposeStage(pipeline: PipelineYaml): boolean {
+  return pipeline.stages.some((stage) => stage.kind === 'decompose');
+}
+
 function hasExactBugFixShape(pipeline: PipelineYaml): boolean {
   if (
     pipeline.name !== 'bug-fix' ||
@@ -654,6 +845,9 @@ function expectedV2MigrationNodeIds(
       for (const phaseNode of declaration.graph.nodes) {
         if (phaseNode.kind !== 'AtomicStage') continue;
         ids.push(`declaration:${declaration.id}/node:${phaseNode.id}`);
+      }
+      if (node.lifecycle.strategy.capability !== undefined) {
+        ids.push(`root:${node.id}/strategy`);
       }
     }
   }
@@ -726,6 +920,13 @@ export function analyzeReconcilerSupport(
           orchestrationEvaluatorCapabilityFor(node) !== null
       )
       .map((node) => `root:${node.id}`);
+    const expectedStrategyIds = prepared.definition.root.nodes
+      .filter(
+        (node) =>
+          node.kind === 'BoundedLoop' &&
+          node.lifecycle.strategy.capability !== undefined
+      )
+      .map((node) => `root:${node.id}/strategy`);
     const expectedBodyIds = prepared.definition.declarations
       .filter((declaration) =>
         referencedDeclarationIds.has(declaration.id)
@@ -737,7 +938,11 @@ export function analyzeReconcilerSupport(
             (node) => `declaration:${declaration.id}/node:${node.id}`
           )
       );
-    const expectedNodeIds = [...expectedRootIds, ...expectedBodyIds].sort(
+    const expectedNodeIds = [
+      ...expectedRootIds,
+      ...expectedBodyIds,
+      ...expectedStrategyIds,
+    ].sort(
       compareStrings
     );
     if (
@@ -766,6 +971,27 @@ export function analyzeReconcilerSupport(
   // is created rather than dying mid-Run at admission with
   // `No capability/policy binding`.
   if (requiresV2) {
+    // The 0.3.0 Dispatch-boundary crossing (issue-autodecompose-graph D2): a
+    // v1 definition carrying a `kind: decompose` stage reports its TRUE
+    // boundary FIRST — the decompose stage is a Dispatch-domain construct the
+    // reconciler engine does not execute as an engine node. Checking before
+    // the null-profile short-circuit means the reason no longer depends on
+    // WHERE binding happens to throw: `normalizeV1` maps a decompose stage to
+    // a synthetic `pipeline:<child>` capability no catalog carries, discovery
+    // yields a null profile, and the old first-reached answer —
+    // `execution_profile_unavailable` — read as a resolvable-sounding profile
+    // problem for a construct the engine will never dispatch. The fail-closed
+    // LAUNCH outcome is unchanged (below `availableEngines` still names
+    // legacy, `pipeline start`'s reconciler-only door still refuses); only
+    // the stated reason becomes truthful. `task-loop` (v1, no decompose
+    // stage) and the six v2 built-ins never reach this branch, and
+    // `execution_profile_unavailable` remains reachable below for genuinely
+    // unresolvable bindings. The flat path needs no change: its
+    // `hasUnsupportedSemantics` check already reports the same reason for a
+    // non-standard stage kind.
+    if (hasDecomposeStage(pipeline)) {
+      return unsupported('unsupported_pipeline_semantics');
+    }
     if (profile === null) {
       return unsupported('execution_profile_unavailable');
     }

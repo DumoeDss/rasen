@@ -77,7 +77,7 @@ async function resolveProjectContext(
  */
 export type ConfigContext =
   | { kind: 'project'; root: string | undefined; ref: ProjectRef | null; storeLayer: StoreConfigLayer | null }
-  | { kind: 'store'; storeId: string; storeRoot: string };
+  | { kind: 'store'; storeId: string; storeUid?: string; storeRoot: string };
 
 export type ConfigContextResult = { ok: true; context: ConfigContext } | ProjectContextErr;
 
@@ -94,6 +94,7 @@ export async function resolveRootConfigContext(root: string): Promise<ConfigCont
     return {
       kind: 'store',
       storeId: registeredStore.id,
+      ...(registeredStore.uid !== undefined ? { storeUid: registeredStore.uid } : {}),
       storeRoot: registeredStore.root,
     };
   }
@@ -161,7 +162,15 @@ export async function resolveConfigContext(
     }
     const space = resolved.space;
     if (space.type === 'store') {
-      return { ok: true, context: { kind: 'store', storeId: space.id, storeRoot: space.root } };
+      return {
+        ok: true,
+        context: {
+          kind: 'store',
+          storeId: space.id,
+          ...(space.uid !== undefined ? { storeUid: space.uid } : {}),
+          storeRoot: space.root,
+        },
+      };
     }
     const spaceLayer = await projectStoreLayer(space.root, space.id);
     if (!spaceLayer.ok) return spaceLayer;
@@ -190,15 +199,36 @@ export async function resolveConfigContext(
  */
 export function contextResolveOptions(context: ConfigContext): ResolveEffectiveConfigOptions {
   if (context.kind === 'store') {
-    return { store: { storeId: context.storeId, storeRoot: context.storeRoot }, includeWildcards: true };
+    return {
+      store: {
+        storeId: context.storeId,
+        ...(context.storeUid !== undefined ? { storeUid: context.storeUid } : {}),
+        storeRoot: context.storeRoot,
+      },
+      includeWildcards: true,
+    };
   }
   return { projectRoot: context.root, store: context.storeLayer, includeWildcards: true };
 }
 
 /** The store-layer reference reported in a response body (design D6). */
 export function contextStoreRef(context: ConfigContext): StoreLayerRef | null {
-  if (context.kind === 'store') return { id: context.storeId, root: context.storeRoot };
-  return context.storeLayer ? { id: context.storeLayer.storeId, root: context.storeLayer.storeRoot } : null;
+  if (context.kind === 'store') {
+    return {
+      id: context.storeId,
+      ...(context.storeUid !== undefined ? { uid: context.storeUid } : {}),
+      root: context.storeRoot,
+    };
+  }
+  return context.storeLayer
+    ? {
+        id: context.storeLayer.storeId,
+        ...(context.storeLayer.storeUid !== undefined
+          ? { uid: context.storeLayer.storeUid }
+          : {}),
+        root: context.storeLayer.storeRoot,
+      }
+    : null;
 }
 
 /** The project reference reported in a response body — null for a store context. */

@@ -1,0 +1,23 @@
+{
+  "targetLineId": "line-0.2",
+  "storeId": "issue-registry",
+  "storeUid": "f76edc31-229a-42bc-a5c7-848021eeb2da",
+  "storeRef": "refs/heads/main",
+  "projects": {
+    "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7": {
+      "codeRef": "refs/heads/dev/0.2.0"
+    }
+  },
+  "path": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store\\.rasen-store\\target-lines\\line-0.2.yaml",
+  "suggestedCommits": [
+    {
+      "repoRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+      "pathspecs": [
+        ".rasen-store/target-lines/line-0.2.yaml"
+      ],
+      "message": "chore(store): record target line line-0.2",
+      "rationale": "The target-line catalog is Git-tracked Store content. Rasen wrote the file and staged nothing.",
+      "command": "git -C E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store add -- .rasen-store/target-lines/line-0.2.yaml && git -C E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store commit -m \"chore(store): record target line line-0.2\""
+    }
+  ]
+}

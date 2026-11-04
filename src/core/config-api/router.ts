@@ -32,6 +32,7 @@ import { serializeConfigEntry } from './serialize.js';
 import { writeGlobalConfigKeyMinimalDiff, GlobalConfigWriteError } from './global-write.js';
 import { serveStatic } from './static.js';
 import type { ProjectRef, StoreLayerRef } from './wire-types.js';
+import type { DetectedHostRuntime } from '../runtime-adapters.js';
 
 /** A write scope on the config API — the registry scopes plus nothing else. */
 type WriteScope = ConfigScope;
@@ -47,6 +48,8 @@ export interface ConfigApiContext {
   version: string;
   /** Resolved UI package `dist/` directory, or null when not installed (D7). */
   uiAssetsDir: string | null;
+  /** Host detected by the launching CLI; tests and embedded hosts may inject it. */
+  hostRuntime?: DetectedHostRuntime;
 }
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;

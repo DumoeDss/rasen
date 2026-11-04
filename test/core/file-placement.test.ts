@@ -10,13 +10,14 @@ import {
   probesFallbackDir,
   designDocsDir,
   archiveBookkeepingDir,
-  resolveExecutionRoot,
   deriveWorkspaceIdentity,
   EXECUTION_STATE_DIR_NAME,
 } from '../../src/core/file-placement.js';
 import { PROBE_PLACEMENT_GUIDANCE } from '../../src/core/templates/experts/_shared.js';
+// 0.1.7 renamed the explore workflow to `prototype`; this line still calls it
+// explore. Same template, same PROBE_PLACEMENT_GUIDANCE contract.
+import { getExploreSkillTemplate as getPrototypeSkillTemplate } from '../../src/core/templates/workflows/explore.js';
 import { getInvestigateSkillTemplate } from '../../src/core/templates/experts/investigate.js';
-import { getExploreSkillTemplate } from '../../src/core/templates/workflows/explore.js';
 
 describe('per-class landing resolvers', () => {
   const changeRoot = path.join('C:', 'proj', 'rasen', 'changes', 'my-change');
@@ -96,41 +97,16 @@ describe('per-class landing resolvers', () => {
   });
 });
 
-describe('resolveExecutionRoot', () => {
-  it('equals the planning root for an in-repo project', () => {
-    const planningRoot = path.join('C:', 'proj');
-    expect(resolveExecutionRoot(planningRoot)).toBe(planningRoot);
-  });
-
-  it('for a store-selected run resolves the cwd code project root', () => {
-    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-fp-exec-')));
-    try {
-      const repo = path.join(tmp, 'code-project');
-      const nested = path.join(repo, 'src', 'deep');
-      fs.mkdirSync(nested, { recursive: true });
-      fs.mkdirSync(path.join(repo, '.git'), { recursive: true });
-
-      const storeRoot = path.join(tmp, 'store');
-      fs.mkdirSync(storeRoot, { recursive: true });
-
-      expect(resolveExecutionRoot(storeRoot, { cwd: nested, storeSelected: true })).toBe(repo);
-    } finally {
-      fs.rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
-  it('for a store-selected run with no enclosing checkout falls back to the cwd', () => {
-    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-fp-exec2-')));
-    try {
-      const storeRoot = path.join(tmp, 'store');
-      fs.mkdirSync(storeRoot, { recursive: true });
-      const resolved = resolveExecutionRoot(storeRoot, { cwd: storeRoot, storeSelected: true });
-      // No .git anywhere above tmp in the test sandbox: the cwd itself is used.
-      expect([storeRoot, resolved]).toContain(resolved);
-      expect(path.isAbsolute(resolved)).toBe(true);
-    } finally {
-      fs.rmSync(tmp, { recursive: true, force: true });
-    }
+describe('execution-root derivation is not a placement concern', () => {
+  it('exports no cwd-probing execution-root resolver', async () => {
+    // The retired `resolveExecutionRoot()` walked up from the current directory
+    // for a `.git` ancestor and fell back to the cwd itself. Execution
+    // authority is now carried by the resolved planning scope
+    // (`resolvedExecutionProjectRoot`), because `specs/file-placement/spec.md`
+    // requires unavailable execution authority to stay unavailable instead of
+    // being inferred from cwd, a Store checkout, or Store membership.
+    const placement = await import('../../src/core/file-placement.js');
+    expect(Object.keys(placement)).not.toContain('resolveExecutionRoot');
   });
 });
 
@@ -219,7 +195,7 @@ describe('probe placement guidance reaches the generated templates', () => {
   });
 
   it('is carried by the skills that authorize writing probe code', () => {
-    for (const template of [getExploreSkillTemplate(), getInvestigateSkillTemplate()]) {
+    for (const template of [getPrototypeSkillTemplate(), getInvestigateSkillTemplate()]) {
       expect(template.instructions, template.name).toContain(PROBE_PLACEMENT_GUIDANCE);
     }
   });

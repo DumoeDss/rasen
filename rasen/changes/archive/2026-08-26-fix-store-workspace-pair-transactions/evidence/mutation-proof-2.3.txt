@@ -1,0 +1,60 @@
+MUTATION PROOF for task 2.3 — the resume-integrity guard bites.
+
+Landing site (verified unique before mutating):
+  $ grep -c 'live.worktreeInstanceId !== recordedIdentity' src/core/store/workspace/apply.ts
+  1        (src/core/store/workspace/apply.ts:209)
+
+sha256 src/core/store/workspace/apply.ts
+  before mutation : 6a359f7b364561f55e04cdabd50c45c2ef334c63a9ca1dfd6563639a89862c36
+  mutated         : ed1211b003e30bf19bbf147aa02058ebb96cdaf7c6dcc9600b8cdf79c55b8386
+  after revert    : 6a359f7b364561f55e04cdabd50c45c2ef334c63a9ca1dfd6563639a89862c36  (identical to before)
+
+Mutation: !== flipped to === at apply.ts:209, nothing else touched.
+Asserted line that reddened: test/core/store/workspace-repreparation.test.ts:470
+  expect(refusal.message).toContain('identity of the created planning worktree');
+
+Run: pnpm exec vitest run test/core/store/workspace-repreparation.test.ts -t 'still refuses a resumed created destination'
+
+
+ RUN  v3.2.6 E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code
+
+ ↓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > applies a re-plan whose created destination is simply absent (task 2.2)
+ ↓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > refuses a second pair at a fresh destination while the recorded pair is live, and converges after cleanup (task 3.2)
+ ↓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > states the re-creation of a vanished recorded pair in the preview (task 3.3)
+ ↓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > treats a case-aliased spelling of the recorded root as the same root (task 3.3)
+ ↓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > names the ref and frozen commit every created side is born from (task 4.1)
+ × test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > still refuses a resumed created destination that is a different incarnation (task 2.3) 6407ms
+   → expected 'The identity of the created execution…' to contain 'identity of the created planning work…'
+ ↓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > prepares in one invocation on a line that advanced moments before (task 4.4)
+ ↓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > still refuses stale when a competitor moves the ref inside the compound window, and converges on repeat (task 4.4)
+ ↓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > fails the compound with a named lock holder rather than deadlocking (task 4.4)
+ ↓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > reattaches the pair branch an earlier pair left behind rather than re-minting it
+ ↓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > refuses a created side whose pair branch another worktree already has checked out
+ ↓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > refuses stale when the reattached pair branch moves between planning and applying
+ ↓ test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > designed staleness > refuses a moved Store ref, naming both the frozen and the live commit (task 1.4)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/core/store/workspace-repreparation.test.ts > re-preparing a Change workspace pair > fixed contract > still refuses a resumed created destination that is a different incarnation (task 2.3)
+AssertionError: expected 'The identity of the created execution…' to contain 'identity of the created planning work…'
+
+Expected: "identity of the created planning worktree"
+Received: "The identity of the created execution worktree C:\Users\Sayo\AppData\Local\Temp\rasen-workspace-repreparation-OXV6wM\app-a-redesign moved between planning and applying, so the plan no longer describes reality. (recorded: wt_24f6f73f0ea5616afbad4071b03a8a9e85346986e15cb0584ee5ab6b7dd6fbc7; live: wt_24f6f73f0ea5616afbad4071b03a8a9e85346986e15cb0584ee5ab6b7dd6fbc7)"
+
+ ❯ test/core/store/workspace-repreparation.test.ts:470:33
+    468|         const refusal = await refusalFrom(() => f.workspace().apply(pl…
+    469|         expect(refusal.code).toBe('workspace_plan_stale');
+    470|         expect(refusal.message).toContain('identity of the created pla…
+       |                                 ^
+    471|         expect(refusal.expected).toBe(ZERO_IDENTITY);
+    472|         expect(refusal.actual).toBe(live?.worktreeInstanceId);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 12 skipped (13)
+   Start at  14:19:26
+   Duration  19.33s (transform 3.73s, setup 66ms, collect 11.83s, tests 6.41s, environment 0ms, prepare 282ms)
+
+EXIT=1

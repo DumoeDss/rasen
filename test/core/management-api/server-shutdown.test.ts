@@ -8,6 +8,7 @@ import { startManagementServer, type ManagementServerHandle } from '../../../src
 import type { ManagementApiContext } from '../../../src/core/management-api/router.js';
 import { fakeClaudeBin } from '../../helpers/fake-claude-bin.js';
 import { cleanupTempPathAsync } from '../../helpers/temp-cleanup.js';
+import type { SessionHost } from '../../../src/core/session-host/contracts.js';
 
 const TOKEN = 'test-token-shutdown-abc123';
 
@@ -124,5 +125,38 @@ describe('foreground server shutdown reaps live sessions (design D6, task 3.4)',
     await handle.stopServer();
     // Well under the 8s session-shutdown backstop — nothing was live to wait on.
     expect(Date.now() - start).toBeLessThan(3000);
+  });
+
+  it('keeps shutdown retryable when hosted process close is not yet observed', async () => {
+    const context: ManagementApiContext = {
+      token: TOKEN,
+      launchProjectRoot: projectRoot,
+      launchProjectRef: { projectId: 'launch-proj', name: 'proj', root: projectRoot },
+      version: '0.0.0-test',
+      uiAssetsDir: null,
+    };
+    let attempts = 0;
+    const sessionHost: SessionHost = {
+      async dispatch(command) {
+        return { ok: false, op: command.op, code: 'session-busy', message: 'not used' };
+      },
+      inspect() { return undefined; },
+      list() { return []; },
+      async reconcileOnStart() {
+        return { ready: true, inspected: 0, recovered: 0, interrupted: 0, failed: 0, diagnostics: [] };
+      },
+      async shutdown() {
+        attempts += 1;
+        if (attempts === 1) throw new Error('exact process close unobserved');
+      },
+    };
+    handle = await startManagementServer({
+      context,
+      sessions: { sessionHostOverride: sessionHost },
+    });
+
+    await expect(handle.stopServer()).rejects.toThrow('exact process close unobserved');
+    await expect(handle.stopServer()).resolves.toBeUndefined();
+    expect(attempts).toBe(2);
   });
 });

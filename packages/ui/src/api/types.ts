@@ -33,6 +33,7 @@ export interface ProjectRef {
  */
 export interface StoreLayerRef {
   id: string;
+  uid?: string;
   root: string;
 }
 
@@ -99,6 +100,11 @@ export interface ApiErrorBody {
     cliExitCode?: number;
     stderr?: string;
     details?: ThemeValidationDetail[];
+    recovery?: {
+      kind: 'issue-publication-indeterminate';
+      identity: { uid: string; key: string };
+      retrySafe: false;
+    };
   };
 }
 
@@ -160,7 +166,12 @@ export type ThresholdSchemeListEntry =
   | { name: string; valid: false; error: string };
 
 export type ThresholdBindingScope = 'project' | 'store' | 'global';
-export type ThresholdBindingRow = 'claude' | 'codex' | 'default';
+/**
+ * Mirrors the CLI's binding rows, which the server derives from
+ * `canProbeContext` — `omp` joined when Oh My Pi gained a context reader — so a
+ * new probe-capable runtime means widening this union in lockstep.
+ */
+export type ThresholdBindingRow = 'claude' | 'codex' | 'omp' | 'default';
 
 export interface ThresholdBindingMetadata {
   scope: ThresholdBindingScope;
@@ -246,6 +257,10 @@ export interface WirePipeline {
   >;
   effectiveReuse?: WireEffectiveReuse;
   stages: WirePipelineStage[];
+  buildOrder?: string[];
+  capabilityPaths?: readonly WirePreparedExecutionCapabilityPath[];
+  policyPaths?: readonly WirePreparedExecutionPolicyPath[];
+  boundedLoops?: readonly WirePreparedBoundedLoopPolicy[];
   authoredVersion?: number;
   normalizedVersion?: 2;
   definitionValid?: boolean;
@@ -253,6 +268,8 @@ export interface WirePipeline {
   executable?: boolean;
   executionMode?: 'legacy' | 'reconciler' | 'unavailable';
   unavailableReason?: string;
+  /** Named migration boundary for an intentionally retained package v1 fixture. */
+  compatibilityBoundary?: 'issue-dispatch-0.3.0';
   diagnostics?: PipelineValidationIssue[];
   /**
    * Additive engine support analysis (task 14.7/14.8): present on the detail
@@ -266,6 +283,35 @@ export interface WirePipeline {
     reason: ReconcilerSupportReason;
     profileDigest: string;
   };
+}
+
+export interface WirePreparedExecutionCapabilityPath {
+  profilePath: string;
+  capability: { id: string; version: string };
+  workspace: 'none' | 'read' | 'write';
+}
+
+export interface WirePreparedExecutionPolicyPath {
+  profilePath: string;
+  role: string;
+  runtime: WireEffectiveValue<'claude' | 'codex'>;
+  model: WireEffectiveValue<string | null>;
+  effort: WireEffectiveValue<string | null>;
+  sandbox: 'read-only' | 'workspace-write';
+  effectiveGate: WireEffectiveValue<boolean>;
+  sessionReuse: {
+    effective: 'never' | 'same-invocation';
+    authored?: 'none' | 'stage' | 'run-planner' | 'review-thread';
+    source: string;
+  };
+  handoffTokenLimit: WireEffectiveValue<number>;
+  reuseRoundLimit: WireEffectiveValue<number>;
+}
+
+export interface WirePreparedBoundedLoopPolicy {
+  nodeId: string;
+  limits: { maxIterations: number; maxActions?: number; budget?: number };
+  lifecycle: WireBoundedLoopLifecyclePolicyV1;
 }
 
 export interface ThresholdPresetSeed {
@@ -651,6 +697,12 @@ export interface SessionSpaceWire {
   type: 'project' | 'store';
   id: string;
   root: string;
+  planning?: {
+    storeUid?: string;
+    storeId?: string;
+    projectId?: string;
+    targetLineId?: string;
+  };
 }
 
 /**
@@ -661,7 +713,18 @@ export interface SessionSpaceWire {
  */
 export type SessionExecutionWire =
   | { kind: 'planning-only' }
-  | { kind: 'project'; projectId: string; root: string; home?: string };
+  | {
+      kind: 'project';
+      projectId: string;
+      root: string;
+      home?: string;
+      worktree?: {
+        root: string;
+        worktreeInstanceId: string;
+        ref?: string;
+        headOid?: string;
+      };
+    };
 
 /** Mirrors `SessionRecord` (session-registry.ts) as sent over the wire. */
 export interface SessionRecordWire {
@@ -772,7 +835,10 @@ export interface ProjectSpaceEntry {
 /** A registered store space (design D6): its members inline (reverse-enumerated per D4). */
 export interface StoreSpaceEntry {
   type: 'store';
+  /** Display alias retained as `id` for compatibility with older daemons. */
   id: string;
+  /** Permanent identity and canonical UI selector for an upgraded Store. */
+  uid?: string;
   name: string;
   root: string;
   members: SpaceMember[];
@@ -859,13 +925,17 @@ export type ChooseLocalPathResponse =
 export type CreateSpaceRequest =
   | { op: 'create-project'; path: string }
   | { op: 'create-store'; parent: string; id: string }
-  | { op: 'register-store'; path: string; id?: string };
+  | { op: 'register-store'; path: string; id?: string }
+  | { op: 'add-project-to-store'; projectId: string; storeId: string };
 
-/** `POST /api/v1/spaces` success response (design D4): the operation performed plus the new space's listing entry. */
-export interface CreateSpaceResponse {
-  operation: 'init' | 'store-register' | 'store-setup';
-  space: SpaceEntry;
-}
+/** `POST /api/v1/spaces` success response: fresh catalog truth after the requested mutation. */
+export type CreateSpaceResponse =
+  | { operation: 'init'; space: ProjectSpaceEntry }
+  | { operation: 'store-register' | 'store-setup'; space: StoreSpaceEntry }
+  | { operation: 'store-add-project'; space: StoreSpaceEntry };
+
+/** The precise HTTP 200 member returned by `add-project-to-store`. */
+export type AddProjectToStoreResponse = Extract<CreateSpaceResponse, { operation: 'store-add-project' }>;
 
 // ---- Workflow library (workflow-http-api design D3/D4) ----
 // Source of truth: `src/core/management-api/wire-types.ts` in the root package.
@@ -1124,7 +1194,12 @@ export interface PipelineHandoffConfig {
 }
 
 /** Per-stage handoff overrides — same shape as `PipelineHandoffConfig` minus `roles` (pipeline-level only). */
-export type PipelineStageHandoffConfig = Omit<PipelineHandoffConfig, 'roles'>;
+export interface PipelineStageHandoffConfig {
+  threshold?: ThresholdValue;
+  maxRelays?: number;
+  stallLimit?: number;
+  [key: string]: unknown;
+}
 
 export type PipelineReuseMode = 'auto' | 'never';
 
@@ -1203,6 +1278,37 @@ export interface WirePipelineDefinitionStage {
 }
 
 /**
+ * Optional content limits for a consultation binding. Each field is individually
+ * optional and defaults to the corresponding server maximum at resolve time.
+ * Mirrors `ConsultationContentLimitsYamlSchema` from
+ * `src/core/pipeline-registry/types.ts`.
+ */
+export interface WireConsultationContentLimits {
+  maxQuestionBytes?: number;
+  maxAdviceBytes?: number;
+  maxAttemptedApproaches?: number;
+  maxConstraints?: number;
+  maxEvidencePointers?: number;
+  maxAdviceSteps?: number;
+  maxCautions?: number;
+  maxEvidenceNotes?: number;
+}
+
+/**
+ * A consultation binding in the pipeline YAML. Each entry maps a source stage
+ * (by stage id) to a Teacher capability and declares per-invocation /
+ * per-consultation limits. Mirrors `ConsultationBindingYamlSchema` from
+ * `src/core/pipeline-registry/types.ts`.
+ */
+export interface WireConsultationBinding {
+  sourceStage: string;
+  teacherSkill: string;
+  maxConsultationsPerInvocation: number;
+  maxTeacherAttemptsPerConsultation: number;
+  limits?: WireConsultationContentLimits;
+}
+
+/**
  * A pipeline's full declared definition (mirrors `WirePipelineDefinition` =
  * `PipelineYaml`) — the JSON projection of the loader's own accepted schema.
  * Round-tripping this value through a future `save` and back through `detail`
@@ -1219,6 +1325,12 @@ export interface WirePipelineDefinitionV1 {
   /** Marks a machine-assembled pipeline: `'composed'` (autopilot LEAD) or `'ui'` (this canvas' future editor). Absent = human-authored. */
   origin?: 'composed' | 'ui';
   stages: WirePipelineDefinitionStage[];
+  /**
+   * Optional consultation bindings (mirrors `PipelineYamlSchema.consultations`
+   * from child 3). When present, the profile resolver adds Teacher capability
+   * bindings and consultation entries to the execution profile.
+   */
+  consultations?: WireConsultationBinding[];
 }
 
 export interface WireDefinitionPort {
@@ -1230,6 +1342,45 @@ export interface WireDefinitionPort {
 export interface WireDefinitionArtifact {
   name: string;
   type: string;
+}
+
+export interface WireDefinitionLimits {
+  maxActions?: number;
+  budget?: number;
+  [key: string]: unknown;
+}
+
+export type WireStageRole =
+  | 'planner'
+  | 'implementer'
+  | 'reviewer'
+  | 'fixer'
+  | 'shipper';
+
+export type WireReviewCyclePhase = 'review' | 'triage' | 'fix' | 're-review';
+export type WireGoalCyclePhase = 'work' | 'judge';
+export type WireGoalCycleVariant = 'measure' | 'evaluate' | 'research';
+
+export interface WireAtomicStageWorkspaceV1 {
+  access: 'none' | 'read' | 'write';
+  [key: string]: unknown;
+}
+
+/** Complete authored v2 AtomicStage execution declaration. */
+export interface WireAtomicStageExecutionV1 {
+  version: 1;
+  role: WireStageRole;
+  workspace: WireAtomicStageWorkspaceV1;
+  leadReview?: boolean;
+  verifyPolicy?: PipelineVerifyPolicy;
+  runtime?: PipelineAgentRuntime;
+  model?: string;
+  effort?: string;
+  sandbox?: PipelineAgentRuntimeSandbox;
+  sessionReuse?: PipelineAgentRuntimeSessionReuse;
+  handoff?: PipelineStageHandoffConfig;
+  /** Forward-compatible authored fields survive unrelated edits. */
+  [key: string]: unknown;
 }
 
 export interface WireDefinitionNodeBase {
@@ -1249,6 +1400,10 @@ export interface WireDefinitionNodeBase {
 export interface WireAtomicStageNode extends WireDefinitionNodeBase {
   kind: 'AtomicStage';
   capability: { id: string; version: string };
+  /** Optional on the wire so an invalid draft can still render its diagnostics; required for valid authored v2. */
+  execution?: WireAtomicStageExecutionV1;
+  reviewCyclePhase?: WireReviewCyclePhase;
+  goalCyclePhase?: WireGoalCyclePhase;
 }
 
 export interface WireCompositeRefNode extends WireDefinitionNodeBase {
@@ -1260,10 +1415,51 @@ export interface WireBoundedLoopNode extends WireDefinitionNodeBase {
   kind: 'BoundedLoop';
   body: string;
   limits: { maxIterations: number; maxActions?: number; budget?: number };
+  /** Read-side compatibility is optional; current authored v2 requires v1. */
+  lifecycle?: WireBoundedLoopLifecyclePolicyV1;
   exits: Record<
     string,
     { action: 'continue' } | { action: 'exit'; outcome: string }
   >;
+  goalCycleVariant?: WireGoalCycleVariant;
+}
+
+export type WireLoopLifecycleTerminalExit = {
+  action: 'exit' | 'escalate' | 'fail';
+  outcome: string;
+};
+
+export type WireLoopLifecycleExit =
+  | WireLoopLifecycleTerminalExit
+  | { action: 'strategy' };
+
+export type WireLoopLifecycleBlockedExit =
+  | WireLoopLifecycleExit
+  | { action: 'human-required'; outcome: string };
+
+export interface WireBoundedLoopLifecyclePolicyV1 {
+  version: 1;
+  thresholds: {
+    stallIterations: number;
+    sameBlockerAttempts: number;
+    [key: string]: unknown;
+  };
+  strategy: {
+    maxAttempts: number;
+    requireMaterialChange: true;
+    capability?: { id: string; version: string };
+    [key: string]: unknown;
+  };
+  exits: {
+    iterationLimit: WireLoopLifecycleExit;
+    actionLimit: WireLoopLifecycleTerminalExit;
+    budgetLimit: WireLoopLifecycleTerminalExit;
+    stalled: WireLoopLifecycleExit;
+    blocked: WireLoopLifecycleBlockedExit;
+    strategyExhausted: WireLoopLifecycleTerminalExit;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
 }
 
 export interface WireChoiceNode extends WireDefinitionNodeBase {
@@ -1274,16 +1470,31 @@ export interface WireChoiceNode extends WireDefinitionNodeBase {
 export interface WireFanOutNode extends WireDefinitionNodeBase {
   kind: 'FanOut';
   branches: string[];
+  concurrencyCap: number;
+  budget: number;
+  joinNodeId: string;
+  members: Array<{
+    id: string;
+    hierarchicalPath: string;
+    required: boolean;
+    condition: string;
+    [key: string]: unknown;
+  }>;
 }
 
 export interface WireJoinNode extends WireDefinitionNodeBase {
   kind: 'Join';
   inputs: string[];
+  requiredMembers: string[];
+  optionalMembers: string[];
+  outcomes: { proceed: string; failed: string; [key: string]: unknown };
 }
 
 export interface WireGateNode extends WireDefinitionNodeBase {
   kind: 'Gate';
+  target: string;
   outcomes: string[];
+  dispositions: Record<string, 'proceed' | 'fail' | 'escalate'>;
 }
 
 export interface WireFinishNode extends WireDefinitionNodeBase {
@@ -1336,7 +1547,13 @@ export interface WirePipelineDefinitionV2 {
   outcomes: string[];
   declarations: WireCompositeDeclaration[];
   root: WireDefinitionGraph;
-  limits?: { maxActions?: number; budget?: number };
+  limits?: WireDefinitionLimits;
+  /**
+   * Optional consultation bindings. Authored extension field preserved
+   * losslessly by the server's Definition v2 round-trip; typed here so the
+   * Canvas reads and edits it type-safely.
+   */
+  consultations?: WireConsultationBinding[];
   /** Authored extension fields are retained losslessly even when unexposed. */
   [key: string]: any;
 }
@@ -1398,6 +1615,12 @@ export interface PipelineCatalogSkill {
   description: string;
   /** Whether the skill is enabled in the active profile selection (a disabled skill is still listed, greyed out in the palette). */
   enabled: boolean;
+  /**
+   * The skill's declared workflow kind, passed through by the server from the
+   * workflow registry — never inferred client-side. Absent on older servers;
+   * the palette degrades such skills to the workflows group.
+   */
+  kind?: 'task' | 'driver' | 'internal' | 'expert';
   /** Exact trusted Definition capability revision; absent on older servers. */
   capability?: {
     id: string;
@@ -1466,10 +1689,34 @@ export interface RunActionView {
   effects: EffectView[];
 }
 
+/** A canonical evidence reference rendered for lifecycle waits. */
+export interface RunEvidenceRef {
+  format: 'change-run-evidence-ref/1';
+  store: 'change-run';
+  evidenceDigest: string;
+  contentDigest: string;
+  mediaType: string;
+  size: number;
+  observationKind: string;
+  producer: { id: string; version: string; identityDigest: string };
+  binding: {
+    planningSpaceId: string;
+    changeInstanceId: string;
+    projectId: string;
+    changeId: string;
+    runId: string;
+    actionId: string;
+    effectId?: string;
+    treeDigest?: string;
+    schema: string;
+  };
+}
+
 /** A discriminated wait reason projected from committed Record truth. */
 export type WaitView =
   | { waitId: string; kind: 'gate'; nodeId: string; invocationId: string; occurrence: number; gateId: string; decisionIds: string[] }
   | { waitId: string; kind: 'domain-blocked'; nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; effectIds: string[]; reasonCode: string }
+  | { waitId: string; kind: 'human-required'; nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; effectIds: string[]; loopPath: string; phase: string; blockerFingerprint: string; reasonCode: string; outcome: string; evidence: readonly RunEvidenceRef[]; decisionIds: readonly ['retry', 'escalate'] }
   | { waitId: string; kind: 'infrastructure'; nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; effectIds: string[]; code: string; retryable: boolean }
   | { waitId: string; kind: 'uncertain-effect'; nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; effectIds: string[] }
   | { waitId: string; kind: 'capability-unavailable'; nodeId: string; invocationId: string; occurrence: number; attemptId: string; actionId: string; effectIds: string[]; code: string }
@@ -1552,14 +1799,28 @@ export interface RunControlRequestBody {
 /**
  * The sealed POST response (mirrors `RunControlResponse`): the committed view
  * + disposition + ALWAYS-empty action list. The bridge seals `deliveryMode:
- * 'defer'`: no executable Agent/Command/Host payload ever leaves via HTTP —
- * the first atomic grant happens on a later trusted CLI `resume-run`. The UI
- * replaces its local view from `view` and never expects executable actions.
+ * 'defer'`: no executable Agent/Command/Host payload ever leaves via HTTP. A
+ * trusted source driver may consume the prompt-free candidate preview and use
+ * the private CLI `pipeline admit` boundary. The UI replaces its local view
+ * from `view` and never expects executable actions.
  */
+export interface RunControlAgentCandidate {
+  format: 'change-run-agent-candidate/1';
+  candidateId: string;
+  runId: string;
+  recordVersion: number;
+  nodeId: string;
+  occurrence: number;
+  profilePath?: string;
+  input?: unknown;
+}
+
 export interface RunControlResponseBody {
   view: ChangeRunView;
   disposition: string;
   actions: readonly never[];
+  /** Additive for compatibility with management servers predating previews. */
+  candidates?: readonly RunControlAgentCandidate[];
 }
 
 /** An active invocation projected from the root-DAG frontier. */
@@ -1612,6 +1873,46 @@ export interface ReviewCycleViewSection {
   };
   waitReason?: string;
   maxRounds: number;
+}
+
+/** Goal domain truth, intentionally separate from shared lifecycle counters. */
+export interface GoalViewSection {
+  kind: 'goal';
+  version: 1;
+  loopPath: string;
+  variant: 'measure' | 'evaluate' | 'research';
+  round: number;
+  phase: 'work' | 'judge';
+  outcome?: 'satisfied' | 'exhausted';
+  lastScore?: number;
+  lastGaps: readonly string[];
+  waitReason?: string;
+}
+
+export interface BoundedLoopLifecycleViewSection {
+  kind: 'bounded-loop-lifecycle';
+  version: 1;
+  loopPath: string;
+  bodyKind: 'review-cycle' | 'goal-cycle' | 'composite';
+  state: 'running' | 'waiting' | 'strategizing' | 'human-required' | 'terminal';
+  iteration: number;
+  phase: string;
+  limits: {
+    iterations: { used: number; max: number };
+    actions: { used: number; max: number };
+    budget: { used: number; max: number };
+  };
+  progressFingerprint?: string;
+  stallStreak: number;
+  blockerFingerprint?: string;
+  blockedStreak: number;
+  strategy: { attempts: number; maxAttempts: number; active?: number };
+  wait?: { waitId: string; kind: string; reasonCode?: string };
+  outcome?: {
+    kind: 'completed' | 'iteration-limit' | 'action-limit' | 'budget-limit' | 'stalled' | 'blocked' | 'strategy-exhausted' | 'failed' | 'cancelled';
+    disposition: 'exit' | 'escalate' | 'fail' | 'cancel';
+    value?: string;
+  };
 }
 
 // --- ECP-4 parallel/1 and choice/1 sections ---
@@ -1680,6 +1981,88 @@ export interface ChoiceViewSection {
   branches: readonly ChoiceBranchView[];
 }
 
+/** Used/max counters carried by a consultation entry. */
+export interface ConsultationUsedMax {
+  used: number;
+  max: number;
+}
+
+/**
+ * A consultation entry projected from the canonical Record-backed view.
+ * Mirrors `ConsultationViewSectionSchema.entries` from
+ * `src/core/change-run/contracts.ts`. Renders projection facts only — no
+ * advice bodies, question content, or evidence content.
+ */
+export interface ConsultationViewEntry {
+  consultationId: string;
+  ordinal: number;
+  state:
+    | 'requested'
+    | 'teacher-active'
+    | 'advice-committed'
+    | 'continuation-granted'
+    | 'continued'
+    | 'unavailable'
+    | 'continuation-outcome-unknown'
+    | 'closed';
+  source: {
+    actionId: string;
+    invocationId: string;
+    attemptId: string;
+    occurrence: number;
+    stableSessionId: string;
+    model: string;
+    runtime: string;
+    questionDigest: string;
+    evidenceDigests: readonly string[];
+  };
+  teacher: {
+    actionId?: string;
+    invocationId?: string;
+    attemptId?: string;
+    model?: string;
+    runtime?: string;
+    adviceDecision?: 'plan' | 'correction' | 'stop';
+    adviceDigest?: string;
+    evidenceDigests: readonly string[];
+  };
+  counters: {
+    consultations: ConsultationUsedMax;
+    teacherAttempts: ConsultationUsedMax;
+  };
+  limits: {
+    maxQuestionBytes: number;
+    maxAdviceBytes: number;
+    maxAttemptedApproaches: number;
+    maxConstraints: number;
+    maxEvidencePointers: number;
+    maxAdviceSteps: number;
+    maxCautions: number;
+    maxEvidenceNotes: number;
+  };
+  continuation?: {
+    requestId: string;
+    inputDigest: string;
+    state: 'granted' | 'settled' | 'ambiguous';
+  };
+  failure?: {
+    code: string;
+    detail?: string;
+  };
+}
+
+/**
+ * A consultation/1 section projected from a Run whose pipeline has consultation
+ * bindings. Mirrors `ConsultationViewSectionSchema` from
+ * `src/core/change-run/contracts.ts`. The UI CONSUMES this — it never derives
+ * consultation state, counters, or continuation authority client-side.
+ */
+export interface ConsultationViewSection {
+  kind: 'consultation';
+  version: 1;
+  entries: readonly ConsultationViewEntry[];
+}
+
 /** An additive unknown section (tolerated, not rendered by name). */
 export interface AdditiveViewSection {
   kind: string;
@@ -1690,8 +2073,11 @@ export interface AdditiveViewSection {
 export type ChangeRunViewSection =
   | RootDagViewSection
   | ReviewCycleViewSection
+  | GoalViewSection
+  | BoundedLoopLifecycleViewSection
   | ParallelViewSection
   | ChoiceViewSection
+  | ConsultationViewSection
   | AdditiveViewSection;
 
 /** Drift state reported by the server's comparison-only DriftObserver. */
@@ -1757,6 +2143,36 @@ export function getReviewCycleSection(view: ChangeRunView): ReviewCycleViewSecti
   return null;
 }
 
+/** Extracts recognized goal/1 domain truth without inferring lifecycle state. */
+export function getGoalSection(view: ChangeRunView): GoalViewSection | null {
+  for (const section of view.sections) {
+    if (section.kind === 'goal' && section.version === 1) {
+      return section as GoalViewSection;
+    }
+  }
+  return null;
+}
+
+/** Returns every recognized lifecycle/1 section; unknown future versions stay additive. */
+export function getBoundedLoopLifecycleSections(
+  view: ChangeRunView
+): readonly BoundedLoopLifecycleViewSection[] {
+  return view.sections.filter(
+    (section): section is BoundedLoopLifecycleViewSection =>
+      section.kind === 'bounded-loop-lifecycle' && section.version === 1
+  );
+}
+
+/** Future lifecycle versions remain visible but are never actionable. */
+export function getUnsupportedBoundedLoopLifecycleSections(
+  view: ChangeRunView
+): readonly AdditiveViewSection[] {
+  return view.sections.filter(
+    (section): section is AdditiveViewSection =>
+      section.kind === 'bounded-loop-lifecycle' && section.version !== 1
+  );
+}
+
 /**
  * Extracts the parallel/1 section from a ChangeRunView. Returns null when the
  * view has no parallel section (Runs whose plan has no FanOut node, or views
@@ -1781,6 +2197,22 @@ export function getChoiceSection(view: ChangeRunView): ChoiceViewSection | null 
   for (const section of view.sections) {
     if (section.kind === 'choice' && section.version === 1) {
       return section as ChoiceViewSection;
+    }
+  }
+  return null;
+}
+
+/**
+ * Extracts the consultation/1 section from a ChangeRunView. Returns null when
+ * the view has no consultation section (Runs whose pipeline has no consultation
+ * bindings, or views projected without the plan — e.g. the management API).
+ */
+export function getConsultationSection(
+  view: ChangeRunView
+): ConsultationViewSection | null {
+  for (const section of view.sections) {
+    if (section.kind === 'consultation' && section.version === 1) {
+      return section as ConsultationViewSection;
     }
   }
   return null;
@@ -1818,4 +2250,865 @@ export interface PipelineEngineSupport {
     reason: ReconcilerSupportReason;
     profileDigest: string;
   };
+}
+
+// ---- Store aggregate (store-issue-resources) ----
+// Source of truth: `src/core/management-api/wire-types.ts` in the root
+// package (`GET`/`POST /api/v1/stores/*`). Same hand-maintained-mirror
+// discipline as the rest of this file: copied field-for-field, `readonly`
+// dropped like every other mirror here. The core file aliases each response
+// type directly to a `StoreAggregateQuery`/`StoreIssues` domain type rather
+// than a hand-authored envelope (the wire body is that type, unwrapped) — this
+// mirror redeclares the same shape as a plain interface instead, since a type
+// ALIAS to a package this UI cannot import is not an option here.
+
+export interface StoreCatalogDiagnostic {
+  code: string;
+  message: string;
+  path: string;
+}
+
+/**
+ * An item the query reached and could not read — a Change whose committed
+ * metadata does not validate, an Issue record that does not parse. Not the
+ * same as an unsearched ref, where the bytes were never reached at all.
+ */
+export interface StoreAggregateProblem {
+  kind: 'change' | 'issue';
+  itemId: string;
+  storeRef: string | null;
+  path: string;
+  reason: string;
+}
+
+/** Carried by every Store aggregate read response. */
+export interface StoreAggregateCompleteness {
+  unsearchedRefs: { targetLineId: string; storeRef: string; reason: string }[];
+  problems: StoreAggregateProblem[];
+  complete: boolean;
+}
+
+export interface StoreProjectRollupEntry {
+  projectId: string;
+  roles: { planning: boolean; knowledge: boolean } | null;
+  diagnostic: StoreCatalogDiagnostic | null;
+  targetLines: string[];
+  activeChangeCount: number;
+  archivedChangeCount: number;
+}
+
+/** `GET /api/v1/stores/projects` response. */
+export interface StoreProjectsResponse extends StoreAggregateCompleteness {
+  storeId: string;
+  storeUid: string;
+  projects: StoreProjectRollupEntry[];
+}
+
+export interface StoreTargetLineRollupEntry {
+  targetLineId: string;
+  storeRef: string | null;
+  diagnostic: StoreCatalogDiagnostic | null;
+  projects: string[];
+  activeChangeCount: number;
+  archivedChangeCount: number;
+}
+
+/** `GET /api/v1/stores/target-lines` response. */
+export interface StoreTargetLinesResponse extends StoreAggregateCompleteness {
+  storeId: string;
+  storeUid: string;
+  targetLines: StoreTargetLineRollupEntry[];
+}
+
+/** An absolute path that locates something on THIS machine and grants nothing. */
+export interface StoreInertLocalLocator {
+  root: string;
+  kind: 'planning-worktree';
+  portable: false;
+}
+
+export interface StoreAggregateChangeEntry {
+  changeId: string;
+  changeInstanceId: string | null;
+  projectId: string;
+  targetLineId: string;
+  foundAtRef: string;
+  localLocator: StoreInertLocalLocator | null;
+}
+
+export interface StoreAggregateArchiveEntry {
+  changeId: string;
+  changeInstanceId: string | null;
+  projectId: string;
+  targetLineId: string;
+  entryName: string;
+  archiveDate: string | null;
+  outcome: string | null;
+  legacyRecord: boolean;
+  foundAtRef: string;
+}
+
+export interface StoreChangeGroup {
+  projectId: string;
+  targetLineId: string;
+  active: StoreAggregateChangeEntry[];
+  archived: StoreAggregateArchiveEntry[];
+}
+
+/** `GET /api/v1/stores/changes` response. */
+export interface StoreChangesResponse extends StoreAggregateCompleteness {
+  groups: StoreChangeGroup[];
+}
+
+export type StoreIssueState = 'open' | 'resolved' | 'dropped';
+
+export type StoreIssueAliasKind = 'legacy-id' | 'former-slug' | 'custom';
+
+export interface StoreIssueAlias {
+  kind: StoreIssueAliasKind;
+  value: string;
+}
+
+/** Public Issue identity. Physical storage locators are intentionally absent. */
+export interface StoreIssueIdentity {
+  readonly uid: string;
+  readonly key: string;
+  readonly slug: string | null;
+  readonly aliases: readonly StoreIssueAlias[];
+}
+
+/** Historical Issue record. Its authored id remains a compatibility alias. */
+export interface StoreIssueRecordV1Wire {
+  version: 1;
+  id: string;
+  title: string;
+  state: StoreIssueState;
+  reason: string | null;
+  createdAt: string;
+}
+
+/** New Issue record, owned by the system-assigned UID. */
+export interface StoreIssueRecordV2Wire {
+  version: 2;
+  identity: StoreIssueIdentity;
+  title: string;
+  state: StoreIssueState;
+  reason: string | null;
+  createdAt: string;
+}
+
+export type StoreIssueRecordWire = StoreIssueRecordV1Wire | StoreIssueRecordV2Wire;
+
+export interface StoreIssueRecordCopy {
+  storeRef: string | null;
+  targetLineId: string | null;
+  identity: StoreIssueIdentity | null;
+  sha256: string;
+  record: StoreIssueRecordWire | null;
+  diagnostic: string | null;
+}
+
+export interface StoreIssueDivergence {
+  copies: StoreIssueRecordCopy[];
+}
+
+export interface StoreIssueSummary {
+  /** Null only when no coherent record identity can be presented. */
+  identity: StoreIssueIdentity | null;
+  /** @deprecated Use `identity.uid` after checking the summary is readable. */
+  issueId: string;
+  record: StoreIssueRecordWire | null;
+  /** Why no record is presented, when a copy that does not read is the reason. */
+  diagnostic: string | null;
+  divergence: StoreIssueDivergence | null;
+  revisionIds: string[];
+  latestRevisionId: string | null;
+  refs: string[];
+  uncommitted: boolean;
+}
+
+/** `GET /api/v1/stores/issues` response. */
+export interface StoreIssuesResponse extends StoreAggregateCompleteness {
+  issues: StoreIssueSummary[];
+}
+
+/** `GET /api/v1/stores/issue-references` response — same shape as the issues list. */
+export type StoreIssueReferencesResponse = StoreIssuesResponse;
+
+export type StoreExecutionPlanNodeKind = 'change' | 'intent';
+
+export interface StoreExecutionPlanNode {
+  nodeId: string;
+  kind: StoreExecutionPlanNodeKind;
+  projectId: string;
+  targetLineId: string;
+  dependsOn: string[];
+  /** Present only when `kind === 'change'`. */
+  changeInstanceId?: string;
+  changeAlias?: string;
+  /** Present only when `kind === 'intent'`. */
+  summary?: string;
+  lifecycle?: StoreIssueNodeLifecycle;
+  reason?: string;
+  suggestedPipeline?: string;
+  rationale?: string;
+  uncertainty?: string;
+}
+
+/** Historical Execution Plan revision. */
+export interface StoreExecutionPlanRevisionV1Wire {
+  version: 1;
+  issueId: string;
+  revisionId: string;
+  supersedes: string | null;
+  createdAt: string;
+  contentSha256: string;
+  nodes: StoreExecutionPlanNode[];
+}
+
+/** Core wire aliases make the absence of the internal storage locator explicit. */
+export type StorePublicIssueRecordCopy = StoreIssueRecordCopy;
+export type StorePublicIssueSummary = StoreIssueSummary;
+
+/** New Execution Plan revision, owned by the authoritative Issue UID. */
+export interface StoreExecutionPlanRevisionV2Wire {
+  version: 2;
+  issueUid: string;
+  revisionId: string;
+  supersedes: string | null;
+  createdAt: string;
+  contentSha256: string;
+  nodes: StoreExecutionPlanNode[];
+}
+
+export type StoreExecutionPlanRevisionWire =
+  | StoreExecutionPlanRevisionV1Wire
+  | StoreExecutionPlanRevisionV2Wire;
+
+export type StorePlanNodeResolutionStatus = 'resolved' | 'unresolved' | 'ambiguous' | 'not-created';
+
+export interface StorePlanNodeClaimant {
+  changeId: string;
+  projectId: string;
+  targetLineId: string;
+  foundAtRef: string;
+  archived: boolean;
+}
+
+export interface StorePlanNodeResolution {
+  status: StorePlanNodeResolutionStatus;
+  claimants: StorePlanNodeClaimant[];
+  searchedRefs: string[];
+  localLocator: StoreInertLocalLocator | null;
+  outcome: string | null;
+  archived: boolean;
+}
+
+export type StorePlanNodeReadiness = 'not-started' | 'blocked' | 'in-progress' | 'finalized' | 'unknown';
+
+export interface StoreResolvedPlanNode {
+  node: StoreExecutionPlanNode;
+  resolution: StorePlanNodeResolution;
+  readiness: StorePlanNodeReadiness;
+  blockedBy: string[];
+}
+
+export interface StoreIssueReadiness {
+  nodes: StoreResolvedPlanNode[];
+  readyToResolve: boolean;
+}
+
+/** `GET /api/v1/stores/execution-plan` response. */
+export interface StoreExecutionPlanResponse extends StoreAggregateCompleteness {
+  issueId: string;
+  revisionId: string | null;
+  revision: StoreExecutionPlanRevisionWire | null;
+  diagnostic: string | null;
+  readiness: StoreIssueReadiness;
+}
+
+export interface StoreIssueDetailResponse extends StoreAggregateCompleteness {
+  issue: StoreIssueSummary;
+  plan: StoreExecutionPlanResponse | null;
+}
+
+export interface StoreIssueWriteReport {
+  identity: StoreIssueIdentity;
+  /** @deprecated Use `identity.uid`. */
+  issueId: string;
+  storeId: string;
+  storeUid: string;
+  warnings?: Array<{
+    code: 'issue_readme_write_failed' | 'issue_record_post_publish_warning';
+    message: string;
+  }>;
+}
+
+/** Exact public core-wire name; retained beside the UI's historical local name. */
+export type StorePublicIssueWriteReport = StoreIssueWriteReport;
+
+/** `POST /api/v1/stores/issues` and `POST /api/v1/stores/issue-state` response — both write one Issue record. */
+export interface StoreIssueRecordResponse extends StoreIssueWriteReport {
+  record: StoreIssueRecordWire;
+}
+
+/** `POST /api/v1/stores/execution-plan` response. */
+export interface StoreExecutionPlanPublishResponse extends StoreIssueWriteReport {
+  revision: StoreExecutionPlanRevisionWire;
+}
+
+/** `POST /api/v1/stores/issues` request body. */
+export interface StoreIssueCreateRequest {
+  issueId?: string;
+  title?: string;
+  readme?: boolean;
+}
+
+/** `POST /api/v1/stores/issue-state` request body. */
+export interface StoreIssueSetStateRequest {
+  issueId?: string;
+  state?: string;
+  reason?: string;
+}
+
+/** One node of a `POST /api/v1/stores/execution-plan` request body. */
+export interface StoreExecutionPlanNodeInput {
+  nodeId?: string;
+  kind?: string;
+  projectId?: string;
+  targetLineId?: string;
+  changeInstanceId?: string;
+  changeAlias?: string;
+  summary?: string;
+  dependsOn?: string[];
+  lifecycle?: string;
+  reason?: string;
+  suggestedPipeline?: string;
+  rationale?: string;
+  uncertainty?: string;
+}
+
+/** `POST /api/v1/stores/execution-plan` request body. */
+export interface StoreExecutionPlanPublishRequest {
+  issueId?: string;
+  nodes?: StoreExecutionPlanNodeInput[];
+  expectedRevisionId?: string | null;
+}
+
+export type StoreChangeIssueAssociation = 'linked' | 'unlinked' | 'unknown';
+
+export type StoreChangeIssueEligibility =
+  | 'attachable'
+  | 'already-linked'
+  | 'identity-missing'
+  | 'identity-ambiguous'
+  | 'evidence-incomplete';
+
+export type StoreChangeOccurrence =
+  | { kind: 'active'; change: StoreAggregateChangeEntry }
+  | { kind: 'archived'; change: StoreAggregateArchiveEntry };
+
+export interface StoreChangeIssueLink {
+  identity: StoreIssueIdentity;
+  /** @deprecated Use `identity.uid`. */
+  issueId: string;
+  title: string | null;
+  state: StoreIssueState | null;
+  revisionId: string;
+  nodeIds: string[];
+}
+
+export interface StoreChangeIssueLinkEntry {
+  occurrence: StoreChangeOccurrence;
+  association: StoreChangeIssueAssociation;
+  eligibility: StoreChangeIssueEligibility;
+  issues: StoreChangeIssueLink[];
+}
+
+/** `GET /api/v1/stores/change-issue-links` response. */
+export interface StoreChangeIssueLinksResponse extends StoreAggregateCompleteness {
+  entries: StoreChangeIssueLinkEntry[];
+}
+
+// ---- Issue projections (issue-read-surface) ----
+// Source of truth: the payload types `src/core/issue-read/composition.ts`
+// exports and `src/core/management-api/wire-types.ts` aliases as the three
+// projection responses. Same hand-maintained-mirror discipline as the section
+// above: copied field-for-field, `readonly` dropped, closed vocabularies
+// copied whole so the UI can map them to labels exhaustively.
+//
+// These are DERIVED reads. Nothing in this file is a place to compute one: the
+// Issue surface renders payload fields and maps closed vocabularies to labels,
+// and derives no phase, health, progress, or determination of its own.
+
+/** Where the work stands. Lane placement IS this value, verbatim. */
+export type StoreIssuePhase = 'planning' | 'ready' | 'active' | 'review' | 'done';
+
+/** Whether anything needs a human. `blocked`/`stale` ship reserved. */
+export type StoreIssueHealth = 'healthy' | 'blocked' | 'failed' | 'waiting-human' | 'stale';
+
+/** What one plan node's execution looks like right now. */
+export type StoreIssueNodeObservation =
+  | 'finalized'
+  | 'run-terminal'
+  | 'in-flight'
+  | 'failed'
+  | 'waiting-human'
+  | 'advanced'
+  | 'not-started'
+  | 'unknown';
+
+/** The lifecycle a plan revision records for a node (absent reads `required`). */
+export type StoreIssueNodeLifecycle =
+  | 'required'
+  | 'optional'
+  | 'cancelled'
+  | 'superseded'
+  | 'deferred';
+
+/** Completed required nodes over total required nodes. */
+export interface StoreIssueProgress {
+  completed: number;
+  total: number;
+}
+
+/** Why a fact the projection could not derive is reported rather than guessed. */
+export type StoreIssueStatusProblemKind =
+  | 'unreadable-plan'
+  | 'unresolved-reference'
+  | 'ambiguous-reference'
+  | 'invalid-run-state'
+  | 'invalid-archive-record'
+  | 'unreadable-acceptance'
+  | 'unsearched-refs';
+
+export interface StoreIssueStatusProblem {
+  kind: StoreIssueStatusProblemKind;
+  node: string | null;
+  ref: string | null;
+  reason: string;
+}
+
+/** Which locator found a node's run-state; null when nothing was located. */
+export type StoreIssueRunStateLocator = 'execution-root' | 'workspace-index';
+
+/** Whether this read could see machine-local run-state at all, and where. */
+export type StoreIssueRunStateVisibility =
+  | { kind: 'execution-root'; executionRoot: string }
+  | { kind: 'none' };
+
+/** One durable session pointer a located run-state's stage records. */
+export interface StoreIssueNodeSession {
+  stageId: string;
+  role: string | null;
+  runtime: string | null;
+  sessionId?: string;
+  threadId?: string;
+  transcript?: string;
+}
+
+/** The facts that join a node's execution back to the Issue. */
+export interface StoreIssueNodeAttribution {
+  pipeline: string | null;
+  sessions: StoreIssueNodeSession[];
+  evidenceLocator: string | null;
+}
+
+/** One dependency the work-complete rule still waits on. */
+export interface StoreIssueNodeBlocker {
+  nodeId: string;
+  projectId: string;
+  observation: StoreIssueNodeObservation;
+}
+
+/** One frozen evidence inventory entry of an archive record. */
+export interface StoreIssueArchiveEvidenceEntry {
+  path: string;
+  sha256: string;
+}
+
+/**
+ * One change node's delivery evidence: five named states, four of which are
+ * four DIFFERENT absences a reviewer acts on differently. Null for intent
+ * nodes — nothing was delivered by construction.
+ */
+export type StoreIssueNodeDelivery =
+  | {
+      state: 'record';
+      basis: 'v2' | 'legacy';
+      archivedAt: string | null;
+      codeCommit: string | null;
+      planningBranch: string | null;
+      outcome: string | null;
+      evidence: StoreIssueArchiveEvidenceEntry[] | null;
+      missing: string[] | null;
+      entryName: string;
+      foundAtRef: string;
+      blobPath: string;
+    }
+  | { state: 'no-record'; foundAtRef: string | null; blobPath: string | null }
+  | { state: 'not-archived' }
+  | { state: 'unreadable' }
+  | { state: 'unattributed' };
+
+/** One Issue-level delivery rollup entry, in the revision's canonical node order. */
+export interface StoreIssueDeliveryEntry {
+  nodeId: string;
+  alias: string | null;
+  projectId: string;
+  lifecycle: StoreIssueNodeLifecycle;
+  observation: StoreIssueNodeObservation;
+  delivery: StoreIssueNodeDelivery | null;
+}
+
+/** Honest counts over the five named states — counts summarize, entries stay listed. */
+export interface StoreIssueDeliveryCounts {
+  record: number;
+  'no-record': number;
+  'not-archived': number;
+  unreadable: number;
+  unattributed: number;
+}
+
+/** Null when the revision did not read back: "no plan" and "no evidence" differ. */
+export interface StoreIssueDeliveryEvidence {
+  revisionId: string;
+  entries: StoreIssueDeliveryEntry[];
+  counts: StoreIssueDeliveryCounts;
+}
+
+/** One plan node, observed. */
+export interface StoreIssueNodeStatus {
+  nodeId: string;
+  kind: 'change' | 'intent';
+  projectId: string;
+  targetLineId: string;
+  lifecycle: StoreIssueNodeLifecycle;
+  reason: string | null;
+  suggestedPipeline: string | null;
+  rationale: string | null;
+  uncertainty: string | null;
+  alias: string | null;
+  observation: StoreIssueNodeObservation;
+  blockedBy: StoreIssueNodeBlocker[];
+  diagnostic: string | null;
+  runStatePath: string | null;
+  locatedBy: StoreIssueRunStateLocator | null;
+  attribution: StoreIssueNodeAttribution;
+  delivery: StoreIssueNodeDelivery | null;
+}
+
+/** One member project's lane: node IDS, never node copies, plus the lane's own progress. */
+export interface StoreIssueProjectLane {
+  projectId: string;
+  alias: string | null;
+  nodeIds: string[];
+  progress: StoreIssueProgress;
+}
+
+// -- The revision delta -------------------------------------------------------
+
+export interface StoreIssueRevisionRetarget {
+  nodeId: string;
+  fromProjectId: string;
+  toProjectId: string;
+  fromTargetLineId: string;
+  toTargetLineId: string;
+}
+
+export interface StoreIssueRevisionEdgeChange {
+  nodeId: string;
+  addedDependencies: string[];
+  removedDependencies: string[];
+}
+
+export interface StoreIssueRevisionLifecycleChange {
+  nodeId: string;
+  from: StoreIssueNodeLifecycle;
+  to: StoreIssueNodeLifecycle;
+}
+
+export interface StoreIssueRevisionSuggestionChange {
+  nodeId: string;
+  from: string | null;
+  to: string | null;
+}
+
+/** What a revision changed against its predecessor. Null when there is none. */
+export interface StoreIssueRevisionDelta {
+  revisionId: string;
+  supersedes: string;
+  added: string[];
+  removed: string[];
+  retargeted: StoreIssueRevisionRetarget[];
+  edgeChanges: StoreIssueRevisionEdgeChange[];
+  lifecycleChanges: StoreIssueRevisionLifecycleChange[];
+  suggestionChanges: StoreIssueRevisionSuggestionChange[];
+}
+
+// -- Acceptance ---------------------------------------------------------------
+
+export interface StoreIssueAcceptanceCondition {
+  id: string;
+  requirement: string;
+  verification?: string;
+}
+
+export interface StoreIssueAcceptanceConditionsRevisionV1 {
+  version: 1;
+  issueId: string;
+  revisionId: string;
+  supersedes: string | null;
+  createdAt: string;
+  contentSha256: string;
+  conditions: StoreIssueAcceptanceCondition[];
+}
+
+export interface StoreIssueAcceptanceConditionsRevisionV2 {
+  version: 2;
+  issueUid: string;
+  revisionId: string;
+  supersedes: string | null;
+  createdAt: string;
+  contentSha256: string;
+  conditions: StoreIssueAcceptanceCondition[];
+}
+
+export type StoreIssueAcceptanceConditionsRevision =
+  | StoreIssueAcceptanceConditionsRevisionV1
+  | StoreIssueAcceptanceConditionsRevisionV2;
+
+/** The latest acceptance-conditions revision read back, or why it could not be. */
+export interface StoreIssueAcceptanceConditionsRead {
+  revision: StoreIssueAcceptanceConditionsRevision | null;
+  revisionId: string | null;
+  diagnostic: string | null;
+  path: string | null;
+}
+
+/** The gate facts an acceptance freezes — portable facts only. */
+export interface StoreIssueAcceptanceGateSnapshot {
+  completed: number;
+  total: number;
+  health: string;
+  problemsStanding: number;
+}
+
+/** One node the gate's required total excluded, with the reason its revision records. */
+export interface StoreIssueAcceptanceGateExclusion {
+  nodeId: string;
+  lifecycle: 'cancelled' | 'superseded' | 'deferred';
+  reason: string;
+}
+
+/** The closed blocker taxonomy — every blocker is named together, never first-only. */
+export type StoreIssueAcceptanceBlocker =
+  | { kind: 'un-terminal-node'; nodeId: string; observation: StoreIssueNodeObservation }
+  | { kind: 'failing-node'; nodeId: string }
+  | {
+      kind: 'status-problem';
+      problemKind: StoreIssueStatusProblemKind;
+      node: string | null;
+      ref: string | null;
+      reason: string;
+    }
+  | { kind: 'incomplete-read'; reason: string };
+
+export type StoreIssueAcceptanceRefusalCode =
+  | 'issue_accept_requires_plan'
+  | 'issue_accept_conditions_required'
+  | 'issue_accept_already_accepted'
+  | 'issue_accept_dropped'
+  | 'issue_accept_blocked';
+
+/** One gate evaluation: eligible with its snapshot, or every blocker named. */
+export type StoreIssueAcceptanceGateEvaluation =
+  | {
+      eligible: true;
+      conditionsRevisionId: string;
+      snapshot: StoreIssueAcceptanceGateSnapshot;
+      exclusions: StoreIssueAcceptanceGateExclusion[];
+      optionalNodes: string[];
+    }
+  | {
+      eligible: false;
+      refusalCode: StoreIssueAcceptanceRefusalCode;
+      blockers: StoreIssueAcceptanceBlocker[];
+      message: string;
+      exclusions: StoreIssueAcceptanceGateExclusion[];
+      optionalNodes: string[];
+    };
+
+export interface StoreIssueAcceptanceRecordExclusion {
+  nodeId: string;
+  lifecycle: 'cancelled' | 'superseded' | 'deferred';
+  reason: string;
+}
+
+/** Historical acceptance record. */
+export interface StoreIssueAcceptedRecordV1 {
+  version: 1;
+  issueId: string;
+  acceptedAt: string;
+  conditionsRevisionId: string;
+  conditionsSha256: string;
+  gate: StoreIssueAcceptanceGateSnapshot;
+  exclusions?: StoreIssueAcceptanceRecordExclusion[];
+  note: string | null;
+  contentSha256: string;
+}
+
+/** New acceptance record, owned by the authoritative Issue UID. */
+export interface StoreIssueAcceptedRecordV2 {
+  version: 2;
+  issueUid: string;
+  acceptedAt: string;
+  conditionsRevisionId: string;
+  conditionsSha256: string;
+  gate: StoreIssueAcceptanceGateSnapshot;
+  exclusions?: StoreIssueAcceptanceRecordExclusion[];
+  note: string | null;
+  contentSha256: string;
+}
+
+export type StoreIssueAcceptedRecord =
+  | StoreIssueAcceptedRecordV1
+  | StoreIssueAcceptedRecordV2;
+
+/** Null when the read supplied no acceptance facts — a named condition of THAT read. */
+export interface StoreIssueAcceptanceStatusBlock {
+  conditions: StoreIssueAcceptanceConditionsRead;
+  gate: StoreIssueAcceptanceGateEvaluation;
+  record: StoreIssueAcceptedRecord | null;
+}
+
+// -- The status --------------------------------------------------------------
+
+/** The tri-axis answer, plus everything that explains it. */
+export interface StoreIssueStatus {
+  phase: StoreIssuePhase;
+  health: StoreIssueHealth;
+  /** Null when there is no latest readable revision to count over. */
+  progress: StoreIssueProgress | null;
+  nodes: StoreIssueNodeStatus[];
+  delta: StoreIssueRevisionDelta | null;
+  projects: StoreIssueProjectLane[];
+  problems: StoreIssueStatusProblem[];
+  runStateVisibility: StoreIssueRunStateVisibility;
+  complete: boolean;
+  acceptance: StoreIssueAcceptanceStatusBlock | null;
+}
+
+// -- Attention ---------------------------------------------------------------
+
+/** Ordinary progress is deliberately NO kind at all: scheduling is not sickness. */
+export type StoreIssueAttentionKind =
+  | 'failure'
+  | 'blocked-behind'
+  | 'waiting-human'
+  | 'acceptance-awaiting'
+  | 'problem';
+
+export interface StoreIssueAttentionBlocker {
+  nodeId: string;
+  projectId: string;
+  state: string;
+}
+
+/** One thing a human must act on, carrying its Issue's phase AND health beside the fact. */
+export type StoreIssueAttentionItem = {
+  issueId: string;
+  phase: StoreIssuePhase;
+  health: StoreIssueHealth;
+  nodeId: string | null;
+  alias: string | null;
+} & (
+  | { kind: 'failure'; diagnostic: string | null }
+  | { kind: 'blocked-behind'; blockers: StoreIssueAttentionBlocker[] }
+  | { kind: 'waiting-human' }
+  | { kind: 'acceptance-awaiting'; gate: StoreIssueAcceptanceGateEvaluation | null }
+  | { kind: 'problem'; problem: StoreIssueStatusProblem }
+);
+
+/** One scanned Issue's roll facts — what keeps "honestly unlisted" visible. */
+export interface StoreIssueAttentionScanEntry {
+  issueId: string;
+  /** Added by identity-aware servers; older responses may omit it. */
+  issueKey?: string;
+  phase: StoreIssuePhase;
+  health: StoreIssueHealth;
+  itemCount: number;
+  runStateVisibility: StoreIssueRunStateVisibility;
+}
+
+// -- Review ------------------------------------------------------------------
+
+/** Seven values MAPPED one-to-one from the acceptance gate, never re-derived. */
+export type StoreIssueReviewDetermination =
+  | { kind: 'review-ready'; conditionsRevisionId: string }
+  | { kind: 'accepted'; acceptedAt: string | null; conditionsRevisionId: string | null }
+  | { kind: 'not-ready'; blockerCount: number }
+  | { kind: 'conditions-missing'; message: string }
+  | { kind: 'no-plan' }
+  | { kind: 'dropped' }
+  | { kind: 'acceptance-unknown'; reason: string };
+
+/** One fact the gate excludes but a reviewer must see. Threads NEVER block. */
+export type StoreIssueReviewThread =
+  | { kind: 'failure'; nodeId: string; alias: string | null; diagnostic: string | null }
+  | {
+      kind: 'blocked-behind';
+      nodeId: string;
+      alias: string | null;
+      blockers: StoreIssueAttentionBlocker[];
+    }
+  | { kind: 'waiting-human'; nodeId: string; alias: string | null }
+  | { kind: 'optional-open'; nodeId: string; observation: StoreIssueNodeObservation }
+  | { kind: 'archive-pending'; nodeId: string; observation: StoreIssueNodeObservation }
+  | { kind: 'record-absent'; nodeId: string }
+  | { kind: 'evidence-missing'; nodeId: string; names: string[] };
+
+/** The verification summary is BY REFERENCE — never copies of the facts it points at. */
+export interface StoreIssueReview {
+  issueId: string;
+  revisionId: string | null;
+  determination: StoreIssueReviewDetermination;
+  threads: StoreIssueReviewThread[];
+  verification: {
+    progress: StoreIssueProgress | null;
+    delivery: StoreIssueDeliveryCounts | null;
+  };
+}
+
+// -- The three projection responses -------------------------------------------
+
+/** One Issue of the list read: its summary with the status projected over it. */
+export type StoreIssueProjectionEntry = StoreIssueSummary & { status: StoreIssueStatus };
+
+/** `GET /api/v1/stores/issue-projections` response. */
+export interface StoreIssueProjectionsResponse extends StoreAggregateCompleteness {
+  issues: StoreIssueProjectionEntry[];
+}
+
+/** `GET /api/v1/stores/issue-projection` response — status, delivery, and review together. */
+export interface StoreIssueProjectionResponse extends StoreAggregateCompleteness {
+  issue: StoreIssueSummary;
+  plan: StoreExecutionPlanResponse | null;
+  status: StoreIssueStatus;
+  /** Null exactly when no readable revision derived a rollup. */
+  delivery: StoreIssueDeliveryEvidence | null;
+  review: StoreIssueReview;
+}
+
+/** `GET /api/v1/stores/issue-attention` response. */
+export interface StoreIssueAttentionResponse {
+  narrowed: boolean;
+  issueId: string | null;
+  scannedCount: number;
+  scanned: StoreIssueAttentionScanEntry[];
+  items: StoreIssueAttentionItem[];
+  counts: Record<StoreIssueAttentionKind, number>;
+  total: number;
+  unsearchedRefs: { targetLineId: string; storeRef: string; reason: string }[];
+  complete: boolean;
 }

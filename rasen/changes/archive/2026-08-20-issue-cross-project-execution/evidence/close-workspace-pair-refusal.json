@@ -1,0 +1,134 @@
+{
+  "planId": "386561aaf51db1a2310eaba1e5294f0c8ebae08e26ab88cd71c60ba0b9ae177e",
+  "intent": "existing-change",
+  "applicable": false,
+  "changeId": "document-multi-project-issues",
+  "changeInstanceId": "ci_4950d004af6e4085c862933dc877396e904522b71d50d07573e4dfe68b8d72c4",
+  "scope": {
+    "storeUid": "f76edc31-229a-42bc-a5c7-848021eeb2da",
+    "storeId": "issue-registry",
+    "storeRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+    "projectId": "6ca78b98-777f-45bc-8d9b-b84c34e1a531",
+    "targetLineId": "line-0.2",
+    "planningScopeId": "ps_ed19005104ae84f9e85f3ed5f45f4dd62c16433acb22b02e79c8359870bfd79c"
+  },
+  "targetLine": {
+    "targetLineId": "line-0.2",
+    "storeRef": "refs/heads/main",
+    "storeRefOid": "2583bf86630801f4ac6af1241346151bc85abf42",
+    "codeRef": "refs/heads/main",
+    "codeRefOid": "2dc9e31379e0d03230945cd20032cca7b700f9a6"
+  },
+  "planning": {
+    "side": "planning",
+    "root": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store--document-multi-project-issues",
+    "repositoryRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+    "disposition": "create",
+    "ref": "refs/heads/change/line-0.2/6ca78b98-777f-45bc-8d9b-b84c34e1a531/document-multi-project-issues",
+    "fromOid": "2583bf86630801f4ac6af1241346151bc85abf42",
+    "createsBranch": true
+  },
+  "execution": {
+    "side": "execution",
+    "root": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-site",
+    "repositoryRoot": "E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/rasen-site",
+    "disposition": "reuse",
+    "ref": "refs/heads/main",
+    "fromOid": "2dc9e31379e0d03230945cd20032cca7b700f9a6",
+    "createsBranch": false,
+    "worktreeInstanceId": "wt_d61254c21a322c934691d12b88619d57bbd1873000c64feb7fe2837217e5b659",
+    "headOid": "2dc9e31379e0d03230945cd20032cca7b700f9a6"
+  },
+  "actions": [
+    {
+      "kind": "create-planning-worktree",
+      "destination": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store--document-multi-project-issues",
+      "repositoryRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+      "fromOid": "2583bf86630801f4ac6af1241346151bc85abf42",
+      "ref": "refs/heads/change/line-0.2/6ca78b98-777f-45bc-8d9b-b84c34e1a531/document-multi-project-issues",
+      "createsBranch": true,
+      "alreadySatisfied": false
+    },
+    {
+      "kind": "reuse-execution-worktree",
+      "destination": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-site",
+      "repositoryRoot": "E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/rasen-site",
+      "fromOid": "2dc9e31379e0d03230945cd20032cca7b700f9a6",
+      "ref": "refs/heads/main",
+      "createsBranch": false,
+      "alreadySatisfied": true
+    },
+    {
+      "kind": "write-planning-marker",
+      "destination": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store--document-multi-project-issues\\.rasen\\planning-line.json",
+      "digest": "f538c3b86f47931fe14e7f860ff6aeb07cd116ab5f3a71bc88d50d58c44088e6",
+      "alreadySatisfied": false
+    },
+    {
+      "kind": "write-execution-association",
+      "destination": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-site\\.rasen\\planning-binding.json",
+      "digest": "1710b9a4e0c152c1496d9c20f27d584bbe312dcac4c67a100c190d3132aae375",
+      "alreadySatisfied": false
+    },
+    {
+      "kind": "record-index-entry",
+      "destination": "C:\\Users\\Sayo\\.rasen\\planning-workspaces\\index\\ps_ed19005104ae84f9e85f3ed5f45f4dd62c16433acb22b02e79c8359870bfd79c.json",
+      "alreadySatisfied": false
+    }
+  ],
+  "preconditions": [
+    {
+      "id": "planning-destination-available",
+      "satisfied": true,
+      "detail": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store--document-multi-project-issues does not exist yet, so the worktree is created there."
+    },
+    {
+      "id": "execution-ref-matches",
+      "satisfied": true,
+      "detail": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-site is on refs/heads/main, which is the ref the pair records."
+    },
+    {
+      "id": "execution-is-linked-worktree",
+      "satisfied": true,
+      "detail": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-site is the project repository's main checkout, which a pair may legitimately use for execution."
+    },
+    {
+      "id": "planning-marker-contained",
+      "satisfied": true,
+      "detail": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store--document-multi-project-issues\\.rasen\\planning-line.json is inside the planned planning worktree root E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store--document-multi-project-issues."
+    },
+    {
+      "id": "execution-marker-contained",
+      "satisfied": true,
+      "detail": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-site\\.rasen\\planning-binding.json is inside the planned execution worktree root E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-site."
+    },
+    {
+      "id": "planning-root-outside-repository",
+      "satisfied": true,
+      "detail": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store--document-multi-project-issues is outside the planning repository's checkout E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store."
+    },
+    {
+      "id": "execution-root-outside-repository",
+      "satisfied": false,
+      "detail": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-site is inside the execution repository's own checkout E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/rasen-site. A worktree nested in its repository shows up there as untracked content, so the checkout this capability promises to leave byte-identical would stop being so, and cleanup would have to reach inside it.",
+      "expected": "a path outside E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/rasen-site",
+      "actual": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-site",
+      "code": "workspace_destination_exists"
+    },
+    {
+      "id": "pair-roots-disjoint",
+      "satisfied": true,
+      "detail": "The planned planning and execution roots are distinct, and neither contains the other."
+    }
+  ],
+  "blockers": [
+    {
+      "id": "execution-root-outside-repository",
+      "satisfied": false,
+      "detail": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-site is inside the execution repository's own checkout E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/rasen-site. A worktree nested in its repository shows up there as untracked content, so the checkout this capability promises to leave byte-identical would stop being so, and cleanup would have to reach inside it.",
+      "expected": "a path outside E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/rasen-site",
+      "actual": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-site",
+      "code": "workspace_destination_exists"
+    }
+  ]
+}

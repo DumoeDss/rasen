@@ -17,6 +17,7 @@ import {
 import { saveNamedProfile } from '../../src/core/named-profiles.js';
 import {
   getExpertSkillDefinitions,
+  INTERNAL_BUILTIN_WORKFLOW_IDS,
   loadWorkflowCatalog,
 } from '../../src/core/workflow-registry/index.js';
 
@@ -91,10 +92,10 @@ describe('profiles', () => {
   });
 
   describe('ALL_EXPERTS / QUALITY_FLOOR_EXPERTS', () => {
-    it('ALL_EXPERTS matches every surviving built-in expert id (12)', () => {
+    it('ALL_EXPERTS matches every surviving built-in expert id (13)', () => {
       const expected = getExpertSkillDefinitions().map((expert) => expert.id);
       expect([...ALL_EXPERTS].sort()).toEqual(expected.sort());
-      expect(ALL_EXPERTS).toHaveLength(12);
+      expect(ALL_EXPERTS).toHaveLength(13);
     });
 
     it('QUALITY_FLOOR_EXPERTS is the five quality-floor identities and a subset of ALL_EXPERTS', () => {
@@ -179,6 +180,13 @@ describe('profiles', () => {
 
     it('includes the recently-added `audit` workflow', () => {
       expect(getCurrentBuiltInWorkflowIds()).toContain('audit');
+    });
+
+    it('generically excludes every current and future internal built-in id', () => {
+      const ids = getCurrentBuiltInWorkflowIds();
+      for (const internalId of INTERNAL_BUILTIN_WORKFLOW_IDS) {
+        expect(ids).not.toContain(internalId);
+      }
     });
   });
 

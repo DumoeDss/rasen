@@ -1,0 +1,26 @@
+conditions:
+  - id: portfolio-delivered
+    requirement: >-
+      All three Phase-7 children are independently verification-clean and
+      review-clean, the final portfolio head 0d725873 passed CI run
+      32711980305 with zero failures, and PR #176 merged into dev/0.2.0 as
+      d2f59f857fea134bb0166e91428680749c004300.
+  - id: issue-surfaces-converged
+    requirement: >-
+      Issue Board, Issue Detail, Store Operations, and Unlinked Changes are
+      the delivered Store surfaces; Store navigation cuts over to the Issue
+      Board while project-scoped Change and Run surfaces remain available at
+      their project routes.
+  - id: displayed-state-is-payload-backed
+    requirement: >-
+      Every displayed phase, health, progress, attention, review, runtime,
+      and delivery state family resolves to provenance facts carried by the
+      existing Git/runtime projection payload rather than a UI-owned second
+      truth.
+  - id: cache-rebuild-is-read-only-and-reproducible
+    requirement: >-
+      Disposable and persistent browser receipts prove cache-cleared rebuild
+      from fresh exact GET 200 responses, with fail-closed request identity,
+      payload, storage, digest, cleanup, and mutation-inventory guards; the
+      persistent issue-registry Store remained clean at f295abce with 311
+      tracked files before the Issue #6 close action.

@@ -1,0 +1,46 @@
+{
+  "issueId": "issue-ui-convergence",
+  "revision": {
+    "version": 1,
+    "issueId": "issue-ui-convergence",
+    "revisionId": "0001",
+    "supersedes": null,
+    "createdAt": "2026-08-24T10:27:15.908Z",
+    "conditions": [
+      {
+        "id": "cache-rebuild-is-read-only-and-reproducible",
+        "requirement": "Disposable and persistent browser receipts prove cache-cleared rebuild from fresh exact GET 200 responses, with fail-closed request identity, payload, storage, digest, cleanup, and mutation-inventory guards; the persistent issue-registry Store remained clean at f295abce with 311 tracked files before the Issue #6 close action."
+      },
+      {
+        "id": "displayed-state-is-payload-backed",
+        "requirement": "Every displayed phase, health, progress, attention, review, runtime, and delivery state family resolves to provenance facts carried by the existing Git/runtime projection payload rather than a UI-owned second truth."
+      },
+      {
+        "id": "issue-surfaces-converged",
+        "requirement": "Issue Board, Issue Detail, Store Operations, and Unlinked Changes are the delivered Store surfaces; Store navigation cuts over to the Issue Board while project-scoped Change and Run surfaces remain available at their project routes."
+      },
+      {
+        "id": "portfolio-delivered",
+        "requirement": "All three Phase-7 children are independently verification-clean and review-clean, the final portfolio head 0d725873 passed CI run 32711980305 with zero failures, and PR #176 merged into dev/0.2.0 as d2f59f857fea134bb0166e91428680749c004300."
+      }
+    ],
+    "contentSha256": "11342fd4722f75aa7297e1153a27c0dbe2c808ee2c427783db3d6b159ee0cc5c"
+  },
+  "storeId": "issue-registry",
+  "storeUid": "f76edc31-229a-42bc-a5c7-848021eeb2da",
+  "checkoutRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+  "checkoutRef": "refs/heads/main",
+  "written": [
+    "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store\\rasen\\issues\\issue-ui-convergence\\acceptance\\0001.yaml"
+  ],
+  "suggestedCommits": [
+    {
+      "repoRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+      "pathspecs": [
+        "rasen/issues/issue-ui-convergence/acceptance/0001.yaml"
+      ],
+      "message": "chore(store): publish acceptance conditions issue-ui-convergence/0001",
+      "rationale": "Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing."
+    }
+  ]
+}

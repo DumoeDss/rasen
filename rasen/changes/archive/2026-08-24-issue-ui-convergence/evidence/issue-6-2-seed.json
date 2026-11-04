@@ -1,0 +1,21 @@
+{
+  "storeRoot": "E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/rasen-issue-store",
+  "storeUid": "f76edc31-229a-42bc-a5c7-848021eeb2da",
+  "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+  "targetLineId": "line-0.2",
+  "precedentSelfCheck": "ci_96db06e16c62383fc2c4218874cb00e6e2a93a9b3c5415206bb8c568d267ab42",
+  "entries": {
+    "2026-08-24-issue-read-surface": {
+      "instanceId": "ci_8ece9024b9a92468dc5d0dc45e5b36939b239d855426190f4c76eab120d4d095",
+      "instanceSeed": "9d08892579e809a6c1131f8f2e79c0f8"
+    },
+    "2026-08-24-issue-operations-and-unlinked": {
+      "instanceId": "ci_608383b4fb75aae4c4f8ec791b2f8a3c1e3536668572366117da1b120a5ce3ff",
+      "instanceSeed": "5e40cd3801bfae56d8b5b536de74594f"
+    },
+    "2026-08-24-issue-board-cutover": {
+      "instanceId": "ci_004cb2221909f68793b8864687fad3e74edb257f2a5b54ce928fb9c8e79e7821",
+      "instanceSeed": "bf2e17fd7612d0abf503f0580f1641d5"
+    }
+  }
+}

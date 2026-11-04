@@ -21,7 +21,6 @@
  */
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import * as fs from 'node:fs';
 import { FileSystemUtils } from '../utils/file-system.js';
 import { WORKSPACE_DIR_NAME } from './config.js';
 import { toKebabCase } from './id.js';
@@ -119,57 +118,14 @@ export function archiveBookkeepingDir(planningRoot: string): string {
 // -----------------------------------------------------------------------------
 // Execution root
 // -----------------------------------------------------------------------------
-
-export interface ResolveExecutionRootOptions {
-  /** The directory the run operates from; defaults to `process.cwd()`. */
-  cwd?: string;
-  /**
-   * True when the planning root came from a `--store`/`--project` selector,
-   * i.e. planning lives somewhere other than the code checkout being worked
-   * on. In-repo runs (the common case) leave this false.
-   */
-  storeSelected?: boolean;
-}
-
-/**
- * The code checkout/worktree a run operates on — the owner root for ephemera
- * and probes.
- *
- * For an in-repo project this IS the planning root. For a store-selected run
- * planning lives store-side while the code being worked on is where the user
- * stands, so the execution root is the cwd's code project root (the nearest
- * enclosing Git checkout, falling back to the cwd itself). Running inside a
- * store checkout with no code project therefore yields the store checkout,
- * which is the documented behavior.
- *
- * Unlike the per-class resolvers this one probes the filesystem (walking up
- * for `.git`); it never writes.
- */
-export function resolveExecutionRoot(
-  planningRoot: string,
-  options: ResolveExecutionRootOptions = {}
-): string {
-  if (!options.storeSelected) {
-    return planningRoot;
-  }
-  const start = path.resolve(options.cwd ?? process.cwd());
-  return findCodeProjectRoot(start) ?? start;
-}
-
-/** Nearest ancestor of `start` (inclusive) containing a `.git` entry. */
-function findCodeProjectRoot(start: string): string | null {
-  let candidate = start;
-  while (true) {
-    if (fs.existsSync(path.join(candidate, '.git'))) {
-      return candidate;
-    }
-    const parent = path.dirname(candidate);
-    if (parent === candidate) {
-      return null;
-    }
-    candidate = parent;
-  }
-}
+//
+// There is deliberately no `resolveExecutionRoot()` here. Execution authority
+// is a capability the resolved planning scope carries
+// (`resolvedExecutionProjectRoot` in `./root-selection.ts`), never something a
+// landing resolver derives by probing the current directory for a `.git`
+// ancestor: `specs/file-placement/spec.md` requires that unavailable execution
+// authority stay unavailable rather than being inferred from cwd, a Store
+// checkout, or Store membership.
 
 // -----------------------------------------------------------------------------
 // Workspace identity (design D5)

@@ -144,16 +144,25 @@ Read and write endpoints SHALL accept an optional project selector (query `proje
 - **THEN** the response is an error explaining that a project must be selected
 - **AND** no global write occurs
 
-### Requirement: Loopback-only bind with per-session token guard
-The API server SHALL bind exclusively to the loopback interface (127.0.0.1) on an ephemeral port by default. At startup the CLI SHALL mint a random per-session token; every `/api/` request SHALL present it as a bearer Authorization header or receive 401. The server SHALL emit no CORS headers, and mutating requests SHALL additionally require an `application/json` content type. The token SHALL be conveyed to the browser via the opened URL's fragment rather than logged query strings.
+### Requirement: Loopback-only bind with automatic browser-session guard
+The API server SHALL bind exclusively to the loopback interface (127.0.0.1) on an ephemeral port by default. At startup the CLI SHALL mint a random per-session token. An `/api/` request SHALL present that token either as a bearer Authorization header or through the server-issued `rasen_session` HttpOnly cookie, otherwise it SHALL receive 401. Browser document responses and `GET /api/v1/auth/session` SHALL issue the cookie with `SameSite=Strict` and `Path=/`, allowing the UI to authenticate and renew after a daemon restart without putting the token in a URL. Before issuing or accepting a browser session, the server SHALL require a literal loopback Host (`127.0.0.1`, `localhost`, or `::1`) so DNS rebinding cannot turn the cookie bootstrap into an authority bypass. The server SHALL emit no CORS headers, and mutating requests SHALL additionally require an `application/json` content type.
 
 #### Scenario: Loopback bind
 - **WHEN** the server starts
 - **THEN** it listens on 127.0.0.1 only and is not reachable from other interfaces
 
 #### Scenario: Missing or wrong token
-- **WHEN** an `/api/` request arrives without the session token or with an incorrect one
+- **WHEN** an `/api/` request arrives without a valid bearer token and without a valid browser-session cookie
 - **THEN** the response is 401 with error code `unauthorized` and no handler logic runs
+
+#### Scenario: Browser session renews without a token URL
+- **WHEN** a loopback browser opens a UI document or requests `GET /api/v1/auth/session`
+- **THEN** the response establishes the current daemon session in an HttpOnly, SameSite=Strict cookie
+- **AND** the browser can retry API calls without learning or placing the token in the address bar
+
+#### Scenario: DNS-rebinding Host is rejected
+- **WHEN** any request reaches the loopback socket with a non-loopback Host header
+- **THEN** the server responds 403 and issues no browser-session cookie
 
 #### Scenario: Cross-origin form post is rejected
 - **WHEN** a mutating request arrives without an `application/json` content type

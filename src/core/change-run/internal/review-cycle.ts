@@ -431,10 +431,10 @@ export function applyReviewCycleEvent(
   event: ReviewCycleEvent,
   maxRounds: number
 ): ReviewCycleState {
-  if (!Number.isSafeInteger(maxRounds) || maxRounds < 1 || maxRounds > 100) {
+  if (!Number.isSafeInteger(maxRounds) || maxRounds < 1) {
     throw new ReviewCycleDomainError(
       'invalid_review_cycle_transition',
-      'ReviewCycle maxRounds must be between 1 and 100.'
+      'ReviewCycle maxRounds must be a positive safe integer.'
     );
   }
   assertEventEnvelope(state, event);

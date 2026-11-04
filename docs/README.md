@@ -77,6 +77,7 @@ That second one matters more than it looks. Rasen has two halves: a command line
 | [Customization](customization.md) | Project config, custom schemas, shared context |
 | [Multi-Language](multi-language.md) | Generate artifacts in languages other than English |
 | [Supported Tools](supported-tools.md) | The 25+ AI tools rasen integrates with, and where files land |
+| [OmniCross Inference Routing](omnicross-inference-routing.md) | Use one Claude/Codex tool with different Providers and models per Pipeline stage |
 
 ### When you need help
 

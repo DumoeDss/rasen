@@ -4,8 +4,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
 
+import { diagnoseLayoutMigration } from './layout-migration/diagnostics.js';
+import { diagnoseConsistency } from './consistency-gates.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
 import { WORKSPACE_DIR_NAME } from '../config.js';
+import { isKebabId, KEBAB_ID_DESCRIPTION, KEBAB_ID_FIX } from '../id.js';
 import {
   appendStoreReference,
   classifyOpenSpecDir,
@@ -18,6 +21,7 @@ import {
   storePointerProblem,
   updateProjectConfigKey,
 } from '../project-config.js';
+import { findAdoptableProjectIdentity } from '../project-registry.js';
 import { storeBindingDeclarationFrom } from '../effective-config.js';
 import {
   ANCHORED_WORKSPACE_DIRS,
@@ -80,6 +84,7 @@ import {
 } from './membership.js';
 import {
   getStoreProjectRecordsDir,
+  normalizeProjectIdentity,
   type StoreProjectRoles,
 } from './project-records.js';
 import type { SuggestedGitCommand } from './migration.js';
@@ -217,6 +222,13 @@ export interface SetupStoreInput {
   allowInsideGitRepository?: boolean;
   /** Canonical clone source written into store.yaml (slice 3.3). */
   remote?: string;
+  /**
+   * Explicit operator request to author the layout-v2 declaration at
+   * creation. The declaration rides the identity mint — the one v2 metadata
+   * writer setup already is — so an existing record is never upgraded by it
+   * (the no-dual-write guard's rule); reruns against a legacy store refuse.
+   */
+  layoutVersion?: 2;
 }
 
 export interface RegisterExistingStoreInput extends StorePathOptions {
@@ -352,6 +364,7 @@ export interface PreparedStoreSetup {
   backend?: StoreGitBackendConfig;
   registry: StoreRegistryState | null;
   remote?: string;
+  layoutVersion?: 2;
 }
 
 interface StoreSetupPlan {
@@ -360,6 +373,7 @@ interface StoreSetupPlan {
   kind: Extract<PathKind, 'missing' | 'directory'>;
   backend?: StoreGitBackendConfig;
   registry: StoreRegistryState | null;
+  layoutVersion?: 2;
 }
 
 async function pathKind(targetPath: string): Promise<PathKind> {
@@ -568,6 +582,60 @@ function inferStoreIdFromPath(storeRoot: string): string {
   return validateStoreId(path.basename(storeRoot));
 }
 
+/**
+ * Resolves the project-namespace display id for `store add-project` without
+ * writing. Existing Store metadata remains authoritative, and an explicit
+ * `--as` remains the next-highest-priority operator choice. Only when both are
+ * absent do we reuse the machine Project registry's identity for this
+ * canonical root; this lets a registered Project whose folder name is not a
+ * valid Store id (for example `rasen-2.0-test`) enter a Store without making
+ * the HTTP bridge invent an alias.
+ *
+ * `findAdoptableProjectIdentity` owns worktree piercing, Windows path
+ * normalization, and canonical-alias conflict detection. A conflicted root is
+ * therefore refused here rather than falling through to the basename and
+ * silently choosing a different identity.
+ */
+async function resolveAddProjectDisplayId(input: {
+  projectRoot: string;
+  metadataId?: string;
+  explicitId?: string;
+}): Promise<string> {
+  if (input.metadataId !== undefined) return input.metadataId;
+  if (input.explicitId !== undefined) return input.explicitId;
+
+  const registered = await findAdoptableProjectIdentity(input.projectRoot);
+  if (registered.adoptable) {
+    return validateStoreId(normalizeProjectIdentity(registered.projectId));
+  }
+  if (registered.reason === 'fixedMetadataConflict') {
+    throw new StoreError(
+      `The registered Project identity for '${input.projectRoot}' is ambiguous because canonical registry aliases disagree on fixed ownership metadata.`,
+      'project_registry_alias_conflict',
+      {
+        target: 'project.registry',
+        fix: 'Repair the conflicting projectId or home metadata explicitly, then retry; Rasen refuses to choose an identity.',
+      }
+    );
+  }
+
+  return inferStoreIdFromPath(input.projectRoot);
+}
+
+function validateProjectNamespaceId(id: string): string {
+  if (!isKebabId(id)) {
+    throw new StoreError(
+      `Project id '${id}' ${KEBAB_ID_DESCRIPTION}.`,
+      'invalid_store_id',
+      {
+        target: 'store.id',
+        fix: KEBAB_ID_FIX,
+      }
+    );
+  }
+  return id;
+}
+
 function normalizeRegistryPathForComparison(targetPath: string): string {
   try {
     return FileSystemUtils.canonicalizeExistingPath(targetPath);
@@ -592,6 +660,7 @@ function isRegisteredAtPath(
 function mutationPayload(
   id: string,
   storeRoot: string,
+  uid: string | undefined,
   git: { isRepository: boolean; initialized: boolean; committed: boolean },
   createdFiles: string[],
   registry: { registered: boolean; alreadyRegistered: boolean },
@@ -604,6 +673,7 @@ function mutationPayload(
       id,
       root: storeRoot,
       metadataPath: getStoreMetadataPath(storeRoot),
+      ...(uid !== undefined ? { uid } : {}),
     },
     ...(remotes && (remotes.canonical || remotes.observed) ? { remotes } : {}),
     registryCommit: {
@@ -635,6 +705,24 @@ function remoteRequiresHandEditError(id: string, storeRoot: string): StoreError 
 }
 
 /**
+ * The layout declaration is authored at creation or not by setup at all: a
+ * store that already has metadata is never upgraded by `--layout 2`, because
+ * no command may add the declaration to a record that did not carry it. A
+ * rerun against a store that already declares layout 2 stays a no-op success,
+ * so only the legacy-record shape refuses.
+ */
+function layoutRequiresMigrationError(id: string): StoreError {
+  return new StoreError(
+    `Store '${id}' already has an identity file without a layout declaration; --layout 2 cannot add one to an existing store.`,
+    'store_setup_layout_existing_metadata',
+    {
+      target: 'store.metadata',
+      fix: `Run 'rasen store migrate-layout ${id}' to migrate the existing store, or set up a new store with --layout 2.`,
+    }
+  );
+}
+
+/**
  * Backend config carrying the observed origin. Guarded by an at-root
  * repository check: `git -C` discovers repositories by walking UP the
  * tree, so probing a non-repo store folder nested inside another repo
@@ -653,7 +741,10 @@ async function resolveBackendWithObservedOrigin(
 }
 
 async function prepareSetupPlan(
-  input: Pick<SetupStoreInput, 'id' | 'path' | 'allowInsideGitRepository' | 'remote'>
+  input: Pick<
+    SetupStoreInput,
+    'id' | 'path' | 'allowInsideGitRepository' | 'remote' | 'layoutVersion'
+  >
 ): Promise<StoreSetupPlan> {
   const id = validateStoreId(input.id ?? '');
   if (input.remote !== undefined && input.remote.length === 0) {
@@ -707,6 +798,12 @@ async function prepareSetupPlan(
         // already exists, so --remote cannot reach the committed shape.
         throw remoteRequiresHandEditError(id, storeRoot);
       }
+      if (input.layoutVersion === 2 && metadata.layoutVersion !== 2) {
+        // Same refusal shape as --remote, for the same reason: the request
+        // cannot reach the committed shape without upgrading an existing
+        // record, which the declaration requirement forbids.
+        throw layoutRequiresMigrationError(id);
+      }
     } else {
       const openspecRoot = await inspectOpenSpecRoot(storeRoot);
       const safeFreshDirectory = await isDirectoryEmpty(storeRoot) || await isGitOnlyDirectory(storeRoot);
@@ -739,6 +836,7 @@ async function prepareSetupPlan(
     kind,
     registry,
     ...(backend ? { backend } : {}),
+    ...(input.layoutVersion === 2 ? { layoutVersion: 2 as const } : {}),
   };
 }
 
@@ -755,7 +853,10 @@ export function resolveSetupGitEnabled(
 }
 
 export async function prepareStoreSetup(
-  input: Pick<SetupStoreInput, 'id' | 'path' | 'allowInsideGitRepository' | 'remote'>
+  input: Pick<
+    SetupStoreInput,
+    'id' | 'path' | 'allowInsideGitRepository' | 'remote' | 'layoutVersion'
+  >
 ): Promise<PreparedStoreSetup> {
   const plan = await prepareSetupPlan(input);
 
@@ -766,6 +867,7 @@ export async function prepareStoreSetup(
     registry: plan.registry,
     ...(plan.backend ? { backend: plan.backend } : {}),
     ...(input.remote !== undefined ? { remote: input.remote } : {}),
+    ...(plan.layoutVersion === 2 ? { layoutVersion: 2 } : {}),
   };
 }
 
@@ -779,6 +881,7 @@ export async function setupPreparedStore(
     kind: prepared.rootKind,
     registry: prepared.registry,
     ...(prepared.backend ? { backend: prepared.backend } : {}),
+    ...(prepared.layoutVersion === 2 ? { layoutVersion: 2 } : {}),
   };
   const { id, storeRoot, kind, registry } = plan;
   let { backend } = plan;
@@ -825,6 +928,7 @@ export async function setupPreparedStore(
   try {
     const root = await ensureOpenSpecRoot(storeRoot, {
       anchorEmptyDirectories: !alreadyRegisteredHere,
+      ...(plan.layoutVersion === 2 ? { layoutVersion: 2 } : {}),
     });
     createdFiles.push(...root.createdArtifacts);
     createdPaths = root.createdPaths;
@@ -839,6 +943,11 @@ export async function setupPreparedStore(
       // between prepare and execute must not silently swallow --remote.
       throw remoteRequiresHandEditError(id, storeRoot);
     }
+    if (existingMetadata && plan.layoutVersion === 2 && existingMetadata.layoutVersion !== 2) {
+      // Same re-assertion for --layout 2: the declaration is authored at
+      // creation only, never appended to an existing record.
+      throw layoutRequiresMigrationError(id);
+    }
     if (!existingMetadata) {
       const metadataDir = getStoreMetadataDir(storeRoot);
       const metadataDirMissing = (await pathKind(metadataDir)) === 'missing';
@@ -850,6 +959,7 @@ export async function setupPreparedStore(
         uid: mintedUid,
         id,
         ...(prepared.remote !== undefined ? { remote: prepared.remote } : {}),
+        ...(plan.layoutVersion === 2 ? { layoutVersion: 2 } : {}),
       });
       if (metadataDirMissing) {
         createdPaths.push(createdPath('.rasen-store/', metadataDir, 'directory'));
@@ -896,7 +1006,7 @@ export async function setupPreparedStore(
     }
 
     const canonical = prepared.remote ?? existingMetadata?.remote;
-    return mutationPayload(id, registered.storeRoot, {
+    return mutationPayload(id, registered.storeRoot, registered.uid, {
       isRepository,
       initialized: gitInitialized,
       committed,
@@ -1092,7 +1202,7 @@ export async function registerExistingStore(
   }
 
   // Register never commits; converted roots are the user's repo to commit.
-  return mutationPayload(id, registered.storeRoot, {
+  return mutationPayload(id, registered.storeRoot, registered.uid, {
     isRepository,
     initialized: false,
     committed: false,
@@ -1121,14 +1231,18 @@ export async function storeAddProject(
   const projectRoot = resolveRegisterRoot(input.projectPath);
   const canonicalProjectRoot = normalizeRegistryPathForComparison(projectRoot);
 
-  // Peek existing identity to resolve the id per D2 (existing metadata ->
-  // explicit id -> folder basename) without writing anything yet; a
-  // not-yet-existing or not-yet-a-project project path resolves via the
-  // same inference registerExistingStore uses internally.
+  // Peek existing identity to resolve the id per D2 without writing anything:
+  // existing metadata -> explicit --as -> registered Project identity for the
+  // canonical root -> folder basename.
   const existingMetadata = await readStoreMetadataForOperation(projectRoot);
-  const explicitId = input.id !== undefined ? validateStoreId(input.id) : undefined;
-  const resolvedProjectId =
-    existingMetadata?.id ?? explicitId ?? inferStoreIdFromPath(projectRoot);
+  const explicitId = input.id !== undefined ? validateProjectNamespaceId(input.id) : undefined;
+  const resolvedProjectId = validateProjectNamespaceId(
+    await resolveAddProjectDisplayId({
+      projectRoot,
+      ...(existingMetadata?.id !== undefined ? { metadataId: existingMetadata.id } : {}),
+      ...(explicitId !== undefined ? { explicitId } : {}),
+    })
+  );
 
   let targetStore;
   try {
@@ -1198,7 +1312,11 @@ export async function storeAddProject(
 
   const registration = await registerExistingStore({
     path: projectRoot,
-    ...(input.id !== undefined ? { id: input.id } : {}),
+    // Preserve registerExistingStore's existing metadata-vs---as mismatch
+    // check. The resolved fallback is injected only when the operator did not
+    // provide --as; otherwise the explicit value reaches the established
+    // validator unchanged.
+    id: input.id ?? resolvedProjectId,
     allowCreateIdentity: true,
     type: 'project',
   });
@@ -2007,6 +2125,72 @@ export async function doctorStores(
           }
         }
       }
+    }
+  }
+
+  // Store-side planning-layout health (`store-layout-v2-migration` task 10.4):
+  // flat refs, mixed residue, an unfinished run, unresolved ownership and
+  // shared specs, partition/catalog disagreement, a legacy membership record
+  // inside a v2 Store, legacy Archive records, and retained design docs. Every
+  // one of these is READ-ONLY and names its repair.
+  for (const store of inspected) {
+    if (store.type !== 'store') continue;
+    if (!store.openspecRoot.healthy) continue;
+    try {
+      diagnostics.push(
+        ...(await diagnoseLayoutMigration({
+          storeId: store.id,
+          ...(store.uid !== undefined ? { storeUid: store.uid } : {}),
+          storeRoot: store.root,
+        }))
+      );
+    } catch (failure) {
+      // A Store whose layout cannot be diagnosed is NOT a Store with no layout
+      // findings. `.catch(() => [])` reported the one state doctor exists to
+      // make loud as perfect health.
+      diagnostics.push(
+        makeStoreDiagnostic(
+          'warning',
+          'store_layout_diagnosis_failed',
+          `Planning-layout diagnosis for store '${store.id}' failed: ${
+            failure instanceof Error ? failure.message : String(failure)
+          }`,
+          {
+            target: 'store.layout',
+            fix: `Inspect ${store.root} and rerun 'rasen store doctor ${store.id}'.`,
+          }
+        )
+      );
+    }
+
+    // Store-side consistency gates (`store-v2-compat-hardening` task 5):
+    // target-line/project mismatches between an Archive entry's recorded
+    // facts and its holding partition, and entries naming undeclared target
+    // lines. Read-only, never repairs. Parity with `rasen doctor`'s
+    // `gatherStoreLayoutFindings` (task 4.9) — both doctors report the same
+    // findings.
+    try {
+      diagnostics.push(
+        ...(await diagnoseConsistency({
+          storeId: store.id,
+          ...(store.uid !== undefined ? { storeUid: store.uid } : {}),
+          storeRoot: store.root,
+        }))
+      );
+    } catch (failure) {
+      diagnostics.push(
+        makeStoreDiagnostic(
+          'warning',
+          'store_consistency_diagnosis_failed',
+          `Consistency diagnosis for store '${store.id}' failed: ${
+            failure instanceof Error ? failure.message : String(failure)
+          }`,
+          {
+            target: 'store.consistency',
+            fix: `Inspect ${store.root} and rerun 'rasen store doctor ${store.id}'.`,
+          }
+        )
+      );
     }
   }
 

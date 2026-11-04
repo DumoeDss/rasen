@@ -1,0 +1,10 @@
+$ (cd <temp>/copy-enriched) rasen store migrate-layout rasen-store --retire-flat
+Store rasen-store — migration retired
+  removed:   rasen/changes
+  removed:   rasen/specs
+
+Suggested commits (not executed — Rasen never writes your git index):
+  Store repo: record the removal of the flat rasen/specs and rasen/changes tree in its own commit.
+    git -C <temp>\copy-enriched add -- rasen .rasen-store && git -C <temp>\copy-enriched commit -m "chore(store): retire rasen-store flat planning tree"
+
+[exit code: 0]

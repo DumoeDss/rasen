@@ -21,6 +21,7 @@ import {
   createCapabilityCatalogSnapshot,
   type DefinitionSourceV2,
 } from '../../../src/core/pipeline-registry/definition.js';
+import { freezeProductionPreparedPipelineRegistry } from '../../../src/core/pipeline-registry/prepared-registry.js';
 
 const VALID_PIPELINE = `name: NAME
 stages:
@@ -121,16 +122,22 @@ describe('pipeline-registry/resolver', () => {
   });
 
   describe('package built-ins', () => {
-    it('should resolve full-feature built-in', () => {
+    it('should resolve full-feature built-in', async () => {
       expect(resolvePipelinePath('full-feature')).not.toBeNull();
-      const pipeline = loadPipelineByName('full-feature');
-      expect(pipeline.name).toBe('full-feature');
-      expect(pipeline.stages.length).toBeGreaterThan(0);
+      const registry = await freezeProductionPreparedPipelineRegistry(undefined, {
+        reporter: false,
+      });
+      const prepared = registry.load('full-feature').prepared;
+      expect(prepared.authoredSource.name).toBe('full-feature');
+      expect(prepared.definition.root.nodes.length).toBeGreaterThan(0);
     });
 
-    it('should resolve small-feature and bug-fix built-ins', () => {
-      expect(loadPipelineByName('small-feature').name).toBe('small-feature');
-      expect(loadPipelineByName('bug-fix').name).toBe('bug-fix');
+    it('should resolve small-feature and bug-fix built-ins', async () => {
+      const registry = await freezeProductionPreparedPipelineRegistry(undefined, {
+        reporter: false,
+      });
+      expect(registry.load('small-feature').prepared.authoredSource.name).toBe('small-feature');
+      expect(registry.load('bug-fix').prepared.authoredSource.name).toBe('bug-fix');
     });
 
     it('should list all three built-ins', () => {
@@ -140,9 +147,12 @@ describe('pipeline-registry/resolver', () => {
       expect(names).toContain('bug-fix');
     });
 
-    it('should strip .yaml/.yml extension from name', () => {
-      expect(loadPipelineByName('full-feature.yaml')).toEqual(loadPipelineByName('full-feature'));
-      expect(loadPipelineByName('full-feature.yml')).toEqual(loadPipelineByName('full-feature'));
+    it('should strip .yaml/.yml extension from name', async () => {
+      const registry = await freezeProductionPreparedPipelineRegistry(undefined, {
+        reporter: false,
+      });
+      expect(registry.load('full-feature.yaml')).toBe(registry.load('full-feature'));
+      expect(registry.load('full-feature.yml')).toBe(registry.load('full-feature'));
     });
   });
 
@@ -280,12 +290,13 @@ stages:
   });
 
   describe('prepared definition resolution', () => {
-    it('prepares unversioned and v1 definitions from package and user layers', () => {
-      const packageResult = loadPreparedPipelineByName('small-feature', undefined, {
-        catalog: createCapabilityCatalogSnapshot([]),
+    it('prepares native-v2 package and authored-v1 user definitions', async () => {
+      const registry = await freezeProductionPreparedPipelineRegistry(undefined, {
+        reporter: false,
       });
+      const packageResult = registry.load('small-feature');
       expect(packageResult.source).toBe('package');
-      expect(packageResult.prepared.authoredVersion).toBe(1);
+      expect(packageResult.prepared.authoredVersion).toBe(2);
       expect(packageResult.prepared.capability).toMatchObject({
         planAvailable: true,
         executable: true,
@@ -345,6 +356,11 @@ stages:
               id: 'exact-capability',
               kind: 'AtomicStage',
               capability: { id: 'skill:test', version: '1' },
+              execution: {
+                version: 1,
+                role: 'implementer',
+                workspace: { access: 'write' },
+              },
             },
           ],
           connections: [],

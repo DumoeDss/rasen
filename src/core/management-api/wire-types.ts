@@ -14,9 +14,14 @@ import type {
   DefinitionPort,
   DefinitionSourceV2,
   PipelineYaml,
+  PreparedExecutionCapabilityPathView,
+  PreparedExecutionPolicyPathView,
+  PreparedExecutionStageView,
+  PreparedBoundedLoopPolicy,
   StageRole,
   ThresholdValue,
 } from '../pipeline-registry/index.js';
+import type { ReconcilerSupportAnalysis } from '../pipeline-registry/execution-plan-internal.js';
 import type {
   AuditRuntime,
   DispatchBridge,
@@ -40,6 +45,29 @@ import type {
 } from '../workflow-registry/index.js';
 import type { WorkflowKind } from '../workflow-registry/types.js';
 import type { WorkflowUsage, WorkflowValidationSummary } from '../workflow-library.js';
+import type {
+  ProjectRollup,
+  TargetLineRollup,
+  GroupedChanges,
+  IssueSummaryPage,
+  IssueDetail,
+  IssueSummary,
+  IssueRecordCopy,
+  ResolvedExecutionPlan,
+} from '../store/query/types.js';
+import type {
+  IssueRecordResult,
+  ExecutionPlanResult,
+  IssuePublicationRecovery,
+  IssueWriteWarning,
+} from '../store/issues/types.js';
+import type { IssueIdentityV2 } from '../store/issues/identity.js';
+import type {
+  ChangeIssueLinksPayload,
+  IssueProjectionDetailPayload,
+  IssueProjectionListPayload,
+  StoreAttentionPayload,
+} from '../issue-read/index.js';
 
 /** A registered project, or the server's launch project. Mirrors config-api's `ProjectRef`. */
 export interface ProjectRef {
@@ -55,7 +83,14 @@ export interface ProjectRef {
  * verbatim rather than paraphrased.
  */
 export interface ApiErrorBody {
-  error: { code: string; message: string; fix?: string; cliExitCode?: number; stderr?: string };
+  error: {
+    code: string;
+    message: string;
+    fix?: string;
+    cliExitCode?: number;
+    stderr?: string;
+    recovery?: IssuePublicationRecovery;
+  };
 }
 
 // -----------------------------------------------------------------------
@@ -117,6 +152,22 @@ export interface WirePipelineStage {
   dispatchMode: DispatchMode;
   /** Named executable bridge when `dispatchMode` is `exec-bridge`. */
   bridge: DispatchBridge | null;
+  /** Native-v2 additive inspection identity; absent on older v1-only clients. */
+  nodePath?: string;
+  profilePath?: string;
+  requires?: string[];
+  capability?: { id: string; version: string };
+  workspace?: 'none' | 'read' | 'write';
+  verifyPolicy?: string | null;
+  leadReview?: boolean;
+  effectiveSandbox?: 'read-only' | 'workspace-write';
+  sessionReuse?: {
+    effective: 'never' | 'same-invocation';
+    authored?: 'none' | 'stage' | 'run-planner' | 'review-thread';
+    source: string;
+  };
+  /** Credential-free resolved inference selection; null when unconfigured. */
+  inference?: PreparedExecutionStageView['inference'];
 }
 
 /**
@@ -133,6 +184,16 @@ export interface WirePipeline {
   roleRuntimes?: Record<StageRole, WireEffectiveValue<DispatchRuntime>>;
   effectiveReuse?: WireEffectiveReuse;
   stages: WirePipelineStage[];
+  /** Shared prepared execution order; paths remain distinct across root/declaration scopes. */
+  buildOrder?: string[];
+  /** Every adapter-free capability path frozen by a native-v2 launch profile. */
+  capabilityPaths?: readonly PreparedExecutionCapabilityPathView[];
+  /** Every effective policy path frozen by a native-v2 launch profile. */
+  policyPaths?: readonly PreparedExecutionPolicyPathView[];
+  /** Exact lifecycle policies sealed by preparation. */
+  boundedLoops?: readonly PreparedBoundedLoopPolicy[];
+  availableEngines?: ReconcilerSupportAnalysis['availableEngines'];
+  reconcilerSupport?: ReconcilerSupportAnalysis['reconcilerSupport'];
   authoredVersion: number;
   normalizedVersion: 2;
   definitionValid: boolean;
@@ -140,6 +201,8 @@ export interface WirePipeline {
   executable: boolean;
   executionMode: 'legacy' | 'reconciler' | 'unavailable';
   unavailableReason?: string;
+  /** Named migration boundary for an intentionally retained package v1 fixture. */
+  compatibilityBoundary?: 'issue-dispatch-0.3.0';
   /** Present when the authoritative winning source failed preparation. */
   diagnostics?: PipelineValidationIssue[];
 }
@@ -255,6 +318,13 @@ export interface PipelineCatalogSkill {
   /** Whether the skill is enabled in the active profile selection (a disabled skill is still listed, greyed out in the palette). */
   enabled: boolean;
   /**
+   * The skill's workflow kind, passed through from the registry's
+   * `WorkflowDefinition.kind` (never inferred). Optional so older servers and
+   * existing catalog fixtures stay source-compatible (the `capability?`
+   * precedent); an absent kind degrades to the workflows group in the palette.
+   */
+  kind?: 'task' | 'driver' | 'internal' | 'expert';
+  /**
    * Exact trusted Definition capability revision. Optional so older catalog
    * fixtures and v1-only clients remain source-compatible.
    */
@@ -297,8 +367,31 @@ export interface SubmitChangeRequest {
 export interface SessionSpaceWire {
   type: 'project' | 'store';
   id: string;
-  root?: string;
+  root: string;
+  /** Stable planning identities frozen at launch; every field is independently optional. */
+  planning?: {
+    storeUid?: string;
+    storeId?: string;
+    projectId?: string;
+    targetLineId?: string;
+  };
 }
+
+/** Mirrors the frozen runtime execution union sent by `sessions.ts#toWire`. */
+export type SessionExecutionWire =
+  | { kind: 'planning-only' }
+  | {
+      kind: 'project';
+      projectId: string;
+      root: string;
+      home?: string;
+      worktree?: {
+        root: string;
+        worktreeInstanceId: string;
+        ref?: string;
+        headOid?: string;
+      };
+    };
 
 /** `POST /api/v1/changes` success response: the CLI-created change, as reported by its own `--json` output. */
 export interface SubmitChangeResponse {
@@ -614,20 +707,25 @@ export type ChooseLocalPathResponse =
 // -----------------------------------------------------------------------
 // Space creation (space-creation design D4/D5) — `POST /api/v1/spaces`.
 // The server never writes workspace files: it spawns the CLI (init / store
-// register / store setup), passing the CLI's own errors through verbatim.
+// register / store setup / store add-project), passing the CLI's own errors
+// through verbatim. Membership success is HTTP 200; creation remains 201.
 // -----------------------------------------------------------------------
 
 /** `POST /api/v1/spaces` request body (design D4). */
 export type CreateSpaceRequest =
   | { op: 'create-project'; path: string }
   | { op: 'create-store'; parent: string; id: string }
-  | { op: 'register-store'; path: string; id?: string };
+  | { op: 'register-store'; path: string; id?: string }
+  | { op: 'add-project-to-store'; projectId: string; storeId: string };
 
-/** `POST /api/v1/spaces` success response (design D4): the operation performed plus the new space's listing entry. */
-export interface CreateSpaceResponse {
-  operation: 'init' | 'store-register' | 'store-setup';
-  space: SpaceEntry;
-}
+/** `POST /api/v1/spaces` success response: fresh catalog truth after the requested mutation. */
+export type CreateSpaceResponse =
+  | { operation: 'init'; space: ProjectSpaceEntry }
+  | { operation: 'store-register' | 'store-setup'; space: StoreSpaceEntry }
+  | { operation: 'store-add-project'; space: StoreSpaceEntry };
+
+/** The precise HTTP 200 member returned by `add-project-to-store`. */
+export type AddProjectToStoreResponse = Extract<CreateSpaceResponse, { operation: 'store-add-project' }>;
 
 // -----------------------------------------------------------------------
 // Sessions (session-supervision design D2/D4) — sibling-stable wire shapes
@@ -637,11 +735,13 @@ export interface CreateSpaceResponse {
 /** Mirrors `SessionRecord` (session-registry.ts) as sent over the wire. */
 export interface SessionRecordWire {
   id: string;
-  kind: 'auto' | 'goal';
+  kind: 'auto' | 'goal' | 'hosted';
   task: string;
   cwd: string;
   /** Planning-space attribution frozen at launch (design D3); absent when the cwd yielded no derivable space. */
   space?: SessionSpaceWire;
+  /** Frozen execution selection; absent only for legacy records. */
+  execution?: SessionExecutionWire;
   pid?: number;
   agentSessionId?: string;
   state: 'starting' | 'running' | 'exiting' | 'exited';
@@ -657,8 +757,22 @@ export interface SessionRecordWire {
     | 'no-output-timeout'
     | 'killed'
     | 'server-shutdown'
-    | 'spawn-error';
+    | 'spawn-error'
+    | 'retired'
+    | 'host-failed';
   changeName?: string;
+  /** Additive durable-host lifecycle facts. Existing one-shot records omit them. */
+  hostState?: import('../session-host/contracts.js').HostedSessionState;
+  backend?: string;
+  backendSessionId?: string;
+  generation?: number;
+  currentRequest?: import('../session-host/contracts.js').SessionHostView['currentRequest'];
+  /** Best-effort tier limits published before the workload started; absent means the exact tier. */
+  processDeclaration?: import('../session-host/contracts.js').HostedProcessDeclaration;
+  /** Permanent honest terminal of a declared best-effort scope, e.g. `cancelled / emptiness-unproven`. */
+  processTerminal?: import('../session-host/contracts.js').HostedProcessTerminal;
+  recoveryReason?: string;
+  retirementReason?: string;
 }
 
 /** `POST /api/v1/sessions` request body (design D1/D4). */
@@ -737,7 +851,10 @@ export interface ProjectSpaceEntry {
 /** A registered store space (design D6): its members inline (reverse-enumerated per D4). */
 export interface StoreSpaceEntry {
   type: 'store';
+  /** Display alias retained as `id` for wire compatibility. */
   id: string;
+  /** Permanent machine identity; absent only for a legacy Store. */
+  uid?: string;
   name: string;
   root?: string;
   members: SpaceMember[];
@@ -1340,4 +1457,369 @@ export function decodeReusableSessionApiResponse(
     return null;
   }
   return decoded.data as ReusableSessionApiResponse;
+}
+
+// -----------------------------------------------------------------------
+// Store aggregate (store-issue-resources) — `GET`/`POST /api/v1/stores/*`.
+// Every read/mutation handler in `stores.ts` sends its `StoreHandlerResult`
+// UNWRAPPED (`sendJson(res, 200, result.response)`, `router.ts`) — the wire
+// body is exactly the handler's own return type, never a hand-authored
+// envelope. Re-declaring these shapes here would be a second source of truth
+// the domain type could drift out from under, so each response type below is
+// a direct alias, not a redeclaration; only the three POST request bodies
+// are wire-specific, because an HTTP body is untrusted JSON and each field's
+// wire type is the OPTIONAL, loosely-typed shape `stores.ts` itself validates
+// at runtime (`typeof body.x === '...'`), not the complete domain input type.
+// -----------------------------------------------------------------------
+
+/** `GET /api/v1/stores/projects` response. */
+export type StoreProjectsResponse = ProjectRollup;
+
+/** `GET /api/v1/stores/target-lines` response. */
+export type StoreTargetLinesResponse = TargetLineRollup;
+
+/** `GET /api/v1/stores/changes` response. */
+export type StoreChangesResponse = GroupedChanges;
+
+/** Public copy projection: the internal storage locator is intentionally unrepresentable. */
+export type StorePublicIssueRecordCopy = Omit<IssueRecordCopy, 'storageKey' | 'identity'> & {
+  readonly identity: IssueIdentityV2 | null;
+};
+
+export type StorePublicIssueSummary = Omit<IssueSummary, 'divergence'> & {
+  readonly divergence: {
+    readonly copies: readonly StorePublicIssueRecordCopy[];
+  } | null;
+};
+
+/** `GET /api/v1/stores/issues` response. */
+export type StoreIssuesResponse = Omit<IssueSummaryPage, 'issues'> & {
+  readonly issues: readonly StorePublicIssueSummary[];
+};
+
+/** `GET /api/v1/stores/issue` response. */
+export type StoreIssueDetailResponse = Omit<IssueDetail, 'issue' | 'plan'> & {
+  readonly issue: StorePublicIssueSummary;
+  readonly plan: StoreExecutionPlanResponse | null;
+};
+
+/** `GET /api/v1/stores/issue-references` response. */
+export type StoreIssueReferencesResponse = StoreIssuesResponse;
+
+/** `GET /api/v1/stores/execution-plan` response. */
+export type StoreExecutionPlanResponse = Omit<ResolvedExecutionPlan, 'issueId'> & {
+  /** Canonical public UID, or the explicit unavailable marker when identity is unverified. */
+  readonly issueId: string;
+};
+
+/**
+ * The three Issue PROJECTION reads (`issue-read-surface` design D2), aliased
+ * to the core composition's own payload types under the same
+ * unwrapped-passthrough rule as every response above: the wire body IS the
+ * body `store issue list|show --json` and `store attention --json` print,
+ * because both callers compose it through the same functions. Review has no
+ * path of its own — it is a named key of the single-Issue read, derived from
+ * the same status on the same read.
+ */
+
+/** `GET /api/v1/stores/issue-projections` response. */
+export type StoreIssueProjectionsResponse = Omit<IssueProjectionListPayload, 'issues'> & {
+  readonly issues: readonly (StorePublicIssueSummary & {
+    readonly status: IssueProjectionListPayload['issues'][number]['status'];
+  })[];
+};
+
+/** `GET /api/v1/stores/issue-projection` response. */
+export type StoreIssueProjectionResponse = Omit<IssueProjectionDetailPayload, 'issue' | 'plan'> & {
+  readonly issue: StorePublicIssueSummary;
+  readonly plan: StoreExecutionPlanResponse | null;
+};
+
+/** `GET /api/v1/stores/issue-attention` response. */
+export type StoreIssueAttentionResponse = StoreAttentionPayload;
+
+/** `GET /api/v1/stores/change-issue-links` response. */
+export type StoreChangeIssueLinksResponse = ChangeIssueLinksPayload;
+
+/** Public write facts. Physical checkout/storage locators remain core-only. */
+type StorePublicIssueWriteWarning = Pick<IssueWriteWarning, 'code' | 'message'>;
+
+export type StorePublicIssueWriteReport = Pick<
+  IssueRecordResult,
+  'identity' | 'issueId' | 'storeId' | 'storeUid'
+> & {
+  readonly warnings?: readonly StorePublicIssueWriteWarning[];
+};
+
+/** `POST /api/v1/stores/issues` and `POST /api/v1/stores/issue-state` response. */
+export type StoreIssueRecordResponse = StorePublicIssueWriteReport &
+  Pick<IssueRecordResult, 'record'>;
+
+/** `POST /api/v1/stores/execution-plan` response. */
+export type StoreExecutionPlanPublishResponse = StorePublicIssueWriteReport &
+  Pick<ExecutionPlanResult, 'revision'>;
+
+/** `POST /api/v1/stores/issues` request body. */
+export interface StoreIssueCreateRequest {
+  issueId?: string;
+  title?: string;
+  readme?: boolean;
+}
+
+/** `POST /api/v1/stores/issue-state` request body. */
+export interface StoreIssueSetStateRequest {
+  issueId?: string;
+  state?: string;
+  reason?: string;
+}
+
+/** One node of a `POST /api/v1/stores/execution-plan` request body — the untrusted-JSON counterpart of `ExecutionPlanNodeInput`. */
+export interface StoreExecutionPlanNodeInput {
+  nodeId?: string;
+  kind?: string;
+  projectId?: string;
+  targetLineId?: string;
+  changeInstanceId?: string;
+  changeAlias?: string;
+  summary?: string;
+  dependsOn?: string[];
+  lifecycle?: string;
+  reason?: string;
+  suggestedPipeline?: string;
+  rationale?: string;
+  uncertainty?: string;
+}
+
+/** `POST /api/v1/stores/execution-plan` request body. */
+export interface StoreExecutionPlanPublishRequest {
+  issueId?: string;
+  nodes?: StoreExecutionPlanNodeInput[];
+  expectedRevisionId?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// [L7 port] 0.1.7 Store aggregate route family wire types (stores-routes.ts).
+// This line additionally keeps its own flat-path handler types above.
+// ---------------------------------------------------------------------------
+
+/** An absolute path that locates something on THIS machine and grants nothing. */
+export interface WireInertLocalLocator {
+  root: string;
+  kind: 'planning-worktree';
+  portable: false;
+}
+export type WirePlanNodeKind = 'change' | 'intent';
+export type WirePlanNodeStatus = 'resolved' | 'unresolved' | 'ambiguous' | 'not-created';
+export interface WirePlanNodeClaimant {
+  changeId: string;
+  projectId: string;
+  targetLineId: string;
+  foundAtRef: string;
+  archived: boolean;
+}
+export interface WirePlanNodeResolution {
+  status: WirePlanNodeStatus;
+  claimants: readonly WirePlanNodeClaimant[];
+  searchedRefs: readonly string[];
+  localLocator: WireInertLocalLocator | null;
+  outcome: WireFinalizationOutcome | null;
+  archived: boolean;
+  /** Which archive-record basis the outcome read under (machine-facing, additive). */
+  outcomeBasis?: 'v2' | 'legacy' | 'invalid';
+  /** The `invalid` basis's parse/validation failure. */
+  outcomeBasisReason?: string | null;
+  /** The archive record's Store-relative blob path, when one was consulted. */
+  outcomeBasisPath?: string | null;
+}
+export type WirePlanNodeReadiness =
+  | 'not-started'
+  | 'blocked'
+  | 'in-progress'
+  | 'finalized'
+  | 'unknown';
+export interface WirePlanNode {
+  nodeId: string;
+  kind: WirePlanNodeKind;
+  projectId: string;
+  targetLineId: string;
+  dependsOn: readonly string[];
+  /** `change` nodes only. Resolution is by this and never by `changeAlias`. */
+  changeInstanceId?: string;
+  /** Human convenience. Never resolved by. */
+  changeAlias?: string;
+  /** `intent` nodes only. */
+  summary?: string;
+}
+export interface WireResolvedPlanNode {
+  node: WirePlanNode;
+  resolution: WirePlanNodeResolution;
+  readiness: WirePlanNodeReadiness;
+  blockedBy: readonly string[];
+}
+export interface WireExecutionPlanRevision {
+  version: 1;
+  issueId: string;
+  revisionId: string;
+  supersedes: string | null;
+  createdAt: string;
+  contentSha256: string;
+  nodes: readonly WirePlanNode[];
+}
+/** A Store ref an aggregate read could not open. NOT evidence of absence. */
+export interface WireUnsearchedRef {
+  targetLineId: string;
+  storeRef: string;
+  reason: string;
+}
+/** Carried by every aggregate response. */
+export interface WireAggregateCompleteness {
+  unsearchedRefs: readonly WireUnsearchedRef[];
+  complete: boolean;
+}
+export type WireFinalizationOutcome = 'landed' | 'superseded' | 'cancelled' | 'abandoned';
+export interface WireAggregateArchiveEntry {
+  changeId: string;
+  changeInstanceId: string | null;
+  projectId: string;
+  targetLineId: string;
+  entryName: string;
+  archiveDate: string | null;
+  /** Null for a relocated legacy record. Never inferred, defaulted, or upgraded. */
+  outcome: WireFinalizationOutcome | null;
+  legacyRecord: boolean;
+  /** Which archive-record basis the entry read under (machine-facing, additive). */
+  outcomeBasis: 'v2' | 'legacy' | 'invalid';
+  /** The `invalid` basis's parse/validation failure. Null on every other basis. */
+  outcomeBasisReason: string | null;
+  /** The archive record's Store-relative blob path. */
+  outcomeBasisPath: string;
+  foundAtRef: string;
+}
+export interface WireAggregateChangeEntry {
+  changeId: string;
+  changeInstanceId: string | null;
+  projectId: string;
+  targetLineId: string;
+  foundAtRef: string;
+  localLocator: WireInertLocalLocator | null;
+}
+export interface WireChangeGroup {
+  projectId: string;
+  targetLineId: string;
+  active: readonly WireAggregateChangeEntry[];
+  archived: readonly WireAggregateArchiveEntry[];
+}
+export interface WireTargetLineRollupEntry {
+  targetLineId: string;
+  storeRef: string | null;
+  diagnostic: WireCatalogDiagnostic | null;
+  projects: readonly string[];
+  activeChangeCount: number;
+  archivedChangeCount: number;
+}
+export interface WireProjectRollupEntry {
+  projectId: string;
+  roles: { planning: boolean; knowledge: boolean } | null;
+  diagnostic: WireCatalogDiagnostic | null;
+  targetLines: readonly string[];
+  activeChangeCount: number;
+  archivedChangeCount: number;
+}
+/** `GET /api/v1/stores/:storeUid/projects/:projectId/lines/:targetLineId/changes`. */
+export interface StoreAggregateChangesResponse extends WireAggregateCompleteness {
+  groups: readonly WireChangeGroup[];
+}
+/** `GET /api/v1/stores/:storeUid/projects`. */
+export interface StoreProjectRollupResponse extends WireAggregateCompleteness {
+  storeId: string;
+  /** The Store's STABLE identity, which is how every Store-scoped call addresses it. */
+  storeUid: string;
+  projects: readonly WireProjectRollupEntry[];
+  targetLines: readonly WireTargetLineRollupEntry[];
+}
+/** A catalog that failed strict validation, reported rather than dropped. */
+export interface WireCatalogDiagnostic {
+  code: string;
+  message: string;
+  path: string;
+}
+export type WireIssueState = 'open' | 'resolved' | 'dropped';
+/** One copy of an Issue record; `storeRef` is null for the local working tree. */
+export interface WireIssueRecordCopy {
+  storeRef: string | null;
+  targetLineId: string | null;
+  /** Public identity projection; the physical storage locator is omitted. */
+  identity: WireIssueIdentity | null;
+  sha256: string;
+  record: WireIssueRecord | null;
+  diagnostic: string | null;
+}
+export interface WireIssueRecordV1 {
+  version: 1;
+  id: string;
+  title: string;
+  state: WireIssueState;
+  reason: string | null;
+  createdAt: string;
+}
+export interface WireIssueIdentity {
+  uid: string;
+  key: string;
+  slug: string | null;
+  aliases: readonly {
+    kind: 'legacy-id' | 'former-slug' | 'custom';
+    value: string;
+  }[];
+}
+export interface WireIssueRecordV2 {
+  version: 2;
+  identity: WireIssueIdentity;
+  title: string;
+  state: WireIssueState;
+  reason: string | null;
+  createdAt: string;
+}
+export type WireIssueRecord = WireIssueRecordV1 | WireIssueRecordV2;
+/** Every copy listed, none presented as the record. */
+export interface WireIssueDivergence {
+  copies: readonly WireIssueRecordCopy[];
+}
+/** Derived at read time and never written back; the state stays operator-declared. */
+export interface WireIssueReadiness {
+  nodes: readonly WireResolvedPlanNode[];
+  readyToResolve: boolean;
+}
+export interface WireIssueSummary {
+  /** Public authoritative identity; null only for unreadable/divergent records. */
+  identity: WireIssueIdentity | null;
+  issueId: string;
+  /** Null exactly when the Issue is divergent. */
+  record: WireIssueRecord | null;
+  diagnostic: string | null;
+  divergence: WireIssueDivergence | null;
+  revisionIds: readonly string[];
+  latestRevisionId: string | null;
+  refs: readonly string[];
+  uncommitted: boolean;
+}
+/** `GET /api/v1/stores/:storeUid/issues`. */
+export interface StoreIssueListResponse extends WireAggregateCompleteness {
+  issues: readonly WireIssueSummary[];
+}
+/** `POST /api/v1/stores/:storeUid/issues/:issueId/plans`. */
+export interface StorePublishPlanRequest {
+  /** A YAML file holding a top-level `nodes:` list. The server assembles no graph. */
+  nodesFile: string;
+}
+/** `POST /api/v1/stores/:storeUid/issues`. */
+export interface StoreCreateIssueRequest {
+  /** Deprecated compatibility alias; canonical creation is title-only. */
+  issueId?: string;
+  title: string;
+}
+export interface StoreCreateScopedChangeRequest {
+  changeId: string;
+  description?: string;
+  proposal?: string;
+  schema?: string;
 }

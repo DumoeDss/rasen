@@ -38,7 +38,7 @@ interface RunCommandOptions {
   env?: NodeJS.ProcessEnv;
 }
 
-interface RunCLIOptions {
+export interface RunCLIOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   input?: string;

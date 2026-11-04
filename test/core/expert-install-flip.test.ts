@@ -163,7 +163,7 @@ describe('expert install-set matrix (6b)', () => {
     expect(await installedExpertIds(testDir)).toEqual([...QUALITY_FLOOR_EXPERTS].sort());
   });
 
-  it('row 7/11: explicit custom=[auto-command] pulls only the closure-required "review" expert', async () => {
+  it('row 7/11: explicit custom=[auto-command] installs every expert its required pipelines can dispatch', async () => {
     saveGlobalConfig({
       featureFlags: {},
       profile: 'custom',
@@ -174,7 +174,7 @@ describe('expert install-set matrix (6b)', () => {
 
     await new InitCommand({ tools: 'claude', force: true }).execute(testDir);
 
-    expect(await installedExpertIds(testDir)).toEqual(['review']);
+    expect(await installedExpertIds(testDir)).toEqual([...QUALITY_FLOOR_EXPERTS].sort());
   });
 
   it('row 12 interplay: verify-enhanced-command closure pulls review, cso, qa, design-review once', async () => {

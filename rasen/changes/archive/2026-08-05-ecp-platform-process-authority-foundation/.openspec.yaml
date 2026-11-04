@@ -1,0 +1,11 @@
+schema: spec-driven
+created: 2026-08-04
+quality:
+  files:
+    - evidence/final-verification-report.md
+    - evidence/implementation-report.md
+    - evidence/verification-report.md
+  metrics:
+    evidence/final-verification-report.md: 0
+    evidence/implementation-report.md: 0
+    evidence/verification-report.md: 0

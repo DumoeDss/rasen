@@ -44,16 +44,20 @@ export interface PipelineMessageValues {
   selectedProjectRoot: { project: string; path: string };
   staleProfileWorkflowsWarning: { workflows: string };
   unknownHostRuntimeWarning: { override: string };
+  hostRuntimeWithoutDispatchAdapterWarning: { host: string; override: string };
   noPipelinesFound: undefined;
   availablePipelinesHeading: undefined;
   pipelineTableEntry: { name: string; source: string };
   pipelineTableStages: { stages: string };
   pipelineLabel: { name: string };
   definitionVersionLabel: { version: number };
+  compatibilityBoundaryLabel: { boundary: string };
   hostRuntimeLabel: { runtime: string; source: string };
   pipelineNotFound: { name: string; available: string };
   originLabel: { origin: string };
   buildOrderHeading: undefined;
+  boundedLoopPoliciesHeading: undefined;
+  boundedLoopPolicyLine: { node: string; limits: string; policy: string };
   // ECP-5 (task 6.1): engine support rendered as PRODUCT LANGUAGE in the human
   // `pipeline show` output. Every reason the analyzer can emit has copy here;
   // the reason CODE stays beside the copy because the CLI, the management API
@@ -181,16 +185,20 @@ export const PIPELINE_MESSAGE_KEYS = [
   'selectedProjectRoot',
   'staleProfileWorkflowsWarning',
   'unknownHostRuntimeWarning',
+  'hostRuntimeWithoutDispatchAdapterWarning',
   'noPipelinesFound',
   'availablePipelinesHeading',
   'pipelineTableEntry',
   'pipelineTableStages',
   'pipelineLabel',
   'definitionVersionLabel',
+  'compatibilityBoundaryLabel',
   'hostRuntimeLabel',
   'pipelineNotFound',
   'originLabel',
   'buildOrderHeading',
+  'boundedLoopPoliciesHeading',
+  'boundedLoopPolicyLine',
   'engineSupportHeading',
   'engineSupportEngines',
   'engineSupportSupported',
@@ -450,6 +458,12 @@ export function formatPipelineExecutionNotice(
   const messages = getPipelineMessages(locale);
   if (notice.kind === 'unknown-host-runtime') {
     return messages.format('unknownHostRuntimeWarning', { override: notice.override });
+  }
+  if (notice.kind === 'host-runtime-without-dispatch-adapter') {
+    return messages.format('hostRuntimeWithoutDispatchAdapterWarning', {
+      host: notice.host,
+      override: notice.override,
+    });
   }
   return messages.format('staleProfileWorkflowsWarning', {
     workflows: notice.workflowIds.join(', '),

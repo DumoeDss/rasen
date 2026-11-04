@@ -70,15 +70,16 @@ export class SpecCommand {
   private rootPath?: string;
 
   // rootPath is set only by root-aware callers (top-level `show`).
-  constructor(rootPath?: string) {
+  constructor(rootPath?: string, specsDir?: string) {
     this.rootPath = rootPath;
-    this.specsDir = rootPath ? join(rootPath, WORKSPACE_DIR_NAME, 'specs') : SPECS_DIR;
+    this.specsDir = specsDir ??
+      (rootPath ? join(rootPath, WORKSPACE_DIR_NAME, 'specs') : SPECS_DIR);
   }
 
   async show(specId?: string, options: ShowOptions = {}): Promise<void> {
     if (!specId) {
       const canPrompt = isInteractive(options);
-      const specIds = await getSpecIds(this.rootPath ?? process.cwd());
+      const specIds = await getSpecIds(this.rootPath ?? process.cwd(), this.specsDir);
       if (canPrompt && specIds.length > 0) {
         const { select } = await import('@inquirer/prompts');
         specId = await select({

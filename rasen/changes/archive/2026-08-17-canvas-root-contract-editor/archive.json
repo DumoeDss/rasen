@@ -1,0 +1,72 @@
+{
+  "change": "canvas-root-contract-editor",
+  "archivedAt": "2026-08-17T04:52:45.974Z",
+  "codeCommit": "4de74cdd77565f5382ae19efc46de9324cb8a120",
+  "planningBranch": "feat/canvas-authoring-followups",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/01-port-mismatch.png",
+      "sha256": "c62b852975597be92a98e18e40539ec346e00d761740e691e7506d78be33a72a"
+    },
+    {
+      "path": "evidence/02-issue-node-panel-empty-sink.png",
+      "sha256": "2df907bf9a8d102659654f0b4b3a867b992a9d4feeadd245b54cd5a39ff0088a"
+    },
+    {
+      "path": "evidence/03-locate-focused.png",
+      "sha256": "2df907bf9a8d102659654f0b4b3a867b992a9d4feeadd245b54cd5a39ff0088a"
+    },
+    {
+      "path": "evidence/04-declared-validate-clean.png",
+      "sha256": "b6abd927acf1f41f477a4bbee4d3c90d7a2ecbd93fe7aa2d15d89ec880eecdba"
+    },
+    {
+      "path": "evidence/cdp-results.json",
+      "sha256": "a13d735e3821bfc9cb20db0f7a2814263aa80d7489fa4ad951e3e376a45f0d6a"
+    },
+    {
+      "path": "evidence/cdp-root-contract-editor-check.mjs",
+      "sha256": "d5a77cc96cc4e0726bc544b3125f0606ff46a9fb35cfb83a87f5af7d277d5f5d"
+    },
+    {
+      "path": "evidence/cdp-transcript.md",
+      "sha256": "bc898ee46986150be9d0a915783522faa9feae760b9c2402526df3b75f929c07"
+    },
+    {
+      "path": "evidence/fix-round-1.md",
+      "sha256": "ccf80d2cad86beb94e6610cd494c7eaff28bd636d34ba67f163b0f6587b2ccb6"
+    },
+    {
+      "path": "evidence/gates-7.md",
+      "sha256": "bd400c6eb29fe9a0a452e9675b7a7971c925917a2e97326f90af6ab2ee89d2b6"
+    },
+    {
+      "path": "evidence/handoff/implementer-1.md",
+      "sha256": "6d0763ae7b27831eac1fcdd3b61513dab55c049fb011e4bc67d3d2f27f0f0b41"
+    },
+    {
+      "path": "evidence/review-cycle-report.md",
+      "sha256": "581dd62dba6e77192aaa0e449beb4f9a468822945e0e560451a275a78280847b"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "67fc055119623d639191015c57183e46ec900819926ff1762b2bc70d28b71480"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "450502634bce5c350fce8f681e02f39b58c365039872d8aced46c051bc0ae2a3"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [
+    {
+      "file": "handoff/implementer-1.md",
+      "outcome": "preserved"
+    }
+  ],
+  "ephemeraDiscarded": [],
+  "missing": [
+    "verification-report"
+  ]
+}

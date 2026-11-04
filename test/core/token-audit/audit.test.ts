@@ -120,11 +120,14 @@ describe('runAudit (Claude path)', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('rejects an unknown runtime with every audit-capable runtime in the error', async () => {
-    await expect(runAudit('session', { runtime: 'unknown', homedir: dataDir })).rejects.toThrow(
-      /--runtime must be "claude", "codex", or "zed"/
-    );
-  });
+  it.each(['unknown', 'omp'])(
+    'rejects the non-audit runtime %s with every audit-capable runtime in the error',
+    async (runtime) => {
+      await expect(runAudit('session', { runtime, homedir: dataDir })).rejects.toThrow(
+        /--runtime must be "claude", "codex", or "zed"/
+      );
+    }
+  );
 
   it('honors an explicit --out override over the default analytics path', async () => {
     const mainPath = path.join(CLAUDE_VALID_FIXTURE_DIR, 'c4a16986-fixture.jsonl');

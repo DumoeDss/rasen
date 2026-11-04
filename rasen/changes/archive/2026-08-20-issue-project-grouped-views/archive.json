@@ -1,0 +1,95 @@
+{
+  "change": "issue-project-grouped-views",
+  "archivedAt": "2026-08-20T15:43:44.047Z",
+  "codeCommit": "3dbf7ffc4647e60d73dc6b706ee13d18007c06e6",
+  "planningBranch": "feat/issue-phase3",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/dogfood-issue1-degradation-show.json",
+      "sha256": "604b392a0b036f9d1b99a658718c80f38b7cfe935bf8d9f3e3fa8534c7a20efa"
+    },
+    {
+      "path": "evidence/dogfood-issue1-degradation-show.txt",
+      "sha256": "0b997155da64ae9b74a53d969782c7b33e5b481aacfe310d3c1f68d09692459d"
+    },
+    {
+      "path": "evidence/dogfood-issue2-1-new.json",
+      "sha256": "d40239070653ae958734870ae62224a74b27c6742723c2240fa469a560135bc9"
+    },
+    {
+      "path": "evidence/dogfood-issue2-2-plan-0001.json",
+      "sha256": "c302891ca2f75b2ac376d35e356ea0a8a6bf70e7664f964ec9a77b920b05c7cc"
+    },
+    {
+      "path": "evidence/dogfood-issue2-3-show-lanes.txt",
+      "sha256": "3ac5138f9d8a9be74332bf91680d8f43ab8880bab188174ef6b0af0d7f3e57af"
+    },
+    {
+      "path": "evidence/dogfood-issue2-4-list-summary.txt",
+      "sha256": "c0284f0e79a1055af71a5a36ae3ce81419042d91ab6f1e689fcd33adae6ee673"
+    },
+    {
+      "path": "evidence/dogfood-issue2-5-show-json.json",
+      "sha256": "e101dc825e703607304389a8eb7d3e1ef3d6d9203dad67124aca8df9c39b9b97"
+    },
+    {
+      "path": "evidence/dogfood-issue2-6-gating-refusal-human.txt",
+      "sha256": "27a70b5c0151fefdb2c37f5718ee202b24adfbfa58135dac2615bda8cdea40e4"
+    },
+    {
+      "path": "evidence/dogfood-issue2-6-gating-refusal.json",
+      "sha256": "2ae26ae36c817106c525e0c573c60fe12422dc2bbef0dc3c5bf19ef6c78a8b5d"
+    },
+    {
+      "path": "evidence/dogfood-store-1-widen-rasen.json",
+      "sha256": "e441665b8f08ae0496818248fe2dce73c07323f5bf0b6dd50ffb82284ac27305"
+    },
+    {
+      "path": "evidence/dogfood-store-1b-widen-rasen-planning.json",
+      "sha256": "9c15660b0550bab95ad9d9855dc1ca1c2a9ed904e96069934466e8e5bb061118"
+    },
+    {
+      "path": "evidence/dogfood-store-2-add-site.json",
+      "sha256": "47d2edcee4ab94df45b105b411a235847b44bebf9d496cb4359d12b7b987258c"
+    },
+    {
+      "path": "evidence/dogfood-store-2b-widen-site-planning.json",
+      "sha256": "e9c85c8ca8a91c986512e482f1ce9998486bb8e8e9e23eb480a2981375a84a96"
+    },
+    {
+      "path": "evidence/dogfood-store-3-line-map-site.json",
+      "sha256": "86ebefbc791913cde9b86106f303b931e092d377fa31140fedecea270e999090"
+    },
+    {
+      "path": "evidence/dogfood-store-4-seed-children.json",
+      "sha256": "97b4f00e854189f12332bbfd8ec2b47b8cfb2c999af5c1a43616d849032dd24c"
+    },
+    {
+      "path": "evidence/dogfood-store-5-site-change.json",
+      "sha256": "4c0733ffd08457a3e4ac1c2f77529b39917b3b2ea06da713020e9a9a8a08ded8"
+    },
+    {
+      "path": "evidence/dogfood-summary.md",
+      "sha256": "ca908de2e3a95cd15fffba2639e46dabf898a28d9b2dd6b2e2a65f682d3804f7"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "5c7cf5dd75b4d6d1cb8f7a85cff2576a68eecc4f26cee3e6ed7349b144e74098"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "9cfe8719f2ff539ee94974ed194e21230e8d76d0543411510c588b0ee3c3a721"
+    },
+    {
+      "path": "evidence/staged-close.md",
+      "sha256": "bfcc860c3c4fe5f8601f4019a2c0899fd199b4fb56ad113a59305a6b383a9a4d"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [],
+  "missing": [
+    "verification-report"
+  ]
+}

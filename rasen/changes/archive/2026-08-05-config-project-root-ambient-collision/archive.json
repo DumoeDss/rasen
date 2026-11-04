@@ -1,0 +1,64 @@
+{
+  "change": "config-project-root-ambient-collision",
+  "archivedAt": "2026-08-05T00:45:39.152Z",
+  "codeCommit": "f1e092d689ed8fd19ecb2c7ae11d57b6761bc105",
+  "planningBranch": "wip/ecp-shared-bounded-loop-lifecycle-resume",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/full-root-unblock.md",
+      "sha256": "6825f586037d95cd2e756db737230d4a2f20e081adb049a07b1f30655e996ea0"
+    },
+    {
+      "path": "evidence/implementation-report.md",
+      "sha256": "8211f6c349fa562bdf79eed9854e3553079ec6f11ebdb688b0a0ff8d4535bf54"
+    },
+    {
+      "path": "evidence/red-regression.md",
+      "sha256": "ddfb4ea642c942fa7e3ae993d2bd31c162ef0e69a929e6e708e5ee973786607b"
+    },
+    {
+      "path": "evidence/review-fix-round-1.md",
+      "sha256": "13b513b090a0ee9aef818f6b9a0b12db3c36433c70d2080516046ba4c690f194"
+    },
+    {
+      "path": "evidence/review-report-round-2.md",
+      "sha256": "b0ffc60f1f0c7b1e2366ed3820de9823af67d40678d8175682a541fa47b17538"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "8c88492e01e286a39002fd3cc76e903c3d59a388424065aab54ac5e5d4b8bbc8"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "a884bf8114f4f8d316dc3ccd4c96fa6317fd64f7030ac3b33d439a960e4ecf5b"
+    },
+    {
+      "path": "evidence/verification-report.md",
+      "sha256": "1cca8273e19bdcecd74ea6e5204be48a9b7f92c04c04046c00f83a5b4322633c"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [
+    {
+      "file": "handoff/fixer-review-1.md",
+      "outcome": "absorbed"
+    },
+    {
+      "file": "handoff/implementer-1.md",
+      "outcome": "absorbed"
+    },
+    {
+      "file": "handoff/reviewer-1.md",
+      "outcome": "absorbed"
+    },
+    {
+      "file": "handoff/reviewer-2.md",
+      "outcome": "absorbed"
+    }
+  ],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": []
+}

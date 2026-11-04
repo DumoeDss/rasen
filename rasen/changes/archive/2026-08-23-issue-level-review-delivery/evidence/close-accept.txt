@@ -1,0 +1,8 @@
+Issue issue-level-review-delivery accepted (resolved)
+  conditions: revision 0001 (f3c1b78ae4bf47370a1383c95eb2e23280c3f599d8323831c638c01a2e56235f)
+  gate: 3/3 waiting-human, 0 problems standing
+  note: Phase 6 unified review & delivery close verified: evidence rollup, 1:1 review determination, deferral vocabulary live (PR #175, Issue #5 loop)
+
+  Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing.
+    git -C E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-issue-store add rasen/issues/issue-level-review-delivery/accepted.yaml rasen/issues/issue-level-review-delivery/issue.yaml
+    git -C E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-issue-store commit -m "chore(store): accept issue issue-level-review-delivery"

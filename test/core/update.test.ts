@@ -1340,6 +1340,7 @@ content
       const goalSkillDirs = [
         'rasen-goal-plan',
         'rasen-goal-iterate',
+        'rasen-goal-judge',
         'rasen-goal-report',
         'rasen-goal',
       ];
@@ -1374,7 +1375,12 @@ content
       await updateCommand.execute(testDir);
 
       // Skill-only goal-loop stage workflows survive, as before.
-      const goalStageSkillDirs = ['rasen-goal-plan', 'rasen-goal-iterate', 'rasen-goal-report'];
+      const goalStageSkillDirs = [
+        'rasen-goal-plan',
+        'rasen-goal-iterate',
+        'rasen-goal-judge',
+        'rasen-goal-report',
+      ];
       for (const skillDir of goalStageSkillDirs) {
         expect(await FileSystemUtils.fileExists(
           path.join(skillsDir, skillDir, 'SKILL.md')

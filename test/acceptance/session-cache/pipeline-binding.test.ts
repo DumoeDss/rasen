@@ -135,8 +135,11 @@ describe('session executor exact reconciler binding acceptance', () => {
     );
     expect(support.reconcilerSupport).toMatchObject({
       supported: false,
-      reason: 'execution_profile_unavailable',
+      reason: 'unsupported_pipeline_semantics',
     });
+    // The discovery profile is still null (the synthetic decompose capability
+    // binds nowhere) — the verdict names the semantics boundary rather than
+    // reading that null as a profile availability.
     expect(preparedProfile).toBeNull();
     expect(host.calls.create).toHaveLength(0);
     expect(host.calls.wake).toHaveLength(0);

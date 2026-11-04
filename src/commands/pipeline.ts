@@ -38,6 +38,7 @@ import {
   resolveLegacyOwnerSignal,
   completedStages,
   stageWorkers,
+  frozenStageInference,
   stagesWithStatus,
   stagesLackingDurableHandle,
   detectDuplicateKeys,
@@ -60,9 +61,13 @@ import {
   resolvePipelineRoleRuntimes,
   resolvePipelineStageOverrides,
   resolveMaskedStageGate,
+  projectPreparedPipelineExecutionView,
   validatePipelineForExecution,
   type AgentRuntime,
   type PipelineExecutionOptions,
+  type PreparedExecutionStageView,
+  type PreparedPipelineExecutionView,
+  type ProductionPreparedPipelineRegistry,
   type PipelineInfo,
   type PipelineYaml,
   type ResolvedStageHandoffConfig,
@@ -90,9 +95,15 @@ import {
   type ReconcilerSupportAnalysis,
 } from '../core/pipeline-registry/execution-plan-internal.js';
 import {
+  projectPreparedBoundedLoopPolicies,
+  type PreparedBoundedLoopPolicy,
+  type PreparedDefinition,
+} from '../core/pipeline-registry/definition.js';
+import {
   resolveDiscoveryReconcilerSupportProfile,
   resolveRuntimeExecutionProfile,
 } from '../core/pipeline-registry/profile-resolver.js';
+import type { ConsultationBindingYaml } from '../core/pipeline-registry/types.js';
 import {
   prepareRuntimeContext,
   decodeCompletion,
@@ -119,6 +130,7 @@ import {
   TaskLoopDomainError,
 } from '../core/change-run/internal/task-loop.js';
 import { createFilesystemRunStore } from '../core/change-run/internal/run-store-fs.js';
+import { openRuntimePlan, type RuntimePlan } from '../core/change-run/internal/runtime-plan.js';
 import {
   assertSingleEngineOwner,
   classifyEngineOwnership,
@@ -126,8 +138,8 @@ import {
   type EngineOwner,
 } from '../core/change-run/internal/engine-ownership.js';
 import {
-  createBoundedEvidenceStore,
   computeEvidenceContentDigest,
+  type BoundedEvidenceStore,
 } from '../core/change-run/internal/evidence.js';
 import {
   readBoundedJson,
@@ -141,12 +153,14 @@ import { statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import {
   requireConfigStoreLayer,
+  resolveEffectiveConfig,
   resolveConfigStoreLayer,
   resolveHandoffThresholdLayers,
   resolveModelConfigLayers,
   resolveEffortConfigLayers,
   resolveThresholdBindingLayers,
 } from '../core/effective-config.js';
+import { resolveOmniCrossConnectionFromEntries } from '../core/omnicross/config.js';
 import { loadThresholdSchemeSnapshot } from '../core/threshold-resolver.js';
 import { getGlobalConfig } from '../core/global-config.js';
 import {
@@ -165,10 +179,10 @@ import {
 import { tryContextEstimate, type ContextEstimate } from '../core/agent-context.js';
 import { validateChangeExists } from './workflow/shared.js';
 import { resolveChangeWorkDir } from '../core/change-work.js';
-import { ephemeraDir, resolveExecutionRoot } from '../core/file-placement.js';
+import { ephemeraDir } from '../core/file-placement.js';
 import {
   resolveRootForCommand,
-  isStoreSelectedRoot,
+  resolvedExecutionProjectRoot,
   type ResolvedOpenSpecRoot,
 } from '../core/root-selection.js';
 import {
@@ -202,9 +216,96 @@ interface PipelineCommandOptions {
   engine?: string;
   /** Internal UTF-8 JSON bridge used by workflow drivers. */
   inputFile?: string;
+  /** Internal trusted pre-admission prompt manifest used by workflow drivers. */
+  turnInputFile?: string;
 }
 
 const MAX_PIPELINE_START_INPUT_BYTES = 1024 * 1024;
+const MAX_AGENT_TURN_INPUT_MANIFEST_BYTES = 2 * 1024 * 1024;
+
+interface AgentTurnInputManifestEntry {
+  readonly candidateId: string;
+  readonly prompt: string;
+}
+
+export function readAgentTurnInputManifest(
+  inputFile: string | undefined,
+  authorizedEphemeraRoot?: string
+): ReadonlyMap<string, string> {
+  if (inputFile === undefined) return new Map();
+  if (authorizedEphemeraRoot === undefined) {
+    throw new ChangeRunRuntimeError(
+      'invalid_run_request',
+      'Agent turn-input admission requires the resolved change ephemera root.'
+    );
+  }
+  let decoded: unknown;
+  try {
+    decoded = readBoundedJsonWithinRoot(
+      authorizedEphemeraRoot,
+      path.resolve(inputFile),
+      MAX_AGENT_TURN_INPUT_MANIFEST_BYTES
+    );
+  } catch (error) {
+    throw new ChangeRunRuntimeError(
+      error instanceof InputReaderError && error.code === 'input_too_large'
+        ? 'input_too_large'
+        : 'invalid_run_request',
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+  if (
+    decoded === null ||
+    typeof decoded !== 'object' ||
+    Array.isArray(decoded) ||
+    Object.keys(decoded).some(
+      (key) => key !== 'format' && key !== 'candidates'
+    ) ||
+    (decoded as { format?: unknown }).format !== 'agent-turn-input-manifest/1' ||
+    !Array.isArray((decoded as { candidates?: unknown }).candidates)
+  ) {
+    throw new ChangeRunRuntimeError(
+      'invalid_run_request',
+      'Agent turn-input manifest must be a closed agent-turn-input-manifest/1 object.'
+    );
+  }
+  const entries = new Map<string, string>();
+  for (const raw of (decoded as { candidates: unknown[] }).candidates) {
+    if (
+      raw === null ||
+      typeof raw !== 'object' ||
+      Array.isArray(raw) ||
+      Object.keys(raw).some(
+        (key) => key !== 'candidateId' && key !== 'prompt'
+      )
+    ) {
+      throw new ChangeRunRuntimeError(
+        'invalid_run_request',
+        'Agent turn-input manifest entries must contain exactly candidateId and prompt.'
+      );
+    }
+    const entry = raw as Partial<AgentTurnInputManifestEntry>;
+    if (
+      typeof entry.candidateId !== 'string' ||
+      !/^candidate:[0-9a-f]{64}$/.test(entry.candidateId) ||
+      typeof entry.prompt !== 'string' ||
+      entry.prompt.length === 0
+    ) {
+      throw new ChangeRunRuntimeError(
+        'invalid_run_request',
+        'Agent turn-input manifest entry is malformed.'
+      );
+    }
+    if (entries.has(entry.candidateId)) {
+      throw new ChangeRunRuntimeError(
+        'candidate_stale',
+        `Agent turn-input manifest duplicates candidate ${entry.candidateId}.`
+      );
+    }
+    entries.set(entry.candidateId, entry.prompt);
+  }
+  return entries;
+}
 
 function deepFreezeJson<T>(value: T): T {
   if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -277,6 +378,38 @@ type RuntimeForRunResolver = (
   options: PipelineCommandOptions
 ) => Promise<ResolvedRuntime>;
 
+function loadFrozenPlanForExistingRun(
+  storeRoot: string,
+  runId: string
+): RuntimePlan | undefined {
+  const store = createFilesystemRunStore(storeRoot);
+  if (!store.has(runId as never)) return undefined;
+  const record = store.load(runId as never);
+  const storedPlan = store.loadPlan?.(runId as never);
+  if (storedPlan === null || storedPlan === undefined) {
+    throw new ChangeRunRuntimeError(
+      'invalid_run_request',
+      'Existing Run has no persisted RuntimePlan; attested resume fails closed.'
+    );
+  }
+  const frozenPlan = openRuntimePlan(storedPlan);
+  if (
+    frozenPlan.runId !== record.runId ||
+    frozenPlan.pipeline !== record.pipeline ||
+    frozenPlan.planDigest !== record.planDigest ||
+    frozenPlan.sourceRevisionDigest !== record.sourceRevisionDigest ||
+    frozenPlan.capabilityDigest !== record.capabilityDigest ||
+    frozenPlan.policyDigest !== record.policyDigest ||
+    frozenPlan.profileDigest !== record.executionProfileDigest
+  ) {
+    throw new ChangeRunRuntimeError(
+      'invalid_run_request',
+      'Persisted RuntimePlan does not match the canonical Run Record.'
+    );
+  }
+  return frozenPlan;
+}
+
 type PipelineAgentsOptions = PipelineCommandOptions;
 
 const STAGE_ROLES: StageRole[] = ['planner', 'implementer', 'reviewer', 'fixer', 'shipper'];
@@ -313,6 +446,7 @@ interface StageView {
   modelSource: ModelSource;
   effort: string | null;
   effortSource: EffortSource;
+  inference: PreparedExecutionStageView['inference'];
   handoff: ResolvedStageHandoffConfig;
 }
 
@@ -361,6 +495,98 @@ function formatThreshold(
   return typeof threshold === 'number'
     ? String(threshold)
     : messages.format('thresholdTokensRemaining', { tokens: threshold.remainingTokens });
+}
+
+/**
+ * Read-only compatibility projection for a legacy `auto-run.json` whose
+ * package definition was upgraded to authored v2 while the run was active.
+ *
+ * Legacy run-state records stage ids, not canonical Action/node identities.
+ * The v2 root intentionally has no `PipelineYaml` adapter, so progression is
+ * projected from the typed root graph: AtomicStage and BoundedLoop ids remain
+ * the durable Change-level cursors, while Gate/FanOut/Join/Finish nodes are
+ * collapsed into dependencies between those cursors. This never becomes an
+ * authored definition or a second writable execution record.
+ */
+function projectNativeV2LegacyRunStatePipeline(
+  prepared: PreparedDefinition,
+  executionView: ReturnType<typeof projectPreparedPipelineExecutionView>
+): PipelineYaml {
+  const graph = prepared.definition.root;
+  const progressionIds = new Set(
+    graph.nodes
+      .filter((node) => node.kind === 'AtomicStage' || node.kind === 'BoundedLoop')
+      .map((node) => node.id)
+  );
+  const incoming = new Map<string, string[]>();
+  for (const node of graph.nodes) incoming.set(node.id, []);
+  for (const connection of graph.connections) {
+    incoming.get(connection.to.node)?.push(connection.from.node);
+  }
+
+  const requirementsFor = (nodeId: string): string[] => {
+    const result = new Set<string>();
+    const visited = new Set<string>();
+    const visit = (candidate: string): void => {
+      if (visited.has(candidate)) return;
+      visited.add(candidate);
+      if (progressionIds.has(candidate)) {
+        result.add(candidate);
+        return;
+      }
+      for (const parent of incoming.get(candidate) ?? []) visit(parent);
+    };
+    for (const parent of incoming.get(nodeId) ?? []) visit(parent);
+    return [...result].sort();
+  };
+
+  const rootStageViews = new Map(
+    executionView.stages
+      .filter((stage) => stage.nodePath === stage.profilePath && stage.nodePath.startsWith('root:'))
+      .map((stage) => [stage.id, stage] as const)
+  );
+  const loopPolicies = new Map(
+    executionView.boundedLoops.map((loop) => [loop.nodeId, loop] as const)
+  );
+  const stages = graph.nodes.flatMap<Stage>((node): Stage[] => {
+    if (node.kind === 'AtomicStage') {
+      const view = rootStageViews.get(node.id);
+      if (!view) {
+        throw new Error(`Prepared execution view omitted root AtomicStage "${node.id}".`);
+      }
+      const capability = view.capability.id;
+      return [{
+        id: node.id,
+        kind: 'standard' as const,
+        skill: capability.startsWith('skill:') ? capability.slice('skill:'.length) : capability,
+        role: view.role,
+        requires: requirementsFor(node.id),
+        gate: view.gate,
+        leadReview: view.leadReview,
+        ...(view.verifyPolicy ? { verifyPolicy: view.verifyPolicy } : {}),
+      }];
+    }
+    if (node.kind !== 'BoundedLoop') return [];
+    const strategyCapability = loopPolicies.get(node.id)?.lifecycle.strategy.capability?.id;
+    const skill = strategyCapability?.startsWith('skill:')
+      ? strategyCapability.slice('skill:'.length)
+      : strategyCapability ?? 'bounded-loop';
+    return [{
+      id: node.id,
+      kind: 'standard' as const,
+      skill,
+      requires: requirementsFor(node.id),
+      gate: false,
+      leadReview: false,
+    }];
+  });
+
+  return {
+    version: 1,
+    name: prepared.authoredSource.name,
+    description: prepared.authoredSource.description,
+    stages,
+  };
 }
 
 export class PipelineCommand {
@@ -466,6 +692,9 @@ export class PipelineCommand {
         description: info.description,
         definition: info.authoredDefinition ?? {},
         source: info.source,
+        ...(info.compatibilityBoundary
+          ? { compatibilityBoundary: info.compatibilityBoundary }
+          : {}),
         preparation: {
           authoredVersion: info.authoredVersion,
           normalizedVersion: 2,
@@ -492,24 +721,83 @@ export class PipelineCommand {
       : undefined;
     const resolution =
       executionSelection?.resolution ?? registry.load(normalizedName);
-    if (resolution.prepared.authoredVersion === 2 && !options.forExecution) {
+    if (resolution.prepared.authoredVersion === 2) {
       const prepared = resolution.prepared;
       // ECP-5 (task 6.1): a v2-authored definition — a Canvas-authored Custom
       // Composite — returns here, and used to carry NO engine-support fields
       // at all, so capability discovery was silent for exactly the shapes
       // ECP-2 shipped. Report the same analysis the v1 path reports.
-      const v2Support = analyzeReconcilerSupport(
-        prepared,
-        resolveDiscoveryReconcilerSupportProfile(prepared, registry.catalog)
+      const storeLayer = await requireConfigStoreLayer(projectRoot);
+      const v2HasInference = [
+        ...prepared.definition.root.nodes,
+        ...prepared.definition.declarations.flatMap((declaration) => declaration.graph.nodes),
+      ].some((node) => node.kind === 'AtomicStage' && node.execution?.inference !== undefined);
+      const omnicrossConnection = options.forExecution && v2HasInference
+        ? resolveOmniCrossConnectionFromEntries(resolveEffectiveConfig({ projectRoot, store: storeLayer }))
+        : undefined;
+      const modelLayers = resolveModelConfigLayers(projectRoot, storeLayer?.storeRoot);
+      const configLayers = resolveHandoffThresholdLayers(
+        projectRoot,
+        storeLayer?.storeRoot
+      );
+      const thresholdContext = {
+        bindings: resolveThresholdBindingLayers(
+          projectRoot,
+          storeLayer?.storeRoot
+        ),
+        schemes: loadThresholdSchemeSnapshot(),
+      };
+      const overrides = resolvePipelineStageOverrides(
+        prepared.authoredSource.name,
+        { projectRoot, store: storeLayer }
+      );
+      const basePolicy = this.resolveBaseGatePolicy(
+        projectRoot,
+        storeLayer?.storeRoot
+      );
+      const view = projectPreparedPipelineExecutionView(prepared, registry.catalog, {
+        overrides,
+        basePolicy,
+        configLayers,
+        modelLayers,
+        thresholdContext,
+        host,
+        roleRuntimeOverrides,
+        ...(omnicrossConnection ? { omnicrossConnection } : {}),
+      });
+      const enginePolicy = this.resolveEnginePolicy(
+        projectRoot,
+        storeLayer?.storeRoot,
+        options
       );
       const result = {
-        version: 2,
+        version: 2 as const,
+        authoredVersion: view.authoredVersion,
         name: prepared.authoredSource.name,
         description: prepared.authoredSource.description ?? '',
         definition: prepared.authoredSource,
+        hostRuntime: host.runtime,
+        hostRuntimeSource: host.source,
+        buildOrder: view.buildOrder,
+        stages: view.stages,
+        capabilityPaths: view.capabilityPaths,
+        policyPaths: view.policyPaths,
+        boundedLoops: view.boundedLoops,
         source: resolution.source,
-        availableEngines: v2Support.availableEngines,
-        reconcilerSupport: v2Support.reconcilerSupport,
+        availableEngines: view.availableEngines,
+        reconcilerSupport: view.reconcilerSupport,
+        enginePolicy: {
+          configured: enginePolicy.effective,
+          source: enginePolicy.source,
+          effectiveEngine:
+            enginePolicy.effective === 'legacy'
+              ? 'legacy'
+              : enginePolicy.effective === 'reconciler'
+                ? 'reconciler'
+                : view.availableEngines.includes('reconciler')
+                  ? 'reconciler'
+                  : 'legacy',
+        },
         preparation: {
           authoredVersion: prepared.authoredVersion,
           normalizedVersion: prepared.normalizedVersion,
@@ -526,7 +814,7 @@ export class PipelineCommand {
         console.log(JSON.stringify(result, null, 2));
         return;
       }
-      console.log(JSON.stringify(result, null, 2));
+      this.printPreparedPipelineDetail(result, getPipelineMessages());
       return;
     }
 
@@ -536,6 +824,9 @@ export class PipelineCommand {
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
     const storeLayer = await requireConfigStoreLayer(projectRoot);
+    const omnicrossConnection = options.forExecution && pipeline.stages.some((stage) => stage.inference)
+      ? resolveOmniCrossConnectionFromEntries(resolveEffectiveConfig({ projectRoot, store: storeLayer }))
+      : undefined;
     const configLayers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
     const modelLayers = resolveModelConfigLayers(projectRoot, storeLayer?.storeRoot);
     const effortLayers = resolveEffortConfigLayers(projectRoot, storeLayer?.storeRoot);
@@ -572,7 +863,8 @@ export class PipelineCommand {
         basePolicy,
         thresholdContext,
         host,
-        executionStages.get(s.id)
+        executionStages.get(s.id),
+        omnicrossConnection
       )
     );
     const reuse: ResolvedReuseConfig = resolvePipelineReuseConfig(pipeline, thresholdContext);
@@ -591,7 +883,11 @@ export class PipelineCommand {
       resolution.prepared,
       resolveDiscoveryReconcilerSupportProfile(
         resolution.prepared,
-        registry.catalog
+        registry.catalog,
+        registry.trustedExecutionAdapters,
+        resolution.prepared.authoredVersion === 1
+          ? (resolution.prepared.authoredSource as { consultations?: readonly ConsultationBindingYaml[] }).consultations
+          : undefined
       )
     );
 
@@ -609,6 +905,7 @@ export class PipelineCommand {
       version: pipeline.version,
       name: pipeline.name,
       description: pipeline.description ?? '',
+      boundedLoops: projectPreparedBoundedLoopPolicies(resolution.prepared),
       agents: pipeline.agents ?? {},
       hostRuntime: host.runtime,
       hostRuntimeSource: host.source,
@@ -635,6 +932,9 @@ export class PipelineCommand {
       // Provenance marker (autonomy-ladder rung 2: composed pipelines) —
       // included only when declared so a human-authored pipeline's JSON shape
       // is unchanged.
+      ...(info?.compatibilityBoundary
+        ? { compatibilityBoundary: info.compatibilityBoundary }
+        : {}),
       ...(pipeline.origin ? { origin: pipeline.origin } : {}),
     };
 
@@ -751,8 +1051,8 @@ export class PipelineCommand {
 
   /**
    * Refuse a canonical mutation when the change is claimed by both engines.
-   * Used by `resume-run` (which admits Actions, so it mutates), `complete`,
-   * and `control`.
+   * Used by `resume-run` (which may settle non-agent frontier state), `admit`,
+   * `complete`, and `control`.
    */
   private async assertCanonicalMutationAllowed(
     changeId: string,
@@ -768,14 +1068,12 @@ export class PipelineCommand {
     changeId: string,
     root: ResolvedOpenSpecRoot
   ): Promise<StateFileLocationOptions> {
-    const workDir = await resolveChangeWorkDir(root.path, changeId, {
-      ensure: false,
-    });
-    const executionRoot = resolveExecutionRoot(root.path, {
-      storeSelected: isStoreSelectedRoot(root),
-    });
+    const executionRoot = resolvedExecutionProjectRoot(root);
+    const workDir = executionRoot === undefined
+      ? null
+      : await resolveChangeWorkDir(executionRoot, changeId, { ensure: false });
     return {
-      ephemeraDir: ephemeraDir(executionRoot, changeId),
+      ...(executionRoot === undefined ? {} : { ephemeraDir: ephemeraDir(executionRoot, changeId) }),
       workDir,
     };
   }
@@ -839,7 +1137,8 @@ export class PipelineCommand {
      * pass nothing and the support failure reports no deciding source.
      */
     engineSelection?: ResolvedEnginePolicy,
-    inputs: Readonly<Record<string, JsonValue>> = Object.freeze({})
+    inputs: Readonly<Record<string, JsonValue>> = Object.freeze({}),
+    frozenPlan?: RuntimePlan
   ): Promise<ResolvedRuntime> {
     const root = await this.resolveRoot(options);
     if (!root) throw new Error('No Rasen root resolved.');
@@ -866,6 +1165,19 @@ export class PipelineCommand {
     const prepared = execution.resolution.prepared;
     const isV2Authored = prepared.authoredVersion === 2;
     const storeLayer = await requireConfigStoreLayer(projectRoot);
+    const routedInferenceDeclared = isV2Authored
+      ? [
+          ...prepared.definition.root.nodes,
+          ...prepared.definition.declarations.flatMap((declaration) => declaration.graph.nodes),
+        ].some((node) => node.kind === 'AtomicStage' && node.execution?.inference !== undefined)
+      : (prepared.authoredSource as PipelineYaml).stages.some(
+          (stage) => stage.inference !== undefined
+        );
+    const omnicrossConnection = routedInferenceDeclared
+      ? resolveOmniCrossConnectionFromEntries(
+          resolveEffectiveConfig({ projectRoot, store: storeLayer })
+        )
+      : undefined;
     const modelLayers = resolveModelConfigLayers(
       projectRoot,
       storeLayer?.storeRoot
@@ -917,6 +1229,12 @@ export class PipelineCommand {
         throw new Error(
           `Execution plan omitted stage "${stage.id}" from pipeline "${sourceDisplayName}".`
         );
+      }
+      if (resolved.inference !== null && resolved.model === undefined) {
+        throw new Error(`OmniCross-routed stage "${stage.id}" has no effective model.`);
+      }
+      if (resolved.inference !== null && omnicrossConnection === undefined) {
+        throw new Error(`OmniCross connection was not resolved for routed stage "${stage.id}".`);
       }
       const v1Pipeline = prepared.authoredSource as PipelineYaml;
       const roleDefault = stage.role
@@ -975,6 +1293,17 @@ export class PipelineCommand {
         // are the Session execution layer's design output.
         handoffTokenLimit: 10_000,
         reuseRoundLimit: 1,
+        ...(resolved.inference !== null
+          ? {
+              inference: {
+                broker: 'omnicross' as const,
+                runtime: resolved.runtime,
+                upstream: resolved.inference.upstream,
+                model: resolved.model!,
+                connection: omnicrossConnection!,
+              },
+            }
+          : {}),
         provenance: {
           role: stage.role ? 'stage' : 'default',
           model: resolved.modelSource,
@@ -991,15 +1320,10 @@ export class PipelineCommand {
         },
       };
     });
-    const profile = resolveRuntimeExecutionProfile(
-      prepared,
-      registry.catalog,
-      policyStages,
-      sourceRevision,
-      { maxAttempts: 3, maxActions: 64 }
-    );
-    const support = analyzeReconcilerSupport(prepared, profile);
-    if (!support.reconcilerSupport.supported) {
+    const rejectUnsupportedNewRun = (
+      support: ReconcilerSupportAnalysis
+    ): void => {
+      if (support.reconcilerSupport.supported) return;
       // ECP-5 (D1): fail with the SUPPORT REASON and — at launch — the layer
       // that chose the engine. An explicit `reconciler` never silently falls
       // back to legacy: the user asked for the engine by name. Under `auto`
@@ -1154,6 +1478,35 @@ export class PipelineCommand {
       engine: 'reconciler',
       inputs,
     });
+    // Every entry point (start reuse, status, resume, cancel, complete and
+    // control) resumes existing meaning from the immutable plan. The current
+    // trusted-adapter catalog is relevant only when this RunId is new.
+    const effectiveFrozenPlan =
+      frozenPlan ?? loadFrozenPlanForExistingRun(`${home}/runs`, runId);
+    const profile =
+      effectiveFrozenPlan?.executionProfile ??
+      resolveRuntimeExecutionProfile(
+        prepared,
+        registry.catalog,
+        policyStages,
+        sourceRevision,
+        { maxAttempts: 3, maxActions: 64 },
+        {
+          overrides,
+          basePolicy: baseGatePolicy,
+          modelLayers,
+          host,
+          roleRuntimeOverrides,
+          ...(omnicrossConnection ? { omnicrossConnection } : {}),
+        },
+        registry.trustedExecutionAdapters,
+        prepared.authoredVersion === 1
+          ? (prepared.authoredSource as { consultations?: readonly ConsultationBindingYaml[] }).consultations
+          : undefined
+      );
+    if (effectiveFrozenPlan === undefined) {
+      rejectUnsupportedNewRun(analyzeReconcilerSupport(prepared, profile));
+    }
 
     const ctx = prepareRuntimeContext({
       projectRoot,
@@ -1168,6 +1521,9 @@ export class PipelineCommand {
       launchRequestDigest,
       inputs,
       storeRoot: `${home}/runs`,
+      ...(effectiveFrozenPlan === undefined
+        ? {}
+        : { frozenPlan: effectiveFrozenPlan }),
       // M2: resolve the registry's source state so `pipeline status` on an
       // archived Run reports sourceState: 'archived'. Falls back to 'active'
       // when no ledger is available (unregistered project / pre-registry Run).
@@ -1192,6 +1548,39 @@ export class PipelineCommand {
       projectId,
       launchKey,
       stateLocations,
+    };
+  }
+
+  private resolveAgentTurnInputContext(
+    options: PipelineCommandOptions,
+    stateLocations: StateFileLocationOptions | undefined
+  ) {
+    const entries = readAgentTurnInputManifest(
+      options.turnInputFile,
+      stateLocations?.ephemeraDir ?? undefined
+    );
+    const unused = new Set(entries.keys());
+    return {
+      deliveryMode: 'grant' as const,
+      resolveAgentTurnInput: (candidate: Readonly<{ candidateId: string }>) => {
+        const prompt = entries.get(candidate.candidateId);
+        if (prompt === undefined) {
+          throw new ChangeRunRuntimeError(
+            'candidate_stale',
+            `Agent turn-input manifest has no prompt for candidate ${candidate.candidateId}.`
+          );
+        }
+        unused.delete(candidate.candidateId);
+        return prompt;
+      },
+      finalizeAgentTurnInputs: () => {
+        if (unused.size > 0) {
+          throw new ChangeRunRuntimeError(
+            'candidate_stale',
+            `Agent turn-input manifest contains stale or extra candidates: ${[...unused].join(', ')}.`
+          );
+        }
+      },
     };
   }
 
@@ -1222,6 +1611,54 @@ export class PipelineCommand {
     // CLI, the API and Operations all print identically.
     if (v.engine) {
       console.log(`Engine: ${v.engine}`);
+    }
+    const lifecycles = v.sections.filter(
+      (section) =>
+        section.kind === 'bounded-loop-lifecycle' && section.version === 1
+    ) as Array<{
+      loopPath: string;
+      bodyKind: string;
+      state: string;
+      iteration: number;
+      phase: string;
+      limits: {
+        iterations: { used: number; max: number };
+        actions: { used: number; max: number };
+        budget: { used: number; max: number };
+      };
+      stallStreak: number;
+      blockedStreak: number;
+      strategy: { attempts: number; maxAttempts: number; active?: number };
+      wait?: { waitId: string; kind: string; reasonCode?: string };
+      outcome?: { kind: string; disposition: string; value?: string };
+    }>;
+    for (const lifecycle of lifecycles) {
+      console.log();
+      console.log(`Bounded Loop Lifecycle (${lifecycle.loopPath}):`);
+      console.log(`  Body: ${lifecycle.bodyKind}`);
+      console.log(`  State: ${lifecycle.state}`);
+      console.log(
+        `  Iteration / Phase: ${lifecycle.iteration} / ${lifecycle.phase}`
+      );
+      console.log(
+        `  Limits: iterations ${lifecycle.limits.iterations.used}/${lifecycle.limits.iterations.max}, actions ${lifecycle.limits.actions.used}/${lifecycle.limits.actions.max}, budget ${lifecycle.limits.budget.used}/${lifecycle.limits.budget.max}`
+      );
+      console.log(
+        `  Streaks: stall ${lifecycle.stallStreak}, blocked ${lifecycle.blockedStreak}`
+      );
+      console.log(
+        `  Strategy: ${lifecycle.strategy.attempts}/${lifecycle.strategy.maxAttempts}${lifecycle.strategy.active === undefined ? '' : ` (attempt ${lifecycle.strategy.active} active)`}`
+      );
+      if (lifecycle.wait !== undefined) {
+        console.log(
+          `  Wait: ${lifecycle.wait.kind} ${lifecycle.wait.waitId}${lifecycle.wait.reasonCode === undefined ? '' : ` (${lifecycle.wait.reasonCode})`}`
+        );
+      }
+      if (lifecycle.outcome !== undefined) {
+        console.log(
+          `  Outcome: ${lifecycle.outcome.kind} / ${lifecycle.outcome.disposition}${lifecycle.outcome.value === undefined ? '' : ` / ${lifecycle.outcome.value}`}`
+        );
+      }
     }
     // Render the review-cycle section when present.
     const rc = v.sections.find(
@@ -1329,7 +1766,7 @@ export class PipelineCommand {
     // registry, so a refusal leaves nothing behind at all.
     await this.assertCanonicalLaunchAllowed(changeId, policyRoot);
 
-    const { ctx, pipelineName: resolvedPipelineName, runId, projectRoot, projectId, launchKey } =
+    const { ctx, pipelineName: resolvedPipelineName, runId, projectRoot, projectId, launchKey, stateLocations } =
       await this.resolveRuntime(
         changeId,
         pipelineName,
@@ -1366,6 +1803,7 @@ export class PipelineCommand {
         nodeId: action.nodeId,
         kind: action.kind,
       })),
+      candidates: receipt.candidates,
     });
   }
 
@@ -1406,7 +1844,7 @@ export class PipelineCommand {
   }
 
   /**
-   * Resume a Run: grant the ready frontier (task 12.3/12.4).
+   * Resume a Run and preview its ready frontier (task 12.3/12.4).
    */
   async resumeRun(
     changeId: string,
@@ -1421,8 +1859,8 @@ export class PipelineCommand {
       launchKey,
       stateLocations,
     } = await this.resolveRuntime(changeId, pipelineName, options);
-    // ECP-5 (D8): resume-run ADMITS Actions, so it mutates — it rechecks
-    // ownership like any other canonical mutation.
+    // ECP-5 (D8): resume-run may settle a non-agent frontier, so it rechecks
+    // ownership like any other canonical mutation. Agent frontiers stop at preview.
     await this.assertCanonicalMutationAllowed(
       changeId,
       projectRoot,
@@ -1444,8 +1882,47 @@ export class PipelineCommand {
         nodeId: action.nodeId,
         kind: action.kind,
       })),
+      candidates: receipt.candidates,
     });
     void launchKey;
+  }
+
+  /** Admit the exact currently previewed agent frontier from private ephemera. */
+  async admit(
+    changeId: string,
+    runId: string,
+    options: PipelineCommandOptions = {}
+  ): Promise<void> {
+    if (options.turnInputFile === undefined) {
+      throw new ChangeRunRuntimeError(
+        'invalid_run_request',
+        'Agent admission requires --turn-input-file.'
+      );
+    }
+    const resolved = await this.resolveRuntimeForRun(changeId, runId, options);
+    await this.assertChangeNotArchived(changeId, resolved.projectRoot, runId);
+    await this.assertCanonicalMutationAllowed(
+      changeId,
+      resolved.projectRoot,
+      runId,
+      resolved.ctx.store,
+      resolved.stateLocations
+    );
+    const receipt = await resolved.ctx.facade.admit(
+      { change: { projectRoot: resolved.projectRoot, changeId }, runId: runId as never },
+      this.resolveAgentTurnInputContext(options, resolved.stateLocations)
+    );
+    this.printRunReceipt(options, {
+      runId,
+      disposition: receipt.disposition,
+      status: receipt.view.status,
+      actions: receipt.actions.map((action) => ({
+        actionId: action.actionId,
+        nodeId: action.nodeId,
+        kind: action.kind,
+      })),
+      candidates: receipt.candidates,
+    });
   }
 
   /**
@@ -1509,12 +1986,28 @@ export class PipelineCommand {
     }
     const record = store.load(runId as never);
     const pipelineName = record.pipeline;
+    const frozenPlan = loadFrozenPlanForExistingRun(storeRoot, runId);
+    if (frozenPlan === undefined) {
+      throw pipelineMessageError(
+        'pipelineNotFound',
+        { name: runId, available: 'no_run' },
+        'run_not_found'
+      );
+    };
 
     // Re-prepare the definition + profile using the recovered pipeline name,
     // overriding the derived runId with the exact --run value. The identities
     // (planningSpaceId, changeInstanceId, workspaceInstanceId) are derived from
     // the physical workspace and remain stable across re-preparation.
-    return this.resolveRuntime(changeId, pipelineName, options, runId);
+    return this.resolveRuntime(
+      changeId,
+      pipelineName,
+      options,
+      runId,
+      undefined,
+      Object.freeze({}),
+      frozenPlan
+    );
   }
 
   /**
@@ -1702,18 +2195,15 @@ export class PipelineCommand {
    * orphaned uploads (not referenced by any ref) are rejected so arbitrary
    * content cannot be injected into the evidence store.
    *
-   * Returns the bounded store handle so tests can inspect what was staged.
+   * Bytes are published into the run-scoped persistent evidence store before
+   * the facade verifies the submitted references and attempts mutation.
    */
   private stageTransportUploads(
     uploads: ReadonlyArray<{ contentDigest: string; contentBase64: string }>,
-    requiredDigests: ReadonlySet<string>
-  ): ReturnType<typeof createBoundedEvidenceStore> {
-    const store = createBoundedEvidenceStore({
-      maxRunBytes: 64 * 1024 * 1024,
-      maxEntries: 64,
-    });
-
-    const stagedDigests = new Set<string>();
+    requiredRefs: readonly EvidenceRef[],
+    store: BoundedEvidenceStore
+  ): void {
+    const staged = new Map<string, Uint8Array>();
     for (const upload of uploads) {
       const content = Buffer.from(upload.contentBase64, 'base64');
       const actualDigest = computeEvidenceContentDigest(
@@ -1725,23 +2215,25 @@ export class PipelineCommand {
           `Upload contentDigest mismatch: claimed ${upload.contentDigest}, actual ${actualDigest}.`
         );
       }
-      store.stage(new Uint8Array(content));
-      stagedDigests.add(upload.contentDigest);
+      staged.set(upload.contentDigest, new Uint8Array(content));
     }
 
     // Every EvidenceRef must have staged content — no ref enters the facade
     // without its raw bytes proven against the claimed digest.
-    for (const digest of requiredDigests) {
-      if (!stagedDigests.has(digest)) {
+    const requiredDigests = new Set(requiredRefs.map((ref) => ref.contentDigest));
+    for (const ref of requiredRefs) {
+      const content = staged.get(ref.contentDigest);
+      if (content === undefined) {
         throw new InputReaderError(
           'input_malformed',
-          `Evidence ref contentDigest ${digest} has no staged upload content.`
+          `Evidence ref contentDigest ${ref.contentDigest} has no staged upload content.`
         );
       }
+      store.stageClaimed(ref, content);
     }
     // Orphaned uploads cannot advance: content uploaded but not referenced by
     // any EvidenceRef is rejected (prevents evidence-store injection).
-    for (const digest of stagedDigests) {
+    for (const digest of staged.keys()) {
       if (!requiredDigests.has(digest)) {
         throw new InputReaderError(
           'input_malformed',
@@ -1749,7 +2241,6 @@ export class PipelineCommand {
         );
       }
     }
-    return store;
   }
 
   /**
@@ -1757,13 +2248,8 @@ export class PipelineCommand {
    * These are the digests that MUST have staged upload content before the
    * facade sees the refs.
    */
-  private collectRequiredDigests(completion: CompleteRunAction): Set<string> {
-    const digests = new Set<string>();
-    digests.add(completion.actorAttestation.contentDigest);
-    for (const ref of completion.evidence) {
-      digests.add(ref.contentDigest);
-    }
-    return digests;
+  private collectRequiredRefs(completion: CompleteRunAction): EvidenceRef[] {
+    return [completion.actorAttestation, ...completion.evidence];
   }
 
   /**
@@ -1852,9 +2338,10 @@ export class PipelineCommand {
     // Decode the completion through the strict contract schema — unknown
     // fields, wrong types, and missing required fields all fail here.
     const completion = decodeCompletion(body.completion);
-    const requiredDigests = this.collectRequiredDigests(completion);
-    // Stage uploads through HostEvidenceWriter before the facade sees refs.
-    this.stageTransportUploads(uploads, requiredDigests);
+    // The complete transport has no raw-store bypass: the host writer verifies
+    // the Action-frozen authority, all proofs, the canonical claim and receipt
+    // as one set before it publishes the first object.
+    resolved.ctx.hostEvidenceWriter.publishCompletion(completion, uploads);
     const receipt = await resolved.ctx.facade.complete(completion, {
       deliveryMode: 'grant',
     });
@@ -1874,6 +2361,7 @@ export class PipelineCommand {
         nodeId: action.nodeId,
         kind: action.kind,
       })),
+      candidates: receipt.candidates,
     });
   }
 
@@ -1928,23 +2416,22 @@ export class PipelineCommand {
     const uploads = this.parseUploads(body.uploads);
     const control = decodeControl(body.control);
     // Collect required digests from any EvidenceRefs the command carries.
-    const requiredDigests = this.collectRequiredDigestsFromControl(control);
-    if (requiredDigests.size > 0 || uploads.length > 0) {
-      this.stageTransportUploads(uploads, requiredDigests);
+    const requiredRefs = this.collectRequiredRefsFromControl(control);
+    if (requiredRefs.length > 0 || uploads.length > 0) {
+      this.stageTransportUploads(
+        uploads,
+        requiredRefs,
+        resolved.ctx.evidenceStore
+      );
     }
-    // The facade's control method casts the request as a RunStimulus (the
-    // reducer expects a top-level `kind`, not the control envelope's nested
-    // `command.kind`). Convert the decoded control request to the matching
-    // stimulus shape. This mirrors how cancelRun already passes a stimulus-
-    // shaped object via `as never`.
-    const stimulus = this.controlRequestToStimulus(control);
-    const receipt = await resolved.ctx.facade.control(stimulus as never, {
+    const receipt = await resolved.ctx.facade.control(control, {
       deliveryMode: 'grant',
     });
     this.printRunReceipt(options, {
       runId,
       disposition: receipt.disposition,
       status: receipt.view.status,
+      candidates: receipt.candidates,
     });
   }
 
@@ -1952,61 +2439,23 @@ export class PipelineCommand {
    * Collect content digests from EvidenceRefs embedded in a control request's
    * command (decision/accept-workspace-revision may carry evidence).
    */
-  private collectRequiredDigestsFromControl(
+  private collectRequiredRefsFromControl(
     control: ChangeRunControlRequest
-  ): Set<string> {
-    const digests = new Set<string>();
+  ): EvidenceRef[] {
+    const refs: EvidenceRef[] = [];
     const cmd = control.command;
     if (cmd.kind === 'decision' && cmd.evidence) {
       for (const ref of cmd.evidence) {
-        digests.add(ref.contentDigest);
+        refs.push(ref);
       }
     }
     if (cmd.kind === 'accept-workspace-revision') {
       for (const ref of cmd.evidence) {
-        digests.add(ref.contentDigest);
+        refs.push(ref);
       }
     }
-    return digests;
+    return refs;
   }
-
-  /**
-   * Convert a decoded ChangeRunControlRequest into the RunStimulus shape the
-   * reducer expects (top-level `kind`, not nested `command.kind`). The facade's
-   * control method casts its argument as a RunStimulus, so the command must be
-   * flattened before the call. This mirrors how `cancelRun` already constructs
-   * a stimulus-shaped object inline.
-   */
-  private controlRequestToStimulus(
-    control: ChangeRunControlRequest
-  ): Readonly<Record<string, unknown>> {
-    const cmd = control.command;
-    switch (cmd.kind) {
-      case 'cancel':
-        return { kind: 'cancel', ...(cmd.reason ? { reason: cmd.reason } : {}) };
-      case 'escalate':
-        // The escalate stimulus requires a `code`; the control command only
-        // carries a human `reason`. Use a stable default code.
-        return { kind: 'escalate', code: 'user_escalated', reason: cmd.reason };
-      case 'resume':
-        return { kind: 'resume-wait', waitId: cmd.waitId };
-      case 'decision':
-        return {
-          kind: 'decide-gate',
-          waitId: cmd.waitId,
-          decisionId: cmd.decisionId,
-          outcome: cmd.outcome,
-        };
-      case 'accept-workspace-revision':
-        return {
-          kind: 'accept-workspace-revision',
-          waitId: cmd.waitId,
-          revision: cmd.revision,
-          evidence: cmd.evidence,
-        };
-    }
-  }
-
 
   /**
    * Show or update role-level Claude/Codex runtime defaults for a pipeline.
@@ -2022,21 +2471,28 @@ export class PipelineCommand {
     if (!root) return;
     const projectRoot = root.path;
     const normalizedName = name.replace(/\.ya?ml$/, '');
-    const pipeline = await this.loadPipelineOrExplain(
+    const loaded = await this.loadPipelineOrExplain(
       normalizedName,
       projectRoot,
       options
     );
+    const prepared = loaded.registry.load(normalizedName).prepared;
+    const pipelineName = prepared.authoredSource.name;
     const updates = this.runtimeUpdatesFromOptions(options);
 
     let configPath: string | null = null;
     if (Object.keys(updates).length > 0) {
-      configPath = this.writeRuntimeInstances(projectRoot, pipeline.name, updates);
+      configPath = this.writeRuntimeInstances(projectRoot, pipelineName, updates);
     }
 
     // Reads report the runtimes as RESOLVED from configuration (including the
     // instances just written), not from a mutated pipeline object.
-    const result = await this.toAgentsResult(pipeline.name, pipeline, configPath, projectRoot);
+    const result = await this.toAgentsResult(
+      prepared,
+      loaded.registry,
+      configPath,
+      projectRoot
+    );
 
     if (options.json) {
       console.log(JSON.stringify(result, null, 2));
@@ -2251,11 +2707,11 @@ export class PipelineCommand {
     // Sticky-legacy chain (`file-placement` capability): the execution root's
     // ephemera directory is the terminal landing and is searched first, then
     // the legacy machine-home work directory, then the change directory.
-    const executionRoot = resolveExecutionRoot(projectRoot, {
-      storeSelected: isStoreSelectedRoot(root),
-    });
+    const executionRoot = resolvedExecutionProjectRoot(root);
     const stateLocations = {
-      ephemeraDir: ephemeraDir(executionRoot, changeName),
+      ...(executionRoot === undefined
+        ? {}
+        : { ephemeraDir: ephemeraDir(executionRoot, changeName) }),
       workDir,
     };
 
@@ -2474,9 +2930,22 @@ export class PipelineCommand {
       return;
     }
 
-    const pipeline = preflightPreparedDefinitionExecution(
-      registry.load(runState.pipeline).prepared
-    ).pipeline;
+    const resolution = registry.load(runState.pipeline);
+    const selection = preflightPreparedDefinitionExecution(resolution.prepared);
+    // Native v2 needs the shared exact-capability view for the read-only legacy
+    // run-state projection. Keep authored v1 on its existing compatibility
+    // selection: in particular, a decompose stage binds its child pipeline via
+    // the registry validator rather than pretending `pipeline:<name>` is an
+    // installed workflow capability descriptor.
+    const pipeline = resolution.prepared.authoredVersion === 2
+      ? projectNativeV2LegacyRunStatePipeline(
+          resolution.prepared,
+          projectPreparedPipelineExecutionView(
+            resolution.prepared,
+            registry.catalog
+          )
+        )
+      : selection.pipeline;
     // A project-local or user-override pipeline authored before the rebrand can
     // still name legacy `openspec-*`/`openspec:*` or retired colon-form skill IDs
     // that no installed skill answers to. Surface each stale stage skill with its
@@ -2505,15 +2974,20 @@ export class PipelineCommand {
               return mapped ? { ...stage, skill: mapped } : stage;
             }),
           };
-    await validatePipelineForExecution(
-      preflightPipeline,
-      projectRoot,
-      {
-        ...this.executionOptions(options, host),
-        skillSets: registry.skillSets,
-        loadPrepared: registry.load,
-      }
-    );
+    // Authored v2 has already passed typed preparation plus exact catalog
+    // binding through the shared execution view. Only authored v1 needs the
+    // legacy skill/runtime validator (including its old->new hint adapter).
+    if (resolution.prepared.authoredVersion === 1) {
+      await validatePipelineForExecution(
+        preflightPipeline,
+        projectRoot,
+        {
+          ...this.executionOptions(options, host),
+          skillSets: registry.skillSets,
+          loadPrepared: registry.load,
+        }
+      );
+    }
     const graph = PipelineGraph.fromPipeline(pipeline);
     const buildOrder = graph.getBuildOrder();
     const completed = completedStages(runState);
@@ -2532,6 +3006,7 @@ export class PipelineCommand {
     // session) with a transcript warm-seed fallback — a spawn `name` is a
     // non-durable dispatch label, never a resume handle.
     const workers = stageWorkers(runState);
+    const frozenInference = frozenStageInference(runState);
     // Enrich each worker whose recorded transcript is readable with a
     // best-effort context estimate. A probe MUST NOT fail resume: any read
     // error silently drops the estimate for that worker.
@@ -2595,6 +3070,7 @@ export class PipelineCommand {
       ready,
       remaining,
       workers: workersWithContext,
+      ...(Object.keys(frozenInference).length > 0 ? { frozenInference } : {}),
       inProgressStages,
       escalatedStages,
       openFindings,
@@ -2722,7 +3198,10 @@ export class PipelineCommand {
     name: string,
     projectRoot: string,
     options: PipelineCommandOptions
-  ): Promise<PipelineYaml> {
+  ): Promise<{
+    registry: ProductionPreparedPipelineRegistry;
+    pipeline: PipelineYaml | null;
+  }> {
     const available = listPipelines(projectRoot);
     if (!available.includes(name)) {
       const messages = getPipelineMessages();
@@ -2742,9 +3221,13 @@ export class PipelineCommand {
     // Definition preparation and the stable v1 adapter boundary, but do not
     // probe target binaries or require the current active profile to be able to
     // execute the pipeline merely to inspect or change its runtime defaults.
-    return preflightPreparedDefinitionExecution(
+    const selection = preflightPreparedDefinitionExecution(
       registry.load(name).prepared
-    ).pipeline;
+    );
+    return {
+      registry,
+      pipeline: selection.pipeline,
+    };
   }
 
   private publicPipelineInfo(info: PipelineInfo): PipelineInfo {
@@ -2777,8 +3260,8 @@ export class PipelineCommand {
   }
 
   private async toAgentsResult(
-    name: string,
-    pipeline: PipelineYaml,
+    prepared: PreparedDefinition,
+    registry: ProductionPreparedPipelineRegistry,
     configPath: string | null,
     projectRoot: string
   ): Promise<{
@@ -2788,14 +3271,54 @@ export class PipelineCommand {
     hostRuntime: DetectedHostRuntime['runtime'];
     hostRuntimeSource: DetectedHostRuntime['source'];
     effectiveRoles: Record<StageRole, ResolvedRoleRuntime>;
-    stages: StageView[];
+    stages: StageView[] | readonly PreparedExecutionStageView[];
   }> {
+    const name = prepared.authoredSource.name;
     const host = detectHostRuntime();
     const storeLayer = await requireConfigStoreLayer(projectRoot);
     const configLayers = resolveHandoffThresholdLayers(projectRoot, storeLayer?.storeRoot);
     const modelLayers = resolveModelConfigLayers(projectRoot, storeLayer?.storeRoot);
     const effortLayers = resolveEffortConfigLayers(projectRoot, storeLayer?.storeRoot);
     const overrides = resolvePipelineStageOverrides(name, { projectRoot, store: storeLayer });
+    const basePolicy = this.resolveBaseGatePolicy(projectRoot, storeLayer?.storeRoot);
+
+    if (prepared.authoredVersion === 2) {
+      const rolePipeline: PipelineYaml = { version: 1, name, stages: [] };
+      const effectiveRoles = resolvePipelineRoleRuntimes(
+        rolePipeline,
+        overrides,
+        host
+      );
+      const view = projectPreparedPipelineExecutionView(
+        prepared,
+        registry.catalog,
+        {
+          overrides,
+          basePolicy,
+          configLayers,
+          modelLayers,
+          thresholdContext: {
+            bindings: resolveThresholdBindingLayers(
+              projectRoot,
+              storeLayer?.storeRoot
+            ),
+            schemes: loadThresholdSchemeSnapshot(),
+          },
+          host,
+        }
+      );
+      return {
+        name,
+        configPath,
+        agents: {},
+        hostRuntime: host.runtime,
+        hostRuntimeSource: host.source,
+        effectiveRoles,
+        stages: view.stages,
+      };
+    }
+
+    const pipeline = prepared.authoredSource as PipelineYaml;
     const thresholdContext = this.thresholdContext(
       pipeline,
       overrides,
@@ -2811,8 +3334,6 @@ export class PipelineCommand {
         effortLayers,
       }).stages.map((stage) => [stage.id, stage])
     );
-    const basePolicy = this.resolveBaseGatePolicy(projectRoot, storeLayer?.storeRoot);
-
     // Effective runtime per role: family instance (project > store > global) >
     // pipeline declaration > detected host > legacy Claude compatibility.
     const effectiveRoles = resolvePipelineRoleRuntimes(pipeline, overrides, host);
@@ -2870,7 +3391,8 @@ export class PipelineCommand {
     basePolicy?: ResolvedGatePolicy,
     thresholdContext?: ThresholdResolutionContext,
     host: DetectedHostRuntime = { runtime: 'unknown', source: 'unknown' },
-    executionRuntime?: ExecutionStageRuntime
+    executionRuntime?: ExecutionStageRuntime,
+    omnicrossConnection?: ReturnType<typeof resolveOmniCrossConnectionFromEntries>
   ): StageView {
     const stageOverrides = this.stageConfigOverrides(stage, overrides);
     const runtime = executionRuntime ?? resolveStageRuntimeConfig(
@@ -2886,7 +3408,12 @@ export class PipelineCommand {
     // the built-in "gates on" default so effective equals the declared gate.
     const policy: ResolvedGatePolicy = basePolicy ?? { effective: 'on', source: 'default' };
     const maskedGate = resolveMaskedStageGate(stage.gate, overrides?.gates.get(stage.id), policy);
-    const route = resolveDispatchRoute(host.runtime, effectiveStageRuntime);
+    const route = resolveDispatchRoute(host.runtime, effectiveStageRuntime, {
+      externalInference: stage.inference !== undefined,
+    });
+    if (stage.inference !== undefined && runtime.model === undefined) {
+      throw new Error(`OmniCross-routed stage "${stage.id}" has no effective model.`);
+    }
     return {
       id: stage.id,
       kind: stage.kind,
@@ -2915,6 +3442,15 @@ export class PipelineCommand {
       modelSource: runtime.modelSource,
       effort: runtime.effort ?? null,
       effortSource: runtime.effortSource,
+      inference: stage.inference
+        ? {
+            broker: 'omnicross',
+            upstream: stage.inference.upstream,
+            runtime: effectiveStageRuntime,
+            model: runtime.model!,
+            ...(omnicrossConnection ? { connection: omnicrossConnection } : {}),
+          }
+        : null,
       handoff: resolveStageHandoffConfig(
         stage,
         pipeline,
@@ -2990,8 +3526,158 @@ export class PipelineCommand {
       console.log(messages.format('pipelineTableStages', {
         stages: pipeline.stages.join(' -> '),
       }));
+      if (pipeline.compatibilityBoundary) {
+        console.log(`    ${messages.format('compatibilityBoundaryLabel', {
+          boundary: pipeline.compatibilityBoundary,
+        })}`);
+      }
       console.log();
     }
+  }
+
+  /** Human projection for authored v2. It deliberately renders the same
+   * prepared execution view returned by --json instead of reconstructing a
+   * legacy PipelineGraph or dumping the authored definition as raw JSON. */
+  private printPreparedPipelineDetail(
+    result: PreparedPipelineExecutionView & {
+      version: 2;
+      source: PipelineInfo['source'];
+      hostRuntime: DetectedHostRuntime['runtime'];
+      hostRuntimeSource: DetectedHostRuntime['source'];
+      enginePolicy: {
+        configured: string;
+        source: string;
+        effectiveEngine: string;
+      };
+    },
+    messages: PipelineMessages
+  ): void {
+    console.log(messages.format('pipelineLabel', { name: result.name }));
+    console.log(messages.format('definitionVersionLabel', { version: result.version }));
+    console.log(messages.format('hostRuntimeLabel', {
+      runtime: result.hostRuntime,
+      source: result.hostRuntimeSource,
+    }));
+    const description = messages.description(
+      result.name,
+      result.source,
+      result.description
+    );
+    if (description) console.log(description.replace(/\s+/g, ' ').trim());
+
+    console.log();
+    console.log(messages.format('buildOrderHeading'));
+    const stageByPath = new Map(result.stages.map((stage) => [stage.nodePath, stage]));
+    for (const nodePath of result.buildOrder) {
+      const stage = stageByPath.get(nodePath);
+      if (!stage) continue;
+      const meta: string[] = [
+        messages.format('stageMetaRole', { role: stage.role }),
+      ];
+      if (stage.requires.length > 0) {
+        meta.push(messages.format('stageMetaRequires', {
+          requires: stage.requires.join(', '),
+        }));
+      }
+      if (stage.effectiveGate.value) meta.push(messages.format('stageMetaGate'));
+      if (stage.verifyPolicy) {
+        meta.push(messages.format('stageMetaVerifyPolicy', {
+          policy: stage.verifyPolicy,
+        }));
+      }
+      meta.push(messages.format('stageMetaRuntimeSource', {
+        runtime: stage.runtime.value,
+        source: stage.runtime.source,
+      }));
+      meta.push(messages.format('stageMetaDispatch', { mode: stage.dispatchMode }));
+      if (stage.sessionReuse.authored) {
+        meta.push(messages.format('stageMetaSessionReuse', {
+          session: stage.sessionReuse.authored,
+        }));
+      }
+      meta.push(messages.format('stageMetaSandbox', { sandbox: stage.sandbox }));
+      if (stage.handoff.source !== 'default') {
+        meta.push(messages.format('stageMetaHandoff', {
+          threshold: formatThreshold(stage.handoff.threshold, messages),
+          source: stage.handoff.source,
+        }));
+      }
+      const capability = stage.capability.id.startsWith('skill:')
+        ? stage.capability.id.slice('skill:'.length)
+        : stage.capability.id;
+      console.log(messages.format('stageLine', {
+        id: stage.nodePath,
+        action: capability,
+        suffix: `  (${meta.join('; ')})`,
+      }));
+    }
+
+    // Orchestration-owned capabilities (FanOut evaluators and bounded-loop
+    // strategies) are frozen launch paths, but are not logical AtomicStages.
+    // Render them after the logical order without pretending they are graph
+    // stages, so the human view remains as complete as the JSON view.
+    const ordinaryProfilePaths = new Set(
+      result.stages.map((stage) => stage.profilePath)
+    );
+    const policyByPath = new Map(
+      result.policyPaths.map((policy) => [policy.profilePath, policy])
+    );
+    for (const binding of result.capabilityPaths) {
+      if (ordinaryProfilePaths.has(binding.profilePath)) continue;
+      const policy = policyByPath.get(binding.profilePath);
+      const meta: string[] = [];
+      if (policy) {
+        meta.push(messages.format('stageMetaRole', { role: policy.role }));
+        if (policy.effectiveGate.value) meta.push(messages.format('stageMetaGate'));
+        meta.push(messages.format('stageMetaRuntimeSource', {
+          runtime: policy.runtime.value,
+          source: policy.runtime.source,
+        }));
+        meta.push(messages.format('stageMetaSandbox', { sandbox: policy.sandbox }));
+      }
+      const capability = binding.capability.id.startsWith('skill:')
+        ? binding.capability.id.slice('skill:'.length)
+        : binding.capability.id;
+      console.log(messages.format('stageLine', {
+        id: binding.profilePath,
+        action: capability,
+        suffix: meta.length > 0 ? `  (${meta.join('; ')})` : '',
+      }));
+    }
+
+    if (result.boundedLoops.length > 0) {
+      console.log();
+      console.log(messages.format('boundedLoopPoliciesHeading'));
+      for (const loop of result.boundedLoops) {
+        console.log(messages.format('boundedLoopPolicyLine', {
+          node: loop.nodeId,
+          limits: JSON.stringify(loop.limits),
+          policy: JSON.stringify(loop.lifecycle),
+        }));
+      }
+    }
+
+    console.log();
+    console.log(messages.format('engineSupportHeading'));
+    console.log(messages.format('engineSupportEngines', {
+      engines: result.availableEngines.length > 0
+        ? result.availableEngines.join(', ')
+        : messages.format('none'),
+    }));
+    const reasonCopy = messages.formatDescriptor(
+      RECONCILER_SUPPORT_REASON_KEYS[result.reconcilerSupport.reason]
+    );
+    console.log(messages.format(
+      result.reconcilerSupport.supported
+        ? 'engineSupportSupported'
+        : 'engineSupportUnsupported',
+      { reason: result.reconcilerSupport.reason, copy: reasonCopy }
+    ));
+    console.log(messages.format('enginePolicyLine', {
+      configured: result.enginePolicy.configured,
+      source: result.enginePolicy.source,
+      effective: result.enginePolicy.effectiveEngine,
+    }));
   }
 
   private printPipelineDetail(
@@ -3006,6 +3692,7 @@ export class PipelineCommand {
       hostRuntime: DetectedHostRuntime['runtime'];
       hostRuntimeSource: DetectedHostRuntime['source'];
       origin?: PipelineYaml['origin'];
+      compatibilityBoundary?: PipelineInfo['compatibilityBoundary'];
       availableEngines: ReconcilerSupportAnalysis['availableEngines'];
       reconcilerSupport: ReconcilerSupportAnalysis['reconcilerSupport'];
       enginePolicy: {
@@ -3013,6 +3700,7 @@ export class PipelineCommand {
         source: string;
         effectiveEngine: string;
       };
+      boundedLoops: readonly PreparedBoundedLoopPolicy[];
     },
     graph: PipelineGraph,
     source: PipelineInfo['source'] | undefined,
@@ -3021,6 +3709,11 @@ export class PipelineCommand {
     this.printThresholdDiagnostics(result);
     console.log(messages.format('pipelineLabel', { name: result.name }));
     console.log(messages.format('definitionVersionLabel', { version: result.version }));
+    if (result.compatibilityBoundary) {
+      console.log(messages.format('compatibilityBoundaryLabel', {
+        boundary: result.compatibilityBoundary,
+      }));
+    }
     console.log(messages.format('hostRuntimeLabel', {
       runtime: result.hostRuntime,
       source: result.hostRuntimeSource,
@@ -3108,6 +3801,19 @@ export class PipelineCommand {
         : (stage.skill ?? '');
       console.log(messages.format('stageLine', { id, action, suffix }));
     }
+    if (result.boundedLoops.length > 0) {
+      console.log();
+      console.log(messages.format('boundedLoopPoliciesHeading'));
+      for (const loop of result.boundedLoops) {
+        console.log(
+          messages.format('boundedLoopPolicyLine', {
+            node: loop.nodeId,
+            limits: JSON.stringify(loop.limits),
+            policy: JSON.stringify(loop.lifecycle),
+          })
+        );
+      }
+    }
     // ECP-5 (task 6.2 / 6.1): the human `pipeline show` used to render the
     // engine analysis nowhere — `--json` carried it and the terminal did not,
     // so the only product surface for engine selection was a JSON field. Every
@@ -3172,7 +3878,7 @@ export class PipelineCommand {
       hostRuntime: DetectedHostRuntime['runtime'];
       hostRuntimeSource: DetectedHostRuntime['source'];
       effectiveRoles: Record<StageRole, ResolvedRoleRuntime>;
-      stages: StageView[];
+      stages: StageView[] | readonly PreparedExecutionStageView[];
     },
     messages: PipelineMessages
   ): void {
@@ -3197,12 +3903,13 @@ export class PipelineCommand {
     console.log();
     console.log(messages.format('stagesHeading'));
     for (const stage of result.stages) {
+      const native = 'nodePath' in stage;
       const role = stage.role ?? messages.format('none');
       console.log(messages.format('agentStageLine', {
-        id: stage.id,
+        id: native ? stage.nodePath : stage.id,
         role,
-        runtime: stage.runtime,
-        source: stage.runtimeSource,
+        runtime: native ? stage.runtime.value : stage.runtime,
+        source: native ? stage.runtime.source : stage.runtimeSource,
         dispatch: stage.dispatchMode,
       }));
     }

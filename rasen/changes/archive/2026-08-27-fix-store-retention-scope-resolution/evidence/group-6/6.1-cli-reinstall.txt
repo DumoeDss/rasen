@@ -1,0 +1,19 @@
+# Task 6.1 — dogfood CLI rebuilt and reinstalled (2026-08-27)
+
+Packed from dev/0.2.0 tip f8ce860f (PR #177 merge), NOT from the archive branch,
+so the stamp names a merged commit.
+
+$ rasen-020.ps1 --version
+0.2.0 (dev.local f8ce860f)
+
+$ rasen --version   # global, deliberately untouched (0.1.7 line)
+0.1.7 (dev.local 9472d7dc)
+
+Tarballs: artifacts/atelierai-rasen-0.2.0-local.74568910.tgz (1329 files)
+          artifacts/atelierai-rasen-ui-0.2.0-local.74568910.tgz (9 files)
+Both stamped 'dev.local f8ce860f'; installed in lockstep into the isolated
+rasen-2.0-test harness (RASEN_HOME=<harness>/.rasen-home-0.2.0).
+
+Change B's shipped surface is live in the installed build:
+$ rasen-020.ps1 store workspace plan --help | grep apply
+  --apply   在一次调用内、同一把锁的持有期间完成计划与应用，使冻结的提交 ID 不会在两次调用之间过期

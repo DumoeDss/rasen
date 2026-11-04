@@ -18,6 +18,8 @@ This skill allows you to batch-archive changes, handling spec conflicts intellig
 
 ${STORE_SELECTION_GUIDANCE}
 
+**Store finalization hard gate:** decide the outcome BEFORE selecting or mutating Changes. If this batch addresses a Store v2 member project — you threaded \`--project <id>\` (a project registered via \`rasen store add-project\`), alone or as the \`--store <id> --project <id>\` pair — every change in the batch is FINALIZED and carries its OWN explicitly declared \`--outcome\` (\`landed\`, \`superseded\`, \`cancelled\`, or \`abandoned\`) plus the \`--reason\` or \`--by <changeInstanceId>\` that outcome requires. An outcome is NEVER inferred from a sibling, reused across changes, or defaulted; if any member has none, REFUSE the entire batch naming that change and create or apply no per-change stored plans. If the selected store is a legacy flat Store, REFUSE with \`legacy_flat_store_requires_migration\` — the legacy flat Store planning tree is read-only until \`rasen store migrate-layout <store-id>\` has migrated it. Every other scope (a standalone project, the bare store-aggregate root) archives as before, with no outcome required or recorded.
+
 **Input**: None required (prompts for selection)
 
 **Steps**
@@ -53,6 +55,15 @@ ${STORE_SELECTION_GUIDANCE}
    c. **Delta specs** - Check \`artifactPaths.specs.existingOutputPaths\` from status JSON
       - List which capability specs exist
       - For each, extract requirement names (lines matching \`### Requirement: <name>\`)
+
+   d. **Reserved ship-log heading** - Resolve the selected sticky-legacy ship log for the change (\`evidenceDir\`, then an existing legacy work directory, then \`changeRoot\`)
+      - If it contains a level-two \`## Archive\` heading, mark that change BLOCKED before intent or saved-plan creation
+      - Explain that the heading is reserved for archive transaction evidence and require the operator to remove or rename the change-authored section
+      - Do not retain or apply a token for that change; other independently clean batch items may continue
+
+   e. **Recorded PR delivery** - From the same selected ship log, record its \`Mode:\` and \`PR:\` fields per item
+      - \`Mode: pr\`, or an otherwise unparseable/missing mode with a \`PR:\` URL, requires per-item merge-gate resolution in step 8a
+      - Missing or malformed PR evidence remains unverified; never treat it as a local/push delivery merely to bypass the gate
 
 4. **Detect spec conflicts**
 
@@ -126,20 +137,29 @@ ${STORE_SELECTION_GUIDANCE}
 
    Process changes in the determined order (respecting conflict resolution):
 
-   a. **Sync specs** if delta specs exist:
+   a. **Resolve every recorded PR gate per item before any sync or bookkeeping**:
+      For each confirmed change whose ship log records \`Mode: pr\` (or has a \`PR:\` URL without a parseable mode), attempt \`gh pr view <url> --json state,mergedAt\` before that item's spec sync, intent, saved preview, or apply.
+      - \`MERGED\` with non-null \`mergedAt\`: independently verified; that item's gate is satisfied.
+      - \`OPEN\`: reject that item by default and name its unmerged PR. In an interactive human session only, ask for a separate explicit override naming this item's PR and its known OPEN condition. Proceed only for that item after that blocker-naming override. Routine batch confirmation and another item's override do not count. Non-interactive or dispatched runs refuse the item outright.
+      - \`CLOSED\` without merge: reject that item and surface its rejected-delivery state; there is no archive override.
+      - Cannot verify because the PR URL is missing, \`gh\` is unavailable/unauthenticated, the network fails, or output is unparseable: state the item-specific reason and keep it re-attemptable. In an interactive human session only, ask separately whether that recorded PR is merged and treat only that explicit item-specific confirmation as the check. Non-interactive or dispatched runs refuse the item outright. Never treat unverifiable state as merged.
+
+      Record independently for each item whether its gate was satisfied by verified merge, a blocker-naming known-OPEN override, or interactive cannot-verify merge confirmation. One answer MUST NOT satisfy another item or waive another blocker.
+
+   b. **Sync specs** after that item's PR gate is satisfied (or its recorded delivery is proved not to be PR mode), if delta specs exist:
       - Let the archive engine prepare and apply the intelligent spec merge
       - For conflicts, apply in resolved order
       - Track if sync was done
 
-   b. **Invoke the authoritative archive engine once per confirmed change**:
+   c. **Invoke the authoritative archive engine once per confirmed change**:
 
       For every change, run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.intentTemplate}\`, write and complete its intent (including empty-handoff and probe-only cases), then run \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.savedPreview}\` with the resolved selector and frozen \`--skip-specs\` choice. Capture each exact \`planToken\` and apply with \`${GENERATED_ARCHIVE_COMMAND_EXAMPLES.apply}\`. Retry recoverable items with the same token; never replan. Use each structured JSON result for partial-success reporting. Never invoke an external spec-sync command, create an archive directory, move a change, recursively remove a source, or hand-write \`archive.json\`.
 
       **Post-bookkeeping commit guidance** (per change, same as \`rasen-archive-change\`, including its CONDITIONAL ship-referencing commit-message form — the "specs synced" clause included only when that change actually had delta specs synced this run, dropped entirely when it had none or sync was skipped; the ship suffix omitted, never invented, when that change's own ship log records no \`Commit:\`; four resulting forms, same as \`rasen-archive-change\` step 5): \`git add -- <changeRoot> <planningHome.changesDir>/archive <specsDir>\` then \`git commit -m "chore(rasen): archive <name> (specs synced; ship <short-sha>)" -- <changeRoot> <planningHome.changesDir>/archive <specsDir>\` (substituting the form that matches this change's actual sync/ship state) — the \`add\` step matters because the newly archived directory, and a spec sync that created a new capability directory, are both untracked and would otherwise be silently left out of a bare \`git commit --\`.
 
-   b.5. **Require finalized delivery-chain evidence per change**: the engine finalizes the archive section and minimal archive-only log when needed before evidence hashing. Do not append a post-hash commit identifier or mutate any successful archive's evidence afterward.
+   c.5. **Require finalized delivery-chain evidence per change**: the engine finalizes the archive section and minimal archive-only log when needed before evidence hashing. Do not append a post-hash commit identifier or mutate any successful archive's evidence afterward.
 
-   c. **Track outcome** for each change:
+   d. **Track outcome** for each change:
       - Success: archived successfully (record the archive location)
       - Failed: error during archive (record error)
       - Skipped: user chose not to archive (if applicable)

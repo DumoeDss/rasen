@@ -3,8 +3,10 @@ import * as client from '../api/client.js';
 import { ApiError } from '../api/client.js';
 import type {
   AllowedControl,
+  BoundedLoopLifecycleViewSection,
   ChangeRunView,
   ChoiceViewSection,
+  GoalViewSection,
   ParallelViewSection,
   ReconcilerRunSummary,
   ReviewCycleViewSection,
@@ -15,11 +17,16 @@ import type {
   WaitView,
 } from '../api/types.js';
 import {
+  getBoundedLoopLifecycleSections,
   getChoiceSection,
+  getConsultationSection,
+  getGoalSection,
   getParallelSection,
   getReviewCycleSection,
   getRootDagSection,
+  getUnsupportedBoundedLoopLifecycleSections,
 } from '../api/types.js';
+import { ConsultationObservabilityPanel } from './ConsultationObservabilityPanel.js';
 import { useT } from '../i18n/store.js';
 
 /** The translator signature `useT()` returns, threaded into leaf renderers. */
@@ -107,6 +114,12 @@ function WaitReason({ wait, t }: { wait: WaitView; t: Translate }) {
     case 'domain-blocked':
       label = t('operations.wait.domain_blocked', { code: wait.reasonCode });
       break;
+    case 'human-required':
+      label = t('operations.wait.human_required', {
+        code: wait.reasonCode,
+        outcome: wait.outcome,
+      });
+      break;
     case 'infrastructure':
       label = wait.retryable
         ? t('operations.wait.infrastructure_retryable', { code: wait.code })
@@ -142,6 +155,32 @@ function WaitReason({ wait, t }: { wait: WaitView; t: Translate }) {
     >
       <span class="ops-wait__id">{id.label}</span>
       <span class="ops-wait__reason">{label}</span>
+      {wait.kind === 'human-required' && (
+        <div class="ops-wait__evidence" data-testid="ops-human-required-evidence">
+          <span class="ops-wait__evidence-label">{t('operations.wait.evidence')}</span>
+          {wait.evidence.length === 0 ? (
+            <span data-testid="ops-human-required-evidence-empty">
+              {t('operations.wait.evidence_none')}
+            </span>
+          ) : (
+            <ul class="ops-wait__evidence-list">
+              {wait.evidence.map((evidence) => (
+                <li
+                  key={evidence.evidenceDigest}
+                  data-testid="ops-human-required-evidence-item"
+                  title={evidence.evidenceDigest}
+                >
+                  <span>{evidence.observationKind}</span>
+                  <span>{evidence.mediaType}</span>
+                  <span>{evidence.size}</span>
+                  <span>{evidence.producer.id}@{evidence.producer.version}</span>
+                  <span>{shortId(evidence.contentDigest, 20).label}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </li>
   );
 }
@@ -176,6 +215,81 @@ function TerminalReason({ terminal, t }: { terminal: TerminalView; t: Translate 
     <p class="ops-run__terminal" data-testid="ops-run-terminal" data-terminal-kind={terminal.kind}>
       {label}
     </p>
+  );
+}
+
+function BoundedLoopLifecycleSection({
+  section,
+  t,
+}: {
+  section: BoundedLoopLifecycleViewSection;
+  t: Translate;
+}) {
+  const loop = shortId(section.loopPath, 32);
+  return (
+    <div
+      class={`ops-run__loop-lifecycle ops-run__loop-lifecycle--${section.state}`}
+      data-testid="ops-run-loop-lifecycle"
+      data-loop-path={section.loopPath}
+      data-body-kind={section.bodyKind}
+      data-state={section.state}
+    >
+      <span class="ops-run__section-label">
+        {t('operations.loop_lifecycle.title')}
+      </span>
+      <dl class="ops-run__loop-lifecycle-meta">
+        <dt>{t('operations.loop_lifecycle.loop')}</dt>
+        <dd title={section.loopPath}>{loop.label}</dd>
+        <dt>{t('operations.loop_lifecycle.body')}</dt>
+        <dd>{section.bodyKind}</dd>
+        <dt>{t('operations.loop_lifecycle.state')}</dt>
+        <dd>{section.state}</dd>
+        <dt>{t('operations.loop_lifecycle.iteration')}</dt>
+        <dd>{section.iteration}</dd>
+        <dt>{t('operations.loop_lifecycle.phase')}</dt>
+        <dd>{section.phase}</dd>
+        <dt>{t('operations.loop_lifecycle.limits')}</dt>
+        <dd data-testid="ops-loop-lifecycle-limits">
+          {t('operations.loop_lifecycle.limit_values', {
+            iterations: `${section.limits.iterations.used}/${section.limits.iterations.max}`,
+            actions: `${section.limits.actions.used}/${section.limits.actions.max}`,
+            budget: `${section.limits.budget.used}/${section.limits.budget.max}`,
+          })}
+        </dd>
+        <dt>{t('operations.loop_lifecycle.streaks')}</dt>
+        <dd>
+          {t('operations.loop_lifecycle.streak_values', {
+            stall: section.stallStreak,
+            blocked: section.blockedStreak,
+          })}
+        </dd>
+        <dt>{t('operations.loop_lifecycle.strategy')}</dt>
+        <dd>
+          {section.strategy.attempts}/{section.strategy.maxAttempts}
+          {section.strategy.active === undefined
+            ? ''
+            : ` (${t('operations.loop_lifecycle.active', { attempt: section.strategy.active })})`}
+        </dd>
+        {section.wait !== undefined && (
+          <>
+            <dt>{t('operations.loop_lifecycle.wait')}</dt>
+            <dd title={section.wait.waitId}>
+              {section.wait.kind}
+              {section.wait.reasonCode === undefined ? '' : `: ${section.wait.reasonCode}`}
+            </dd>
+          </>
+        )}
+        {section.outcome !== undefined && (
+          <>
+            <dt>{t('operations.loop_lifecycle.outcome')}</dt>
+            <dd data-testid="ops-loop-lifecycle-outcome">
+              {section.outcome.kind} / {section.outcome.disposition}
+              {section.outcome.value === undefined ? '' : `: ${section.outcome.value}`}
+            </dd>
+          </>
+        )}
+      </dl>
+    </div>
   );
 }
 
@@ -474,6 +588,54 @@ function ReviewCycleSection({
   );
 }
 
+/** Renders GoalLoop domain facts without duplicating lifecycle mechanics. */
+function GoalSection({ section, t }: { section: GoalViewSection; t: Translate }) {
+  const loop = shortId(section.loopPath, 32);
+  return (
+    <div
+      class="ops-run__goal"
+      data-testid="ops-run-goal"
+      data-variant={section.variant}
+      data-phase={section.phase}
+      data-outcome={section.outcome}
+    >
+      <span class="ops-run__section-label">{t('operations.goal.title')}</span>
+      <dl class="ops-run__goal-meta">
+        <dt>{t('operations.goal.loop')}</dt>
+        <dd title={section.loopPath} data-testid="ops-goal-loop">{loop.label}</dd>
+        <dt>{t('operations.goal.variant')}</dt>
+        <dd data-testid="ops-goal-variant">{section.variant}</dd>
+        <dt>{t('operations.goal.round')}</dt>
+        <dd data-testid="ops-goal-round">{section.round}</dd>
+        <dt>{t('operations.goal.phase')}</dt>
+        <dd data-testid="ops-goal-phase">{section.phase}</dd>
+        <dt>{t('operations.goal.outcome')}</dt>
+        <dd data-testid="ops-goal-outcome">
+          {section.outcome ?? t('operations.goal.in_progress')}
+        </dd>
+        {section.lastScore !== undefined && (
+          <>
+            <dt>{t('operations.goal.score')}</dt>
+            <dd data-testid="ops-goal-score">{section.lastScore}</dd>
+          </>
+        )}
+        <dt>{t('operations.goal.gaps')}</dt>
+        <dd data-testid="ops-goal-gaps">
+          {section.lastGaps.length === 0
+            ? t('operations.goal.gaps_none')
+            : section.lastGaps.join(' | ')}
+        </dd>
+        {section.waitReason !== undefined && (
+          <>
+            <dt>{t('operations.goal.wait')}</dt>
+            <dd data-testid="ops-goal-wait">{section.waitReason}</dd>
+          </>
+        )}
+      </dl>
+    </div>
+  );
+}
+
 /**
  * Renders one allowed control that the browser CANNOT submit as a read-only
  * badge. Only `accept-workspace-revision` qualifies: it requires `EvidenceRef[]`
@@ -662,7 +824,9 @@ function ControlsSection({
                 </span>
               </div>
             );
-          case 'resume':
+          case 'resume': {
+            const wait = root.waits.find(candidate => candidate.waitId === control.waitId);
+            const retry = wait?.kind === 'infrastructure' && wait.retryable;
             return (
               <div
                 key={`resume-${control.waitId}`}
@@ -672,7 +836,9 @@ function ControlsSection({
                 title={`waitId: ${control.waitId}`}
               >
                 <span class="ops-control__label">
-                  {t('operations.control.resume', { wait: shortId(control.waitId).label })}
+                  {t(retry ? 'operations.control.retry' : 'operations.control.resume', {
+                    wait: shortId(control.waitId).label,
+                  })}
                 </span>
                 <button
                   type="button"
@@ -681,10 +847,11 @@ function ControlsSection({
                   disabled={inFlight}
                   onClick={() => submit({ kind: 'resume', waitId: control.waitId })}
                 >
-                  {t('operations.control.resume_action')}
+                  {t(retry ? 'operations.control.retry_action' : 'operations.control.resume_action')}
                 </button>
               </div>
             );
+          }
           case 'escalate':
             return (
               <div
@@ -807,8 +974,12 @@ function RunDetailBody({
 }) {
   const root = getRootDagSection(view);
   const reviewCycle = getReviewCycleSection(view);
+  const goal = getGoalSection(view);
+  const loopLifecycles = getBoundedLoopLifecycleSections(view);
+  const unsupportedLoopLifecycles = getUnsupportedBoundedLoopLifecycleSections(view);
   const parallel = getParallelSection(view);
   const choice = getChoiceSection(view);
+  const consultation = getConsultationSection(view);
   const isOther = view.workspace.scope === 'other';
   const runIdShort = shortId(view.runId);
 
@@ -924,6 +1095,25 @@ function RunDetailBody({
                   <span class="ops-run__action-kind">{action.kind}</span>
                   <span class="ops-run__action-id">{actShort.label}</span>
                   <span class="ops-run__delivery">{action.deliveryState}</span>
+                  {action.effects.length > 0 && (
+                    <ul class="ops-run__effect-list" data-testid="ops-run-effects">
+                      {action.effects.map((effect) => (
+                        <li
+                          key={effect.effectId}
+                          class={`ops-run__effect ops-run__effect--${effect.state}`}
+                          data-testid="ops-run-effect"
+                          data-effect-state={effect.state}
+                          title={`EffectId: ${effect.effectId}\nSlot: ${effect.slot}`}
+                        >
+                          <span class="ops-run__effect-slot">{effect.slot}</span>
+                          <span class="ops-run__effect-id">
+                            {shortId(effect.effectId).label}
+                          </span>
+                          <span class="ops-run__effect-state">{effect.state}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </li>
               );
             })}
@@ -952,9 +1142,33 @@ function RunDetailBody({
           projects only when the Run's plan carries a review-cycle BoundedLoop
           (ECP-1), a FanOut or a Choice node (ECP-4). Absent sections render
           nothing, exactly like an empty frontier. */}
+      {loopLifecycles.map((section) => (
+        <BoundedLoopLifecycleSection
+          key={section.loopPath}
+          section={section}
+          t={t}
+        />
+      ))}
+      {(reviewCycle || goal) && loopLifecycles.length === 0 && unsupportedLoopLifecycles.length === 0 && (
+        <p class="ops-run__compatibility-notice" data-testid="ops-loop-lifecycle-missing">
+          {t('operations.loop_lifecycle.missing')}
+        </p>
+      )}
+      {unsupportedLoopLifecycles.map((section) => (
+        <p
+          key={`${section.kind}/${section.version}`}
+          class="ops-run__compatibility-notice"
+          data-testid="ops-loop-lifecycle-unsupported"
+          data-version={section.version}
+        >
+          {t('operations.loop_lifecycle.unsupported', { version: section.version })}
+        </p>
+      ))}
       {reviewCycle && <ReviewCycleSection section={reviewCycle} t={t} />}
+      {goal && <GoalSection section={goal} t={t} />}
       {parallel && <ParallelSection section={parallel} t={t} />}
       {choice && <ChoiceSection section={choice} t={t} />}
+      {consultation && <ConsultationObservabilityPanel section={consultation} />}
 
       {/* Drift — definition/capability/policy/workspace/source comparison. The
           facet names are localized; the observer's verdict on each
@@ -986,7 +1200,7 @@ function RunDetailBody({
           the browser cannot produce). Other-workspace and terminal Runs have
           an empty allowedControls array server-side, so this section is absent
           for them (same conditional as actions/waits above). */}
-      {root.allowedControls.length > 0 && (
+      {root.allowedControls.length > 0 && unsupportedLoopLifecycles.length === 0 && (
         <div class="ops-run__controls" data-testid="ops-run-controls">
           <span class="ops-run__section-label">{t('operations.control.title')}</span>
           <ControlsSection
@@ -1140,15 +1354,20 @@ function RunDetailPanel({
  * filters reconciler Runs to the Task's child change names, and groups them
  * per child without mixing planning spaces.
  */
-export function OperationsSection({
+export function RunOperationsPanel({
   runsResponse,
   selector,
   childNames,
+  projectId,
+  title,
 }: {
   runsResponse: RunsResponse | null;
   selector?: string;
   /** The Task's child change names — used to group runs by child. */
   childNames: readonly string[];
+  /** Exact Store member whose selector produced this response. */
+  projectId?: string;
+  title?: string;
 }) {
   const t = useT();
   const [selectedRun, setSelectedRun] = useState<{ changeId: string; runId: string } | null>(null);
@@ -1177,8 +1396,9 @@ export function OperationsSection({
       class="task-detail__operations"
       aria-label={t('operations.aria')}
       data-testid="operations-section"
+      data-project-id={projectId}
     >
-      <h3 class="operations-section__title">{t('operations.title')}</h3>
+      <h3 class="operations-section__title">{title ?? t('operations.title')}</h3>
 
       {childGroups.map(([changeId, summaries]) => (
         <div
@@ -1244,4 +1464,13 @@ export function OperationsSection({
       )}
     </section>
   );
+}
+
+/** Task-detail compatibility wrapper over the reusable project-tagged panel. */
+export function OperationsSection(props: {
+  runsResponse: RunsResponse | null;
+  selector?: string;
+  childNames: readonly string[];
+}) {
+  return <RunOperationsPanel {...props} />;
 }

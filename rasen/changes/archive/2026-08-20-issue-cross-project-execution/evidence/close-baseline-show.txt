@@ -1,0 +1,26 @@
+Issue issue-cross-project-execution
+  state: open
+  title: Issue layer Phase 3: one Issue across member projects
+  revisions: 0001
+  latest plan: revision 0001
+  plan digest: efaf70efa3e621e86eeb0845307f0c18ab9943249f510ae39f04bd1414d78ff8
+  status:
+    phase: active
+    health: healthy
+    progress: 2/3
+    run-state: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer
+    nodes:
+      project rasen-site (6ca78b98-777f-45bc-8d9b-b84c34e1a531): 0/1
+      document-multi-project-issues change 6ca78b98-777f-45bc-8d9b-b84c34e1a531 document-multi-project-issues — not-started (blockedBy issue-project-grouped-views@e2ee72ed-04a1-4395-86aa-7e77d2b83ec7: not-started, no local run-state)
+        evidence: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-issue-store\rasen\projects\6ca78b98-777f-45bc-8d9b-b84c34e1a531\changes\document-multi-project-issues\evidence
+      project rasen (e2ee72ed-04a1-4395-86aa-7e77d2b83ec7): 2/2
+      issue-cross-project-gating change e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 2026-08-20-issue-cross-project-gating — run-terminal
+        pipeline: small-feature (located by execution-root)
+      issue-project-grouped-views intent e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 — not-started
+      issue-target-project-binding change e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 2026-08-20-issue-target-project-binding — run-terminal
+        pipeline: small-feature (located by execution-root)
+
+  acceptance:
+    conditions: (none published)
+    gate: not eligible — the Issue has no readable acceptance conditions — no acceptance conditions revision exists for it.
+    record: (not accepted)

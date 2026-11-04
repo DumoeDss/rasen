@@ -1,0 +1,49 @@
+{
+  "change": "issue-delivery-evidence-rollup",
+  "archivedAt": "2026-08-23T08:58:54.941Z",
+  "codeCommit": "c870a4b223d4b4edb99aee251e182a8e57898259",
+  "planningBranch": "feat/issue-phase6",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/dogfood-1-autodecompose-uplift.txt",
+      "sha256": "9f8d733d3adb46f3e38ba53d77d7a36fbc20aae7960b73119aa83feee5dd01f0"
+    },
+    {
+      "path": "evidence/dogfood-2-cross-project-execution.txt",
+      "sha256": "5af27964a7760e611d9377896c67e26e3544197141724941dbb73fd498c5b0ed"
+    },
+    {
+      "path": "evidence/dogfood-3-cross-project-replanning.txt",
+      "sha256": "2c0fae36f8d9c8a54fc9c93c7a655e51e291c4e80a5f1386210f6dc4b5b849bb"
+    },
+    {
+      "path": "evidence/dogfood-4-multi-change-execution.txt",
+      "sha256": "c4505e99446a6279ea87eb9b5e75bf6f24d07b58fb64625b4e0562517f3c4c7a"
+    },
+    {
+      "path": "evidence/dogfood-5-multi-change-execution.json",
+      "sha256": "d94c4c3c96b50e4aabaca40d2aacc43cb9c6e115c8723e2a9096309c01f13b2b"
+    },
+    {
+      "path": "evidence/dogfood-receipts-summary.md",
+      "sha256": "750522cce125e7a4df7301c6ffef87eccbee1be9febdc98ebc67fd9f19efe1ba"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "542b4a0a1e4eb750668392358aabca05faa5895111c278b6999f28634ce3a110"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "b525ee4710a11dad3383d4cc564bc9101f76bf604ec54d935f280f4d67cd0879"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

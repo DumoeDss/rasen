@@ -1,0 +1,30 @@
+Issue issue-multi-change-execution
+  state: resolved
+  title: Issue layer Phase 2: single Issue, single project, multi-Change execution
+  revisions: 0001
+  latest plan: revision 0001
+  plan digest: e9b0cd65883cd390480f235d35088f64c9e6d447fd1b4aab9e557aae7dcfbbe0
+  status:
+    phase: done
+    health: healthy
+    progress: 3/3
+    run-state: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer
+    nodes:
+      project rasen (e2ee72ed-04a1-4395-86aa-7e77d2b83ec7): 3/3
+      issue-node-lifecycle change e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 2026-08-20-issue-node-lifecycle — run-terminal
+        pipeline: small-feature (located by execution-root)
+      issue-persistent-baseline change e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 issue-persistent-baseline — run-terminal
+        pipeline: small-feature (located by execution-root)
+        evidence: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-issue-store\rasen\projects\e2ee72ed-04a1-4395-86aa-7e77d2b83ec7\changes\issue-persistent-baseline\evidence
+      issue-plan-publication change e2ee72ed-04a1-4395-86aa-7e77d2b83ec7 2026-08-20-issue-plan-publication — run-terminal
+        pipeline: small-feature (located by execution-root)
+
+  acceptance:
+    conditions: revision 0001 (5 condition(s))
+      acceptance-gate-holds-until-close: The acceptance gate holds while any required node's work is un-terminal, and the Issue is accepted only at portfolio close through the recorded acceptance (verification: staged gate-holds capture (this change) + the portfolio-close accept record (LEAD-driven))
+      each-change-runs-and-verifies-independently: Every change node reaches a terminal run (ship + archive for g-001/g-002; g-003 closes with this baseline persisted), each through its own small-feature pipeline with its own verification gates (verification: per-child run-states under the worktree ephemera + the repo's archived changes)
+      persistent-store-is-the-registry: The loop runs against the persistent store issue-registry (not a temp store) and the store survives this change as the machine's Issue registry (verification: this change's evidence receipts + the store's own git history)
+      plan-published-from-real-portfolio: Revision 0001 names every portfolio child as an explicit change reference (no name-prefix inference) with the serial dependsOn DAG intact (verification: store issue plan --from-portfolio receipt (4-1-plan-0001.json) over the worktree's real portfolio run-state)
+      tri-axis-live-through-completion: The projection shows progress moving 2/3 to 3/3 and phase reaching review as g-003 completes, derived from real evidence rather than fixtures (verification: store issue show captures from the worktree cwd (4-2 receipt pre-close, portfolio-close receipt final))
+    gate: not eligible — the Issue already carries an acceptance record; an acceptance is never rewritten.
+    record: accepted 2026-08-20T09:46:11.369Z under revision 0001 (gate 3/3 waiting-human)

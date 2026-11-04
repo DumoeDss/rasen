@@ -105,7 +105,7 @@ describe.sequential('CLI presentation resolution', () => {
       store?.subcommands
         ?.find((command) => command.name === 'setup')
         ?.flags.find((flag) => flag.name === 'path')?.description,
-    ).toContain('~/custom-workspace/<id>');
+    ).toContain('~/custom-workspace/<name>');
     expect(init?.name).toBe('init');
     expect(init?.flags.find((flag) => flag.name === 'tools')?.name).toBe('tools');
   });

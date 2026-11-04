@@ -1,0 +1,14 @@
+$ (cd <temp>/copy-postfix) rasen store adopt <temp>/probe-project --to rasen-store --dry-run --json
+{
+  "status": [
+    {
+      "severity": "error",
+      "code": "store_v2_target_line_required",
+      "message": "Store 'rasen-store' declares planning layout version 2, where archives are partitioned by stable target line, so store adopt --archive move requires an explicit --target-line <id>.",
+      "target": "selection.targetLine",
+      "fix": "Pass --target-line <id> naming an existing target-line catalog; no line is derived from a branch name, a ref, or another entry."
+    }
+  ]
+}
+
+[exit code: 1]

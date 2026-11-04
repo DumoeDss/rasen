@@ -42,6 +42,7 @@ import {
   computeWorkflowDependencyGraph,
   type WorkflowCatalog,
 } from '../../../src/core/workflow-registry/index.js';
+import { loadPipelineByName } from '../../../src/core/pipeline-registry/resolver.js';
 
 interface FakeDef {
   id: string;
@@ -71,7 +72,9 @@ describe('computeWorkflowDependencyGraph — decompose childPipeline traversal (
         { id: 'driver', skillName: 'driver-skill', pipelines: ['parent-pipe'] },
         { id: 'child-owner', skillName: 'child-skill' },
         { id: 'weak-owner', skillName: 'weak-skill' },
-      ])
+      ]),
+      undefined,
+      { loadPipeline: loadPipelineByName }
     );
     const map = new Map(graph.entries.map((e) => [e.id, e]));
     // Reached ONLY through parent-pipe → decompose → child-pipe.
@@ -87,7 +90,9 @@ describe('computeWorkflowDependencyGraph — decompose childPipeline traversal (
         { id: 'driver', skillName: 'driver-skill', pipelines: ['strong-then-weak'] },
         { id: 'mid', skillName: 'mid-skill', workflows: ['expert'] },
         { id: 'expert', skillName: 'expert-skill' },
-      ])
+      ]),
+      undefined,
+      { loadPipeline: loadPipelineByName }
     );
     const map = new Map(graph.entries.map((e) => [e.id, e]));
     // expert is reachable via mid (transitive strong), so it is a hard require…

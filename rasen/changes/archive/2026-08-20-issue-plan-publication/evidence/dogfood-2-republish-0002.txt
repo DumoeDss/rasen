@@ -1,0 +1,251 @@
+# Dogfood receipt 2 — child transition, revision 0002, bytes unchanged
+
+Date: 2026-08-20T00:59:54Z
+
+0001 sha256 before: 2561f2b82e8bae04d6253cc571a5630e911836753f09e391fc674513b906c865
+
+## The pipeline flips issue-plan-publication to done in its own run-state
+{
+  "parent": "issue-multi-change-execution",
+  "childPipeline": "small-feature",
+  "children": [
+    {
+      "id": "issue-plan-publication",
+      "pipeline": "small-feature",
+      "dependsOn": [],
+      "status": "done"
+    },
+    {
+      "id": "issue-node-lifecycle",
+      "pipeline": "small-feature",
+      "dependsOn": [
+        "issue-plan-publication"
+      ],
+      "status": "pending"
+    }
+  ],
+  "delivery": {
+    "status": "pending"
+  },
+  "updatedAt": "2026-08-20T00:59:54.853Z"
+}
+run-state sha256 entering publication: 78610cba976bf49bbd2b73d73ec623d83d3abe44fbe537ea107eb58efa4b5f8c
+
+## Re-publish (cwd = the member project root)
+$ node E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code/.claude/worktrees/issue-layer/bin/rasen.js store issue plan issue-plan-pub-dogfood --store issue-plan-pub-dogfood --from-portfolio issue-multi-change-execution
+Issue issue-plan-pub-dogfood: Execution Plan revision 0002
+  supersedes: 0001
+  nodes: 2
+  source: portfolio 'issue-multi-change-execution' — 2 children, run-state C:\Users\Sayo\AppData\Local\Temp\tmp.A8psYm1UDj\app\.rasen\changes\issue-multi-change-execution\ephemera\portfolio-run.json
+
+  Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing.
+    git -C C:\Users\Sayo\AppData\Local\Temp\tmp.A8psYm1UDj\store add rasen/issues/issue-plan-pub-dogfood/plans/0002.yaml
+    git -C C:\Users\Sayo\AppData\Local\Temp\tmp.A8psYm1UDj\store commit -m "chore(store): publish execution plan issue-plan-pub-dogfood/0002"
+
+## Receipt facts
+revision files:
+0001.yaml
+0002.yaml
+0001 sha256 after:  2561f2b82e8bae04d6253cc571a5630e911836753f09e391fc674513b906c865
+0001 bytes UNCHANGED: yes
+run-state untouched by publication: yes
+
+## The Issue now carries both revisions
+$ node E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code/.claude/worktrees/issue-layer/bin/rasen.js store issue show issue-plan-pub-dogfood --store issue-plan-pub-dogfood --json
+{
+  "issue": {
+    "issueId": "issue-plan-pub-dogfood",
+    "record": {
+      "version": 1,
+      "id": "issue-plan-pub-dogfood",
+      "title": "Dogfood: publish an Execution Plan from the issue-multi-change-execution portfolio",
+      "state": "open",
+      "reason": null,
+      "createdAt": "2026-08-20T00:59:38.718Z"
+    },
+    "diagnostic": null,
+    "divergence": null,
+    "revisionIds": [
+      "0001",
+      "0002"
+    ],
+    "latestRevisionId": "0002",
+    "refs": [],
+    "uncommitted": true
+  },
+  "plan": {
+    "issueId": "issue-plan-pub-dogfood",
+    "revisionId": "0002",
+    "revision": {
+      "version": 1,
+      "issueId": "issue-plan-pub-dogfood",
+      "revisionId": "0002",
+      "supersedes": "0001",
+      "createdAt": "2026-08-20T00:59:58.734Z",
+      "contentSha256": "153d091893cf9ae2302a1e70f3bed7992b058b04be510ddb04cb627b64f72259",
+      "nodes": [
+        {
+          "nodeId": "issue-node-lifecycle",
+          "kind": "change",
+          "projectId": "1bb4341d-2e5f-4423-a306-ac6aa9000ec2",
+          "targetLineId": "line-0.2",
+          "changeInstanceId": "ci_d0738726f5e8f6976c7e29d719b0305df5764c68dceba75133d4e9cc1693a1aa",
+          "changeAlias": "issue-node-lifecycle",
+          "dependsOn": [
+            "issue-plan-publication"
+          ]
+        },
+        {
+          "nodeId": "issue-plan-publication",
+          "kind": "change",
+          "projectId": "1bb4341d-2e5f-4423-a306-ac6aa9000ec2",
+          "targetLineId": "line-0.2",
+          "changeInstanceId": "ci_b804740e41d55a235fa310651ac34c8bf5971ffa798a66c9d4b8f400a73bdae2",
+          "changeAlias": "issue-plan-publication",
+          "dependsOn": []
+        }
+      ]
+    },
+    "diagnostic": null,
+    "readiness": {
+      "nodes": [
+        {
+          "node": {
+            "nodeId": "issue-node-lifecycle",
+            "kind": "change",
+            "projectId": "1bb4341d-2e5f-4423-a306-ac6aa9000ec2",
+            "targetLineId": "line-0.2",
+            "changeInstanceId": "ci_d0738726f5e8f6976c7e29d719b0305df5764c68dceba75133d4e9cc1693a1aa",
+            "changeAlias": "issue-node-lifecycle",
+            "dependsOn": [
+              "issue-plan-publication"
+            ]
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "issue-node-lifecycle",
+                "projectId": "1bb4341d-2e5f-4423-a306-ac6aa9000ec2",
+                "targetLineId": "line-0.2",
+                "foundAtRef": "refs/heads/main",
+                "archived": false
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": false
+          },
+          "readiness": "blocked",
+          "blockedBy": [
+            "issue-plan-publication"
+          ]
+        },
+        {
+          "node": {
+            "nodeId": "issue-plan-publication",
+            "kind": "change",
+            "projectId": "1bb4341d-2e5f-4423-a306-ac6aa9000ec2",
+            "targetLineId": "line-0.2",
+            "changeInstanceId": "ci_b804740e41d55a235fa310651ac34c8bf5971ffa798a66c9d4b8f400a73bdae2",
+            "changeAlias": "issue-plan-publication",
+            "dependsOn": []
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "issue-plan-publication",
+                "projectId": "1bb4341d-2e5f-4423-a306-ac6aa9000ec2",
+                "targetLineId": "line-0.2",
+                "foundAtRef": "refs/heads/main",
+                "archived": false
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": false
+          },
+          "readiness": "in-progress",
+          "blockedBy": []
+        }
+      ],
+      "readyToResolve": false
+    },
+    "unsearchedRefs": [],
+    "problems": [],
+    "complete": true
+  },
+  "status": {
+    "phase": "active",
+    "health": "healthy",
+    "progress": {
+      "completed": 0,
+      "total": 2
+    },
+    "nodes": [
+      {
+        "nodeId": "issue-node-lifecycle",
+        "kind": "change",
+        "alias": "issue-node-lifecycle",
+        "observation": "not-started",
+        "blockedBy": [
+          "issue-plan-publication"
+        ],
+        "diagnostic": null,
+        "runStatePath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\.rasen\\changes\\issue-node-lifecycle\\ephemera\\auto-run.json",
+        "locatedBy": "execution-root",
+        "attribution": {
+          "pipeline": "small-feature",
+          "sessions": [],
+          "evidenceLocator": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\rasen\\changes\\issue-node-lifecycle\\evidence"
+        }
+      },
+      {
+        "nodeId": "issue-plan-publication",
+        "kind": "change",
+        "alias": "issue-plan-publication",
+        "observation": "in-flight",
+        "blockedBy": [],
+        "diagnostic": null,
+        "runStatePath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\.rasen\\changes\\issue-plan-publication\\ephemera\\auto-run.json",
+        "locatedBy": "execution-root",
+        "attribution": {
+          "pipeline": "small-feature",
+          "sessions": [],
+          "evidenceLocator": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\rasen\\changes\\issue-plan-publication\\evidence"
+        }
+      }
+    ],
+    "problems": [],
+    "runStateVisibility": {
+      "kind": "execution-root",
+      "executionRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer"
+    },
+    "complete": true,
+    "acceptance": {
+      "conditions": {
+        "revision": null,
+        "revisionId": null,
+        "diagnostic": null,
+        "path": null
+      },
+      "gate": {
+        "eligible": false,
+        "refusalCode": "issue_accept_conditions_required",
+        "blockers": [],
+        "message": "the Issue has no readable acceptance conditions — no acceptance conditions revision exists for it."
+      },
+      "record": null
+    }
+  },
+  "complete": true,
+  "unsearchedRefs": [],
+  "problems": []
+}

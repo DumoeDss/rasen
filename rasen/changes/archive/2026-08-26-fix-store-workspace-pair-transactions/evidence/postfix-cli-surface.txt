@@ -1,0 +1,374 @@
+
+ RUN  v3.2.6 E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code
+
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > isOhMyZshInstalled > should return false when Oh My Zsh is not installed 9ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > isOhMyZshInstalled > should return true when Oh My Zsh directory exists 5ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > isOhMyZshInstalled > should return false when .oh-my-zsh exists but is a file 7ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > getInstallationPath > should return Oh My Zsh path when Oh My Zsh is installed 5ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > getInstallationPath > should return standard Zsh path when Oh My Zsh is not installed 2ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > backupExistingFile > should return undefined when file does not exist 2ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > backupExistingFile > should create backup when file exists 33ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > backupExistingFile > should create backup with timestamp in filename 8ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > getProfilePath > should prefer PROFILE environment variable when set 7ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > getProfilePath > should return Windows default path when on win32 platform 4ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > getProfilePath > should return Unix default path when on darwin platform 2ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > getProfilePath > should return Unix default path when on linux platform 2ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > getInstallationPath > should return path relative to profile directory 2ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > getInstallationPath > should work with custom PROFILE environment variable 2ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > getInstallationPath > should return Windows path when on Windows platform 2ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > backupExistingFile > should return undefined when file does not exist 3ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > backupExistingFile > should create backup with timestamp in filename 16ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > backupExistingFile > should copy file content to backup 29ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > backupExistingFile > should create backup next to original file 8ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > install > should install to Oh My Zsh path when Oh My Zsh is present 29ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > install > should install to standard Zsh path when Oh My Zsh is not present 12ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > install > should create necessary directories if they do not exist 13ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > install > should backup existing file before overwriting 46ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > install > should include fpath verification guidance for Oh My Zsh 13ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > install > should include fpath instructions for standard Zsh when auto-config is disabled 12ms
+ ↓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > install > should handle installation errors gracefully
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > configureProfile > should create profile with markers when file does not exist 35ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > configureProfile > should prepend markers and config when file exists without markers 59ms
+ ↓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > configureProfile > should skip configuration when already configured with current RASEN markers
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > install > should detect already-installed completion with identical content 13ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > install > should update completion when content differs 59ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > install > should handle paths with spaces in .zshrc config 27ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > configureProfile > should replace an existing legacy OPENSPEC block with RASEN markers on reconfigure, even when the script line already matches (upgrade path) 57ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > configureProfile > should dedupe to a single RASEN block when both a RASEN and an OPENSPEC block are present 46ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > uninstall > should remove installed completion script 26ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > uninstall > should return failure when script and .zshrc config are not installed 2ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > uninstall > should remove from correct location for Oh My Zsh 12ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > isInstalled > should return false when not installed 2ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > isInstalled > should return true when installed 10ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > isInstalled > should check correct location for Oh My Zsh 11ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > getInstallationInfo > should return not installed when script does not exist 2ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > getInstallationInfo > should return installation info when installed 12ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > getInstallationInfo > should indicate Oh My Zsh when installed there 12ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > constructor > should use provided home directory 2ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > constructor > should use os.homedir() by default 1ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > configureZshrc > should create .zshrc with markers and config when file does not exist 20ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > configureProfile > should preserve user content outside markers and replace a legacy block in place 52ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > configureProfile > should generate correct PowerShell syntax in config 12ms
+ ↓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > configureProfile > should return false on write permission error
+ ↓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > configureProfile > should not create profile directory when parent is not writable
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > removeProfileConfig > should return false when profile does not exist 2ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > removeProfileConfig > should return false when profile exists but has no markers 31ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > configureZshrc > should prepend markers and config when .zshrc exists without markers 34ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > configureZshrc > should replace an existing legacy OPENSPEC block with RASEN markers on reconfigure (upgrade path) 34ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > configureZshrc > should dedupe to a single RASEN block when both a RASEN and an OPENSPEC block are present 21ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > removeProfileConfig > should remove content between markers 54ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > removeProfileConfig > should remove trailing empty lines after removal 56ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > configureZshrc > should preserve user content outside markers 33ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > configureZshrc > should not treat a user comment merely starting with the marker literal as a managed block (RASEN prefix collision) 33ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > configureZshrc > should not treat a user comment merely starting with the legacy marker literal as a managed block (OPENSPEC prefix collision) 32ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > configureZshrc > should return false when RASEN_NO_AUTO_CONFIG is set 2ms
+ ↓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > configureZshrc > should handle write permission errors gracefully
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > removeZshrcConfig > should return true when .zshrc does not exist 2ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > removeZshrcConfig > should return true when .zshrc exists but has no markers 20ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > removeProfileConfig > should preserve user content outside markers 50ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > removeProfileConfig > should return false on invalid marker placement 32ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > removeProfileConfig > should remove content between markers when the current RASEN family is present 31ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > removeProfileConfig > should fully remove a legacy OPENSPEC-only block that was never upgraded 33ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > removeProfileConfig > should remove both a RASEN and an OPENSPEC block when both are present 31ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > install > should install completion script for the first time 20ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > install > should create parent directories if they do not exist 23ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > install > should write completion script content correctly 20ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > removeZshrcConfig > should remove markers and config when present 34ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > removeZshrcConfig > should remove leading empty lines when markers were at top 35ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > removeZshrcConfig > should handle invalid marker placement gracefully 20ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > removeZshrcConfig > should return true when only one marker is present 23ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > install > should detect when already installed with same content 20ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > install > should update when content is different 39ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > removeZshrcConfig > should remove both a RASEN and an OPENSPEC block when both are present 24ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > removeZshrcConfig > should not delete a user comment merely starting with the marker literal (prefix collision, not an exact bare marker line) 7ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > install with .zshrc auto-configuration > should auto-configure .zshrc for standard Zsh 29ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > install with .zshrc auto-configuration > should not configure .zshrc for Oh My Zsh 33ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > install with .zshrc auto-configuration > should not include manual instructions when .zshrc was auto-configured 13ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > install with .zshrc auto-configuration > should include instructions when .zshrc auto-config fails 11ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > install > should create backup when updating existing installation 60ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > install > should configure PowerShell profile when not disabled 20ms
+ ↓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > install > should provide instructions when profile cannot be configured
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > install > should include backup path in message when updating 42ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > install > should handle installation with paths containing spaces 22ms
+ ↓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > install > should return failure on permission error
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > install with .zshrc auto-configuration > should update success message when .zshrc is configured 13ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > uninstall with .zshrc cleanup > should remove .zshrc config when uninstalling 33ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > uninstall with .zshrc cleanup > should not remove .zshrc config for Oh My Zsh users 10ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > uninstall with .zshrc cleanup > should succeed even if only .zshrc config is removed 20ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > uninstall with .zshrc cleanup > should fully remove a legacy OPENSPEC-only block via uninstall() that was never upgraded 13ms
+ ✓ test/core/completions/installers/zsh-installer.test.ts > ZshInstaller > uninstall with .zshrc cleanup > should include both messages when removing script and .zshrc 28ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > install > should handle empty completion script 19ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > install > should handle completion script with special characters 34ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > encoding preservation > should preserve UTF-16 LE BOM when configuring profile 71ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > encoding preservation > should preserve UTF-16 LE BOM when removing profile config 78ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > encoding preservation > should preserve UTF-8 BOM when configuring profile 74ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > encoding preservation > should skip UTF-16 BE profile and leave it unchanged 6ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > encoding preservation > should handle plain UTF-8 files without BOM (no regression) 50ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > encoding preservation > should round-trip UTF-16 LE through install → uninstall without corruption 76ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > uninstall > should successfully uninstall when completion script exists 37ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > uninstall > should remove the completion file 35ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > uninstall > should remove profile configuration 36ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > uninstall > should return failure when completion script is not installed 2ms
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > uninstall > should accept yes option parameter 39ms
+ ↓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > uninstall > should uninstall read-only completion script when parent directory is writable
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > uninstall > should handle both script and config removal 41ms
+ ↓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > uninstall > should return failure on permission error
+ ✓ test/core/completions/installers/powershell-installer.test.ts > PowerShellInstaller > uninstall > should handle uninstall when parent directory does not exist 2ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > getInstallationPath > should return standard bash-completion path 6ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > backupExistingFile > should return undefined when file does not exist 8ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > backupExistingFile > should create backup when file exists 13ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > backupExistingFile > should create backup with timestamp in filename 6ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > install > should install to bash-completion path 28ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > install > should create necessary directories if they do not exist 16ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > install > should backup existing file before overwriting 32ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > install > should configure .bashrc when auto-config is enabled 30ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > install > should include instructions when auto-config is disabled 14ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > install > should handle installation errors gracefully 5ms
+ ↓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > install > should return failure when completion directory is not writable
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > install > should detect already-installed completion with identical content 17ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > install > should update completion when content differs 57ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > install > should handle paths with spaces in .bashrc config 30ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > uninstall > should remove installed completion script 34ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > uninstall > should return failure when not installed 2ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > uninstall > should remove .bashrc configuration 28ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > configureBashrc > should create .bashrc with markers and config when file does not exist 20ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > configureBashrc > should prepend markers and config when .bashrc exists without markers 32ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > configureBashrc > should replace an existing legacy OPENSPEC block with RASEN markers on reconfigure (upgrade path) 33ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > configureBashrc > should dedupe to a single RASEN block when both a RASEN and an OPENSPEC block are present 23ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > configureBashrc > should preserve user content outside markers 32ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > configureBashrc > should not treat a user comment merely starting with the marker literal as a managed block (RASEN prefix collision) 23ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > configureBashrc > should not treat a user comment merely starting with the legacy marker literal as a managed block (OPENSPEC prefix collision) 20ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > configureBashrc > should return false when RASEN_NO_AUTO_CONFIG is set 2ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > configureBashrc > should handle write permission errors gracefully 6ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > removeBashrcConfig > should return true when .bashrc does not exist 2ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > removeBashrcConfig > should return true when .bashrc exists but has no markers 5ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > removeBashrcConfig > should remove markers and config when present 20ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > removeBashrcConfig > should preserve user content when removing markers 34ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > removeBashrcConfig > should not delete a user comment merely starting with the marker literal (prefix collision, not an exact bare marker line) 6ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > removeBashrcConfig > should handle permission errors gracefully 2ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > removeBashrcConfig > should fully remove a legacy OPENSPEC-only block that was never upgraded 7ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > removeBashrcConfig > should remove both a RASEN and an OPENSPEC block when both are present 8ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > constructor > should use provided home directory 2ms
+ ✓ test/core/completions/installers/bash-installer.test.ts > BashInstaller > constructor > should use os.homedir() by default 3ms
+ ✓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > getInstallationPath > should return standard fish completions path 5ms
+ ✓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > getInstallationPath > should use homeDir from constructor 2ms
+ ✓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > backupExistingFile > should return undefined when file does not exist 2ms
+ ✓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > backupExistingFile > should create backup with timestamp in filename 10ms
+ ✓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > backupExistingFile > should copy file content to backup 23ms
+ ✓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > backupExistingFile > should create backup next to original file 8ms
+ ✓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > install > should install completion script for the first time 12ms
+ ✓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > install > should create parent directories if they do not exist 12ms
+ ✓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > install > should write completion script content correctly 15ms
+ ✓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > install > should detect when already installed with same content 12ms
+ ✓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > install > should update when content is different 15ms
+ ✓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > install > should create backup when updating existing installation 27ms
+ ✓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > install > should include backup path in message when updating 15ms
+ ✓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > install > should handle installation with paths containing spaces 9ms
+ ↓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > install > should return failure on permission error
+ ✓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > install > should provide appropriate instructions for Fish 9ms
+ ✓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > install > should handle empty completion script 9ms
+ ✓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > install > should handle completion script with special characters 24ms
+ ✓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > uninstall > should successfully uninstall when completion script exists 10ms
+ ✓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > uninstall > should remove the completion file 12ms
+ ✓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > uninstall > should return failure when completion script is not installed 1ms
+ ✓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > uninstall > should accept yes option parameter 10ms
+ ↓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > uninstall > should uninstall read-only file when parent directory is writable
+ ↓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > uninstall > should return failure on permission error
+ ✓ test/core/completions/installers/fish-installer.test.ts > FishInstaller > uninstall > should handle uninstall when parent directory does not exist 2ms
+ ✓ test/core/completions/completion-provider.test.ts > CompletionProvider > getChangeIds > should return empty array when no changes exist 12ms
+ ✓ test/core/completions/completion-provider.test.ts > CompletionProvider > getChangeIds > should return active change IDs 21ms
+ ✓ test/core/completions/completion-provider.test.ts > CompletionProvider > getChangeIds > should exclude archive directory 14ms
+ ✓ test/core/completions/completion-provider.test.ts > CompletionProvider > getChangeIds > should cache results for the TTL duration 15ms
+ ✓ test/core/completions/completion-provider.test.ts > CompletionProvider > getChangeIds > should refresh cache after TTL expires 75ms
+ ✓ test/core/completions/completion-provider.test.ts > CompletionProvider > getSpecIds > should return empty array when no specs exist 2ms
+ ✓ test/core/completions/completion-provider.test.ts > CompletionProvider > getSpecIds > should return spec IDs 11ms
+ ✓ test/core/completions/completion-provider.test.ts > CompletionProvider > getSpecIds > should cache results for the TTL duration 10ms
+ ✓ test/core/completions/completion-provider.test.ts > CompletionProvider > getSpecIds > should refresh cache after TTL expires 85ms
+ ✓ test/core/completions/completion-provider.test.ts > CompletionProvider > getAllIds > should return both change and spec IDs 14ms
+ ✓ test/core/completions/completion-provider.test.ts > CompletionProvider > getAllIds > should return empty arrays when no items exist 2ms
+ ✓ test/core/completions/completion-provider.test.ts > CompletionProvider > clearCache > should clear all cached data 13ms
+ ✓ test/core/completions/completion-provider.test.ts > CompletionProvider > getCacheStats > should report invalid cache when empty 2ms
+ ✓ test/core/completions/completion-provider.test.ts > CompletionProvider > getCacheStats > should report valid cache after data is fetched 10ms
+ ✓ test/core/completions/completion-provider.test.ts > CompletionProvider > getCacheStats > should report invalid cache after TTL expires 81ms
+ ✓ test/core/completions/completion-provider.test.ts > CompletionProvider > constructor > should use default TTL of 2000ms 1ms
+ ✓ test/core/completions/completion-provider.test.ts > CompletionProvider > constructor > should accept custom TTL 1ms
+ ✓ test/core/completions/completion-provider.test.ts > CompletionProvider > constructor > should use process.cwd() as default project root 1ms
+ ✓ test/commands/legacy-groups-removed.test.ts > legacy command groups are removed > rejects the deleted groups as unknown commands 3686ms
+ ✓ test/commands/legacy-groups-removed.test.ts > legacy command groups are removed > lists neither group in --help 1968ms
+ ✓ test/commands/workspace-cli.test.ts > rasen store workspace CLI > lives under `store`, and the retired top-level name stays retired 5692ms
+ ✓ test/commands/legacy-groups-removed.test.ts > legacy command groups are removed > update falls through to the standard no-project error in a view dir 1912ms
+ ✓ test/core/completions/command-registry.test.ts > root-inclusive CLI structure > matches the complete visible Commander structure 58ms
+ ✓ test/core/completions/command-registry.test.ts > root-inclusive CLI structure > keeps simple aliases on canonical commands 5ms
+ ✓ test/core/completions/command-registry.test.ts > root-inclusive CLI structure > keeps hidden compatibility commands out of the public structure 2ms
+ ✓ test/core/completions/command-registry.test.ts > root-inclusive CLI structure > keeps accepted values separate from completion-only values 1ms
+ ✓ test/core/completions/command-registry.test.ts > root-inclusive CLI structure > tracks top-level workflow commands and machine-facing flags 0ms
+ ✓ test/core/completions/command-registry.test.ts > root-inclusive CLI structure > keeps store-selection options paired and guidance complete 3ms
+ ✓ test/core/completions/command-registry.test.ts > root-inclusive CLI structure > tracks store subcommands under the store telemetry path 8ms
+ ✓ test/cli-program.test.ts > localized Commander program factory > exports the resolved positional presentation type 2ms
+ ✓ test/cli-program.test.ts > localized Commander program factory > renders root and nested help in every supported locale 75ms
+ ✓ test/cli-program.test.ts > localized Commander program factory > returns independent program instances with isolated locales 27ms
+ ✓ test/cli-program.test.ts > localized Commander program factory > applies canonical aliases and generated help/version copy 13ms
+ ✓ test/cli-program.test.ts > localized Commander program factory > does not append Commander-owned English metadata to localized option copy 10ms
+ ✓ test/cli-program.test.ts > localized Commander program factory > renders runtime facts around unchanged machine tokens 10ms
+ ✓ test/cli-program.test.ts > localized Commander program factory > reuses the program presentation snapshot for completion actions 16ms
+ ✓ test/cli-program.test.ts > localized Commander program factory > preserves the knowledge bundle positional help description 13ms
+ ✓ test/cli-program.test.ts > localized Commander program factory > preserves direct help for the hidden experimental compatibility command 10ms
+ ✓ test/core/completions/cli-presentation.test.ts > CLI presentation resolution > resolves complete immutable presentations in every supported locale 17ms
+ ✓ test/core/completions/cli-presentation.test.ts > CLI presentation resolution > resolves complete localized copy for the archive plan and intent flags 11ms
+ ✓ test/core/completions/cli-presentation.test.ts > CLI presentation resolution > interpolates typed facts without changing machine values 5ms
+ ✓ test/core/completions/cli-presentation.test.ts > CLI presentation resolution > falls back to English when selected-locale copy is unavailable 4ms
+ ✓ test/core/completions/cli-presentation.test.ts > CLI presentation resolution > rejects missing and empty English baseline copy 2ms
+ ✓ test/core/completions/cli-presentation.test.ts > CLI presentation resolution > rejects a missing required English chrome slot 1ms
+ ✓ test/core/completions/cli-presentation.test.ts > CLI presentation resolution > rejects placeholder mismatch and unresolved placeholders 2ms
+ ✓ test/core/completions/cli-presentation.test.ts > CLI presentation resolution > rejects missing runtime facts 1ms
+ ✓ test/core/completions/cli-presentation.test.ts > CLI presentation resolution > rejects duplicate identities and alias collisions 1ms
+ ✓ test/core/completions/cli-presentation.test.ts > CLI presentation resolution > preflights Commander structure before applying any copy 6ms
+ ✓ test/core/completions/cli-presentation.test.ts > CLI presentation resolution > checks the generated version option before applying any copy 8ms
+ ✓ test/core/completions/generators/resolved-presentation.test.ts > completion generators consume resolved presentation > projects canonical aliases before rendering bash 3ms
+ ✓ test/core/completions/generators/resolved-presentation.test.ts > completion generators consume resolved presentation > projects canonical aliases before rendering fish 2ms
+ ✓ test/core/completions/generators/resolved-presentation.test.ts > completion generators consume resolved presentation > projects canonical aliases before rendering powershell 4ms
+ ✓ test/core/completions/generators/resolved-presentation.test.ts > completion generators consume resolved presentation > projects canonical aliases before rendering zsh 6ms
+ ✓ test/core/completions/generators/resolved-presentation.test.ts > completion generators consume resolved presentation > preserves static completion values after resolution 3ms
+ ✓ test/core/completions/generators/resolved-presentation.test.ts > completion generators consume resolved presentation > uses the same localized copy in description-capable shells 9ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > interface compliance > should have shell property set to "fish" 1ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > interface compliance > should implement generate method 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > generate > should generate valid fish completion script with header 1ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > generate > should generate helper functions for Fish 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > generate > should include all commands with descriptions 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > generate > should handle commands with flags without short options 1ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > generate > should handle flags with short options 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > generate > should use -r flag for flags that require values 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > generate > should not use -r flag for boolean flags 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > generate > should handle flags with enum values 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > generate > should handle commands with subcommands 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > generate > should handle positional arguments for change-id 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > generate > should handle positional arguments for spec-id 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > generate > should handle positional arguments for change-or-spec-id 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > generate > should handle positional arguments for shell with inline values 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > generate > should handle positional arguments for schema names 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > generate > should handle positional arguments for profile names 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > generate > should generate dynamic completion helper for changes 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > generate > should generate dynamic completion helper for specs 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > generate > should generate dynamic completion helper for items 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > generate > should escape single quotes in descriptions 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > generate > should handle complex nested subcommands with flags 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > generate > should handle empty command list 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > generate > should handle commands with no flags 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > filename completion scope > should disable the default filename fallback for rasen 1ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > filename completion scope > should force filename completion back on for path positionals 1ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > filename completion scope > should not force files for non-path positionals 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > security - command injection prevention > should escape $() command substitution in descriptions 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > security - command injection prevention > should escape backticks in descriptions 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > security - command injection prevention > should escape dollar signs in descriptions 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > security - command injection prevention > should escape single quotes in descriptions 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > security - command injection prevention > should escape backslashes in descriptions 0ms
+ ✓ test/core/completions/generators/fish-generator.test.ts > FishGenerator > security - command injection prevention > should handle multiple shell metacharacters together 2ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > interface compliance > should have shell property set to "powershell" 2ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > interface compliance > should implement generate method 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should generate valid PowerShell completion script with header 1ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should register argument completer for rasen command 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should include all commands with descriptions 1ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should use CompletionResult objects for completions 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should handle commands with flags without short options 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should handle flags with short options 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should handle boolean flags vs value-taking flags 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should handle flags with enum values 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should handle commands with subcommands 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should offer parent flags when command has both flags and subcommands 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should handle positional arguments for change-id 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should handle positional arguments for spec-id 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should handle positional arguments for change-or-spec-id 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should handle positional arguments for shell with inline values 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should not include path completion helpers (PowerShell handles natively) 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should handle positional arguments for schema names 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should handle positional arguments for profile names 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should generate dynamic completion helper for changes 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should generate dynamic completion helper for specs 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should escape double quotes in descriptions 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should handle complex nested subcommands with flags 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should not emit trailing commas in @() arrays 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should handle empty command list 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should handle commands with no flags 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > generate > should generate helper function that splits on tab character 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > security - command injection prevention > should escape $() subexpressions in descriptions 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > security - command injection prevention > should escape backticks in descriptions 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > security - command injection prevention > should escape dollar signs in descriptions 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > security - command injection prevention > should escape double quotes in descriptions 0ms
+ ✓ test/core/completions/generators/powershell-generator.test.ts > PowerShellGenerator > security - command injection prevention > should handle multiple PowerShell metacharacters together 1ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > interface compliance > should have shell property set to "bash" 3ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > interface compliance > should implement generate method 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should generate valid bash completion script with header 1ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should include all commands in the command list 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should handle commands with flags without short options 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should handle flags with short options 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should handle boolean flags vs value-taking flags 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should handle flags with enum values 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should handle flags with takesValue but no specific values 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should handle commands with subcommands 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should offer parent flags when command has both flags and subcommands 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should handle positional arguments for change-id 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should handle positional arguments for spec-id 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should handle positional arguments for change-or-spec-id 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should handle positional arguments for shell 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should handle positional arguments for paths 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should handle positional arguments for schema names 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should handle positional arguments for profile names 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should generate dynamic completion helper for changes 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should generate dynamic completion helper for specs 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should generate dynamic completion helper for items (changes and specs) 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should handle complex nested subcommands with flags 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should generate script that ends with complete registration 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should handle empty command list 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > generate > should handle commands with no flags 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > security - command injection prevention > should escape command names with shell metacharacters 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > security - command injection prevention > should escape dollar signs in command names 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > security - command injection prevention > should escape backticks in command names 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > security - command injection prevention > should escape double quotes in command names 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > security - command injection prevention > should escape backslashes in command names 0ms
+ ✓ test/core/completions/generators/bash-generator.test.ts > BashGenerator > security - command injection prevention > should escape subcommand names with shell metacharacters 0ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > interface compliance > should have shell property set to "zsh" 2ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > interface compliance > should implement generate method 0ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > generate > should generate valid zsh completion script with header 1ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > generate > should include all commands in the command list 0ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > generate > should generate command completion functions 0ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > generate > should handle commands with flags 1ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > generate > should handle flags with short options 0ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > generate > should handle flags that take values 0ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > generate > should handle flags with takesValue but no specific values 0ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > generate > should handle commands with subcommands 1ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > generate > should handle positional arguments for change-id 0ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > generate > should handle positional arguments for spec-id 0ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > generate > should handle positional arguments for change-or-spec-id 0ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > generate > should handle positional arguments for paths 0ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > generate > should handle positional arguments for schema names 0ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > generate > should handle positional arguments for profile names 0ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > generate > should emit optional indexed positional arguments with double-colon syntax 0ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > generate > should escape special characters in descriptions 1ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > generate > should sanitize command names with hyphens for function names 0ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > generate > should handle complex nested subcommands with flags 0ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > generate > should generate script that ends with compdef registration 0ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > generate > should handle empty command list 0ms
+ ✓ test/core/completions/generators/zsh-generator.test.ts > ZshGenerator > generate > should handle commands with no flags 0ms
+ ✓ test/commands/workspace-cli.test.ts > rasen store workspace CLI > renders the full action and precondition table, with the same content as --json 6981ms
+ ✓ test/commands/workspace-cli.test.ts > rasen store workspace CLI > previews without creating a worktree, and stores the plan for the apply step 4285ms
+ ✓ test/commands/legacy-groups-removed.test.ts > legacy command groups are removed > keeps initiative data and view state byte-identical across surviving commands 12056ms
+ ✓ test/commands/legacy-groups-removed.test.ts > legacy command groups are removed > tolerates legacy initiative metadata without re-emitting it 1806ms
+ ✓ test/commands/legacy-groups-removed.test.ts > legacy command groups are removed > reports repo-local in a view dir, exactly as before this slice 1669ms
+ ✓ test/commands/workspace-cli.test.ts > rasen store workspace CLI > applies a stored plan id and prepares both worktrees 7559ms
+ ✓ test/commands/workspace-cli.test.ts > rasen store workspace CLI > refuses an apply with no --apply-plan and names the flag 2961ms
+ ✓ test/commands/workspace-cli.test.ts > rasen store workspace CLI > refuses a plan with no --change 3000ms
+ ✓ test/commands/workspace-cli.test.ts > rasen store workspace CLI > exits 1 and prints every blocker when the plan is not applicable 5734ms
+ ✓ test/commands/workspace-cli.test.ts > rasen store workspace CLI > reports a scope with no prepared workspace, in both forms 5277ms
+ ✓ test/commands/workspace-cli.test.ts > rasen store workspace CLI > does not claim a scope with two prepared pairs has none, when --change names neither 15785ms
+ ✓ test/commands/workspace-cli.test.ts > rasen store workspace CLI > reports a prepared pair with both roots, refs, and instance ids 11989ms
+ ✓ test/commands/workspace-cli.test.ts > rasen store workspace CLI > previews a cleanup, refuses an unsafe one, and removes a safe one by plan id 20055ms
+ ✓ test/commands/workspace-cli.test.ts > rasen store workspace CLI > refuses cleanup while a live session references a recorded worktree, with nothing threaded in 15750ms
+ ✓ test/commands/workspace-cli.test.ts > rasen store workspace CLI > accepts --existing-change, which is the only way to reach that intent 6300ms
+ ✓ test/commands/workspace-cli.test.ts > rasen store workspace CLI > omits the Change instance from the preview when the plan mints one 5782ms
+
+ Test Files  15 passed (15)
+      Tests  351 passed | 13 skipped (364)
+   Start at  16:00:22
+   Duration  127.96s (transform 7.56s, setup 520ms, collect 57.59s, tests 144.38s, environment 4ms, prepare 3.37s)
+
+EXIT=0

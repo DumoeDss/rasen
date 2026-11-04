@@ -1,0 +1,10 @@
+$ rasen store issue plan dogfood-multi --from-file <nodes.yaml> --store dogfood-store
+(exit 0)
+
+Issue dogfood-multi: Execution Plan revision 0001
+  supersedes: (none)
+  nodes: 2
+
+  Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing.
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-dogfood-target-vsWJKt\store add rasen/issues/dogfood-multi/plans/0001.yaml
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-dogfood-target-vsWJKt\store commit -m "chore(store): publish execution plan dogfood-multi/0001"

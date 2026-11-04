@@ -40,7 +40,8 @@ async function dispatch(
   mode: string,
   extraArgs: string[] = [],
   contract = 'leaf',
-  promptExtra = '第一行\n第二行 "quoted" & | > < ^ % !'
+  promptExtra = '第一行\n第二行 "quoted" & | > < ^ % !',
+  timeoutMs = 5000
 ) {
   return runCLI(
     [
@@ -50,7 +51,7 @@ async function dispatch(
       '--contract', contract,
       '--sandbox', 'read-only',
       '--cwd', cwd,
-      '--timeout-ms', '5000',
+      '--timeout-ms', String(timeoutMs),
       '--json',
       ...extraArgs,
     ],
@@ -177,6 +178,32 @@ describe('rasen agent dispatch --runtime codex', () => {
     });
   });
 
+  it('rejects consultable-leaf before Codex binary resolution or spawn', async () => {
+    const marker = path.join(cwd, 'must-not-spawn.marker');
+    const result = await runCLI([
+      'agent', 'dispatch', '--runtime', 'codex',
+      '--prompt-file', prompt('success', `MARKER_FILE=${marker}`),
+      '--contract', 'consultable-leaf', '--sandbox', 'read-only', '--cwd', cwd,
+      '--timeout-ms', '5000', '--json',
+    ], {
+      env: { RASEN_CODEX_BIN: path.join(cwd, 'missing-codex-runtime.exe') },
+      timeoutMs: 20_000,
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toBe('');
+    expect(receipt(result.stdout)).toMatchObject({
+      ok: false,
+      runtime: 'codex',
+      contract: 'consultable-leaf',
+      failure: {
+        kind: 'invalid-input',
+        message: expect.stringMatching(/stable hosted continuation authority/i),
+      },
+    });
+    expect(fs.existsSync(marker)).toBe(false);
+  });
+
   it.each([
     ['missing-thread', 'thread-id-missing'],
     ['missing-last', 'last-message-missing'],
@@ -214,7 +241,8 @@ describe('rasen agent dispatch --runtime codex', () => {
       'hold',
       ['--resume', threadId],
       'leaf',
-      `MARKER_FILE=${marker}\nRELEASE_FILE=${release}`
+      `MARKER_FILE=${marker}\nRELEASE_FILE=${release}`,
+      20_000
     );
     await waitForFile(marker);
     let duplicate;
@@ -228,7 +256,11 @@ describe('rasen agent dispatch --runtime codex', () => {
       threadId,
       failure: { kind: 'thread-busy' },
     });
-    expect(receipt((await first).stdout)).toMatchObject({ ok: true, threadId });
+    const firstResult = await first;
+    expect(
+      receipt(firstResult.stdout),
+      `${firstResult.stderr}\n${firstResult.stdout}`
+    ).toMatchObject({ ok: true, threadId });
   });
 
   it('keeps the exact thread busy when only the bridge parent dies and its worker survives', async () => {

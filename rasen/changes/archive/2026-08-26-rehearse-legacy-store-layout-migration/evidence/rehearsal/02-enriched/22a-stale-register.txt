@@ -1,0 +1,22 @@
+$ (cd <temp>/copy-stale) rasen store register <temp>/copy-stale --json
+{
+  "store": {
+    "id": "rasen-store",
+    "root": "<temp>\\copy-stale",
+    "metadata_path": "<temp>\\copy-stale\\.rasen-store\\store.yaml"
+  },
+  "registry": {
+    "path": "<temp>\\rasen-home-stale\\stores\\registry.yaml",
+    "registered": true,
+    "already_registered": false
+  },
+  "git": {
+    "is_repository": true,
+    "initialized": false,
+    "committed": false
+  },
+  "created_files": [],
+  "status": []
+}
+
+[exit code: 0]

@@ -936,7 +936,7 @@ describe('immutable session-cache acceptance generations', () => {
               'rasen-cli-driver.mjs'
             ),
             identity,
-            operationTimeoutMs: 30_000,
+            operationTimeoutMs: 90_000,
             rasenBin: path.join(repositoryRoot, 'bin', 'rasen.js'),
             rasenHome: root,
             workDir: evidenceRoot,
@@ -965,14 +965,14 @@ describe('immutable session-cache acceptance generations', () => {
         cwd: repositoryRoot,
         env: launchEnv,
         windowsHide: true,
-        timeout: 45_000,
+        timeout: 90_000,
       });
       const sessionsPath = path.join(
         fixture.manifest.runDirectory,
         'sessions.json'
       );
       const awaitAdmittedTurnInFlight = async () => {
-        const deadline = Date.now() + 30_000;
+        const deadline = Date.now() + 60_000;
         for (;;) {
           try {
             const snapshot = readJsonBounded(sessionsPath) as {
@@ -1000,6 +1000,13 @@ describe('immutable session-cache acceptance generations', () => {
       // machine it loses — both launches are then admitted in sequence
       // against an idle session and the fence is never tested. So hold the
       // admitted turn open until the competing launch has been answered.
+
+      // Budget chain (measured flake, run 31869784203, 2026-08-15): the admitted
+      // launch must survive its exec turn, the fenced launch answering, and the
+      // post-turn binding capture - all under load. Tight 15s/30s/45s ceilings
+      // turn a slow-but-correct CI round into a recorded cli_timeout result.json,
+      // which breaks the exactly-one-result expectation below. These ceilings
+      // only bind on pathology; the happy path stays well under them.
       const admitted = Promise.allSettled([launchCompetitor()]);
       await awaitAdmittedTurnInFlight();
       const [fenced] = await Promise.allSettled([launchCompetitor()]);
@@ -1084,7 +1091,7 @@ describe('immutable session-cache acceptance generations', () => {
       process.env = previousEnv;
       if (shutdownError !== undefined) throw shutdownError;
     }
-  }, 60_000);
+  }, 120_000);
 
   it('keeps a crashed incomplete generation and starts a new generation unchanged', () => {
     const root = workDir('rasen-crash-generation-');

@@ -1,0 +1,10 @@
+$ (cd <temp>/copy-pristine) rasen store migrate-layout rasen-store
+Store rasen-store — planning layout migration preview
+  plan id: 426ed682c46dfe6860a67c319dc05a5ad8d9a4a01583afff85d0ab8be4fe3550
+  ref:     refs/heads/master
+
+  No flat planning content was inventoried for this ref.
+
+  Not applicable: 0 item(s) unresolved or blocked. There is no --force and no partial migration; the mapping file is the escape hatch.
+
+[exit code: 1]

@@ -1,0 +1,5 @@
+$ (cd <temp>/copy-enriched) rasen store migrate-layout rasen-store --rollback
+migration_rollback_after_retirement: The flat tree has already been retired, so rollback can no longer restore it.
+  fix: Recover with Git: check out the commit before the retirement commit in the Store repository.
+
+[exit code: 1]

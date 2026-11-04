@@ -13,6 +13,7 @@ import { registerStore } from '../../src/core/store/registry.js';
 import { writeStoreProjectRecord } from '../../src/core/store/project-records.js';
 import {
   RASEN_SESSION_CONTEXT_ENV,
+  RUNTIME_CONTEXT_VERSION,
   buildRuntimeContext,
   readSessionRuntimeContext,
   writeSessionRuntimeContext,
@@ -64,6 +65,15 @@ describe('session runtime context end to end', () => {
     ];
   }
 
+  /** Project-partitioned planning dirs (layout v2): the grant a Store session
+   *  with a projectId receives, replacing the legacy flat paths. */
+  function partitionDirs(root: string, projectId: string): string[] {
+    return [
+      path.join(root, WORKSPACE_DIR_NAME, 'projects', projectId, 'specs'),
+      path.join(root, WORKSPACE_DIR_NAME, 'projects', projectId, 'changes'),
+    ];
+  }
+
   /** Store S planning, project P checked out at B. */
   async function storeSessionFixture(): Promise<{
     storeRoot: string;
@@ -112,11 +122,16 @@ describe('session runtime context end to end', () => {
   it('carries Store S, project P and checkout B from launch to the capability an agent reads', async () => {
     const fixture = await storeSessionFixture();
 
-    expect(fixture.context.planning).toEqual({
+    // `planning` (the frozen Store/project facts) is additive: task 9.4 has the
+    // session freeze the shared scope description's stable facts. The three
+    // baseline fields are unchanged, and the added facts are asserted rather
+    // than merely tolerated.
+    expect(fixture.context.planning).toMatchObject({
       type: 'store',
       id: 'store-s',
       root: fixture.storeRoot,
     });
+    expect(fixture.context.planning).toMatchObject({ projectId: 'project-p' });
     expect(fixture.context.execution).toEqual({
       kind: 'project',
       projectId: 'project-p',
@@ -138,7 +153,7 @@ describe('session runtime context end to end', () => {
       artifactIds: ['proposal'],
       session: { planning: read.context.planning, execution: read.context.execution },
     });
-    expect(capability.planningWriteRoots).toEqual(planningDirs(fixture.storeRoot));
+    expect(capability.planningWriteRoots).toEqual(partitionDirs(fixture.storeRoot, 'project-p'));
     expect(capability.codeWriteRoots).toEqual([fixture.checkout]);
   });
 
@@ -304,7 +319,9 @@ describe('session runtime context end to end', () => {
     const withContext = await resolveFrozenExecutionBinding({
       frozen: { kind: 'project', projectId: 'twin-project' },
       sessionContext: {
-        version: 1,
+        // Tracks the current context-file version rather than pinning a
+        // literal, which `store-planning-worktree-bindings` raised to 2.
+        version: RUNTIME_CONTEXT_VERSION,
         sessionId: 'session-twin',
         planning: { type: 'project', projectId: 'twin-project', root: cloneB },
         execution: { kind: 'project', projectId: 'twin-project', root: cloneB },

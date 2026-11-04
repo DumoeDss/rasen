@@ -53,7 +53,7 @@ These commands support `--json` output for programmatic use by AI agents and scr
 | `rasen instructions` | Get next steps | `--json` for agent instructions |
 | `rasen templates` | Find template paths | `--json` for path resolution |
 | `rasen schemas` | List available schemas | `--json` for schema discovery |
-| `rasen store setup <id>` | Create and register a local store | `--json` with explicit inputs for structured setup output |
+| `rasen store setup <name>` | Create and register a local store; its permanent UID is generated automatically | `--json` with explicit inputs for structured setup output |
 | `rasen store register <path>` | Register an existing store | `--json` for structured registration output |
 | `rasen store upgrade-identity <id>` | Give a store a permanent identity | `--apply --json`; previews by default |
 | `rasen store unregister <id>` | Forget a local store registration | `--json` for structured cleanup output |
@@ -203,20 +203,20 @@ Rasen guides the user through setup. Agents and scripts should pass explicit
 inputs and use `--json`.
 
 ```bash
-rasen store setup [id] [options]
+rasen store setup [name] [options]
 ```
 
 **Options:**
 
 | Option | Description |
 |--------|-------------|
-| `--path <path>` | Folder where the store should live (for example `~/rasen/<id>`) |
+| `--path <path>` | Folder where the store should live (for example `~/rasen/<name>`) |
 | `--remote <url>` | Record the canonical remote in the new store's `store.yaml` |
 | `--init-git` | Initialize a Git repository with an initial commit (default) |
 | `--no-init-git` | Skip every Git action: no init, no initial commit |
 | `--json` | Output JSON |
 
-Non-interactive runs (`--json`, scripts, agents) must pass both the store id and `--path`. In an interactive terminal, setup prompts for the location with an editable suggestion in a visible, user-owned place (for example `~/rasen/<id>`); it never defaults to rasen's managed data directory.
+Non-interactive runs (`--json`, scripts, agents) must pass both the Store name and `--path`. The name is a readable display alias and directory segment; Rasen generates the permanent Store UID automatically. In an interactive terminal, setup prompts for the location with an editable suggestion in a visible, user-owned place (for example `~/rasen/<name>`); it never defaults to rasen's managed data directory.
 
 Examples:
 
@@ -239,7 +239,7 @@ rasen store register [path] [options]
 
 | Option | Description |
 |--------|-------------|
-| `--id <id>` | Store id; defaults to store metadata or folder name |
+| `--id <name>` | Store display-name override; defaults to store metadata or folder name. The flag name is retained for compatibility. |
 | `--yes` | Confirm creating store identity metadata for a healthy Rasen root |
 | `--json` | Output JSON |
 
@@ -503,6 +503,104 @@ to commit; the command never touches the git index.
   "status": []
 }
 ```
+
+### `rasen store migrate-layout` (0.1.7 compatibility bridge)
+
+Convert one checked-out ref of a legacy flat Store to layout v2. Preview is the
+default; writes happen only with `--apply`, and the command never commits,
+fetches, or pushes.
+
+```bash
+rasen store migrate-layout <store> --mapping rasen/migration-mapping.yaml --json
+rasen store migrate-layout <store> --mapping rasen/migration-mapping.yaml --apply --json
+rasen store migrate-layout <store> --status --json
+rasen store migrate-layout <store> --resume --json
+rasen store migrate-layout <store> --rollback --json
+rasen store migrate-layout <store> --retire-flat --json
+```
+
+Mapping version 1 keeps the original project-copy contract and continues to
+produce plan-schema-v1 canonical bytes and plan ids for equal inputs. Mapping
+version 2 adds an explicit choice between a project-owned Change and a
+Store-level Issue:
+
+```yaml
+version: 2
+defaultTargetLine: release-0-1
+targetLines:
+  release-0-1:
+    storeRef: refs/heads/main
+    projects:
+      scene-bridge:
+        codeRef: refs/heads/main
+changes:
+  render-worker:
+    kind: project-change
+    project: scene-bridge
+  release-coordinator:
+    kind: store-issue
+    issueId: release-coordinator
+    title: Coordinate the cross-project release
+    plan: rasen/migration-inputs/release-coordinator.yaml
+archive:
+  historical-coordinator:
+    kind: store-issue
+    issueId: historical-coordinator
+    title: Historical release coordination
+    state: resolved
+    reason: Operator declares the historical coordination concluded; acceptance is unproven.
+```
+
+Recorded Change identity remains binding. An active `store-issue` always imports
+as `open` and cannot declare a reason. An archived source must explicitly
+declare `open`, `resolved`, or `dropped`; terminal states require an operator
+reason and are recorded with acceptance evidence `unproven`. Names, prose,
+branches, cwd, archive placement, and commits never infer ownership, state, or
+acceptance.
+
+An optional Issue plan input must be inside the Store, Git-tracked, and
+byte-identical in HEAD, index, and worktree. It must be strict UTF-8 without a
+BOM. A migration-only `sourceChange` node still declares project and target
+line; planning verifies it against one project Change in the same immutable
+plan and serializes only the canonical `changeInstanceId`. Without a plan input,
+the Issue is created without nodes and preview reports
+`no plan supplied; no nodes invented` plus the ordinary follow-up command:
+
+```bash
+rasen store issue plan <issue-id> --store <store> --from-file <path>
+```
+
+Publication stages and verifies the complete ref, writes project partitions and
+generated Issue roots without copying a coordinator's legacy tree, records a
+typed receipt, and flips `layoutVersion: 2` last. A failure can be continued with
+`--resume` or reverted with `--rollback` while flat sources remain. After the
+publication commit is secured, `--retire-flat` removes only the receipt-listed
+legacy paths and is safe to retry after partial removal. The receipt identifies
+the source as a Store planning revision, never as a member code commit:
+
+```bash
+git restore --source=<receipt.sourceRevision.headOid> --worktree -- <conversion.source.path>
+```
+
+After restoring, compare the recursive source digest with
+`conversion.source.digest`. Member code repositories are never migration write
+targets.
+
+After retirement, ordinary direct `rasen archive <old-active-alias>` reports
+`legacy_coordinator_became_issue` and the existing `rasen store issue show`
+command when one current-ref v2 receipt proves the conversion. It does not
+redirect or translate archive outcome, reason, token, commit, confirmation, or
+acceptance into Issue state. Archived-source aliases do not redirect, token
+`--apply-plan`/`--abort-plan` routes do not query receipts, and a real Change
+still follows normal finalization (including `finalization_outcome_required`).
+
+This is an explicitly bounded **Rasen 0.1.7 compatibility-only bridge** for
+retiring flat Store coordinators through the already available minimal Issue
+record and Execution Plan v1 resources. It does not implement the later
+Issue-centered automation platform, Dispatch, Reconciliation, Acceptance,
+Delivery, Board, or coordinator runtime. Remove the bridge when supported Stores
+no longer require flat-to-v2 migration; keep typed historical receipt readers as
+long as committed receipts remain supported evidence.
 
 ### Store membership
 
@@ -1441,6 +1539,45 @@ code write roots. It may write planning artifacts in its Store exactly as any
 Store session does; it performs no project-scoped materialization and changes
 no project's code. The restriction is stated where the session is launched and
 in the action context the agent reads (see [`rasen status`](#rasen-status)).
+
+---
+
+## Durable hosted agent Sessions
+
+`rasen session` talks to the resident local daemon. The daemon, not the short-lived
+CLI caller, owns the agent process and its stdin/stdout pipes.
+
+```bash
+# Create a Session. The prompt body is read from a bounded file and sent over stdin.
+rasen session exec --backend claude --prompt-file ./turn.txt --cwd . --json
+
+# Wake the same stable Rasen Session with a new idempotency key.
+rasen session exec --backend claude --prompt-file ./next-turn.txt --cwd . \
+  --session <rasen-session-uuid> --request-id <request-uuid> --json
+
+rasen session list --json
+rasen session inspect <rasen-session-uuid> --json
+rasen session cancel <rasen-session-uuid> --reason operator-stop --json
+rasen session restart <rasen-session-uuid> --json
+rasen session retire <rasen-session-uuid> --reason work-complete --json
+```
+
+The public Rasen Session UUID stays stable. The backend Session id is separate
+and is used only for exact recovery. Closing the CLI caller is a logical driver
+reattach: the daemon and live transport continue. After daemon replacement, an
+idle Session can be opened with the exact backend identity and original canonical
+working directory. A request durably marked `sent` but not `settled` becomes
+`ambiguous`/`interrupted`; Rasen never replays that input automatically.
+
+`cancel` fences the current generation and classifies a turn as cancelled only
+when the backend can prove it did no work; otherwise the result remains unknown.
+`restart` requires the exact backend identity and original directory. `retire`
+is terminal and permanently rejects later wake or restart operations.
+
+Hosted Session outcomes are execution-layer receipts only. They do not complete
+a canonical Run, write Action/Record/Evidence, or make a trust claim. Registry,
+state, upgrade, and local Management API details are in
+[Durable Session host](session-host.md).
 
 ---
 
@@ -2641,9 +2778,9 @@ Pipeline help and Rasen-owned human output for all eleven subcommands are availa
 | `export <name> <path>` | Package an installed **user** pipeline as a deterministic `.rasenpkg`; built-in and project-local pipelines cannot be exported |
 | `delete <name>` | Delete an unreferenced user pipeline after a refcount check; built-in pipelines cannot be deleted |
 
-**Pipeline definition content version.** The normalized public definition always carries the top-level integer `version: 1`. Historical definitions with no `version` remain readable and normalize to v1; any explicit unsupported or malformed value is refused with an actionable issue at `/version` so the user can upgrade to a compatible Rasen release. `show` and the management detail API expose the normalized v1 definition. `init` and `save` emit canonical v1 YAML. `export` canonicalizes only the packaged `pipeline.yaml`, preserves ancillary files, and does not rewrite the installed source merely because it was read or exported. The package manifest's `formatVersion` is a separate `.rasenpkg` container version.
+**Pipeline definition content version.** New CLI and Canvas drafts start from a minimal authored `version: 2` definition, and the six Change-level package pipelines (`bug-fix`, `small-feature`, `full-feature`, and the three `goal-loop-*` variants) are authored v2. The public reader also accepts authored `version: 1` as a compatibility input; historical definitions with no version remain readable as v1, while unsupported or malformed versions fail at `/version`. `show` and the management detail API preserve the authored definition/version while preparation reports normalized v2 planning and execution capability. `save` and `export` preserve either supported authored version. The package manifest's `formatVersion` is a separate `.rasenpkg` container version.
 
-Pipeline v1 keeps the existing flat `requires` DAG and the current `stage.loop.kind: review-cycle` and `stage.loop.kind: goal` declarations. They remain readable today and are valid source inputs for a future compiled Composite run plan. For now, the LEAD orchestration playbook interprets both loop kinds. Canvas views and edits Pipeline definitions; it is not a programmatic Pipeline runner and does not introduce nested execution behavior.
+Pipeline v1 keeps the flat `requires` DAG and `stage.loop.kind: review-cycle | goal` declarations. They are compatibility inputs normalized into the same composite plan used by authored v2. `auto-decompose` is the only package v1 compatibility fixture; list, show, and Management API responses identify its migration boundary as `issue-dispatch-0.3.0`. With the default `runs.engine: auto`, supported Change-level pipelines run under the reconciler; the legacy playbook remains only for an explicit/owned legacy path. Canvas continues to edit existing authored v1 definitions without silently converting them. Its v2 authoring surface intentionally does not add full primitive/loop editor parity in this Change.
 
 `.rasenpkg` files carry a `kind` discriminant — `workflow`, `profile`, or `pipeline` — sharing one package format. A `kind: pipeline` package's digest, transactional install (temp stage → atomic rename, all-or-nothing across every packaged pipeline), and file-limit rules mirror the `kind: workflow` contract in [Installable workflows and `.rasenpkg`](workflow-packages.md). Every package also carries an optional `minRasenVersion`, stamped from the packing CLI's own version: an older CLI importing a package that requires a newer one gets a clear upgrade message instead of an opaque schema error. This preflight only helps CLIs from this point forward — an already-shipped CLI predating this field still rejects an unrecognized package `kind` opaquely; there is no way to retrofit that.
 

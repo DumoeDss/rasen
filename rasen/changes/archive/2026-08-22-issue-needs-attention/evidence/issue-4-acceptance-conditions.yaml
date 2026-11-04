@@ -1,0 +1,38 @@
+# Acceptance conditions of Issue #4 (issue-cross-project-replanning) —
+# authored 2026-08-22 by the issue-needs-attention implementer leg as the
+# STAGED close (design D5 / task 4.5): the conditions state the real criteria
+# the portfolio close will evaluate; the accept step itself is documented in
+# evidence (issue-4-close-staged.md) and executes only from a genuinely
+# terminal state at the closer's hands — the LEAD close precedent, never from
+# this change's own task list.
+conditions:
+  - id: attention-aggregation-entry-ships
+    requirement: The needs-attention aggregation entry ships — the attention
+      derivation with its closed five-kind vocabulary, the honest absence
+      discipline, and the store-level read verb, with the unmasked-failure
+      guarantee pinned by an integration receipt
+    verification: repo ship of issue-needs-attention with
+      test/commands/store-attention-cli.test.ts and
+      test/core/issue-status/issue-attention.test.ts green, plus the receipts
+      under this change's evidence/
+  - id: children-terminal-and-finale-honest
+    requirement: The Issue's plan carries the two shipped children reading
+      terminal on their seeded Store evidence and the finale reading honestly
+      in flight until it ships, with every stage receipted through the new
+      aggregation verb
+    verification: evidence receipts issue-4-receipt-1..4 (authoring scan,
+      confirm, in-flight scan, show) and the store-side commits seeding the
+      children and publishing revisions 0001/0002
+  - id: exit-criteria-evidenced-from-one-place
+    requirement: Roadmap Phase 5 section 8's three receipts —
+      replanning-preserves-history, failure-not-masked, and the aggregation
+      entry — read from this change's evidence directory as one set
+    verification: evidence/p5-exit-criteria.md citing g-002's shipped pins
+      (not recreated), the unmasking integration test, and the dogfood
+      receipts
+  - id: suites-green
+    requirement: The focused suites covering the change are green — attention
+      units, the attention CLI, the issue-status family, completions, and the
+      locale catalog — with the full failure list adjudicated, not assumed
+    verification: evidence/focused-summaries.txt and the binned full-suite run
+      per the store-family recipe

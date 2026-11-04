@@ -1,0 +1,117 @@
+$ rasen store issue show defer-dogfood   # revision 0001, before the deferral
+Issue defer-dogfood
+  state: open
+  title: Deferral dogfood
+  revisions: 0001
+  latest plan: revision 0001
+  plan digest: 648ccbc105eea77074018e2f87aed4ec2361f2fdd49d6dc4f8dff17c52ccf3c0
+  status:
+    phase: ready
+    health: healthy
+    progress: 0/1
+    run-state: C:\Users\Sayo\AppData\Local\Temp\rasen-defer-dogfood-3ovilM\exec-project
+    nodes:
+      project app-a (app-a): 0/1
+      g-001 change app-a child-a — not-started
+        evidence: C:\Users\Sayo\AppData\Local\Temp\rasen-defer-dogfood-3ovilM\store-integration\rasen\projects\app-a\changes\child-a\evidence
+      g-opt change app-a child-opt — not-started (optional)
+        evidence: C:\Users\Sayo\AppData\Local\Temp\rasen-defer-dogfood-3ovilM\store-integration\rasen\projects\app-a\changes\child-opt\evidence
+
+  acceptance:
+    conditions: revision 0001 (1 condition(s))
+      cond-1: The deferral is recorded
+    gate: not eligible
+      not accepted yet
+      - node g-001 is not-started
+    record: (not accepted)
+
+  delivery evidence:
+    g-001 child-a@app-a — not-started — not-archived
+      delivery evidence will exist when the Change archives
+    g-opt child-opt@app-a — not-started — not-archived
+      delivery evidence will exist when the Change archives
+    counts: 0 record, 0 no-record, 2 not-archived, 0 unreadable, 0 unattributed
+
+  review:
+    determination: not-ready (1 blocker(s) named above)
+    threads: 1
+      optional-open g-opt (not-started)
+    verification: required 0/1, delivery 0 record / 0 no-record / 2 not-archived / 0 unreadable / 0 unattributed
+    review derives; accepting remains the operator's act.
+
+$ rasen store issue plan defer-dogfood --from-file nodes-2.yaml --json
+{
+  "issueId": "defer-dogfood",
+  "revision": {
+    "version": 1,
+    "issueId": "defer-dogfood",
+    "revisionId": "0002",
+    "supersedes": "0001",
+    "createdAt": "2026-08-23T11:51:22.711Z",
+    "nodes": [
+      {
+        "nodeId": "g-001",
+        "kind": "change",
+        "projectId": "app-a",
+        "targetLineId": "main",
+        "changeInstanceId": "ci_303c2eac5531228018fd48e169a9dcb236105995b8958156579ff67eda2d6157",
+        "changeAlias": "child-a",
+        "dependsOn": []
+      },
+      {
+        "nodeId": "g-opt",
+        "kind": "change",
+        "projectId": "app-a",
+        "targetLineId": "main",
+        "changeInstanceId": "ci_238a839acc254413a54c469e72f4b3fde08ef3bb8955b16251113470432eaa19",
+        "changeAlias": "child-opt",
+        "lifecycle": "deferred",
+        "reason": "postponed beyond this Issue to the next milestone",
+        "dependsOn": []
+      }
+    ],
+    "contentSha256": "81034802e048593eeaf19d34cbd9e1cd4ac8213a7cecc6d3269ed9d2f4bd7f84"
+  },
+  "storeId": "team-store",
+  "storeUid": "f4674b4d-9161-4f2f-bb30-5a2d743978f9",
+  "checkoutRoot": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-defer-dogfood-3ovilM\\store-integration",
+  "checkoutRef": "refs/heads/main",
+  "written": [
+    "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-defer-dogfood-3ovilM\\store-integration\\rasen\\issues\\defer-dogfood\\plans\\0002.yaml"
+  ],
+  "suggestedCommits": [
+    {
+      "repoRoot": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-defer-dogfood-3ovilM\\store-integration",
+      "pathspecs": [
+        "rasen/issues/defer-dogfood/plans/0002.yaml"
+      ],
+      "message": "chore(store): publish execution plan defer-dogfood/0002",
+      "rationale": "Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing."
+    }
+  ]
+}
+
+$ cat rasen/issues/defer-dogfood/plans/0002.yaml
+version: 1
+issueId: defer-dogfood
+revisionId: "0002"
+supersedes: "0001"
+createdAt: 2026-08-23T11:51:22.711Z
+contentSha256: 81034802e048593eeaf19d34cbd9e1cd4ac8213a7cecc6d3269ed9d2f4bd7f84
+nodes:
+  - nodeId: g-001
+    kind: change
+    projectId: app-a
+    targetLineId: main
+    changeInstanceId: ci_303c2eac5531228018fd48e169a9dcb236105995b8958156579ff67eda2d6157
+    changeAlias: child-a
+    dependsOn: []
+  - nodeId: g-opt
+    kind: change
+    projectId: app-a
+    targetLineId: main
+    changeInstanceId: ci_238a839acc254413a54c469e72f4b3fde08ef3bb8955b16251113470432eaa19
+    changeAlias: child-opt
+    lifecycle: deferred
+    reason: postponed beyond this Issue to the next milestone
+    dependsOn: []

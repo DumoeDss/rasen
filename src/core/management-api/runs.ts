@@ -27,7 +27,6 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { createHash } from 'node:crypto';
 
 import { WORKSPACE_DIR_NAME } from '../config.js';
 import { resolveProjectHome, type ProjectHome } from '../project-home.js';
@@ -56,11 +55,6 @@ import type {
 // Reconciler-engine imports — reaching into internal modules exactly like
 // `src/commands/pipeline.ts` does (the identity derivation chain is the same
 // read-only path: statSync + pure SHA-256 hashes, zero writes).
-import {
-  derivePlanningSpaceId,
-  deriveWorkspaceInstanceId,
-  readPhysicalIdentity,
-} from '../change-run/internal/identity.js';
 import { projectRunView } from '../change-run/internal/projector.js';
 import { projectGoalRunJson, type GoalRunRoundRecord } from '../change-run/internal/goal-cycle-runtime.js';
 import { decodeCanonicalRunRecord, type CanonicalRunRecord } from '../change-run/internal/record.js';
@@ -69,6 +63,7 @@ import type {
   ChangeRunView,
   RootDagViewSection,
 } from '../change-run/contracts.js';
+import { deriveRunWorkspaceIds } from './run-workspace-identity.js';
 
 /** No typed reader module exists for this file (design D5); read as opaque raw JSON. */
 const GOAL_RUN_STATE_FILENAME = 'goal-run.json';
@@ -104,52 +99,6 @@ function decodeCursor(raw: string): CursorPayload | null {
       return { afterRunId: (parsed as { afterRunId: string }).afterRunId };
     }
     return null;
-  } catch {
-    return null;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Workspace identity derivation (read-only, mirrors pipeline.ts exactly).
-// ---------------------------------------------------------------------------
-
-/**
- * Derives the WorkspaceInstanceId for a project root using the same chain as
- * the CLI `pipeline start/status` command: `projectRoot → sha256 → planningSpaceHome
- * → derivePlanningSpaceId → statSync → readPhysicalIdentity → deriveWorkspaceInstanceId`.
- * All steps are read-only (stat + pure hashes); no writes, no identity minting.
- * Returns `null` when the root does not exist or cannot be stat'd.
- */
-function deriveWorkspaceIdFromRoot(root: string): string | null {
-  try {
-    const planningSpaceHome = `project-${createHash('sha256')
-      .update(root)
-      .digest('hex')
-      .slice(0, 12)}`;
-    const planningSpaceId = derivePlanningSpaceId(planningSpaceHome);
-    const st = fs.statSync(root, { bigint: true });
-    const physical = readPhysicalIdentity({
-      device: st.dev,
-      ino: st.ino,
-      birthtimeMs: st.birthtimeMs,
-    });
-    return deriveWorkspaceInstanceId(planningSpaceId, physical) as string;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Derives the PlanningSpaceId for a project root using the same `project-<sha256>.slice(0,12)`
- * home derivation as the CLI. Returns `null` only if the hash fails (effectively never).
- */
-function derivePlanningSpaceIdFromRoot(root: string): string | null {
-  try {
-    const planningSpaceHome = `project-${createHash('sha256')
-      .update(root)
-      .digest('hex')
-      .slice(0, 12)}`;
-    return derivePlanningSpaceId(planningSpaceHome) as string;
   } catch {
     return null;
   }
@@ -366,6 +315,8 @@ export interface ReconcilerListOptions {
    * state defaults to "missing" since no change directory can be checked.
    */
   planningSpaceId?: string;
+  /** Server-lifetime Run store root; avoids re-reading mutable process env per request. */
+  runsRoot?: string;
 }
 
 /**
@@ -391,15 +342,16 @@ async function discoverReconcilerRuns(
   home: ProjectHome | null,
   options: ReconcilerListOptions = {}
 ): Promise<ReconcilerListResult> {
-  let storeRoot: string;
-  try {
-    const { getGlobalDataDir } = await import('../global-config.js');
-    storeRoot = path.join(getGlobalDataDir(), 'runs');
-  } catch {
-    return { summaries: [], hasMore: false };
+  let storeRoot = options.runsRoot;
+  if (!storeRoot) {
+    try {
+      const { getGlobalDataDir } = await import('../global-config.js');
+      storeRoot = path.join(getGlobalDataDir(), 'runs');
+    } catch {
+      return { summaries: [], hasMore: false };
+    }
   }
 
-  const workspaceFilter = root ? deriveWorkspaceIdFromRoot(root) : null;
   const planningFilter = options.planningSpaceId ?? null;
   const candidates = enumerateRunCandidates(storeRoot);
 
@@ -428,15 +380,24 @@ async function discoverReconcilerRuns(
     }
   }
 
-  // Filter: when a planningSpaceId override is set (from `planning:<id>`
-  // selector), filter by change.planningSpaceId match. Otherwise, filter by
-  // the derived WorkspaceInstanceId (linked-worktree isolation). When neither
-  // is derivable (no root, no override), all Runs are included.
-  const filtered = planningFilter
+  // A planning selector constrains the planning identity. When it also resolves
+  // to a live root, retain the normal WorkspaceInstanceId filter so a linked
+  // worktree's Runs remain read-only detail targets rather than appearing in
+  // the selected worktree's list.
+  const planningRuns = planningFilter
     ? validRuns.filter((run) => (run.record.change.planningSpaceId as string) === planningFilter)
-    : workspaceFilter
-      ? validRuns.filter((run) => run.record.workspaceInstanceId === workspaceFilter)
-      : validRuns;
+    : validRuns;
+  const filtered = root
+    ? planningRuns.filter((run) => {
+        const workspaceResolution = deriveRunWorkspaceIds(
+          root,
+          home,
+          run.record.change.changeId
+        );
+        return workspaceResolution.ok &&
+          workspaceResolution.workspaceIds.includes(run.record.workspaceInstanceId);
+      })
+    : planningRuns;
 
   // Stable-sort by runId (deterministic ordering across requests).
   filtered.sort((a, b) => (a.runId < b.runId ? -1 : a.runId > b.runId ? 1 : 0));
@@ -488,14 +449,17 @@ export async function handleRunDetail(
   changeId: string,
   runId: string,
   root: string | undefined,
-  home: ProjectHome | null
+  home: ProjectHome | null,
+  runsRoot?: string
 ): Promise<RunDetailResult> {
-  let storeRoot: string;
-  try {
-    const { getGlobalDataDir } = await import('../global-config.js');
-    storeRoot = path.join(getGlobalDataDir(), 'runs');
-  } catch {
-    return { ok: false, status: 500, code: 'run_store_unavailable', message: 'Machine data directory is not available.' };
+  let storeRoot = runsRoot;
+  if (!storeRoot) {
+    try {
+      const { getGlobalDataDir } = await import('../global-config.js');
+      storeRoot = path.join(getGlobalDataDir(), 'runs');
+    } catch {
+      return { ok: false, status: 500, code: 'run_store_unavailable', message: 'Machine data directory is not available.' };
+    }
   }
 
   if (!fs.existsSync(storeRoot)) {
@@ -533,9 +497,13 @@ export async function handleRunDetail(
 
   // Determine workspace scope: "current" when the Run's workspaceInstanceId
   // matches the selected root's derived workspace, "other" otherwise.
-  const workspaceFilter = root ? deriveWorkspaceIdFromRoot(root) : null;
+  const workspaceResolution = root
+    ? deriveRunWorkspaceIds(root, home, changeId)
+    : undefined;
   const isOtherWorkspace =
-    workspaceFilter !== null && record.workspaceInstanceId !== workspaceFilter;
+    workspaceResolution !== undefined &&
+    (!workspaceResolution.ok ||
+      !workspaceResolution.workspaceIds.includes(record.workspaceInstanceId));
 
   if (isOtherWorkspace) {
     // Read-only other-worktree projection: scope "other", no controls, no

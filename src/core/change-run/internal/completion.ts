@@ -35,16 +35,25 @@ export function computeCompletionReceiptDigest(
       return domainDigest('change-run-receipt/domain-result', {
         status: completion.status,
         result: completion.result,
+        actor: completion.actor,
+        actorAttestation: completion.actorAttestation,
+        evidence: completion.evidence,
       });
     case 'effect-observation':
       return domainDigest('change-run-receipt/effect-observation', {
         effectId: completion.effectId,
         status: completion.status,
         observation: completion.observation,
+        actor: completion.actor,
+        actorAttestation: completion.actorAttestation,
+        evidence: completion.evidence,
       });
     case 'infrastructure-observation':
       return domainDigest('change-run-receipt/infrastructure', {
         error: completion.error,
+        actor: completion.actor,
+        actorAttestation: completion.actorAttestation,
+        evidence: completion.evidence,
       });
   }
 }

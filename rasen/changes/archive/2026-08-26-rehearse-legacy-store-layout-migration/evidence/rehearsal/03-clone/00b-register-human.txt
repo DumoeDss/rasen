@@ -1,0 +1,12 @@
+$ (cd <temp>/copy-clone) rasen store register <temp>/copy-clone
+Store registered: rasen-store
+Location: ~\AppData\Local\Temp\rasen-g2\copy-clone
+Rasen root: ready
+Registry: already registered
+Note: Store 'rasen-store' is already registered at this path.
+
+Next: run normal Rasen commands against this store, for example:
+  rasen new change <change-id> --store rasen-store
+Share it: teammates clone <real-store> and run rasen store register <path>.
+
+[exit code: 0]

@@ -68,6 +68,7 @@ Rasen 是一套**自主引擎**：你描述意图——一个目标、一个 bug
 |-----|-------------------|
 | [概念](concepts.md) | 对 spec、变更、产物、schema 和归档的长篇讲解 |
 | [制品工作流](artifact-workflow.md) | 为什么这套工作流是”流动的”而非”阶段锁死的”，外加一次架构深潜 |
+| [文件落点与规划根](file-placement-and-planning-roots.md) | Archive 与 evidence 固定在规划根；runtime、scratch、probes 可选择内置或外置 |
 | [术语表](glossary.md) | 每个术语集中在一处定义 |
 
 ### 改造成你自己的

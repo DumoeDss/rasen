@@ -1,4 +1,4 @@
-/** Full-screen notice for missing token / 401 (design.md D4): no retry loop, no token prompt. */
+/** Full-screen notice after automatic browser-session renewal still returns 401. */
 import { useT } from '../i18n/store.js';
 
 export function RelaunchNotice() {

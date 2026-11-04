@@ -14,6 +14,8 @@ export type CodexDispatchFailureKind =
   | 'thread-busy'
   | 'resume-cwd-mismatch'
   | 'timeout'
+  | 'cancelled'
+  | 'route-lease-lost'
   | 'output-limit'
   | 'nonzero-exit'
   | 'thread-id-missing'

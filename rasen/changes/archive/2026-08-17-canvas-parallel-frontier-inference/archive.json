@@ -1,0 +1,88 @@
+{
+  "change": "canvas-parallel-frontier-inference",
+  "archivedAt": "2026-08-17T01:18:06.535Z",
+  "codeCommit": "6dba3ff0757039a456c8186b09e5ea04d96d9f25",
+  "planningBranch": "feat/canvas-gesture-ir-compiler",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/01-not-found.png",
+      "sha256": "3c99c69bf2d119164f8b894137e71ce1a84afd9917c028529f86a68dc912690e"
+    },
+    {
+      "path": "evidence/02-first-branch-drawn-no-offer.png",
+      "sha256": "53cb2fea6dd561c1809c4396ae22f2460782cd68dcfc574d417eb0785216c31f"
+    },
+    {
+      "path": "evidence/03-completing-edge-offer.png",
+      "sha256": "5b7d1528082c37b398b73df19003574569d74b35e30f8a909f246537b64f038c"
+    },
+    {
+      "path": "evidence/04-review-open-with-defaults.png",
+      "sha256": "77731844c72d0a087ba8a0aa6fa692b54706e3d5003103326630a820dfe414e8"
+    },
+    {
+      "path": "evidence/05-frontier-synthesized.png",
+      "sha256": "318638b5e770131df2f17da8337f54671a2fd7c8ec0ca2f6103854de033e8e29"
+    },
+    {
+      "path": "evidence/06-membership-edited-through-panel.png",
+      "sha256": "ffec8b32242cff62237d853ba341c181619dde19a4809fb089902318e0d645d1"
+    },
+    {
+      "path": "evidence/07-explicit-gesture-still-works.png",
+      "sha256": "4720f6a817b9a8a64466872867e7b8c4693a501ed896993d76e68a50f6ea8411"
+    },
+    {
+      "path": "evidence/cdp-parallel-frontier-check.mjs",
+      "sha256": "fa61c515fb01ca9c025830244423d6fbc9cc7b2804811c5225a5eb0ec28d0c55"
+    },
+    {
+      "path": "evidence/cdp-results.json",
+      "sha256": "0716b686f2b7ff2afa664b1cfaa874667034f1a10d991e52b01a06c5ef63b716"
+    },
+    {
+      "path": "evidence/cdp-transcript.md",
+      "sha256": "9267fb24307e074c21e1058f9a7ad1802678e1fadefb8f60143eddf30b466e9b"
+    },
+    {
+      "path": "evidence/fix-round-1.md",
+      "sha256": "4333471c81dd93fee5195200a6a21badc1e9e9b1c6ab9fb0af7bd2fcb7c24b22"
+    },
+    {
+      "path": "evidence/gates-4-2.md",
+      "sha256": "d31368e599b83c35508e68ff680fc7c8b738c2950ae9559a388c416364534904"
+    },
+    {
+      "path": "evidence/handoff/implementer-1.md",
+      "sha256": "1ed960886b16cd57d2335d83144ce108238eb5d1f067fd9384609d8c8b77b9b6"
+    },
+    {
+      "path": "evidence/review-cycle-report.md",
+      "sha256": "7752caabb1bf648e01bc1bd0bce6e115a12072ae22a4e36c064d4ae93f0230d3"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "e16e25ef32899a719c12dfba9586692b721972c33829ab45aa68e396d57a9179"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "90d5ce82c635538e98a90c30bb97c387d61da4f577917da257088e1ca58aafa1"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [
+    {
+      "file": "handoff/implementer-1.md",
+      "outcome": "preserved"
+    },
+    {
+      "file": "handoff/shipper-1.md",
+      "outcome": "absorbed"
+    }
+  ],
+  "ephemeraDiscarded": [],
+  "missing": [
+    "verification-report"
+  ]
+}

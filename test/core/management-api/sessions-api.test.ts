@@ -300,7 +300,17 @@ describe('sessions API (session-supervision design D1/D4)', () => {
         kind: 'auto',
         task: 'test',
         cwd: planningRoot,
-        space: { type: 'store', id: 'planning', root: planningRoot },
+        space: {
+          type: 'store',
+          id: 'planning',
+          root: planningRoot,
+          planning: {
+            storeUid: 'store-uid',
+            storeId: 'planning',
+            projectId: 'live',
+            targetLineId: 'main',
+          },
+        },
         state: 'exited',
         startedAt: 1,
         lastOutputAt: 1,
@@ -345,6 +355,15 @@ describe('sessions API (session-supervision design D1/D4)', () => {
         name: 'joined',
         kind: 'error',
         message: 'home inspection denied',
+      });
+      // The wire declaration mirrors facts `toWire()` already passes through:
+      // planning identity and frozen execution are separate from the opaque cwd.
+      expect(response.sessions[1]?.session.space?.planning).toEqual(base.space?.planning);
+      expect(response.sessions[1]?.session.execution).toEqual({ kind: 'planning-only' });
+      expect(response.sessions[3]?.session.execution).toEqual({
+        kind: 'project',
+        projectId: 'live',
+        root: liveExecution,
       });
       expect(resolveHomeForRoot).toHaveBeenCalledTimes(1);
     });

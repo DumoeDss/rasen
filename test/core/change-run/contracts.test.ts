@@ -12,10 +12,16 @@ import {
   decodeWorkspaceRevision,
   deriveReceiptDisposition,
   type ChangePipelineRuntime,
+  type ChangeRunReceiptContinuationAuthority,
   type CompleteRunAction,
   type ExactChangeRunRef,
   type ResumeChangePipeline,
 } from '../../../src/core/change-run/index.js';
+
+const NO_CONTINUATION_AUTHORITY: ChangeRunReceiptContinuationAuthority = {
+  source: 'canonical-record',
+  resolveContinuationLimits: () => undefined,
+};
 
 const ids = {
   planningSpaceId: `planning-space:${'1'.repeat(64)}`,
@@ -258,7 +264,7 @@ describe('closed change-run codecs', () => {
       decodeActorRef({ ...actor, format: 'change-run-actor/2' })
     ).toThrowError(expect.objectContaining({ code: 'unsupported_contract_version' }));
     expect(() =>
-      decodeEvidenceRef({ ...evidence, format: 'change-run-evidence-ref/2' })
+      decodeEvidenceRef({ ...evidence, format: 'change-run-evidence-ref/3' })
     ).toThrowError(expect.objectContaining({ code: 'unsupported_contract_version' }));
     expect(() => decodeRunAction({ ...action, command: {} })).toThrow(
       ChangeRunContractError
@@ -313,6 +319,65 @@ describe('closed change-run codecs', () => {
     ).toThrowError(expect.objectContaining({ code: 'unsupported_view_version' }));
   });
 
+  it('strictly decodes known goal/lifecycle sections and preserves future lifecycle versions', () => {
+    const candidate = view();
+    candidate.sections.push({
+      kind: 'goal',
+      version: 1,
+      loopPath: 'root/goal-loop',
+      variant: 'measure',
+      round: 2,
+      phase: 'judge',
+      lastScore: 0.72,
+      lastGaps: [],
+    } as never);
+    candidate.sections.push({
+      kind: 'bounded-loop-lifecycle',
+      version: 1,
+      loopPath: 'root/goal-loop',
+      bodyKind: 'goal-cycle',
+      state: 'running',
+      iteration: 2,
+      phase: 'judge',
+      limits: {
+        iterations: { used: 2, max: 5 },
+        actions: { used: 4, max: 12 },
+        budget: { used: 4, max: 12 },
+      },
+      progressFingerprint: ids.digest,
+      stallStreak: 1,
+      blockedStreak: 0,
+      strategy: { attempts: 0, maxAttempts: 2 },
+    } as never);
+    candidate.sections.push({
+      kind: 'bounded-loop-lifecycle',
+      version: 2,
+      loopPath: 'root/future-loop',
+      futureCounter: 99,
+    } as never);
+
+    const decoded = decodeChangeRunView(candidate);
+    expect(decoded.sections[1]).toMatchObject({ kind: 'goal', lastScore: 0.72 });
+    expect(decoded.sections[2]).toMatchObject({
+      kind: 'bounded-loop-lifecycle',
+      version: 1,
+      limits: { actions: { used: 4, max: 12 } },
+    });
+    expect(decoded.sections[3]).toEqual({
+      kind: 'bounded-loop-lifecycle',
+      version: 2,
+      loopPath: 'root/future-loop',
+      futureCounter: 99,
+    });
+
+    const invalidKnown = view();
+    invalidKnown.sections.push({
+      kind: 'goal', version: 1, loopPath: 'root/goal-loop', variant: 'measure',
+      round: 1, phase: 'judge', lastGaps: [], lifecycleCounter: 1,
+    } as never);
+    expect(() => decodeChangeRunView(invalidKnown)).toThrow(ChangeRunContractError);
+  });
+
   it('enforces stable arrays, closure, status, scope and receipt grant invariants', () => {
     const unsorted = view();
     const section = unsorted.sections[0]!;
@@ -336,17 +401,71 @@ describe('closed change-run codecs', () => {
         disposition: 'reused',
         view: view(),
         actions: [action],
-      })
+      }, NO_CONTINUATION_AUTHORITY)
     ).toThrowError(expect.objectContaining({ code: 'invalid_run_invariant' }));
 
+    const historical = decodeChangeRunReceipt({
+      format: 'change-run-receipt/1',
+      disposition: 'advanced',
+      view: view(),
+      actions: [action],
+    });
+    expect(historical.actions).toHaveLength(1);
+    expect(historical.candidates).toEqual([]);
+
+    const candidate = {
+      format: 'change-run-agent-candidate/1',
+      candidateId: `candidate:${'9'.repeat(64)}`,
+      runId: ids.runId,
+      recordVersion: 1,
+      nodeId: action.nodeId,
+      occurrence: 0,
+      input: { phase: 'review' },
+    };
     expect(
       decodeChangeRunReceipt({
         format: 'change-run-receipt/1',
         disposition: 'advanced',
         view: view(),
         actions: [action],
-      }).actions
+      }, NO_CONTINUATION_AUTHORITY).actions
     ).toHaveLength(1);
+    expect(
+      decodeChangeRunReceipt({
+        format: 'change-run-receipt/1',
+        disposition: 'advanced',
+        view: view(),
+        actions: [],
+        candidates: [candidate],
+      }, NO_CONTINUATION_AUTHORITY).candidates
+    ).toEqual([candidate]);
+    expect(() =>
+      decodeChangeRunReceipt({
+        format: 'change-run-receipt/1',
+        disposition: 'advanced',
+        view: view(),
+        actions: [],
+        candidates: [{ ...candidate, prompt: 'must stay private' }],
+      }, NO_CONTINUATION_AUTHORITY)
+    ).toThrow(ChangeRunContractError);
+    expect(() =>
+      decodeChangeRunReceipt({
+        format: 'change-run-receipt/1',
+        disposition: 'advanced',
+        view: view(),
+        actions: [],
+        candidates: [candidate, candidate],
+      }, NO_CONTINUATION_AUTHORITY)
+    ).toThrowError(expect.objectContaining({ code: 'invalid_run_invariant' }));
+    expect(() =>
+      decodeChangeRunReceipt({
+        format: 'change-run-receipt/1',
+        disposition: 'advanced',
+        view: view(),
+        actions: [],
+        candidates: [{ ...candidate, recordVersion: 0 }],
+      }, NO_CONTINUATION_AUTHORITY)
+    ).toThrowError(expect.objectContaining({ code: 'invalid_run_invariant' }));
   });
 
   it('allows branch-local waits beside active Actions and forbids terminal overlap', () => {

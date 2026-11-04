@@ -171,7 +171,7 @@ describe('reference index assembly', () => {
 
     // An invalid id wins over any declared remote.
     const invalid = await assembleReferenceIndex({
-      references: [{ id: 'BAD ID', remote: 'https://192.0.2.1/team.git' }],
+      references: [{ id: 'Bad/Id', remote: 'https://192.0.2.1/team.git' }],
       resolvedRoot: appRoot(),
       globalDataDir,
     });
@@ -199,7 +199,7 @@ describe('reference index assembly', () => {
   });
 
   it('degrades an invalid id to reference_invalid_id', async () => {
-    const entries = await assemble(['BAD ID']);
+    const entries = await assemble(['Bad/Id']);
 
     expect(entries[0].status[0]).toEqual(
       expect.objectContaining({ severity: 'warning', code: 'reference_invalid_id' })
@@ -286,7 +286,7 @@ describe('reference index assembly', () => {
     const root = mkdir('self-store');
     createOpenSpecRoot(root);
     const entries = await assembleReferenceIndex({
-      references: [{ id: 'BAD ID' }, { id: 'self-store' }],
+      references: [{ id: 'Bad/Id' }, { id: 'self-store' }],
       resolvedRoot: {
         path: root,
         source: 'store',

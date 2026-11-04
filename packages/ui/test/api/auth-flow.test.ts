@@ -42,6 +42,20 @@ describe('token → client integration', () => {
     expect(isUnauthorized()).toBe(true);
   });
 
+  it('refreshes an expired daemon session cookie and retries once without asking for a new URL token', async () => {
+    window.history.replaceState(null, '', '/p/proj_x/config');
+
+    (fetch as any)
+      .mockResolvedValueOnce(jsonResponse(401, errorsFixture.unauthorized.body))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(jsonResponse(200, healthFixture));
+
+    await expect(client.health()).resolves.toEqual(healthFixture);
+    expect((fetch as any).mock.calls[1][0]).toBe('/api/v1/auth/session');
+    expect((fetch as any).mock.calls[1][1]).toMatchObject({ credentials: 'same-origin' });
+    expect(isUnauthorized()).toBe(false);
+  });
+
   it('board fetches (listChanges) go through the same seam: 401 triggers the re-launch notice path', async () => {
     window.history.replaceState(null, '', '/#token=stale');
     initTokenFromLocation();

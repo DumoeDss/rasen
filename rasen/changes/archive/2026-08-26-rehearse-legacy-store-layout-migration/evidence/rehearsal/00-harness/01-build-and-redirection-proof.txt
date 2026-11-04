@@ -1,0 +1,47 @@
+### Pinned CLI (this is the binary every rehearsal step below runs)
+$ node <temp>/pinned/bin/rasen.js --version
+0.2.0
+
+# Pinned tree = git archive of the repo's committed HEAD, extracted into
+# the temp root, node_modules junctioned to the repo's, built with node build.js.
+$ git -C <repo> rev-parse HEAD
+9f9f68cf4a44d722f3a7d6eac2a7f2a07e22b4fc
+$ git -C <repo> rev-parse --abbrev-ref HEAD
+dev/0.2.0
+
+# WHY PINNED: the repo working tree is shared with a sibling change whose
+# uncommitted edits were live during this rehearsal. Recorded here so any
+# finding can be audited for contamination:
+$ git -C <repo> status --porcelain -- src/
+ M src/core/store-planning/internal/dependencies.ts
+ M src/core/store-planning/internal/resolver.ts
+ M src/core/store-planning/testing.ts
+ M src/core/store/identity.ts
+$ git -C <repo> diff --stat -- src/
+ src/core/store-planning/internal/dependencies.ts |  44 ++++
+ src/core/store-planning/internal/resolver.ts     | 263 +++++++++++++++++++++--
+ src/core/store-planning/testing.ts               |   1 +
+ src/core/store/identity.ts                       | 145 +++++++++++--
+ 4 files changed, 420 insertions(+), 33 deletions(-)
+# None of the above is present in the pinned CLI.
+
+### Redirected environment
+RASEN_HOME=<temp>/rasen-home
+GIT_CONFIG_GLOBAL=<temp>/gitconfig
+XDG_DATA_HOME=<temp>/xdg-data
+XDG_CONFIG_HOME=<temp>/xdg-config
+$ git config --global user.name / user.email
+Rasen Rehearsal
+rehearsal@example.invalid
+
+### Redirection proof: the redirected registry is EMPTY before any copy is registered
+$ rasen store list --json
+{
+  "stores": [],
+  "status": []
+}
+
+# For contrast, the REAL machine registry (read-only, never written by this
+# rehearsal) holds 5 stores + 10 projects, including
+#   f35acc7d-e088-4186-9ad6-b4b770649b0b: <real-store>  id: rasen-store
+# which is the SAME uid the disposable copies carry.

@@ -41,6 +41,15 @@ export const DEFAULT_REUSABLE_SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 export const DEFAULT_REUSABLE_SESSION_NO_OUTPUT_TIMEOUT_MS = 5 * 60 * 1000;
 export const REUSABLE_SESSION_OWNER_SHUTDOWN_TIMEOUT_MS = 7_500;
 
+export type ReusableSessionCommandAction = RunAction;
+
+/** Keep Run-action schema authority behind the reusable-session API boundary. */
+export function decodeReusableSessionCommandAction(
+  value: unknown
+): ReusableSessionCommandAction {
+  return decodeRunAction(value);
+}
+
 const RUN_ID_PATTERN = /^run:[0-9a-f]{64}$/u;
 const SESSION_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const MAX_MESSAGE_ID_LENGTH = 512;

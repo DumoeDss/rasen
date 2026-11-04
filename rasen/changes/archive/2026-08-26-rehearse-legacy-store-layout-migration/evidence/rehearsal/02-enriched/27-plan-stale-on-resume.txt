@@ -1,0 +1,31 @@
+### Reaching migration_plan_stale (task 2.5)
+#
+# The CLI's --apply re-plans immediately before applying, in one process, so
+# there is no operator-visible window between plan and apply: an edit made
+# 'between' them is simply seen by the FRESH plan (see 23-stale-uncommitted-edit.txt,
+# where the edit surfaced as dirty-source on a new plan, not as staleness).
+# The stored plan IS revalidated on the recovery path, so --resume after a
+# rollback is where a real operator meets this refusal.
+
+$ (commit an edit to a planned source, so the plan's recorded digest goes stale)
+warning: in the working copy of 'rasen/changes/change-conflict/proposal.md', LF will be replaced by CRLF the next time Git touches it
+b91618e Edit a planned source after the plan was stored
+
+$ rasen store migrate-layout rasen-store --resume
+migration_recovery_ambiguous: Completed operation .rasen-store/target-lines/main.yaml no longer has exactly one destination copy.
+  fix: Leave the paths untouched and inspect the recovery manifest; Rasen will not reconstruct or delete unproven content.
+[exit code: 1]
+
+$ git -C <temp>/copy-stale status --porcelain    # nothing written, moved, or deleted
+$ ls rasen/specs rasen/changes                   # the flat tree is intact
+alpha-only-capability/
+shared-capability/
+中文能力/
+--
+archive/
+change-alpha-recorded/
+change-conflict/
+change-dirty/
+change-no-evidence/
+change-non-member/
+change-zh-renamed/

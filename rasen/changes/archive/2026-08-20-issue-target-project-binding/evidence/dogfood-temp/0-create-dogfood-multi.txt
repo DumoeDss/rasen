@@ -1,0 +1,10 @@
+$ rasen store issue new dogfood-multi --title Dogfood dogfood-multi --store dogfood-store
+(exit 0)
+
+Issue dogfood-multi (open)
+  title: Dogfood dogfood-multi
+  checkout: C:\Users\Sayo\AppData\Local\Temp\rasen-dogfood-target-vsWJKt\store
+
+  Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing.
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-dogfood-target-vsWJKt\store add rasen/issues/dogfood-multi/issue.yaml
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-dogfood-target-vsWJKt\store commit -m "chore(store): open issue dogfood-multi"

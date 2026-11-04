@@ -1,0 +1,10 @@
+Store attention scan — 4 Issue(s) scanned
+  scanned:
+    issue-autodecompose-uplift: done/healthy — 0 item(s)
+    issue-cross-project-execution: done/healthy — 0 item(s)
+    issue-cross-project-replanning: planning/healthy — 0 item(s)
+    issue-multi-change-execution: done/healthy — 0 item(s)
+  run-state: E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\OpenSpec-code\.claude\worktrees\issue-layer
+  none need attention — 4 Issue(s) scanned, zero items
+
+  wrote nothing — attention derives; acting on an item remains a human act.

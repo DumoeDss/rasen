@@ -1,0 +1,6 @@
+$ (cd <temp>/copy-clone-noactive) rasen store migrate-layout rasen-store --mapping migration-mapping-noactive.yaml --apply
+migration_plan_blocked: Migration cannot apply while 1 item(s) are unresolved or blocked:
+  - .rasen-store/store.yaml [blocked:store-identity-missing] the Store carries no permanent identity, so no v2 identity can be derived — Run 'rasen store upgrade-identity rasen-store --apply' first.
+  fix: Resolve every listed item — the mapping file is the only escape hatch; there is no --force and no partial migration.
+
+[exit code: 1]

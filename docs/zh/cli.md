@@ -52,7 +52,7 @@ rasen CLI（`rasen`）提供了用于项目初始化、校验、状态检查和�
 | `rasen instructions` | 获取下一步操作 | `--json` 获取 agent 指令 |
 | `rasen templates` | 查找模板路径 | `--json` 用于路径解析 |
 | `rasen schemas` | 列出可用 schema | `--json` 用于 schema 发现 |
-| `rasen store setup <id>` | 创建并注册本地 store | `--json` 配合显式输入，获取结构化的 setup 输出 |
+| `rasen store setup <name>` | 创建并注册本地 store；永久 UID 由 Rasen 自动生成 | `--json` 配合显式输入，获取结构化的 setup 输出 |
 | `rasen store register <path>` | 注册已存在的 store | `--json` 获取结构化的注册输出 |
 | `rasen store unregister <id>` | 忘记本地 store 注册 | `--json` 获取结构化的清理输出 |
 | `rasen store remove <id>` | 删除已注册的本地 store 文件夹 | `--yes --json` 非交互式删除 |
@@ -191,20 +191,20 @@ Store 是你在这台机器上注册过的独立 rasen 仓库——例如一个�
 创建并注册一个本地 store。在终端中无参数运行时，Rasen 会引导用户完成 setup。Agent 和脚本应传入显式输入并使用 `--json`。
 
 ```bash
-rasen store setup [id] [options]
+rasen store setup [name] [options]
 ```
 
 **选项：**
 
 | 选项 | 说明 |
 |--------|-------------|
-| `--path <path>` | store 所在文件夹（例如 `~/rasen/<id>`） |
+| `--path <path>` | store 所在文件夹（例如 `~/rasen/<name>`） |
 | `--remote <url>` | 将权威 remote 记录到新 store 的 `store.yaml` |
 | `--init-git` | 初始化 Git 仓库并创建初始提交（默认） |
 | `--no-init-git` | 跳过所有 Git 操作：不 init、无初始提交 |
 | `--json` | 输出 JSON |
 
-非交互式运行（`--json`、脚本、agent）必须同时传入 store id 和 `--path`。在交互式终端中，setup 会在一个可见的、用户拥有的位置（例如 `~/rasen/<id>`）通过可编辑的建议来提示位置；它绝不默认使用 rasen 的托管数据目录。
+非交互式运行（`--json`、脚本、agent）必须同时传入 Store 名称和 `--path`。名称只是可读的显示别名和目录片段；永久 Store UID 由 Rasen 自动生成。在交互式终端中，setup 会在一个可见的、用户拥有的位置（例如 `~/rasen/<name>`）通过可编辑的建议来提示位置；它绝不默认使用 rasen 的托管数据目录。
 
 示例：
 
@@ -227,7 +227,7 @@ rasen store register [path] [options]
 
 | 选项 | 说明 |
 |--------|-------------|
-| `--id <id>` | store id；默认取 store 元数据或文件夹名 |
+| `--id <name>` | Store 显示名称覆盖值；默认取 Store 元数据或文件夹名。flag 名称为兼容旧用法而保留。 |
 | `--yes` | 确认为健康的 Rasen 根创建 store 身份元数据 |
 | `--json` | 输出 JSON |
 
@@ -269,6 +269,95 @@ rasen store doctor [id] [--json]
 ```
 
 doctor 仅用于诊断；它报告缺失的根、元数据不匹配和无效的本地注册表状态，但不修改 store。
+
+### `rasen store migrate-layout`（0.1.7 兼容桥）
+
+把旧式 flat Store 当前检出的一个 ref 转换为 layout v2。默认只预览；只有
+`--apply` 才会写入，命令不会 commit、fetch 或 push。
+
+```bash
+rasen store migrate-layout <store> --mapping rasen/migration-mapping.yaml --json
+rasen store migrate-layout <store> --mapping rasen/migration-mapping.yaml --apply --json
+rasen store migrate-layout <store> --status --json
+rasen store migrate-layout <store> --resume --json
+rasen store migrate-layout <store> --rollback --json
+rasen store migrate-layout <store> --retire-flat --json
+```
+
+mapping v1 保持原有的项目复制契约：相同输入仍产生完全相同的 plan-schema-v1
+规范字节和 plan id。mapping v2 要求显式区分项目 Change 与 Store Issue：
+
+```yaml
+version: 2
+defaultTargetLine: release-0-1
+targetLines:
+  release-0-1:
+    storeRef: refs/heads/main
+    projects:
+      scene-bridge:
+        codeRef: refs/heads/main
+changes:
+  render-worker:
+    kind: project-change
+    project: scene-bridge
+  release-coordinator:
+    kind: store-issue
+    issueId: release-coordinator
+    title: Coordinate the cross-project release
+    plan: rasen/migration-inputs/release-coordinator.yaml
+archive:
+  historical-coordinator:
+    kind: store-issue
+    issueId: historical-coordinator
+    title: Historical release coordination
+    state: resolved
+    reason: Operator declares the historical coordination concluded; acceptance is unproven.
+```
+
+Change 已记录的身份始终具有约束力。活跃的 `store-issue` 一律以 `open`
+导入，不能声明 reason；归档源必须显式声明 `open`、`resolved` 或
+`dropped`，终态必须带操作员理由，并记录 `acceptanceEvidence: unproven`。
+名称、文档内容、分支、cwd、归档位置和 commit 都不能推断所有权、状态或验收。
+
+可选的 Issue plan 输入必须位于 Store 内，被 Git 跟踪，并且 HEAD、index 与
+worktree 字节完全一致；文本必须是无 BOM 的严格 UTF-8。迁移专用的
+`sourceChange` 节点仍须声明 project 与 target line；规划会在同一不可变
+plan 中把它验证为唯一项目 Change，并且只序列化规范 `changeInstanceId`。
+不提供 plan 时不会虚构节点，预览会报告
+`no plan supplied; no nodes invented`，并给出普通后续命令：
+
+```bash
+rasen store issue plan <issue-id> --store <store> --from-file <path>
+```
+
+发布会先暂存并验证整个 ref，写入项目分区与生成的 Issue 根（不会复制旧
+coordinator 树），记录强类型 receipt，最后才翻转 `layoutVersion: 2`。
+flat 源仍在时，失败可用 `--resume` 继续或用 `--rollback` 回滚。确认发布
+commit 已安全保存后，`--retire-flat` 只删除 receipt 明列的旧路径；部分删除
+后可安全重试。receipt 把源 revision 明确标为 Store 规划来源，而不是成员代码
+commit：
+
+```bash
+git restore --source=<receipt.sourceRevision.headOid> --worktree -- <conversion.source.path>
+```
+
+恢复后将递归源 digest 与 `conversion.source.digest` 比对。迁移不会写成员代码
+仓库。
+
+retirement 后，普通的直接选择器 `rasen archive <old-active-alias>` 只有在当前
+ref 的一个 v2 receipt 唯一证明转换时，才报告
+`legacy_coordinator_became_issue` 与现有 `rasen store issue show` 命令。它不会
+把 archive 的 outcome、reason、token、commit、确认或验收翻译为 Issue 状态。
+归档源别名不会重定向，token 所有的 `--apply-plan`/`--abort-plan` 路径不会查询
+receipt，真实 Change 仍遵循普通终结规则（包括
+`finalization_outcome_required`）。
+
+这是边界明确的 **Rasen 0.1.7 兼容专用桥**：它只借助已经存在的最小 Issue
+record 与 Execution Plan v1 资源，帮助 flat Store coordinator 退役；它不表示
+后续 Issue-centered automation、Dispatch、Reconciliation、Acceptance、
+Delivery、Board 或 coordinator runtime 已提前实现。当受支持的 Store 不再需要
+flat-to-v2 迁移时，应整体移除此桥；只要已提交 receipt 仍是受支持证据，就保留
+强类型历史 receipt reader。
 
 ### 从项目引用 store
 
@@ -1094,9 +1183,9 @@ rasen pipeline delete <name> [--yes] [--force] [--json]
 | `export <name> <path>` | 将一个已安装的 **user** pipeline 打包为确定性的 `.rasenpkg`；内置与项目本地 pipeline 不可导出 |
 | `delete <name>` | 在引用计数检查后删除一个未被引用的 user pipeline；内置 pipeline 不可删除 |
 
-**Pipeline 定义内容版本。** 规范化后的公开定义始终带顶层整数 `version: 1`。历史上没有 `version` 的定义仍可读取，并会归一化为 v1；任何显式的不支持版本或畸形值都会被拒绝，并在 `/version` 给出可操作的诊断，提示用户升级到兼容的 Rasen 版本。`show` 与管理 API 的 detail 返回规范化后的 v1 定义；`init` 与 `save` 输出标准 v1 YAML；`export` 只规范化包内的 `pipeline.yaml`，保留其他附属文件，也不会仅因读取或导出就改写已安装的源文件。包清单里的 `formatVersion` 是独立的 `.rasenpkg` 容器版本。
+**Pipeline 定义内容版本。** 公开读取面同时接受 authored `version: 1` 与 `version: 2`。历史上没有版本号的定义继续按 v1 读取；不支持或畸形版本会在 `/version` fail closed。`show` 与管理 API detail 保留 authored definition/version，同时由 preparation 报告 normalized v2 plan 与执行能力。`save`、`export` 保留两种受支持的 authored version。`init` 当前仍生成 v1；让所有新建入口默认 v2 是 0.2.0 ECP 的待收口项。包清单里的 `formatVersion` 是独立的 `.rasenpkg` 容器版本。
 
-Pipeline v1 保留现有的扁平 `requires` DAG，以及当前的 `stage.loop.kind: review-cycle` 和 `stage.loop.kind: goal` 声明。它们现在仍可读取，也是未来编译 Composite run plan 的有效源输入。目前两种 loop 都由 LEAD 编排 playbook 解释执行。Canvas 负责查看和编辑 Pipeline 定义；它不是程序化 Pipeline runner，也不会引入嵌套执行行为。
+Pipeline v1 保留扁平 `requires` DAG 与 `stage.loop.kind: review-cycle | goal`，作为兼容输入归一化到 authored v2 使用的同一 composite plan。默认 `runs.engine: auto` 下，受支持的 Change-level Pipeline 由 reconciler 执行；legacy playbook 只保留给显式或既有 legacy owner。Canvas 可以编辑 v1/v2，但当前 v2 创作面尚未对称：FanOut/Join 只读，完整 BoundedLoop/GoalLoop policy 仍是 ECP 收口项。
 
 `.rasenpkg` 携带一个 `kind` 判别字段——`workflow`、`profile`、或 `pipeline`——共享同一套包格式。`kind: pipeline` 包的 digest、事务性安装（暂存到临时目录 → 原子重命名，包内全部 pipeline 要么全装要么全不装）与文件限额规则，均与[可安装工作流与 `.rasenpkg`](workflow-packages.md)中 `kind: workflow` 的约定一致。每个包还携带一个可选的 `minRasenVersion`，在打包时由打包 CLI 自身版本戳入：较旧的 CLI 导入一个要求更新版本的包时，会收到清晰的升级提示，而不是含糊的 schema 错误。这个预检只对本次改动之后的 CLI 生效——早于此字段存在的已发布 CLI，遇到无法识别的包 `kind` 时仍会含糊拒绝，无法回补。
 

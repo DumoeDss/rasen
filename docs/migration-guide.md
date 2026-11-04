@@ -1124,6 +1124,20 @@ version changes; no data migration; rolling back is reverting the release.
 
 ---
 
+## OmniCross inference routing (0.2.0)
+
+OmniCross routing is additive. Existing Pipelines, Actions, run-state, Claude sessions, and Codex threads that omit `inference` require no migration and retain their previous dispatch behavior.
+
+To opt in, configure the resident loopback daemon and add a credential-free `inference` block to selected standard stages. To roll back an unstarted route, remove that block. Do not resume an already-frozen routed Action or in-progress routed legacy stage with a Rasen binary that predates this feature: the older binary cannot honor its frozen Provider/model authority and must not silently replace it with CLI login state.
+
+No Claude or Codex credential-file migration exists. Rasen neither creates nor edits user `config.toml`, `auth.json`, settings, or credentials, and it never creates persistent OmniCross downstream keys/bindings.
+
+Remote daemon discovery, Pipeline UI authoring for `inference`, negotiated response-storage policy, and cost attribution are deliberately deferred. The current boundary is a configured HTTP loopback origin, disabled Codex response storage, and externally managed Provider/account configuration in OmniCross.
+
+See [OmniCross Inference Routing](omnicross-inference-routing.md) for setup and recovery details.
+
+---
+
 ## Getting Help
 
 - **Discord**: [discord.gg/YctCnvvshC](https://discord.gg/YctCnvvshC)

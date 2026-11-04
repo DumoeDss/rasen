@@ -303,8 +303,9 @@ tells you which case you're in.
 
 - **Beta shape.** Everything on this page may change between releases —
   names, flags, file formats, JSON keys.
-- **One checkout per store id per machine.** Registering a second checkout
-  under the same id fails with a hint to `store unregister` first.
+- **One checkout per permanent Store UID per machine.** Display names may be
+  shared; registering a second checkout of the same identity fails with a hint
+  to `store unregister` first.
 - **No sync, ever — by design.** Rasen never clones, pulls, or pushes.
   A stale checkout shows stale specs until *you* pull; references are
   indexed live from whatever is on disk.

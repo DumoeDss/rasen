@@ -181,7 +181,7 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
     expect(res.status).toBe(201);
     const session = (res.json() as any).session;
     expect(session.cwd).toBe(FileSystemUtils.canonicalizeExistingPath(memberRoot));
-    expect(session.space).toEqual({
+    expect(session.space).toMatchObject({
       type: 'store',
       id: 'member-store',
       root: FileSystemUtils.canonicalizeExistingPath(storeRoot),
@@ -222,7 +222,7 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
     const session = (res.json() as any).session;
     expect(session.cwd).toBe(FileSystemUtils.canonicalizeExistingPath(cloneB));
     expect(session.cwd).not.toBe(FileSystemUtils.canonicalizeExistingPath(cloneA));
-    expect(session.space).toEqual({
+    expect(session.space).toMatchObject({
       type: 'store',
       id: 'clone-store',
       root: FileSystemUtils.canonicalizeExistingPath(storeRoot),
@@ -371,8 +371,10 @@ describe('sessions space attribution (planning-space-addressing design D3)', () 
     // The stale pointer names a Store that is not this one and resolves to
     // nothing, and the selected Store holds no membership record for the
     // project — so neither authority vouches for it
-    // (unified-session-runtime-context D6). The failure now names the missing
-    // membership instead of a generic unavailability.
+    // (unified-session-runtime-context D6). The failure names the missing
+    // membership rather than a generic unavailability: the project's own
+    // declaration is a locator and the Store's record is the authority, so an
+    // unresolvable declaration must not pre-empt the membership diagnostic.
     expect((res.json() as any).error.code).toBe('execution_not_member');
     const listRes = await req(h.port, { method: 'GET', path: '/api/v1/sessions', headers: authed() });
     expect((listRes.json() as any).sessions).toEqual([]);

@@ -1,0 +1,41 @@
+# CLI PROVENANCE for this stage
+
+    Pinned build:   git archive HEAD  ->  <temp>/pinned-fixed
+                    + ONLY this change's src diff copied over
+                    ->  node build.js
+    Commit:         9f9f68cf4a44d722f3a7d6eac2a7f2a07e22b4fc  (dev/0.2.0)
+    Patched files:  src/core/store/layout-migration/plan.ts
+                    src/core/store/layout-migration/types.ts
+                    src/core/store/layout-migration/index.ts
+                    src/commands/store-migrate-layout.ts
+                    src/commands/store-migration.ts
+    Excludes:       every OTHER uncommitted change in the repo, i.e. all
+                    sibling-change work in flight at capture time.
+
+This is the second half of a before/after pair, and it is pinned the same way as
+the first half (`01-pristine/`, `02-enriched/`, `03-clone/`, all built from the
+same `git archive HEAD`). The only difference between the two builds is this
+change's own diff -- which is what makes the comparison mean anything.
+
+Repo working-tree state under src/ at capture time; only the files listed above
+were carried into the pinned build:
+
+$ git status --porcelain -- src/
+ M src/commands/store-migrate-layout.ts
+ M src/commands/store-migration.ts
+ M src/commands/workspace.ts
+ M src/core/completions/command-registry.ts
+ M src/core/store-planning/internal/dependencies.ts
+ M src/core/store-planning/internal/resolver.ts
+ M src/core/store-planning/testing.ts
+ M src/core/store/identity.ts
+ M src/core/store/layout-migration/index.ts
+ M src/core/store/layout-migration/plan.ts
+ M src/core/store/layout-migration/types.ts
+ M src/core/store/workspace/apply.ts
+ M src/core/store/workspace/dependencies.ts
+ M src/core/store/workspace/module.ts
+ M src/core/store/workspace/plan.ts
+ M src/locales/en.json
+ M src/locales/ja.json
+ M src/locales/zh-cn.json

@@ -1,0 +1,36 @@
+### The sharpest defect found by the rehearsal: "Ready to apply" on a plan that cannot apply
+#
+# Store shape: legacy flat, real content (specs + archive entries + membership
+# records + a design doc), NO active changes, and NO permanent identity
+# (committed metadata 'version: 1, id: rasen-store' -- exactly what the real
+# rasen-store's committed metadata says).
+#
+# plan.ts:707-718 stamps the store-identity-missing blocker onto items of kind
+# 'change' ONLY. With no active changes, nothing carries it, so:
+#   blockers      = []          (nothing is reported as blocked)
+#   applicable    = true        (blockers.length === 0 && items.length > 0)
+#   token         = undefined   (the token additionally requires storeUid)
+#
+# The preview therefore prints 'Ready to apply. Re-run with --apply.' and exits 0.
+# Re-running with --apply hits store-migrate-layout.ts:278-283, which re-renders
+# the SAME 'Ready to apply' text and sets exit 1 -- no error, no code, no
+# diagnostic, nothing naming the missing identity.
+
+$ (preview) rasen store migrate-layout rasen-store --mapping migration-mapping-noactive.yaml --json | jq '{applicable, token, blockers: (.blockers|length), items: (.items|length)}'
+{ "applicable": true, "token": null, "blockers": 0, "items": 11 }
+  (verbatim JSON in 09d-preview-json-silent-identity-hole.txt)
+
+$ tail -3 09b-preview-silent-identity-hole.txt   # exit 0, says ready
+
+  Ready to apply. Re-run with --apply.
+
+[exit code: 0]
+
+$ tail -3 09c-apply-attempt-silent-identity-hole.txt   # exit 1, says ready
+
+  Ready to apply. Re-run with --apply.
+
+[exit code: 1]
+
+# Same seam as the empty-store dead end: 'applicable' is computed from item
+# blockers alone, while the token carries a second, unreported precondition.

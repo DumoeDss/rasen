@@ -456,7 +456,7 @@ canonical Run Record, and reconcile again.
 - Root graphs, every Composite body, and the Composite call graph are DAGs.
 - The Composite call graph is non-recursive.
 - A BoundedLoop repeats exactly one Composite body and cannot occur within
-  another BoundedLoop in 0.1.6.
+  another BoundedLoop in 0.2.0.
 - All BoundedLoop limits are positive, capped by system policy, and all terminal
   outcomes are explicitly mapped.
 - Node IDs are unique within their graph; compiled NodePath, InvocationId,
@@ -714,7 +714,7 @@ a new runtime Seam and cannot submit state by round-tripping its output.
 - Open node-kind registries: they would let extensions redefine control semantics.
 - User-supplied JavaScript, shell predicates, or expression code: arbitrary
   scripting by another spelling.
-- Recursive Composite calls or nested BoundedLoop: excluded in 0.1.6.
+- Recursive Composite calls or nested BoundedLoop: excluded in 0.2.0.
 - Projection write-back: it would create a second mutable runtime truth.
 - A universal ReviewCycle/GoalLoop result schema: it would reduce Locality by
   spreading domain interpretation across callers.

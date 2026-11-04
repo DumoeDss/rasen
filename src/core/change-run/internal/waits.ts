@@ -33,6 +33,7 @@ type WaitOf<Kind extends CanonicalWait['kind']> = Extract<
 export type CanonicalWaitInput =
   | Omit<WaitOf<'gate'>, 'waitId'>
   | Omit<WaitOf<'domain-blocked'>, 'waitId'>
+  | Omit<WaitOf<'human-required'>, 'waitId'>
   | Omit<WaitOf<'infrastructure'>, 'waitId'>
   | Omit<WaitOf<'uncertain-effect'>, 'waitId'>
   | Omit<WaitOf<'capability-unavailable'>, 'waitId'>
@@ -89,6 +90,23 @@ const WaitSchema = z.discriminatedUnion('kind', [
     effectIds: z.array(EffectIdSchema).max(64),
     reasonCode: z.string().min(1).max(256),
     evidence: z.array(z.unknown()).max(64),
+  }),
+  z.strictObject({
+    kind: z.literal('human-required'),
+    waitId: WaitIdSchema,
+    nodeId: NodeIdSchema,
+    invocationId: InvocationIdSchema,
+    occurrence: SafeIntegerSchema,
+    attemptId: AttemptIdSchema,
+    actionId: ActionIdSchema,
+    effectIds: z.array(EffectIdSchema).max(64),
+    loopPath: z.string().min(1).max(1024),
+    phase: z.string().min(1).max(256),
+    blockerFingerprint: DigestSchema,
+    reasonCode: z.string().min(1).max(256),
+    outcome: z.string().min(1).max(256),
+    evidence: z.array(z.unknown()).max(64),
+    decisionIds: z.tuple([z.literal('retry'), z.literal('escalate')]),
   }),
   z.strictObject({
     kind: z.literal('infrastructure'),
@@ -194,7 +212,7 @@ function parseWait(value: unknown): CanonicalWait {
   }
 
   const wait = parsed.data;
-  if (wait.kind === 'domain-blocked') {
+  if (wait.kind === 'domain-blocked' || wait.kind === 'human-required') {
     return {
       ...wait,
       evidence: wait.evidence.map((item) => decodeEvidenceRef(item)),
@@ -222,6 +240,7 @@ function waitContext(runId: RunId, wait: CanonicalWait): WaitIdentityContext {
         decisionOccurrence: wait.occurrence,
       };
     case 'domain-blocked':
+    case 'human-required':
     case 'infrastructure':
     case 'uncertain-effect':
     case 'capability-unavailable':
@@ -273,6 +292,7 @@ function validateWaitShape(wait: CanonicalWait): void {
   }
   if (
     wait.kind === 'domain-blocked' ||
+    wait.kind === 'human-required' ||
     wait.kind === 'infrastructure' ||
     wait.kind === 'uncertain-effect' ||
     wait.kind === 'capability-unavailable'

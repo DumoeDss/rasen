@@ -17,6 +17,15 @@ import {
   type PreparedDefinition,
 } from './definition.js';
 import { DEFAULT_CHILD_PIPELINE, type PipelineYaml, type Stage } from './types.js';
+import {
+  pipelineV1CompatibilityBoundary,
+  type PipelineCompatibilityBoundary,
+} from './builtins.js';
+import { parsePipelineSourceDocument } from './source-document.js';
+import {
+  projectPreparedPipelineExecutionView,
+  type PreparedPipelineExecutionView,
+} from './prepared-execution-view.js';
 
 /**
  * Error thrown when loading a pipeline fails.
@@ -228,6 +237,18 @@ function sourceLayerForPath(
   return 'package';
 }
 
+/** Resolve only the winning layer; does not parse or prepare the manifest. */
+export function resolvePipelineSource(
+  name: string,
+  projectRoot?: string
+): PipelineSourceLayer | null {
+  const normalizedName = name.replace(/\.ya?ml$/, '');
+  const pipelinePath = resolvePipelinePath(normalizedName, projectRoot);
+  return pipelinePath
+    ? sourceLayerForPath(pipelinePath, normalizedName, projectRoot)
+    : null;
+}
+
 function preparePipelineAtPath(
   normalizedName: string,
   pipelinePath: string,
@@ -352,6 +373,8 @@ export interface PipelineInfo {
   planAvailable?: boolean;
   executable?: boolean;
   executionMode?: 'legacy' | 'reconciler' | 'unavailable';
+  /** Named migration boundary for an intentionally retained package v1 fixture. */
+  compatibilityBoundary?: PipelineCompatibilityBoundary;
   unavailableReason?: string;
   prepared?: PreparedDefinition;
   diagnostics?: readonly DefinitionDiagnostic[];
@@ -359,6 +382,18 @@ export interface PipelineInfo {
   authoredText?: string;
   /** Total projection captured by authoritative preparation; never reparsed. */
   authoredDefinition?: unknown;
+  /** Registry-owned execution metadata from the same prepared projection used by read planes. */
+  executionView?: PreparedPipelineExecutionView;
+}
+
+function compatibilityBoundaryFields(
+  name: string,
+  source: PipelineInfo['source'],
+  authoredVersion: number
+): Pick<PipelineInfo, 'compatibilityBoundary'> {
+  if (source !== 'package' || authoredVersion !== 1) return {};
+  const compatibilityBoundary = pipelineV1CompatibilityBoundary(name);
+  return compatibilityBoundary ? { compatibilityBoundary } : {};
 }
 
 /**
@@ -398,19 +433,25 @@ function collectPipelineInfo(
               preparation
             );
         const authored = resolution.prepared.authoredSource;
+        const executionView = projectPreparedPipelineExecutionView(
+          resolution.prepared,
+          preparation.catalog
+        );
         into.push({
           name: entry.name,
           description: authored.description || '',
-          stages:
-            resolution.prepared.authoredVersion === 1
-              ? (authored as PipelineYaml).stages.map((stage) => stage.id)
-              : resolution.prepared.definition.root.nodes.map((node) => node.id),
+          stages: [...executionView.buildOrder],
           source,
           authoredVersion: resolution.prepared.authoredVersion,
           definitionValid: resolution.prepared.capability.definitionValid,
           planAvailable: resolution.prepared.capability.planAvailable,
           executable: resolution.prepared.capability.executable,
           executionMode: resolution.prepared.capability.executionMode,
+          ...compatibilityBoundaryFields(
+            entry.name,
+            source,
+            resolution.prepared.authoredVersion
+          ),
           ...(resolution.prepared.capability.unavailableReason
             ? {
                 unavailableReason:
@@ -421,17 +462,57 @@ function collectPipelineInfo(
           pipelinePath: resolution.pipelinePath,
           authoredText: resolution.authoredText,
           authoredDefinition: resolution.prepared.authoredSource,
+          executionView,
         });
         continue;
       }
 
-      const pipeline = parsePipeline(fs.readFileSync(pipelinePath, 'utf-8'));
-      into.push({
-        name: entry.name,
-        description: pipeline.description || '',
-        stages: pipeline.stages.map(s => s.id),
-        source,
-      });
+      const authoredText = fs.readFileSync(pipelinePath, 'utf-8');
+      try {
+        const pipeline = parsePipeline(authoredText);
+        into.push({
+          name: entry.name,
+          description: pipeline.description || '',
+          stages: pipeline.stages.map(s => s.id),
+          source,
+          authoredVersion: 1,
+          ...compatibilityBoundaryFields(entry.name, source, 1),
+        });
+      } catch (legacyError) {
+        // The metadata-only reader has no authoritative capability catalog,
+        // but it must still reserve/list native-v2 winners (notably so sync
+        // library guards cannot overwrite or delete migrated built-ins).
+        const authored = parsePipelineSourceDocument(authoredText);
+        if (
+          authored === null ||
+          typeof authored !== 'object' ||
+          Array.isArray(authored) ||
+          (authored as Record<string, unknown>).version !== 2
+        ) {
+          throw legacyError;
+        }
+        const record = authored as Record<string, unknown>;
+        const root = record.root;
+        if (root === null || typeof root !== 'object' || Array.isArray(root)) {
+          throw legacyError;
+        }
+        const nodes = (root as Record<string, unknown>).nodes;
+        if (!Array.isArray(nodes)) throw legacyError;
+        const stages = nodes.map((node) =>
+          node !== null && typeof node === 'object' && !Array.isArray(node)
+            ? (node as Record<string, unknown>).id
+            : undefined
+        );
+        if (stages.some((id) => typeof id !== 'string')) throw legacyError;
+        into.push({
+          name: entry.name,
+          description:
+            typeof record.description === 'string' ? record.description : '',
+          stages: stages as string[],
+          source,
+          authoredVersion: 2,
+        });
+      }
     } catch (error) {
       if (
         preparation &&
@@ -461,6 +542,11 @@ function collectPipelineInfo(
           planAvailable: false,
           executable: false,
           executionMode: 'unavailable',
+          ...compatibilityBoundaryFields(
+            entry.name,
+            source,
+            typeof explicitVersion === 'number' ? explicitVersion : 1
+          ),
           diagnostics: error.cause.diagnostics,
           pipelinePath,
           authoredText,
@@ -495,15 +581,15 @@ export function resolveChildPipelineName(stage: Stage): string {
 export function validateDecomposeChildPipelines(
   pipeline: PipelineYaml,
   projectRoot?: string,
-  loadChild: (name: string) => PipelineYaml = (name) =>
-    loadPipelineByName(name, projectRoot)
+  loadChild: (name: string) => PipelineYaml | null = (name) =>
+    loadDecomposeChildCompatibilitySource(name, projectRoot)
 ): void {
   for (const [stageIndex, stage] of pipeline.stages.entries()) {
     if (stage.kind !== 'decompose') continue;
     const childName = resolveChildPipelineName(stage);
     const stagePath = `/stages/${stageIndex}/childPipeline`;
 
-    let child: PipelineYaml;
+    let child: PipelineYaml | null;
     try {
       child = loadChild(childName);
     } catch (error) {
@@ -546,7 +632,10 @@ export function validateDecomposeChildPipelines(
       );
     }
 
-    if (child.stages.some(s => s.kind === 'decompose')) {
+    // `null` is the explicit native-v2 child selection. Definition v2 does
+    // not expose the Issue/Dispatch decompose primitive, so preparation plus
+    // execution preflight above is sufficient to prove it decompose-free.
+    if (child?.stages.some(s => s.kind === 'decompose')) {
       throw new PipelineValidationError(
         `Recursion guard: childPipeline '${childName}' (used by decompose stage '${stage.id}') ` +
           `itself contains a decompose stage; child pipelines must be decompose-free`,
@@ -555,6 +644,26 @@ export function validateDecomposeChildPipelines(
       );
     }
   }
+}
+
+function loadDecomposeChildCompatibilitySource(
+  name: string,
+  projectRoot?: string
+): PipelineYaml | null {
+  const pipelinePath = resolvePipelinePath(name, projectRoot);
+  if (!pipelinePath) return loadPipelineByName(name, projectRoot);
+  const authored = parsePipelineSourceDocument(
+    fs.readFileSync(pipelinePath, 'utf8')
+  );
+  if (
+    authored !== null &&
+    typeof authored === 'object' &&
+    !Array.isArray(authored) &&
+    (authored as Record<string, unknown>).version === 2
+  ) {
+    return null;
+  }
+  return loadPipelineByName(name, projectRoot);
 }
 
 /**

@@ -1,0 +1,21 @@
+# The refusal as it now renders (both intents), captured from the unit fixture
+
+INTENT create-change
+  message: Store and project-local planning both exist; Change creation is blocked.
+           Local planning content is at <projectRoot>.
+  fix:     Consolidate on one truth, then retry: run 'rasen store adopt --to team-store'
+           from <projectRoot> to move that planning into the Store, or
+           'rasen store eject project-a --from team-store' to resolve the split the other way.
+
+INTENT finalize-change
+  message: Store and project-local planning both exist; Change finalization is blocked.
+           Local planning content is at <projectRoot>.
+  fix:     (identical repair text)
+
+Real ids are interpolated -- 'team-store' and 'project-a' above are the fixture's
+actual store and project ids, not placeholders. The '<store-id>' / '<project-id>'
+fallbacks only appear when the resolved ref carries no such id, which the type
+union permits.
+
+Before this change both refusals rendered as a single sentence with no fix field
+and no path (see 01-guard-red-before.txt).

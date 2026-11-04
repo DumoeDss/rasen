@@ -128,7 +128,8 @@ describe('rasen ui stale-daemon replacement (review round 1 M1, fixture-loopback
       const result = await runCli(['ui', '--no-open'], baseEnv, projectRoot);
 
       expect(result.code, result.stderr).toBe(0);
-      expect(result.stdout).toMatch(new RegExp(`^Rasen UI: http://127\\.0\\.0\\.1:${daemonPort}/#token=[0-9a-f]{64}$`, 'm'));
+      expect(result.stdout).toMatch(new RegExp(`^Rasen UI: http://127\\.0\\.0\\.1:${daemonPort}/(?:\\?space=[^#\\n]+)?$`, 'm'));
+      expect(result.stdout).not.toContain('#token=');
 
       // The stale fixture is dead — really killed by its reported pid, not
       // merely superseded (its process, not just its port, is gone).

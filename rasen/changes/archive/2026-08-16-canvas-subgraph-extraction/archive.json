@@ -1,0 +1,84 @@
+{
+  "change": "canvas-subgraph-extraction",
+  "archivedAt": "2026-08-16T22:58:40.956Z",
+  "codeCommit": "7cc8e6808c95663c50868d003bbfb828cb5c4494",
+  "planningBranch": "feat/canvas-gesture-ir-compiler",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/01-not-found.png",
+      "sha256": "0b99f9dbaf637b910bb2be5ba0dc1f3676a101d00c850a2550fa0914ecdeaf5a"
+    },
+    {
+      "path": "evidence/02-authored-chain.png",
+      "sha256": "918c621a537802befcdbf0136a052be9b1ea7a1a9901a40b9b24778cdcc91311"
+    },
+    {
+      "path": "evidence/03-pair-selected-package-offered.png",
+      "sha256": "4032438a04f5eebaa1c9f4869d0dae3ac19791545577524fa1af31b828f3e42a"
+    },
+    {
+      "path": "evidence/04-review-open-with-defaults.png",
+      "sha256": "bb5341aeb6b43887e478bfe628d63d3d782938c16fa5b4693dbf7a76ad70c796"
+    },
+    {
+      "path": "evidence/05-extracted-rewired.png",
+      "sha256": "03076fa19d8cb79255ba0c51bfa1d09af16e3756ebeecdd60273b680d36f8ea5"
+    },
+    {
+      "path": "evidence/06-second-ref-inserted.png",
+      "sha256": "3303d294d71036835d915df5d296b32e4870f3d312b6bdff4d95d922de5abe71"
+    },
+    {
+      "path": "evidence/cdp-results.json",
+      "sha256": "8699714f00a42fba0b7d92584a61cf24edcb0bb77d34d975950e1be28e17a88f"
+    },
+    {
+      "path": "evidence/cdp-subgraph-extraction-check.mjs",
+      "sha256": "296eb4d65f229c7acaaf0dd54957b980e341a06f140b5b4203a84bc8bf165d54"
+    },
+    {
+      "path": "evidence/cdp-transcript.md",
+      "sha256": "1a7e3e19a55cdf25de1c6ece1d0a4d2c16fdbfc10b7d23f31a19053ecbf4cc36"
+    },
+    {
+      "path": "evidence/fix-round-1.md",
+      "sha256": "822b6d59c60652c336f3a67dbb39b5f1d60aeb6f8c4a439eb05687dfd1979006"
+    },
+    {
+      "path": "evidence/gates-5-2.md",
+      "sha256": "24f59a57a04a84b0dc72f11e70181d009c59891b87ab51d951480700692b8d91"
+    },
+    {
+      "path": "evidence/handoff/implementer-1.md",
+      "sha256": "830363d46900f1b7990b73fdfebb5cc14096a7d9b91a5c2b752ff69bd12fd4e9"
+    },
+    {
+      "path": "evidence/review-cycle-report.md",
+      "sha256": "6f07ee133232b64734f6aa1f0fcfdc12175bd88501e3bffd8f19609566e0a786"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "62a4041e1d6d5bcfcefeb9a50943e611722ad7e2abdde1e2993e1546801b6b25"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "a264e4fc1ca7734608aa9897e4cdebc2c6d874024928bf5f4794449f6e0ba11d"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [
+    {
+      "file": "handoff/implementer-1.md",
+      "outcome": "preserved"
+    },
+    {
+      "file": "handoff/shipper-1.md",
+      "outcome": "absorbed"
+    }
+  ],
+  "ephemeraDiscarded": [],
+  "missing": [
+    "verification-report"
+  ]
+}

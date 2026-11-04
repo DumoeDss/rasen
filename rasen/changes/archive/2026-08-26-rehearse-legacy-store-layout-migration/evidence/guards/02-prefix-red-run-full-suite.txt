@@ -1,0 +1,340 @@
+### Pre-fix RED run of the complete guard suite (corrected test)
+#
+# Tree: <temp>/pinned -- git archive HEAD (9f9f68cf, dev/0.2.0), own dist/,
+# node_modules junctioned. Verified before the run to be a true baseline:
+#   grep -c 'throw error;'          src/commands/store-migration.ts      -> 3 (O5 fix ABSENT)
+#   grep -c 'frozenItems.length > 0' .../layout-migration/plan.ts        -> 1 (seam fix ABSENT)
+#   grep -c 'store-metadata'         .../layout-migration/types.ts       -> 0 (item kind ABSENT)
+# No sibling change's uncommitted work is present either. Only the new test
+# file was copied in.
+#
+# Command (from <temp>/pinned):
+#   VITEST_MAX_WORKERS=1 npx vitest run test/core/store/layout-migration-empty-store.test.ts --reporter=verbose
+#
+# Result: 15 failed | 4 passed (19).   Post-fix: 19 passed (19).
+#
+# Every one of the 15 is red for the DEFECT. The headline number matches an
+# earlier run, but that earlier one had two cases red for a fixture defect of
+# my own instead; see the correction in 05-stale-text-sweep.md. With the
+# fixture fixed, those two now fail on invariant 2 --
+#   'an inapplicable plan names at least one blocker'  ->  expected 0 to be greater than 0
+# which is exactly the hole: pre-fix an empty Store was inapplicable while
+# reporting no blocker at all.
+#
+# The 4 that pass here MUST pass on both sides:
+#   - still refuses an empty-blocker gate it should refuse
+#   - keeps blocking every active Change when the Store has no identity
+#       (the deliberate 'no gate was weakened' regression guards)
+#   - never reports readiness it cannot back -- Store with content and no active Changes
+#   - never reports readiness it cannot back -- Store with an unresolvable Change
+#       (the two invariant shapes that already held before the fix -- the
+#        table discriminates rather than asserting uniformly)
+#
+# ANSI colour codes stripped; nothing else edited.
+
+
+ RUN  v3.2.6 C:/Users/Sayo/AppData/Local/Temp/rasen-g2/pinned
+
+ × test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — an empty legacy flat Store is not a dead end > reproduces the dead end and then completes a trivial migration 2351ms
+   → expected false to be true // Object.is equality
+ × test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — an empty legacy flat Store is not a dead end > retires the empty flat tree once published, idempotently 2778ms
+   → Cannot read properties of undefined (reading 'storeUid')
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — an empty legacy flat Store is not a dead end > still refuses an empty-blocker gate it should refuse: one unresolved item blocks apply 2422ms
+ × test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — a Store with no permanent identity says so > refuses and names the identity repair when nothing but Changes could carry the block 2211ms
+   → expected true to be false // Object.is equality
+ × test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — a Store with no permanent identity says so > does not offer the mapping file as the escape hatch for a blocked item 2267ms
+   → expected 'There is nothing to migrate: no flat …' to contain 'store-identity-missing'
+ × test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — a Store with no permanent identity says so > names the missing identity even when the Store is completely empty 2483ms
+   → expected [] to include 'blocked:store-identity-missing'
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — a Store with no permanent identity says so > keeps blocking every active Change when the Store has no identity 2574ms
+ × test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — through the registered-store command handler > drives preview -> apply -> status -> retire against a registered empty Store 3083ms
+   → expected 1 to be +0 // Object.is equality
+ × test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — through the registered-store command handler > names the blocking precondition in the JSON payload, with no token 3391ms
+   → expected +0 to be 1 // Object.is equality
+ × test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — through the registered-store command handler > reports a refusal instead of "Ready to apply" when the plan cannot be applied 3208ms
+   → expected +0 to be 1 // Object.is equality
+ × test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — refusals name the real cause and a repair that works > sends a non-member RECORDED owner to membership, not to the mapping file that refuses it 2052ms
+   → expected 'Declare changes.fix-a.project in the …' not to contain 'changes.fix-a.project in the mapping …'
+ × test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — refusals name the real cause and a repair that works > blames the item name, not the project id, when the name cannot address a v2 destination 2511ms
+   → expected 'the named project id fails the v2 por…' to contain '变更'
+ × test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — every ref carrying the flat layout is reported > lists a remote-tracking ref that still carries the flat layout, and says it is migrated elsewhere 4799ms
+   → expected 'Store team-store — planning layout mi…' to contain 'refs/remotes/origin/main'
+ × test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — the apply gate and the apply token agree > never reports readiness it cannot back — empty Store 2175ms
+   → expected 0 to be greater than 0
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — the apply gate and the apply token agree > never reports readiness it cannot back — Store with content and no active Changes 4540ms
+ × test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — the apply gate and the apply token agree > never reports readiness it cannot back — empty Store with no permanent identity 2324ms
+   → expected 0 to be greater than 0
+ × test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — the apply gate and the apply token agree > never reports readiness it cannot back — Store with content, no active Changes, and no permanent identity 2397ms
+   → expected true to be false // Object.is equality
+ ✓ test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — the apply gate and the apply token agree > never reports readiness it cannot back — Store with an unresolvable Change 4911ms
+ × test/core/store/layout-migration-empty-store.test.ts > store adopt — a refusal renders as a diagnostic on the human path too > names the legacy-layout refusal and its fix instead of throwing to the top level 998ms
+   → promise rejected "StoreError: Store 'team-store' has not de… { diagnostic: { …(5) } }" instead of resolving
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 15 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — an empty legacy flat Store is not a dead end > reproduces the dead end and then completes a trivial migration
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ test/core/store/layout-migration-empty-store.test.ts:97:31
+     95|       expect(plan.items).toHaveLength(0);
+     96|       expect(plan.blockers).toHaveLength(0);
+     97|       expect(plan.applicable).toBe(true);
+       |                               ^
+     98|       expect(plan.token).toBeDefined();
+     99| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/15]⎯
+
+ FAIL  test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — an empty legacy flat Store is not a dead end > retires the empty flat tree once published, idempotently
+TypeError: Cannot read properties of undefined (reading 'storeUid')
+ ❯ StoreLayoutMigration.loadPlan src/core/store/layout-migration/module.ts:646:40
+    644|     const value = await this.dependencies
+    645|       .coordination(this.globalDataDir)
+    646|       .readJson(planRelativePath(token.storeUid, token.ref, token.plan…
+       |                                        ^
+    647|     if (value === null) {
+    648|       throw migrationError(
+ ❯ StoreLayoutMigration.apply src/core/store/layout-migration/module.ts:172:29
+ ❯ test/core/store/layout-migration-empty-store.test.ts:118:27
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/15]⎯
+
+ FAIL  test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — a Store with no permanent identity says so > refuses and names the identity repair when nothing but Changes could carry the block
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/core/store/layout-migration-empty-store.test.ts:192:31
+    190| 
+    191|       // The plan must NOT claim readiness it cannot deliver.
+    192|       expect(plan.applicable).toBe(false);
+       |                               ^
+    193|       expect(plan.token).toBeUndefined();
+    194| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/15]⎯
+
+ FAIL  test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — a Store with no permanent identity says so > does not offer the mapping file as the escape hatch for a blocked item
+AssertionError: expected 'There is nothing to migrate: no flat …' to contain 'store-identity-missing'
+
+Expected: "store-identity-missing"
+Received: "There is nothing to migrate: no flat planning content was inventoried for this ref."
+
+ ❯ test/core/store/layout-migration-empty-store.test.ts:218:40
+    216| 
+    217|       expect(error.diagnostic.code).toBe('migration_plan_blocked');
+    218|       expect(error.diagnostic.message).toContain('store-identity-missi…
+       |                                        ^
+    219|       expect(error.diagnostic.message).toContain('upgrade-identity');
+    220|       // The mapping file resolves unresolved OWNERSHIP; it can do not…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/15]⎯
+
+ FAIL  test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — a Store with no permanent identity says so > names the missing identity even when the Store is completely empty
+AssertionError: expected [] to include 'blocked:store-identity-missing'
+ ❯ test/core/store/layout-migration-empty-store.test.ts:238:39
+    236|       expect(plan.applicable).toBe(false);
+    237|       expect(plan.token).toBeUndefined();
+    238|       expect(labelsOf(plan.blockers)).toContain('blocked:store-identit…
+       |                                       ^
+    239|       expect(plan.blockers[0]?.repair).toContain('upgrade-identity');
+    240|     },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/15]⎯
+
+ FAIL  test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — through the registered-store command handler > drives preview -> apply -> status -> retire against a registered empty Store
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ test/core/store/layout-migration-empty-store.test.ts:312:29
+    310| 
+    311|       // Preview: resolved by store id through the machine registry.
+    312|       expect(await run({})).toBe(0);
+       |                             ^
+    313|       expect(out.join('\n')).toContain('Ready to apply');
+    314| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/15]⎯
+
+ FAIL  test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — through the registered-store command handler > names the blocking precondition in the JSON payload, with no token
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ test/core/store/layout-migration-empty-store.test.ts:346:61
+    344|         process.chdir(legacy.storeRoot);
+    345| 
+    346|         expect(await run({ mapping: MAPPING, json: true })).toBe(1);
+       |                                                             ^
+    347|         const payload = JSON.parse(out.join('\n')) as {
+    348|           applicable: boolean;
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/15]⎯
+
+ FAIL  test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — through the registered-store command handler > reports a refusal instead of "Ready to apply" when the plan cannot be applied
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ test/core/store/layout-migration-empty-store.test.ts:380:49
+    378|         process.chdir(legacy.storeRoot);
+    379| 
+    380|         expect(await run({ mapping: MAPPING })).toBe(1);
+       |                                                 ^
+    381|         const preview = out.join('\n');
+    382|         expect(preview).not.toContain('Ready to apply');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/15]⎯
+
+ FAIL  test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — refusals name the real cause and a repair that works > sends a non-member RECORDED owner to membership, not to the mapping file that refuses it
+AssertionError: expected 'Declare changes.fix-a.project in the …' not to contain 'changes.fix-a.project in the mapping …'
+
+Expected: "changes.fix-a.project in the mapping file"
+Received: "Declare changes.fix-a.project in the mapping file."
+
+ ❯ test/core/store/layout-migration-empty-store.test.ts:429:32
+    427|       // The mapping validator refuses an entry contradicting a record…
+    428|       // identity, so the repair must not send the operator there.
+    429|       expect(item?.repair).not.toContain('changes.fix-a.project in the…
+       |                                ^
+    430|       expect(item?.repair).toContain('add-project');
+    431|       expect(item?.repair).toContain('stranger-project');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/15]⎯
+
+ FAIL  test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — refusals name the real cause and a repair that works > blames the item name, not the project id, when the name cannot address a v2 destination
+AssertionError: expected 'the named project id fails the v2 por…' to contain '变更'
+
+Expected: "变更"
+Received: "the named project id fails the v2 portable identifier contract"
+
+ ❯ test/core/store/layout-migration-empty-store.test.ts:454:28
+    452|         'unresolved:unrecordable-identity'
+    453|       );
+    454|       expect(item?.reason).toContain(zhName);
+       |                            ^
+    455|       expect(item?.reason).toContain('kebab');
+    456|       expect(item?.reason).not.toContain('project id');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/15]⎯
+
+ FAIL  test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — every ref carrying the flat layout is reported > lists a remote-tracking ref that still carries the flat layout, and says it is migrated elsewhere
+AssertionError: expected 'Store team-store — planning layout mi…' to contain 'refs/remotes/origin/main'
+
+- Expected
++ Received
+
+- refs/remotes/origin/main
++ Store team-store — planning layout migration preview
++   plan id: c6045c051f165377fec0317e6565d646ebd6f0009e1745e126424e6cd9c180ec
++   ref:     refs/heads/main
++
++   Items
++     [resolved] membership-record elftia.yaml -> elftia
++         source:      .rasen-store/projects/elftia.yaml
++         destination: .rasen-store/projects/elftia.yaml
++         reason:      upgraded in place to a v2 project catalog with a bound planning binding
++     [resolved] spec billing -> elftia
++         source:      rasen/specs/billing
++         destination: rasen/projects/elftia/specs/billing
++         reason:      owner determined and destination computed
++         evidence:    E2-store-records (derived) elftia <- .rasen-store/projects/elftia.yaml
++
++   Other local refs that still carry flat planning content
++     refs/heads/legacy-feature — rasen store migrate-layout team-store --apply  # from a worktree with refs/heads/legacy-feature checked out
++     Migrating this ref does not migrate the others.
++
++   Ready to apply. Re-run with --apply.
+
+ ❯ test/core/store/layout-migration-empty-store.test.ts:507:24
+    505|       expect(rendered).toContain('refs/heads/legacy-feature');
+    506|       // The remote-tracking ref was surveyed as flat and reported now…
+    507|       expect(rendered).toContain('refs/remotes/origin/main');
+       |                        ^
+    508|       expect(rendered).toContain('Remote-tracking refs that still carr…
+    509|       expect(rendered).toContain('where it lives');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/15]⎯
+
+ FAIL  test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — the apply gate and the apply token agree > never reports readiness it cannot back — empty Store
+ FAIL  test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — the apply gate and the apply token agree > never reports readiness it cannot back — empty Store with no permanent identity
+AssertionError: expected 0 to be greater than 0
+ ❯ test/core/store/layout-migration-empty-store.test.ts:595:62
+    593|           expect(plan.applicable).toBe(plan.token !== undefined);
+    594|           // Invariant 2: an inapplicable plan names at least one bloc…
+    595|           if (!plan.applicable) expect(plan.blockers.length).toBeGreat…
+       |                                                              ^
+    596| 
+    597|           process.chdir(f.storeRoot);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/15]⎯
+
+ FAIL  test/core/store/layout-migration-empty-store.test.ts > store layout v2 migration — the apply gate and the apply token agree > never reports readiness it cannot back — Store with content, no active Changes, and no permanent identity
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/core/store/layout-migration-empty-store.test.ts:593:35
+    591| 
+    592|           // Invariant 1: applicable and token-minted are the same sta…
+    593|           expect(plan.applicable).toBe(plan.token !== undefined);
+       |                                   ^
+    594|           // Invariant 2: an inapplicable plan names at least one bloc…
+    595|           if (!plan.applicable) expect(plan.blockers.length).toBeGreat…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/15]⎯
+
+ FAIL  test/core/store/layout-migration-empty-store.test.ts > store adopt — a refusal renders as a diagnostic on the human path too > names the legacy-layout refusal and its fix instead of throwing to the top level
+AssertionError: promise rejected "StoreError: Store 'team-store' has not de… { diagnostic: { …(5) } }" instead of resolving
+ ❯ test/core/store/layout-migration-empty-store.test.ts:679:7
+    677|       await expect(
+    678|         runAdopt(project, { to: MIGRATION_FIXTURE_STORE_ID, dryRun: tr…
+    679|       ).resolves.toBeUndefined();
+       |       ^
+    680| 
+    681|       const rendered = out.join('\n');
+
+Caused by: StoreError: Store 'team-store' has not declared planning layout version 2, so store-adopt cannot write a project partition.
+ ❯ assertStoreLayoutForWrite src/core/store/layout-write-guard.ts:244:11
+ ❯ adoptProject src/core/store/migration-ops.ts:471:3
+ ❯ runAdopt src/commands/store-migration.ts:117:20
+ ❯ test/core/store/layout-migration-empty-store.test.ts:677:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { diagnostic: { severity: 'error', code: 'legacy_flat_store_requires_migration', message: 'Store \'team-store\' has not declared planning layout version 2, so store-adopt cannot write a project partition.', target: 'store.layout', fix: 'Run \'rasen store migrate-layout team-store\' to migrate this Store, then retry.' } }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/15]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  15 failed | 4 passed (19)
+   Start at  15:40:15
+   Duration  69.35s (transform 5.47s, setup 89ms, collect 14.87s, tests 53.48s, environment 0ms, prepare 295ms)
+
+EXIT=1

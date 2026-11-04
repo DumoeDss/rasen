@@ -37,6 +37,7 @@ import {
 } from '../../../src/core/pipeline-registry/index.js';
 import { canonicalJson, deriveNodeId } from '../../../src/core/change-run/internal/identity.js';
 import type { Digest, RunId } from '../../../src/core/change-run/index.js';
+import { withTestAttestationAuthority } from '../../fixtures/trusted-completion.js';
 
 const branded = <T>(value: string): T => value as T;
 const runId = branded<RunId>(`run:${'a'.repeat(64)}`);
@@ -60,7 +61,7 @@ const identity: ActionIdentity = {
 };
 
 function capability(): RuntimeCapabilityBinding {
-  return {
+  return withTestAttestationAuthority({
     nodeId: 'stage:apply',
     authoredCapability: { id: 'skill:rasen-apply-change', version: 'legacy' },
     contract: { id: 'apply-change', version: '1', digest: branded(`sha256:${'1'.repeat(64)}`) },
@@ -90,7 +91,7 @@ function capability(): RuntimeCapabilityBinding {
       version: '1',
       contentDigest: branded(`sha256:${'4'.repeat(64)}`),
     },
-  } as RuntimeCapabilityBinding;
+  });
 }
 
 /**
@@ -136,7 +137,10 @@ function actionFor(authored?: AuthoredScope) {
     executionProfileDigest: branded(`sha256:${'5'.repeat(64)}`),
     policyDigest: branded(`sha256:${'6'.repeat(64)}`),
   };
-  const action = buildAgentAction(ctx, identity, { input: { change: 'fixture' } });
+  const action = buildAgentAction(ctx, identity, {
+    renderedTurnInput: 'trusted fixture prompt',
+    input: { change: 'fixture' },
+  });
   return action as Extract<typeof action, { kind: 'agent' }>;
 }
 

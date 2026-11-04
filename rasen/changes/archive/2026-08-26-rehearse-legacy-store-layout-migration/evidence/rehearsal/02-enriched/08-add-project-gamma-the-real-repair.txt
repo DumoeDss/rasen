@@ -1,0 +1,27 @@
+$ (cd <temp>/project-gamma) rasen store add-project <temp>/project-gamma --to rasen-store
+Project: project-gamma (project namespace)
+Location: ~\AppData\Local\Temp\rasen-g2\project-gamma
+Registry: registered
+Added to store: rasen-store
+References: added to ~\AppData\Local\Temp\rasen-g2\copy-enriched\rasen\config.yaml
+
+Membership (roster and eligibility only; it does not decide where a change is implemented):
+  Project identity: 33333333-3333-4333-8333-333333333333
+  Roles: planning=no, knowledge=yes
+  Store repo wrote: ~\AppData\Local\Temp\rasen-g2\copy-enriched\.rasen-store\projects\33333333-3333-4333-8333-333333333333.yaml
+  Project repo wrote: ~\AppData\Local\Temp\rasen-g2\project-gamma\rasen\config.yaml
+  Suggested commit (Store repo: record the membership authority record.)
+    git -C <temp>\copy-enriched add .rasen-store\projects\33333333-3333-4333-8333-333333333333.yaml && git -C <temp>\copy-enriched commit -m "chore: record project-gamma as a member"
+  Suggested commit (Project repo: record the membership locator hint.)
+    git -C <temp>\project-gamma add rasen\config.yaml && git -C <temp>\project-gamma commit -m "chore: record membership of store rasen-store"
+  Neither command was run: rasen never stages, commits, pushes, fetches, or pulls.
+
+Planning store: unchanged (none declared). Pass --set-primary to bind it.
+
+The project remains usable in-repo; it continues to resolve as its own local Rasen root.
+
+Store identity metadata was created at ~\AppData\Local\Temp\rasen-g2\project-gamma\.rasen-store\store.yaml.
+Commit it so teammates can resolve this project as a store on their own checkouts, or gitignore it to keep it machine-local.
+This command does not edit .gitignore and does not create a commit.
+
+[exit code: 0]

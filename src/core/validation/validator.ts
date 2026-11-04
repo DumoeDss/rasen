@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { z, ZodError } from 'zod';
 import { readFileSync, promises as fs } from 'fs';
 import path from 'path';
@@ -11,8 +12,17 @@ import {
   VALIDATION_MESSAGES
 } from './constants.js';
 import { parseDeltaSpec, normalizeRequirementName, extractRequirementsSection } from '../parsers/requirement-blocks.js';
-import { findMainSpecStructureIssues } from '../parsers/spec-structure.js';
+import {
+  findMainSpecStructureIssues,
+  stripFencedCodeBlocksPreservingLines,
+} from '../parsers/spec-structure.js';
 import { FileSystemUtils } from '../../utils/file-system.js';
+import {
+  analyzeSpecUpdates,
+  discoverDeltaSpecFiles,
+  findSpecUpdates,
+  type DeltaSpecDiscovery,
+} from '../specs-apply.js';
 
 export class Validator {
   private strictMode: boolean;
@@ -112,29 +122,97 @@ export class Validator {
    * - RENAMED: pairs well-formed
    * - No duplicates within sections; no cross-section conflicts per spec
    */
-  async validateChangeDeltaSpecs(changeDir: string): Promise<ValidationReport> {
+  async validateChangeDeltaSpecs(
+    changeDir: string,
+    canonicalSpecsDir?: string,
+    discoveredDeltaSpecs?: DeltaSpecDiscovery
+  ): Promise<ValidationReport> {
     const issues: ValidationIssue[] = [];
     const specsDir = path.join(changeDir, 'specs');
     let totalDeltas = 0;
-    const missingHeaderSpecs: string[] = [];
-    const emptySectionSpecs: Array<{ path: string; sections: string[] }> = [];
+    const deltaSnapshots = new Map<string, Buffer>();
+    const reconciliationIssueKey = (
+      source: string,
+      code: string,
+      requirement?: string
+    ): string =>
+      `${source}\0${code}\0${
+        requirement === undefined ? '' : normalizeRequirementName(requirement)
+      }`;
+    const independentlyReported = new Set<string>();
+    const shapeIssueKeys = new Set<string>();
+    const shapeIssueKey = (
+      source: string,
+      kind: 'requirement-keyword' | 'scenario',
+      requirement: string
+    ): string =>
+      `${source}\0${kind}\0${normalizeRequirementName(requirement)}`;
+    const deltaDiscovery =
+      discoveredDeltaSpecs ?? (await discoverDeltaSpecFiles(changeDir));
+    let deltaInputUnavailable = deltaDiscovery.issues.length > 0;
+    for (const issue of deltaDiscovery.issues) {
+      issues.push({
+        level: 'ERROR',
+        path: FileSystemUtils.toPosixPath(
+          path.relative(specsDir, issue.source)
+        ),
+        code: issue.code,
+        source: issue.source,
+        capability: issue.capability,
+        message: issue.message,
+      });
+      independentlyReported.add(
+        reconciliationIssueKey(issue.source, issue.code, issue.requirement)
+      );
+    }
+    const discovery =
+      canonicalSpecsDir === undefined
+        ? null
+        : await findSpecUpdates(
+            changeDir,
+            canonicalSpecsDir,
+            deltaDiscovery
+          );
 
     try {
-      // Discover delta specs at any depth so the nested multi-area layout
-      // (specs/<area>/<capability>/spec.md) is validated, not just the
-      // one-level specs/<capability>/spec.md layout (#1182b). The spec-driven
-      // specs glob is specs/**/*.md; delta files are always named spec.md.
-      const specFiles = await this.findDeltaSpecFiles(specsDir);
-      for (const specFile of specFiles) {
-        let content: string | undefined;
+      for (const specFile of deltaDiscovery.files) {
+        const entryPath = FileSystemUtils.toPosixPath(
+          path.relative(specsDir, specFile)
+        );
+        const capability = path.posix.dirname(entryPath);
+        const deltaIssue = (
+          code: string,
+          message: string,
+          requirement?: string
+        ): ValidationIssue => ({
+          level: 'ERROR',
+          path: entryPath,
+          code,
+          source: specFile,
+          capability,
+          ...(requirement === undefined ? {} : { requirement }),
+          message,
+        });
+        let content: string;
         try {
-          content = await fs.readFile(specFile, 'utf-8');
-        } catch {
+          const snapshot = await fs.readFile(specFile);
+          deltaSnapshots.set(specFile, snapshot);
+          content = snapshot.toString('utf8');
+        } catch (error) {
+          issues.push(
+            deltaIssue(
+              'spec_delta_read_failed',
+              `Cannot read delta spec ${specFile}: ${
+              error instanceof Error ? error.message : String(error)
+              }`
+            )
+          );
+          deltaInputUnavailable = true;
           continue;
         }
+        const issuesBeforeShapeValidation = issues.length;
 
         const plan = parseDeltaSpec(content);
-        const entryPath = FileSystemUtils.toPosixPath(path.relative(specsDir, specFile));
         const sectionNames: string[] = [];
         if (plan.sectionPresence.added) sectionNames.push('## ADDED Requirements');
         if (plan.sectionPresence.modified) sectionNames.push('## MODIFIED Requirements');
@@ -143,8 +221,17 @@ export class Validator {
         const hasSections = sectionNames.length > 0;
         const hasEntries = plan.added.length + plan.modified.length + plan.removed.length + plan.renamed.length > 0;
         if (!hasEntries) {
-          if (hasSections) emptySectionSpecs.push({ path: entryPath, sections: sectionNames });
-          else missingHeaderSpecs.push(entryPath);
+          issues.push(
+            deltaIssue(
+              'spec_delta_no_operations',
+              hasSections
+                ? `Delta sections ${this.formatSectionList(sectionNames)} were found, but no requirement entries parsed. Ensure each section includes at least one "### Requirement:" block (REMOVED may use bullet list syntax).`
+                : 'No delta sections found. Add headers such as "## ADDED Requirements" or move non-delta notes outside specs/.'
+            )
+          );
+          independentlyReported.add(
+            reconciliationIssueKey(specFile, 'spec_delta_no_operations')
+          );
         }
 
         const addedNames = new Set<string>();
@@ -158,19 +245,62 @@ export class Validator {
           const key = normalizeRequirementName(block.name);
           totalDeltas++;
           if (addedNames.has(key)) {
-            issues.push({ level: 'ERROR', path: entryPath, message: `Duplicate requirement in ADDED: "${block.name}"` });
+            issues.push(
+              deltaIssue(
+                'spec_delta_duplicate_added',
+                `Duplicate requirement in ADDED: "${block.name}"`,
+                block.name
+              )
+            );
+            independentlyReported.add(
+              reconciliationIssueKey(
+                specFile,
+                'spec_delta_duplicate_added',
+                block.name
+              )
+            );
           } else {
             addedNames.add(key);
           }
           const requirementText = this.extractRequirementText(block.raw);
           if (!requirementText) {
-            issues.push({ level: 'ERROR', path: entryPath, message: `ADDED "${block.name}" is missing requirement text` });
+            issues.push(
+              deltaIssue(
+                'spec_delta_requirement_text_missing',
+                `ADDED "${block.name}" is missing requirement text`,
+                block.name
+              )
+            );
+            shapeIssueKeys.add(
+              shapeIssueKey(specFile, 'requirement-keyword', block.name)
+            );
           } else if (!this.containsShallOrMust(requirementText)) {
-            issues.push({ level: 'ERROR', path: entryPath, message: this.buildMissingShallOrMustMessage(`ADDED "${block.name}"`, block.name) });
+            issues.push(
+              deltaIssue(
+                'spec_delta_requirement_keyword_missing',
+                this.buildMissingShallOrMustMessage(
+                  `ADDED "${block.name}"`,
+                  block.name
+                ),
+                block.name
+              )
+            );
+            shapeIssueKeys.add(
+              shapeIssueKey(specFile, 'requirement-keyword', block.name)
+            );
           }
           const scenarioCount = this.countScenarios(block.raw);
           if (scenarioCount < 1) {
-            issues.push({ level: 'ERROR', path: entryPath, message: `ADDED "${block.name}" must include at least one scenario` });
+            issues.push(
+              deltaIssue(
+                'spec_delta_scenarios_missing',
+                `ADDED "${block.name}" must include at least one scenario`,
+                block.name
+              )
+            );
+            shapeIssueKeys.add(
+              shapeIssueKey(specFile, 'scenario', block.name)
+            );
           }
         }
 
@@ -179,19 +309,62 @@ export class Validator {
           const key = normalizeRequirementName(block.name);
           totalDeltas++;
           if (modifiedNames.has(key)) {
-            issues.push({ level: 'ERROR', path: entryPath, message: `Duplicate requirement in MODIFIED: "${block.name}"` });
+            issues.push(
+              deltaIssue(
+                'spec_delta_duplicate_modified',
+                `Duplicate requirement in MODIFIED: "${block.name}"`,
+                block.name
+              )
+            );
+            independentlyReported.add(
+              reconciliationIssueKey(
+                specFile,
+                'spec_delta_duplicate_modified',
+                block.name
+              )
+            );
           } else {
             modifiedNames.add(key);
           }
           const requirementText = this.extractRequirementText(block.raw);
           if (!requirementText) {
-            issues.push({ level: 'ERROR', path: entryPath, message: `MODIFIED "${block.name}" is missing requirement text` });
+            issues.push(
+              deltaIssue(
+                'spec_delta_requirement_text_missing',
+                `MODIFIED "${block.name}" is missing requirement text`,
+                block.name
+              )
+            );
+            shapeIssueKeys.add(
+              shapeIssueKey(specFile, 'requirement-keyword', block.name)
+            );
           } else if (!this.containsShallOrMust(requirementText)) {
-            issues.push({ level: 'ERROR', path: entryPath, message: this.buildMissingShallOrMustMessage(`MODIFIED "${block.name}"`, block.name) });
+            issues.push(
+              deltaIssue(
+                'spec_delta_requirement_keyword_missing',
+                this.buildMissingShallOrMustMessage(
+                  `MODIFIED "${block.name}"`,
+                  block.name
+                ),
+                block.name
+              )
+            );
+            shapeIssueKeys.add(
+              shapeIssueKey(specFile, 'requirement-keyword', block.name)
+            );
           }
           const scenarioCount = this.countScenarios(block.raw);
           if (scenarioCount < 1) {
-            issues.push({ level: 'ERROR', path: entryPath, message: `MODIFIED "${block.name}" must include at least one scenario` });
+            issues.push(
+              deltaIssue(
+                'spec_delta_scenarios_missing',
+                `MODIFIED "${block.name}" must include at least one scenario`,
+                block.name
+              )
+            );
+            shapeIssueKeys.add(
+              shapeIssueKey(specFile, 'scenario', block.name)
+            );
           }
         }
 
@@ -200,7 +373,20 @@ export class Validator {
           const key = normalizeRequirementName(name);
           totalDeltas++;
           if (removedNames.has(key)) {
-            issues.push({ level: 'ERROR', path: entryPath, message: `Duplicate requirement in REMOVED: "${name}"` });
+            issues.push(
+              deltaIssue(
+                'spec_delta_duplicate_removed',
+                `Duplicate requirement in REMOVED: "${name}"`,
+                name
+              )
+            );
+            independentlyReported.add(
+              reconciliationIssueKey(
+                specFile,
+                'spec_delta_duplicate_removed',
+                name
+              )
+            );
           } else {
             removedNames.add(key);
           }
@@ -212,12 +398,38 @@ export class Validator {
           const toKey = normalizeRequirementName(to);
           totalDeltas++;
           if (renamedFrom.has(fromKey)) {
-            issues.push({ level: 'ERROR', path: entryPath, message: `Duplicate FROM in RENAMED: "${from}"` });
+            issues.push(
+              deltaIssue(
+                'spec_delta_duplicate_renamed_from',
+                `Duplicate FROM in RENAMED: "${from}"`,
+                from
+              )
+            );
+            independentlyReported.add(
+              reconciliationIssueKey(
+                specFile,
+                'spec_delta_duplicate_renamed_from',
+                from
+              )
+            );
           } else {
             renamedFrom.add(fromKey);
           }
           if (renamedTo.has(toKey)) {
-            issues.push({ level: 'ERROR', path: entryPath, message: `Duplicate TO in RENAMED: "${to}"` });
+            issues.push(
+              deltaIssue(
+                'spec_delta_duplicate_renamed_to',
+                `Duplicate TO in RENAMED: "${to}"`,
+                to
+              )
+            );
+            independentlyReported.add(
+              reconciliationIssueKey(
+                specFile,
+                'spec_delta_duplicate_renamed_to',
+                to
+              )
+            );
           } else {
             renamedTo.add(toKey);
           }
@@ -226,81 +438,389 @@ export class Validator {
         // Cross-section conflicts (within the same spec file)
         for (const n of modifiedNames) {
           if (removedNames.has(n)) {
-            issues.push({ level: 'ERROR', path: entryPath, message: `Requirement present in both MODIFIED and REMOVED: "${n}"` });
+            issues.push(
+              deltaIssue(
+                'spec_delta_cross_section_conflict',
+                `Requirement present in both MODIFIED and REMOVED: "${n}"`,
+                n
+              )
+            );
+            independentlyReported.add(
+              reconciliationIssueKey(
+                specFile,
+                'spec_delta_cross_section_conflict',
+                n
+              )
+            );
           }
           if (addedNames.has(n)) {
-            issues.push({ level: 'ERROR', path: entryPath, message: `Requirement present in both MODIFIED and ADDED: "${n}"` });
+            issues.push(
+              deltaIssue(
+                'spec_delta_cross_section_conflict',
+                `Requirement present in both MODIFIED and ADDED: "${n}"`,
+                n
+              )
+            );
+            independentlyReported.add(
+              reconciliationIssueKey(
+                specFile,
+                'spec_delta_cross_section_conflict',
+                n
+              )
+            );
           }
         }
         for (const n of addedNames) {
           if (removedNames.has(n)) {
-            issues.push({ level: 'ERROR', path: entryPath, message: `Requirement present in both ADDED and REMOVED: "${n}"` });
+            issues.push(
+              deltaIssue(
+                'spec_delta_cross_section_conflict',
+                `Requirement present in both ADDED and REMOVED: "${n}"`,
+                n
+              )
+            );
+            independentlyReported.add(
+              reconciliationIssueKey(
+                specFile,
+                'spec_delta_cross_section_conflict',
+                n
+              )
+            );
           }
         }
         for (const { from, to } of plan.renamed) {
           const fromKey = normalizeRequirementName(from);
           const toKey = normalizeRequirementName(to);
           if (modifiedNames.has(fromKey)) {
-            issues.push({ level: 'ERROR', path: entryPath, message: `MODIFIED references old name from RENAMED. Use new header for "${to}"` });
+            issues.push(
+              deltaIssue(
+                'spec_modified_uses_renamed_source',
+                `MODIFIED references old name from RENAMED. Use new header for "${to}"`,
+                from
+              )
+            );
+            independentlyReported.add(
+              reconciliationIssueKey(
+                specFile,
+                'spec_modified_uses_renamed_source',
+                from
+              )
+            );
           }
           if (addedNames.has(toKey)) {
-            issues.push({ level: 'ERROR', path: entryPath, message: `RENAMED TO collides with ADDED for "${to}"` });
+            issues.push(
+              deltaIssue(
+                'spec_renamed_target_conflicts_added',
+                `RENAMED TO collides with ADDED for "${to}"`,
+                to
+              )
+            );
+            independentlyReported.add(
+              reconciliationIssueKey(
+                specFile,
+                'spec_renamed_target_conflicts_added',
+                to
+              )
+            );
+          }
+        }
+        void issuesBeforeShapeValidation;
+      }
+    } catch (error) {
+      deltaInputUnavailable = true;
+      issues.push({
+        level: 'ERROR',
+        path: 'specs',
+        code: 'spec_delta_discovery_failed',
+        source: specsDir,
+        message: `Cannot inspect delta specs under ${specsDir}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      });
+    }
+
+    const analyzedTargets = new Map<
+      string,
+      { state: 'absent' } | { state: 'file'; sha256: string }
+    >();
+
+    const targetSnapshots = new Map<string, Buffer | null>();
+    if (discovery !== null) {
+      for (const update of discovery.updates) {
+        try {
+          const snapshot = await fs.readFile(update.target);
+          targetSnapshots.set(update.target, snapshot);
+          analyzedTargets.set(update.target, {
+            state: 'file',
+            sha256: createHash('sha256').update(snapshot).digest('hex'),
+          });
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            targetSnapshots.set(update.target, null);
+            analyzedTargets.set(update.target, { state: 'absent' });
           }
         }
       }
-    } catch {
-      // If no specs dir, treat as no deltas
     }
 
-    for (const { path: specPath, sections } of emptySectionSpecs) {
-      issues.push({
-        level: 'ERROR',
-        path: specPath,
-        message: `Delta sections ${this.formatSectionList(sections)} were found, but no requirement entries parsed. Ensure each section includes at least one "### Requirement:" block (REMOVED may use bullet list syntax).`,
-      });
-    }
-    for (const path of missingHeaderSpecs) {
-      issues.push({
-        level: 'ERROR',
-        path,
-        message: 'No delta sections found. Add headers such as "## ADDED Requirements" or move non-delta notes outside specs/.',
-      });
+    if (discovery !== null) {
+      const analysisDiscovery = {
+        issues: discovery.issues,
+        updates: discovery.updates.flatMap(update => {
+          const sourceSnapshot = deltaSnapshots.get(update.source);
+          if (sourceSnapshot === undefined) return [];
+          const hasTargetSnapshot = targetSnapshots.has(update.target);
+          return [
+            {
+              ...update,
+              sourceSnapshot,
+              ...(hasTargetSnapshot
+                ? { targetSnapshot: targetSnapshots.get(update.target) ?? null }
+                : {}),
+            },
+          ];
+        }),
+      };
+      const analysis = await analyzeSpecUpdates(
+        analysisDiscovery,
+        path.basename(changeDir),
+        { silent: true }
+      );
+      for (const prepared of analysis.prepared) {
+        analyzedTargets.set(
+          prepared.update.target,
+          prepared.targetPrecondition
+        );
+        if (prepared.emptied) continue;
+
+        const projectedReport = await this.validateSpecContent(
+          prepared.update.capability,
+          prepared.rebuilt
+        );
+        const projectedBlocks = extractRequirementsSection(
+          prepared.rebuilt
+        ).bodyBlocks;
+        for (const projectedIssue of projectedReport.issues) {
+          if (projectedIssue.level !== 'ERROR') continue;
+          const requirementIndexMatch = projectedIssue.path.match(
+            /^requirements(?:\.|\[)(\d+)/
+          );
+          const requirement =
+            requirementIndexMatch === null
+              ? undefined
+              : projectedBlocks[Number(requirementIndexMatch[1])]?.name;
+          const projectedKind = projectedIssue.message.includes(
+            'SHALL or MUST'
+          )
+            ? 'requirement-keyword'
+            : projectedIssue.path.includes('scenarios') ||
+                /\bscenario/i.test(projectedIssue.message)
+              ? 'scenario'
+              : undefined;
+          if (
+            requirement !== undefined &&
+            projectedKind !== undefined &&
+            shapeIssueKeys.has(
+              shapeIssueKey(
+                prepared.update.source,
+                projectedKind,
+                requirement
+              )
+            )
+          ) {
+            continue;
+          }
+          issues.push({
+            path: FileSystemUtils.toPosixPath(
+              path.relative(specsDir, prepared.update.source)
+            ),
+            level: 'ERROR',
+            code: 'spec_target_validation_failed',
+            source: prepared.update.source,
+            capability: prepared.update.capability,
+            ...(requirement === undefined ? {} : { requirement }),
+            message:
+              `${prepared.update.capability}: rebuilt canonical spec is invalid:\n` +
+              `${projectedIssue.path}: ${projectedIssue.message}`,
+          });
+        }
+      }
+      for (const issue of analysis.issues) {
+        const preservationFailure =
+          issue.code === 'spec_modified_scenarios_missing';
+        if (
+          independentlyReported.has(
+            reconciliationIssueKey(
+              issue.source,
+              issue.code,
+              issue.requirement
+            )
+          )
+        ) {
+          continue;
+        }
+        issues.push({
+          path: FileSystemUtils.toPosixPath(
+            path.relative(specsDir, issue.source)
+          ),
+          level: preservationFailure
+            ? this.strictMode
+              ? 'ERROR'
+              : 'WARNING'
+            : 'ERROR',
+          code: issue.code,
+          source: issue.source,
+          capability: issue.capability,
+          ...(issue.requirement === undefined
+            ? {}
+            : { requirement: issue.requirement }),
+          ...(issue.missingScenarios === undefined
+            ? {}
+            : { missingScenarios: issue.missingScenarios }),
+          message: preservationFailure
+            ? `${issue.message} MODIFIED replaces the complete requirement; include every scenario that should survive.`
+            : issue.message,
+        });
+      }
     }
 
-    if (totalDeltas === 0) {
+
+    for (const [target, precondition] of analyzedTargets) {
+      try {
+        const current = await fs.readFile(target);
+        if (
+          precondition.state === 'absent' ||
+          createHash('sha256').update(current).digest('hex') !==
+            precondition.sha256
+        ) {
+          issues.push({
+            level: 'ERROR',
+            path: target,
+            code: 'spec_target_source_changed',
+            source: target,
+            message: `Canonical spec changed during validation: ${target}. Rerun validation against the current baseline.`,
+          });
+        }
+      } catch (error) {
+        if (
+          precondition.state === 'absent' &&
+          (error as NodeJS.ErrnoException).code === 'ENOENT'
+        ) {
+          continue;
+        }
+        issues.push({
+          level: 'ERROR',
+          path: target,
+          code: 'spec_target_read_failed',
+          source: target,
+          message: `Cannot confirm canonical spec snapshot ${target}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        });
+      }
+    }
+
+    const unreadableDeltaSnapshots = new Set<string>();
+    for (const [specFile, snapshot] of deltaSnapshots) {
+      try {
+        const current = await fs.readFile(specFile);
+        if (!current.equals(snapshot)) {
+          issues.push({
+            level: 'ERROR',
+            path: FileSystemUtils.toPosixPath(
+              path.relative(specsDir, specFile)
+            ),
+            code: 'spec_delta_source_changed',
+            source: specFile,
+            message: `Delta spec changed during validation: ${specFile}. Rerun validation against the current bytes.`,
+          });
+          deltaInputUnavailable = true;
+        }
+      } catch (error) {
+        issues.push({
+          level: 'ERROR',
+          path: FileSystemUtils.toPosixPath(
+            path.relative(specsDir, specFile)
+          ),
+          code: 'spec_delta_read_failed',
+          source: specFile,
+          capability: path.posix.dirname(
+            FileSystemUtils.toPosixPath(path.relative(specsDir, specFile))
+          ),
+          message: `Cannot confirm delta spec snapshot ${specFile}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        });
+        unreadableDeltaSnapshots.add(path.resolve(specFile));
+        deltaInputUnavailable = true;
+      }
+    }
+    const finalDeltaDiscovery = await discoverDeltaSpecFiles(changeDir);
+    for (const issue of finalDeltaDiscovery.issues) {
+      const key = reconciliationIssueKey(
+        issue.source,
+        issue.code,
+        issue.requirement
+      );
+      if (independentlyReported.has(key)) continue;
+      issues.push({
+        level: 'ERROR',
+        path: FileSystemUtils.toPosixPath(
+          path.relative(specsDir, issue.source)
+        ),
+        code: issue.code,
+        source: issue.source,
+        capability: issue.capability,
+        message: issue.message,
+      });
+      independentlyReported.add(key);
+      deltaInputUnavailable = true;
+    }
+    const admittedDeltaFiles = new Set(
+      deltaDiscovery.files.map(file => path.resolve(file))
+    );
+    const finalDeltaFiles = new Set(
+      finalDeltaDiscovery.files.map(file => path.resolve(file))
+    );
+    for (const specFile of admittedDeltaFiles) {
+      if (
+        finalDeltaFiles.has(specFile) ||
+        unreadableDeltaSnapshots.has(specFile)
+      ) {
+        continue;
+      }
+      issues.push({
+        level: 'ERROR',
+        path: FileSystemUtils.toPosixPath(
+          path.relative(specsDir, specFile)
+        ),
+        code: 'spec_delta_set_changed',
+        source: specFile,
+        message: `Admitted delta spec is no longer a discoverable regular file: ${specFile}. Rerun validation against the complete current delta set.`,
+      });
+      deltaInputUnavailable = true;
+    }
+    for (const specFile of finalDeltaDiscovery.files) {
+      if (admittedDeltaFiles.has(path.resolve(specFile))) continue;
+      issues.push({
+        level: 'ERROR',
+        path: FileSystemUtils.toPosixPath(
+          path.relative(specsDir, specFile)
+        ),
+        code: 'spec_delta_set_changed',
+        source: specFile,
+        message: `Delta spec appeared during validation: ${specFile}. Rerun validation against the complete current delta set.`,
+      });
+      deltaInputUnavailable = true;
+    }
+
+    if (totalDeltas === 0 && !deltaInputUnavailable) {
       issues.push({ level: 'ERROR', path: 'file', message: this.enrichTopLevelError('change', VALIDATION_MESSAGES.CHANGE_NO_DELTAS) });
     }
 
     return this.createReport(issues);
   }
 
-  /**
-   * Recursively collect every delta `spec.md` under a change's specs directory,
-   * so both the one-level (specs/<capability>/spec.md) and nested multi-area
-   * (specs/<area>/<capability>/spec.md) layouts are discovered (#1182b).
-   * Returns absolute paths, sorted for deterministic issue ordering.
-   */
-  private async findDeltaSpecFiles(specsDir: string): Promise<string[]> {
-    const results: string[] = [];
-    const walk = async (dir: string): Promise<void> => {
-      let entries;
-      try {
-        entries = await fs.readdir(dir, { withFileTypes: true });
-      } catch {
-        return;
-      }
-      for (const entry of entries) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          await walk(full);
-        } else if (entry.isFile() && entry.name === 'spec.md') {
-          results.push(full);
-        }
-      }
-    };
-    await walk(specsDir);
-    return results.sort();
-  }
 
   private convertZodErrors(error: ZodError): ValidationIssue[] {
     return error.issues.map(err => {
@@ -510,7 +1030,10 @@ export class Validator {
   }
 
   private countScenarios(blockRaw: string): number {
-    const matches = blockRaw.match(/^####\s+/gm);
+    const visible = stripFencedCodeBlocksPreservingLines(
+      blockRaw.replace(/\r\n?/g, '\n')
+    );
+    const matches = visible.match(/^####\s+/gm);
     return matches ? matches.length : 0;
   }
 

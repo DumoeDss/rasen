@@ -1,0 +1,59 @@
+$ rasen store issue plan dogfood-portfolio --from-portfolio parent-cross --json --store dogfood-store
+(exit 0)
+
+{
+  "issueId": "dogfood-portfolio",
+  "revision": {
+    "version": 1,
+    "issueId": "dogfood-portfolio",
+    "revisionId": "0001",
+    "supersedes": null,
+    "createdAt": "2026-08-20T10:57:27.191Z",
+    "nodes": [
+      {
+        "nodeId": "alpha-child",
+        "kind": "change",
+        "projectId": "alpha-core",
+        "targetLineId": "main",
+        "changeInstanceId": "ci_c96f8cc0c764edd1fe5ee4f70c1a53b407417c8eff4a024939880d63fa4c86f5",
+        "changeAlias": "alpha-child",
+        "dependsOn": []
+      },
+      {
+        "nodeId": "beta-child",
+        "kind": "change",
+        "projectId": "beta-site",
+        "targetLineId": "main",
+        "changeInstanceId": "ci_950adf9fcfb29d6cce90b7bfe32e277a62d0f4e7e880650260d70e22dc28cc5d",
+        "changeAlias": "beta-child",
+        "dependsOn": [
+          "alpha-child"
+        ]
+      }
+    ],
+    "contentSha256": "d69bee3651df98c6613fee97d5449e5fa4d7a9f27b88a4930714b5e3339cbcf3"
+  },
+  "storeId": "dogfood-store",
+  "storeUid": "51dc9acf-7f9c-4ef6-89e4-4b179beba8ca",
+  "checkoutRoot": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-dogfood-target-vsWJKt\\store",
+  "checkoutRef": "refs/heads/main",
+  "written": [
+    "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-dogfood-target-vsWJKt\\store\\rasen\\issues\\dogfood-portfolio\\plans\\0001.yaml"
+  ],
+  "suggestedCommits": [
+    {
+      "repoRoot": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-dogfood-target-vsWJKt\\store",
+      "pathspecs": [
+        "rasen/issues/dogfood-portfolio/plans/0001.yaml"
+      ],
+      "message": "chore(store): publish execution plan dogfood-portfolio/0001",
+      "rationale": "Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing."
+    }
+  ],
+  "source": {
+    "kind": "portfolio",
+    "parent": "parent-cross",
+    "statePath": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-dogfood-target-vsWJKt\\store\\rasen\\projects\\alpha-core\\changes\\parent-cross\\portfolio-run.json",
+    "childCount": 2
+  }
+}

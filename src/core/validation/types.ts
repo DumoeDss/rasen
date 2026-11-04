@@ -6,6 +6,11 @@ export interface ValidationIssue {
   message: string;
   line?: number;
   column?: number;
+  code?: string;
+  source?: string;
+  capability?: string;
+  requirement?: string;
+  missingScenarios?: string[];
 }
 
 export interface ValidationReport {

@@ -1,0 +1,71 @@
+{
+  "issueId": "issue-cross-project-execution",
+  "revision": {
+    "version": 1,
+    "issueId": "issue-cross-project-execution",
+    "revisionId": "0001",
+    "supersedes": null,
+    "createdAt": "2026-08-20T14:17:18.940Z",
+    "nodes": [
+      {
+        "nodeId": "document-multi-project-issues",
+        "kind": "change",
+        "projectId": "6ca78b98-777f-45bc-8d9b-b84c34e1a531",
+        "targetLineId": "line-0.2",
+        "changeInstanceId": "ci_4950d004af6e4085c862933dc877396e904522b71d50d07573e4dfe68b8d72c4",
+        "changeAlias": "document-multi-project-issues",
+        "dependsOn": [
+          "issue-project-grouped-views"
+        ]
+      },
+      {
+        "nodeId": "issue-cross-project-gating",
+        "kind": "change",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "changeInstanceId": "ci_3682f3979e67a6b1ac48fd1c4cec6abd65d6ad783dc7bf3c70f0d807827818be",
+        "changeAlias": "issue-cross-project-gating",
+        "dependsOn": [
+          "issue-target-project-binding"
+        ]
+      },
+      {
+        "nodeId": "issue-project-grouped-views",
+        "kind": "intent",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "summary": "Grouped per-project read surface (g-003) — Change not yet committed evidence at first publication",
+        "dependsOn": [
+          "issue-cross-project-gating"
+        ]
+      },
+      {
+        "nodeId": "issue-target-project-binding",
+        "kind": "change",
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "changeInstanceId": "ci_114dc062aed6b5c7b7a2aa2860e8ffa29e356ced35baadfa0901052fccc859ec",
+        "changeAlias": "issue-target-project-binding",
+        "dependsOn": []
+      }
+    ],
+    "contentSha256": "efaf70efa3e621e86eeb0845307f0c18ab9943249f510ae39f04bd1414d78ff8"
+  },
+  "storeId": "issue-registry",
+  "storeUid": "f76edc31-229a-42bc-a5c7-848021eeb2da",
+  "checkoutRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+  "checkoutRef": "refs/heads/main",
+  "written": [
+    "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store\\rasen\\issues\\issue-cross-project-execution\\plans\\0001.yaml"
+  ],
+  "suggestedCommits": [
+    {
+      "repoRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+      "pathspecs": [
+        "rasen/issues/issue-cross-project-execution/plans/0001.yaml"
+      ],
+      "message": "chore(store): publish execution plan issue-cross-project-execution/0001",
+      "rationale": "Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing."
+    }
+  ]
+}

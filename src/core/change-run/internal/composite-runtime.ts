@@ -1,4 +1,4 @@
-import type { NodeId } from '../contracts.js';
+import type { JsonValue, NodeId } from '../contracts.js';
 import { deriveNodeId } from './identity.js';
 import type { CanonicalRunRecord, CommittedAction } from './record.js';
 import type {
@@ -7,6 +7,12 @@ import type {
   RuntimePlanCompositeBody,
   RuntimePlanCompositeStage,
 } from './runtime-plan.js';
+import {
+  latestAttemptForDomainInvocation,
+  strategyIterationLimitAllowance,
+  type LoopDomainSnapshot,
+  type LoopProgressEntry,
+} from './bounded-loop-lifecycle.js';
 
 /**
  * Descriptor for the next body stage to admit in a composite-body bounded loop.
@@ -64,12 +70,30 @@ export function compositeBodyStagePath(
   return `${loopPath}/round:${round}/${stageId}`;
 }
 
-function actionForNodeId(
+function actionForInvocation(
+  plan: RuntimePlan,
+  loop: RuntimePlanBoundedLoopNode,
   record: CanonicalRunRecord,
-  nodeId: NodeId
+  nodeId: NodeId,
+  hierarchicalPath: string
 ): CommittedAction | undefined {
-  return Object.values(record.actions).find(
-    (action) => action.action.nodeId === nodeId
+  return latestAttemptForDomainInvocation(
+    plan,
+    loop,
+    record,
+    nodeId,
+    hierarchicalPath
+  );
+}
+
+function effectiveIterationLimit(
+  plan: RuntimePlan,
+  loop: RuntimePlanBoundedLoopNode,
+  record: CanonicalRunRecord
+): number {
+  return (
+    loop.limits.maxIterations +
+    strategyIterationLimitAllowance(plan, loop, record)
   );
 }
 
@@ -103,8 +127,9 @@ export function projectCompositeBodyProgress(
   }
   const body = loop.body;
   const succeededThisRound = new Set<string>();
+  const iterationLimit = effectiveIterationLimit(plan, loop, record);
 
-  for (let round = 1; round <= loop.maxIterations; round += 1) {
+  for (let round = 1; round <= iterationLimit; round += 1) {
     succeededThisRound.clear();
 
     for (const stage of body.stages) {
@@ -114,7 +139,13 @@ export function projectCompositeBodyProgress(
         stage.hierarchicalPath
       );
       const perRoundNodeId = deriveNodeId(plan.runId, perRoundPath);
-      const action = actionForNodeId(record, perRoundNodeId);
+      const action = actionForInvocation(
+        plan,
+        loop,
+        record,
+        perRoundNodeId,
+        perRoundPath
+      );
 
       if (action === undefined) {
         // No action yet. Check if dependencies are satisfied (all required
@@ -154,7 +185,13 @@ export function projectCompositeBodyProgress(
               missingDep.hierarchicalPath
             );
             const depNodeId = deriveNodeId(plan.runId, depPath);
-            const depAction = actionForNodeId(record, depNodeId);
+            const depAction = actionForInvocation(
+              plan,
+              loop,
+              record,
+              depNodeId,
+              depPath
+            );
             if (depAction !== undefined && depAction.result?.status === 'failed') {
               return Object.freeze({
                 kind: 'failed',
@@ -170,7 +207,9 @@ export function projectCompositeBodyProgress(
           return Object.freeze({
             kind: 'waiting',
             next: invocation(plan, loop, round, stage, perRoundPath),
-            action: actionForNodeId(
+            action: actionForInvocation(
+              plan,
+              loop,
               record,
               deriveNodeId(
                 plan.runId,
@@ -179,6 +218,11 @@ export function projectCompositeBodyProgress(
                   round,
                   (missingDep ?? body.stages[0])!.hierarchicalPath
                 )
+              ),
+              compositeBodyStagePath(
+                loop.hierarchicalPath,
+                round,
+                (missingDep ?? body.stages[0])!.hierarchicalPath
               )
             )!,
           });
@@ -209,6 +253,14 @@ export function projectCompositeBodyProgress(
         });
       }
 
+      if (action.result.status === 'blocked') {
+        return Object.freeze({
+          kind: 'waiting',
+          next: invocation(plan, loop, round, stage, perRoundPath),
+          action,
+        });
+      }
+
       // Action succeeded.
       succeededThisRound.add(perRoundPath);
     }
@@ -233,6 +285,85 @@ export function projectCompositeBodyProgress(
 
   // maxIterations reached without an exit.
   return Object.freeze({ kind: 'exhausted' });
+}
+
+/** Domain adapter for generic Composite bounded-loop bodies. */
+export function projectCompositeBodyDomainSnapshot(
+  plan: RuntimePlan,
+  loop: RuntimePlanBoundedLoopNode,
+  record: CanonicalRunRecord
+): LoopDomainSnapshot {
+  if (loop.body.kind !== 'composite') {
+    throw new Error('Composite lifecycle snapshot requires a composite body.');
+  }
+  const ownedNodeIds = new Set<NodeId>();
+  const ownedInvocations: LoopDomainSnapshot['ownedInvocations'][number][] = [];
+  const progressHistory: LoopProgressEntry[] = [];
+  let lastCompletedRound = 0;
+  const iterationLimit = effectiveIterationLimit(plan, loop, record);
+  for (let round = 1; round <= iterationLimit; round += 1) {
+    const material: Readonly<{ stage: string; result: JsonValue }>[] = [];
+    let complete = true;
+    for (const stage of loop.body.stages) {
+      const path = compositeBodyStagePath(
+        loop.hierarchicalPath,
+        round,
+        stage.hierarchicalPath
+      );
+      const nodeId = deriveNodeId(plan.runId, path);
+      ownedNodeIds.add(nodeId);
+      ownedInvocations.push({
+        nodeId,
+        hierarchicalPath: path,
+        profilePath: stage.profilePath,
+        admissionKind: stage.admissionKind,
+        access: stage.workspace.access,
+        iteration: round,
+        phase: stage.hierarchicalPath,
+      });
+      const action = actionForInvocation(plan, loop, record, nodeId, path);
+      if (action?.result?.status !== 'succeeded') {
+        complete = false;
+        continue;
+      }
+      material.push({ stage: stage.hierarchicalPath, result: action.result.result });
+    }
+    if (!complete) break;
+    lastCompletedRound = round;
+    progressHistory.push({
+      iteration: round,
+      material: material.sort((left, right) =>
+        left.stage < right.stage ? -1 : left.stage > right.stage ? 1 : 0
+      ),
+    });
+  }
+  const progress = projectCompositeBodyProgress(plan, loop, record);
+  const next = 'next' in progress ? progress.next : undefined;
+  return Object.freeze({
+    bodyKind: 'composite',
+    iteration: next?.round ?? Math.max(1, lastCompletedRound),
+    phase: next?.stage.hierarchicalPath ?? 'complete',
+    ...(progress.kind === 'clean' ? { completionOutcome: progress.outcome } : {}),
+    continueRequested:
+      progress.kind === 'exhausted' ||
+      (lastCompletedRound > 0 && progress.kind === 'ready'),
+    progressHistory: Object.freeze(progressHistory),
+    ...(next === undefined
+      ? {}
+      : {
+          nextInvocation: {
+            nodeId: next.nodeId,
+            hierarchicalPath: next.hierarchicalPath,
+            profilePath: next.stage.profilePath,
+            admissionKind: next.stage.admissionKind,
+            access: next.stage.workspace.access,
+            iteration: next.round,
+            phase: next.stage.hierarchicalPath,
+          },
+        }),
+    ownedNodeIds,
+    ownedInvocations: Object.freeze(ownedInvocations),
+  });
 }
 
 function invocation(

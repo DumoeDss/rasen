@@ -5,6 +5,7 @@ import * as path from 'node:path';
 
 import { getGlobalDataDir, registerStore } from '../../src/core/index.js';
 import { runCLI } from '../helpers/run-cli.js';
+import { seedFlatStoreChange } from '../helpers/rasen-fixtures.js';
 import { createHealthyOpenSpecRoot } from '../helpers/store-git.js';
 import { cleanupTempPath } from '../helpers/temp-cleanup.js';
 
@@ -127,12 +128,21 @@ describe('legacy command groups are removed', () => {
     // update exits 1 here (no project) — asserted so a future auto-init
     // behavior cannot silently start writing into this fixture.
     expect((await runCLI(['update'], { cwd: projectDir, env })).exitCode).toBe(1);
-    expect(
-      (await runCLI(['new', 'change', 'survival-check', '--store', 'team-context', '--json'], {
-        cwd: projectDir,
-        env,
-      })).exitCode
-    ).toBe(0);
+    // `new change` against a LEGACY FLAT store is now a deliberate refusal
+    // naming the layout migration (change `store-layout-v2-migration`,
+    // `proposal.md` BREAKING bullet 2, task 10b.1). It still belongs in this
+    // sweep: a command that refuses must leave the initiative data and the
+    // workspace view state exactly as untouched as one that succeeds.
+    const refusedCreate = await runCLI(
+      ['new', 'change', 'survival-check', '--store', 'team-context', '--json'],
+      { cwd: projectDir, env }
+    );
+    expect(refusedCreate.exitCode).toBe(1);
+    expect(`${refusedCreate.stdout}${refusedCreate.stderr}`).toContain(
+      'legacy_flat_store_requires_migration'
+    );
+    // Reading a Change the store already holds is unaffected by the refusal.
+    seedFlatStoreChange(storeRoot, 'survival-check');
     expect(
       (await runCLI(['status', '--change', 'survival-check', '--store', 'team-context', '--json'], {
         cwd: projectDir,

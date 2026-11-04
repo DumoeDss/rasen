@@ -62,6 +62,87 @@ const KNOWN_SLOW_TEST_WEIGHTS_MS: Record<string, number> = {
   'test/core/management-api/workflow-enablement.test.ts': 15371,
   'test/commands/work.test.ts': 14611,
   'test/core/management-api/space-scoping.test.ts': 13318,
+  // Real Git worktrees + real filesystem fixtures (store-worktree-bindings-v2,
+  // task 6.9): the byte-size heuristic badly underestimates these, because the
+  // cost is worktree creation/removal wall-clock time, not source size.
+  'test/core/store/workspace-cleanup.test.ts': 166610,
+  'test/commands/workspace-cli.test.ts': 166960,
+  'test/core/store/workspace-apply.test.ts': 109103,
+  // Same class again (fix-store-workspace-pair-transactions, task 1.5): thirteen
+  // real-Git scenarios that prepare, tear down, and re-prepare a pair, several
+  // of them building three worktrees. 25KB of source implies a 2.5s fallback;
+  // measured solo on Windows at 167.8s in this shape, and at 201.7s in an
+  // intermediate shape carrying two extra cases. The higher figure is not
+  // entered because it is not an observation of the file as it ships; the
+  // measured 167.8s is rounded up instead. Do not lower it without re-measuring
+  // on a quiesced tree -- under-entering a heavy file skews the whole shard,
+  // over-entering only costs balance.
+  'test/core/store/workspace-repreparation.test.ts': 169000,
+  // Neither of the next two had an entry at all, so both were weighted from
+  // source size -- the exact skew this table exists to prevent. Recorded after
+  // investigating windows-pwsh-shard-2 (2026-08-27): 19KB of source implied
+  // ~1.9s for a suite measured at 67.3s solo (~35x under), and 74KB implied
+  // ~7.4s for one CI measured at 37.1s (~5x under). Entered as measured.
+  //
+  // Recorded honestly: shard imbalance was NOT the defect behind that
+  // investigation. The three shards measured balanced (231 files each,
+  // 25/24/23 min), and the failures were Windows teardown/FS races. These
+  // entries remove latent skew; they do not fix those races.
+  'test/core/archive-consumer-integration.test.ts': 67280,
+  'test/core/session-host/host.test.ts': 37130,
+  // Real Git fixture (`createStoreWorkspaceFixture`) driven through both the
+  // in-process handlers and a `runCLI` subprocess per test (store-issue-resources).
+  'test/core/management-api/stores.test.ts': 199980,
+  // Six real-Git Store/Issue/link scenarios, including a daemon route and
+  // repeated byte-parity reads (issue-operations-and-unlinked, task 4.4).
+  // Measured at ~241s solo wall-clock on Windows (198s test body).
+  'test/core/management-api/change-issue-links.test.ts': 241000,
+  // Same real-Git fixture class (a two-revision Issue plus a damaged plan
+  // revision built per test), the in-process projection handlers, and a
+  // `startManagementServer` + six `runCLI` subprocess pairs for the byte-parity
+  // witness (issue-read-surface, task 3.4). Measured at ~230s solo on Windows.
+  'test/core/management-api/issue-projection.test.ts': 240000,
+  // Same fixture class, plus 26 scenario cases that each commit real Git
+  // objects (store-issue-resources, task 8.5): a wide relative-size gap from
+  // the 38KB source file to this solo wall-clock is expected, not a fluke.
+  // Measured TWICE, 1.8x apart on the same machine: 314950ms under task 8.1
+  // and 177060ms under task 8.5. The higher observation is entered, for the
+  // same reason task 8.5 flags `workspace-cleanup` above as under-entered --
+  // a shard planner that underestimates a heavy file skews the whole shard,
+  // whereas overestimating it only costs balance. Do not lower this to the
+  // faster observation without re-measuring on a quiesced tree.
+  'test/core/store/store-aggregate-query.test.ts': 314950,
+  // Eleven real-Git legacy flat Stores, several driven through the shipped
+  // `store migrate-layout` command handler rather than the Module directly
+  // (rehearse-legacy-store-layout-migration, task 4.3). Measured at 91760ms
+  // solo on Windows with VITEST_MAX_WORKERS=1; the source-size fallback would
+  // have guessed ~1600ms, which is the skew this table exists to prevent.
+  'test/core/store/layout-migration-empty-store.test.ts': 92000,
+  // `runCLI` subprocess per case, same underestimated class as the two
+  // `workspace-*` CLI entries above (store-issue-resources, task 8.5).
+  'test/commands/store-issue-cli.test.ts': 76790,
+  'test/commands/store-aggregate-cli.test.ts': 62300,
+  // Real Git fixture, no CLI subprocess, but still a real worktree/lock
+  // read per case (store-issue-resources, task 8.5).
+  'test/core/store/store-query-lock-free.test.ts': 52290,
+  // Smallest absolute cost of this change's entries, but the worst RELATIVE
+  // skew in the table: 5949 bytes of source implies a 595ms fallback, while
+  // three of its five cases each build a real second Git worktree, measured
+  // twice at 16150ms and 15960ms solo (store-issue-resources, task 8.5). The
+  // higher observation is entered deliberately — under-entering is the failure
+  // mode the `workspace-cleanup` entry above already demonstrates.
+  'test/core/store/store-issue-scope.test.ts': 16150,
+  // issue-acceptance-close: three real-Git-fixture suites and one runCLI
+  // subprocess-per-case CLI suite, the same underestimated classes as the
+  // entries above. The CLI file was measured twice: 145128ms during fix round
+  // 1 under a warm tree and 194524ms solo on the reviewer's pass — the
+  // HIGHER observation is entered (review round 1, Info-5), for the same
+  // reason as `store-aggregate-query` above: underestimating a spawn-heavy
+  // file skews the whole shard, overestimating only costs balance.
+  'test/core/store/store-issue-acceptance-content.test.ts': 1100,
+  'test/core/store/store-issue-acceptance-mutations.test.ts': 24000,
+  'test/core/issue-acceptance/issue-acceptance-gate.test.ts': 45000,
+  'test/commands/store-issue-acceptance-cli.test.ts': 200000,
 };
 
 function listTestFiles(directory: string, root: string): TestFile[] {
@@ -131,6 +212,15 @@ export default defineConfig({
     pool: 'forks',
     maxWorkers: resolveMaxWorkers(),
     include: resolveTestInclude(),
+    // `expectTypeOf` is a runtime no-op, and the root tsconfig excludes `test/`,
+    // so type-level assertions living in `*.test.ts` cannot fail — nothing in
+    // this repository type-checks them. `*.test-d.ts` files are checked instead,
+    // under a tsconfig scoped to exactly those files plus `src/`. Disabled by
+    // default (so `pnpm test` is unchanged); `pnpm run test:types` enables it.
+    typecheck: {
+      include: ['test/**/*.test-d.ts'],
+      tsconfig: './tsconfig.typecheck.json',
+    },
     coverage: {
       reporter: ['text', 'json', 'html'],
       exclude: [

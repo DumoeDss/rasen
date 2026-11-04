@@ -1,0 +1,25 @@
+{
+  "change": "teacher-consultation-canvas",
+  "archivedAt": "2026-08-10T12:54:07.332Z",
+  "codeCommit": "a9176fcb5430206f3e5ea675a9acbd86af15eae4",
+  "planningBranch": "feat/teacher-advisor-workflow",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "e62725504445a98cd8ceb085c32b464425436a141776b88ecaa38bd2e1cc8bf9"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "b5a64ea84eb111738849953c5de592011706e3cc96155f05b42e8e76622ff807"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

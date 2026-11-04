@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const LOCK_TIMEOUT_MS = 60_000;
 const LOCK_STALE_MS = 5 * 60_000;
 const HASH_DIRECTORIES = [
@@ -301,6 +301,29 @@ function computeFingerprint(sourceRoot, toolchain) {
   return hash.digest('hex');
 }
 
+function localBuildInfo(sourceRoot) {
+  const result = spawnSync('git', ['rev-parse', '--short=8', 'HEAD'], {
+    cwd: sourceRoot,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  const commit = result.status === 0 ? result.stdout.trim() : '';
+  return /^[0-9a-f]{7,40}$/i.test(commit)
+    ? { channel: 'dev.local', commit }
+    : { channel: 'dev.local' };
+}
+
+function localBuildInfoPath(packageRoot) {
+  return path.join(packageRoot, 'dist', 'build-info.json');
+}
+
+function writeLocalBuildInfo(packageRoot, info) {
+  const filePath = localBuildInfoPath(packageRoot);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(info, null, 2)}\n`);
+  return filePath;
+}
+
 function defaultCacheRoot() {
   if (process.env.RASEN_LOCAL_HARNESS_ROOT) {
     return path.resolve(process.env.RASEN_LOCAL_HARNESS_ROOT);
@@ -438,17 +461,49 @@ async function validateRuntime(
     throw new HarnessError('UI_ASSETS_MISSING', 'validate', `Installed UI is missing ${uiIndex}`);
   }
 
+  const cliBuildInfo = readManifest(
+    localBuildInfoPath(cliRoot),
+    'installed CLI local build info',
+    'validate',
+  );
+  const uiBuildInfo = readManifest(
+    localBuildInfoPath(uiRoot),
+    'installed UI local build info',
+    'validate',
+  );
+  const validBuildInfo = (info) => info.channel === 'dev.local'
+    && (info.commit === undefined || /^[0-9a-f]{7,40}$/i.test(info.commit));
+  if (!validBuildInfo(cliBuildInfo) || !validBuildInfo(uiBuildInfo)) {
+    throw new HarnessError(
+      'LOCAL_BUILD_INFO_INVALID',
+      'validate',
+      'Installed CLI/UI local build provenance is invalid',
+      { cliBuildInfo, uiBuildInfo },
+    );
+  }
+  if (JSON.stringify(cliBuildInfo) !== JSON.stringify(uiBuildInfo)) {
+    throw new HarnessError(
+      'LOCAL_BUILD_INFO_MISMATCH',
+      'validate',
+      'Installed CLI/UI local build provenance does not match',
+      { cliBuildInfo, uiBuildInfo },
+    );
+  }
+
   const cliEntry = path.join(cliRoot, 'bin', 'rasen.js');
   const versionResult = spawnSync(process.execPath, [cliEntry, '--version'], {
     cwd: runtimeRoot,
     encoding: 'utf8',
     env: { ...process.env, RASEN_TELEMETRY: '0' },
   });
-  if (versionResult.status !== 0 || versionResult.stdout.trim() !== expectedVersion) {
+  const expectedRenderedVersion = cliBuildInfo.commit
+    ? `${expectedVersion} (${cliBuildInfo.channel} ${cliBuildInfo.commit})`
+    : `${expectedVersion} (${cliBuildInfo.channel})`;
+  if (versionResult.status !== 0 || versionResult.stdout.trim() !== expectedRenderedVersion) {
     throw new HarnessError(
       'CLI_VERSION_MISMATCH',
       'validate',
-      `Installed CLI did not report ${expectedVersion}`,
+      `Installed CLI did not report ${expectedRenderedVersion}`,
       { exitCode: versionResult.status, reportedVersion: versionResult.stdout.trim() },
     );
   }
@@ -534,8 +589,21 @@ async function materializeRuntime(source, cacheRoot, runtimeRoot, fingerprint, t
   try {
     preparePackage(source.sourceRoot, source.cliManifest);
     preparePackage(path.join(source.sourceRoot, 'packages', 'ui'), source.uiManifest);
-    const cliPack = npmPack(source.sourceRoot, packsRoot);
-    const uiPack = npmPack(path.join(source.sourceRoot, 'packages', 'ui'), packsRoot);
+    const uiSourceRoot = path.join(source.sourceRoot, 'packages', 'ui');
+    const buildInfo = localBuildInfo(source.sourceRoot);
+    const sourceBuildInfoPaths = [];
+    let cliPack;
+    let uiPack;
+    try {
+      sourceBuildInfoPaths.push(writeLocalBuildInfo(source.sourceRoot, buildInfo));
+      sourceBuildInfoPaths.push(writeLocalBuildInfo(uiSourceRoot, buildInfo));
+      cliPack = npmPack(source.sourceRoot, packsRoot);
+      uiPack = npmPack(uiSourceRoot, packsRoot);
+    } finally {
+      for (const filePath of sourceBuildInfoPaths) {
+        fs.rmSync(filePath, { force: true });
+      }
+    }
     if (cliPack.version !== source.version || uiPack.version !== source.version) {
       throw new HarnessError(
         'PACKED_VERSION_MISMATCH',

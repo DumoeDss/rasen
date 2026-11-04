@@ -37,6 +37,18 @@ export async function setup() {
   xdgDataNet = mkdtempSync(path.join(os.tmpdir(), 'rasen-test-xdg-data-'));
   process.env.XDG_DATA_HOME = xdgDataNet;
 
+  // Third net layer: host-runtime detection (src/core/runtime-adapters.ts)
+  // reads harness fingerprints straight off the environment. A developer
+  // running the suite from inside a coding harness leaks that harness in —
+  // `CLAUDECODE` made every host-sensitive assertion resolve `claude`
+  // locally while CI (which sets neither) resolved `unknown`, so the two
+  // disagreed silently. Scrubbing both recognized fingerprints here makes
+  // the default host `unknown` everywhere, matching CI. A suite that
+  // exercises a specific host sets the fingerprint itself and wins, and
+  // spawned CLIs inherit the scrubbed environment through `runCLI`.
+  delete process.env.CLAUDECODE;
+  delete process.env.OMPCODE;
+
   await ensureCliBuilt();
 }
 

@@ -1,0 +1,48 @@
+# Dogfood receipt 3 — teardown, no residue
+
+Date: 2026-08-20T05:10:36Z
+Temp root was: /tmp/rasen-lc-dogfood.GnSFri
+
+## Project namespace entry forgotten first (double-clear: config + .rasen-store)
+{
+  "store": {
+    "id": "lc-dogfood-app",
+    "root": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\app",
+    "metadata_path": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\app\\.rasen-store\\store.yaml"
+  },
+  "registry": {
+    "path": "C:\\Users\\Sayo\\.rasen\\stores\\registry.yaml",
+    "removed": true
+  },
+  "files": {
+    "deleted": true,
+    "deleted_path": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\app",
+    "left_on_disk": null
+  },
+  "status": []
+}
+
+## Store registration forgotten and folder deleted
+{
+  "store": {
+    "id": "issue-lc-dogfood",
+    "root": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\store",
+    "metadata_path": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\store\\.rasen-store\\store.yaml"
+  },
+  "registry": {
+    "path": "C:\\Users\\Sayo\\.rasen\\stores\\registry.yaml",
+    "removed": true
+  },
+  "files": {
+    "deleted": true,
+    "deleted_path": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-lc-dogfood.GnSFri\\store",
+    "left_on_disk": null
+  },
+  "status": []
+}
+
+## Temp root removed
+temp dir gone: yes
+
+## Residue checks
+registry carries no lc-dogfood entries: yes

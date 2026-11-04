@@ -2,7 +2,7 @@
 
 ## Context
 
-Three independent designs explored the 0.1.6 Definition/runtime seam:
+Three independent designs explored the 0.2.0 Definition/runtime seam:
 
 - `design-alternatives/minimal-interface.md`
 - `design-alternatives/extensible-interface.md`
@@ -128,7 +128,7 @@ Safe extension occurs through:
 - versioned read-only projections.
 
 User-supplied code, open node-kind plugins, recursive Composite calls, nested
-loops, and projection write-back are rejected in 0.1.6.
+loops, and projection write-back are rejected in 0.2.0.
 
 ## Storage and Adapter seams
 

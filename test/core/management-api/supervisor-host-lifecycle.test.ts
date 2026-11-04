@@ -308,18 +308,20 @@ describe('reusable session host lifecycle', () => {
     expect(hostB.ok).toBe(true);
     if (!hostA.ok || !hostB.ok) return;
 
+    const delayedResultMs = process.platform === 'win32' ? 1100 : 200;
     const delayedA = supervisor!.wakeHost(hostA.host.id, {
-      message: 'host A DELAY_RESULT=200',
-      timeoutMs: 3000,
-      noOutputTimeoutMs: 1000,
+      message: `host A DELAY_RESULT=${delayedResultMs}`,
+      timeoutMs: 3000 + STARTUP_LATENCY_BUFFER_MS,
+      noOutputTimeoutMs: 1000 + STARTUP_LATENCY_BUFFER_MS,
     });
     const promptB = await supervisor!.wakeHost(hostB.host.id, {
       message: 'host B immediate',
-      timeoutMs: 3000,
-      noOutputTimeoutMs: 1000,
+      timeoutMs: 3000 + STARTUP_LATENCY_BUFFER_MS,
+      noOutputTimeoutMs: 1000 + STARTUP_LATENCY_BUFFER_MS,
     });
-    expect(promptB.ok).toBe(true);
-    expect((await delayedA).ok).toBe(true);
+    expect(promptB.ok, JSON.stringify(promptB)).toBe(true);
+    const delayedResultA = await delayedA;
+    expect(delayedResultA.ok, JSON.stringify(delayedResultA)).toBe(true);
   }, 12_000);
 
   it('recovers an idle loss with the stable host id, original cwd, and resume identity', async () => {

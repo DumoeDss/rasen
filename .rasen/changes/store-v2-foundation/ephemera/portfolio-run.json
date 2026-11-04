@@ -1,0 +1,262 @@
+{
+  "parent": "store-v2-foundation",
+  "sessionHandoff": {
+    "path": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\store-v2-foundation\\rasen\\work\\issue-centered-automation-platform\\store-v2-onto-020\\handoff\\lead-2.md",
+    "n": 2,
+    "pct": 0.701,
+    "afterStage": "S3 apply (35/39 tasks, Section 8 gates in flight)",
+    "at": "2026-08-14T00:00:00Z"
+  },
+  "gatePolicy": {
+    "effective": "off",
+    "source": "global"
+  },
+  "tier": "A",
+  "planner": {
+    "role": "planner",
+    "runtime": "claude",
+    "dispatchMode": "native",
+    "agentId": "planner@session-54f71457",
+    "model": "opus",
+    "horizon": "ONE_SHOT",
+    "horizonBasis": "Persistent across all three proposes per Step B.1, but NOT parked between them: children are serialized behind full pipelines, so the gap to the next propose is long/unbounded and the 12-beat cap would burn out first. Re-engage per Step B.1 item 2, applying the H.2 warm-continue guard against the REUSE threshold (0.6), not the handoff threshold (0.7), because taking on a new child change is a cross-change re-staffing decision.",
+    "seed": "rasen/changes/store-v2-foundation/planning-context.md",
+    "transcript": "C:/Users/Sayo/.claude/projects/E--AI-ChatAI-Agents-VibeCodingProjects-workflow-Reference-OpenSpec-code--claude-worktrees-store-v2-foundation/54f71457-52e9-42cc-8bda-b835238239cd/subagents/agent-aplanner-813c8b420f048755.jsonl",
+    "reuseDecision": {
+      "probedAt": "after S1 propose, before S2 dispatch",
+      "pct": 0.211,
+      "comparedAgainst": "REUSE threshold 0.6 (resolvePipelineReuseConfig roles.planner, global-scheme binding) - NOT the handoff threshold 0.7 the probe prints by default. Taking on a whole new child change is a cross-change re-staffing decision, so the reuse family governs.",
+      "verdict": "WARM REUSE PERMITTED - re-engage this same planner for S2's propose rather than retiring it. Re-probe before S3."
+    }
+  },
+  "decomposeBasis": "Slice plan.md preferred ONE change but pre-authorised a split if the port proves too large at design time. The survey measured it: the minimum coherent unit that delivers Store Issues is ~13,800 LOC of source plus ~345 KB of tests across three grepped dependency layers. That is not one reviewable diff, so the split is taken. Slicing deliberately mirrors 0.1.7's own proven delivery order (9 archived changes on origin/dev/0.1.7).",
+  "parallelism": {
+    "decision": "none",
+    "basis": "Strict dependency chain S1 -> S2 -> S3, every edge grepped. Slice plan.md independently declares 'Parallelism: None'. No positive independence proof exists between any pair, so all three run serially."
+  },
+  "children": [
+    {
+      "id": "store-planning-contract-v2",
+      "pipeline": "small-feature",
+      "dependsOn": [],
+      "status": "done",
+      "completion": {
+        "implemented": true,
+        "reviewClean": true,
+        "shipped": "local (f8e17e3d)",
+        "archive": "pending - correctly blocked by task 6.5, whose CI run reference cannot exist until the portfolio's single PR. Unblocks at portfolio delivery.",
+        "reviewSummary": "17 findings closed across 3 rounds plus one escalation-ladder attempt; final 0 Blocker / 0 Major, every one confirmed by a non-author re-running the mutation.",
+        "finalGate": "110 files / 1511 passed / 1 skipped / 0 failed on a quiesced tree, vs a 104 / 1264 / 0 pre-change baseline.",
+        "note": "Marked done because it is implemented and review-clean, which is what Step G requires to unblock a dependent child. Its archive is gated on portfolio delivery, not on any remaining work."
+      },
+      "node": "S1",
+      "delivers": "Layer 0 pure planning contract: branded IDs + derive/verify, id/text/state validators, project & target-line catalog schemas, the v2 on-disk layout resolver, finalization contract types, canonical-json.",
+      "touches": [
+        "src/core/store/planning-validation.ts",
+        "src/core/store/planning-catalogs.ts",
+        "src/core/store/planning-identity.ts",
+        "src/core/store/planning-layout-v2.ts",
+        "src/core/store/finalization-v2.ts",
+        "src/core/store/planning-foundation.ts",
+        "src/core/canonical-json.ts",
+        "src/core/store/index.ts (+1 export line)",
+        "test/core/store/planning-*.test.ts"
+      ],
+      "collisionClass": "A (free drop) - zero Category-B collisions with 0.2.0",
+      "referenceSpecs": [
+        "store-planning-identity-v2 (6 req)",
+        "store-planning-layout-v2 (9 req)"
+      ],
+      "priorArt": "origin/dev/0.1.7 rasen/changes/archive/2026-08-05-store-planning-foundation-v2"
+    },
+    {
+      "id": "store-worktree-bindings-v2",
+      "pipeline": "small-feature",
+      "dependsOn": [
+        "store-planning-contract-v2"
+      ],
+      "status": "done",
+      "completion": {
+        "implemented": true,
+        "reviewClean": true,
+        "shipped": "local (501b8943)",
+        "archive": "pending - correctly blocked by tasks 6.9 and 6.10. Unblocks at portfolio delivery.",
+        "commits": "ad413c6f (implementation, 43 files) -> 29dd0b8b (verb-guard proof) -> 7fcfa457 (review fixes) -> 6113f288 (pointer correction) -> 501b8943 (ship log)",
+        "reviewSummary": "Round 1: 0 Blocker / 0 Major / 3 Minor / 2 Trivial. All five closed in ONE fix round. Round 2 verification: all five RESOLVED, one new Trivial corrected. Contrast with child 1, which needed three rounds plus an escalation-ladder attempt - the difference is that the digest-anchor requirement was written into tasks.md at propose time.",
+        "gates": "Main baseline 122 files / 1744 passed / 6 skipped / 0 failed at VITEST_MAX_WORKERS=2, vs 110 / 1511 / 0 at child 1's close. The child's four command suites, run separately because the frozen gate command missed them: 4 files / 26 passed / 2 skipped / 0 failed.",
+        "invariance": "git diff ad413c6f..HEAD -- src/ empty (every proof mutation byte-reverted, hash-verified). git diff origin/dev/0.1.7 -- src/core/store/workspace/ empty (13-file module byte-identical to the tip, this child's intended property)."
+      },
+      "node": "S2",
+      "delivers": "Layer 1: planning worktree bindings (workspace locks/registry/binding/cleanup/plan/apply) and target-line catalog operations. Required because issues/ imports workspace/{dependencies,locks,binding,registry}.",
+      "touches": [
+        "src/core/store/workspace/** (all 13 files - see scopeNote, subset is NOT viable)",
+        "src/core/store/target-lines.ts",
+        "src/commands/workspace.ts",
+        "src/commands/store-target-line.ts",
+        "test/core/store/workspace-*.test.ts",
+        "test/core/store/target-lines.test.ts",
+        "test/helpers/store-workspace-fixture.ts"
+      ],
+      "collisionClass": "A mostly; rim overlap on src/commands/store.ts registration + src/core/store/membership.ts",
+      "referenceSpecs": [
+        "store-planning-worktree-bindings (14 req)",
+        "store-target-lines (4 req)"
+      ],
+      "priorArt": "origin/dev/0.1.7 rasen/changes/archive/2026-08-08-store-planning-worktree-bindings (+ two archived fixups: 2026-08-09-fix-existing-change-workspace-binding, 2026-08-10-fix-workspace-claim-portability)",
+      "scopeNote": "RESOLVED 2026-08-12 - port workspace/ WHOLE. A minimal subset is not viable. issues/ takes only 12 symbols across 4 files, and the source-only closure is 7 of 13 files (3,212 of 6,445 LOC, a ~50% paper saving). But test/helpers/store-workspace-fixture.ts:31 imports StoreWorkspace from workspace/module.js, and module.js pulls apply + cleanup + plan, so the closure is all 13. Five of S3's ten test files go through that fixture (store-aggregate-query 24 cases, store-query-lock-free, store-issue-cli, store-aggregate-cli, store-issue-scope-intent). Buying the ~2,900-LOC saving would mean discarding the 0.1.7 test suite that the entire portfolio leans on as prior art, to save source S2 is chartered to deliver anyway. LEAD-verified.",
+      "scopeChange": "membership-layout.ts REMOVED from this child 2026-08-12 and deferred to the layout-migration slice (L2). Evidence: membership-layout.ts:18 imports layout-write-guard.js, which at line 23 imports layout-migration/receipt.js, dragging a bounded 5-file / 1,737-LOC piece of a LATER roadmap slice into this one. The consumer graph confirms it does not belong here: every consumer of membership-layout is bootstrap.ts, membership.ts, migration-ops.ts, migration-ops-v2.ts, or layout-migration/diagnostics.ts. Neither issues/ nor query/ nor any S1 file imports it, so it has ZERO consumers inside this portfolio's scope."
+    },
+    {
+      "id": "store-issue-resources",
+      "pipeline": "small-feature",
+      "dependsOn": [
+        "store-worktree-bindings-v2"
+      ],
+      "status": "pending",
+      "node": "S3",
+      "delivers": "Layer 2, the direction's named target: IssueRecordV1, ExecutionPlanRevisionV1, issue lock protocol, plan node normalizer + graph checker + revision digest, reference verification against committed Store evidence, StoreIssues.{create,setState,publishPlan}, and StoreAggregateQuery.{listIssues,showIssue,issuesReferencing,resolveExecutionPlan,listProjects,listTargetLines,listChanges}.",
+      "touches": [
+        "src/core/store/issues/** (11 files)",
+        "src/core/store/query/** (7 files) - SAME SLICE, proven import cycle",
+        "src/commands/store-issue.ts",
+        "src/commands/store-aggregate.ts",
+        "src/core/management-api/stores.ts",
+        "packages/ui/src/components/StoreIssuesView.tsx",
+        "packages/ui/src/components/StoreAggregateBoard.tsx",
+        "8 core test files (110 cases) + 2 CLI suites + 4 UI test/fixture files"
+      ],
+      "collisionClass": "B (HIGH) on the consumer rim: management-api/router.ts, management-api/wire-types.ts, packages/ui/src/api/types.ts, src/cli/index.ts, src/core/completions/command-registry.ts, 6 locale files",
+      "referenceSpecs": [
+        "store-issue-resources (11 req)",
+        "store-aggregate-query (7 req)"
+      ],
+      "priorArt": "origin/dev/0.1.7 rasen/changes/archive/2026-08-08-store-scoped-issues-management",
+      "deferredTest": {
+        "file": "test/core/store/store-issue-scope-intent.test.ts",
+        "cases": 7,
+        "reason": "Transitively requires an out-of-scope later slice. It imports test/helpers/store-finalization-fixture.js, which imports src/core/store/finalization/index.js (12 files, 4,785 LOC) and specs-apply/archive-engine; the test body itself imports StorePlanning from src/core/store-planning/index.js (6 files, 3,787 LOC). Both belong to the finalization slice (L3+L5). It is the only one of S3's ten test files with this property. LEAD-verified against origin/dev/0.1.7.",
+        "mandateForPlanner": "Do NOT silently drop it, and do NOT drag finalization/ into this child to satisfy it. Deferring the FILE is acceptable; shipping issues/scope.ts with NO coverage is not. The S3 planner MUST determine which behaviours of issues/scope.ts (207 LOC) are covered only by this file, and author equivalent finalization-free coverage for them in this child. Record the deferral and the substitute coverage explicitly in the proposal, and hand the file itself forward as an inbound acceptance item for the finalization slice."
+      },
+      "reviewHazard": {
+        "symbol": "assertStoreLockOrderAgreesWithWorkspace",
+        "site": "src/core/store/issues/locks.ts:101 (called at module load)",
+        "hazard": "It compares STORE_LOCK_ORDER.slice(1) element-wise against WORKSPACE_LOCK_ORDER = ['scope','workspace','change','integration'] - two frozen arrays. It therefore keeps PASSING under any partial port even when the ordering it encodes has no enforcement surface left: 'workspace' is taken only by workspace/apply.ts and cleanup.ts, and 'change'/'integration' only by finalization/. The file's own docstring names this failure mode - 'the precise way an ordering gate keeps passing while it stops meaning anything.' Compile-clean and silently vacuous.",
+        "instructionForReviewer": "Comparing the two arrays proves NOTHING about this child. To confirm lock ordering actually survived, verify that each kind in STORE_LOCK_ORDER has a real TAKER in shipped code, and treat any kind whose taker lives in a deferred slice as explicitly unenforced-by-design rather than as covered."
+      }
+    }
+  ],
+  "delivery": {
+    "status": "pending",
+    "note": "Children ship local (commit only). Single portfolio-level delivery at the parent after all three are terminal."
+  },
+  "outOfScope": {
+    "S4-finalization": "src/core/store/finalization/** + src/core/store-planning/** - roadmap slice 'finalization + stored-plan' (L3+L5), not this slice. INBOUND ITEM: test/core/store/store-issue-scope-intent.test.ts (7 cases) is deferred to this slice from S3 - see children[2].deferredTest.",
+    "S5-layout-migration": "src/core/store/layout-migration/** + layout-write-guard + migration-ops-v2 + consistency-gates - roadmap slice 'layout-migration' (L2), not this slice. INBOUND ITEM: membership-layout.ts moved here from S2 - see children[1].scopeChange."
+  },
+  "anchorShapeTaxonomy": {
+    "why": "Earned incrementally across all three children, at the cost of three review rounds plus an escalation-ladder attempt in S1. The choice of anchor shape is not stylistic - picking the wrong one produces a test that cannot fail against the very change it exists to catch.",
+    "shapes": {
+      "pinned-literal": "Value is offline-determinable. Pin the literal and compare. Discriminates any change to preimage OR serialization. The default.",
+      "independently-reconstructed-and-rehashed": "Value embeds live per-run facts (frozen ref OIDs, worktree instance ids), so a fixed literal is PHYSICALLY impossible. The test rebuilds the hashed body from reported fields and rehashes with its OWN hardcoded hash calls, independent of production's encoding. Named by S2. CAUTION: this shape is blind to a SYMMETRIC change - if the test calls production's own serializer to rebuild, a serializer shift moves both sides together. S2 had to strengthen both such anchors with an offline-pinned literal over their non-Git-fact field slice.",
+      "behavioural": "Value is NEVER externally observable - a purely internal key with no public type exposing it. Pinning its literal would pin an implementation detail. Anchor the OBSERVABLE property instead. Named by S3 for refs.ts:447's CommittedChangeEvidence.digest, an internal de-dup key: force two refs to a byte-identical Change -> listChanges reports exactly 1 entry; perturb only one copy in a field the schema never reads -> exactly 2 entries, one per foundAtRef. Proves the digest is a live discriminator in the dedup key rather than decoration.",
+      "relational": "NOT A VALID ANCHOR. toMatch(shape), .toBe(other), .not.toBe(other), distinct-set counts. Uniformly blind to any change that transforms every value the same way - which is exactly what a preimage, digest or format change is. S1 passed 217/217 with every derived digest unanchored."
+    },
+    "selectionRule": "Ask whether the value is externally observable, and whether a fixed literal is physically possible. Observable + determinable -> pinned literal. Observable + live facts -> reconstruct-and-rehash, PLUS an offline-pinned slice to cover the symmetric case. Not observable -> behavioural. Never relational.",
+    "proofRule": "For every anchor, the mutation used to prove it must discriminate THE PROPERTY THE ANCHOR EXISTS FOR, not merely make something go red. S2's near-miss: an input-field perturbation moves only one side of the comparison and is the break an un-strengthened anchor already catches; the symmetric serializer case went unmeasured until a verifier caught it."
+  },
+  "leadBriefDefect": {
+    "what": "The LEAD's dispatch brief undercounted the capability set for ALL THREE children. It told each planner there were 2 capabilities; the real numbers were 3, 3 and 7 (S3 ported 6, correctly dropping store-planning-scope-routing which does not exist on this line).",
+    "rootCause": "The LEAD used the survey's `referenceSpecs` field as the inventory. That field is a SUMMARY, not a directory listing - it names the headline capabilities, not every spec file the prior-art change carries.",
+    "fix": "Always list the prior-art change's own specs/ directory (`git ls-tree -r --name-only origin/dev/0.1.7 -- rasen/changes/archive/<change>/specs/`) rather than trusting any summarised count, including the LEAD's own.",
+    "whyItMattered": "Each planner caught it and proposed the true set anyway, so nothing shipped short. But a planner that trusted the brief would have under-delivered by a whole capability three times running, and the omission was invisible from inside the brief.",
+    "generalForm": "A summarised count carried forward as an inventory is the documentation-layer version of this portfolio's recurring defect: a claim that reads as complete because nothing in it can reveal what it left out."
+  },
+  "plannerRetired": {
+    "when": "after S3's propose - all three children proposed",
+    "finalOccupancy": "29.8% at the S3 reuse decision, against a reuse threshold of 0.6; grew ~9pp per child (21.1% before S2, 29.8% before S3)",
+    "durableOutput": "rasen/changes/store-v2-foundation/planning-context.md sections 'From S1', 'From S2', 'From S3' - committed, so its knowledge survives its retirement.",
+    "note": "Persistent portfolio planner per Step B.1, warm-reused across all three proposes rather than respawned. Its per-commit attribution recipe produced a DIFFERENT correct answer for each child (never-the-tip / the-tip / the-squash-base-minus-a-later-slice), which is the evidence it was running the method rather than reusing an answer."
+  },
+  "toolingHazard": {
+    "what": "The bare `rasen` command on this machine is a GLOBALLY INSTALLED dev-local build at version 0.1.7 (dev.local 9472d7dc). This repo is 0.2.0. So `rasen ...` runs 0.1.7 code against 0.2.0 data.",
+    "howItSurfaced": "The S2 implementer hit `error: unknown option '--target-line'` running ported upstream tests. The LEAD had earlier run `rasen new change --help`, seen `--target-line <id>` in the output, and read it as a fact about this branch - it was a fact about the global 0.1.7 binary. `git grep target-line -- src/cli/index.ts src/commands/change.ts` on this branch returns NOTHING.",
+    "rule": "Use `node bin/rasen.js ...` for every rasen invocation in this worktree, never bare `rasen`.",
+    "damageAssessment": "The LEAD re-ran every load-bearing measurement against the local 0.2.0 build: `pipeline show auto-decompose --for-execution` (same 7 stages, same gate resolution to false via autopilot-global, same ship/archive sonnet stage models, same review-cycle maxRounds 3), `validate --strict` on both children (1 passed / 0 failed each), and `archive --dry-run` on child 1 (same tasks blocker). ALL IDENTICAL - no orchestration decision was corrupted. TASK_PATTERN is byte-identical between the two lines, so the [~] finding also stands.",
+    "residualRisk": "Worker-taken measurements that used the bare command may differ. Each worker has been told to re-take with the local build and report any that changed."
+  },
+  "decompositionGap": {
+    "found": "During S2 implementation, not at propose time.",
+    "what": "`rasen new change --target-line <id>`, and the marker-reading planning-worktree resolution it depends on (refusal code `planning_worktree_required`, zero hits in src/ on this branch), were delivered upstream by `store-planning-scope-routing` (commit 3b050663) - which is NOT an ancestor of dev/0.2.0. Seven faithfully-ported S2 test cases (5 in workspace-baseline.test.ts, 2 in store-v2-workspace-journey.test.ts) depend on that CLI surface.",
+    "whyNeitherChildClaimsIt": "S1's design.md explicitly hands workspace bindings and target-line operations to the next two children; S2's 33 tasks never mention `new change`, cli/index.ts's `new` command, or CLI-level target-line resolution - only `store workspace` / `store target-line` as new subcommands.",
+    "ruling": "OPTION 1 - defer the 7 cases with mandatory substitute coverage. Rejected pulling scope-routing forward: 3b050663 maps to the finalization/scope-routing slice, a LATER roadmap slice deliberately out of this whole portfolio's scope, and porting it would drag context.ts and store-planning/** in with it.",
+    "rule": "Deferring the CASE is acceptable; shipping the behaviour untested is not. Substitute coverage drives the same behaviours - marker validation, the refusal taxonomy including planning_worktree_required, integration-checkout refusal, index update - through StoreWorkspace / StoreTargetLinesModule directly. The CLI is a delivery surface; the behaviour lives in the modules this child owns. Substitutes must be mutation-proved like any other guard.",
+    "precedent": "Same shape as child 3's already-recorded deferral of test/core/store/store-issue-scope-intent.test.ts (7 cases, same later slice via store-finalization-fixture.ts).",
+    "warningForS3": "The same upstream commit also touched show.ts and spec.ts, which is adjacent to child 3's territory. The S3 proposal MUST check for CLI-surface dependencies in the tests it plans to port, at propose time, rather than discovering them at implementation time as happened here."
+  },
+  "gateMethodologyFinding": {
+    "discoveredAt": "S2's no-regression gate, 2026-08-13",
+    "what": "The single full-suite gate run is no longer trustworthy on this machine at default parallelism. It came back RED - 3 files / 6 tests failed out of 122 files - and every one of the six passed on a solo re-run. No regression existed.",
+    "numbers": {
+      "baselineAtS1Close": "110 files / 1511 passed / 0 failed / 299s",
+      "s2FullRunDefaultParallelism": "122 files / 1738 passed / 6 FAILED / 851s",
+      "soloReRuns": "store.test.ts + store-root-selection.test.ts -> 84 passed 0 failed; workspace-cleanup.test.ts -> 26 passed 0 failed"
+    },
+    "cause": "S2 adds suites an order of magnitude heavier than S1's pure unit tests - measured solo wall-clock: workspace-cleanup 166610ms, workspace-cli 166960ms, workspace-apply 109103ms - against a 30s testTimeout, pool 'forks', maxWorkers min(4, cpus), on Windows temp dirs with real Git worktrees.",
+    "theTriageTrap": "Two of the six failures were 30s timeouts and ONE was a hard assertion failure - `expected 1 to be +0`, a command exiting 1 instead of 0. That one also passed solo. So an assertion failure is NOT reliable evidence of a real defect on this machine: a busy filesystem makes commands genuinely fail, not merely run slow. The timeout-vs-assertion distinction does NOT separate contention from defect. Only a solo re-run does. Do not triage by failure shape.",
+    "ruleForS3": "S3 adds more heavy suites and will hit this harder. (1) Never triage a full-run failure by its shape - re-run the file solo before concluding anything. (2) Do not accept 'every file passes solo' AS the gate either; it is good evidence but a different claim from 'the suite passes'. Re-take the gate at reduced parallelism (VITEST_MAX_WORKERS=2) for a trustworthy single number. (3) Only one agent runs suites at a time - the LEAD owns the gate, workers hold.",
+    "alsoNote": "KNOWN_SLOW_TEST_WEIGHTS_MS entries help CI SHARDING but do nothing for a single local full run. S2 added three; S3 must measure and add its own for any suite of comparable weight or the macOS/Windows shards will skew.",
+    "gateCoverageBlindSpot": {
+      "what": "The LEAD's baseline gate command was fixed before S2 existed and names test/commands/store.test.ts and store-root-selection.test.ts individually rather than the directory. S2 added FOUR command-level suites - store-target-line-cli, store-v2-workspace-concurrency, store-v2-workspace-journey, workspace-cli - and the gate silently did not run any of them. A green gate therefore did not cover the child's own acceptance suites.",
+      "howItSurfaced": "Auditing the skipped count. The gate reported 5 newly skipped tests, all in workspace-baseline.test.ts, but the implementer had reported SEVEN deferred cases - 5 there and 2 in store-v2-workspace-journey.test.ts. The missing 2 were the tell that the journey suite had not run at all.",
+      "generalRule": "A gate command frozen at one point in time stops measuring whatever the subject grows afterwards, silently. Same disease as an assertion that cannot fail, one level up. Re-derive the gate's file list from the change's own diff each time rather than reusing a stale literal.",
+      "correctedGateForS3": "pnpm exec vitest run test/core/store test/core/change-run test/commands/store.test.ts test/commands/store-root-selection.test.ts test/cli-e2e/store-lifecycle.test.ts test/commands/store-target-line-cli.test.ts test/commands/store-v2-workspace-concurrency.test.ts test/commands/store-v2-workspace-journey.test.ts test/commands/workspace-cli.test.ts   -- and S3 must ADD its own new suites to this list, then verify by diffing the run's file count against the change's test-file additions."
+    }
+  },
+  "s2GateResult": {
+    "mainBaseline": {
+      "command": "VITEST_MAX_WORKERS=2 pnpm exec vitest run test/core/store test/core/change-run test/commands/store.test.ts test/commands/store-root-selection.test.ts test/cli-e2e/store-lifecycle.test.ts",
+      "result": "GREEN",
+      "testFiles": 122,
+      "passed": 1744,
+      "skipped": 6,
+      "failed": 0,
+      "durationSec": 1107,
+      "vsBaseline": "S1-close baseline was 110 files / 1511 passed / 1 skipped / 0 failed -> +12 files, +233 tests, NO regression"
+    },
+    "s2CommandSuites": {
+      "command": "VITEST_MAX_WORKERS=2 pnpm exec vitest run test/commands/{store-target-line-cli,store-v2-workspace-concurrency,store-v2-workspace-journey,workspace-cli}.test.ts",
+      "result": "GREEN",
+      "testFiles": 4,
+      "passed": 26,
+      "skipped": 2,
+      "failed": 0,
+      "note": "Run separately because the frozen baseline command did not cover them. See gateCoverageBlindSpot."
+    },
+    "deferredCaseAccounting": "7 deferred cases reconcile exactly: 5 skipped in workspace-baseline.test.ts plus 2 skipped in store-v2-workspace-journey.test.ts. The remaining 1 skip in the main run is pre-existing in project-records.test.ts."
+  },
+  "inboundNotesFromS1": {
+    "brandVocabularyGuardBlindSpot": {
+      "appliesTo": [
+        "store-worktree-bindings-v2",
+        "store-issue-resources"
+      ],
+      "severity": "Trivial in S1, but with a LIVE consumer in both later children",
+      "what": "S1 ships a guard in test/core/store/planning-foundation-consumer.test.ts that reads branded-type declarations out of the Layer-0 sources and fails by name if a brand reaches the vocabulary without a bare-string pin. It closes the recurring 'a type assertion reached through a derived type is inert against its base' defect. But the guard reads exactly THREE hardcoded source files.",
+      "consequence": "S2 and S3 both add new modules to src/core/store/. Any brand declared in a file outside those three inherits NONE of this guard - the suite stays fully green. Two further blind spots, both requiring a deliberate act: a commented-out pin still counts as present (text scan), and a brand declared with a line break after the `=` is invisible while the count assertion still passes (there is no formatter backstop - no prettier config, lint is eslint only).",
+      "actionForPlanner": "When proposing S2 and S3, decide explicitly whether new branded types are in scope. If they are, extend the guard's source list in the same change that introduces them - do NOT leave a new brand unguarded and do not assume the S1 guard covers it."
+    },
+    "relationalAssertionBlindness": {
+      "appliesTo": [
+        "store-worktree-bindings-v2",
+        "store-issue-resources"
+      ],
+      "what": "S1's most expensive lesson, established over three review rounds plus an escalation-ladder attempt. A test suite built entirely from toMatch(shape), .toBe(other), .not.toBe(other) and distinct-set counts is UNIFORMLY BLIND to any change that transforms every value the same way - which is exactly what a preimage, digest, or serialization-format change does. Three consecutive rounds of 217/217 green missed it: the problem was never too few assertions, it was an assertion SHAPE structurally immune to the defect class.",
+      "actionForPlanner": "S3 in particular ships executionPlanDigest and the Issue/Plan serializers - the same durable-format shape. Require known-input/known-digest golden vectors in the proposal, with pinned LITERAL inputs per vector (never chained off the previous derivation, or a break smears across all vectors instead of localising). Require that each vector also walks back through its own verifier, so a preimage change cannot hide behind a verifier that stopped checking."
+    }
+  },
+  "portfolioLessons": [
+    "The 0.1.7 TEST HELPERS are the real coupling graph, not the src imports. test/helpers/store-workspace-fixture.ts -> workspace/module.js and test/helpers/store-finalization-fixture.ts -> finalization/index.js are what actually decide slice boundaries here. Both scope surprises in this portfolio came from test/helpers/ and neither was visible in the src import graph. Any future 'can we port a subset of X' question in this codebase starts at test/helpers/, not at src/.",
+    "Keep ported file layout byte-comparable to origin/dev/0.1.7 wherever possible. That comparability is what makes the 9 archived 0.1.7 changes usable as a diff-able reference, and it is worth more than local tidiness. Concretely: do NOT extract the two string constants issues/ takes out of workspace/binding.ts (611 LOC) just because they look separable.",
+    "Re-run `git diff e62b101f origin/dev/0.2.0 -- src/core/store` before trusting any future claim that the store lines diverged. It is currently EMPTY and it is the cheapest possible check."
+  ]
+}

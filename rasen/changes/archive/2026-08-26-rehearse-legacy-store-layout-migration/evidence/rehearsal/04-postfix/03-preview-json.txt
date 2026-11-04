@@ -1,0 +1,38 @@
+$ (cd <temp>/copy-postfix) rasen store migrate-layout rasen-store --json
+{
+  "planId": "18480e7960cad8103b895809dad182cfb8ec1d211e411782573a4c904d887d2c",
+  "schemaVersion": 1,
+  "storeId": "rasen-store",
+  "ref": "refs/heads/master",
+  "applicable": true,
+  "token": {
+    "planId": "18480e7960cad8103b895809dad182cfb8ec1d211e411782573a4c904d887d2c",
+    "storeUid": "f35acc7d-e088-4186-9ad6-b4b770649b0b",
+    "ref": "refs/heads/master",
+    "headOid": "254b265cb4750e2fd7e5fe6caa1e1ffb219a3e4a",
+    "inventoryFingerprint": "946fa0bf12daf6cc7880be9727eb508f2103831c9eef95c1c73048ff5ba5ffd4"
+  },
+  "items": [],
+  "blockers": [],
+  "retainedDesignDocs": [],
+  "sharedSpecResolutions": [],
+  "catalogUpgrades": [],
+  "targetLineCatalogs": [],
+  "changeInstances": [],
+  "retirementSet": [
+    "rasen/changes",
+    "rasen/specs"
+  ],
+  "otherFlatRefs": [],
+  "refs": [
+    {
+      "ref": "refs/heads/master",
+      "kind": "local-branch",
+      "classification": "flat",
+      "checkedOut": true
+    }
+  ],
+  "inventoryFailures": []
+}
+
+[exit code: 0]

@@ -110,15 +110,14 @@ describe('config ui command', () => {
     vi.resetModules();
   });
 
-  it('adopts the resident daemon, prints the /config URL with its token, and opens the browser by default', async () => {
+  it('adopts the resident daemon, prints the stable token-free /p/config URL, and opens the browser by default', async () => {
     await runConfigCommand(['ui']);
 
     expect(startManagementServerMock).not.toHaveBeenCalled();
     expect(spawnDaemonDetachedMock).not.toHaveBeenCalled();
     const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    // A `?space=` selector may follow `/config` (the repo cwd is a Rasen
-    // project); the deprecation/adopt behavior under test is unaffected.
-    expect(printed).toMatch(new RegExp(`^Config UI: http://127\\.0\\.0\\.1:4321/config[^#\\n]*#token=a{64}$`, 'm'));
+    expect(printed).toMatch(/^Config UI: http:\/\/127\.0\.0\.1:4321\/p\/config$/m);
+    expect(printed).not.toContain('#token=');
   });
 
   it('prints a one-line deprecation notice naming `rasen ui` (design D1)', async () => {
@@ -148,7 +147,8 @@ describe('config ui command', () => {
 
     expect(spawnDaemonDetachedMock).toHaveBeenCalledWith(8791, OWN_VERSION);
     const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(printed).toMatch(/^Config UI: http:\/\/127\.0\.0\.1:8791\/config[^#\n]*#token=spawned-token$/m);
+    expect(printed).toMatch(/^Config UI: http:\/\/127\.0\.0\.1:8791\/p\/config$/m);
+    expect(printed).not.toContain('#token=');
   });
 
   it('fails without touching a foreign listener', async () => {

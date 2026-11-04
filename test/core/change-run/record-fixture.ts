@@ -19,6 +19,7 @@ import {
   deriveInvocationId,
   deriveNodeId,
 } from '../../../src/core/change-run/internal/identity.js';
+import { deriveAgentTurnInputBinding } from '../../../src/core/change-run/internal/actions.js';
 
 const branded = <T>(value: string): T => value as T;
 
@@ -115,6 +116,22 @@ export function makeRecordAction(
     },
     ...overrides,
   } as RunAction;
+}
+
+export function makeBoundRecordAction(
+  turnInput: string,
+  overrides: Partial<RunAction> = {}
+): RunAction {
+  const historical = makeRecordAction();
+  if (historical.kind !== 'agent') throw new Error('Expected agent fixture Action.');
+  return makeRecordAction({
+    ...overrides,
+    agent: {
+      ...historical.agent,
+      turnInput: deriveAgentTurnInputBinding(turnInput),
+      ...(overrides.kind === 'agent' ? overrides.agent : {}),
+    },
+  });
 }
 
 export function makeDerivedRecordAction(

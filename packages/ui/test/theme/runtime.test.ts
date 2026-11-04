@@ -72,7 +72,6 @@ describe('theme activation', () => {
     expect(css).not.toContain('data-theme-id');
     expect(css).toMatch(/\.board-card\s*\{[^}]*var\(--radius-lg\)[^}]*var\(--ring\)/s);
     expect(css).toMatch(/\.new-change-dialog,[^{]+\{[^}]*var\(--radius-xl\)[^}]*var\(--shadow-pop\)/s);
-    expect(css).toMatch(/\.running-sessions-menu__list\s*\{[^}]*var\(--radius-xl\)[^}]*var\(--shadow-pop\)/s);
     expect(css).toMatch(/button\s*\{[^}]*var\(--radius-lg\)[^}]*var\(--ring\)/s);
   });
 

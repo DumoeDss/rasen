@@ -194,6 +194,31 @@ describe('api client', () => {
     });
   });
 
+  it('preserves structured Issue publication recovery on ApiError', async () => {
+    const recovery = {
+      kind: 'issue-publication-indeterminate' as const,
+      identity: {
+        uid: '11111111-1111-4111-8111-111111111111',
+        key: 'ISS-2XSJ22FNSYD353XC',
+      },
+      retrySafe: false as const,
+    };
+    (fetch as any).mockResolvedValueOnce(jsonResponse(500, {
+      error: {
+        code: 'issue_publication_indeterminate',
+        message: 'Issue record publication outcome is indeterminate.',
+        recovery,
+      },
+    }));
+    await expect(client.createStoreIssue(
+      { title: 'Recovery facts' },
+      'store:11111111-1111-4111-8111-111111111111'
+    )).rejects.toMatchObject({
+      code: 'issue_publication_indeterminate',
+      recovery,
+    });
+  });
+
   it('narrows a non-2xx body to ApiError with code/message/fix', async () => {
     const { status, body } = errorsFixture.invalid_scope;
     (fetch as any).mockResolvedValueOnce(jsonResponse(status, body));
@@ -393,6 +418,39 @@ describe('api client', () => {
       const [url, init] = (fetch as any).mock.calls[0];
       expect(url).toBe('/api/v1/spaces');
       expect(init.method).toBeUndefined();
+    });
+
+    it('addProjectToStore POSTs only the explicit ids and returns the typed Store member', async () => {
+      const response = {
+        operation: 'store-add-project' as const,
+        space: {
+          type: 'store' as const,
+          id: 'team-store',
+          name: 'Team Store',
+          root: 'C:\\work\\team-store',
+          members: [
+            {
+              projectId: 'project-123',
+              name: 'Project 123',
+              root: 'C:\\work\\project-123',
+            },
+          ],
+        },
+      };
+      (fetch as any).mockResolvedValueOnce(jsonResponse(200, response));
+
+      const result = await client.addProjectToStore('project-123', 'team-store');
+
+      const [url, init] = (fetch as any).mock.calls[0];
+      expect(url).toBe('/api/v1/spaces');
+      expect(init.method).toBe('POST');
+      expect(JSON.parse(init.body)).toEqual({
+        op: 'add-project-to-store',
+        projectId: 'project-123',
+        storeId: 'team-store',
+      });
+      expect(result.operation).toBe('store-add-project');
+      expect(result.space.members).toEqual(response.space.members);
     });
   });
 

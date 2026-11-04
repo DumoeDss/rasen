@@ -1,0 +1,31 @@
+{
+  "change": "omnicross-inference-routing",
+  "archivedAt": "2026-08-13T10:44:49.968Z",
+  "codeCommit": "b56a814d23ad31a6643525e20447affe00121824",
+  "planningBranch": "dev/0.2.0",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/review-cycle-report.md",
+      "sha256": "0ea05ae4658461219ad840fabaa5fbf62a609919eedda362c82ace218dbc98aa"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "a7000db40d0fd6d35f6b1654aa0148d228f328005be34ddc643e82205e7b29b1"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "459b3815c1e9c4f7cc80dca92f2618264f4dd66bef8acf744bfe6f63494543f1"
+    },
+    {
+      "path": "evidence/strategy-review.md",
+      "sha256": "fe138b5871fecce45c58595e1dad73950ac1ba1da4701e7a486e05b608a78ca2"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [],
+  "missing": [
+    "verification-report"
+  ]
+}

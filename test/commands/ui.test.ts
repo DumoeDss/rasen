@@ -137,10 +137,8 @@ describe('ui command', () => {
       expect(spawnDaemonDetachedMock).not.toHaveBeenCalled();
       expect(startManagementServerMock).not.toHaveBeenCalled();
       const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
-      // The URL may carry a `?space=` selector derived from the cwd (the repo
-      // is itself a Rasen project); the launch behavior under test is
-      // unaffected either way.
-      expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:8791\/[^#\n]*#token=adopted-token$/m);
+      expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:8791\/(?:\?space=[^#\n]+)?$/m);
+      expect(printed).not.toContain('#token=');
     });
 
     it('spawns a daemon when nothing listens and prints its URL', async () => {
@@ -152,7 +150,8 @@ describe('ui command', () => {
 
       expect(spawnDaemonDetachedMock).toHaveBeenCalledWith(8791, OWN_VERSION);
       const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
-      expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:8791\/[^#\n]*#token=spawned-token$/m);
+      expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:8791\/(?:\?space=[^#\n]+)?$/m);
+      expect(printed).not.toContain('#token=');
     });
 
     it('review round 1 M1: replaces a stale-version daemon — kills it by its reported pid, waits for the port to free, then spawns fresh', async () => {
@@ -166,7 +165,8 @@ describe('ui command', () => {
       expect(killIdentifiedDaemonAndWaitFreeMock).toHaveBeenCalledWith(9999, 8791);
       expect(spawnDaemonDetachedMock).toHaveBeenCalledWith(8791, OWN_VERSION);
       const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
-      expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:8791\/[^#\n]*#token=replaced-token$/m);
+      expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:8791\/(?:\?space=[^#\n]+)?$/m);
+      expect(printed).not.toContain('#token=');
     });
 
     it('review round 1 M1: fails, without spawning, when the stale daemon\'s port cannot be freed in time', async () => {
@@ -193,25 +193,27 @@ describe('ui command', () => {
       expect(printed).toContain('--no-daemon');
     });
 
-    it('fails with remediation, no kill, when the adopted daemon token is unreadable', async () => {
+    it('adopts a same-version daemon even when its bearer token is not readable by the UI launcher', async () => {
       probeDaemonMock.mockResolvedValue({ port: 8791, result: { kind: 'rasen-daemon', version: OWN_VERSION, pid: 4242 } });
       readDaemonStateMock.mockReturnValue(null);
 
       await runUiCommand([]);
 
-      expect(process.exitCode).toBe(1);
-      const printed = consoleErrorSpy.mock.calls.map((c) => String(c[0])).join('\n');
-      expect(printed).toContain('rasen daemon stop');
+      expect(process.exitCode).toBeUndefined();
+      const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:8791\/(?:\?space=[^#\n]+)?$/m);
+      expect(printed).not.toContain('#token=');
     });
   });
 
   describe('--no-daemon (self-hosted foreground form)', () => {
-    it('starts the management server, prints the root URL with the token fragment, and opens the browser by default', async () => {
+    it('starts the management server, prints a token-free root URL, and opens the browser by default', async () => {
       await runUiCommand(['--no-daemon']);
 
       expect(startManagementServerMock).toHaveBeenCalledTimes(1);
       const printed = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
-      expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:4321\/[^#\n]*#token=[0-9a-f]{64}$/m);
+      expect(printed).toMatch(/^Rasen UI: http:\/\/127\.0\.0\.1:4321\/(?:\?space=[^#\n]+)?$/m);
+      expect(printed).not.toContain('#token=');
       expect(spawnMock).toHaveBeenCalledTimes(1);
     });
 

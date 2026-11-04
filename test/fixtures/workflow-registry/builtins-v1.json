@@ -17,9 +17,11 @@
   { "id": "retain-command", "skillName": "rasen-retain", "dirName": "rasen-retain", "kind": "internal" },
   { "id": "auto-command", "skillName": "rasen-auto", "dirName": "rasen-auto", "kind": "driver" },
   { "id": "review-cycle", "skillName": "rasen-review-cycle", "dirName": "rasen-review-cycle", "kind": "task" },
+  { "id": "review-fix", "skillName": "rasen-review-fix", "dirName": "rasen-review-fix", "kind": "internal" },
   { "id": "handoff", "skillName": "rasen-handoff", "dirName": "rasen-handoff", "kind": "task" },
   { "id": "goal-plan", "skillName": "rasen-goal-plan", "dirName": "rasen-goal-plan", "kind": "internal" },
   { "id": "goal-iterate", "skillName": "rasen-goal-iterate", "dirName": "rasen-goal-iterate", "kind": "internal" },
+  { "id": "goal-judge", "skillName": "rasen-goal-judge", "dirName": "rasen-goal-judge", "kind": "internal" },
   { "id": "task-loop", "skillName": "rasen-task-loop", "dirName": "rasen-task-loop", "kind": "internal" },
   { "id": "goal-report", "skillName": "rasen-goal-report", "dirName": "rasen-goal-report", "kind": "internal" },
   { "id": "goal-command", "skillName": "rasen-goal", "dirName": "rasen-goal", "kind": "driver" },
@@ -35,5 +37,6 @@
   { "id": "office-hours", "skillName": "rasen-office-hours", "dirName": "rasen-office-hours", "kind": "expert" },
   { "id": "qa", "skillName": "rasen-qa", "dirName": "rasen-qa", "kind": "expert" },
   { "id": "review", "skillName": "rasen-review", "dirName": "rasen-review", "kind": "expert" },
+  { "id": "teacher-advisor", "skillName": "rasen-teacher-advisor", "dirName": "rasen-teacher-advisor", "kind": "expert" },
   { "id": "workflow-author", "skillName": "rasen-workflow-author", "dirName": "rasen-workflow-author", "kind": "expert" }
 ]

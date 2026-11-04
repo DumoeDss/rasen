@@ -1,0 +1,33 @@
+### After --rollback: the Store reads as a legacy flat Store again
+$ cat .rasen-store/store.yaml
+version: 2
+uid: f35acc7d-e088-4186-9ad6-b4b770649b0b
+id: rasen-store
+
+$ git -C <temp>/copy-stale status --porcelain   # replaced files restored byte-for-byte
+
+$ ls rasen/
+changes/
+config.yaml
+design-docs/
+projects/
+specs/
+$ ls rasen/specs/ rasen/changes/
+alpha-only-capability/
+shared-capability/
+中文能力/
+--
+archive/
+change-alpha-recorded/
+change-conflict/
+change-dirty/
+change-no-evidence/
+change-non-member/
+change-zh-renamed/
+
+$ ls rasen/projects/ 2>&1   # the partitions the run created are gone
+11111111-1111-4111-8111-111111111111/
+22222222-2222-4222-8222-222222222222/
+33333333-3333-4333-8333-333333333333/
+
+$ ls .rasen-store/target-lines .rasen-store/migration/receipts 2>&1

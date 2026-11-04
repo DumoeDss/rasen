@@ -1,0 +1,8 @@
+Issue issue-cross-project-replanning accepted (resolved)
+  conditions: revision 0001 (99b35b53fc8b48b65ecd041f9b3194a35745a299712980ea2fbeb0b3bca867e4)
+  gate: 3/3 waiting-human, 0 problems standing
+  note: Phase 5 cross-project replanning verified: shared ready-set, history preservation, attention aggregation live (PR #174, Issue #4 loop)
+
+  Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing.
+    git -C E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-issue-store add rasen/issues/issue-cross-project-replanning/accepted.yaml rasen/issues/issue-cross-project-replanning/issue.yaml
+    git -C E:\AI\ChatAI\Agents\VibeCodingProjects\workflow\Reference\rasen-issue-store commit -m "chore(store): accept issue issue-cross-project-replanning"

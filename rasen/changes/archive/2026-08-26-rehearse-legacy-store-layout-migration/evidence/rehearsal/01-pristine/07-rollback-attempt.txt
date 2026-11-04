@@ -1,0 +1,5 @@
+$ (cd <temp>/copy-pristine) rasen store migrate-layout rasen-store --rollback
+migration_run_missing: No layout migration run is recorded for store 'rasen-store' on refs/heads/master.
+  fix: Run `rasen store migrate-layout <store-id>` to produce a plan first.
+
+[exit code: 1]

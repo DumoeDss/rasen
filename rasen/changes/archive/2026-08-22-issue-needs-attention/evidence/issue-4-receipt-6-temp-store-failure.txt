@@ -1,0 +1,96 @@
+# Task 4.4 receipt - staged failure shape on a TEMP-store fixture twin
+# (NOT the persistent store). Captured 2026-08-22 from a throwaway vitest run
+# over the same fixture shape as test/commands/store-attention-cli.test.ts
+# (the keeper suite): one Issue (fleet-alpha) with two running siblings and
+# one failed node (a portfolio record whose child escalated - the run-state
+# writer's documented FAILURE signal) plus one node blocked behind it; another
+# Issue (fleet-beta) parked waiting for a human. The failure item leads the
+# answer carrying active/failed beside the node - unmasked by the running
+# siblings; both forms carry the same facts in full.
+
+=== receipts below are this change evidence; temp file deleted after capture ===
+$ rasen store attention --store team-store   # from the execution root C:\Users\Sayo\AppData\Local\Temp\rasen-att-receipt-Wz02Q2\exec-project
+Store attention scan — 2 Issue(s) scanned
+  scanned:
+    fleet-alpha: active/failed — 2 item(s)
+    fleet-beta: active/waiting-human — 1 item(s)
+  run-state: C:\Users\Sayo\AppData\Local\Temp\rasen-att-receipt-Wz02Q2\exec-project
+  attention: 3 item(s)
+  failure (1)
+    [fleet-alpha active/failed] g-fail boom failed
+  blocked-behind (1)
+    [fleet-alpha active/failed] g-down down blocked behind g-fail@app-a: failed
+  waiting-human (1)
+    [fleet-beta active/waiting-human] g-park park waiting for a human
+
+  wrote nothing — attention derives; acting on an item remains a human act.
+
+$ rasen store attention --store team-store --json   (items + counts)
+{
+  "scanned": [
+    {
+      "issueId": "fleet-alpha",
+      "phase": "active",
+      "health": "failed",
+      "itemCount": 2,
+      "runStateVisibility": {
+        "kind": "execution-root",
+        "executionRoot": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-att-receipt-Wz02Q2\\exec-project"
+      }
+    },
+    {
+      "issueId": "fleet-beta",
+      "phase": "active",
+      "health": "waiting-human",
+      "itemCount": 1,
+      "runStateVisibility": {
+        "kind": "execution-root",
+        "executionRoot": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-att-receipt-Wz02Q2\\exec-project"
+      }
+    }
+  ],
+  "items": [
+    {
+      "issueId": "fleet-alpha",
+      "phase": "active",
+      "health": "failed",
+      "kind": "failure",
+      "nodeId": "g-fail",
+      "alias": "boom",
+      "diagnostic": null
+    },
+    {
+      "issueId": "fleet-alpha",
+      "phase": "active",
+      "health": "failed",
+      "kind": "blocked-behind",
+      "nodeId": "g-down",
+      "alias": "down",
+      "blockers": [
+        {
+          "nodeId": "g-fail",
+          "projectId": "app-a",
+          "state": "failed"
+        }
+      ]
+    },
+    {
+      "issueId": "fleet-beta",
+      "phase": "active",
+      "health": "waiting-human",
+      "kind": "waiting-human",
+      "nodeId": "g-park",
+      "alias": "park"
+    }
+  ],
+  "counts": {
+    "failure": 1,
+    "blocked-behind": 1,
+    "waiting-human": 1,
+    "acceptance-awaiting": 0,
+    "problem": 0
+  },
+  "total": 3
+}
+
+ ✓

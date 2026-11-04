@@ -1,0 +1,22 @@
+$ (cd <temp>/copy-pristine) rasen store adopt <temp>/probe-project --to rasen-store --dry-run
+file:///<temp>/pinned/dist/core/store/layout-write-guard.js:170
+        throw new StoreError(`Store '${input.storeId}' has not declared planning layout version 2, so ${input.intent} cannot write a project partition.`, 'legacy_flat_store_requires_migration', {
+              ^
+
+StoreError: Store 'rasen-store' has not declared planning layout version 2, so store-adopt cannot write a project partition.
+    at assertStoreLayoutForWrite (file:///<temp>/pinned/dist/core/store/layout-write-guard.js:170:15)
+    at async adoptProject (file:///<temp>/pinned/dist/core/store/migration-ops.js:290:5)
+    at async runAdopt (file:///<temp>/pinned/dist/commands/store-migration.js:48:24)
+    at async Command.<anonymous> (file:///<temp>/pinned/dist/commands/store.js:1135:9) {
+  diagnostic: {
+    severity: 'error',
+    code: 'legacy_flat_store_requires_migration',
+    message: "Store 'rasen-store' has not declared planning layout version 2, so store-adopt cannot write a project partition.",
+    target: 'store.layout',
+    fix: "Run 'rasen store migrate-layout rasen-store' to migrate this Store, then retry."
+  }
+}
+
+Node.js v24.14.0
+
+[exit code: 1]

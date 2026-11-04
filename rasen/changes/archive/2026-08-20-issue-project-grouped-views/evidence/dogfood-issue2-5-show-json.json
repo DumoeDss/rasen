@@ -1,0 +1,358 @@
+{
+  "issue": {
+    "issueId": "issue-cross-project-execution",
+    "record": {
+      "version": 1,
+      "id": "issue-cross-project-execution",
+      "title": "Issue layer Phase 3: one Issue across member projects",
+      "state": "open",
+      "reason": null,
+      "createdAt": "2026-08-20T14:17:13.730Z"
+    },
+    "diagnostic": null,
+    "divergence": null,
+    "revisionIds": [
+      "0001"
+    ],
+    "latestRevisionId": "0001",
+    "refs": [
+      "refs/heads/main"
+    ],
+    "uncommitted": false
+  },
+  "plan": {
+    "issueId": "issue-cross-project-execution",
+    "revisionId": "0001",
+    "revision": {
+      "version": 1,
+      "issueId": "issue-cross-project-execution",
+      "revisionId": "0001",
+      "supersedes": null,
+      "createdAt": "2026-08-20T14:17:18.940Z",
+      "contentSha256": "efaf70efa3e621e86eeb0845307f0c18ab9943249f510ae39f04bd1414d78ff8",
+      "nodes": [
+        {
+          "nodeId": "document-multi-project-issues",
+          "kind": "change",
+          "projectId": "6ca78b98-777f-45bc-8d9b-b84c34e1a531",
+          "targetLineId": "line-0.2",
+          "changeInstanceId": "ci_4950d004af6e4085c862933dc877396e904522b71d50d07573e4dfe68b8d72c4",
+          "changeAlias": "document-multi-project-issues",
+          "dependsOn": [
+            "issue-project-grouped-views"
+          ]
+        },
+        {
+          "nodeId": "issue-cross-project-gating",
+          "kind": "change",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "changeInstanceId": "ci_3682f3979e67a6b1ac48fd1c4cec6abd65d6ad783dc7bf3c70f0d807827818be",
+          "changeAlias": "issue-cross-project-gating",
+          "dependsOn": [
+            "issue-target-project-binding"
+          ]
+        },
+        {
+          "nodeId": "issue-project-grouped-views",
+          "kind": "intent",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "summary": "Grouped per-project read surface (g-003) — Change not yet committed evidence at first publication",
+          "dependsOn": [
+            "issue-cross-project-gating"
+          ]
+        },
+        {
+          "nodeId": "issue-target-project-binding",
+          "kind": "change",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "changeInstanceId": "ci_114dc062aed6b5c7b7a2aa2860e8ffa29e356ced35baadfa0901052fccc859ec",
+          "changeAlias": "issue-target-project-binding",
+          "dependsOn": []
+        }
+      ]
+    },
+    "diagnostic": null,
+    "readiness": {
+      "nodes": [
+        {
+          "node": {
+            "nodeId": "document-multi-project-issues",
+            "kind": "change",
+            "projectId": "6ca78b98-777f-45bc-8d9b-b84c34e1a531",
+            "targetLineId": "line-0.2",
+            "changeInstanceId": "ci_4950d004af6e4085c862933dc877396e904522b71d50d07573e4dfe68b8d72c4",
+            "changeAlias": "document-multi-project-issues",
+            "dependsOn": [
+              "issue-project-grouped-views"
+            ]
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "document-multi-project-issues",
+                "projectId": "6ca78b98-777f-45bc-8d9b-b84c34e1a531",
+                "targetLineId": "line-0.2",
+                "foundAtRef": "refs/heads/main",
+                "archived": false
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": false
+          },
+          "readiness": "blocked",
+          "blockedBy": [
+            "issue-project-grouped-views"
+          ]
+        },
+        {
+          "node": {
+            "nodeId": "issue-cross-project-gating",
+            "kind": "change",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "changeInstanceId": "ci_3682f3979e67a6b1ac48fd1c4cec6abd65d6ad783dc7bf3c70f0d807827818be",
+            "changeAlias": "issue-cross-project-gating",
+            "dependsOn": [
+              "issue-target-project-binding"
+            ]
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "2026-08-20-issue-cross-project-gating",
+                "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+                "targetLineId": "line-0.2",
+                "foundAtRef": "refs/heads/main",
+                "archived": true
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": true
+          },
+          "readiness": "blocked",
+          "blockedBy": [
+            "issue-target-project-binding"
+          ]
+        },
+        {
+          "node": {
+            "nodeId": "issue-project-grouped-views",
+            "kind": "intent",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "summary": "Grouped per-project read surface (g-003) — Change not yet committed evidence at first publication",
+            "dependsOn": [
+              "issue-cross-project-gating"
+            ]
+          },
+          "resolution": {
+            "status": "not-created",
+            "claimants": [],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": false
+          },
+          "readiness": "blocked",
+          "blockedBy": [
+            "issue-cross-project-gating"
+          ]
+        },
+        {
+          "node": {
+            "nodeId": "issue-target-project-binding",
+            "kind": "change",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "changeInstanceId": "ci_114dc062aed6b5c7b7a2aa2860e8ffa29e356ced35baadfa0901052fccc859ec",
+            "changeAlias": "issue-target-project-binding",
+            "dependsOn": []
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "2026-08-20-issue-target-project-binding",
+                "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+                "targetLineId": "line-0.2",
+                "foundAtRef": "refs/heads/main",
+                "archived": true
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": true
+          },
+          "readiness": "in-progress",
+          "blockedBy": []
+        }
+      ],
+      "readyToResolve": false
+    },
+    "unsearchedRefs": [],
+    "problems": [],
+    "complete": true
+  },
+  "status": {
+    "phase": "active",
+    "health": "healthy",
+    "progress": {
+      "completed": 2,
+      "total": 3
+    },
+    "nodes": [
+      {
+        "nodeId": "document-multi-project-issues",
+        "kind": "change",
+        "alias": "document-multi-project-issues",
+        "observation": "not-started",
+        "diagnostic": null,
+        "runStatePath": null,
+        "locatedBy": null,
+        "attribution": {
+          "pipeline": null,
+          "sessions": [],
+          "evidenceLocator": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store\\rasen\\projects\\6ca78b98-777f-45bc-8d9b-b84c34e1a531\\changes\\document-multi-project-issues\\evidence"
+        },
+        "projectId": "6ca78b98-777f-45bc-8d9b-b84c34e1a531",
+        "targetLineId": "line-0.2",
+        "lifecycle": "required",
+        "reason": null,
+        "blockedBy": [
+          {
+            "nodeId": "issue-project-grouped-views",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "observation": "not-started"
+          }
+        ]
+      },
+      {
+        "nodeId": "issue-cross-project-gating",
+        "kind": "change",
+        "alias": "2026-08-20-issue-cross-project-gating",
+        "observation": "run-terminal",
+        "diagnostic": null,
+        "runStatePath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\.rasen\\changes\\2026-08-20-issue-cross-project-gating\\ephemera\\auto-run.json",
+        "locatedBy": "execution-root",
+        "attribution": {
+          "pipeline": "small-feature",
+          "sessions": [],
+          "evidenceLocator": null
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": "required",
+        "reason": null,
+        "blockedBy": []
+      },
+      {
+        "nodeId": "issue-project-grouped-views",
+        "kind": "intent",
+        "alias": null,
+        "observation": "not-started",
+        "diagnostic": null,
+        "runStatePath": null,
+        "locatedBy": null,
+        "attribution": {
+          "pipeline": null,
+          "sessions": [],
+          "evidenceLocator": null
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": null,
+        "reason": null,
+        "blockedBy": []
+      },
+      {
+        "nodeId": "issue-target-project-binding",
+        "kind": "change",
+        "alias": "2026-08-20-issue-target-project-binding",
+        "observation": "run-terminal",
+        "diagnostic": null,
+        "runStatePath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\.rasen\\changes\\2026-08-20-issue-target-project-binding\\ephemera\\auto-run.json",
+        "locatedBy": "execution-root",
+        "attribution": {
+          "pipeline": "small-feature",
+          "sessions": [],
+          "evidenceLocator": null
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": "required",
+        "reason": null,
+        "blockedBy": []
+      }
+    ],
+    "projects": [
+      {
+        "projectId": "6ca78b98-777f-45bc-8d9b-b84c34e1a531",
+        "alias": "rasen-site",
+        "nodeIds": [
+          "document-multi-project-issues"
+        ],
+        "progress": {
+          "completed": 0,
+          "total": 1
+        }
+      },
+      {
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "alias": "rasen",
+        "nodeIds": [
+          "issue-cross-project-gating",
+          "issue-project-grouped-views",
+          "issue-target-project-binding"
+        ],
+        "progress": {
+          "completed": 2,
+          "total": 2
+        }
+      }
+    ],
+    "problems": [],
+    "runStateVisibility": {
+      "kind": "execution-root",
+      "executionRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer"
+    },
+    "complete": true,
+    "acceptance": {
+      "conditions": {
+        "revision": null,
+        "revisionId": null,
+        "diagnostic": null,
+        "path": null
+      },
+      "gate": {
+        "eligible": false,
+        "refusalCode": "issue_accept_conditions_required",
+        "blockers": [],
+        "message": "the Issue has no readable acceptance conditions — no acceptance conditions revision exists for it.",
+        "exclusions": [],
+        "optionalNodes": []
+      },
+      "record": null
+    }
+  },
+  "complete": true,
+  "unsearchedRefs": [],
+  "problems": []
+}

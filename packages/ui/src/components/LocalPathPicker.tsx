@@ -2,6 +2,7 @@ import type { RefObject } from 'preact';
 import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 
 import type { LocalPathSelectionKind } from '../api/types.js';
+import { useT } from '../i18n/store.js';
 import {
   useLocalPathSelection,
   type LocalPathSelectionController,
@@ -36,12 +37,13 @@ export function LocalPathPicker({
   classPrefix,
   disabled,
   mode = 'dir',
-  currentLabel = 'Target',
+  currentLabel,
   controllerRef,
   onValueChange,
   onDirChange,
   onFileSelect,
 }: LocalPathPickerProps) {
+  const t = useT();
   const controller = useLocalPathSelection(selectionKind(mode));
   const valueChangeCallback = useRef(onValueChange);
   const directoryCallback = useRef(onDirChange);
@@ -94,7 +96,7 @@ export function LocalPathPicker({
             data-testid="choose-directory"
             onClick={() => void controller.chooseNative('directory')}
           >
-            Choose directory
+            {t('local_path_picker.choose_directory')}
           </button>
         )}
         {(mode === 'file' || mode === 'file-or-dir') && (
@@ -104,14 +106,14 @@ export function LocalPathPicker({
             data-testid="choose-file"
             onClick={() => void controller.chooseNative('file')}
           >
-            Choose package file
+            {t('local_path_picker.choose_package_file')}
           </button>
         )}
         {controller.nativeStatus !== 'idle' && (
           <span class={`${classPrefix}__chooser-status`} data-testid="chooser-fallback">
             {controller.nativeStatus === 'cancelled'
-              ? 'Choice cancelled; current path preserved.'
-              : 'Native choice unavailable; use the server browser below.'}
+              ? t('local_path_picker.choice_cancelled')
+              : t('local_path_picker.native_unavailable')}
           </span>
         )}
       </div>
@@ -120,8 +122,8 @@ export function LocalPathPicker({
         <input
           type="text"
           class={`${classPrefix}__path-input`}
-          aria-label="Server-local path"
-          placeholder="Type an absolute server-local path"
+          aria-label={t('local_path_picker.path_aria')}
+          placeholder={t('local_path_picker.path_placeholder')}
           value={controller.value}
           disabled={disabled}
           data-status={controller.status}
@@ -140,7 +142,7 @@ export function LocalPathPicker({
           disabled={disabled || controller.status === 'resolving'}
           onClick={() => void controller.resolveVisible()}
         >
-          Go
+          {t('local_path_picker.go')}
         </button>
         <button
           type="button"
@@ -154,7 +156,7 @@ export function LocalPathPicker({
             if (!controller.listing?.home && parent) void controller.browse(parent);
           }}
         >
-          Up
+          {t('local_path_picker.up')}
         </button>
       </div>
 
@@ -165,9 +167,9 @@ export function LocalPathPicker({
       )}
 
       <p class={`${classPrefix}__current`} data-testid="current-path">
-        {currentLabel}: <code>{controller.value || '—'}</code>
+        {currentLabel ?? t('local_path_picker.target')}: <code>{controller.value || '—'}</code>
         {controller.status === 'resolved' && (
-          <span data-testid="path-resolved"> resolved</span>
+          <span data-testid="path-resolved"> {t('local_path_picker.resolved')}</span>
         )}
       </p>
 
@@ -194,7 +196,7 @@ export function LocalPathPicker({
               <span class={`${classPrefix}__entry-name`}>{entry.name}</span>
               {entry.isGitRepo && (
                 <span class={`${classPrefix}__git-badge`} data-testid="git-badge">
-                  git
+                  {t('local_path_picker.git_badge')}
                 </span>
               )}
             </button>

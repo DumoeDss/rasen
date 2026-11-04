@@ -1,0 +1,7 @@
+$ rasen store issue plan dogfood-refusals --from-file <knowledge-only nodes> --store dogfood-store
+(exit 1)
+
+
+--- stderr ---
+Error: Node 'knowledge-only-target' targets project 'docs-only', which Store 'dogfood-store' records with planning: false (roles: planning=false, knowledge=true); a plan target must be a project that plans in this Store. Planning members: alpha-core, beta-site. (expected: a project with roles.planning: true (planning members: alpha-core, beta-site); actual: docs-only (roles: planning=false, knowledge=true))
+Fix: Target a project that plans in this Store, or widen the project's membership with 'rasen store add-project' (re-adding OR-widens roles per the membership mutation's compose semantics).

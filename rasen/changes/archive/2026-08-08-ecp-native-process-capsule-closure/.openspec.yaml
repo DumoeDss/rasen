@@ -1,0 +1,13 @@
+schema: spec-driven
+created: 2026-08-04
+quality:
+  files:
+    - evidence/cso-report.md
+    - evidence/implementation-report.md
+    - evidence/provenance-audit.md
+    - evidence/review-report.md
+  metrics:
+    evidence/cso-report.md: 0
+    evidence/implementation-report.md: 0
+    evidence/provenance-audit.md: 0
+    evidence/review-report.md: 0

@@ -44,7 +44,10 @@ import {
 const require = createRequire(import.meta.url);
 const IS_WINDOWS = process.platform === 'win32';
 
-const READINESS_POLL_ATTEMPTS = 20;
+// A cold Windows process can spend several seconds in loader/antivirus work
+// before the Management server binds. Keep readiness bounded, but do not kill
+// a healthy daemon solely because a 5-second local-start budget was exceeded.
+const READINESS_POLL_ATTEMPTS = 60;
 const READINESS_POLL_INTERVAL_MS = 250;
 
 export const DAEMON_COORDINATOR_SHUTDOWN_GUARD_MS = 8_000;
@@ -229,16 +232,18 @@ export async function runDaemonRun(
     if (shuttingDown) return;
     shuttingDown = true;
     // The scheduler must drain while its authenticated loopback owner still
-    // exists; `stopServer` then reaps every supervised session.
+    // exists; `stopServer` then reaps both reusable and hosted Session trees.
     try {
       await scheduler.stop();
-    } finally {
-      try {
-        await handle.stopServer();
-      } finally {
-        (dependencies.deleteState ?? deleteDaemonState)();
-        (dependencies.exit ?? process.exit)(0);
-      }
+      await handle.stopServer();
+      (dependencies.deleteState ?? deleteDaemonState)();
+      (dependencies.exit ?? process.exit)(0);
+    } catch (error) {
+      shuttingDown = false;
+      process.exitCode = 1;
+      console.error(
+        `Error: daemon shutdown retained live Session authority (${error instanceof Error ? error.message : String(error)}). Retry stop after inspecting the hosted Session.`
+      );
     }
   };
   const onSignal =

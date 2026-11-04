@@ -1,0 +1,153 @@
+{
+  "capturedAt": "2026-08-23T17:18:58.297Z",
+  "store": {
+    "id": "issue-registry",
+    "uid": "f76edc31-229a-42bc-a5c7-848021eeb2da"
+  },
+  "launchProjectRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer",
+  "issueIds": [
+    "issue-autodecompose-uplift",
+    "issue-cross-project-execution",
+    "issue-cross-project-replanning",
+    "issue-level-review-delivery",
+    "issue-multi-change-execution"
+  ],
+  "pairs": [
+    {
+      "label": "issue-projections",
+      "apiPath": "/api/v1/stores/issue-projections?space=store:f76edc31-229a-42bc-a5c7-848021eeb2da",
+      "cliCommand": "rasen store issue list --store issue-registry --json",
+      "httpStatus": 200,
+      "bytesIdentical": true,
+      "apiBytes": 76590,
+      "cliBytes": 76590
+    },
+    {
+      "label": "issue-projection__issue-autodecompose-uplift",
+      "apiPath": "/api/v1/stores/issue-projection?space=store:f76edc31-229a-42bc-a5c7-848021eeb2da&issueId=issue-autodecompose-uplift",
+      "cliCommand": "rasen store issue show issue-autodecompose-uplift --store issue-registry --json",
+      "httpStatus": 200,
+      "bytesIdentical": true,
+      "apiBytes": 32493,
+      "cliBytes": 32493
+    },
+    {
+      "label": "issue-projection__issue-cross-project-execution",
+      "apiPath": "/api/v1/stores/issue-projection?space=store:f76edc31-229a-42bc-a5c7-848021eeb2da&issueId=issue-cross-project-execution",
+      "cliCommand": "rasen store issue show issue-cross-project-execution --store issue-registry --json",
+      "httpStatus": 200,
+      "bytesIdentical": true,
+      "apiBytes": 55678,
+      "cliBytes": 55678
+    },
+    {
+      "label": "issue-projection__issue-cross-project-replanning",
+      "apiPath": "/api/v1/stores/issue-projection?space=store:f76edc31-229a-42bc-a5c7-848021eeb2da&issueId=issue-cross-project-replanning",
+      "cliCommand": "rasen store issue show issue-cross-project-replanning --store issue-registry --json",
+      "httpStatus": 200,
+      "bytesIdentical": true,
+      "apiBytes": 30455,
+      "cliBytes": 30455
+    },
+    {
+      "label": "issue-projection__issue-level-review-delivery",
+      "apiPath": "/api/v1/stores/issue-projection?space=store:f76edc31-229a-42bc-a5c7-848021eeb2da&issueId=issue-level-review-delivery",
+      "cliCommand": "rasen store issue show issue-level-review-delivery --store issue-registry --json",
+      "httpStatus": 200,
+      "bytesIdentical": true,
+      "apiBytes": 39722,
+      "cliBytes": 39722
+    },
+    {
+      "label": "issue-projection__issue-multi-change-execution",
+      "apiPath": "/api/v1/stores/issue-projection?space=store:f76edc31-229a-42bc-a5c7-848021eeb2da&issueId=issue-multi-change-execution",
+      "cliCommand": "rasen store issue show issue-multi-change-execution --store issue-registry --json",
+      "httpStatus": 200,
+      "bytesIdentical": true,
+      "apiBytes": 26524,
+      "cliBytes": 26524
+    },
+    {
+      "label": "issue-attention",
+      "apiPath": "/api/v1/stores/issue-attention?space=store:f76edc31-229a-42bc-a5c7-848021eeb2da",
+      "cliCommand": "rasen store attention --store issue-registry --json",
+      "httpStatus": 200,
+      "bytesIdentical": true,
+      "apiBytes": 2014,
+      "cliBytes": 2014
+    },
+    {
+      "label": "issue-attention__issue-autodecompose-uplift",
+      "apiPath": "/api/v1/stores/issue-attention?space=store:f76edc31-229a-42bc-a5c7-848021eeb2da&issueId=issue-autodecompose-uplift",
+      "cliCommand": "rasen store attention --store issue-registry --issue issue-autodecompose-uplift --json",
+      "httpStatus": 200,
+      "bytesIdentical": true,
+      "apiBytes": 655,
+      "cliBytes": 655
+    },
+    {
+      "label": "issue-attention__issue-cross-project-execution",
+      "apiPath": "/api/v1/stores/issue-attention?space=store:f76edc31-229a-42bc-a5c7-848021eeb2da&issueId=issue-cross-project-execution",
+      "cliCommand": "rasen store attention --store issue-registry --issue issue-cross-project-execution --json",
+      "httpStatus": 200,
+      "bytesIdentical": true,
+      "apiBytes": 661,
+      "cliBytes": 661
+    },
+    {
+      "label": "issue-attention__issue-cross-project-replanning",
+      "apiPath": "/api/v1/stores/issue-attention?space=store:f76edc31-229a-42bc-a5c7-848021eeb2da&issueId=issue-cross-project-replanning",
+      "cliCommand": "rasen store attention --store issue-registry --issue issue-cross-project-replanning --json",
+      "httpStatus": 200,
+      "bytesIdentical": true,
+      "apiBytes": 663,
+      "cliBytes": 663
+    },
+    {
+      "label": "issue-attention__issue-level-review-delivery",
+      "apiPath": "/api/v1/stores/issue-attention?space=store:f76edc31-229a-42bc-a5c7-848021eeb2da&issueId=issue-level-review-delivery",
+      "cliCommand": "rasen store attention --store issue-registry --issue issue-level-review-delivery --json",
+      "httpStatus": 200,
+      "bytesIdentical": true,
+      "apiBytes": 657,
+      "cliBytes": 657
+    },
+    {
+      "label": "issue-attention__issue-multi-change-execution",
+      "apiPath": "/api/v1/stores/issue-attention?space=store:f76edc31-229a-42bc-a5c7-848021eeb2da&issueId=issue-multi-change-execution",
+      "cliCommand": "rasen store attention --store issue-registry --issue issue-multi-change-execution --json",
+      "httpStatus": 200,
+      "bytesIdentical": true,
+      "apiBytes": 659,
+      "cliBytes": 659
+    }
+  ],
+  "allIdentical": true,
+  "refusal": {
+    "status": 404,
+    "body": {
+      "error": {
+        "code": "issue_attention_unknown_issue",
+        "message": "Issue 'no-such-issue-on-the-real-store' is not known to this Store; an unknown id is refused rather than read as an empty scan."
+      }
+    }
+  },
+  "board": {
+    "cardCount": 5,
+    "laneCounts": {
+      "done": 5
+    },
+    "attentionItemCount": 0,
+    "attentionScannedCount": 5,
+    "runStateVisibility": [
+      "execution-root",
+      "execution-root",
+      "execution-root",
+      "execution-root",
+      "execution-root"
+    ],
+    "complete": true,
+    "problems": [],
+    "unsearchedRefs": []
+  }
+}

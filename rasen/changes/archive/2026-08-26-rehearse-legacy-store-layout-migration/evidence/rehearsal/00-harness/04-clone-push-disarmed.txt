@@ -1,0 +1,8 @@
+### SAFETY hardening: the clone's origin points AT the real store.
+# Fetch/remote-tracking refs are kept (they are real survey material for the
+# multi-ref check), but the push URL is disabled so no accidental push can
+# ever write a ref into the real store.
+$ git -C <clone> remote set-url --push origin DISABLED-no-push-to-real-store
+$ git -C <clone> remote -v
+origin	<real> (fetch)
+origin	DISABLED-no-push-to-real-store (push)

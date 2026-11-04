@@ -1,0 +1,58 @@
+{
+  "narrowed": false,
+  "issueId": null,
+  "scannedCount": 4,
+  "scanned": [
+    {
+      "issueId": "issue-autodecompose-uplift",
+      "phase": "done",
+      "health": "healthy",
+      "itemCount": 0,
+      "runStateVisibility": {
+        "kind": "execution-root",
+        "executionRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer"
+      }
+    },
+    {
+      "issueId": "issue-cross-project-execution",
+      "phase": "done",
+      "health": "healthy",
+      "itemCount": 0,
+      "runStateVisibility": {
+        "kind": "execution-root",
+        "executionRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer"
+      }
+    },
+    {
+      "issueId": "issue-cross-project-replanning",
+      "phase": "active",
+      "health": "healthy",
+      "itemCount": 0,
+      "runStateVisibility": {
+        "kind": "execution-root",
+        "executionRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer"
+      }
+    },
+    {
+      "issueId": "issue-multi-change-execution",
+      "phase": "done",
+      "health": "healthy",
+      "itemCount": 0,
+      "runStateVisibility": {
+        "kind": "execution-root",
+        "executionRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer"
+      }
+    }
+  ],
+  "items": [],
+  "counts": {
+    "failure": 0,
+    "blocked-behind": 0,
+    "waiting-human": 0,
+    "acceptance-awaiting": 0,
+    "problem": 0
+  },
+  "total": 0,
+  "unsearchedRefs": [],
+  "complete": true
+}

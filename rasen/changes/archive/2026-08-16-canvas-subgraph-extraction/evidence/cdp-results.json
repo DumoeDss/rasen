@@ -1,0 +1,105 @@
+{
+  "allOk": true,
+  "results": [
+    {
+      "name": "authoring setup produced four nodes",
+      "ok": true,
+      "detail": "nodes=4"
+    },
+    {
+      "name": "three handle-to-handle drags produced the chained edges",
+      "ok": true,
+      "detail": "[\"atomic-stage:done->atomic-stage-2:input\",\"atomic-stage-2:done->atomic-stage-3:input\",\"atomic-stage-3:done->finish:input\"]"
+    },
+    {
+      "name": "box drag starts on the pane, not on a node",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "box rectangle contains the pair and intersects no other node",
+      "ok": true,
+      "detail": "from=(847,420) to=(1263,568)"
+    },
+    {
+      "name": "the middle pair is the selection (box-select, Control+click-corrected when RF dropped a node)",
+      "ok": true,
+      "detail": "attempt1=[\"atomic-stage-3\"] attempt2=[\"atomic-stage-3\"] attempt3=[\"atomic-stage-3\"] corrected=[\"atomic-stage-2\",\"atomic-stage-3\"]"
+    },
+    {
+      "name": "selection panel offers \"Package into reusable block\"",
+      "ok": true,
+      "detail": "Package into reusable block"
+    },
+    {
+      "name": "review defaults the declaration id to \"block\"",
+      "ok": true,
+      "detail": "block"
+    },
+    {
+      "name": "review summary states stages, internal connections, and the derived cut",
+      "ok": true,
+      "detail": "2 stages · 1 internal connection · cut: 1 input, 1 outcome"
+    },
+    {
+      "name": "review derived the outcome named after the severed source stage",
+      "ok": true,
+      "detail": "atomic-stage-3"
+    },
+    {
+      "name": "success toast names the declaration",
+      "ok": true,
+      "detail": "Packaged 2 stages into 'block'."
+    },
+    {
+      "name": "review dialog closed after confirm",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "root graph is upstream, finish, and one ref",
+      "ok": true,
+      "detail": "[\"atomic-stage\",\"finish\",\"composite-ref\"]"
+    },
+    {
+      "name": "the ref IS the selection after confirm",
+      "ok": true,
+      "detail": "[\"composite-ref\"]"
+    },
+    {
+      "name": "the ref node panel is open",
+      "ok": true,
+      "detail": "composite-ref"
+    },
+    {
+      "name": "ref renders the derived input port (named after the severed target stage)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "ref renders the EDITED outcome port as its source handle",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "root rewired upstream->ref and ref->finish",
+      "ok": true,
+      "detail": "[\"atomic-stage:done->composite-ref:atomic-stage-2\",\"composite-ref:complete->finish:input\"]"
+    },
+    {
+      "name": "declarations panel lists the extracted block as a custom row",
+      "ok": true,
+      "detail": "custom"
+    },
+    {
+      "name": "insert action added a second ref to the same declaration",
+      "ok": true,
+      "detail": "[\"atomic-stage\",\"finish\",\"composite-ref\",\"composite-ref-2\"]"
+    },
+    {
+      "name": "tab is alive after the full pass (no listener freeze)",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

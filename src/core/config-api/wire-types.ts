@@ -21,7 +21,10 @@ export interface ProjectRef {
  * for a store context. `null` in a response when no store layer is active.
  */
 export interface StoreLayerRef {
+  /** Display alias retained for compatibility and labels. */
   id: string;
+  /** Permanent identity; canonical selector when present. */
+  uid?: string;
   root: string;
 }
 
@@ -39,6 +42,8 @@ export interface WireConstraints {
   enumValuesByScope?: Partial<Record<ConfigScope, readonly string[]>>;
   /** For `type: 'number'`, or the fraction branch of `type: 'threshold'`. */
   range?: { gt: number; lte: number };
+  /** Inclusive integer bounds used by bounded duration/count settings. */
+  integerRange?: { min: number; max: number };
   /**
    * Present only for `type: 'threshold'` (dual-form): describes the
    * alternate absolute form, a strict object `{ remainingTokens: N }` where

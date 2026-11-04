@@ -1,0 +1,13 @@
+nodes:
+  - nodeId: render-worker
+    kind: change
+    projectId: scene-bridge
+    targetLineId: line-0.1
+    sourceChange: scene-render-worker
+    dependsOn: []
+  - nodeId: integration-guide
+    kind: intent
+    projectId: scene-bridge
+    targetLineId: line-0.1
+    summary: Publish the reference-video integration guide
+    dependsOn: [render-worker]

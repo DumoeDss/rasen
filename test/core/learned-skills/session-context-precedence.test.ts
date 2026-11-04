@@ -9,6 +9,7 @@ import { registerStore } from '../../../src/core/store/registry.js';
 import { upgradeStoreIdentity } from '../../../src/core/store/upgrade-identity.js';
 import {
   RASEN_SESSION_CONTEXT_ENV,
+  RUNTIME_CONTEXT_VERSION,
   writeSessionRuntimeContext,
   type RuntimeContext,
 } from '../../../src/core/session-runtime-context.js';
@@ -82,7 +83,15 @@ describe('learned-skill context resolution precedence', () => {
 
   function contextPinning(storeId: string, storeRoot: string, projectRoot: string, projectId: string): RuntimeContext {
     return {
-      version: 1,
+      // Tracks the current context-file version rather than pinning one.
+      // `store-planning-worktree-bindings` raised it to 2, and a file written
+      // at an earlier version is now reported as an unsupported version rather
+      // than read partially — which is the capability's own requirement, so a
+      // literal here would make this fixture stale at every future raise. The
+      // frozen worktree pair those versions carry is optional and irrelevant to
+      // this suite's subject, which is PRECEDENCE: the environment-pointed
+      // session context beats the working directory.
+      version: RUNTIME_CONTEXT_VERSION,
       sessionId: 'session-precedence',
       planning: { type: 'store', id: storeId, root: storeRoot },
       execution: { kind: 'project', projectId, root: projectRoot },

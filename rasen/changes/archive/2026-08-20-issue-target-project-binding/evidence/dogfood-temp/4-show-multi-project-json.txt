@@ -1,0 +1,211 @@
+$ rasen store issue show dogfood-multi --json --store dogfood-store
+(exit 0)
+
+{
+  "issue": {
+    "issueId": "dogfood-multi",
+    "record": {
+      "version": 1,
+      "id": "dogfood-multi",
+      "title": "Dogfood dogfood-multi",
+      "state": "open",
+      "reason": null,
+      "createdAt": "2026-08-20T10:57:13.968Z"
+    },
+    "diagnostic": null,
+    "divergence": null,
+    "revisionIds": [
+      "0001"
+    ],
+    "latestRevisionId": "0001",
+    "refs": [
+      "refs/heads/main"
+    ],
+    "uncommitted": false
+  },
+  "plan": {
+    "issueId": "dogfood-multi",
+    "revisionId": "0001",
+    "revision": {
+      "version": 1,
+      "issueId": "dogfood-multi",
+      "revisionId": "0001",
+      "supersedes": null,
+      "createdAt": "2026-08-20T10:57:21.970Z",
+      "contentSha256": "3f1e815387588b9390b243d764b6edcceab1e67aaac62a3414159a1c03d4b877",
+      "nodes": [
+        {
+          "nodeId": "core-work",
+          "kind": "change",
+          "projectId": "alpha-core",
+          "targetLineId": "main",
+          "changeInstanceId": "ci_c96f8cc0c764edd1fe5ee4f70c1a53b407417c8eff4a024939880d63fa4c86f5",
+          "changeAlias": "alpha-child",
+          "dependsOn": []
+        },
+        {
+          "nodeId": "site-work",
+          "kind": "change",
+          "projectId": "beta-site",
+          "targetLineId": "main",
+          "changeInstanceId": "ci_950adf9fcfb29d6cce90b7bfe32e277a62d0f4e7e880650260d70e22dc28cc5d",
+          "changeAlias": "beta-child",
+          "dependsOn": [
+            "core-work"
+          ]
+        }
+      ]
+    },
+    "diagnostic": null,
+    "readiness": {
+      "nodes": [
+        {
+          "node": {
+            "nodeId": "core-work",
+            "kind": "change",
+            "projectId": "alpha-core",
+            "targetLineId": "main",
+            "changeInstanceId": "ci_c96f8cc0c764edd1fe5ee4f70c1a53b407417c8eff4a024939880d63fa4c86f5",
+            "changeAlias": "alpha-child",
+            "dependsOn": []
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "alpha-child",
+                "projectId": "alpha-core",
+                "targetLineId": "main",
+                "foundAtRef": "refs/heads/main",
+                "archived": false
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": false
+          },
+          "readiness": "in-progress",
+          "blockedBy": []
+        },
+        {
+          "node": {
+            "nodeId": "site-work",
+            "kind": "change",
+            "projectId": "beta-site",
+            "targetLineId": "main",
+            "changeInstanceId": "ci_950adf9fcfb29d6cce90b7bfe32e277a62d0f4e7e880650260d70e22dc28cc5d",
+            "changeAlias": "beta-child",
+            "dependsOn": [
+              "core-work"
+            ]
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "beta-child",
+                "projectId": "beta-site",
+                "targetLineId": "main",
+                "foundAtRef": "refs/heads/main",
+                "archived": false
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": false
+          },
+          "readiness": "blocked",
+          "blockedBy": [
+            "core-work"
+          ]
+        }
+      ],
+      "readyToResolve": false
+    },
+    "unsearchedRefs": [],
+    "problems": [],
+    "complete": true
+  },
+  "status": {
+    "phase": "ready",
+    "health": "healthy",
+    "progress": {
+      "completed": 0,
+      "total": 2
+    },
+    "nodes": [
+      {
+        "nodeId": "core-work",
+        "kind": "change",
+        "alias": "alpha-child",
+        "observation": "not-started",
+        "blockedBy": [],
+        "diagnostic": null,
+        "runStatePath": null,
+        "locatedBy": null,
+        "attribution": {
+          "pipeline": null,
+          "sessions": [],
+          "evidenceLocator": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-dogfood-target-vsWJKt\\store\\rasen\\projects\\alpha-core\\changes\\alpha-child\\evidence"
+        },
+        "projectId": "alpha-core",
+        "targetLineId": "main",
+        "lifecycle": "required",
+        "reason": null
+      },
+      {
+        "nodeId": "site-work",
+        "kind": "change",
+        "alias": "beta-child",
+        "observation": "not-started",
+        "blockedBy": [
+          "core-work"
+        ],
+        "diagnostic": null,
+        "runStatePath": null,
+        "locatedBy": null,
+        "attribution": {
+          "pipeline": null,
+          "sessions": [],
+          "evidenceLocator": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-dogfood-target-vsWJKt\\store\\rasen\\projects\\beta-site\\changes\\beta-child\\evidence"
+        },
+        "projectId": "beta-site",
+        "targetLineId": "main",
+        "lifecycle": "required",
+        "reason": null
+      }
+    ],
+    "problems": [],
+    "runStateVisibility": {
+      "kind": "execution-root",
+      "executionRoot": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\rasen-dogfood-target-vsWJKt\\alpha-core"
+    },
+    "complete": true,
+    "acceptance": {
+      "conditions": {
+        "revision": null,
+        "revisionId": null,
+        "diagnostic": null,
+        "path": null
+      },
+      "gate": {
+        "eligible": false,
+        "refusalCode": "issue_accept_conditions_required",
+        "blockers": [],
+        "message": "the Issue has no readable acceptance conditions — no acceptance conditions revision exists for it.",
+        "exclusions": [],
+        "optionalNodes": []
+      },
+      "record": null
+    }
+  },
+  "complete": true,
+  "unsearchedRefs": [],
+  "problems": []
+}

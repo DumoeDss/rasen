@@ -4,7 +4,7 @@ import * as yaml from 'yaml';
 import { ChangeMetadataSchema, type ChangeMetadata } from '../core/change-metadata/index.js';
 import { listSchemas } from '../core/artifact-graph/resolver.js';
 import { DEFAULT_SCHEMA } from '../core/config.js';
-import { readProjectConfig } from '../core/project-config.js';
+import { readProjectConfig, type ProjectConfig } from '../core/project-config.js';
 
 export const METADATA_FILENAME = '.openspec.yaml';
 
@@ -32,9 +32,10 @@ export class ChangeMetadataError extends Error {
  */
 export function validateSchemaName(
   schemaName: string,
-  projectRoot?: string
+  projectRoot?: string,
+  projectSchemasDir?: string
 ): string {
-  const availableSchemas = listSchemas(projectRoot);
+  const availableSchemas = listSchemas(projectRoot, projectSchemasDir);
   if (!availableSchemas.includes(schemaName)) {
     throw new Error(
       `Unknown schema '${schemaName}'. Available: ${availableSchemas.join(', ')}`
@@ -54,12 +55,13 @@ export function validateSchemaName(
 export function writeChangeMetadata(
   changeDir: string,
   metadata: ChangeMetadata,
-  projectRoot?: string
+  projectRoot?: string,
+  projectSchemasDir?: string
 ): void {
   const metaPath = path.join(changeDir, METADATA_FILENAME);
 
   // Validate schema exists
-  validateSchemaName(metadata.schema, projectRoot);
+  validateSchemaName(metadata.schema, projectRoot, projectSchemasDir);
 
   // Validate with Zod
   const parseResult = ChangeMetadataSchema.safeParse(metadata);
@@ -94,7 +96,8 @@ export function writeChangeMetadata(
  */
 export function readChangeMetadata(
   changeDir: string,
-  projectRoot?: string
+  projectRoot?: string,
+  projectSchemasDir?: string
 ): ChangeMetadata | null {
   const metaPath = path.join(changeDir, METADATA_FILENAME);
 
@@ -136,7 +139,7 @@ export function readChangeMetadata(
   }
 
   // Validate that the schema exists
-  const availableSchemas = listSchemas(projectRoot);
+  const availableSchemas = listSchemas(projectRoot, projectSchemasDir);
   if (!availableSchemas.includes(parseResult.data.schema)) {
     throw new ChangeMetadataError(
       `Unknown schema '${parseResult.data.schema}'. Available: ${availableSchemas.join(', ')}`,
@@ -149,6 +152,8 @@ export function readChangeMetadata(
 
 export interface ResolveSchemaForChangeOptions {
   metadata?: ChangeMetadata | null;
+  projectSchemasDir?: string;
+  projectConfig?: ProjectConfig | null;
 }
 
 /**
@@ -179,14 +184,18 @@ export function resolveSchemaForChange(
   }
 
   const metadata =
-    options.metadata !== undefined ? options.metadata : readChangeMetadata(changeDir, projectRoot);
+    options.metadata !== undefined
+      ? options.metadata
+      : readChangeMetadata(changeDir, projectRoot, options.projectSchemasDir);
   if (metadata?.schema) {
     return metadata.schema;
   }
 
   // 3. Try reading from project config when metadata is absent.
   try {
-    const config = readProjectConfig(projectRoot);
+    const config = options.projectConfig !== undefined
+      ? options.projectConfig
+      : readProjectConfig(projectRoot);
     if (config?.schema) {
       return config.schema;
     }

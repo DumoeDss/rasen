@@ -1,0 +1,30 @@
+$ (cd <temp>/copy-clone) rasen store register <temp>/copy-clone --json
+{
+  "store": {
+    "id": "rasen-store",
+    "root": "<temp>\\copy-clone",
+    "metadata_path": "<temp>\\copy-clone\\.rasen-store\\store.yaml"
+  },
+  "registry": {
+    "path": "<temp>\\rasen-home-clone\\stores\\registry.yaml",
+    "registered": true,
+    "already_registered": false
+  },
+  "git": {
+    "is_repository": true,
+    "initialized": false,
+    "committed": false
+  },
+  "created_files": [],
+  "status": [
+    {
+      "severity": "info",
+      "code": "store_registry_rekey_blocked",
+      "message": "The machine store registry still identifies stores by display name: rasen-store has no permanent identity yet.",
+      "target": "store.registry",
+      "fix": "rasen store upgrade-identity rasen-store --apply"
+    }
+  ]
+}
+
+[exit code: 0]

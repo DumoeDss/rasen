@@ -24,6 +24,16 @@ console.log('Compiling TypeScript...');
 try {
   runTsc(['--version']);
   runTsc();
+  console.log('Building source-owned ProcessCapsule helper...');
+  execFileSync(process.execPath, ['scripts/build-process-capsule.mjs'], {
+    stdio: 'inherit',
+  });
+  if (process.platform === 'linux') {
+    console.log('Building source-owned Linux process-authority helper...');
+    execFileSync(process.execPath, ['scripts/build-linux-process-authority.mjs'], {
+      stdio: 'inherit',
+    });
+  }
   console.log('\n✅ Build completed successfully!');
 } catch (error) {
   console.error('\n❌ Build failed!');

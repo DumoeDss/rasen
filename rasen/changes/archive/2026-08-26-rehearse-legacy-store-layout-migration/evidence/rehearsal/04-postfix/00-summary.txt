@@ -1,0 +1,26 @@
+### Post-fix stage 1 (tasks.md 5.1) — the real store's ACTUAL shape, end to end
+#
+# Same disposable copy of the same real store, same redirected registry, same
+# Windows host. The only difference from 01-pristine/ is the CLI: built from
+# the pinned committed tree WITH this change's four src files copied over.
+#
+# Before -> after, step by step:
+#
+#   01  store adopt              legacy_flat_store_requires_migration
+#                                fix: 'Run rasen store migrate-layout rasen-store'
+#   02  migrate-layout           'Ready to apply. Re-run with --apply.'  exit 0
+#                                (was: 'Not applicable: 0 item(s) unresolved or
+#                                 blocked', exit 1 -- 01-pristine/01-preview-human.txt)
+#   04  migrate-layout --apply   published: receipt + .rasen-store/store.yaml
+#                                (was: reprinted the preview, exit 1, no diagnostic
+#                                 -- 01-pristine/05-apply-attempt.txt)
+#   05  --status                 publication recorded: yes
+#   06  --retire-flat            removed rasen/changes, rasen/specs
+#                                (was: migration_run_missing -- 01-pristine/06)
+#   07  store adopt              store_v2_target_line_required
+#                                the legacy gate is GONE; this is the v2 contract
+#   08  store target-line add    catalog written
+#   09  store adopt              accepted (dry run reports the plan)
+#
+# The repair loop is open: every refusal in the chain now names a command
+# that works, and the chain terminates in an accepted partition write.

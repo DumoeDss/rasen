@@ -1,0 +1,12 @@
+$ (cd <temp>/copy-clone-content) rasen store upgrade-identity rasen-store --apply
+Store identity applied: rasen-store
+Permanent identity: ff964a0f-cb5e-42d5-93ad-f1946182406c
+Location: ~\AppData\Local\Temp\rasen-g2\copy-clone-content
+
+  - <temp>\copy-clone-content\.rasen-store\store.yaml: Record permanent identity ff964a0f-cb5e-42d5-93ad-f1946182406c in the store's own metadata.
+  - the machine store registry: Re-key the machine store registry by permanent identity.
+
+Commit these files yourself — this command never commits or pushes:
+  - .rasen-store\store.yaml
+
+[exit code: 0]

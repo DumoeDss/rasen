@@ -1,0 +1,56 @@
+{
+  "change": "issue-read-surface",
+  "archivedAt": "2026-08-24T10:10:21.760Z",
+  "codeCommit": "0d7258735a6abea5cf566179b0224973e5bdf19c",
+  "planningBranch": "feat/issue-phase7",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/dogfood-board-render.html",
+      "sha256": "9be74b80fedefde19ec4439f2754b136e9ef8ffa41fdf262bc6ccf7c449a8097"
+    },
+    {
+      "path": "evidence/dogfood-board-render.json",
+      "sha256": "63fbbb7116daf883ac5f1167a4efb57e1477cb35991712c8beafae5af601cb30"
+    },
+    {
+      "path": "evidence/dogfood-cli-http-parity.json",
+      "sha256": "b248b686f2f4acb82836a24281c6792f45716b9c9c722de8c8313bdd64486df1"
+    },
+    {
+      "path": "evidence/dogfood-readonly-proof.txt",
+      "sha256": "13ddc720a1d0f06b5ae5f9bf90d2fda7c553a185c44fb48dfe1ec776a919ec16"
+    },
+    {
+      "path": "evidence/dogfood-real-issue-projection.json",
+      "sha256": "0a81c37d240d59bc4a70324e798f2b04cd1ade7284b4a6e67b1c05590d54e192"
+    },
+    {
+      "path": "evidence/review-cycle-report.md",
+      "sha256": "560a472d9334202fa06a6c2a5aa6eded67b3103dbbcf6d70c92912463c924d17"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "80e0f4dee9fc73ec1416f33c7edea626d07e24de989a83c58e13c294274661fc"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "9f7c96c88fa66f6fec2fb858ef49397a30ecfb20689079a659b8f0b146d826c0"
+    },
+    {
+      "path": "evidence/verification-report.md",
+      "sha256": "292b8e208fc5aa8ecf11fac4477edddb840ebacc5fb855b3cda12162ebf813ac"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [
+    {
+      "file": "handoff/impl-1.md",
+      "outcome": "absorbed"
+    }
+  ],
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": []
+}

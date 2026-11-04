@@ -1,0 +1,28 @@
+[package]
+name = "rasen-windows-process-authority"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT"
+publish = false
+
+[lib]
+name = "rasen_windows_process_authority"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rasen-windows-process-authority"
+path = "src/main.rs"
+
+[[bin]]
+name = "rasen-windows-process-authority-guardian"
+path = "src/bin/rasen-windows-process-authority-guardian.rs"
+
+[dependencies]
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "z"
+panic = "abort"
+strip = "symbols"

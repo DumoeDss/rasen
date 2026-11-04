@@ -104,7 +104,20 @@ describe('localized Commander program factory', () => {
 
     expect(init?.helpInformation()).toContain('claude, codex');
     expect(templates?.helpInformation()).toContain('custom-schema');
-    expect(setup?.helpInformation()).toContain('~/custom-workspace/<id>');
+    expect(setup?.helpInformation()).toContain('~/custom-workspace/<name>');
+    expect(setup?.helpInformation()).toContain('[name]');
+  });
+
+  it('describes Store creation inputs as names rather than machine identities', () => {
+    const english = createProgram({ locale: 'en', facts });
+    const store = english.commands.find((command) => command.name() === 'store');
+    const setup = store?.commands.find((command) => command.name() === 'setup');
+    const register = store?.commands.find((command) => command.name() === 'register');
+
+    expect(setup?.helpInformation()).toContain('[name]');
+    expect(setup?.helpInformation()).not.toContain('[id]');
+    expect(register?.helpInformation()).toContain('Store name override');
+    expect(register?.helpInformation()).not.toContain('Store id;');
   });
 
   it('reuses the program presentation snapshot for completion actions', async () => {

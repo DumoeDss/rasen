@@ -53,24 +53,19 @@ This creates a reconciler-engine Run. The reconciler owns the loop mechanics: ro
 
 **Engine policy applies here too.** \`rasen pipeline start\` resolves the engine from \`--engine\` over \`runs.engine\` (project > store > global) over the default \`auto\`. Goal loops REQUIRE the reconciler, so a project that has turned the reconciler off (\`runs.engine: legacy\`) gets a typed \`engine_disabled_by_config\` refusal naming the deciding layer — report that as the cause rather than retrying, since there is no legacy goal-loop path to fall back to. Pass \`--engine reconciler\` only when the user explicitly wants to override a configured policy for this one launch.
 
-## 3. Drive the Run (resume frontier)
+## 3. Drive the Run (preview → render → admit)
 
 At each quiescent boundary:
 
-\`\`\`bash
-rasen pipeline resume-run <change> goal-loop-<variant> --json   # grants the ready frontier
-rasen pipeline status <change> goal-loop-<variant> --json        # read the goal section
-\`\`\`
+1. Consume the prompt-free \`candidates[]\` returned by \`start\` or \`complete\`, or reproduce it with \`rasen pipeline resume-run <change> goal-loop-<variant> --json\`. An unchanged canonical head reproduces the identical candidate; resume does not admit an agent Action.
+2. For every candidate, render the existing complete role-isolated prompt from these trusted source instructions plus the frozen candidate descriptor and canonical goal state. Write private ephemera as \`{ "format": "agent-turn-input-manifest/1", "candidates": [{ "candidateId": "<exact id>", "prompt": "<complete prompt>" }] }\`. Include every preview candidate exactly once; never persist or print prompt bodies.
+3. Run \`rasen pipeline admit <change> --run <runId> --turn-input-file <private-manifest-path> --json\`. Only \`admit\` creates and grants the bound Actions. A stale, wrong, missing, duplicate, or extra candidate fails closed; preview again rather than editing an old id.
+4. Dispatch the returned \`actions[]\`, transporting prompt bytes identical to those authenticated at admission. Use an implementer for work and a different reviewer for judge; the reconciler rejects same-actor judging.
+5. Commit each phase with \`rasen pipeline complete <change> --run <runId> --from <receipt.json> --json\`. Completion returns the next preview and never auto-admits an agent successor.
 
-The status output includes a \`goal\` section with: \`variant\`, \`round\`, \`phase\` (work|judge), \`outcome\` (satisfied|exhausted|undefined), \`lastScore\`, \`lastGaps\`, \`stallStreak\`, \`budget\` (used/max), and \`waitReason\`.
+\`rasen pipeline status <change> goal-loop-<variant> --json\` includes a \`goal\` section with: \`variant\`, \`round\`, \`phase\` (work|judge), \`outcome\` (satisfied|exhausted|undefined), \`lastScore\`, \`lastGaps\`, \`stallStreak\`, \`budget\` (used/max), and \`waitReason\`.
 
 Read the goal section to report progress instead of owning loop state. The canonical Record + projector is the authoritative spine.
-
-## 4. Complete actions
-
-For each granted action, dispatch the appropriate role-isolated subagent (implementer for work phase, reviewer for judge phase). The worker and judge MUST be different agents (the reconciler enforces actor separation at commit time — a same-actor judge will be rejected).
-
-Use \`rasen pipeline complete <change>\` with the action receipt to commit each phase result.
 
 ## Termination
 

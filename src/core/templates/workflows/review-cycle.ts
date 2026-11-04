@@ -21,6 +21,37 @@ ${STORE_SELECTION_GUIDANCE}
 
 This workflow is a **thin launcher**. The ReviewCycle loop (round counting, phase sequencing, max-rounds enforcement, actor separation, escalation) is owned by the canonical ChangeRun reconciler. This skill does NOT duplicate that state.
 
+## Bounded-loop strategy capability mode
+
+Before following the launcher flow below, inspect the admitted Action input. When it contains a \`boundedLoopStrategy\` object whose \`contract\` is \`bounded-loop/strategy-invocation/1\`, this invocation is a bounded recovery-strategy selection, not a request to launch a ReviewCycle.
+
+The versioned invocation is exactly:
+
+\`\`\`json
+{
+  "contract": "bounded-loop/strategy-invocation/1",
+  "loopPath": "<canonical loop path>",
+  "attempt": 1,
+  "trigger": "iteration-limit | action-limit | budget-limit | stalled | blocked | strategy-exhausted"
+}
+\`\`\`
+
+Choose one materially different recovery tactic for the reported trigger. Use the canonical Run view and current review evidence to explain why it differs from exhausted work and which files, findings, tests, or review surfaces the next ordinary loop pass should change. Do NOT perform the fix in this strategy Action. Do NOT launch or resume another Run; that would recursively create a second mechanical owner.
+
+For this Action, return only the strategy result, using this exact closed shape:
+
+\`\`\`json
+{
+  "contract": "bounded-loop/strategy-result/1",
+  "strategyKey": "<stable tactic key>",
+  "rationale": "<why this is materially different and addresses the trigger>",
+  "intendedChangeSurface": ["<specific file, finding, test, or subsystem>"],
+  "evidence": []
+}
+\`\`\`
+
+\`strategyKey\`, \`rationale\`, and every \`intendedChangeSurface\` entry are non-empty; \`evidence\` is an array. Stop after returning that object. The reconciler validates \`bounded-loop/strategy-result/1\`, accounts the attempt, and separately admits the ordinary recovery pass. If the Action input is not this versioned invocation, continue with the launcher flow below.
+
 ## When to Use
 
 Use when: "review cycle", "keep reviewing until clean", "drive the findings to closure", "iterate on the review", "loop the review", "make sure the fixes actually got re-reviewed".
@@ -39,13 +70,13 @@ Start the canonical ReviewCycle Run:
 rasen pipeline start <change-name> bug-fix --json
 \`\`\`
 
-If a Run already exists, resume it:
+If a Run already exists, reproduce its current quiescent preview:
 
 \`\`\`
 rasen pipeline resume-run <change-name> bug-fix --json
 \`\`\`
 
-The Run\'s reconciler admits each ReviewCycle phase (review, triage, fix, re-review) in the correct order, enforces the round cap, checks actor separation, and escalates when exhausted. You do NOT track rounds or phases yourself.
+\`start\`, \`resume-run\`, \`complete\`, and \`control\` stop at a prompt-free \`candidates[]\` preview whenever an agent phase is ready. They do not admit that phase. The Run\'s reconciler orders ReviewCycle phases (review, triage, fix, re-review), enforces the round cap, checks actor separation, and escalates when exhausted. You do NOT track rounds or phases yourself.
 
 ## 3. Read the canonical progress
 
@@ -57,16 +88,22 @@ rasen pipeline status <change-name> bug-fix --json
 
 The response includes a \`review-cycle\` section with: \`round\`, \`phase\`, \`outcome\`, \`findings\`, \`actors\`, \`waitReason\`, \`maxRounds\`. This is the ONE source of truth — read it, do not duplicate it.
 
-## 4. Compose per-phase agent briefs
+## 4. Render and admit each phase
 
-For each admitted phase action, compose a brief from the canonical state:
+For each prompt-free candidate, compose the complete brief from these trusted source instructions, the frozen candidate descriptor, and canonical state:
 
 - **review**: delegate to \`rasen-review\` against the current diff
 - **triage**: classify findings by severity and disposition
 - **fix**: route findings to a role-isolated fixer (NOT the reviewer)
 - **re-review**: delegate to \`rasen-review\` with the fix delta, by an independent verifier (NOT the fixer)
 
-The reconciler enforces author != verifier; you do not check it yourself.
+Write every candidate and complete prompt exactly once to private ephemera using \`agent-turn-input-manifest/1\`, then run:
+
+\`\`\`
+rasen pipeline admit <change-name> --run <runId> --turn-input-file <private-manifest-path> --json
+\`\`\`
+
+Only \`admit\` creates and grants the Actions. Dispatch each returned Action with prompt bytes identical to the manifest bytes authenticated at admission. A stale, wrong, missing, duplicate, or extra candidate fails closed; obtain a fresh preview instead of repairing an old id. Never put prompt bodies in run-state, Records, logs, evidence, or telemetry. The reconciler enforces author != verifier; you do not check it yourself.
 
 ## 5. Complete each phase
 

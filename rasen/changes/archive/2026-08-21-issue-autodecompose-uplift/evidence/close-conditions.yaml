@@ -1,0 +1,21 @@
+conditions:
+  - id: boundary-crossed-truthfully
+    requirement: >-
+      The auto-decompose fail-close resolved as a truthful verdict, not faked
+      support: registry diff exactly the sanctioned one-file guard (verified
+      byte-identical by reviewer), boundary issue-dispatch-0.3.0 unchanged.
+  - id: three-children-delivered
+    requirement: >-
+      All three Phase-4 children shipped and archived on dev/0.2.0 via merged
+      PR #173 (CI green after two budget fixes): containment fix, decompose
+      graph, review flow.
+  - id: reviewable-graph-proven
+    requirement: >-
+      Decomposition output lands as a reviewable target-project-bound execution
+      plan revision with suggestion fields, proven live on Issue #3
+      (0001-0004 lineage, ordinal add-never-rewrite, one-edge delta).
+  - id: confirm-flow-real
+    requirement: >-
+      The confirm verb composed real launch contracts from both roots
+      (byte-reproduced by the reviewer), wrote nothing, and refuses honestly
+      (distinct unreadable-revision refusal live on 9999).

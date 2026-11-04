@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BoundedUtf8Capture,
   sanitizeAgentDiagnostic,
+  sanitizeAgentDiagnosticValue,
 } from '../../src/core/agent-diagnostics.js';
 
 describe('runtime-neutral agent diagnostics', () => {
@@ -14,6 +15,20 @@ describe('runtime-neutral agent diagnostics', () => {
     expect(rendered).not.toContain('private-token');
     expect(rendered).not.toContain('secret-value');
     expect(rendered).not.toContain('user:pass');
+  });
+
+  it('redacts structured results without diagnostic array, field, or depth truncation', () => {
+    const secret = 'explicit-route-secret';
+    const value = {
+      gaps: Array.from({ length: 105 }, (_, index) => `gap-${index}: ${secret}`),
+      nested: { one: { two: { three: { four: { five: { six: { seven: { eight: secret } } } } } } } },
+    };
+    const redacted = sanitizeAgentDiagnosticValue(value, [secret]);
+
+    expect(redacted.gaps).toHaveLength(105);
+    expect(redacted.gaps[104]).toBe('gap-104: <redacted>');
+    expect(redacted.nested.one.two.three.four.five.six.seven.eight).toBe('<redacted>');
+    expect(JSON.stringify(redacted)).not.toContain(secret);
   });
 
   it('truncates on a UTF-8 boundary within the requested byte budget', () => {

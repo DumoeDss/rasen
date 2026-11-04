@@ -1,0 +1,28 @@
+{
+  "issueId": "issue-multi-change-execution",
+  "record": {
+    "version": 1,
+    "id": "issue-multi-change-execution",
+    "title": "Issue layer Phase 2: single Issue, single project, multi-Change execution",
+    "state": "open",
+    "reason": null,
+    "createdAt": "2026-08-20T06:43:21.537Z"
+  },
+  "storeId": "issue-registry",
+  "storeUid": "f76edc31-229a-42bc-a5c7-848021eeb2da",
+  "checkoutRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+  "checkoutRef": "refs/heads/main",
+  "written": [
+    "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store\\rasen\\issues\\issue-multi-change-execution\\issue.yaml"
+  ],
+  "suggestedCommits": [
+    {
+      "repoRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\rasen-issue-store",
+      "pathspecs": [
+        "rasen/issues/issue-multi-change-execution/issue.yaml"
+      ],
+      "message": "chore(store): open issue issue-multi-change-execution",
+      "rationale": "Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing."
+    }
+  ]
+}

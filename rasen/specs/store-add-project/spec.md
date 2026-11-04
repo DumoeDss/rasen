@@ -74,17 +74,32 @@ Re-running `store add-project` for a project that is already registered, already
 
 ### Requirement: The project's store id is resolved predictably
 
-When registering the project, its id SHALL be resolved in this order: the project's existing `.rasen-store/store.yaml` id if it is already registered; otherwise an explicit id provided on the command (`--as <id>`); otherwise the kebab-cased basename of the project directory. The resolved id SHALL satisfy the id grammar and SHALL be registered in the project namespace. An id that collides with a STORE of the same name SHALL NOT be a conflict; an id that collides with another PROJECT checkout of the same name SHALL be rejected with a message naming the taken id and a fix suggesting `--as <id>` with a concrete example.
+When registering the project, its id SHALL be resolved in this order: the project's existing `.rasen-store/store.yaml` id if it is already registered; otherwise an explicit id provided on the command (`--as <id>`); otherwise the normalized identity already registered for the same canonical root in the machine Project registry; otherwise the basename of the project directory as a fallback. Canonical Project-registry aliases that disagree on fixed identity metadata SHALL fail closed rather than choosing an alias or falling back to the basename. The resolved id SHALL satisfy the id grammar and SHALL be registered in the project namespace. An id that collides with a STORE of the same name SHALL NOT be a conflict; an id that collides with another PROJECT checkout of the same name SHALL be rejected with a message naming the taken id and a fix suggesting `--as <id>` with a concrete example. The Management API SHALL resolve the selected Project to its root and rely on this precedence; it SHALL NOT invent or pass `--as`.
 
 #### Scenario: Existing store metadata id wins
 
 - **WHEN** the project already carries `.rasen-store/store.yaml` with id `proj-specs`
 - **THEN** `proj-specs` is the id registered in the project namespace and referenced from the target store, regardless of the folder name
 
-#### Scenario: Folder name is used when no id is given
+#### Scenario: Registered Project identity precedes the folder fallback
 
-- **WHEN** the project is not yet registered and no explicit `--as` id is passed
-- **THEN** the kebab-cased project folder basename is used as the id (resolved cross-platform from the directory path)
+- **WHEN** the canonical project root is already registered with a Project identity, carries no store metadata, and no explicit `--as` id is passed
+- **THEN** that normalized registered Project identity is used even when the project folder basename does not satisfy the id grammar
+
+#### Scenario: Ambiguous canonical Project aliases fail closed
+
+- **WHEN** live Project-registry aliases for the same canonical root disagree on fixed identity metadata
+- **THEN** the command fails without choosing an identity, falling back to the folder basename, or writing either repository
+
+#### Scenario: Folder name is used only when no stronger identity exists
+
+- **WHEN** the project carries no store metadata, no explicit `--as` id is passed, and the canonical root has no registered Project identity
+- **THEN** the project folder basename is used as the id fallback (resolved cross-platform from the directory path) and must satisfy the id grammar
+
+#### Scenario: Management API does not invent an alias
+
+- **WHEN** the Management API adds a selected Project to a Store
+- **THEN** it resolves the Project root and invokes `store add-project` without `--as`, leaving identity resolution to the command's canonical precedence
 
 #### Scenario: Project-namespace collision suggests --as
 

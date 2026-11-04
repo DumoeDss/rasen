@@ -1,0 +1,185 @@
+# Dogfood receipt 1 — temp store, portfolio run-state, revision 0001
+
+Date: 2026-08-20T00:59:20Z  CLI: 0.2.0  worktree: E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code/.claude/worktrees/issue-layer
+Temp root: /tmp/tmp.A8psYm1UDj
+
+## Store setup (trap list: OS temp; initial branch is master)
+$ node E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code/.claude/worktrees/issue-layer/bin/rasen.js store setup issue-plan-pub-dogfood --path /tmp/tmp.A8psYm1UDj/store --init-git --json
+{
+  "store": {
+    "id": "issue-plan-pub-dogfood",
+    "root": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\store",
+    "metadata_path": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\store\\.rasen-store\\store.yaml"
+  },
+  "registry": {
+    "path": "C:\\Users\\Sayo\\.rasen\\stores\\registry.yaml",
+    "registered": true,
+    "already_registered": false
+  },
+  "git": {
+    "is_repository": true,
+    "initialized": true,
+    "committed": true
+  },
+  "created_files": [
+    "rasen/",
+    "rasen/specs/",
+    "rasen/changes/",
+    "rasen/changes/archive/",
+    "rasen/config.yaml",
+    "rasen/specs/.gitkeep",
+    "rasen/changes/archive/.gitkeep",
+    ".rasen-store/store.yaml"
+  ],
+  "status": []
+}
+initial branch: master
+after rename:   main
+
+## store.yaml as setup wrote it (trap: layoutVersion must be handwritten, and the flat tree must be gone first)
+version: 2
+uid: be046ac3-0ddd-45eb-a9e7-ec3389e9e5f0
+id: issue-plan-pub-dogfood
+--- after the handwritten bump ---
+version: 2
+uid: be046ac3-0ddd-45eb-a9e7-ec3389e9e5f0
+id: issue-plan-pub-dogfood
+layoutVersion: 2
+warning: in the working copy of '.rasen-store/store.yaml', LF will be replaced by CRLF the next time Git touches it
+store uid: be046ac3-0ddd-45eb-a9e7-ec3389e9e5f0
+
+## Member project + target line (trap: add-project writes BOTH the project config and .rasen-store/ — double-clear at teardown)
+warning: in the working copy of 'README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'rasen/config.yaml', LF will be replaced by CRLF the next time Git touches it
+$ node E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code/.claude/worktrees/issue-layer/bin/rasen.js store add-project /tmp/tmp.A8psYm1UDj/app --to issue-plan-pub-dogfood --as dogfood-app --set-primary --json
+{
+  "project": {
+    "id": "dogfood-app",
+    "root": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\app",
+    "metadata_created": true,
+    "already_registered": false
+  },
+  "target": {
+    "id": "issue-plan-pub-dogfood",
+    "root": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\store",
+    "config_path": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\store\\rasen\\config.yaml",
+    "reference_added": true,
+    "reference_already_present": false
+  },
+  "membership": {
+    "project_id": "1bb4341d-2e5f-4423-a306-ac6aa9000ec2",
+    "roles": {
+      "planning": true,
+      "knowledge": true
+    },
+    "project_base_commit": "f3620373d32eba81f6c553c4aabbbc5a1766e1ab",
+    "store_base_commit": "fe24bafa89465136d77d510f0684ca0ec3440aaa",
+    "project_writes": [
+      "C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\app\\rasen\\config.yaml"
+    ],
+    "store_writes": [
+      "C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\store\\.rasen-store\\projects\\1bb4341d-2e5f-4423-a306-ac6aa9000ec2.yaml"
+    ],
+    "record_written": true,
+    "hint_written": true,
+    "repair_needed": [],
+    "suggested_commits": [
+      {
+        "repo_root": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\store",
+        "command": "git -C C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\store add .rasen-store\\projects\\1bb4341d-2e5f-4423-a306-ac6aa9000ec2.yaml && git -C C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\store commit -m \"chore: record dogfood-app as a member\"",
+        "purpose": "Store repo: record the membership authority record."
+      },
+      {
+        "repo_root": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\app",
+        "command": "git -C C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\app add rasen\\config.yaml && git -C C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\app commit -m \"chore: record membership of store issue-plan-pub-dogfood\"",
+        "purpose": "Project repo: record the membership locator hint."
+      }
+    ]
+  },
+  "planning_binding": {
+    "requested": true,
+    "changed": true,
+    "refused": false,
+    "already_bound": false,
+    "bound_to": "issue-plan-pub-dogfood",
+    "bound_to_uid": null,
+    "requested_store": "issue-plan-pub-dogfood",
+    "requested_store_uid": "be046ac3-0ddd-45eb-a9e7-ec3389e9e5f0",
+    "rebind_command": null
+  },
+  "dry_run": false,
+  "status": []
+}
+project permanent id: 1bb4341d-2e5f-4423-a306-ac6aa9000ec2
+warning: in the working copy of 'README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'rasen/config.yaml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.rasen-store/store.yaml', LF will be replaced by CRLF the next time Git touches it
+$ node E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code/.claude/worktrees/issue-layer/bin/rasen.js store target-line add line-0.2 --store issue-plan-pub-dogfood --store-ref refs/heads/main --project 1bb4341d-2e5f-4423-a306-ac6aa9000ec2 --code-ref refs/heads/main --json
+{
+  "targetLineId": "line-0.2",
+  "storeId": "issue-plan-pub-dogfood",
+  "storeUid": "be046ac3-0ddd-45eb-a9e7-ec3389e9e5f0",
+  "storeRef": "refs/heads/main",
+  "projects": {
+    "1bb4341d-2e5f-4423-a306-ac6aa9000ec2": {
+      "codeRef": "refs/heads/main"
+    }
+  },
+  "path": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\store\\.rasen-store\\target-lines\\line-0.2.yaml",
+  "suggestedCommits": [
+    {
+      "repoRoot": "C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\store",
+      "pathspecs": [
+        ".rasen-store/target-lines/line-0.2.yaml"
+      ],
+      "message": "chore(store): record target line line-0.2",
+      "rationale": "The target-line catalog is Git-tracked Store content. Rasen wrote the file and staged nothing.",
+      "command": "git -C C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\store add -- .rasen-store/target-lines/line-0.2.yaml && git -C C:\\Users\\Sayo\\AppData\\Local\\Temp\\tmp.A8psYm1UDj\\store commit -m \"chore(store): record target line line-0.2\""
+    }
+  ]
+}
+warning: in the working copy of '.rasen-store/store.yaml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'rasen/config.yaml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.rasen-store/projects/1bb4341d-2e5f-4423-a306-ac6aa9000ec2.yaml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.rasen-store/target-lines/line-0.2.yaml', LF will be replaced by CRLF the next time Git touches it
+
+## Two committed children with distinct instance identities (identity keyed by the permanent project id)
+child issue-plan-publication instanceId=ci_b804740e41d55a235fa310651ac34c8bf5971ffa798a66c9d4b8f400a73bdae2
+child issue-node-lifecycle instanceId=ci_d0738726f5e8f6976c7e29d719b0305df5764c68dceba75133d4e9cc1693a1aa
+warning: in the working copy of 'rasen/projects/1bb4341d-2e5f-4423-a306-ac6aa9000ec2/changes/issue-node-lifecycle/.openspec.yaml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'rasen/projects/1bb4341d-2e5f-4423-a306-ac6aa9000ec2/changes/issue-node-lifecycle/proposal.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'rasen/projects/1bb4341d-2e5f-4423-a306-ac6aa9000ec2/changes/issue-plan-publication/.openspec.yaml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'rasen/projects/1bb4341d-2e5f-4423-a306-ac6aa9000ec2/changes/issue-plan-publication/proposal.md', LF will be replaced by CRLF the next time Git touches it
+
+## The portfolio run-state, at the REAL resume placement (execution-root ephemera)
+state: /tmp/tmp.A8psYm1UDj/app/.rasen/changes/issue-multi-change-execution/ephemera/portfolio-run.json
+run-state sha256 before publication: 674760cbe9a481a4fb99ad5777fba9dee273c39888401219ae27e732e29971af
+
+## The Issue
+$ node E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code/.claude/worktrees/issue-layer/bin/rasen.js store issue new issue-plan-pub-dogfood --store issue-plan-pub-dogfood --title Dogfood: publish an Execution Plan from the issue-multi-change-execution portfolio
+Issue issue-plan-pub-dogfood (open)
+  title: Dogfood: publish an Execution Plan from the issue-multi-change-execution portfolio
+  checkout: C:\Users\Sayo\AppData\Local\Temp\tmp.A8psYm1UDj\store
+
+  Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing.
+    git -C C:\Users\Sayo\AppData\Local\Temp\tmp.A8psYm1UDj\store add rasen/issues/issue-plan-pub-dogfood/issue.yaml
+    git -C C:\Users\Sayo\AppData\Local\Temp\tmp.A8psYm1UDj\store commit -m "chore(store): open issue issue-plan-pub-dogfood"
+
+## Publish revision 0001 via --from-portfolio (cwd = the member project root)
+$ node E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code/.claude/worktrees/issue-layer/bin/rasen.js store issue plan issue-plan-pub-dogfood --store issue-plan-pub-dogfood --from-portfolio issue-multi-change-execution
+Issue issue-plan-pub-dogfood: Execution Plan revision 0001
+  supersedes: (none)
+  nodes: 2
+  source: portfolio 'issue-multi-change-execution' — 2 children, run-state C:\Users\Sayo\AppData\Local\Temp\tmp.A8psYm1UDj\app\.rasen\changes\issue-multi-change-execution\ephemera\portfolio-run.json
+
+  Issue content is Git-tracked Store content. Rasen wrote the file and staged nothing.
+    git -C C:\Users\Sayo\AppData\Local\Temp\tmp.A8psYm1UDj\store add rasen/issues/issue-plan-pub-dogfood/plans/0001.yaml
+    git -C C:\Users\Sayo\AppData\Local\Temp\tmp.A8psYm1UDj\store commit -m "chore(store): publish execution plan issue-plan-pub-dogfood/0001"
+
+## Receipt facts
+revision files:
+0001.yaml
+0001 sha256: 2561f2b82e8bae04d6253cc571a5630e911836753f09e391fc674513b906c865
+run-state sha256 after publication: 674760cbe9a481a4fb99ad5777fba9dee273c39888401219ae27e732e29971af
+store git status (nothing staged expected):
+?? rasen/issues/

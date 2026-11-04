@@ -1,0 +1,160 @@
+{
+  "allOk": true,
+  "m2Probe": {
+    "attempts": [
+      {
+        "label": "middle pair",
+        "geometryOk": true,
+        "targets": [
+          "atomic-stage-2",
+          "atomic-stage-3"
+        ],
+        "selected": [
+          "atomic-stage-3"
+        ],
+        "fullMembership": false
+      },
+      {
+        "label": "singleton",
+        "geometryOk": true,
+        "targets": [
+          "atomic-stage-3"
+        ],
+        "selected": [],
+        "fullMembership": false
+      },
+      {
+        "label": "region triple",
+        "geometryOk": true,
+        "targets": [
+          "atomic-stage-2",
+          "atomic-stage-3",
+          "atomic-stage-4"
+        ],
+        "selected": [
+          "atomic-stage-3",
+          "atomic-stage-4"
+        ],
+        "fullMembership": false
+      }
+    ],
+    "reproduced": true
+  },
+  "results": [
+    {
+      "name": "four handle-to-handle drags produced the chained edges",
+      "ok": true,
+      "detail": "[\"atomic-stage:done->atomic-stage-2:input\",\"atomic-stage-2:done->atomic-stage-3:input\",\"atomic-stage-3:done->atomic-stage-4:input\",\"atomic-stage-4:done->finish:input\"]"
+    },
+    {
+      "name": "m2 repeat-probe ran three verified rectangles",
+      "ok": true,
+      "detail": "middle pair:full=false; singleton:full=false; region triple:full=false"
+    },
+    {
+      "name": "m2 CONTAINMENT MISS REPRODUCED — recorded, routed to child 1 (not fixed here)",
+      "ok": true,
+      "detail": "[{\"label\":\"middle pair\",\"selected\":[\"atomic-stage-3\"]},{\"label\":\"singleton\",\"selected\":[]},{\"label\":\"region triple\",\"selected\":[\"atomic-stage-3\",\"atomic-stage-4\"]}]"
+    },
+    {
+      "name": "draw-time refusal toast stands",
+      "ok": true,
+      "detail": "Rejected: atomic-stage-4 → atomic-stage-2 would create a cycle"
+    },
+    {
+      "name": "review shows the drawn back-edge endpoints",
+      "ok": true,
+      "detail": "Drawn back-edge: atomic-stage-4 → atomic-stage-2"
+    },
+    {
+      "name": "review shows the enclosed region (3 stages, endpoints included, finish excluded)",
+      "ok": true,
+      "detail": "Enclosed region (3): atomic-stage-2, atomic-stage-4, atomic-stage-3"
+    },
+    {
+      "name": "review defaults the declaration id to \"loop-body\"",
+      "ok": true,
+      "detail": "loop-body"
+    },
+    {
+      "name": "review defaults the iteration bound to 3",
+      "ok": true,
+      "detail": "3"
+    },
+    {
+      "name": "review defaults the exit outcome to the first definition outcome",
+      "ok": true,
+      "detail": "done"
+    },
+    {
+      "name": "review derived the outcome named after the severed source stage",
+      "ok": true,
+      "detail": "atomic-stage-4"
+    },
+    {
+      "name": "an invalid bound blocks confirm in the real browser",
+      "ok": true,
+      "detail": "{\"invalid\":\"true\",\"confirm\":true,\"error\":\"Max iterations must be a positive integer.\"}"
+    },
+    {
+      "name": "success toast names the loop synthesis",
+      "ok": true,
+      "detail": "Loop created from back-edge over 3 stages ('loop-body')."
+    },
+    {
+      "name": "review dialog closed after confirm",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "root graph is lead, finish, and one bounded-loop (the region left the root)",
+      "ok": true,
+      "detail": "[\"atomic-stage\",\"finish\",\"bounded-loop\"]"
+    },
+    {
+      "name": "the loop IS the selection after confirm",
+      "ok": true,
+      "detail": "[\"bounded-loop\"]"
+    },
+    {
+      "name": "the loop node panel is open",
+      "ok": true,
+      "detail": "bounded-loop"
+    },
+    {
+      "name": "the loop's properties panel shows the author's repaired bound",
+      "ok": true,
+      "detail": "5"
+    },
+    {
+      "name": "loop renders the derived input port (named after the severed target stage)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "loop renders the derived outcome port as its source handle",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "root rewired lead->loop and loop->finish; no back-edge edge exists",
+      "ok": true,
+      "detail": "[\"atomic-stage:done->bounded-loop:atomic-stage-2\",\"bounded-loop:atomic-stage-4->finish:input\"]"
+    },
+    {
+      "name": "declarations panel lists the loop body as a custom row",
+      "ok": true,
+      "detail": "custom"
+    },
+    {
+      "name": "the explicit palette loop gesture still mints a BoundedLoop over the body declaration",
+      "ok": true,
+      "detail": "[\"atomic-stage\",\"finish\",\"bounded-loop\",\"bounded-loop-2\"]"
+    },
+    {
+      "name": "tab is alive after the full pass (no listener freeze)",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

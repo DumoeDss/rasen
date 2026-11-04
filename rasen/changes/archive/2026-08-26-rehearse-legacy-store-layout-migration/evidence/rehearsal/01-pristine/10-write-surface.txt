@@ -1,0 +1,30 @@
+### After every stage-1 command: what did the flow write, and where?
+
+$ find <temp>/rasen-home -type f    # machine-local coordination state
+<temp>/rasen-home/config.json
+<temp>/rasen-home/stores/registry.yaml
+
+# NOTE: no plan file was stored. module.plan() persists the plan only when
+# plan.token is defined (module.ts:159-167), and the token is minted only when
+# plan.applicable is true (plan.ts:1096-1105). An empty legacy flat store
+# therefore cannot even leave a plan behind for --apply to consume.
+
+$ git -C <temp>/copy-pristine status --porcelain   # store worktree unchanged by previews
+ M .rasen-store/store.yaml
+ M rasen/config.yaml
+
+$ find <temp>/copy-pristine -not -path '*/.git/*' -not -name .git
+<temp>/copy-pristine
+<temp>/copy-pristine/.rasen-store
+<temp>/copy-pristine/.rasen-store/store.yaml
+<temp>/copy-pristine/rasen
+<temp>/copy-pristine/rasen/changes
+<temp>/copy-pristine/rasen/changes/archive
+<temp>/copy-pristine/rasen/changes/archive/.gitkeep
+<temp>/copy-pristine/rasen/config.yaml
+<temp>/copy-pristine/rasen/specs
+<temp>/copy-pristine/rasen/specs/.gitkeep
+
+$ sha256sum <temp>/copy-pristine/.rasen-store/store.yaml
+3aab228b3b79484cc62324d7a633661de04f975e9a4fbcd6ea1346c96e1eac22 *<temp>/copy-pristine/.rasen-store/store.yaml
+# unchanged from the real store's recorded baseline 3aab228b...eac22

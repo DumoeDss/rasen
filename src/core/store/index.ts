@@ -8,3 +8,4 @@ export * from './identity.js';
 export * from './inspection.js';
 export * from './remote.js';
 export * from './upgrade-identity.js';
+export * from './planning-foundation.js';

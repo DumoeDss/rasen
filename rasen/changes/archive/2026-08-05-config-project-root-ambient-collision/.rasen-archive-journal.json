@@ -1,0 +1,5489 @@
+{
+  "schemaVersion": 2,
+  "transactionId": "31593bac-258c-4b2c-a9a8-ba0c614087f6",
+  "planHash": "5306e5339c236f962d0e9bd8c6d5c1cc7da51bc5d0b58cf6c0c86aacbbb0dd4a",
+  "change": "config-project-root-ambient-collision",
+  "phase": "complete",
+  "activePath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code-wt-ecp-shared-bounded-loop-lifecycle\\rasen\\changes\\config-project-root-ambient-collision",
+  "stagePath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code-wt-ecp-shared-bounded-loop-lifecycle\\rasen\\changes\\archive\\.rasen-archive-stage-31593bac-258c-4b2c-a9a8-ba0c614087f6",
+  "finalPath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code-wt-ecp-shared-bounded-loop-lifecycle\\rasen\\changes\\archive\\2026-08-05-config-project-root-ambient-collision",
+  "ephemeraDisposed": [
+    "auto-run.json"
+  ],
+  "phaseFingerprints": {
+    "payload-copied": {
+      "state": "verified",
+      "scope": "stage",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "041fd774c28575e01b2eabcd4d9e6dce7e9b938b57ad6cc48ca61d45d15ac66c",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "23565055d097ad3e7f15475ed5d87778aa242fd4fd69516e5e239baeebaf096d"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3481",
+            "sha256": "bd6061dc969b70ab9ca402d9e05cd9e81c32f309f523d0ff28659192519fb4bb"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1149",
+            "sha256": "6825f586037d95cd2e756db737230d4a2f20e081adb049a07b1f30655e996ea0"
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4180",
+            "sha256": "8211f6c349fa562bdf79eed9854e3553079ec6f11ebdb688b0a0ff8d4535bf54"
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "executable": false,
+            "size": "999",
+            "sha256": "ddfb4ea642c942fa7e3ae993d2bd31c162ef0e69a929e6e708e5ee973786607b"
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4862",
+            "sha256": "13b513b090a0ee9aef818f6b9a0b12db3c36433c70d2080516046ba4c690f194"
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3884",
+            "sha256": "b0ffc60f1f0c7b1e2366ed3820de9823af67d40678d8175682a541fa47b17538"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3958",
+            "sha256": "8c88492e01e286a39002fd3cc76e903c3d59a388424065aab54ac5e5d4b8bbc8"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1493",
+            "sha256": "00be73a70d2792aaafe6225acd89161a6f1f2451f01e0e6628dfb198da621674"
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "680",
+            "sha256": "1cca8273e19bdcecd74ea6e5204be48a9b7f92c04c04046c00f83a5b4322633c"
+          },
+          {
+            "path": "handoff",
+            "kind": "directory"
+          },
+          {
+            "path": "handoff/fixer-review-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1974",
+            "sha256": "beed478e86142c133a024de1e8e55ffb9751bafa3e7a6bca26eac5ff4c7c986c"
+          },
+          {
+            "path": "handoff/implementer-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1838",
+            "sha256": "711cc0ebd061043d2cb18a3b408caafed8ee02ba58717f75d8ce64563ddbfa32"
+          },
+          {
+            "path": "handoff/reviewer-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1527",
+            "sha256": "08b7b9a73434ec4a295b36e1903d615ded38d6ac11f08a7dd77b62429a00afa7"
+          },
+          {
+            "path": "handoff/reviewer-2.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1424",
+            "sha256": "ab1c8cfede061a467ffab6c4b0302aaf57dbda4b895bf5ffd1404aa08d0fd8c7"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1662",
+            "sha256": "31012c5c1f0f8fc5f921670ecb6edbe914b7d9e04e775786d581eee654a71a5e"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4804",
+            "sha256": "95e463361727d5e19d270d921f383912147baeb8f222c44192a4fc14225ab534"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2113",
+            "sha256": "84b67715e2f5e647c96d2066d9e009d13a51b12e21a9b71622690734bb8509ed"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "2533274801896876",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "673cc461cfc5585546efc5bcacba6af96d7c0ae214860851286b70ea11f7c58c",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475565",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1785886991959861400",
+              "ctimeNs": "1785886991959861400"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899918343708",
+              "mode": "33206",
+              "size": "3481",
+              "mtimeNs": "1785890709902025200",
+              "ctimeNs": "1785890709902025200"
+            }
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "281474988213058",
+              "mode": "33206",
+              "size": "1149",
+              "mtimeNs": "1785890464600775500",
+              "ctimeNs": "1785890464600775500"
+            }
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732028825",
+              "mode": "33206",
+              "size": "4180",
+              "mtimeNs": "1785887651979817000",
+              "ctimeNs": "1785887651979817000"
+            }
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1407374895054415",
+              "mode": "33206",
+              "size": "999",
+              "mtimeNs": "1785887299996925300",
+              "ctimeNs": "1785887299996925300"
+            }
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "26740122788742578",
+              "mode": "33206",
+              "size": "4862",
+              "mtimeNs": "1785888768427677200",
+              "ctimeNs": "1785888768427677200"
+            }
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9288674242952802",
+              "mode": "33206",
+              "size": "3884",
+              "mtimeNs": "1785889164937214900",
+              "ctimeNs": "1785889164937214900"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1407374895054431",
+              "mode": "33206",
+              "size": "3958",
+              "mtimeNs": "1785888146196628900",
+              "ctimeNs": "1785888146196628900"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1125899918345627",
+              "mode": "33206",
+              "size": "1493",
+              "mtimeNs": "1785890666148811500",
+              "ctimeNs": "1785890666148811500"
+            }
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "281474988213059",
+              "mode": "33206",
+              "size": "680",
+              "mtimeNs": "1785890630676271400",
+              "ctimeNs": "1785890630676271400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224755318350",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "handoff/fixer-review-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9288674242952801",
+              "mode": "33206",
+              "size": "1974",
+              "mtimeNs": "1785888768428680700",
+              "ctimeNs": "1785888768428680700"
+            }
+          },
+          {
+            "path": "handoff/implementer-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1407374895054417",
+              "mode": "33206",
+              "size": "1838",
+              "mtimeNs": "1785887651980814600",
+              "ctimeNs": "1785887651980814600"
+            }
+          },
+          {
+            "path": "handoff/reviewer-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "562949964922464",
+              "mode": "33206",
+              "size": "1527",
+              "mtimeNs": "1785888146197637300",
+              "ctimeNs": "1785888146197637300"
+            }
+          },
+          {
+            "path": "handoff/reviewer-2.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1407374895054435",
+              "mode": "33206",
+              "size": "1424",
+              "mtimeNs": "1785889164938217200",
+              "ctimeNs": "1785889164938217200"
+            }
+          },
+          {
+            "path": "handoff",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "6192449499135568",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5066549592292775",
+              "mode": "33206",
+              "size": "1662",
+              "mtimeNs": "1785887075411678600",
+              "ctimeNs": "1785887075411678600"
+            }
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1407374895054411",
+              "mode": "33206",
+              "size": "4804",
+              "mtimeNs": "1785887075414169400",
+              "ctimeNs": "1785887075414169400"
+            }
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475722",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799825186377",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475724",
+              "mode": "33206",
+              "size": "2113",
+              "mtimeNs": "1785890709903532200",
+              "ctimeNs": "1785890709903532200"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "041fd774c28575e01b2eabcd4d9e6dce7e9b938b57ad6cc48ca61d45d15ac66c",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "23565055d097ad3e7f15475ed5d87778aa242fd4fd69516e5e239baeebaf096d"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3481",
+            "sha256": "bd6061dc969b70ab9ca402d9e05cd9e81c32f309f523d0ff28659192519fb4bb"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1149",
+            "sha256": "6825f586037d95cd2e756db737230d4a2f20e081adb049a07b1f30655e996ea0"
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4180",
+            "sha256": "8211f6c349fa562bdf79eed9854e3553079ec6f11ebdb688b0a0ff8d4535bf54"
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "executable": false,
+            "size": "999",
+            "sha256": "ddfb4ea642c942fa7e3ae993d2bd31c162ef0e69a929e6e708e5ee973786607b"
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4862",
+            "sha256": "13b513b090a0ee9aef818f6b9a0b12db3c36433c70d2080516046ba4c690f194"
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3884",
+            "sha256": "b0ffc60f1f0c7b1e2366ed3820de9823af67d40678d8175682a541fa47b17538"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3958",
+            "sha256": "8c88492e01e286a39002fd3cc76e903c3d59a388424065aab54ac5e5d4b8bbc8"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1493",
+            "sha256": "00be73a70d2792aaafe6225acd89161a6f1f2451f01e0e6628dfb198da621674"
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "680",
+            "sha256": "1cca8273e19bdcecd74ea6e5204be48a9b7f92c04c04046c00f83a5b4322633c"
+          },
+          {
+            "path": "handoff",
+            "kind": "directory"
+          },
+          {
+            "path": "handoff/fixer-review-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1974",
+            "sha256": "beed478e86142c133a024de1e8e55ffb9751bafa3e7a6bca26eac5ff4c7c986c"
+          },
+          {
+            "path": "handoff/implementer-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1838",
+            "sha256": "711cc0ebd061043d2cb18a3b408caafed8ee02ba58717f75d8ce64563ddbfa32"
+          },
+          {
+            "path": "handoff/reviewer-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1527",
+            "sha256": "08b7b9a73434ec4a295b36e1903d615ded38d6ac11f08a7dd77b62429a00afa7"
+          },
+          {
+            "path": "handoff/reviewer-2.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1424",
+            "sha256": "ab1c8cfede061a467ffab6c4b0302aaf57dbda4b895bf5ffd1404aa08d0fd8c7"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1662",
+            "sha256": "31012c5c1f0f8fc5f921670ecb6edbe914b7d9e04e775786d581eee654a71a5e"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4804",
+            "sha256": "95e463361727d5e19d270d921f383912147baeb8f222c44192a4fc14225ab534"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2113",
+            "sha256": "84b67715e2f5e647c96d2066d9e009d13a51b12e21a9b71622690734bb8509ed"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "53198770607949392",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "5414633abb35ed547356277cc390892967fc827e3a2e1e6d96419d1079019242",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9570149219663437",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1785886991959861400",
+              "ctimeNs": "1785886991959861400"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "22236523171642982",
+              "mode": "33206",
+              "size": "3481",
+              "mtimeNs": "1785890709902025200",
+              "ctimeNs": "1785890709902025200"
+            }
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "13792273870323305",
+              "mode": "33206",
+              "size": "1149",
+              "mtimeNs": "1785890464600775500",
+              "ctimeNs": "1785890464600775500"
+            }
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5629499545714284",
+              "mode": "33206",
+              "size": "4180",
+              "mtimeNs": "1785887651979817000",
+              "ctimeNs": "1785887651979817000"
+            }
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5629499545714285",
+              "mode": "33206",
+              "size": "999",
+              "mtimeNs": "1785887299996925300",
+              "ctimeNs": "1785887299996925300"
+            }
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871662",
+              "mode": "33206",
+              "size": "4862",
+              "mtimeNs": "1785888768427677200",
+              "ctimeNs": "1785888768427677200"
+            }
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871663",
+              "mode": "33206",
+              "size": "3884",
+              "mtimeNs": "1785889164937214900",
+              "ctimeNs": "1785889164937214900"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5066549592292976",
+              "mode": "33206",
+              "size": "3958",
+              "mtimeNs": "1785888146196628900",
+              "ctimeNs": "1785888146196628900"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4222124662161009",
+              "mode": "33206",
+              "size": "1493",
+              "mtimeNs": "1785890666148811500",
+              "ctimeNs": "1785890666148811500"
+            }
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074615582322",
+              "mode": "33206",
+              "size": "680",
+              "mtimeNs": "1785890630676271400",
+              "ctimeNs": "1785890630676271400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "16888498614140519",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "handoff/fixer-review-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649685450356",
+              "mode": "33206",
+              "size": "1974",
+              "mtimeNs": "1785888768428680700",
+              "ctimeNs": "1785888768428680700"
+            }
+          },
+          {
+            "path": "handoff/implementer-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029045",
+              "mode": "33206",
+              "size": "1838",
+              "mtimeNs": "1785887651980814600",
+              "ctimeNs": "1785887651980814600"
+            }
+          },
+          {
+            "path": "handoff/reviewer-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174708739702",
+              "mode": "33206",
+              "size": "1527",
+              "mtimeNs": "1785888146197637300",
+              "ctimeNs": "1785888146197637300"
+            }
+          },
+          {
+            "path": "handoff/reviewer-2.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174708739704",
+              "mode": "33206",
+              "size": "1424",
+              "mtimeNs": "1785889164938217200",
+              "ctimeNs": "1785889164938217200"
+            }
+          },
+          {
+            "path": "handoff",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5910974522424947",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649685450361",
+              "mode": "33206",
+              "size": "1662",
+              "mtimeNs": "1785887075411678600",
+              "ctimeNs": "1785887075411678600"
+            }
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749778607741",
+              "mode": "33206",
+              "size": "4804",
+              "mtimeNs": "1785887075414169400",
+              "ctimeNs": "1785887075414169400"
+            }
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5066549592292987",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824382688890",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029054",
+              "mode": "33206",
+              "size": "2113",
+              "mtimeNs": "1785890709903532200",
+              "ctimeNs": "1785890709903532200"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "041fd774c28575e01b2eabcd4d9e6dce7e9b938b57ad6cc48ca61d45d15ac66c",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "23565055d097ad3e7f15475ed5d87778aa242fd4fd69516e5e239baeebaf096d"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3481",
+            "sha256": "bd6061dc969b70ab9ca402d9e05cd9e81c32f309f523d0ff28659192519fb4bb"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1149",
+            "sha256": "6825f586037d95cd2e756db737230d4a2f20e081adb049a07b1f30655e996ea0"
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4180",
+            "sha256": "8211f6c349fa562bdf79eed9854e3553079ec6f11ebdb688b0a0ff8d4535bf54"
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "executable": false,
+            "size": "999",
+            "sha256": "ddfb4ea642c942fa7e3ae993d2bd31c162ef0e69a929e6e708e5ee973786607b"
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4862",
+            "sha256": "13b513b090a0ee9aef818f6b9a0b12db3c36433c70d2080516046ba4c690f194"
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3884",
+            "sha256": "b0ffc60f1f0c7b1e2366ed3820de9823af67d40678d8175682a541fa47b17538"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3958",
+            "sha256": "8c88492e01e286a39002fd3cc76e903c3d59a388424065aab54ac5e5d4b8bbc8"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1493",
+            "sha256": "00be73a70d2792aaafe6225acd89161a6f1f2451f01e0e6628dfb198da621674"
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "680",
+            "sha256": "1cca8273e19bdcecd74ea6e5204be48a9b7f92c04c04046c00f83a5b4322633c"
+          },
+          {
+            "path": "handoff",
+            "kind": "directory"
+          },
+          {
+            "path": "handoff/fixer-review-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1974",
+            "sha256": "beed478e86142c133a024de1e8e55ffb9751bafa3e7a6bca26eac5ff4c7c986c"
+          },
+          {
+            "path": "handoff/implementer-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1838",
+            "sha256": "711cc0ebd061043d2cb18a3b408caafed8ee02ba58717f75d8ce64563ddbfa32"
+          },
+          {
+            "path": "handoff/reviewer-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1527",
+            "sha256": "08b7b9a73434ec4a295b36e1903d615ded38d6ac11f08a7dd77b62429a00afa7"
+          },
+          {
+            "path": "handoff/reviewer-2.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1424",
+            "sha256": "ab1c8cfede061a467ffab6c4b0302aaf57dbda4b895bf5ffd1404aa08d0fd8c7"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1662",
+            "sha256": "31012c5c1f0f8fc5f921670ecb6edbe914b7d9e04e775786d581eee654a71a5e"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4804",
+            "sha256": "95e463361727d5e19d270d921f383912147baeb8f222c44192a4fc14225ab534"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2113",
+            "sha256": "84b67715e2f5e647c96d2066d9e009d13a51b12e21a9b71622690734bb8509ed"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "53198770607949392",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "5414633abb35ed547356277cc390892967fc827e3a2e1e6d96419d1079019242",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9570149219663437",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1785886991959861400",
+              "ctimeNs": "1785886991959861400"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "22236523171642982",
+              "mode": "33206",
+              "size": "3481",
+              "mtimeNs": "1785890709902025200",
+              "ctimeNs": "1785890709902025200"
+            }
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "13792273870323305",
+              "mode": "33206",
+              "size": "1149",
+              "mtimeNs": "1785890464600775500",
+              "ctimeNs": "1785890464600775500"
+            }
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5629499545714284",
+              "mode": "33206",
+              "size": "4180",
+              "mtimeNs": "1785887651979817000",
+              "ctimeNs": "1785887651979817000"
+            }
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5629499545714285",
+              "mode": "33206",
+              "size": "999",
+              "mtimeNs": "1785887299996925300",
+              "ctimeNs": "1785887299996925300"
+            }
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871662",
+              "mode": "33206",
+              "size": "4862",
+              "mtimeNs": "1785888768427677200",
+              "ctimeNs": "1785888768427677200"
+            }
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871663",
+              "mode": "33206",
+              "size": "3884",
+              "mtimeNs": "1785889164937214900",
+              "ctimeNs": "1785889164937214900"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5066549592292976",
+              "mode": "33206",
+              "size": "3958",
+              "mtimeNs": "1785888146196628900",
+              "ctimeNs": "1785888146196628900"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4222124662161009",
+              "mode": "33206",
+              "size": "1493",
+              "mtimeNs": "1785890666148811500",
+              "ctimeNs": "1785890666148811500"
+            }
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074615582322",
+              "mode": "33206",
+              "size": "680",
+              "mtimeNs": "1785890630676271400",
+              "ctimeNs": "1785890630676271400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "16888498614140519",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "handoff/fixer-review-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649685450356",
+              "mode": "33206",
+              "size": "1974",
+              "mtimeNs": "1785888768428680700",
+              "ctimeNs": "1785888768428680700"
+            }
+          },
+          {
+            "path": "handoff/implementer-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029045",
+              "mode": "33206",
+              "size": "1838",
+              "mtimeNs": "1785887651980814600",
+              "ctimeNs": "1785887651980814600"
+            }
+          },
+          {
+            "path": "handoff/reviewer-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174708739702",
+              "mode": "33206",
+              "size": "1527",
+              "mtimeNs": "1785888146197637300",
+              "ctimeNs": "1785888146197637300"
+            }
+          },
+          {
+            "path": "handoff/reviewer-2.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174708739704",
+              "mode": "33206",
+              "size": "1424",
+              "mtimeNs": "1785889164938217200",
+              "ctimeNs": "1785889164938217200"
+            }
+          },
+          {
+            "path": "handoff",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5910974522424947",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649685450361",
+              "mode": "33206",
+              "size": "1662",
+              "mtimeNs": "1785887075411678600",
+              "ctimeNs": "1785887075411678600"
+            }
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749778607741",
+              "mode": "33206",
+              "size": "4804",
+              "mtimeNs": "1785887075414169400",
+              "ctimeNs": "1785887075414169400"
+            }
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5066549592292987",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824382688890",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029054",
+              "mode": "33206",
+              "size": "2113",
+              "mtimeNs": "1785890709903532200",
+              "ctimeNs": "1785890709903532200"
+            }
+          }
+        ]
+      }
+    },
+    "handoff-finalized": {
+      "state": "verified",
+      "scope": "stage",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "041fd774c28575e01b2eabcd4d9e6dce7e9b938b57ad6cc48ca61d45d15ac66c",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "23565055d097ad3e7f15475ed5d87778aa242fd4fd69516e5e239baeebaf096d"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3481",
+            "sha256": "bd6061dc969b70ab9ca402d9e05cd9e81c32f309f523d0ff28659192519fb4bb"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1149",
+            "sha256": "6825f586037d95cd2e756db737230d4a2f20e081adb049a07b1f30655e996ea0"
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4180",
+            "sha256": "8211f6c349fa562bdf79eed9854e3553079ec6f11ebdb688b0a0ff8d4535bf54"
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "executable": false,
+            "size": "999",
+            "sha256": "ddfb4ea642c942fa7e3ae993d2bd31c162ef0e69a929e6e708e5ee973786607b"
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4862",
+            "sha256": "13b513b090a0ee9aef818f6b9a0b12db3c36433c70d2080516046ba4c690f194"
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3884",
+            "sha256": "b0ffc60f1f0c7b1e2366ed3820de9823af67d40678d8175682a541fa47b17538"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3958",
+            "sha256": "8c88492e01e286a39002fd3cc76e903c3d59a388424065aab54ac5e5d4b8bbc8"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1493",
+            "sha256": "00be73a70d2792aaafe6225acd89161a6f1f2451f01e0e6628dfb198da621674"
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "680",
+            "sha256": "1cca8273e19bdcecd74ea6e5204be48a9b7f92c04c04046c00f83a5b4322633c"
+          },
+          {
+            "path": "handoff",
+            "kind": "directory"
+          },
+          {
+            "path": "handoff/fixer-review-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1974",
+            "sha256": "beed478e86142c133a024de1e8e55ffb9751bafa3e7a6bca26eac5ff4c7c986c"
+          },
+          {
+            "path": "handoff/implementer-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1838",
+            "sha256": "711cc0ebd061043d2cb18a3b408caafed8ee02ba58717f75d8ce64563ddbfa32"
+          },
+          {
+            "path": "handoff/reviewer-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1527",
+            "sha256": "08b7b9a73434ec4a295b36e1903d615ded38d6ac11f08a7dd77b62429a00afa7"
+          },
+          {
+            "path": "handoff/reviewer-2.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1424",
+            "sha256": "ab1c8cfede061a467ffab6c4b0302aaf57dbda4b895bf5ffd1404aa08d0fd8c7"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1662",
+            "sha256": "31012c5c1f0f8fc5f921670ecb6edbe914b7d9e04e775786d581eee654a71a5e"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4804",
+            "sha256": "95e463361727d5e19d270d921f383912147baeb8f222c44192a4fc14225ab534"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2113",
+            "sha256": "84b67715e2f5e647c96d2066d9e009d13a51b12e21a9b71622690734bb8509ed"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "53198770607949392",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "5414633abb35ed547356277cc390892967fc827e3a2e1e6d96419d1079019242",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9570149219663437",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1785886991959861400",
+              "ctimeNs": "1785886991959861400"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "22236523171642982",
+              "mode": "33206",
+              "size": "3481",
+              "mtimeNs": "1785890709902025200",
+              "ctimeNs": "1785890709902025200"
+            }
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "13792273870323305",
+              "mode": "33206",
+              "size": "1149",
+              "mtimeNs": "1785890464600775500",
+              "ctimeNs": "1785890464600775500"
+            }
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5629499545714284",
+              "mode": "33206",
+              "size": "4180",
+              "mtimeNs": "1785887651979817000",
+              "ctimeNs": "1785887651979817000"
+            }
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5629499545714285",
+              "mode": "33206",
+              "size": "999",
+              "mtimeNs": "1785887299996925300",
+              "ctimeNs": "1785887299996925300"
+            }
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871662",
+              "mode": "33206",
+              "size": "4862",
+              "mtimeNs": "1785888768427677200",
+              "ctimeNs": "1785888768427677200"
+            }
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871663",
+              "mode": "33206",
+              "size": "3884",
+              "mtimeNs": "1785889164937214900",
+              "ctimeNs": "1785889164937214900"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5066549592292976",
+              "mode": "33206",
+              "size": "3958",
+              "mtimeNs": "1785888146196628900",
+              "ctimeNs": "1785888146196628900"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4222124662161009",
+              "mode": "33206",
+              "size": "1493",
+              "mtimeNs": "1785890666148811500",
+              "ctimeNs": "1785890666148811500"
+            }
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074615582322",
+              "mode": "33206",
+              "size": "680",
+              "mtimeNs": "1785890630676271400",
+              "ctimeNs": "1785890630676271400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "16888498614140519",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "handoff/fixer-review-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649685450356",
+              "mode": "33206",
+              "size": "1974",
+              "mtimeNs": "1785888768428680700",
+              "ctimeNs": "1785888768428680700"
+            }
+          },
+          {
+            "path": "handoff/implementer-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029045",
+              "mode": "33206",
+              "size": "1838",
+              "mtimeNs": "1785887651980814600",
+              "ctimeNs": "1785887651980814600"
+            }
+          },
+          {
+            "path": "handoff/reviewer-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174708739702",
+              "mode": "33206",
+              "size": "1527",
+              "mtimeNs": "1785888146197637300",
+              "ctimeNs": "1785888146197637300"
+            }
+          },
+          {
+            "path": "handoff/reviewer-2.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174708739704",
+              "mode": "33206",
+              "size": "1424",
+              "mtimeNs": "1785889164938217200",
+              "ctimeNs": "1785889164938217200"
+            }
+          },
+          {
+            "path": "handoff",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5910974522424947",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649685450361",
+              "mode": "33206",
+              "size": "1662",
+              "mtimeNs": "1785887075411678600",
+              "ctimeNs": "1785887075411678600"
+            }
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749778607741",
+              "mode": "33206",
+              "size": "4804",
+              "mtimeNs": "1785887075414169400",
+              "ctimeNs": "1785887075414169400"
+            }
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5066549592292987",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824382688890",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029054",
+              "mode": "33206",
+              "size": "2113",
+              "mtimeNs": "1785890709903532200",
+              "ctimeNs": "1785890709903532200"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "a461632bb39ef0c6c840ab60a6d202e89ab3f72637c4115a263e5f936d50d2d2",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "23565055d097ad3e7f15475ed5d87778aa242fd4fd69516e5e239baeebaf096d"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3481",
+            "sha256": "bd6061dc969b70ab9ca402d9e05cd9e81c32f309f523d0ff28659192519fb4bb"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1149",
+            "sha256": "6825f586037d95cd2e756db737230d4a2f20e081adb049a07b1f30655e996ea0"
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4180",
+            "sha256": "8211f6c349fa562bdf79eed9854e3553079ec6f11ebdb688b0a0ff8d4535bf54"
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "executable": false,
+            "size": "999",
+            "sha256": "ddfb4ea642c942fa7e3ae993d2bd31c162ef0e69a929e6e708e5ee973786607b"
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4862",
+            "sha256": "13b513b090a0ee9aef818f6b9a0b12db3c36433c70d2080516046ba4c690f194"
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3884",
+            "sha256": "b0ffc60f1f0c7b1e2366ed3820de9823af67d40678d8175682a541fa47b17538"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3958",
+            "sha256": "8c88492e01e286a39002fd3cc76e903c3d59a388424065aab54ac5e5d4b8bbc8"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1493",
+            "sha256": "00be73a70d2792aaafe6225acd89161a6f1f2451f01e0e6628dfb198da621674"
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "680",
+            "sha256": "1cca8273e19bdcecd74ea6e5204be48a9b7f92c04c04046c00f83a5b4322633c"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1662",
+            "sha256": "31012c5c1f0f8fc5f921670ecb6edbe914b7d9e04e775786d581eee654a71a5e"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4804",
+            "sha256": "95e463361727d5e19d270d921f383912147baeb8f222c44192a4fc14225ab534"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2113",
+            "sha256": "84b67715e2f5e647c96d2066d9e009d13a51b12e21a9b71622690734bb8509ed"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "53198770607949392",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "c75fb68b919486d1eedfda038a399c1fb233997d6b5346b88174171043d84e47",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9570149219663437",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1785886991959861400",
+              "ctimeNs": "1785886991959861400"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "22236523171642982",
+              "mode": "33206",
+              "size": "3481",
+              "mtimeNs": "1785890709902025200",
+              "ctimeNs": "1785890709902025200"
+            }
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "13792273870323305",
+              "mode": "33206",
+              "size": "1149",
+              "mtimeNs": "1785890464600775500",
+              "ctimeNs": "1785890464600775500"
+            }
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5629499545714284",
+              "mode": "33206",
+              "size": "4180",
+              "mtimeNs": "1785887651979817000",
+              "ctimeNs": "1785887651979817000"
+            }
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5629499545714285",
+              "mode": "33206",
+              "size": "999",
+              "mtimeNs": "1785887299996925300",
+              "ctimeNs": "1785887299996925300"
+            }
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871662",
+              "mode": "33206",
+              "size": "4862",
+              "mtimeNs": "1785888768427677200",
+              "ctimeNs": "1785888768427677200"
+            }
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871663",
+              "mode": "33206",
+              "size": "3884",
+              "mtimeNs": "1785889164937214900",
+              "ctimeNs": "1785889164937214900"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5066549592292976",
+              "mode": "33206",
+              "size": "3958",
+              "mtimeNs": "1785888146196628900",
+              "ctimeNs": "1785888146196628900"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4222124662161009",
+              "mode": "33206",
+              "size": "1493",
+              "mtimeNs": "1785890666148811500",
+              "ctimeNs": "1785890666148811500"
+            }
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074615582322",
+              "mode": "33206",
+              "size": "680",
+              "mtimeNs": "1785890630676271400",
+              "ctimeNs": "1785890630676271400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "16888498614140519",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649685450361",
+              "mode": "33206",
+              "size": "1662",
+              "mtimeNs": "1785887075411678600",
+              "ctimeNs": "1785887075411678600"
+            }
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749778607741",
+              "mode": "33206",
+              "size": "4804",
+              "mtimeNs": "1785887075414169400",
+              "ctimeNs": "1785887075414169400"
+            }
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5066549592292987",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824382688890",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029054",
+              "mode": "33206",
+              "size": "2113",
+              "mtimeNs": "1785890709903532200",
+              "ctimeNs": "1785890709903532200"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "a461632bb39ef0c6c840ab60a6d202e89ab3f72637c4115a263e5f936d50d2d2",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "23565055d097ad3e7f15475ed5d87778aa242fd4fd69516e5e239baeebaf096d"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3481",
+            "sha256": "bd6061dc969b70ab9ca402d9e05cd9e81c32f309f523d0ff28659192519fb4bb"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1149",
+            "sha256": "6825f586037d95cd2e756db737230d4a2f20e081adb049a07b1f30655e996ea0"
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4180",
+            "sha256": "8211f6c349fa562bdf79eed9854e3553079ec6f11ebdb688b0a0ff8d4535bf54"
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "executable": false,
+            "size": "999",
+            "sha256": "ddfb4ea642c942fa7e3ae993d2bd31c162ef0e69a929e6e708e5ee973786607b"
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4862",
+            "sha256": "13b513b090a0ee9aef818f6b9a0b12db3c36433c70d2080516046ba4c690f194"
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3884",
+            "sha256": "b0ffc60f1f0c7b1e2366ed3820de9823af67d40678d8175682a541fa47b17538"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3958",
+            "sha256": "8c88492e01e286a39002fd3cc76e903c3d59a388424065aab54ac5e5d4b8bbc8"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1493",
+            "sha256": "00be73a70d2792aaafe6225acd89161a6f1f2451f01e0e6628dfb198da621674"
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "680",
+            "sha256": "1cca8273e19bdcecd74ea6e5204be48a9b7f92c04c04046c00f83a5b4322633c"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1662",
+            "sha256": "31012c5c1f0f8fc5f921670ecb6edbe914b7d9e04e775786d581eee654a71a5e"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4804",
+            "sha256": "95e463361727d5e19d270d921f383912147baeb8f222c44192a4fc14225ab534"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2113",
+            "sha256": "84b67715e2f5e647c96d2066d9e009d13a51b12e21a9b71622690734bb8509ed"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "53198770607949392",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "c75fb68b919486d1eedfda038a399c1fb233997d6b5346b88174171043d84e47",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9570149219663437",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1785886991959861400",
+              "ctimeNs": "1785886991959861400"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "22236523171642982",
+              "mode": "33206",
+              "size": "3481",
+              "mtimeNs": "1785890709902025200",
+              "ctimeNs": "1785890709902025200"
+            }
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "13792273870323305",
+              "mode": "33206",
+              "size": "1149",
+              "mtimeNs": "1785890464600775500",
+              "ctimeNs": "1785890464600775500"
+            }
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5629499545714284",
+              "mode": "33206",
+              "size": "4180",
+              "mtimeNs": "1785887651979817000",
+              "ctimeNs": "1785887651979817000"
+            }
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5629499545714285",
+              "mode": "33206",
+              "size": "999",
+              "mtimeNs": "1785887299996925300",
+              "ctimeNs": "1785887299996925300"
+            }
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871662",
+              "mode": "33206",
+              "size": "4862",
+              "mtimeNs": "1785888768427677200",
+              "ctimeNs": "1785888768427677200"
+            }
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871663",
+              "mode": "33206",
+              "size": "3884",
+              "mtimeNs": "1785889164937214900",
+              "ctimeNs": "1785889164937214900"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5066549592292976",
+              "mode": "33206",
+              "size": "3958",
+              "mtimeNs": "1785888146196628900",
+              "ctimeNs": "1785888146196628900"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4222124662161009",
+              "mode": "33206",
+              "size": "1493",
+              "mtimeNs": "1785890666148811500",
+              "ctimeNs": "1785890666148811500"
+            }
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074615582322",
+              "mode": "33206",
+              "size": "680",
+              "mtimeNs": "1785890630676271400",
+              "ctimeNs": "1785890630676271400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "16888498614140519",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649685450361",
+              "mode": "33206",
+              "size": "1662",
+              "mtimeNs": "1785887075411678600",
+              "ctimeNs": "1785887075411678600"
+            }
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749778607741",
+              "mode": "33206",
+              "size": "4804",
+              "mtimeNs": "1785887075414169400",
+              "ctimeNs": "1785887075414169400"
+            }
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5066549592292987",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824382688890",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029054",
+              "mode": "33206",
+              "size": "2113",
+              "mtimeNs": "1785890709903532200",
+              "ctimeNs": "1785890709903532200"
+            }
+          }
+        ]
+      }
+    },
+    "evidence-finalized": {
+      "state": "verified",
+      "scope": "stage",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "a461632bb39ef0c6c840ab60a6d202e89ab3f72637c4115a263e5f936d50d2d2",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "40",
+            "sha256": "23565055d097ad3e7f15475ed5d87778aa242fd4fd69516e5e239baeebaf096d"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3481",
+            "sha256": "bd6061dc969b70ab9ca402d9e05cd9e81c32f309f523d0ff28659192519fb4bb"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1149",
+            "sha256": "6825f586037d95cd2e756db737230d4a2f20e081adb049a07b1f30655e996ea0"
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4180",
+            "sha256": "8211f6c349fa562bdf79eed9854e3553079ec6f11ebdb688b0a0ff8d4535bf54"
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "executable": false,
+            "size": "999",
+            "sha256": "ddfb4ea642c942fa7e3ae993d2bd31c162ef0e69a929e6e708e5ee973786607b"
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4862",
+            "sha256": "13b513b090a0ee9aef818f6b9a0b12db3c36433c70d2080516046ba4c690f194"
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3884",
+            "sha256": "b0ffc60f1f0c7b1e2366ed3820de9823af67d40678d8175682a541fa47b17538"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3958",
+            "sha256": "8c88492e01e286a39002fd3cc76e903c3d59a388424065aab54ac5e5d4b8bbc8"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1493",
+            "sha256": "00be73a70d2792aaafe6225acd89161a6f1f2451f01e0e6628dfb198da621674"
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "680",
+            "sha256": "1cca8273e19bdcecd74ea6e5204be48a9b7f92c04c04046c00f83a5b4322633c"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1662",
+            "sha256": "31012c5c1f0f8fc5f921670ecb6edbe914b7d9e04e775786d581eee654a71a5e"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4804",
+            "sha256": "95e463361727d5e19d270d921f383912147baeb8f222c44192a4fc14225ab534"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2113",
+            "sha256": "84b67715e2f5e647c96d2066d9e009d13a51b12e21a9b71622690734bb8509ed"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "53198770607949392",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "c75fb68b919486d1eedfda038a399c1fb233997d6b5346b88174171043d84e47",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9570149219663437",
+              "mode": "33206",
+              "size": "40",
+              "mtimeNs": "1785886991959861400",
+              "ctimeNs": "1785886991959861400"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "22236523171642982",
+              "mode": "33206",
+              "size": "3481",
+              "mtimeNs": "1785890709902025200",
+              "ctimeNs": "1785890709902025200"
+            }
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "13792273870323305",
+              "mode": "33206",
+              "size": "1149",
+              "mtimeNs": "1785890464600775500",
+              "ctimeNs": "1785890464600775500"
+            }
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5629499545714284",
+              "mode": "33206",
+              "size": "4180",
+              "mtimeNs": "1785887651979817000",
+              "ctimeNs": "1785887651979817000"
+            }
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5629499545714285",
+              "mode": "33206",
+              "size": "999",
+              "mtimeNs": "1785887299996925300",
+              "ctimeNs": "1785887299996925300"
+            }
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871662",
+              "mode": "33206",
+              "size": "4862",
+              "mtimeNs": "1785888768427677200",
+              "ctimeNs": "1785888768427677200"
+            }
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871663",
+              "mode": "33206",
+              "size": "3884",
+              "mtimeNs": "1785889164937214900",
+              "ctimeNs": "1785889164937214900"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5066549592292976",
+              "mode": "33206",
+              "size": "3958",
+              "mtimeNs": "1785888146196628900",
+              "ctimeNs": "1785888146196628900"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4222124662161009",
+              "mode": "33206",
+              "size": "1493",
+              "mtimeNs": "1785890666148811500",
+              "ctimeNs": "1785890666148811500"
+            }
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074615582322",
+              "mode": "33206",
+              "size": "680",
+              "mtimeNs": "1785890630676271400",
+              "ctimeNs": "1785890630676271400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "16888498614140519",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649685450361",
+              "mode": "33206",
+              "size": "1662",
+              "mtimeNs": "1785887075411678600",
+              "ctimeNs": "1785887075411678600"
+            }
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749778607741",
+              "mode": "33206",
+              "size": "4804",
+              "mtimeNs": "1785887075414169400",
+              "ctimeNs": "1785887075414169400"
+            }
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5066549592292987",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824382688890",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029054",
+              "mode": "33206",
+              "size": "2113",
+              "mtimeNs": "1785890709903532200",
+              "ctimeNs": "1785890709903532200"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "3a6e4c2289a2174ecf8801fbd6cefece08fe354fcdfcac7136f4c0bd38b46c08",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "292",
+            "sha256": "433b0da8674fd2726c96a6cc0d8b05ca21a989d4dfa2f60e039046923aa2142f"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3481",
+            "sha256": "bd6061dc969b70ab9ca402d9e05cd9e81c32f309f523d0ff28659192519fb4bb"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1149",
+            "sha256": "6825f586037d95cd2e756db737230d4a2f20e081adb049a07b1f30655e996ea0"
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4180",
+            "sha256": "8211f6c349fa562bdf79eed9854e3553079ec6f11ebdb688b0a0ff8d4535bf54"
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "executable": false,
+            "size": "999",
+            "sha256": "ddfb4ea642c942fa7e3ae993d2bd31c162ef0e69a929e6e708e5ee973786607b"
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4862",
+            "sha256": "13b513b090a0ee9aef818f6b9a0b12db3c36433c70d2080516046ba4c690f194"
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3884",
+            "sha256": "b0ffc60f1f0c7b1e2366ed3820de9823af67d40678d8175682a541fa47b17538"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3958",
+            "sha256": "8c88492e01e286a39002fd3cc76e903c3d59a388424065aab54ac5e5d4b8bbc8"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1857",
+            "sha256": "a884bf8114f4f8d316dc3ccd4c96fa6317fd64f7030ac3b33d439a960e4ecf5b"
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "680",
+            "sha256": "1cca8273e19bdcecd74ea6e5204be48a9b7f92c04c04046c00f83a5b4322633c"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1662",
+            "sha256": "31012c5c1f0f8fc5f921670ecb6edbe914b7d9e04e775786d581eee654a71a5e"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4804",
+            "sha256": "95e463361727d5e19d270d921f383912147baeb8f222c44192a4fc14225ab534"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2113",
+            "sha256": "84b67715e2f5e647c96d2066d9e009d13a51b12e21a9b71622690734bb8509ed"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "53198770607949392",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "88ff879dff5a71a080331228a5e256ac76d55ea416f360bad13736f4ce139e5a",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9570149219663437",
+              "mode": "33206",
+              "size": "292",
+              "mtimeNs": "1785890748753428700",
+              "ctimeNs": "1785890748753428700"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "22236523171642982",
+              "mode": "33206",
+              "size": "3481",
+              "mtimeNs": "1785890709902025200",
+              "ctimeNs": "1785890709902025200"
+            }
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "13792273870323305",
+              "mode": "33206",
+              "size": "1149",
+              "mtimeNs": "1785890464600775500",
+              "ctimeNs": "1785890464600775500"
+            }
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5629499545714284",
+              "mode": "33206",
+              "size": "4180",
+              "mtimeNs": "1785887651979817000",
+              "ctimeNs": "1785887651979817000"
+            }
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5629499545714285",
+              "mode": "33206",
+              "size": "999",
+              "mtimeNs": "1785887299996925300",
+              "ctimeNs": "1785887299996925300"
+            }
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871662",
+              "mode": "33206",
+              "size": "4862",
+              "mtimeNs": "1785888768427677200",
+              "ctimeNs": "1785888768427677200"
+            }
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871663",
+              "mode": "33206",
+              "size": "3884",
+              "mtimeNs": "1785889164937214900",
+              "ctimeNs": "1785889164937214900"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5066549592292976",
+              "mode": "33206",
+              "size": "3958",
+              "mtimeNs": "1785888146196628900",
+              "ctimeNs": "1785888146196628900"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4222124662161009",
+              "mode": "33206",
+              "size": "1857",
+              "mtimeNs": "1785890748744112000",
+              "ctimeNs": "1785890748744112000"
+            }
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074615582322",
+              "mode": "33206",
+              "size": "680",
+              "mtimeNs": "1785890630676271400",
+              "ctimeNs": "1785890630676271400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "16888498614140519",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649685450361",
+              "mode": "33206",
+              "size": "1662",
+              "mtimeNs": "1785887075411678600",
+              "ctimeNs": "1785887075411678600"
+            }
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749778607741",
+              "mode": "33206",
+              "size": "4804",
+              "mtimeNs": "1785887075414169400",
+              "ctimeNs": "1785887075414169400"
+            }
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5066549592292987",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824382688890",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029054",
+              "mode": "33206",
+              "size": "2113",
+              "mtimeNs": "1785890709903532200",
+              "ctimeNs": "1785890709903532200"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "3a6e4c2289a2174ecf8801fbd6cefece08fe354fcdfcac7136f4c0bd38b46c08",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "292",
+            "sha256": "433b0da8674fd2726c96a6cc0d8b05ca21a989d4dfa2f60e039046923aa2142f"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3481",
+            "sha256": "bd6061dc969b70ab9ca402d9e05cd9e81c32f309f523d0ff28659192519fb4bb"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1149",
+            "sha256": "6825f586037d95cd2e756db737230d4a2f20e081adb049a07b1f30655e996ea0"
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4180",
+            "sha256": "8211f6c349fa562bdf79eed9854e3553079ec6f11ebdb688b0a0ff8d4535bf54"
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "executable": false,
+            "size": "999",
+            "sha256": "ddfb4ea642c942fa7e3ae993d2bd31c162ef0e69a929e6e708e5ee973786607b"
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4862",
+            "sha256": "13b513b090a0ee9aef818f6b9a0b12db3c36433c70d2080516046ba4c690f194"
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3884",
+            "sha256": "b0ffc60f1f0c7b1e2366ed3820de9823af67d40678d8175682a541fa47b17538"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3958",
+            "sha256": "8c88492e01e286a39002fd3cc76e903c3d59a388424065aab54ac5e5d4b8bbc8"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1857",
+            "sha256": "a884bf8114f4f8d316dc3ccd4c96fa6317fd64f7030ac3b33d439a960e4ecf5b"
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "680",
+            "sha256": "1cca8273e19bdcecd74ea6e5204be48a9b7f92c04c04046c00f83a5b4322633c"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1662",
+            "sha256": "31012c5c1f0f8fc5f921670ecb6edbe914b7d9e04e775786d581eee654a71a5e"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4804",
+            "sha256": "95e463361727d5e19d270d921f383912147baeb8f222c44192a4fc14225ab534"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2113",
+            "sha256": "84b67715e2f5e647c96d2066d9e009d13a51b12e21a9b71622690734bb8509ed"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "53198770607949392",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "88ff879dff5a71a080331228a5e256ac76d55ea416f360bad13736f4ce139e5a",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9570149219663437",
+              "mode": "33206",
+              "size": "292",
+              "mtimeNs": "1785890748753428700",
+              "ctimeNs": "1785890748753428700"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "22236523171642982",
+              "mode": "33206",
+              "size": "3481",
+              "mtimeNs": "1785890709902025200",
+              "ctimeNs": "1785890709902025200"
+            }
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "13792273870323305",
+              "mode": "33206",
+              "size": "1149",
+              "mtimeNs": "1785890464600775500",
+              "ctimeNs": "1785890464600775500"
+            }
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5629499545714284",
+              "mode": "33206",
+              "size": "4180",
+              "mtimeNs": "1785887651979817000",
+              "ctimeNs": "1785887651979817000"
+            }
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5629499545714285",
+              "mode": "33206",
+              "size": "999",
+              "mtimeNs": "1785887299996925300",
+              "ctimeNs": "1785887299996925300"
+            }
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871662",
+              "mode": "33206",
+              "size": "4862",
+              "mtimeNs": "1785888768427677200",
+              "ctimeNs": "1785888768427677200"
+            }
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871663",
+              "mode": "33206",
+              "size": "3884",
+              "mtimeNs": "1785889164937214900",
+              "ctimeNs": "1785889164937214900"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5066549592292976",
+              "mode": "33206",
+              "size": "3958",
+              "mtimeNs": "1785888146196628900",
+              "ctimeNs": "1785888146196628900"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4222124662161009",
+              "mode": "33206",
+              "size": "1857",
+              "mtimeNs": "1785890748744112000",
+              "ctimeNs": "1785890748744112000"
+            }
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074615582322",
+              "mode": "33206",
+              "size": "680",
+              "mtimeNs": "1785890630676271400",
+              "ctimeNs": "1785890630676271400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "16888498614140519",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649685450361",
+              "mode": "33206",
+              "size": "1662",
+              "mtimeNs": "1785887075411678600",
+              "ctimeNs": "1785887075411678600"
+            }
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749778607741",
+              "mode": "33206",
+              "size": "4804",
+              "mtimeNs": "1785887075414169400",
+              "ctimeNs": "1785887075414169400"
+            }
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5066549592292987",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824382688890",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029054",
+              "mode": "33206",
+              "size": "2113",
+              "mtimeNs": "1785890709903532200",
+              "ctimeNs": "1785890709903532200"
+            }
+          }
+        ]
+      }
+    },
+    "final-reserved": {
+      "state": "verified",
+      "scope": "final",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "3a6e4c2289a2174ecf8801fbd6cefece08fe354fcdfcac7136f4c0bd38b46c08",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "292",
+            "sha256": "433b0da8674fd2726c96a6cc0d8b05ca21a989d4dfa2f60e039046923aa2142f"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3481",
+            "sha256": "bd6061dc969b70ab9ca402d9e05cd9e81c32f309f523d0ff28659192519fb4bb"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1149",
+            "sha256": "6825f586037d95cd2e756db737230d4a2f20e081adb049a07b1f30655e996ea0"
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4180",
+            "sha256": "8211f6c349fa562bdf79eed9854e3553079ec6f11ebdb688b0a0ff8d4535bf54"
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "executable": false,
+            "size": "999",
+            "sha256": "ddfb4ea642c942fa7e3ae993d2bd31c162ef0e69a929e6e708e5ee973786607b"
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4862",
+            "sha256": "13b513b090a0ee9aef818f6b9a0b12db3c36433c70d2080516046ba4c690f194"
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3884",
+            "sha256": "b0ffc60f1f0c7b1e2366ed3820de9823af67d40678d8175682a541fa47b17538"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3958",
+            "sha256": "8c88492e01e286a39002fd3cc76e903c3d59a388424065aab54ac5e5d4b8bbc8"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1857",
+            "sha256": "a884bf8114f4f8d316dc3ccd4c96fa6317fd64f7030ac3b33d439a960e4ecf5b"
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "680",
+            "sha256": "1cca8273e19bdcecd74ea6e5204be48a9b7f92c04c04046c00f83a5b4322633c"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1662",
+            "sha256": "31012c5c1f0f8fc5f921670ecb6edbe914b7d9e04e775786d581eee654a71a5e"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4804",
+            "sha256": "95e463361727d5e19d270d921f383912147baeb8f222c44192a4fc14225ab534"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2113",
+            "sha256": "84b67715e2f5e647c96d2066d9e009d13a51b12e21a9b71622690734bb8509ed"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "53198770607949392",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "88ff879dff5a71a080331228a5e256ac76d55ea416f360bad13736f4ce139e5a",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "9570149219663437",
+              "mode": "33206",
+              "size": "292",
+              "mtimeNs": "1785890748753428700",
+              "ctimeNs": "1785890748753428700"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "22236523171642982",
+              "mode": "33206",
+              "size": "3481",
+              "mtimeNs": "1785890709902025200",
+              "ctimeNs": "1785890709902025200"
+            }
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "13792273870323305",
+              "mode": "33206",
+              "size": "1149",
+              "mtimeNs": "1785890464600775500",
+              "ctimeNs": "1785890464600775500"
+            }
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5629499545714284",
+              "mode": "33206",
+              "size": "4180",
+              "mtimeNs": "1785887651979817000",
+              "ctimeNs": "1785887651979817000"
+            }
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5629499545714285",
+              "mode": "33206",
+              "size": "999",
+              "mtimeNs": "1785887299996925300",
+              "ctimeNs": "1785887299996925300"
+            }
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871662",
+              "mode": "33206",
+              "size": "4862",
+              "mtimeNs": "1785888768427677200",
+              "ctimeNs": "1785888768427677200"
+            }
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871663",
+              "mode": "33206",
+              "size": "3884",
+              "mtimeNs": "1785889164937214900",
+              "ctimeNs": "1785889164937214900"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5066549592292976",
+              "mode": "33206",
+              "size": "3958",
+              "mtimeNs": "1785888146196628900",
+              "ctimeNs": "1785888146196628900"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4222124662161009",
+              "mode": "33206",
+              "size": "1857",
+              "mtimeNs": "1785890748744112000",
+              "ctimeNs": "1785890748744112000"
+            }
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074615582322",
+              "mode": "33206",
+              "size": "680",
+              "mtimeNs": "1785890630676271400",
+              "ctimeNs": "1785890630676271400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "16888498614140519",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649685450361",
+              "mode": "33206",
+              "size": "1662",
+              "mtimeNs": "1785887075411678600",
+              "ctimeNs": "1785887075411678600"
+            }
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749778607741",
+              "mode": "33206",
+              "size": "4804",
+              "mtimeNs": "1785887075414169400",
+              "ctimeNs": "1785887075414169400"
+            }
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "5066549592292987",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "7599824382688890",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029054",
+              "mode": "33206",
+              "size": "2113",
+              "mtimeNs": "1785890709903532200",
+              "ctimeNs": "1785890709903532200"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "3a6e4c2289a2174ecf8801fbd6cefece08fe354fcdfcac7136f4c0bd38b46c08",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "292",
+            "sha256": "433b0da8674fd2726c96a6cc0d8b05ca21a989d4dfa2f60e039046923aa2142f"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3481",
+            "sha256": "bd6061dc969b70ab9ca402d9e05cd9e81c32f309f523d0ff28659192519fb4bb"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1149",
+            "sha256": "6825f586037d95cd2e756db737230d4a2f20e081adb049a07b1f30655e996ea0"
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4180",
+            "sha256": "8211f6c349fa562bdf79eed9854e3553079ec6f11ebdb688b0a0ff8d4535bf54"
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "executable": false,
+            "size": "999",
+            "sha256": "ddfb4ea642c942fa7e3ae993d2bd31c162ef0e69a929e6e708e5ee973786607b"
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4862",
+            "sha256": "13b513b090a0ee9aef818f6b9a0b12db3c36433c70d2080516046ba4c690f194"
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3884",
+            "sha256": "b0ffc60f1f0c7b1e2366ed3820de9823af67d40678d8175682a541fa47b17538"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3958",
+            "sha256": "8c88492e01e286a39002fd3cc76e903c3d59a388424065aab54ac5e5d4b8bbc8"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1857",
+            "sha256": "a884bf8114f4f8d316dc3ccd4c96fa6317fd64f7030ac3b33d439a960e4ecf5b"
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "680",
+            "sha256": "1cca8273e19bdcecd74ea6e5204be48a9b7f92c04c04046c00f83a5b4322633c"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1662",
+            "sha256": "31012c5c1f0f8fc5f921670ecb6edbe914b7d9e04e775786d581eee654a71a5e"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4804",
+            "sha256": "95e463361727d5e19d270d921f383912147baeb8f222c44192a4fc14225ab534"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2113",
+            "sha256": "84b67715e2f5e647c96d2066d9e009d13a51b12e21a9b71622690734bb8509ed"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "8162774334204795",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "a970cab1395ad93627de21f288910c2d01592cc33f429b8c1776abd6057fb150",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074615582325",
+              "mode": "33206",
+              "size": "292",
+              "mtimeNs": "1785890748753428700",
+              "ctimeNs": "1785890748753428700"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871670",
+              "mode": "33206",
+              "size": "3481",
+              "mtimeNs": "1785890709902025200",
+              "ctimeNs": "1785890709902025200"
+            }
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029055",
+              "mode": "33206",
+              "size": "1149",
+              "mtimeNs": "1785890464600775500",
+              "ctimeNs": "1785890464600775500"
+            }
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224755318400",
+              "mode": "33206",
+              "size": "4180",
+              "mtimeNs": "1785887651979817000",
+              "ctimeNs": "1785887651979817000"
+            }
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649685450369",
+              "mode": "33206",
+              "size": "999",
+              "mtimeNs": "1785887299996925300",
+              "ctimeNs": "1785887299996925300"
+            }
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174708739714",
+              "mode": "33206",
+              "size": "4862",
+              "mtimeNs": "1785888768427677200",
+              "ctimeNs": "1785888768427677200"
+            }
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029059",
+              "mode": "33206",
+              "size": "3884",
+              "mtimeNs": "1785889164937214900",
+              "ctimeNs": "1785889164937214900"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174708739716",
+              "mode": "33206",
+              "size": "3958",
+              "mtimeNs": "1785888146196628900",
+              "ctimeNs": "1785888146196628900"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029061",
+              "mode": "33206",
+              "size": "1857",
+              "mtimeNs": "1785890748744112000",
+              "ctimeNs": "1785890748744112000"
+            }
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174708739718",
+              "mode": "33206",
+              "size": "680",
+              "mtimeNs": "1785890630676271400",
+              "ctimeNs": "1785890630676271400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871672",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799825186439",
+              "mode": "33206",
+              "size": "1662",
+              "mtimeNs": "1785887075411678600",
+              "ctimeNs": "1785887075411678600"
+            }
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475786",
+              "mode": "33206",
+              "size": "4804",
+              "mtimeNs": "1785887075414169400",
+              "ctimeNs": "1785887075414169400"
+            }
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475785",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475784",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475787",
+              "mode": "33206",
+              "size": "2113",
+              "mtimeNs": "1785890709903532200",
+              "ctimeNs": "1785890709903532200"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "3a6e4c2289a2174ecf8801fbd6cefece08fe354fcdfcac7136f4c0bd38b46c08",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "292",
+            "sha256": "433b0da8674fd2726c96a6cc0d8b05ca21a989d4dfa2f60e039046923aa2142f"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3481",
+            "sha256": "bd6061dc969b70ab9ca402d9e05cd9e81c32f309f523d0ff28659192519fb4bb"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1149",
+            "sha256": "6825f586037d95cd2e756db737230d4a2f20e081adb049a07b1f30655e996ea0"
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4180",
+            "sha256": "8211f6c349fa562bdf79eed9854e3553079ec6f11ebdb688b0a0ff8d4535bf54"
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "executable": false,
+            "size": "999",
+            "sha256": "ddfb4ea642c942fa7e3ae993d2bd31c162ef0e69a929e6e708e5ee973786607b"
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4862",
+            "sha256": "13b513b090a0ee9aef818f6b9a0b12db3c36433c70d2080516046ba4c690f194"
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3884",
+            "sha256": "b0ffc60f1f0c7b1e2366ed3820de9823af67d40678d8175682a541fa47b17538"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3958",
+            "sha256": "8c88492e01e286a39002fd3cc76e903c3d59a388424065aab54ac5e5d4b8bbc8"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1857",
+            "sha256": "a884bf8114f4f8d316dc3ccd4c96fa6317fd64f7030ac3b33d439a960e4ecf5b"
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "680",
+            "sha256": "1cca8273e19bdcecd74ea6e5204be48a9b7f92c04c04046c00f83a5b4322633c"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1662",
+            "sha256": "31012c5c1f0f8fc5f921670ecb6edbe914b7d9e04e775786d581eee654a71a5e"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4804",
+            "sha256": "95e463361727d5e19d270d921f383912147baeb8f222c44192a4fc14225ab534"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2113",
+            "sha256": "84b67715e2f5e647c96d2066d9e009d13a51b12e21a9b71622690734bb8509ed"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "8162774334204795",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "a970cab1395ad93627de21f288910c2d01592cc33f429b8c1776abd6057fb150",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074615582325",
+              "mode": "33206",
+              "size": "292",
+              "mtimeNs": "1785890748753428700",
+              "ctimeNs": "1785890748753428700"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871670",
+              "mode": "33206",
+              "size": "3481",
+              "mtimeNs": "1785890709902025200",
+              "ctimeNs": "1785890709902025200"
+            }
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029055",
+              "mode": "33206",
+              "size": "1149",
+              "mtimeNs": "1785890464600775500",
+              "ctimeNs": "1785890464600775500"
+            }
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224755318400",
+              "mode": "33206",
+              "size": "4180",
+              "mtimeNs": "1785887651979817000",
+              "ctimeNs": "1785887651979817000"
+            }
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649685450369",
+              "mode": "33206",
+              "size": "999",
+              "mtimeNs": "1785887299996925300",
+              "ctimeNs": "1785887299996925300"
+            }
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174708739714",
+              "mode": "33206",
+              "size": "4862",
+              "mtimeNs": "1785888768427677200",
+              "ctimeNs": "1785888768427677200"
+            }
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029059",
+              "mode": "33206",
+              "size": "3884",
+              "mtimeNs": "1785889164937214900",
+              "ctimeNs": "1785889164937214900"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174708739716",
+              "mode": "33206",
+              "size": "3958",
+              "mtimeNs": "1785888146196628900",
+              "ctimeNs": "1785888146196628900"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029061",
+              "mode": "33206",
+              "size": "1857",
+              "mtimeNs": "1785890748744112000",
+              "ctimeNs": "1785890748744112000"
+            }
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174708739718",
+              "mode": "33206",
+              "size": "680",
+              "mtimeNs": "1785890630676271400",
+              "ctimeNs": "1785890630676271400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871672",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799825186439",
+              "mode": "33206",
+              "size": "1662",
+              "mtimeNs": "1785887075411678600",
+              "ctimeNs": "1785887075411678600"
+            }
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475786",
+              "mode": "33206",
+              "size": "4804",
+              "mtimeNs": "1785887075414169400",
+              "ctimeNs": "1785887075414169400"
+            }
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475785",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475784",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475787",
+              "mode": "33206",
+              "size": "2113",
+              "mtimeNs": "1785890709903532200",
+              "ctimeNs": "1785890709903532200"
+            }
+          }
+        ]
+      }
+    },
+    "accounting-finalized": {
+      "state": "verified",
+      "scope": "final",
+      "before": {
+        "algorithm": "sha256",
+        "digest": "3a6e4c2289a2174ecf8801fbd6cefece08fe354fcdfcac7136f4c0bd38b46c08",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "292",
+            "sha256": "433b0da8674fd2726c96a6cc0d8b05ca21a989d4dfa2f60e039046923aa2142f"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3481",
+            "sha256": "bd6061dc969b70ab9ca402d9e05cd9e81c32f309f523d0ff28659192519fb4bb"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1149",
+            "sha256": "6825f586037d95cd2e756db737230d4a2f20e081adb049a07b1f30655e996ea0"
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4180",
+            "sha256": "8211f6c349fa562bdf79eed9854e3553079ec6f11ebdb688b0a0ff8d4535bf54"
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "executable": false,
+            "size": "999",
+            "sha256": "ddfb4ea642c942fa7e3ae993d2bd31c162ef0e69a929e6e708e5ee973786607b"
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4862",
+            "sha256": "13b513b090a0ee9aef818f6b9a0b12db3c36433c70d2080516046ba4c690f194"
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3884",
+            "sha256": "b0ffc60f1f0c7b1e2366ed3820de9823af67d40678d8175682a541fa47b17538"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3958",
+            "sha256": "8c88492e01e286a39002fd3cc76e903c3d59a388424065aab54ac5e5d4b8bbc8"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1857",
+            "sha256": "a884bf8114f4f8d316dc3ccd4c96fa6317fd64f7030ac3b33d439a960e4ecf5b"
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "680",
+            "sha256": "1cca8273e19bdcecd74ea6e5204be48a9b7f92c04c04046c00f83a5b4322633c"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1662",
+            "sha256": "31012c5c1f0f8fc5f921670ecb6edbe914b7d9e04e775786d581eee654a71a5e"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4804",
+            "sha256": "95e463361727d5e19d270d921f383912147baeb8f222c44192a4fc14225ab534"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2113",
+            "sha256": "84b67715e2f5e647c96d2066d9e009d13a51b12e21a9b71622690734bb8509ed"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "8162774334204795",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "a970cab1395ad93627de21f288910c2d01592cc33f429b8c1776abd6057fb150",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074615582325",
+              "mode": "33206",
+              "size": "292",
+              "mtimeNs": "1785890748753428700",
+              "ctimeNs": "1785890748753428700"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871670",
+              "mode": "33206",
+              "size": "3481",
+              "mtimeNs": "1785890709902025200",
+              "ctimeNs": "1785890709902025200"
+            }
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029055",
+              "mode": "33206",
+              "size": "1149",
+              "mtimeNs": "1785890464600775500",
+              "ctimeNs": "1785890464600775500"
+            }
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224755318400",
+              "mode": "33206",
+              "size": "4180",
+              "mtimeNs": "1785887651979817000",
+              "ctimeNs": "1785887651979817000"
+            }
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649685450369",
+              "mode": "33206",
+              "size": "999",
+              "mtimeNs": "1785887299996925300",
+              "ctimeNs": "1785887299996925300"
+            }
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174708739714",
+              "mode": "33206",
+              "size": "4862",
+              "mtimeNs": "1785888768427677200",
+              "ctimeNs": "1785888768427677200"
+            }
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029059",
+              "mode": "33206",
+              "size": "3884",
+              "mtimeNs": "1785889164937214900",
+              "ctimeNs": "1785889164937214900"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174708739716",
+              "mode": "33206",
+              "size": "3958",
+              "mtimeNs": "1785888146196628900",
+              "ctimeNs": "1785888146196628900"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029061",
+              "mode": "33206",
+              "size": "1857",
+              "mtimeNs": "1785890748744112000",
+              "ctimeNs": "1785890748744112000"
+            }
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174708739718",
+              "mode": "33206",
+              "size": "680",
+              "mtimeNs": "1785890630676271400",
+              "ctimeNs": "1785890630676271400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871672",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799825186439",
+              "mode": "33206",
+              "size": "1662",
+              "mtimeNs": "1785887075411678600",
+              "ctimeNs": "1785887075411678600"
+            }
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475786",
+              "mode": "33206",
+              "size": "4804",
+              "mtimeNs": "1785887075414169400",
+              "ctimeNs": "1785887075414169400"
+            }
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475785",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475784",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475787",
+              "mode": "33206",
+              "size": "2113",
+              "mtimeNs": "1785890709903532200",
+              "ctimeNs": "1785890709903532200"
+            }
+          }
+        ]
+      },
+      "expectedAfter": {
+        "algorithm": "sha256",
+        "digest": "c219575491dd110912059caccb4be60cd7cb3c93e2cbfa2403088353b20ca9a9",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "292",
+            "sha256": "433b0da8674fd2726c96a6cc0d8b05ca21a989d4dfa2f60e039046923aa2142f"
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "executable": false,
+            "size": "1856",
+            "sha256": "0c7c1078e03c85191808d55e798992be39fd5eeff736976f226f460c59176963"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3481",
+            "sha256": "bd6061dc969b70ab9ca402d9e05cd9e81c32f309f523d0ff28659192519fb4bb"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1149",
+            "sha256": "6825f586037d95cd2e756db737230d4a2f20e081adb049a07b1f30655e996ea0"
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4180",
+            "sha256": "8211f6c349fa562bdf79eed9854e3553079ec6f11ebdb688b0a0ff8d4535bf54"
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "executable": false,
+            "size": "999",
+            "sha256": "ddfb4ea642c942fa7e3ae993d2bd31c162ef0e69a929e6e708e5ee973786607b"
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4862",
+            "sha256": "13b513b090a0ee9aef818f6b9a0b12db3c36433c70d2080516046ba4c690f194"
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3884",
+            "sha256": "b0ffc60f1f0c7b1e2366ed3820de9823af67d40678d8175682a541fa47b17538"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3958",
+            "sha256": "8c88492e01e286a39002fd3cc76e903c3d59a388424065aab54ac5e5d4b8bbc8"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1857",
+            "sha256": "a884bf8114f4f8d316dc3ccd4c96fa6317fd64f7030ac3b33d439a960e4ecf5b"
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "680",
+            "sha256": "1cca8273e19bdcecd74ea6e5204be48a9b7f92c04c04046c00f83a5b4322633c"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1662",
+            "sha256": "31012c5c1f0f8fc5f921670ecb6edbe914b7d9e04e775786d581eee654a71a5e"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4804",
+            "sha256": "95e463361727d5e19d270d921f383912147baeb8f222c44192a4fc14225ab534"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2113",
+            "sha256": "84b67715e2f5e647c96d2066d9e009d13a51b12e21a9b71622690734bb8509ed"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "8162774334204795",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "39307f67ac7af9c253d235d859f4fb578a072ad99be4207a65d1b0822f44c364",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074615582325",
+              "mode": "33206",
+              "size": "292",
+              "mtimeNs": "1785890748753428700",
+              "ctimeNs": "1785890748753428700"
+            }
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749778607682",
+              "mode": "33206",
+              "size": "1856",
+              "mtimeNs": "1785890749076187100",
+              "ctimeNs": "1785890749077201800"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871670",
+              "mode": "33206",
+              "size": "3481",
+              "mtimeNs": "1785890709902025200",
+              "ctimeNs": "1785890709902025200"
+            }
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029055",
+              "mode": "33206",
+              "size": "1149",
+              "mtimeNs": "1785890464600775500",
+              "ctimeNs": "1785890464600775500"
+            }
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224755318400",
+              "mode": "33206",
+              "size": "4180",
+              "mtimeNs": "1785887651979817000",
+              "ctimeNs": "1785887651979817000"
+            }
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649685450369",
+              "mode": "33206",
+              "size": "999",
+              "mtimeNs": "1785887299996925300",
+              "ctimeNs": "1785887299996925300"
+            }
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174708739714",
+              "mode": "33206",
+              "size": "4862",
+              "mtimeNs": "1785888768427677200",
+              "ctimeNs": "1785888768427677200"
+            }
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029059",
+              "mode": "33206",
+              "size": "3884",
+              "mtimeNs": "1785889164937214900",
+              "ctimeNs": "1785889164937214900"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174708739716",
+              "mode": "33206",
+              "size": "3958",
+              "mtimeNs": "1785888146196628900",
+              "ctimeNs": "1785888146196628900"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029061",
+              "mode": "33206",
+              "size": "1857",
+              "mtimeNs": "1785890748744112000",
+              "ctimeNs": "1785890748744112000"
+            }
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174708739718",
+              "mode": "33206",
+              "size": "680",
+              "mtimeNs": "1785890630676271400",
+              "ctimeNs": "1785890630676271400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871672",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799825186439",
+              "mode": "33206",
+              "size": "1662",
+              "mtimeNs": "1785887075411678600",
+              "ctimeNs": "1785887075411678600"
+            }
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475786",
+              "mode": "33206",
+              "size": "4804",
+              "mtimeNs": "1785887075414169400",
+              "ctimeNs": "1785887075414169400"
+            }
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475785",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475784",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475787",
+              "mode": "33206",
+              "size": "2113",
+              "mtimeNs": "1785890709903532200",
+              "ctimeNs": "1785890709903532200"
+            }
+          }
+        ]
+      },
+      "observedAfter": {
+        "algorithm": "sha256",
+        "digest": "c219575491dd110912059caccb4be60cd7cb3c93e2cbfa2403088353b20ca9a9",
+        "entries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "executable": false,
+            "size": "292",
+            "sha256": "433b0da8674fd2726c96a6cc0d8b05ca21a989d4dfa2f60e039046923aa2142f"
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "executable": false,
+            "size": "1856",
+            "sha256": "0c7c1078e03c85191808d55e798992be39fd5eeff736976f226f460c59176963"
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3481",
+            "sha256": "bd6061dc969b70ab9ca402d9e05cd9e81c32f309f523d0ff28659192519fb4bb"
+          },
+          {
+            "path": "evidence",
+            "kind": "directory"
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1149",
+            "sha256": "6825f586037d95cd2e756db737230d4a2f20e081adb049a07b1f30655e996ea0"
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4180",
+            "sha256": "8211f6c349fa562bdf79eed9854e3553079ec6f11ebdb688b0a0ff8d4535bf54"
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "executable": false,
+            "size": "999",
+            "sha256": "ddfb4ea642c942fa7e3ae993d2bd31c162ef0e69a929e6e708e5ee973786607b"
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4862",
+            "sha256": "13b513b090a0ee9aef818f6b9a0b12db3c36433c70d2080516046ba4c690f194"
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3884",
+            "sha256": "b0ffc60f1f0c7b1e2366ed3820de9823af67d40678d8175682a541fa47b17538"
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "3958",
+            "sha256": "8c88492e01e286a39002fd3cc76e903c3d59a388424065aab54ac5e5d4b8bbc8"
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1857",
+            "sha256": "a884bf8114f4f8d316dc3ccd4c96fa6317fd64f7030ac3b33d439a960e4ecf5b"
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "executable": false,
+            "size": "680",
+            "sha256": "1cca8273e19bdcecd74ea6e5204be48a9b7f92c04c04046c00f83a5b4322633c"
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "executable": false,
+            "size": "1662",
+            "sha256": "31012c5c1f0f8fc5f921670ecb6edbe914b7d9e04e775786d581eee654a71a5e"
+          },
+          {
+            "path": "specs",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory"
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "executable": false,
+            "size": "4804",
+            "sha256": "95e463361727d5e19d270d921f383912147baeb8f222c44192a4fc14225ab534"
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "executable": false,
+            "size": "2113",
+            "sha256": "84b67715e2f5e647c96d2066d9e009d13a51b12e21a9b71622690734bb8509ed"
+          }
+        ],
+        "rootIdentity": {
+          "dev": "3122291782",
+          "ino": "8162774334204795",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        },
+        "authorityDigest": "39307f67ac7af9c253d235d859f4fb578a072ad99be4207a65d1b0822f44c364",
+        "authorityEntries": [
+          {
+            "path": ".openspec.yaml",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4785074615582325",
+              "mode": "33206",
+              "size": "292",
+              "mtimeNs": "1785890748753428700",
+              "ctimeNs": "1785890748753428700"
+            }
+          },
+          {
+            "path": "archive.json",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2814749778607682",
+              "mode": "33206",
+              "size": "1856",
+              "mtimeNs": "1785890749076187100",
+              "ctimeNs": "1785890749077201800"
+            }
+          },
+          {
+            "path": "design.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871670",
+              "mode": "33206",
+              "size": "3481",
+              "mtimeNs": "1785890709902025200",
+              "ctimeNs": "1785890709902025200"
+            }
+          },
+          {
+            "path": "evidence/full-root-unblock.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029055",
+              "mode": "33206",
+              "size": "1149",
+              "mtimeNs": "1785890464600775500",
+              "ctimeNs": "1785890464600775500"
+            }
+          },
+          {
+            "path": "evidence/implementation-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3096224755318400",
+              "mode": "33206",
+              "size": "4180",
+              "mtimeNs": "1785887651979817000",
+              "ctimeNs": "1785887651979817000"
+            }
+          },
+          {
+            "path": "evidence/red-regression.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3940649685450369",
+              "mode": "33206",
+              "size": "999",
+              "mtimeNs": "1785887299996925300",
+              "ctimeNs": "1785887299996925300"
+            }
+          },
+          {
+            "path": "evidence/review-fix-round-1.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174708739714",
+              "mode": "33206",
+              "size": "4862",
+              "mtimeNs": "1785888768427677200",
+              "ctimeNs": "1785888768427677200"
+            }
+          },
+          {
+            "path": "evidence/review-report-round-2.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029059",
+              "mode": "33206",
+              "size": "3884",
+              "mtimeNs": "1785889164937214900",
+              "ctimeNs": "1785889164937214900"
+            }
+          },
+          {
+            "path": "evidence/review-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174708739716",
+              "mode": "33206",
+              "size": "3958",
+              "mtimeNs": "1785888146196628900",
+              "ctimeNs": "1785888146196628900"
+            }
+          },
+          {
+            "path": "evidence/ship-log.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3377699732029061",
+              "mode": "33206",
+              "size": "1857",
+              "mtimeNs": "1785890748744112000",
+              "ctimeNs": "1785890748744112000"
+            }
+          },
+          {
+            "path": "evidence/verification-report.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "3659174708739718",
+              "mode": "33206",
+              "size": "680",
+              "mtimeNs": "1785890630676271400",
+              "ctimeNs": "1785890630676271400"
+            }
+          },
+          {
+            "path": "evidence",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "4503599638871672",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "proposal.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "2251799825186439",
+              "mode": "33206",
+              "size": "1662",
+              "mtimeNs": "1785887075411678600",
+              "ctimeNs": "1785887075411678600"
+            }
+          },
+          {
+            "path": "specs/cli-config/spec.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475786",
+              "mode": "33206",
+              "size": "4804",
+              "mtimeNs": "1785887075414169400",
+              "ctimeNs": "1785887075414169400"
+            }
+          },
+          {
+            "path": "specs/cli-config",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475785",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "specs",
+            "kind": "directory",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475784",
+              "mode": "16822",
+              "size": "0",
+              "mtimeNs": "0",
+              "ctimeNs": "0"
+            }
+          },
+          {
+            "path": "tasks.md",
+            "kind": "file",
+            "identity": {
+              "dev": "3122291782",
+              "ino": "1970324848475787",
+              "mode": "33206",
+              "size": "2113",
+              "mtimeNs": "1785890709903532200",
+              "ctimeNs": "1785890709903532200"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "finalReservation": {
+    "identity": {
+      "dev": "3122291782",
+      "ino": "8162774334204795",
+      "mode": "16822",
+      "size": "0",
+      "mtimeNs": "0",
+      "ctimeNs": "0"
+    },
+    "entries": [
+      {
+        "path": ".openspec.yaml",
+        "kind": "file",
+        "expected": {
+          "path": ".openspec.yaml",
+          "kind": "file",
+          "executable": false,
+          "size": "292",
+          "sha256": "433b0da8674fd2726c96a6cc0d8b05ca21a989d4dfa2f60e039046923aa2142f"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "4785074615582325",
+          "mode": "33206",
+          "size": "292",
+          "mtimeNs": "1785890748753428700",
+          "ctimeNs": "1785890748753428700"
+        }
+      },
+      {
+        "path": "design.md",
+        "kind": "file",
+        "expected": {
+          "path": "design.md",
+          "kind": "file",
+          "executable": false,
+          "size": "3481",
+          "sha256": "bd6061dc969b70ab9ca402d9e05cd9e81c32f309f523d0ff28659192519fb4bb"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "4503599638871670",
+          "mode": "33206",
+          "size": "3481",
+          "mtimeNs": "1785890709902025200",
+          "ctimeNs": "1785890709902025200"
+        }
+      },
+      {
+        "path": "evidence",
+        "kind": "directory",
+        "expected": {
+          "path": "evidence",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "4503599638871672",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "evidence/full-root-unblock.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/full-root-unblock.md",
+          "kind": "file",
+          "executable": false,
+          "size": "1149",
+          "sha256": "6825f586037d95cd2e756db737230d4a2f20e081adb049a07b1f30655e996ea0"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "3377699732029055",
+          "mode": "33206",
+          "size": "1149",
+          "mtimeNs": "1785890464600775500",
+          "ctimeNs": "1785890464600775500"
+        }
+      },
+      {
+        "path": "evidence/implementation-report.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/implementation-report.md",
+          "kind": "file",
+          "executable": false,
+          "size": "4180",
+          "sha256": "8211f6c349fa562bdf79eed9854e3553079ec6f11ebdb688b0a0ff8d4535bf54"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "3096224755318400",
+          "mode": "33206",
+          "size": "4180",
+          "mtimeNs": "1785887651979817000",
+          "ctimeNs": "1785887651979817000"
+        }
+      },
+      {
+        "path": "evidence/red-regression.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/red-regression.md",
+          "kind": "file",
+          "executable": false,
+          "size": "999",
+          "sha256": "ddfb4ea642c942fa7e3ae993d2bd31c162ef0e69a929e6e708e5ee973786607b"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "3940649685450369",
+          "mode": "33206",
+          "size": "999",
+          "mtimeNs": "1785887299996925300",
+          "ctimeNs": "1785887299996925300"
+        }
+      },
+      {
+        "path": "evidence/review-fix-round-1.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/review-fix-round-1.md",
+          "kind": "file",
+          "executable": false,
+          "size": "4862",
+          "sha256": "13b513b090a0ee9aef818f6b9a0b12db3c36433c70d2080516046ba4c690f194"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "3659174708739714",
+          "mode": "33206",
+          "size": "4862",
+          "mtimeNs": "1785888768427677200",
+          "ctimeNs": "1785888768427677200"
+        }
+      },
+      {
+        "path": "evidence/review-report-round-2.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/review-report-round-2.md",
+          "kind": "file",
+          "executable": false,
+          "size": "3884",
+          "sha256": "b0ffc60f1f0c7b1e2366ed3820de9823af67d40678d8175682a541fa47b17538"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "3377699732029059",
+          "mode": "33206",
+          "size": "3884",
+          "mtimeNs": "1785889164937214900",
+          "ctimeNs": "1785889164937214900"
+        }
+      },
+      {
+        "path": "evidence/review-report.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/review-report.md",
+          "kind": "file",
+          "executable": false,
+          "size": "3958",
+          "sha256": "8c88492e01e286a39002fd3cc76e903c3d59a388424065aab54ac5e5d4b8bbc8"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "3659174708739716",
+          "mode": "33206",
+          "size": "3958",
+          "mtimeNs": "1785888146196628900",
+          "ctimeNs": "1785888146196628900"
+        }
+      },
+      {
+        "path": "evidence/ship-log.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/ship-log.md",
+          "kind": "file",
+          "executable": false,
+          "size": "1857",
+          "sha256": "a884bf8114f4f8d316dc3ccd4c96fa6317fd64f7030ac3b33d439a960e4ecf5b"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "3377699732029061",
+          "mode": "33206",
+          "size": "1857",
+          "mtimeNs": "1785890748744112000",
+          "ctimeNs": "1785890748744112000"
+        }
+      },
+      {
+        "path": "evidence/verification-report.md",
+        "kind": "file",
+        "expected": {
+          "path": "evidence/verification-report.md",
+          "kind": "file",
+          "executable": false,
+          "size": "680",
+          "sha256": "1cca8273e19bdcecd74ea6e5204be48a9b7f92c04c04046c00f83a5b4322633c"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "3659174708739718",
+          "mode": "33206",
+          "size": "680",
+          "mtimeNs": "1785890630676271400",
+          "ctimeNs": "1785890630676271400"
+        }
+      },
+      {
+        "path": "proposal.md",
+        "kind": "file",
+        "expected": {
+          "path": "proposal.md",
+          "kind": "file",
+          "executable": false,
+          "size": "1662",
+          "sha256": "31012c5c1f0f8fc5f921670ecb6edbe914b7d9e04e775786d581eee654a71a5e"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "2251799825186439",
+          "mode": "33206",
+          "size": "1662",
+          "mtimeNs": "1785887075411678600",
+          "ctimeNs": "1785887075411678600"
+        }
+      },
+      {
+        "path": "specs",
+        "kind": "directory",
+        "expected": {
+          "path": "specs",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1970324848475784",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "specs/cli-config",
+        "kind": "directory",
+        "expected": {
+          "path": "specs/cli-config",
+          "kind": "directory"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1970324848475785",
+          "mode": "16822",
+          "size": "0",
+          "mtimeNs": "0",
+          "ctimeNs": "0"
+        }
+      },
+      {
+        "path": "specs/cli-config/spec.md",
+        "kind": "file",
+        "expected": {
+          "path": "specs/cli-config/spec.md",
+          "kind": "file",
+          "executable": false,
+          "size": "4804",
+          "sha256": "95e463361727d5e19d270d921f383912147baeb8f222c44192a4fc14225ab534"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1970324848475786",
+          "mode": "33206",
+          "size": "4804",
+          "mtimeNs": "1785887075414169400",
+          "ctimeNs": "1785887075414169400"
+        }
+      },
+      {
+        "path": "tasks.md",
+        "kind": "file",
+        "expected": {
+          "path": "tasks.md",
+          "kind": "file",
+          "executable": false,
+          "size": "2113",
+          "sha256": "84b67715e2f5e647c96d2066d9e009d13a51b12e21a9b71622690734bb8509ed"
+        },
+        "state": "copied",
+        "identity": {
+          "dev": "3122291782",
+          "ino": "1970324848475787",
+          "mode": "33206",
+          "size": "2113",
+          "mtimeNs": "1785890709903532200",
+          "ctimeNs": "1785890709903532200"
+        }
+      }
+    ]
+  },
+  "specProgress": [
+    {
+      "actionId": "f06c85f6f4f34c0c0cc440875642639a9fdd4d90b9a4c9b5307c827e578d649b",
+      "action": "update",
+      "target": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code-wt-ecp-shared-bounded-loop-lifecycle\\rasen\\specs\\cli-config\\spec.md",
+      "backupOrQuarantine": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code-wt-ecp-shared-bounded-loop-lifecycle\\rasen\\specs\\cli-config\\.rasen-archive-spec-31593bac-258c-4b2c-a9a8-ba0c614087f6-f06c85f6f4f3\\original",
+      "temporary": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code-wt-ecp-shared-bounded-loop-lifecycle\\rasen\\specs\\cli-config\\.rasen-archive-spec-31593bac-258c-4b2c-a9a8-ba0c614087f6-f06c85f6f4f3\\result.tmp",
+      "state": "complete",
+      "claimIdentity": {
+        "dev": "3122291782",
+        "ino": "6755399452556915",
+        "mode": "16822",
+        "size": "0",
+        "mtimeNs": "0",
+        "ctimeNs": "0"
+      },
+      "temporaryIdentity": {
+        "dev": "3122291782",
+        "ino": "34058472193490533",
+        "mode": "33206",
+        "size": "16389",
+        "mtimeNs": "1785890748782338200",
+        "ctimeNs": "1785890748782338200"
+      },
+      "publishedIdentity": {
+        "dev": "3122291782",
+        "ino": "34058472193490533",
+        "mode": "33206",
+        "size": "16389",
+        "mtimeNs": "1785890748782338200",
+        "ctimeNs": "1785890748793244900"
+      }
+    }
+  ],
+  "cleanerProgress": [
+    {
+      "path": "auto-run.json",
+      "state": "deleted"
+    }
+  ],
+  "sourceProgress": {
+    "state": "removed",
+    "quarantine": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code-wt-ecp-shared-bounded-loop-lifecycle\\rasen\\changes\\.rasen-archive-source-31593bac-258c-4b2c-a9a8-ba0c614087f6\\config-project-root-ambient-collision"
+  },
+  "updatedAt": "2026-08-05T00:45:49.164Z"
+}

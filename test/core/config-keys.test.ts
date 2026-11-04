@@ -356,7 +356,7 @@ describe('config-keys registry', () => {
   });
 
   describe('scope assignment', () => {
-      it('assigns exactly 10 global-only, 4 global+project, 2 store+project, and 15 all-three keys', () => {
+      it('assigns exactly 10 global-only, 4 global+project, 2 store+project, and 25 all-three keys', () => {
       const nonWildcard = CONFIG_KEY_REGISTRY.filter((def) => !def.wildcard);
       const sorted = (def: (typeof nonWildcard)[number]) => [...def.scopes].sort().join(',');
       const globalOnly = nonWildcard.filter((def) => sorted(def) === 'global');
@@ -384,10 +384,11 @@ describe('config-keys registry', () => {
           'workflows',
         ]);
       expect(storeProject.length).toBe(2);
-      // 21 includes six generic effort keys plus `runs.engine` (ECP-5 engine selection policy: the
+      // 25 includes the four OmniCross connection keys, six generic effort keys, and
+      // `runs.engine` (ECP-5 engine selection policy: the
       // `ecp-change-run-runtime` delta requires it to resolve project > store
       // > global, so it MUST carry all three scopes).
-      expect(allThree.length).toBe(21);
+      expect(allThree.length).toBe(25);
       // Seven wildcard families: featureFlags, five pipelines families, and
       // runtime threshold bindings.
       const wildcards = CONFIG_KEY_REGISTRY.filter((def) => def.wildcard);

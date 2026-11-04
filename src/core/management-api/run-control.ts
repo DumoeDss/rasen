@@ -14,30 +14,27 @@
  * ignores the context's `deliveryMode` entirely, always returning an empty
  * action list). HTTP responses therefore NEVER contain executable
  * Agent/Command/Host payloads — they return only the committed view and an
- * EMPTY receipt action list. A subsequent trusted CLI resume performs the
- * first atomic grant; browser response loss/replay cannot turn an unconsumed
- * admission into an uncertain already-delivered effect.
+ * EMPTY receipt action list plus prompt-free candidates. A subsequent trusted
+ * CLI admit binds private prompt bytes and performs the atomic grant; browser
+ * response loss/replay cannot turn an unconsumed admission into an uncertain
+ * already-delivered effect.
  */
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { createHash } from 'node:crypto';
 
 import type { ProjectHome } from '../project-home.js';
 import {
   decodeControl,
+  type AgentTurnInputCandidate,
   type ChangeRunControlRequest,
   type ChangeRunView,
 } from '../change-run/index.js';
-import {
-  derivePlanningSpaceId,
-  deriveWorkspaceInstanceId,
-  readPhysicalIdentity,
-} from '../change-run/internal/identity.js';
 import { projectRunView } from '../change-run/internal/projector.js';
 import { decodeCanonicalRunRecord, type CanonicalRunRecord } from '../change-run/internal/record.js';
 import type { RuntimePlan } from '../change-run/internal/runtime-plan.js';
+import { deriveRunWorkspaceIds } from './run-workspace-identity.js';
 
 const require = createRequire(import.meta.url);
 
@@ -161,6 +158,8 @@ export interface RunControlResponse {
   readonly disposition: string;
   /** ALWAYS empty — the bridge seals defer; no executable grants in the response. */
   readonly actions: readonly never[];
+  /** Prompt-free agent candidates that the trusted driver may render and admit. */
+  readonly candidates: readonly AgentTurnInputCandidate[];
 }
 
 export type RunControlResult =
@@ -185,29 +184,6 @@ function resolveCliEntry(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Workspace identity (same read-only chain as runs.ts).
-// ---------------------------------------------------------------------------
-
-function deriveWorkspaceIdFromRoot(root: string): string | null {
-  try {
-    const planningSpaceHome = `project-${createHash('sha256')
-      .update(root)
-      .digest('hex')
-      .slice(0, 12)}`;
-    const planningSpaceId = derivePlanningSpaceId(planningSpaceHome);
-    const st = fs.statSync(root, { bigint: true });
-    const physical = readPhysicalIdentity({
-      device: st.dev,
-      ino: st.ino,
-      birthtimeMs: st.birthtimeMs,
-    });
-    return deriveWorkspaceInstanceId(planningSpaceId, physical) as string;
-  } catch {
-    return null;
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Pre-spawn admission: read-only Record load + validation.
 // ---------------------------------------------------------------------------
 
@@ -227,6 +203,7 @@ function admitControlRequest(
   changeId: string,
   runId: string,
   root: string | undefined,
+  home: ProjectHome | null,
   body: unknown,
   storeRoot: string
 ): PreSpawnAdmission | { ok: false; status: number; code: string; message: string } {
@@ -332,8 +309,16 @@ function admitControlRequest(
 
   // --- Workspace scope: mutations are rejected from other worktrees ---
   if (root) {
-    const expectedWorkspace = deriveWorkspaceIdFromRoot(root);
-    if (expectedWorkspace !== null && record.workspaceInstanceId !== expectedWorkspace) {
+    const workspaceResolution = deriveRunWorkspaceIds(root, home, changeId);
+    if (!workspaceResolution.ok) {
+      return {
+        ok: false,
+        status: 503,
+        code: workspaceResolution.code,
+        message: `${workspaceResolution.message} Control is rejected until workspace authority can be established.`,
+      };
+    }
+    if (!workspaceResolution.workspaceIds.includes(record.workspaceInstanceId)) {
       return {
         ok: false,
         status: 403,
@@ -406,6 +391,7 @@ interface CliControlReceipt {
   runId?: unknown;
   disposition?: unknown;
   status?: unknown;
+  candidates?: unknown;
 }
 
 /**
@@ -422,7 +408,8 @@ function parseCliReceipt(stdout: string): CliControlReceipt | null {
     if (
       typeof parsed.runId === 'string' &&
       typeof parsed.disposition === 'string' &&
-      (parsed.status === undefined || typeof parsed.status === 'string')
+      (parsed.status === undefined || typeof parsed.status === 'string') &&
+      (parsed.candidates === undefined || Array.isArray(parsed.candidates))
     ) {
       return parsed;
     }
@@ -443,6 +430,8 @@ export interface HandleRunControlOptions {
   timeoutMs?: number;
   /** SIGTERM → SIGKILL grace (default 2s). */
   killGraceMs?: number;
+  /** Server-lifetime Run store root; avoids re-reading mutable process env per request. */
+  runsRoot?: string;
 }
 
 /**
@@ -468,16 +457,25 @@ export async function handleRunControl(
   options: HandleRunControlOptions = {}
 ): Promise<RunControlResult> {
   // --- Resolve the store root ---
-  let storeRoot: string;
-  try {
-    const { getGlobalDataDir } = await import('../global-config.js');
-    storeRoot = path.join(getGlobalDataDir(), 'runs');
-  } catch {
-    return { ok: false, status: 500, code: 'run_store_unavailable', message: 'Machine data directory is not available.' };
+  let storeRoot = options.runsRoot;
+  if (!storeRoot) {
+    try {
+      const { getGlobalDataDir } = await import('../global-config.js');
+      storeRoot = path.join(getGlobalDataDir(), 'runs');
+    } catch {
+      return { ok: false, status: 500, code: 'run_store_unavailable', message: 'Machine data directory is not available.' };
+    }
   }
 
   // --- Pre-spawn admission ---
-  const admission = admitControlRequest(changeId, runId, root, body, storeRoot);
+  const admission = admitControlRequest(
+    changeId,
+    runId,
+    root,
+    home,
+    body,
+    storeRoot
+  );
   if (!('record' in admission)) {
     return admission;
   }
@@ -591,7 +589,7 @@ export async function handleRunControl(
   // The control method inherently defers (facade.control ignores deliveryMode
   // and always returns empty actions). The receipt actions are sealed to empty
   // regardless of what the CLI output contained — no executable payload leaves
-  // via HTTP. A subsequent trusted CLI resume performs the first atomic grant.
+  // via HTTP. A subsequent trusted CLI admit performs the atomic grant.
   return {
     ok: true,
     status: 200,
@@ -599,6 +597,7 @@ export async function handleRunControl(
       view,
       disposition: receipt.disposition as string,
       actions: [] as readonly never[],
+      candidates: (receipt.candidates ?? []) as readonly AgentTurnInputCandidate[],
     },
   };
 }

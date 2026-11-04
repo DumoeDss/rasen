@@ -1,0 +1,71 @@
+{
+  "change": "issue-autodecompose-graph",
+  "archivedAt": "2026-08-21T12:13:49.958Z",
+  "codeCommit": "6b00f24da260b510d43ff0ceeef03aa7c895bc35",
+  "planningBranch": "feat/issue-phase4",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/dogfood-issue3-create.json",
+      "sha256": "982c2a720a34fcc27dfc82f6497435537d63a8d501b08a1764c3b36782dccde8"
+    },
+    {
+      "path": "evidence/dogfood-issue3-doc-sha-after.txt",
+      "sha256": "7ea3c3235fb8a1ebd4581739dfd25e0204c234b2c42eda3f3680a9f3b19b5a55"
+    },
+    {
+      "path": "evidence/dogfood-issue3-doc-sha-before.txt",
+      "sha256": "7ea3c3235fb8a1ebd4581739dfd25e0204c234b2c42eda3f3680a9f3b19b5a55"
+    },
+    {
+      "path": "evidence/dogfood-issue3-publish-human-0001.txt",
+      "sha256": "c57c2a3491fb3c2ba8d375075b8e550c6e103a1fc09fa279e5b09453ccf1a499"
+    },
+    {
+      "path": "evidence/dogfood-issue3-publish-json-0002.json",
+      "sha256": "a5c2baf7883e64c0071c2ab2a164f6eb99d42878b8109d8fd24942fa4e3e5041"
+    },
+    {
+      "path": "evidence/dogfood-issue3-show-human.txt",
+      "sha256": "77b2d5698c9a2dfadbf6014dfb7e2b532f3b89d0be31feb65edb523b2b15cca4"
+    },
+    {
+      "path": "evidence/dogfood-issue3-show-json.json",
+      "sha256": "9832c087a107a1b18fda65fa1b8c22b385ab43d12d4fe5b70c49fe50d3b9f59e"
+    },
+    {
+      "path": "evidence/fix-round-1.md",
+      "sha256": "386938f4e37f67839af1af2224ad9f58cb13e0b6aee321ef82c197226d26e1a9"
+    },
+    {
+      "path": "evidence/issue-3-decomposition.yaml",
+      "sha256": "9b29c574ff7ef4e697cef77d177e3e287ad15797ee64623c6069dc3b4e6f9bf7"
+    },
+    {
+      "path": "evidence/local-full-suite-triage.md",
+      "sha256": "b6e5ce54da6f3ea85fcad75fc37278940febbd929372a0fb0d4ce903904c9ca3"
+    },
+    {
+      "path": "evidence/pipeline-show-auto-decompose.json",
+      "sha256": "2dbc6a8245cf443199c5998b37415a82939f5981e61d266dd1597b53a85c6927"
+    },
+    {
+      "path": "evidence/registry-diff-sanctioned.patch",
+      "sha256": "f87cc6712611053e1a94e44772b3c1cacdd029444ce01f29aff9d3bfd1cc6561"
+    },
+    {
+      "path": "evidence/review-report.md",
+      "sha256": "d6862ae46e5b72cdc2e16e93b9a0830a00520ce638d761b076f10ec4487cafbb"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "1ce4520ac956340e99f3279e74e7e9228f74ea2536af570f6fa1727a7afd6e00"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [],
+  "missing": [
+    "verification-report"
+  ]
+}

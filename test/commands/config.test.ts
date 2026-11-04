@@ -633,10 +633,20 @@ describe('config command --scope project and promoted keys', () => {
   });
 
   it('fails --scope project operations outside a Rasen project', async () => {
-    process.chdir(tempDir); // no rasen/ here
-    await runConfigCommand(['get', 'schema', '--scope', 'project']);
-    expect(process.exitCode).toBe(1);
-    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('no Rasen project found'));
+    vi.resetModules();
+    vi.doMock('../../src/core/planning-home.js', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../src/core/planning-home.js')>();
+      return { ...actual, findRepoPlanningRootSync: vi.fn(() => null) };
+    });
+    try {
+      process.chdir(tempDir);
+      await runConfigCommand(['get', 'schema', '--scope', 'project']);
+      expect(process.exitCode).toBe(1);
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('no Rasen project found'));
+    } finally {
+      vi.doUnmock('../../src/core/planning-home.js');
+      vi.resetModules();
+    }
   });
 
   it('rejects an unknown project key without modifying the file', async () => {

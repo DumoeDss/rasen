@@ -36,7 +36,27 @@ import {
 import { findRepoPlanningRootSync } from '../core/planning-home.js';
 import { isInteractive } from '../utils/interactive.js';
 import { WORKSPACE_DIR_NAME } from '../core/config.js';
+import { StoreAggregateQuery } from '../core/store/query/index.js';
+import {
+  ISSUE_ATTENTION_KIND_ORDER,
+  type IssueAttentionItem,
+} from '../core/issue-status/index.js';
+import {
+  attentionCounts,
+  composeStoreAttention,
+  resolveRunStateContext,
+  type StoreAttentionScanEntry,
+} from '../core/issue-read/index.js';
 import { runAdopt, runEject } from './store-migration.js';
+import {
+  runStoreMigrateLayout,
+  type StoreMigrateLayoutOptions,
+} from './store-migrate-layout.js';
+import { registerStoreAggregateCommands } from './store-aggregate.js';
+import { registerStoreIssueCommand } from './store-issue.js';
+import { registerStoreTargetLineCommand } from './store-target-line.js';
+import { registerWorkspaceCommand } from './workspace.js';
+import { projectStoreAttentionForWire } from '../core/management-api/stores.js';
 import {
   diagnoseMigrationDrift,
   migrateStoreMembership,
@@ -58,6 +78,8 @@ interface StoreSetupOptions {
   initGit?: boolean;
   json?: boolean;
   remote?: string;
+  /** `--layout <version>`: explicit layout request; only 2 is accepted. */
+  layout?: string;
 }
 
 interface StoreRegisterOptions {
@@ -525,8 +547,97 @@ function toDoctorOutput(result: StoreDoctorResult): StoreDoctorOutput {
 }
 
 
+// -----------------------------------------------------------------------------
+// The attention scan (`store attention`) — issue-needs-attention D3
+// -----------------------------------------------------------------------------
 
+interface StoreAttentionOptions {
+  store?: string;
+  issue?: string;
+  json?: boolean;
+}
 
+/** One attention item's human line — the item's own context carries the axes. */
+function renderAttentionItem(
+  item: IssueAttentionItem,
+  issueKeys: ReadonlyMap<string, string>
+): string {
+  const context = `[${issueKeys.get(item.issueId) ?? item.issueId} ${item.phase}/${item.health}]`;
+  const who = item.nodeId === null ? '' : item.alias === null ? ` ${item.nodeId}` : ` ${item.nodeId} ${item.alias}`;
+  switch (item.kind) {
+    case 'failure':
+      return `    ${context}${who} failed${item.diagnostic === null ? '' : ` — ${item.diagnostic}`}`;
+    case 'blocked-behind':
+      return `    ${context}${who} blocked behind ${item.blockers
+        .map(blocker => `${blocker.nodeId}@${blocker.projectId}: ${blocker.state}`)
+        .join(', ')}`;
+    case 'waiting-human':
+      return `    ${context}${who} waiting for a human`;
+    case 'acceptance-awaiting': {
+      const gate =
+        item.gate === null
+          ? 'gate not evaluated on this read — no acceptance facts supplied'
+          : item.gate.eligible
+            ? `gate holds, conditions revision ${item.gate.conditionsRevisionId}`
+            : `gate does not hold — ${item.gate.message}`;
+      return `    ${context} acceptance is the human's next act (${gate})`;
+    }
+    case 'problem': {
+      const node = item.problem.node === null ? '' : ` ${item.problem.node}`;
+      const at = item.problem.ref === null ? '' : ` ${item.problem.ref}`;
+      return `    ${context} problem ${item.problem.kind}${node}${at}: ${item.problem.reason}`;
+    }
+  }
+}
+
+/** The visibility label each per-Issue read already renders, one line per distinct value. */
+function attentionVisibilityLines(entries: readonly StoreAttentionScanEntry[]): string[] {
+  const labels = new Set(
+    entries.map(entry =>
+      entry.runStateVisibility.kind === 'execution-root'
+        ? entry.runStateVisibility.executionRoot
+        : 'none visible from this directory'
+    )
+  );
+  return [...labels].sort().map(label => `  run-state: ${label}`);
+}
+
+/**
+ * The attention answer in human form: the scan summary first (every Issue
+ * scanned with its phase, health, and item count — scanned-and-healthy work is
+ * visible, honestly unlisted), then the items grouped fail-first with every
+ * item listed in full, and an explicit empty state when nothing needs
+ * attention. Reading writes nothing, and the answer says so.
+ */
+function renderAttentionAnswer(
+  narrowed: boolean,
+  narrowedIssueId: string | null,
+  scanned: readonly StoreAttentionScanEntry[],
+  items: readonly IssueAttentionItem[]
+): void {
+  const issueKeys = new Map(scanned.map(entry => [entry.issueId, entry.issueKey]));
+  const narrowedKey = narrowedIssueId === null ? null : issueKeys.get(narrowedIssueId) ?? narrowedIssueId;
+  const scope = narrowed ? `narrowed to ${narrowedKey} — ` : '';
+  console.log(`Store attention scan — ${scope}${scanned.length} Issue(s) scanned`);
+  console.log('  scanned:');
+  for (const entry of scanned) {
+    console.log(`    ${entry.issueKey}: ${entry.phase}/${entry.health} — ${entry.itemCount} item(s)`);
+  }
+  for (const line of attentionVisibilityLines(scanned)) console.log(line);
+  if (items.length === 0) {
+    console.log(`  none need attention — ${scanned.length} Issue(s) scanned, zero items`);
+  } else {
+    console.log(`  attention: ${items.length} item(s)`);
+    for (const kind of ISSUE_ATTENTION_KIND_ORDER) {
+      const group = items.filter(item => item.kind === kind);
+      if (group.length === 0) continue;
+      console.log(`  ${kind} (${group.length})`);
+      for (const item of group) console.log(renderAttentionItem(item, issueKeys));
+    }
+  }
+  console.log('');
+  console.log('  wrote nothing — attention derives; acting on an item remains a human act.');
+}
 
 function formatPathForHuman(targetPath: string): string {
   const home = os.homedir();
@@ -583,7 +694,7 @@ async function resolveSetupInput(
       'store_setup_id_required',
       {
         target: 'store.id',
-        fix: `rasen store setup <id> --path ~/${WORKSPACE_DIR_NAME}/<id> --json`,
+        fix: `rasen store setup <name> --path ~/${WORKSPACE_DIR_NAME}/<name> --json`,
       }
     );
   }
@@ -594,10 +705,14 @@ async function resolveSetupInput(
       'store_setup_path_required',
       {
         target: 'store.root',
-        fix: `rasen store setup ${id ?? '<id>'} --path ~/${WORKSPACE_DIR_NAME}/${id ?? '<id>'}`,
+        fix: `rasen store setup ${id ?? '<name>'} --path ~/${WORKSPACE_DIR_NAME}/${id ?? '<name>'}`,
       }
     );
   }
+
+  // Value-validated before anything is touched (and before any prompt), so an
+  // unsupported request fails fast naming the one accepted value.
+  const layoutVersion = parseSetupLayoutOption(options.layout);
 
   const resolvedId = id ? validateStoreId(id) : await promptStoreId();
   const promptedPath = options.path === undefined
@@ -608,7 +723,22 @@ async function resolveSetupInput(
     id: resolvedId,
     path: options.path ?? promptedPath,
     ...(options.remote !== undefined ? { remote: options.remote } : {}),
+    ...(layoutVersion !== undefined ? { layoutVersion } : {}),
   };
+}
+
+/** `--layout` accepts exactly the layout version 2; anything else is refused. */
+function parseSetupLayoutOption(value: string | undefined): 2 | undefined {
+  if (value === undefined) return undefined;
+  if (value === '2') return 2;
+  throw new StoreError(
+    `Unsupported store layout version '${value}'; only layout version 2 can be requested.`,
+    'store_setup_layout_invalid',
+    {
+      target: 'store.layout',
+      fix: 'Pass --layout 2, or omit the option to create the store as setup creates it today.',
+    }
+  );
 }
 
 async function prepareSetupInput(
@@ -1424,12 +1554,13 @@ export function registerStoreCommand(program: Command): void {
   const store = program.command('store').description('');
 
   store
-    .command('setup [id]')
+    .command('setup [name]')
     .description('')
     .option('--path <path>', '')
     .option('--init-git', '')
     .option('--no-init-git', '')
     .option('--remote <url>', '')
+    .option('--layout <version>', '')
     .option('--json', '')
     .action(async (id: string | undefined, options: StoreSetupOptions) => {
       await storeCommand.setup(id, options);
@@ -1490,10 +1621,28 @@ export function registerStoreCommand(program: Command): void {
     });
 
   store
+    .command('migrate-layout <store-id>')
+    .description('')
+    .option('--mapping <path>', '')
+    .option('--default-target-line <id>', '')
+    .option('--include-untracked', '')
+    .option('--dry-run', '')
+    .option('--apply', '')
+    .option('--status', '')
+    .option('--resume', '')
+    .option('--rollback', '')
+    .option('--retire-flat', '')
+    .option('--json', '')
+    .action(async (storeId: string, options: StoreMigrateLayoutOptions) => {
+      await runStoreMigrateLayout(storeId, options);
+    });
+
+  store
     .command('adopt [path]')
     .description('')
     .option('--to <store-id>', '')
     .option('--archive <mode>', '')
+    .option('--target-line <id>', '')
     .option('--dry-run', '')
     .option('--verify-hash', '')
     .option('--json', '')
@@ -1561,6 +1710,66 @@ export function registerStoreCommand(program: Command): void {
     .action(async (id: string | undefined, options: StoreDoctorOptions) => {
       await storeCommand.doctor(id, options);
     });
+
+  // The cross-Issue attention scan (issue-needs-attention D3): a Store-scoped
+  // FLEET read, hence a sibling of `issue` on the store tree, not one of its
+  // per-Issue subcommands. Read-only: the scan composes each Issue through the
+  // exact CLI status composition `show` performs (same detail, same inputs,
+  // same projection), so attention and show cannot disagree about an Issue's
+  // facts.
+  store
+    .command('attention')
+    .description('')
+    .option('--store <id>', '')
+    .option('--issue <issue-id>', '')
+    .option('--json', '')
+    .action(async (options: StoreAttentionOptions) => {
+      const emptyAnswer = () => ({
+        narrowed: options.issue !== undefined,
+        issueId: options.issue ?? null,
+        scannedCount: 0,
+        scanned: [] as StoreAttentionScanEntry[],
+        items: [] as IssueAttentionItem[],
+        counts: attentionCounts([]),
+        total: 0,
+      });
+      try {
+        // The fleet composition (issue-read-surface design D1): the scan loop
+        // - the ordered per-Issue inputs, the unknown-narrowing refusal, and
+        // the fail-first cross-Issue ordering - lives in `core/issue-read`,
+        // where the daemon's attention path calls the same function, so the
+        // two surfaces cannot assemble a scan differently. The failure
+        // sentinel above stays here: it is this command's shape for a refused
+        // answer, not a fact about the scan.
+        const answer = await composeStoreAttention(
+          StoreAggregateQuery,
+          {
+            ...(options.store === undefined ? {} : { store: options.store }),
+            startPath: process.cwd(),
+          },
+          await resolveRunStateContext(process.cwd()),
+          options.issue
+        );
+        if (options.json) {
+          printJson(projectStoreAttentionForWire(answer));
+          return;
+        }
+        renderAttentionAnswer(answer.narrowed, answer.issueId, answer.scanned, answer.items);
+      } catch (error) {
+        emitFailure(options.json, emptyAnswer(), error, 'store_attention_failed');
+      }
+    });
+
+  registerStoreTargetLineCommand(store);
+  // The bound planning/execution worktree PAIR is Store content — a standalone
+  // project has no pair — and `workspace` is a retired top-level group name
+  // that must stay retired, so the group lives here rather than at the root.
+  registerWorkspaceCommand(store);
+  // A Store-level Issue spans projects, so its commands take only `--store`.
+  registerStoreIssueCommand(store);
+  // The aggregate reads. They answer questions that span more than one project,
+  // which is exactly what no other surface can do.
+  registerStoreAggregateCommands(store);
 
   const lifecycleRedirects = new Set(
     (COMMAND_REGISTRY.subcommands ?? []).filter(

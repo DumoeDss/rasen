@@ -171,6 +171,47 @@ describe('reconcile root-DAG semantics (5.3)', () => {
     expect(result.actions.some((action) => action.kind === 'admit')).toBe(false);
   });
 
+  it.each([
+    ['proceed', 'admit'],
+    ['fail', 'fail'],
+    ['escalate', 'escalate'],
+  ] as const)(
+    'preserves an authored Gate %s disposition through reconciliation',
+    (gateDisposition, expectedActionKind) => {
+      const input = bugFixPlanInput();
+      const plan = createRuntimePlan({
+        ...input,
+        nodes: input.nodes.map((node, index) =>
+          index === 0 && node.kind === 'atomic'
+            ? {
+                ...node,
+                gate: {
+                  gateId: 'propose-gate',
+                  decisionIds: ['selected'],
+                  outcomes: { selected: gateDisposition },
+                },
+              }
+            : node
+        ),
+      });
+      let record = awaitGate(plan, startRecord(plan), PROPOSE);
+      record = decideGate(plan, record, PROPOSE, 'selected');
+
+      const result = reconcile(plan, record);
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.actions).toHaveLength(1);
+      expect(result.actions[0]?.kind).toBe(expectedActionKind);
+      if (gateDisposition !== 'proceed') {
+        expect(result.actions[0]).toEqual({
+          kind: gateDisposition,
+          code: 'gate_rejected_propose-gate',
+        });
+      }
+    }
+  );
+
   it('advances past verify on the simple adaptive route', () => {
     const plan = bugFixPlan();
     // verify has no gate; once propose+apply have succeeded it is admitted directly.

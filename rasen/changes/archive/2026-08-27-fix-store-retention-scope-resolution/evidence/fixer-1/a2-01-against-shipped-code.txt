@@ -1,0 +1,11 @@
+
+ RUN  v3.2.6 E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code
+
+ ✓ test/core/store-planning/store-planning.test.ts (51 tests | 44 skipped) 407ms
+
+ Test Files  1 passed (1)
+      Tests  7 passed | 44 skipped (51)
+   Start at  16:52:55
+   Duration  10.21s (transform 2.84s, setup 59ms, collect 9.19s, tests 407ms, environment 0ms, prepare 174ms)
+
+EXIT=0

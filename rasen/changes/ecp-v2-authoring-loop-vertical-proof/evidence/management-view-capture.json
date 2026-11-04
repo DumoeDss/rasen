@@ -1,0 +1,1246 @@
+{
+  "format": "ecp6-vertical-management-capture/1",
+  "source": {
+    "definitionExport": "packages/ui/test/fixtures/canvas-v2-authoring.ts#CANVAS_V2_AUTHORING_DEFINITION",
+    "generatedBy": "test/core/change-run/canvas-v2-vertical-proof.test.ts"
+  },
+  "views": {
+    "success-running": {
+      "format": "change-run-view/1",
+      "engine": "reconciler",
+      "runId": "run:27947346eb59881f355f6530d3432d5b552ce52552c952d48d6baa533adc9a9f",
+      "change": {
+        "planningSpaceId": "planning-space:e5258cdf5efecf8e71d37bf761e743d46a6b934df8eea638dcbf27c0626f1d0d",
+        "projectId": "f2d0ae72-d759-4572-82c6-44ada6e9ebe6",
+        "changeId": "ecp6-vertical-proof",
+        "instanceId": "change-instance:c4e4287cdc5a4f3d157f1fade95752d29f739030e04b81b51f42c7e30467af8a"
+      },
+      "recordVersion": 1,
+      "status": "running",
+      "sourceState": "active",
+      "workspace": {
+        "instanceId": "workspace-instance:488833503782630956f72e897b8b180a23770c6bd9b19e70ecc035767072fb91",
+        "scope": "current"
+      },
+      "drift": {
+        "definition": "unchanged",
+        "sourceRevision": {
+          "provenance": "unchanged",
+          "content": "unchanged",
+          "semantic": "unchanged"
+        },
+        "capability": "unchanged",
+        "policy": "unchanged",
+        "workspace": "unchanged"
+      },
+      "sections": [
+        {
+          "kind": "root-dag",
+          "version": 1,
+          "frontier": [],
+          "activeInvocations": [],
+          "actions": [
+            {
+              "format": "change-run-action-view/1",
+              "kind": "agent",
+              "actionId": "action:62032b3048e1a1693ad11729c2a99c83d71ae7fd2ecf1b3b4790cf5937aee9c2",
+              "invocationId": "invocation:c2d2bd1dfe61ec6f0e8bd3e354a0ad074c05b1fb2857e3d7132ff7eab56d658a",
+              "attemptId": "attempt:bdb445af55e41c4ee8df131d09553d4773a37ab08ee2ffde61b66adef02dff6d",
+              "nodeId": "node:d9d89bf8c06aeb11f2b5afe0a0534e56599ea0754ee332786e881e333ad549c5",
+              "deliveryState": "granted",
+              "capability": {
+                "id": "skill:rasen-apply-change",
+                "contractVersion": "1",
+                "contractDigest": "sha256:a4559817d3de2f554890a24d53e4a26827086a0e0f51371213be1db4686c0e8f",
+                "artifactDigest": "sha256:a4559817d3de2f554890a24d53e4a26827086a0e0f51371213be1db4686c0e8f"
+              },
+              "effects": [
+                {
+                  "slot": "workspace",
+                  "effectId": "effect:2a083d5ba8a2a11199a5519e5db773d30e64fecb3551bcde3996e47aa3afe295",
+                  "state": "admitted"
+                }
+              ]
+            }
+          ],
+          "waits": [],
+          "workspace": {
+            "current": {
+              "format": "workspace-revision/1",
+              "head": {
+                "kind": "commit",
+                "digest": "sha256:5ec47642ba557137d0113eeccca102bc088f2b1549950e2d7ed0928223f6df23",
+                "detached": false
+              },
+              "treeDigest": "sha256:1bee7c3a4ca8f9c893e20f7adbd0d5ab0c0b7540c65ba8e146a4c9d66c13b4f3",
+              "dirtyWorktreeDigest": "sha256:f3784be9b2ae73c7d257f23f26d21277ae0ff18dda58799157749804e2e22d1a"
+            },
+            "expectedByActiveWriters": []
+          },
+          "effectDiagnostics": [],
+          "allowedControls": [
+            {
+              "kind": "cancel"
+            },
+            {
+              "kind": "escalate"
+            }
+          ]
+        },
+        {
+          "kind": "bounded-loop-lifecycle",
+          "version": 1,
+          "loopPath": "root:bounded-loop",
+          "bodyKind": "composite",
+          "state": "running",
+          "iteration": 1,
+          "phase": "root:bounded-loop/stage",
+          "limits": {
+            "iterations": {
+              "used": 0,
+              "max": 3
+            },
+            "actions": {
+              "used": 0,
+              "max": 12
+            },
+            "budget": {
+              "used": 0,
+              "max": 12
+            }
+          },
+          "stallStreak": 0,
+          "blockedStreak": 0,
+          "strategy": {
+            "attempts": 0,
+            "maxAttempts": 0
+          }
+        },
+        {
+          "kind": "composite",
+          "version": 1,
+          "compositePath": "root:bounded-loop",
+          "declarationId": "work-body",
+          "stages": [
+            {
+              "path": "root:bounded-loop/stage",
+              "status": "pending",
+              "capability": {
+                "id": "declaration:work-body/node:stage"
+              }
+            }
+          ],
+          "round": 1,
+          "maxIterations": 3
+        },
+        {
+          "kind": "parallel",
+          "version": 1,
+          "fanOutPath": "root:fan-out",
+          "joinPath": "root:join",
+          "members": [
+            {
+              "path": "root:atomic-stage",
+              "status": "waiting",
+              "required": true,
+              "condition": "always"
+            }
+          ],
+          "joinState": "not-reached",
+          "concurrencyCap": 1,
+          "budget": {
+            "used": 0,
+            "max": 1
+          },
+          "activeCount": 0,
+          "succeededCount": 0,
+          "failedCount": 0,
+          "keyBlockers": []
+        },
+        {
+          "kind": "choice",
+          "version": 1,
+          "choicePath": "root:choice",
+          "branches": [
+            {
+              "outcome": "default",
+              "path": "root:fan-out",
+              "active": false
+            },
+            {
+              "outcome": "parallel",
+              "path": "root:fan-out",
+              "active": false
+            }
+          ]
+        }
+      ]
+    },
+    "success-waiting": {
+      "format": "change-run-view/1",
+      "engine": "reconciler",
+      "runId": "run:27947346eb59881f355f6530d3432d5b552ce52552c952d48d6baa533adc9a9f",
+      "change": {
+        "planningSpaceId": "planning-space:e5258cdf5efecf8e71d37bf761e743d46a6b934df8eea638dcbf27c0626f1d0d",
+        "projectId": "f2d0ae72-d759-4572-82c6-44ada6e9ebe6",
+        "changeId": "ecp6-vertical-proof",
+        "instanceId": "change-instance:c4e4287cdc5a4f3d157f1fade95752d29f739030e04b81b51f42c7e30467af8a"
+      },
+      "recordVersion": 7,
+      "status": "waiting",
+      "sourceState": "active",
+      "workspace": {
+        "instanceId": "workspace-instance:488833503782630956f72e897b8b180a23770c6bd9b19e70ecc035767072fb91",
+        "scope": "current"
+      },
+      "drift": {
+        "definition": "unchanged",
+        "sourceRevision": {
+          "provenance": "unchanged",
+          "content": "unchanged",
+          "semantic": "unchanged"
+        },
+        "capability": "unchanged",
+        "policy": "unchanged",
+        "workspace": "unchanged"
+      },
+      "sections": [
+        {
+          "kind": "root-dag",
+          "version": 1,
+          "frontier": [],
+          "activeInvocations": [],
+          "actions": [
+            {
+              "format": "change-run-action-view/1",
+              "kind": "agent",
+              "actionId": "action:26745ab545450d4d15d1d13eed6928bbea619730039190cc128df302a1f1c5e0",
+              "invocationId": "invocation:ee7c97e23e180f9dbe2be91e5a055e58d7830533f400a525483a317139e6b28f",
+              "attemptId": "attempt:18c5a87e0822ca45e311fe8f3a0c1287e8c14e37932f77a9fa5106bc3b9bbe24",
+              "nodeId": "node:e809111ad8a90eaebc70874ccbb0c10ee6b03d1dff8743ab193b2a0a135990fe",
+              "deliveryState": "closed",
+              "capability": {
+                "id": "capability:choice-select",
+                "contractVersion": "1",
+                "contractDigest": "sha256:f84988b2aa80457b33c3c7680c74e727bb1cefd49c75c0ab7fb41bca9a39b0e1",
+                "artifactDigest": "sha256:f84988b2aa80457b33c3c7680c74e727bb1cefd49c75c0ab7fb41bca9a39b0e1"
+              },
+              "effects": []
+            },
+            {
+              "format": "change-run-action-view/1",
+              "kind": "agent",
+              "actionId": "action:38e5b697b180927bf053808c565ea807a7d30c9a47849a393769bdb3b6195243",
+              "invocationId": "invocation:0fad371e1e86ad57f9c9019b4d4415d46fc949c96470180c37294d033d89e3d7",
+              "attemptId": "attempt:660b9b0ff505fc5f02e86c0e7e359132b0a304af708dbe25ff93068adef382e1",
+              "nodeId": "node:d230633c6eb4babcba498655a2fad012cb79fa86f6902b6b922d373d947c5bc3",
+              "deliveryState": "closed",
+              "capability": {
+                "id": "capability:parallel-dispatch",
+                "contractVersion": "1",
+                "contractDigest": "sha256:6821834c2e195193c5d7555347fe46a2545821af17001f463f198036d4e37478",
+                "artifactDigest": "sha256:6821834c2e195193c5d7555347fe46a2545821af17001f463f198036d4e37478"
+              },
+              "effects": []
+            },
+            {
+              "format": "change-run-action-view/1",
+              "kind": "agent",
+              "actionId": "action:3bedc4826b7a9abf885da843059f03e93b97c1e0284f90570bc1d8fe83bcaf73",
+              "invocationId": "invocation:76b2afcd23a35ad1e74872764ef3d8349a331f91562e45703ef34c2f95a3571e",
+              "attemptId": "attempt:70c9c51532bbbba66044a2db395708432ca5b79024ecdada2234c83354221d7e",
+              "nodeId": "node:4b8dc9eac99f2a1b46af78dbddb6afa8a11d5c0c718d32e2ccde3526fdb78d76",
+              "deliveryState": "closed",
+              "capability": {
+                "id": "skill:rasen-apply-change",
+                "contractVersion": "1",
+                "contractDigest": "sha256:a4559817d3de2f554890a24d53e4a26827086a0e0f51371213be1db4686c0e8f",
+                "artifactDigest": "sha256:a4559817d3de2f554890a24d53e4a26827086a0e0f51371213be1db4686c0e8f"
+              },
+              "effects": [
+                {
+                  "slot": "workspace",
+                  "effectId": "effect:7800c8c30f3192e118fdd15e9a44add2e295df306e72d0b7c94700535060cc01",
+                  "state": "succeeded"
+                }
+              ]
+            },
+            {
+              "format": "change-run-action-view/1",
+              "kind": "agent",
+              "actionId": "action:62032b3048e1a1693ad11729c2a99c83d71ae7fd2ecf1b3b4790cf5937aee9c2",
+              "invocationId": "invocation:c2d2bd1dfe61ec6f0e8bd3e354a0ad074c05b1fb2857e3d7132ff7eab56d658a",
+              "attemptId": "attempt:bdb445af55e41c4ee8df131d09553d4773a37ab08ee2ffde61b66adef02dff6d",
+              "nodeId": "node:d9d89bf8c06aeb11f2b5afe0a0534e56599ea0754ee332786e881e333ad549c5",
+              "deliveryState": "closed",
+              "capability": {
+                "id": "skill:rasen-apply-change",
+                "contractVersion": "1",
+                "contractDigest": "sha256:a4559817d3de2f554890a24d53e4a26827086a0e0f51371213be1db4686c0e8f",
+                "artifactDigest": "sha256:a4559817d3de2f554890a24d53e4a26827086a0e0f51371213be1db4686c0e8f"
+              },
+              "effects": [
+                {
+                  "slot": "workspace",
+                  "effectId": "effect:2a083d5ba8a2a11199a5519e5db773d30e64fecb3551bcde3996e47aa3afe295",
+                  "state": "succeeded"
+                }
+              ]
+            }
+          ],
+          "waits": [
+            {
+              "kind": "gate",
+              "waitId": "wait:2e199071ba2f374fb492fa5f2afc2fa972558aafa18937bfb52c2247159de91d",
+              "nodeId": "node:b42a7aa8dab4a413c3f36677aad78b5123f578e489579cc2a726235cfeb0f332",
+              "invocationId": "invocation:4e2aabffa702b351ed4540bc8e6331f3698892491dbb525984e1cc6454fb2c0b",
+              "occurrence": 0,
+              "gateId": "gate",
+              "decisionIds": [
+                "approved",
+                "rejected"
+              ]
+            }
+          ],
+          "workspace": {
+            "current": {
+              "format": "workspace-revision/1",
+              "head": {
+                "kind": "commit",
+                "digest": "sha256:5ec47642ba557137d0113eeccca102bc088f2b1549950e2d7ed0928223f6df23",
+                "detached": false
+              },
+              "treeDigest": "sha256:1bee7c3a4ca8f9c893e20f7adbd0d5ab0c0b7540c65ba8e146a4c9d66c13b4f3",
+              "dirtyWorktreeDigest": "sha256:f3784be9b2ae73c7d257f23f26d21277ae0ff18dda58799157749804e2e22d1a"
+            },
+            "expectedByActiveWriters": []
+          },
+          "effectDiagnostics": [],
+          "allowedControls": [
+            {
+              "kind": "decision",
+              "waitId": "wait:2e199071ba2f374fb492fa5f2afc2fa972558aafa18937bfb52c2247159de91d",
+              "decisionId": "approved",
+              "outcomes": [
+                "approved",
+                "rejected"
+              ]
+            },
+            {
+              "kind": "decision",
+              "waitId": "wait:2e199071ba2f374fb492fa5f2afc2fa972558aafa18937bfb52c2247159de91d",
+              "decisionId": "rejected",
+              "outcomes": [
+                "approved",
+                "rejected"
+              ]
+            },
+            {
+              "kind": "cancel"
+            },
+            {
+              "kind": "escalate"
+            }
+          ]
+        },
+        {
+          "kind": "bounded-loop-lifecycle",
+          "version": 1,
+          "loopPath": "root:bounded-loop",
+          "bodyKind": "composite",
+          "state": "terminal",
+          "iteration": 1,
+          "phase": "complete",
+          "limits": {
+            "iterations": {
+              "used": 1,
+              "max": 3
+            },
+            "actions": {
+              "used": 1,
+              "max": 12
+            },
+            "budget": {
+              "used": 1,
+              "max": 12
+            }
+          },
+          "progressFingerprint": "sha256:c3f7f38372c4b102a3078f0adf702e2cc80e8a06989da5860393fd824ecd8a81",
+          "stallStreak": 0,
+          "blockedStreak": 0,
+          "strategy": {
+            "attempts": 0,
+            "maxAttempts": 0
+          },
+          "outcome": {
+            "kind": "completed",
+            "disposition": "exit",
+            "value": "done"
+          }
+        },
+        {
+          "kind": "composite",
+          "version": 1,
+          "compositePath": "root:bounded-loop",
+          "declarationId": "work-body",
+          "stages": [
+            {
+              "path": "root:bounded-loop/stage",
+              "status": "pending",
+              "capability": {
+                "id": "declaration:work-body/node:stage"
+              }
+            }
+          ],
+          "outcome": "done",
+          "round": 1,
+          "maxIterations": 3
+        },
+        {
+          "kind": "parallel",
+          "version": 1,
+          "fanOutPath": "root:fan-out",
+          "joinPath": "root:join",
+          "members": [
+            {
+              "path": "root:atomic-stage",
+              "status": "ready",
+              "required": true,
+              "condition": "always"
+            }
+          ],
+          "joinState": "waiting",
+          "concurrencyCap": 1,
+          "budget": {
+            "used": 0,
+            "max": 1
+          },
+          "activeCount": 1,
+          "succeededCount": 0,
+          "failedCount": 0,
+          "keyBlockers": []
+        },
+        {
+          "kind": "choice",
+          "version": 1,
+          "choicePath": "root:choice",
+          "outcome": "parallel",
+          "branches": [
+            {
+              "outcome": "default",
+              "path": "root:fan-out",
+              "active": false
+            },
+            {
+              "outcome": "parallel",
+              "path": "root:fan-out",
+              "active": true
+            }
+          ]
+        }
+      ]
+    },
+    "success-parallel": {
+      "format": "change-run-view/1",
+      "engine": "reconciler",
+      "runId": "run:27947346eb59881f355f6530d3432d5b552ce52552c952d48d6baa533adc9a9f",
+      "change": {
+        "planningSpaceId": "planning-space:e5258cdf5efecf8e71d37bf761e743d46a6b934df8eea638dcbf27c0626f1d0d",
+        "projectId": "f2d0ae72-d759-4572-82c6-44ada6e9ebe6",
+        "changeId": "ecp6-vertical-proof",
+        "instanceId": "change-instance:c4e4287cdc5a4f3d157f1fade95752d29f739030e04b81b51f42c7e30467af8a"
+      },
+      "recordVersion": 7,
+      "status": "waiting",
+      "sourceState": "active",
+      "workspace": {
+        "instanceId": "workspace-instance:488833503782630956f72e897b8b180a23770c6bd9b19e70ecc035767072fb91",
+        "scope": "current"
+      },
+      "drift": {
+        "definition": "unchanged",
+        "sourceRevision": {
+          "provenance": "unchanged",
+          "content": "unchanged",
+          "semantic": "unchanged"
+        },
+        "capability": "unchanged",
+        "policy": "unchanged",
+        "workspace": "unchanged"
+      },
+      "sections": [
+        {
+          "kind": "root-dag",
+          "version": 1,
+          "frontier": [],
+          "activeInvocations": [],
+          "actions": [
+            {
+              "format": "change-run-action-view/1",
+              "kind": "agent",
+              "actionId": "action:26745ab545450d4d15d1d13eed6928bbea619730039190cc128df302a1f1c5e0",
+              "invocationId": "invocation:ee7c97e23e180f9dbe2be91e5a055e58d7830533f400a525483a317139e6b28f",
+              "attemptId": "attempt:18c5a87e0822ca45e311fe8f3a0c1287e8c14e37932f77a9fa5106bc3b9bbe24",
+              "nodeId": "node:e809111ad8a90eaebc70874ccbb0c10ee6b03d1dff8743ab193b2a0a135990fe",
+              "deliveryState": "closed",
+              "capability": {
+                "id": "capability:choice-select",
+                "contractVersion": "1",
+                "contractDigest": "sha256:f84988b2aa80457b33c3c7680c74e727bb1cefd49c75c0ab7fb41bca9a39b0e1",
+                "artifactDigest": "sha256:f84988b2aa80457b33c3c7680c74e727bb1cefd49c75c0ab7fb41bca9a39b0e1"
+              },
+              "effects": []
+            },
+            {
+              "format": "change-run-action-view/1",
+              "kind": "agent",
+              "actionId": "action:38e5b697b180927bf053808c565ea807a7d30c9a47849a393769bdb3b6195243",
+              "invocationId": "invocation:0fad371e1e86ad57f9c9019b4d4415d46fc949c96470180c37294d033d89e3d7",
+              "attemptId": "attempt:660b9b0ff505fc5f02e86c0e7e359132b0a304af708dbe25ff93068adef382e1",
+              "nodeId": "node:d230633c6eb4babcba498655a2fad012cb79fa86f6902b6b922d373d947c5bc3",
+              "deliveryState": "closed",
+              "capability": {
+                "id": "capability:parallel-dispatch",
+                "contractVersion": "1",
+                "contractDigest": "sha256:6821834c2e195193c5d7555347fe46a2545821af17001f463f198036d4e37478",
+                "artifactDigest": "sha256:6821834c2e195193c5d7555347fe46a2545821af17001f463f198036d4e37478"
+              },
+              "effects": []
+            },
+            {
+              "format": "change-run-action-view/1",
+              "kind": "agent",
+              "actionId": "action:3bedc4826b7a9abf885da843059f03e93b97c1e0284f90570bc1d8fe83bcaf73",
+              "invocationId": "invocation:76b2afcd23a35ad1e74872764ef3d8349a331f91562e45703ef34c2f95a3571e",
+              "attemptId": "attempt:70c9c51532bbbba66044a2db395708432ca5b79024ecdada2234c83354221d7e",
+              "nodeId": "node:4b8dc9eac99f2a1b46af78dbddb6afa8a11d5c0c718d32e2ccde3526fdb78d76",
+              "deliveryState": "closed",
+              "capability": {
+                "id": "skill:rasen-apply-change",
+                "contractVersion": "1",
+                "contractDigest": "sha256:a4559817d3de2f554890a24d53e4a26827086a0e0f51371213be1db4686c0e8f",
+                "artifactDigest": "sha256:a4559817d3de2f554890a24d53e4a26827086a0e0f51371213be1db4686c0e8f"
+              },
+              "effects": [
+                {
+                  "slot": "workspace",
+                  "effectId": "effect:7800c8c30f3192e118fdd15e9a44add2e295df306e72d0b7c94700535060cc01",
+                  "state": "succeeded"
+                }
+              ]
+            },
+            {
+              "format": "change-run-action-view/1",
+              "kind": "agent",
+              "actionId": "action:62032b3048e1a1693ad11729c2a99c83d71ae7fd2ecf1b3b4790cf5937aee9c2",
+              "invocationId": "invocation:c2d2bd1dfe61ec6f0e8bd3e354a0ad074c05b1fb2857e3d7132ff7eab56d658a",
+              "attemptId": "attempt:bdb445af55e41c4ee8df131d09553d4773a37ab08ee2ffde61b66adef02dff6d",
+              "nodeId": "node:d9d89bf8c06aeb11f2b5afe0a0534e56599ea0754ee332786e881e333ad549c5",
+              "deliveryState": "closed",
+              "capability": {
+                "id": "skill:rasen-apply-change",
+                "contractVersion": "1",
+                "contractDigest": "sha256:a4559817d3de2f554890a24d53e4a26827086a0e0f51371213be1db4686c0e8f",
+                "artifactDigest": "sha256:a4559817d3de2f554890a24d53e4a26827086a0e0f51371213be1db4686c0e8f"
+              },
+              "effects": [
+                {
+                  "slot": "workspace",
+                  "effectId": "effect:2a083d5ba8a2a11199a5519e5db773d30e64fecb3551bcde3996e47aa3afe295",
+                  "state": "succeeded"
+                }
+              ]
+            }
+          ],
+          "waits": [
+            {
+              "kind": "gate",
+              "waitId": "wait:2e199071ba2f374fb492fa5f2afc2fa972558aafa18937bfb52c2247159de91d",
+              "nodeId": "node:b42a7aa8dab4a413c3f36677aad78b5123f578e489579cc2a726235cfeb0f332",
+              "invocationId": "invocation:4e2aabffa702b351ed4540bc8e6331f3698892491dbb525984e1cc6454fb2c0b",
+              "occurrence": 0,
+              "gateId": "gate",
+              "decisionIds": [
+                "approved",
+                "rejected"
+              ]
+            }
+          ],
+          "workspace": {
+            "current": {
+              "format": "workspace-revision/1",
+              "head": {
+                "kind": "commit",
+                "digest": "sha256:5ec47642ba557137d0113eeccca102bc088f2b1549950e2d7ed0928223f6df23",
+                "detached": false
+              },
+              "treeDigest": "sha256:1bee7c3a4ca8f9c893e20f7adbd0d5ab0c0b7540c65ba8e146a4c9d66c13b4f3",
+              "dirtyWorktreeDigest": "sha256:f3784be9b2ae73c7d257f23f26d21277ae0ff18dda58799157749804e2e22d1a"
+            },
+            "expectedByActiveWriters": []
+          },
+          "effectDiagnostics": [],
+          "allowedControls": [
+            {
+              "kind": "decision",
+              "waitId": "wait:2e199071ba2f374fb492fa5f2afc2fa972558aafa18937bfb52c2247159de91d",
+              "decisionId": "approved",
+              "outcomes": [
+                "approved",
+                "rejected"
+              ]
+            },
+            {
+              "kind": "decision",
+              "waitId": "wait:2e199071ba2f374fb492fa5f2afc2fa972558aafa18937bfb52c2247159de91d",
+              "decisionId": "rejected",
+              "outcomes": [
+                "approved",
+                "rejected"
+              ]
+            },
+            {
+              "kind": "cancel"
+            },
+            {
+              "kind": "escalate"
+            }
+          ]
+        },
+        {
+          "kind": "bounded-loop-lifecycle",
+          "version": 1,
+          "loopPath": "root:bounded-loop",
+          "bodyKind": "composite",
+          "state": "terminal",
+          "iteration": 1,
+          "phase": "complete",
+          "limits": {
+            "iterations": {
+              "used": 1,
+              "max": 3
+            },
+            "actions": {
+              "used": 1,
+              "max": 12
+            },
+            "budget": {
+              "used": 1,
+              "max": 12
+            }
+          },
+          "progressFingerprint": "sha256:c3f7f38372c4b102a3078f0adf702e2cc80e8a06989da5860393fd824ecd8a81",
+          "stallStreak": 0,
+          "blockedStreak": 0,
+          "strategy": {
+            "attempts": 0,
+            "maxAttempts": 0
+          },
+          "outcome": {
+            "kind": "completed",
+            "disposition": "exit",
+            "value": "done"
+          }
+        },
+        {
+          "kind": "composite",
+          "version": 1,
+          "compositePath": "root:bounded-loop",
+          "declarationId": "work-body",
+          "stages": [
+            {
+              "path": "root:bounded-loop/stage",
+              "status": "pending",
+              "capability": {
+                "id": "declaration:work-body/node:stage"
+              }
+            }
+          ],
+          "outcome": "done",
+          "round": 1,
+          "maxIterations": 3
+        },
+        {
+          "kind": "parallel",
+          "version": 1,
+          "fanOutPath": "root:fan-out",
+          "joinPath": "root:join",
+          "members": [
+            {
+              "path": "root:atomic-stage",
+              "status": "ready",
+              "required": true,
+              "condition": "always"
+            }
+          ],
+          "joinState": "waiting",
+          "concurrencyCap": 1,
+          "budget": {
+            "used": 0,
+            "max": 1
+          },
+          "activeCount": 1,
+          "succeededCount": 0,
+          "failedCount": 0,
+          "keyBlockers": []
+        },
+        {
+          "kind": "choice",
+          "version": 1,
+          "choicePath": "root:choice",
+          "outcome": "parallel",
+          "branches": [
+            {
+              "outcome": "default",
+              "path": "root:fan-out",
+              "active": false
+            },
+            {
+              "outcome": "parallel",
+              "path": "root:fan-out",
+              "active": true
+            }
+          ]
+        }
+      ]
+    },
+    "success-terminal": {
+      "format": "change-run-view/1",
+      "engine": "reconciler",
+      "runId": "run:27947346eb59881f355f6530d3432d5b552ce52552c952d48d6baa533adc9a9f",
+      "change": {
+        "planningSpaceId": "planning-space:e5258cdf5efecf8e71d37bf761e743d46a6b934df8eea638dcbf27c0626f1d0d",
+        "projectId": "f2d0ae72-d759-4572-82c6-44ada6e9ebe6",
+        "changeId": "ecp6-vertical-proof",
+        "instanceId": "change-instance:c4e4287cdc5a4f3d157f1fade95752d29f739030e04b81b51f42c7e30467af8a"
+      },
+      "recordVersion": 10,
+      "status": "completed",
+      "sourceState": "active",
+      "workspace": {
+        "instanceId": "workspace-instance:488833503782630956f72e897b8b180a23770c6bd9b19e70ecc035767072fb91",
+        "scope": "current"
+      },
+      "drift": {
+        "definition": "unchanged",
+        "sourceRevision": {
+          "provenance": "unchanged",
+          "content": "unchanged",
+          "semantic": "unchanged"
+        },
+        "capability": "unchanged",
+        "policy": "unchanged",
+        "workspace": "unchanged"
+      },
+      "sections": [
+        {
+          "kind": "root-dag",
+          "version": 1,
+          "frontier": [],
+          "activeInvocations": [],
+          "actions": [],
+          "waits": [],
+          "terminal": {
+            "kind": "completed",
+            "outcome": "done"
+          },
+          "workspace": {
+            "current": {
+              "format": "workspace-revision/1",
+              "head": {
+                "kind": "commit",
+                "digest": "sha256:5ec47642ba557137d0113eeccca102bc088f2b1549950e2d7ed0928223f6df23",
+                "detached": false
+              },
+              "treeDigest": "sha256:1bee7c3a4ca8f9c893e20f7adbd0d5ab0c0b7540c65ba8e146a4c9d66c13b4f3",
+              "dirtyWorktreeDigest": "sha256:f3784be9b2ae73c7d257f23f26d21277ae0ff18dda58799157749804e2e22d1a"
+            },
+            "expectedByActiveWriters": []
+          },
+          "effectDiagnostics": [],
+          "allowedControls": []
+        },
+        {
+          "kind": "bounded-loop-lifecycle",
+          "version": 1,
+          "loopPath": "root:bounded-loop",
+          "bodyKind": "composite",
+          "state": "terminal",
+          "iteration": 1,
+          "phase": "complete",
+          "limits": {
+            "iterations": {
+              "used": 1,
+              "max": 3
+            },
+            "actions": {
+              "used": 1,
+              "max": 12
+            },
+            "budget": {
+              "used": 1,
+              "max": 12
+            }
+          },
+          "progressFingerprint": "sha256:c3f7f38372c4b102a3078f0adf702e2cc80e8a06989da5860393fd824ecd8a81",
+          "stallStreak": 0,
+          "blockedStreak": 0,
+          "strategy": {
+            "attempts": 0,
+            "maxAttempts": 0
+          },
+          "outcome": {
+            "kind": "completed",
+            "disposition": "exit",
+            "value": "done"
+          }
+        },
+        {
+          "kind": "composite",
+          "version": 1,
+          "compositePath": "root:bounded-loop",
+          "declarationId": "work-body",
+          "stages": [
+            {
+              "path": "root:bounded-loop/stage",
+              "status": "pending",
+              "capability": {
+                "id": "declaration:work-body/node:stage"
+              }
+            }
+          ],
+          "outcome": "done",
+          "round": 1,
+          "maxIterations": 3
+        },
+        {
+          "kind": "parallel",
+          "version": 1,
+          "fanOutPath": "root:fan-out",
+          "joinPath": "root:join",
+          "members": [
+            {
+              "path": "root:atomic-stage",
+              "status": "succeeded",
+              "required": true,
+              "condition": "always"
+            }
+          ],
+          "joinState": "proceeding",
+          "concurrencyCap": 1,
+          "budget": {
+            "used": 1,
+            "max": 1
+          },
+          "activeCount": 0,
+          "succeededCount": 1,
+          "failedCount": 0,
+          "keyBlockers": []
+        },
+        {
+          "kind": "choice",
+          "version": 1,
+          "choicePath": "root:choice",
+          "outcome": "parallel",
+          "branches": [
+            {
+              "outcome": "default",
+              "path": "root:fan-out",
+              "active": false
+            },
+            {
+              "outcome": "parallel",
+              "path": "root:fan-out",
+              "active": true
+            }
+          ]
+        }
+      ]
+    },
+    "failure-running": {
+      "format": "change-run-view/1",
+      "engine": "reconciler",
+      "runId": "run:60f26fed06adc13066f717e8226050c4d658d938392fff14b4eb6a848a2decdb",
+      "change": {
+        "planningSpaceId": "planning-space:e5258cdf5efecf8e71d37bf761e743d46a6b934df8eea638dcbf27c0626f1d0d",
+        "projectId": "f2d0ae72-d759-4572-82c6-44ada6e9ebe6",
+        "changeId": "ecp6-vertical-proof-required-member-failure",
+        "instanceId": "change-instance:5aa0807e5759d8215b4dfcd8a29e3026ef4b14fbf33f8f1a557280eabccd43b1"
+      },
+      "recordVersion": 1,
+      "status": "running",
+      "sourceState": "active",
+      "workspace": {
+        "instanceId": "workspace-instance:c87083fc48661a5a4d337644fda7b87d8c81b26e7b66f9ed0ad0775d696232e7",
+        "scope": "current"
+      },
+      "drift": {
+        "definition": "unchanged",
+        "sourceRevision": {
+          "provenance": "unchanged",
+          "content": "unchanged",
+          "semantic": "unchanged"
+        },
+        "capability": "unchanged",
+        "policy": "unchanged",
+        "workspace": "unchanged"
+      },
+      "sections": [
+        {
+          "kind": "root-dag",
+          "version": 1,
+          "frontier": [],
+          "activeInvocations": [],
+          "actions": [
+            {
+              "format": "change-run-action-view/1",
+              "kind": "agent",
+              "actionId": "action:38ab44d03923cde28739fb2f8fa6fd55d2c2ddaa4cb811e07a74179b70b674c4",
+              "invocationId": "invocation:827222b5e1e90801f8331c6dfd139df904b123fb780dfa771db3fd49fbbffe29",
+              "attemptId": "attempt:5c510c08a3082fa7110d4e62019338defd94a0129200063ce5962b365580ff73",
+              "nodeId": "node:f04b501083b536a01e73f4920ac67d510fcd1b3fe55d2372be7e95133ece666d",
+              "deliveryState": "granted",
+              "capability": {
+                "id": "skill:rasen-apply-change",
+                "contractVersion": "1",
+                "contractDigest": "sha256:a4559817d3de2f554890a24d53e4a26827086a0e0f51371213be1db4686c0e8f",
+                "artifactDigest": "sha256:a4559817d3de2f554890a24d53e4a26827086a0e0f51371213be1db4686c0e8f"
+              },
+              "effects": [
+                {
+                  "slot": "workspace",
+                  "effectId": "effect:60f6da881e07da632ad26cdfe8522820a468dd5b12a4f6427f529a27a0cc2621",
+                  "state": "admitted"
+                }
+              ]
+            }
+          ],
+          "waits": [],
+          "workspace": {
+            "current": {
+              "format": "workspace-revision/1",
+              "head": {
+                "kind": "commit",
+                "digest": "sha256:5ec47642ba557137d0113eeccca102bc088f2b1549950e2d7ed0928223f6df23",
+                "detached": false
+              },
+              "treeDigest": "sha256:96e72ed208e085399ece898777db32811b874d1bfc6f78653609566e39b88ccd",
+              "dirtyWorktreeDigest": "sha256:3e135c1d713cfd902881354810d4311247fa9e2dc6050c8792e155d99601cbf7"
+            },
+            "expectedByActiveWriters": []
+          },
+          "effectDiagnostics": [],
+          "allowedControls": [
+            {
+              "kind": "cancel"
+            },
+            {
+              "kind": "escalate"
+            }
+          ]
+        },
+        {
+          "kind": "bounded-loop-lifecycle",
+          "version": 1,
+          "loopPath": "root:bounded-loop",
+          "bodyKind": "composite",
+          "state": "running",
+          "iteration": 1,
+          "phase": "root:bounded-loop/stage",
+          "limits": {
+            "iterations": {
+              "used": 0,
+              "max": 3
+            },
+            "actions": {
+              "used": 0,
+              "max": 12
+            },
+            "budget": {
+              "used": 0,
+              "max": 12
+            }
+          },
+          "stallStreak": 0,
+          "blockedStreak": 0,
+          "strategy": {
+            "attempts": 0,
+            "maxAttempts": 0
+          }
+        },
+        {
+          "kind": "composite",
+          "version": 1,
+          "compositePath": "root:bounded-loop",
+          "declarationId": "work-body",
+          "stages": [
+            {
+              "path": "root:bounded-loop/stage",
+              "status": "pending",
+              "capability": {
+                "id": "declaration:work-body/node:stage"
+              }
+            }
+          ],
+          "round": 1,
+          "maxIterations": 3
+        },
+        {
+          "kind": "parallel",
+          "version": 1,
+          "fanOutPath": "root:fan-out",
+          "joinPath": "root:join",
+          "members": [
+            {
+              "path": "root:atomic-stage",
+              "status": "waiting",
+              "required": true,
+              "condition": "always"
+            }
+          ],
+          "joinState": "not-reached",
+          "concurrencyCap": 1,
+          "budget": {
+            "used": 0,
+            "max": 1
+          },
+          "activeCount": 0,
+          "succeededCount": 0,
+          "failedCount": 0,
+          "keyBlockers": []
+        },
+        {
+          "kind": "choice",
+          "version": 1,
+          "choicePath": "root:choice",
+          "branches": [
+            {
+              "outcome": "default",
+              "path": "root:fan-out",
+              "active": false
+            },
+            {
+              "outcome": "parallel",
+              "path": "root:fan-out",
+              "active": false
+            }
+          ]
+        }
+      ]
+    },
+    "failure-terminal": {
+      "format": "change-run-view/1",
+      "engine": "reconciler",
+      "runId": "run:60f26fed06adc13066f717e8226050c4d658d938392fff14b4eb6a848a2decdb",
+      "change": {
+        "planningSpaceId": "planning-space:e5258cdf5efecf8e71d37bf761e743d46a6b934df8eea638dcbf27c0626f1d0d",
+        "projectId": "f2d0ae72-d759-4572-82c6-44ada6e9ebe6",
+        "changeId": "ecp6-vertical-proof-required-member-failure",
+        "instanceId": "change-instance:5aa0807e5759d8215b4dfcd8a29e3026ef4b14fbf33f8f1a557280eabccd43b1"
+      },
+      "recordVersion": 10,
+      "status": "escalated",
+      "sourceState": "active",
+      "workspace": {
+        "instanceId": "workspace-instance:c87083fc48661a5a4d337644fda7b87d8c81b26e7b66f9ed0ad0775d696232e7",
+        "scope": "current"
+      },
+      "drift": {
+        "definition": "unchanged",
+        "sourceRevision": {
+          "provenance": "unchanged",
+          "content": "unchanged",
+          "semantic": "unchanged"
+        },
+        "capability": "unchanged",
+        "policy": "unchanged",
+        "workspace": "unchanged"
+      },
+      "sections": [
+        {
+          "kind": "root-dag",
+          "version": 1,
+          "frontier": [],
+          "activeInvocations": [],
+          "actions": [],
+          "waits": [],
+          "terminal": {
+            "kind": "escalated",
+            "code": "failed"
+          },
+          "workspace": {
+            "current": {
+              "format": "workspace-revision/1",
+              "head": {
+                "kind": "commit",
+                "digest": "sha256:5ec47642ba557137d0113eeccca102bc088f2b1549950e2d7ed0928223f6df23",
+                "detached": false
+              },
+              "treeDigest": "sha256:96e72ed208e085399ece898777db32811b874d1bfc6f78653609566e39b88ccd",
+              "dirtyWorktreeDigest": "sha256:3e135c1d713cfd902881354810d4311247fa9e2dc6050c8792e155d99601cbf7"
+            },
+            "expectedByActiveWriters": []
+          },
+          "effectDiagnostics": [],
+          "allowedControls": []
+        },
+        {
+          "kind": "bounded-loop-lifecycle",
+          "version": 1,
+          "loopPath": "root:bounded-loop",
+          "bodyKind": "composite",
+          "state": "terminal",
+          "iteration": 1,
+          "phase": "complete",
+          "limits": {
+            "iterations": {
+              "used": 1,
+              "max": 3
+            },
+            "actions": {
+              "used": 1,
+              "max": 12
+            },
+            "budget": {
+              "used": 1,
+              "max": 12
+            }
+          },
+          "progressFingerprint": "sha256:c3f7f38372c4b102a3078f0adf702e2cc80e8a06989da5860393fd824ecd8a81",
+          "stallStreak": 0,
+          "blockedStreak": 0,
+          "strategy": {
+            "attempts": 0,
+            "maxAttempts": 0
+          },
+          "outcome": {
+            "kind": "completed",
+            "disposition": "exit",
+            "value": "done"
+          }
+        },
+        {
+          "kind": "composite",
+          "version": 1,
+          "compositePath": "root:bounded-loop",
+          "declarationId": "work-body",
+          "stages": [
+            {
+              "path": "root:bounded-loop/stage",
+              "status": "pending",
+              "capability": {
+                "id": "declaration:work-body/node:stage"
+              }
+            }
+          ],
+          "outcome": "done",
+          "round": 1,
+          "maxIterations": 3
+        },
+        {
+          "kind": "parallel",
+          "version": 1,
+          "fanOutPath": "root:fan-out",
+          "joinPath": "root:join",
+          "members": [
+            {
+              "path": "root:atomic-stage",
+              "status": "failed",
+              "required": true,
+              "condition": "always"
+            }
+          ],
+          "joinState": "failed",
+          "concurrencyCap": 1,
+          "budget": {
+            "used": 1,
+            "max": 1
+          },
+          "activeCount": 0,
+          "succeededCount": 0,
+          "failedCount": 1,
+          "keyBlockers": [
+            "required member 'root:atomic-stage' failed"
+          ]
+        },
+        {
+          "kind": "choice",
+          "version": 1,
+          "choicePath": "root:choice",
+          "outcome": "parallel",
+          "branches": [
+            {
+              "outcome": "default",
+              "path": "root:fan-out",
+              "active": false
+            },
+            {
+              "outcome": "parallel",
+              "path": "root:fan-out",
+              "active": true
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "runsResponse": {
+    "runs": [
+      {
+        "name": "ecp6-vertical-proof",
+        "kind": "ok",
+        "autoRun": {
+          "kind": "absent"
+        },
+        "portfolio": {
+          "kind": "absent"
+        },
+        "goalRun": {
+          "kind": "absent"
+        }
+      },
+      {
+        "name": "ecp6-vertical-proof-required-member-failure",
+        "kind": "ok",
+        "autoRun": {
+          "kind": "absent"
+        },
+        "portfolio": {
+          "kind": "absent"
+        },
+        "goalRun": {
+          "kind": "absent"
+        }
+      }
+    ],
+    "reconcilerRuns": [
+      {
+        "runId": "run:27947346eb59881f355f6530d3432d5b552ce52552c952d48d6baa533adc9a9f",
+        "changeId": "ecp6-vertical-proof",
+        "planningSpaceId": "planning-space:e5258cdf5efecf8e71d37bf761e743d46a6b934df8eea638dcbf27c0626f1d0d",
+        "engine": "reconciler",
+        "recordVersion": 10,
+        "status": "completed",
+        "sourceState": "active",
+        "terminal": {
+          "kind": "completed",
+          "outcome": "done"
+        }
+      },
+      {
+        "runId": "run:60f26fed06adc13066f717e8226050c4d658d938392fff14b4eb6a848a2decdb",
+        "changeId": "ecp6-vertical-proof-required-member-failure",
+        "planningSpaceId": "planning-space:e5258cdf5efecf8e71d37bf761e743d46a6b934df8eea638dcbf27c0626f1d0d",
+        "engine": "reconciler",
+        "recordVersion": 10,
+        "status": "escalated",
+        "sourceState": "active",
+        "terminal": {
+          "kind": "escalated",
+          "code": "failed"
+        }
+      }
+    ],
+    "hasMore": false
+  }
+}

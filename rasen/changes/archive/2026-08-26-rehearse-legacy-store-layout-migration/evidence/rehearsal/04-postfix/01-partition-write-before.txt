@@ -1,0 +1,14 @@
+$ (cd <temp>/copy-postfix) rasen store adopt <temp>/probe-project --to rasen-store --dry-run --json
+{
+  "status": [
+    {
+      "severity": "error",
+      "code": "legacy_flat_store_requires_migration",
+      "message": "Store 'rasen-store' has not declared planning layout version 2, so store-adopt cannot write a project partition.",
+      "target": "store.layout",
+      "fix": "Run 'rasen store migrate-layout rasen-store' to migrate this Store, then retry."
+    }
+  ]
+}
+
+[exit code: 1]

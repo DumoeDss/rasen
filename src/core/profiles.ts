@@ -22,6 +22,7 @@ import {
   getExpertSkillDefinitions,
   isInternalBuiltInWorkflowId,
   resolveEffectiveWorkflowInstallSelection,
+  resolveWorkflowSelection,
   WorkflowCatalog,
   type BuiltInWorkflowId,
 } from './workflow-registry/index.js';
@@ -74,8 +75,8 @@ export function getCurrentBuiltInWorkflowIds(): string[] {
       (definition) =>
         definition.source === 'built-in' &&
         definition.kind !== 'expert' &&
-        // The retention runner is internal and non-selectable — never part of
-        // the selectable-workflow baseline.
+        // Dependency-only built-ins are internal and non-selectable, so none
+        // belongs to the persisted selectable-workflow baseline.
         !isInternalBuiltInWorkflowId(definition.id)
     )
     .map((definition) => definition.id);
@@ -139,6 +140,34 @@ export interface ResolveDesiredWorkflowSelectionResult {
 }
 
 /**
+ * Resolve the public profile selection without widening it to execution-only
+ * capability owners. Profile-facing workflow chains use this result;
+ * artifact installation and execution enablement use
+ * {@link resolveDesiredWorkflowSelection} instead.
+ *
+ * Ordinary `requires.workflows` dependencies remain visible because they are
+ * part of the authored workflow selection model. Catalog units explicitly
+ * classified as internal are removed even when a selected public workflow
+ * needs them installed.
+ */
+export function resolvePublicWorkflowSelection(
+  catalog: WorkflowCatalog,
+  profile: string,
+  customWorkflows: string[] | undefined,
+  expertSelectionExplicit: boolean
+): ResolveDesiredWorkflowSelectionResult {
+  const baseResult = resolveUserWideProfileBase(profile, customWorkflows, expertSelectionExplicit);
+  const base = baseResult.ok
+    ? baseResult.workflows
+    : [...getProfileWorkflows('full', undefined, { expertSelectionExplicit })];
+  const { known, unknown } = filterKnownWorkflowRoots(catalog, base);
+  const ids = resolveWorkflowSelection(catalog, known)
+    .map((definition) => definition.id)
+    .filter((id) => !isInternalBuiltInWorkflowId(id));
+  return { ids, unknown, ...(baseResult.ok ? {} : { profileWarning: baseResult.warning }) };
+}
+
+/**
  * Why the user-wide (global) profile could not govern resolution: it names a
  * saved profile whose definition is missing or invalid on this machine.
  * Mirrors the `unresolvable` shape of {@link ProfileLockWarning}; resolution
@@ -188,24 +217,27 @@ export function resolveUserWideProfileBase(
  * D3): resolves the profile's default workflow+expert ids — through
  * {@link resolveUserWideProfileBase} so a saved profile name is first-class at
  * global scope (unresolvable → `full` with a warning on the result) — drops
- * any the catalog no longer recognizes, then closes over `requires.workflows`
- * AND (opt-in here) `requires.skills` so a lean profile still installs the
- * experts its selected workflows require. Threading one resolved array to
- * both the install path (`getSkillTemplates`) and the removal seam
- * (`removeUnselectedSkillDirs`/drift) keeps them from ever disagreeing.
+ * any the catalog no longer recognizes, then closes over `requires.workflows`,
+ * `requires.skills`, and the owners of skill capabilities reachable through
+ * `requires.pipelines`. This keeps a lean profile executable without exposing
+ * closure-only internal workflows as selectable profile roots. Threading one
+ * resolved array to both the install path (`getSkillTemplates`) and the
+ * removal seam (`removeUnselectedSkillDirs`/drift) keeps them from ever
+ * disagreeing.
  */
 export function resolveDesiredWorkflowSelection(
   catalog: WorkflowCatalog,
   profile: string,
   customWorkflows: string[] | undefined,
-  expertSelectionExplicit: boolean
+  expertSelectionExplicit: boolean,
+  options: { projectRoot?: string } = {}
 ): ResolveDesiredWorkflowSelectionResult {
   const baseResult = resolveUserWideProfileBase(profile, customWorkflows, expertSelectionExplicit);
   const base = baseResult.ok
     ? baseResult.workflows
     : [...getProfileWorkflows('full', undefined, { expertSelectionExplicit })];
   const { known, unknown } = filterKnownWorkflowRoots(catalog, base);
-  const ids = resolveEffectiveWorkflowInstallSelection(catalog, known).map(
+  const ids = resolveEffectiveWorkflowInstallSelection(catalog, known, options).map(
     (definition) => definition.id
   );
   return { ids, unknown, ...(baseResult.ok ? {} : { profileWarning: baseResult.warning }) };
@@ -350,7 +382,7 @@ export function resolveProjectWorkflowSelection(
 
   if (override !== undefined) {
     const { known, unknown } = filterKnownWorkflowRoots(catalog, override);
-    const ids = resolveEffectiveWorkflowInstallSelection(catalog, known).map(
+    const ids = resolveEffectiveWorkflowInstallSelection(catalog, known, { projectRoot }).map(
       (definition) => definition.id
     );
     return {
@@ -367,7 +399,7 @@ export function resolveProjectWorkflowSelection(
     const lockBase = resolveLockedProfileBase(lockedProfile, expertSelectionExplicit);
     if (lockBase.ok) {
       const { known, unknown } = filterKnownWorkflowRoots(catalog, lockBase.workflows);
-      const ids = resolveEffectiveWorkflowInstallSelection(catalog, known).map(
+      const ids = resolveEffectiveWorkflowInstallSelection(catalog, known, { projectRoot }).map(
         (definition) => definition.id
       );
       return { ids, unknown, mode: 'locked-profile', lockedProfile };
@@ -376,11 +408,18 @@ export function resolveProjectWorkflowSelection(
       catalog,
       profile,
       customWorkflows,
-      expertSelectionExplicit
+      expertSelectionExplicit,
+      { projectRoot }
     );
     return { ...fallback, mode: 'profile', lockWarning: lockBase.warning };
   }
 
-  const result = resolveDesiredWorkflowSelection(catalog, profile, customWorkflows, expertSelectionExplicit);
+  const result = resolveDesiredWorkflowSelection(
+    catalog,
+    profile,
+    customWorkflows,
+    expertSelectionExplicit,
+    { projectRoot }
+  );
   return { ...result, mode: 'profile' };
 }

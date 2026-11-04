@@ -230,7 +230,7 @@ async function processCreationIdentity(pid, config, cwd) {
       result = await boundedSpawn(
         '/bin/ps',
         ['-p', String(pid), '-o', 'lstart='],
-        { cwd, env: process.env, timeoutMs: 15_000 }
+        { cwd, env: process.env, timeoutMs: 60_000 }
       );
     } catch {
       throw new Error('owned_process_creation_identity_ambiguous');
@@ -256,6 +256,9 @@ async function processCreationIdentity(pid, config, cwd) {
     }
     return `proc-start:${startTicks}`;
   }
+  // 60s, not 15s: a cold powershell.exe CIM spawn on a loaded CI runner can exceed 15s,
+  // and killing it here surfaces as cli_timeout inside the admitted observation
+  // (measured: windows-pwsh-shard-3, 2026-08-15, run 31869784203).
   const script =
     `$p=Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}" `
     + "-ErrorAction SilentlyContinue;"
@@ -266,7 +269,7 @@ async function processCreationIdentity(pid, config, cwd) {
     {
       cwd,
       env: process.env,
-      timeoutMs: 15_000,
+      timeoutMs: 60_000,
     }
   );
   const value = result.stdout.trim();

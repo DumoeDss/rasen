@@ -123,9 +123,26 @@ describe('project-side store membership hints', () => {
 
     it('keys de-duplication on the alias only when there is no identity', () => {
       expect(storeMembershipHintKey({ uid: UID_A, id: 'team-store' })).toBe(`uid:${UID_A}`);
-      expect(storeMembershipHintKey({ id: 'Team-Store' })).toBe('id:team-store');
+      expect(storeMembershipHintKey({ id: 'Team-Store' })).toBe('id:Team-Store');
       expect(describeStoreMembershipHint({ uid: UID_A })).toBe(UID_A);
       expect(describeStoreMembershipHint({ uid: UID_A, id: 'team-store' })).toBe('team-store');
+    });
+
+    it('preserves identityless Store aliases that differ only by case', () => {
+      write(
+        [
+          'schema: spec-driven',
+          'storeMemberships:',
+          '  - Acme',
+          '  - acme',
+          '',
+        ].join('\n')
+      );
+
+      expect(readProjectConfig(projectRoot)?.storeMemberships).toEqual([
+        { id: 'Acme' },
+        { id: 'acme' },
+      ]);
     });
   });
 

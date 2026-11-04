@@ -47,10 +47,16 @@ function findTrackedTasksArtifact(schema: SchemaYaml): Artifact | undefined {
  * `resolveSchema` throws on an unresolvable/misnamed schema; we swallow that so
  * the caller falls back to a single top-level `tasks.md` and never crashes.
  */
-function resolveTrackedTasksGlob(changeDir: string, projectRoot: string): string | undefined {
+function resolveTrackedTasksGlob(
+  changeDir: string,
+  projectRoot: string,
+  projectSchemasDir?: string
+): string | undefined {
   try {
-    const schemaName = resolveSchemaForChange(changeDir, undefined, projectRoot);
-    const schema = resolveSchema(schemaName, projectRoot);
+    const schemaName = resolveSchemaForChange(changeDir, undefined, projectRoot, {
+      ...(projectSchemasDir === undefined ? {} : { projectSchemasDir }),
+    });
+    const schema = resolveSchema(schemaName, projectRoot, projectSchemasDir);
     return findTrackedTasksArtifact(schema)?.generates;
   } catch {
     return undefined;
@@ -79,11 +85,12 @@ async function countSingleTopLevelTasksFile(changeDir: string): Promise<TaskProg
 export async function getTaskProgressForChange(
   changesDir: string,
   changeName: string,
-  projectRoot: string
+  projectRoot: string,
+  projectSchemasDir?: string
 ): Promise<TaskProgress> {
   const changeDir = path.join(changesDir, changeName);
 
-  const generates = resolveTrackedTasksGlob(changeDir, projectRoot);
+  const generates = resolveTrackedTasksGlob(changeDir, projectRoot, projectSchemasDir);
   if (generates) {
     const files = resolveArtifactOutputs(changeDir, generates);
     if (files.length > 0) {
@@ -139,11 +146,12 @@ export function listTaskItemsFromContent(content: string): TaskItem[] {
 export async function listTaskItemsForChange(
   changesDir: string,
   changeName: string,
-  projectRoot: string
+  projectRoot: string,
+  projectSchemasDir?: string
 ): Promise<TaskItem[]> {
   const changeDir = path.join(changesDir, changeName);
 
-  const generates = resolveTrackedTasksGlob(changeDir, projectRoot);
+  const generates = resolveTrackedTasksGlob(changeDir, projectRoot, projectSchemasDir);
   if (generates) {
     const files = resolveArtifactOutputs(changeDir, generates);
     if (files.length > 0) {

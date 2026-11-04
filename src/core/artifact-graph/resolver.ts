@@ -46,6 +46,13 @@ export function getProjectSchemasDir(projectRoot: string): string {
   return path.join(projectRoot, WORKSPACE_DIR_NAME, 'schemas');
 }
 
+function resolveProjectSchemasDir(
+  projectRoot?: string,
+  projectSchemasDir?: string
+): string | undefined {
+  return projectSchemasDir ?? (projectRoot === undefined ? undefined : getProjectSchemasDir(projectRoot));
+}
+
 /**
  * Resolves a schema name to its directory path.
  *
@@ -63,11 +70,13 @@ export function getProjectSchemasDir(projectRoot: string): string {
  */
 export function getSchemaDir(
   name: string,
-  projectRoot?: string
+  projectRoot?: string,
+  projectSchemasDir?: string
 ): string | null {
   // 1. Check project-local directory (if projectRoot provided)
-  if (projectRoot) {
-    const projectDir = path.join(getProjectSchemasDir(projectRoot), name);
+  const schemasDir = resolveProjectSchemasDir(projectRoot, projectSchemasDir);
+  if (schemasDir) {
+    const projectDir = path.join(schemasDir, name);
     const projectSchemaPath = path.join(projectDir, 'schema.yaml');
     if (fs.existsSync(projectSchemaPath)) {
       return projectDir;
@@ -107,13 +116,17 @@ export function getSchemaDir(
  * @returns The resolved schema object
  * @throws Error if schema is not found in any location
  */
-export function resolveSchema(name: string, projectRoot?: string): SchemaYaml {
+export function resolveSchema(
+  name: string,
+  projectRoot?: string,
+  projectSchemasDir?: string
+): SchemaYaml {
   // Normalize name (remove .yaml extension if provided)
   const normalizedName = name.replace(/\.ya?ml$/, '');
 
-  const schemaDir = getSchemaDir(normalizedName, projectRoot);
+  const schemaDir = getSchemaDir(normalizedName, projectRoot, projectSchemasDir);
   if (!schemaDir) {
-    const availableSchemas = listSchemas(projectRoot);
+    const availableSchemas = listSchemas(projectRoot, projectSchemasDir);
     throw new Error(
       `Schema '${normalizedName}' not found. Available schemas: ${availableSchemas.join(', ')}`
     );
@@ -159,7 +172,7 @@ export function resolveSchema(name: string, projectRoot?: string): SchemaYaml {
  *
  * @param projectRoot - Optional project root directory for project-local schema resolution
  */
-export function listSchemas(projectRoot?: string): string[] {
+export function listSchemas(projectRoot?: string, projectSchemasDir?: string): string[] {
   const schemas = new Set<string>();
 
   // Add package built-in schemas
@@ -189,8 +202,9 @@ export function listSchemas(projectRoot?: string): string[] {
   }
 
   // Add project-local schemas (if projectRoot provided)
-  if (projectRoot) {
-    const projectDir = getProjectSchemasDir(projectRoot);
+  const schemasDir = resolveProjectSchemasDir(projectRoot, projectSchemasDir);
+  if (schemasDir) {
+    const projectDir = schemasDir;
     if (fs.existsSync(projectDir)) {
       for (const entry of fs.readdirSync(projectDir, { withFileTypes: true })) {
         if (entry.isDirectory()) {
@@ -222,13 +236,17 @@ export interface SchemaInfo {
  *
  * @param projectRoot - Optional project root directory for project-local schema resolution
  */
-export function listSchemasWithInfo(projectRoot?: string): SchemaInfo[] {
+export function listSchemasWithInfo(
+  projectRoot?: string,
+  projectSchemasDir?: string
+): SchemaInfo[] {
   const schemas: SchemaInfo[] = [];
   const seenNames = new Set<string>();
 
   // Add project-local schemas first (highest priority, if projectRoot provided)
-  if (projectRoot) {
-    const projectDir = getProjectSchemasDir(projectRoot);
+  const schemasDir = resolveProjectSchemasDir(projectRoot, projectSchemasDir);
+  if (schemasDir) {
+    const projectDir = schemasDir;
     if (fs.existsSync(projectDir)) {
       for (const entry of fs.readdirSync(projectDir, { withFileTypes: true })) {
         if (entry.isDirectory()) {

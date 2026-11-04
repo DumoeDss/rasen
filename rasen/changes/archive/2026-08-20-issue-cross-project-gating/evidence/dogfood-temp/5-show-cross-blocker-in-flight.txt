@@ -1,0 +1,25 @@
+$ rasen store issue show dogfood-cross --store dogfood-store
+(exit 0)
+
+Issue dogfood-cross
+  state: open
+  title: Cross-project wait
+  revisions: 0001
+  latest plan: revision 0001
+  plan digest: ea1228456379d5577a200e7d07e7f03dcba43f6800bcf101272c8e857c1067c0
+  status:
+    phase: active
+    health: healthy
+    progress: 0/2
+    run-state: C:\Users\Sayo\AppData\Local\Temp\rasen-dogfood-gating-Hu2QdF\beta-site
+    nodes:
+      alpha-work change alpha-core alpha-down — not-started (blockedBy beta-work@beta-site: in-flight)
+        evidence: C:\Users\Sayo\AppData\Local\Temp\rasen-dogfood-gating-Hu2QdF\store\rasen\projects\alpha-core\changes\alpha-down\evidence
+      beta-work change beta-site beta-up — in-flight
+        pipeline: small-feature (located by execution-root)
+        evidence: C:\Users\Sayo\AppData\Local\Temp\rasen-dogfood-gating-Hu2QdF\store\rasen\projects\beta-site\changes\beta-up\evidence
+
+  acceptance:
+    conditions: (none published)
+    gate: not eligible — the Issue has no readable acceptance conditions — no acceptance conditions revision exists for it.
+    record: (not accepted)

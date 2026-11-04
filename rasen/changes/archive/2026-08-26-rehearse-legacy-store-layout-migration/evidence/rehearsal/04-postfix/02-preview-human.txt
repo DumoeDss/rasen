@@ -1,0 +1,10 @@
+$ (cd <temp>/copy-postfix) rasen store migrate-layout rasen-store
+Store rasen-store — planning layout migration preview
+  plan id: 38bc686b179855504913c23ee1e3646c0bbbbc9841847c72509b7ffdffe8d077
+  ref:     refs/heads/master
+
+  No flat planning content was inventoried for this ref.
+
+  Ready to apply. Re-run with --apply.
+
+[exit code: 0]

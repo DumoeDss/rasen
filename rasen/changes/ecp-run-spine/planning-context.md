@@ -5,7 +5,7 @@
 
 ## What this change is
 
-`ecp-run-spine` is the **deterministic execution kernel** for 0.1.6 (Executable
+`ecp-run-spine` is the **deterministic execution kernel** for 0.2.0 (Executable
 Composite Pipelines): one immutable prepared Pipeline plan owned by a durable
 canonical Run Record, with deterministic root-DAG reconciliation, closed
 action/result/control contracts, atomic recovery, engine ownership, and drift

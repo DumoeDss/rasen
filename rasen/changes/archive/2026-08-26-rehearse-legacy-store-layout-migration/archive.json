@@ -1,0 +1,413 @@
+{
+  "change": "rehearse-legacy-store-layout-migration",
+  "archivedAt": "2026-08-26T13:49:57.250Z",
+  "codeCommit": "f8ce860f9d8301d6b1098a6975d815c265d5e918",
+  "planningBranch": "chore/archive-store-v2-retention-tranche",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/guards/02-prefix-red-run-full-suite.txt",
+      "sha256": "76b7de24cc2f20ce57a24bf34c5e4f59a692e9d2ff450b600f3f573b3ef21f93"
+    },
+    {
+      "path": "evidence/guards/03-postfix-green-run.txt",
+      "sha256": "16db1eed6ed37e368f102b681876160fb236c222b8e9938a28646d6b21070c73"
+    },
+    {
+      "path": "evidence/guards/04-existing-suites-green.txt",
+      "sha256": "9d769e3c0a3a2bba72160dd585b0b64b7161879058f88e05f18aa62bc2952498"
+    },
+    {
+      "path": "evidence/guards/05-stale-text-sweep.md",
+      "sha256": "3a6770c860d762de63ec771ed554d3368045c718b5d94107371952b09b7f073e"
+    },
+    {
+      "path": "evidence/guards/06-committed-tree-baseline.txt",
+      "sha256": "6029b7c4c4c26f42789e2b730f9f7efc2f21131e5980347a566cb90222e0da4b"
+    },
+    {
+      "path": "evidence/guards/07-what-was-run-and-what-was-not.md",
+      "sha256": "c2fe1116c3f4c8a065bd2ae12027179bb7cbc21118bcc64abe6569d626163310"
+    },
+    {
+      "path": "evidence/guards/08-build-and-scope-audit.md",
+      "sha256": "afb153eee21f83643303fa59e671a020e31322096eecb92ced4485c77bc057d5"
+    },
+    {
+      "path": "evidence/rehearsal/00-harness/00-provenance.txt",
+      "sha256": "f50d45ade6a5d96f98006c5eb324e92161bd2ece861909b36549d84ae595a16e"
+    },
+    {
+      "path": "evidence/rehearsal/00-harness/01-build-and-redirection-proof.txt",
+      "sha256": "7455728ffec7cc9792a15a40878b1a0c265aafca48012b01fb27e4f08bec2b75"
+    },
+    {
+      "path": "evidence/rehearsal/00-harness/02-pristine-copy.txt",
+      "sha256": "281063c4f2ff5eb05190a3f36e21310695ca8b757933cde8d5bb525dabe14bde"
+    },
+    {
+      "path": "evidence/rehearsal/00-harness/03-clone-copy.txt",
+      "sha256": "d8b601f828659728a03211d69c62df6fc7840c52298bb4683b0461d7a6805db5"
+    },
+    {
+      "path": "evidence/rehearsal/00-harness/04-clone-push-disarmed.txt",
+      "sha256": "3b78dac14560362486b0719c68942869674fc7b041da99de9e4bd91f2e55221d"
+    },
+    {
+      "path": "evidence/rehearsal/00-harness/05-teardown-and-real-store-untouched.txt",
+      "sha256": "104c02e569e5e94fc46bf5999513291988585339b173720cf2f309c18501a4fe"
+    },
+    {
+      "path": "evidence/rehearsal/00-harness/06-teardown.txt",
+      "sha256": "51eb0a3f1d2122a9b90a56efd88a2767fa1e9ff5a4645962e01ed2920fbf6d4d"
+    },
+    {
+      "path": "evidence/rehearsal/01-pristine/00-provenance.txt",
+      "sha256": "f50d45ade6a5d96f98006c5eb324e92161bd2ece861909b36549d84ae595a16e"
+    },
+    {
+      "path": "evidence/rehearsal/01-pristine/00a-register.txt",
+      "sha256": "bac10cc3a95ddc965d1142deec501d9b8867307ec6c8d68ac6024d2517a732fe"
+    },
+    {
+      "path": "evidence/rehearsal/01-pristine/00b-preflight.txt",
+      "sha256": "4d986c6ae63ff997aa58f15a651a5b3f7dca9c0c72933599f1b056e10eb62836"
+    },
+    {
+      "path": "evidence/rehearsal/01-pristine/01-preview-human.txt",
+      "sha256": "2f32ea27335c81757acb8c1f1731b5de2484401e6a69472c5b82e5a43250121c"
+    },
+    {
+      "path": "evidence/rehearsal/01-pristine/02-preview-json.txt",
+      "sha256": "6fc9fe92db4e0105b66342c928d64450ff24be0655bbc03a3de8a609ee0831f5"
+    },
+    {
+      "path": "evidence/rehearsal/01-pristine/03-status.txt",
+      "sha256": "3cffc68c0924c333ac77ceebee33cdc8a58a2e3f4e2adf666b83ba8624272547"
+    },
+    {
+      "path": "evidence/rehearsal/01-pristine/04-status-json.txt",
+      "sha256": "a9d6e58e2ee514bdb4fdf138ba69ff9963ba6b0c930b628e368389004a7756ba"
+    },
+    {
+      "path": "evidence/rehearsal/01-pristine/05-apply-attempt.txt",
+      "sha256": "ab9b3f2cb2c3769fc1c7c5f903805c18f1d4b335a38e71e6e6bc52b75732f126"
+    },
+    {
+      "path": "evidence/rehearsal/01-pristine/06-retire-flat-attempt.txt",
+      "sha256": "c0a5edb719bc317dc50232ae7163e893d9e9b530d05414b35a7fbebf535d848b"
+    },
+    {
+      "path": "evidence/rehearsal/01-pristine/07-rollback-attempt.txt",
+      "sha256": "9043cfce6a079187059b638064cf093dc0f89956d1bda54b5bae7491d6553ce7"
+    },
+    {
+      "path": "evidence/rehearsal/01-pristine/08-partition-write-probe.txt",
+      "sha256": "29ad184564bfe35ef371d5514e3a4a822ff1e34d8cec33d3099e755b8418ff99"
+    },
+    {
+      "path": "evidence/rehearsal/01-pristine/09-partition-write-probe-json.txt",
+      "sha256": "1dfb5e3b9510fe0cbc7bf942f06c79ecd4190a854dc8763304579dd0b9cfd11e"
+    },
+    {
+      "path": "evidence/rehearsal/01-pristine/10-write-surface.txt",
+      "sha256": "92b146c3639666e4b139fb784c77cddf52b78490df5842aebdd4f6a8008d0020"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/00-provenance.txt",
+      "sha256": "f50d45ade6a5d96f98006c5eb324e92161bd2ece861909b36549d84ae595a16e"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/00a-register.txt",
+      "sha256": "6944ce4a3e039d07b6db78e79a7e40f06d9fc2d7e1a2957d11f06840eeb2b2cb"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/00b-preflight.txt",
+      "sha256": "0cd013ac72d25c7b9dd58e23b4ade8024ac735b7ccbf6d167d7d014552966c83"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/01-add-project-beta.txt",
+      "sha256": "7b5a5f9ccf060bfdfb8091b7b388f1a1552d7128be7808bec483540e87424a7e"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/02-preview-human.txt",
+      "sha256": "71f2fe185afcd8f3995b5106b714e1937302354f80e8dc1a30c819cf59593d9d"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/03-preview-json.txt",
+      "sha256": "0578d622aaa671992beefb97ee2eb26a9fa4dd5f63ff59a7088266b7f101c50d"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/04-mapping-contradicts-recorded-identity.txt",
+      "sha256": "3c209e878aa378ee5caabe99df83c728e8b19c01b1d1c449eb02343417d1fbd0"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/05-mapping-outside-worktree.txt",
+      "sha256": "bf4e0f43bd2405895aaa71f521faff549f26884a37020cf90376c51621e80308"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/06-mapping-names-absent-item.txt",
+      "sha256": "a6e64bf1e602db8ec2deb0d9b3d07a7427b2a407b57bc33478a4d53e84cee441"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/07-mapping-repairs-non-member.txt",
+      "sha256": "83582335a79acbeca5ab875a869b94a02eb7c1ad2830c0801b3dab58ea5a3769"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/08-add-project-gamma-the-real-repair.txt",
+      "sha256": "b8968fd7e4ff5377ef0c4413afbaf84c0839a55df845d04b68a79607607b7b2a"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/09-replan-with-mapping.txt",
+      "sha256": "8e1cdb799c342a434f88de6b86ea0940f157526d722a8de911df1821a4532d6f"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/10-rename-unrecordable-item.txt",
+      "sha256": "21beb322dbd34f4926335209bc3d6fa79238fd6add4082ff0d5b7709332d8dbc"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/11-replan-applicable.txt",
+      "sha256": "1388a7fd7abc20724cb951ac991e2bb9cf46503d51daf2dab3e32c3bf0a5a767"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/12-apply.txt",
+      "sha256": "044bf413052e318887fd94ee5857ded30a41c3a1368a7bd7beca1553f56cb90e"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/13-status-after-apply.txt",
+      "sha256": "9f7a0b850661235807c85cf42cbcd9d22ec6603398316bc4abd5139aea1978f9"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/14-status-after-apply-json.txt",
+      "sha256": "76c7163ae613acd8bbcefc2c802e81542b346dc36489df32cbe731dd02897a18"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/15-publication-verification.txt",
+      "sha256": "9374e164c5a65929af6aa531b60e5b88858a3a5c5e2a129fea2ec854e4431767"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/16-retire-before-commit.txt",
+      "sha256": "d4ac76452495eebcd0ca38a11cd6017b2f98c725702c7d6178498af8a7f83da1"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/17-retire-again-idempotence.txt",
+      "sha256": "ec17f11701387dd46920ea523a33ddea130cd3425615bb0ee6ab3fa30f3bd92d"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/18-rollback-after-retirement.txt",
+      "sha256": "74794490d4489f3fbfc72eaa27ce0a922ec0411fdd55c3ba7cbbba2a8b795519"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/19-status-after-retirement.txt",
+      "sha256": "97ce4449c45a549a11831bde69b9aab88077d47d8d426164a68b63701f53397e"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/20-partition-write-accepted-after-migration.txt",
+      "sha256": "62a19cb68e88dd3bc59e4b8d1eb116bd106943ab971c2bdf67f55cbef21a5a5e"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/21-post-retirement-tree-and-receipt.txt",
+      "sha256": "9ac21c9480ad3273da6932a1fbebe0e6b3c06161b6b48cf9acb6bc84843e1fe8"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/22a-stale-register.txt",
+      "sha256": "7d559a4369e84a79e0c7d5ee8e200e316c6127642b3c132077f8be4c9421bb7f"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/22b-stale-plan.txt",
+      "sha256": "4f1796e552e29bcbccb0d46362f42012e332ff25fc5ec06f78f5ef18246c05ff"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/23-stale-uncommitted-edit.txt",
+      "sha256": "017ac4de989432357246ea22c48bce4ec5aae93aa0833df8cb13268aaedc984f"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/24-stale-apply.txt",
+      "sha256": "bf9bcd5639cfe31d1916bb9fe2889491cb664b85bee1369ed21902c89f495417"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/25-rollback-before-retirement.txt",
+      "sha256": "0f2ebcef4de2d17b9498b5b5c49449d1e80dcbd864bf670d2a820a230665b836"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/26-post-rollback-state.txt",
+      "sha256": "0b6c6906d9da6a17a442f6db1d3d00a3e51dcac61621f9dcf10b378717ace03e"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/27-plan-stale-on-resume.txt",
+      "sha256": "5cbeda7dca7b2e35484893336c69522f1a9694484636cea9acd92e5c78b6fb12"
+    },
+    {
+      "path": "evidence/rehearsal/02-enriched/28-recovery-after-wedged-resume.txt",
+      "sha256": "ef134fb848f10454c1ce1aec78a7dd3081020ba128921d157278dea41268fa2c"
+    },
+    {
+      "path": "evidence/rehearsal/03-clone/00-provenance.txt",
+      "sha256": "f50d45ade6a5d96f98006c5eb324e92161bd2ece861909b36549d84ae595a16e"
+    },
+    {
+      "path": "evidence/rehearsal/03-clone/00a-register-no-yes.txt",
+      "sha256": "ec58f1936ad9b1bd4a15fe60ce6c0c790ab3b87032774968999eef409456da9a"
+    },
+    {
+      "path": "evidence/rehearsal/03-clone/00b-register-human.txt",
+      "sha256": "be0feb8c9bfa23ae74130578560a2c90d5024f5cc3176a259110d63fc6da46f9"
+    },
+    {
+      "path": "evidence/rehearsal/03-clone/00c-preflight.txt",
+      "sha256": "a07c4a79578c0db5f3cbbb68f4a84a575b8750845096a74dc1df04c456e3f61b"
+    },
+    {
+      "path": "evidence/rehearsal/03-clone/01-preview.txt",
+      "sha256": "b19bcb71141d91ed96da0fb9a3c32384890f2cd48b54f5ec4bd2cc12706d2432"
+    },
+    {
+      "path": "evidence/rehearsal/03-clone/02-upgrade-identity-preview.txt",
+      "sha256": "5a1baed05d62a607533cae838fe5fb378befb7321b65c0ad5627c60f54e2119c"
+    },
+    {
+      "path": "evidence/rehearsal/03-clone/03-upgrade-identity-apply.txt",
+      "sha256": "1349c0442bea59a3a1e4a75323508e50f36c826e9702b5c484d30cf3fb68e1df"
+    },
+    {
+      "path": "evidence/rehearsal/03-clone/04-replan-after-identity.txt",
+      "sha256": "6b72af75e9405a2d25f70c27893c3f0b3f166937196816cbb3fbffe4812a29b5"
+    },
+    {
+      "path": "evidence/rehearsal/03-clone/05-register-content-clone.txt",
+      "sha256": "a42f890800f6f9e91f9376d4463c815998e968a8b519ad9f8b503462b9bd5aec"
+    },
+    {
+      "path": "evidence/rehearsal/03-clone/06-preview-store-identity-missing.txt",
+      "sha256": "18d2b7b8c9c4a43f33a4ef8878ecc0bf5f7b1ddab1515ddd422c6622048c9c66"
+    },
+    {
+      "path": "evidence/rehearsal/03-clone/07-upgrade-identity-apply.txt",
+      "sha256": "73e35ab2e993f20667637c83134e79d5fe3b6d274e8e70c313ed4a400f966017"
+    },
+    {
+      "path": "evidence/rehearsal/03-clone/08-replan-after-identity.txt",
+      "sha256": "c5de303494bb8c07f682063e1ec48833804354324e39e408f66cfa9c8cf83338"
+    },
+    {
+      "path": "evidence/rehearsal/03-clone/09a-register-noactive.txt",
+      "sha256": "1f9a6aea274a05bd8425ee4c2c464804f549cc23a6cb927bec5b8756d86df005"
+    },
+    {
+      "path": "evidence/rehearsal/03-clone/09b-preview-silent-identity-hole.txt",
+      "sha256": "038762ce9ab3728abbd8c30f762fa0116c30097da4f5c8910059d92a344becd5"
+    },
+    {
+      "path": "evidence/rehearsal/03-clone/09c-apply-attempt-silent-identity-hole.txt",
+      "sha256": "b23ba99f96a80afef3d8296a24da83726bba4d98010c471c859cc7288c1fd0ad"
+    },
+    {
+      "path": "evidence/rehearsal/03-clone/09d-preview-json-silent-identity-hole.txt",
+      "sha256": "cd8f2670436d410ac5d0cd5efc03a6f0384a69dfa3b51dccb565577f3d65b27e"
+    },
+    {
+      "path": "evidence/rehearsal/03-clone/10-identity-hole-analysis.txt",
+      "sha256": "ac5ae2ba6194863fe24fb28e78847dbc675d535a071ad76970341da360b5ef18"
+    },
+    {
+      "path": "evidence/rehearsal/03-clone/11-remote-tracking-ref-reporting.txt",
+      "sha256": "992008b34710654495b2d2156d52c766ae5f5af14405a8c7bb55e0cea17c3af1"
+    },
+    {
+      "path": "evidence/rehearsal/04-postfix/00-provenance.txt",
+      "sha256": "2f32cd9cd64c2c1b7e7537312234d420922d3bdbadc1ea19227e4142fa0bcd97"
+    },
+    {
+      "path": "evidence/rehearsal/04-postfix/00-summary.txt",
+      "sha256": "bf4528e97e52c13d6bd9a386d1b3a12c2cf1f081e8bc7e315a4f9a22c4a9ef3d"
+    },
+    {
+      "path": "evidence/rehearsal/04-postfix/00a-register.txt",
+      "sha256": "5749ec28573084fdcd14a2da2eef645de0e349005cf1c8727429ae355abe55d0"
+    },
+    {
+      "path": "evidence/rehearsal/04-postfix/01-partition-write-before.txt",
+      "sha256": "cf2d953f2a45a3c69c74739a778ae0cf993b49dd24b7a88b5d620f1f630c04dd"
+    },
+    {
+      "path": "evidence/rehearsal/04-postfix/02-preview-human.txt",
+      "sha256": "0d669e861349bfde20347aeeb6384e96fec2c4f613e8c96423281d0eb4dc1929"
+    },
+    {
+      "path": "evidence/rehearsal/04-postfix/03-preview-json.txt",
+      "sha256": "8c2aa66eef2694766b3106e5f79748aafcfb44c4ff0356a013765d550fc04c81"
+    },
+    {
+      "path": "evidence/rehearsal/04-postfix/04-apply.txt",
+      "sha256": "8d7e0a8a5953028e71b07d06dc9cbf70b9a431187c642ffcfa4284a518e3f2b5"
+    },
+    {
+      "path": "evidence/rehearsal/04-postfix/05-status.txt",
+      "sha256": "3e117052893123926dbea0deb939968300decab00eb695ed4f2868e65e33877d"
+    },
+    {
+      "path": "evidence/rehearsal/04-postfix/06-retire-flat.txt",
+      "sha256": "4d5c2f05800d61ae01d7a0e53b9b9bb4b78187963c9301776850e20b11bcdc4a"
+    },
+    {
+      "path": "evidence/rehearsal/04-postfix/07-partition-write-after.txt",
+      "sha256": "2a700b45512e357f7c46eea0d13f10458478e7073d3ec7afe3d4682220234090"
+    },
+    {
+      "path": "evidence/rehearsal/04-postfix/08-target-line-add.txt",
+      "sha256": "85007711cea5c8e75b60658b21490a82896b8a9495a40f04e2f379fbfc974809"
+    },
+    {
+      "path": "evidence/rehearsal/04-postfix/09-partition-write-accepted.txt",
+      "sha256": "e19253574ae290b41c9b27a7e9ee8fc74351ca70186d595949632106cd78eeef"
+    },
+    {
+      "path": "evidence/rehearsal/04-postfix/10-identity-hole-preview.txt",
+      "sha256": "fe34c942907bcba506003acede502b6a2b9914c6169382f01b72d818eb2db4ed"
+    },
+    {
+      "path": "evidence/rehearsal/04-postfix/11-identity-hole-apply.txt",
+      "sha256": "dbbc4c4641fc1f5a04b707e53c7455409f0e89b86f9ea2a0e7532f1e9841556e"
+    },
+    {
+      "path": "evidence/rehearsal/04-postfix/12-identity-hole-json.txt",
+      "sha256": "16d85c09e44d13a28b7dff8d0de88f06c1ff737d1adce72bd43ca8e236d78c19"
+    },
+    {
+      "path": "evidence/rehearsal/04-postfix/13-operator-worktree-after.txt",
+      "sha256": "fdf966939dfc8b6b12219ebb00648da4414a14f7a525c5bd0e07fd6ede49129c"
+    },
+    {
+      "path": "evidence/rehearsal/harness.sh",
+      "sha256": "d2a2713318f4f7cbac05060826889e465d3051913657fb33382609fdf68af2a2"
+    },
+    {
+      "path": "evidence/rehearsal/preflight.js",
+      "sha256": "87d201356d777759a0c2b0d25727993f7fbd55a596b9624c37c6a7b26ff5b242"
+    },
+    {
+      "path": "evidence/rehearsal/seed-enriched.py",
+      "sha256": "b128dff3c647f7b1613749784d153ad53d7407f3c2dd62c92e6c548d5b9e45a1"
+    },
+    {
+      "path": "evidence/rehearsal/steps.md",
+      "sha256": "c2ecec614f3867dc70ac37712aff2329ecc502dcd681f1b76f20107bd03f3cfe"
+    },
+    {
+      "path": "evidence/rehearsal/triage.md",
+      "sha256": "8191fa7f3328b3eeca0323a0736e301cce4dcfb3da3f03170e79e17b65ede966"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "d0ab4322522c62cd107bcf31785ad0799a5321416f4364ee6f3f39900285040a"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

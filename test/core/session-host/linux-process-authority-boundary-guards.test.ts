@@ -1,0 +1,105 @@
+import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
+const FROZEN_COMMON_INPUTS = Object.freeze({
+  // Rebaselined 05257eb1... -> 359db6d9...: commit 2961848b replaced the archived
+  // Purpose placeholder in the accepted spec (docs-only edit; committed bytes
+  // re-hashed via `git show`). LEAD-authorized rebaseline, 2026-08-08.
+  'rasen/specs/process-authority-provider/spec.md':
+    'e376f5a77f8934a0ada5e07213c495f377b3279d6b1e76d7d1c101dfa0f69430',
+  'test/helpers/process-authority-provider-conformance.ts':
+    'b9d8bd4fb63910ed1626c0d9f2bda258803a8f3a191f98c57509e837cc58d2f0',
+});
+
+const LEGACY_PROCESS_CAPSULE_INPUTS = Object.freeze({
+  // Rebaselined 79dc1ad0... -> a4c80875...: PR 147's cross-platform
+  // CI follow-up added exact native process-birth probing, POSIX owned-ref
+  // replacement termination, zombie reaping, and a stable leaked-Job-handle
+  // mutation oracle. These are shared ProcessCapsule correctness fixes, not
+  // reinterpretation by the Linux provider. LF delivery bytes re-hashed by
+  // the LEAD, 2026-08-09.
+  // Rebaselined a4c80875... -> f6c00b73...: PR 147's CI fix-forward makes
+  // the leaked-Job-handle mutation an acknowledged protocol step. The
+  // supervisor validates its remotely duplicated handle against the kernel
+  // before the controller publishes PREPARED, removing the full-suite race.
+  // This remains shared ProcessCapsule correctness, not Linux-provider
+  // reinterpretation. Staged LF delivery bytes re-hashed via `git show
+  // :<path>`. LEAD-authorized rebaseline, 2026-08-09.
+  // Rebaselined f6c00b73... -> 6f242be9...: the next CI discovery pass
+  // proved Windows can report controller death as broken-pipe rather than
+  // EOF. The acknowledged mutation now retains its validated Job handle for
+  // both control-loss outcomes. LF delivery bytes re-hashed by the LEAD,
+  // 2026-08-09.
+  'native/process-capsule/src/main.rs':
+    '6f242be9e48bb24aa5b8130de9785fb25b514adee35c043f4d9a7638a5c52d24',
+  'native/process-capsule/Cargo.lock':
+    'f00e64114e06f06b623880947c4ec4d33953218d901abdba3b2b2f1d32db8793',
+  'scripts/build-process-capsule.mjs':
+    '4117b109bbe524ccd9423e9e4ef1da8f52cfc1a27e818871ae71c653f599ef92',
+  'src/core/session-host/process-capsule/resolver.ts':
+    'a1df4e2ed63167231c0207dbd4d5a5d8c8aa5bb4e44665e7b4cbe3d5624bbf91',
+  // Rebaselined 0848c77b... -> a070733c...: review round 1 finding F1 (RC-004
+  // parser containment) wrapped the one-shot probe's stdout callback so a
+  // malformed frame becomes typed uncertainty instead of a throw escaping an
+  // EventEmitter callback. The cutover Change made that path production-
+  // reachable via design D4, which is why the parked finding came due here.
+  // TypeScript adapter only - the Rust crate and every other pinned digest in
+  // this list are unchanged. Committed bytes re-hashed via
+  // `git show 8e48ce45:<path>`. LEAD-authorized rebaseline, 2026-08-08.
+  // Rebaselined a070733c... -> 3e74b2c2...: closure task 12.8 (RC-005
+  // clients-map retention lifecycle) added the shared scope-retention sweep
+  // call into the native adapter's prepare(). TypeScript adapter only - the
+  // Rust crate and every other pinned digest in this list are unchanged.
+  // Committed bytes re-hashed via `git show efe834ba:<path>`. Second
+  // LEAD-authorized rebaseline of this file, 2026-08-08.
+  // Rebaselined 3e74b2c2... -> d485c503...: the PR 147 follow-up classifies
+  // pre-PREPARED native errors by phase, restricts orphan-group termination
+  // to an exact locally owned ref, and preserves typed uncertainty when a
+  // live controller is lost during termination. LF delivery bytes re-hashed
+  // by the LEAD, 2026-08-09.
+  // Rebaselined d485c503... -> 4493068e...: PR 147's macOS CI follow-up
+  // preserves a locally observed exact SCOPE_EMPTY terminal instead of
+  // replacing it with a weaker one-shot probe after the controller exits.
+  // Staged LF delivery bytes re-hashed by the LEAD, 2026-08-10.
+  'src/core/session-host/process-capsule/native-process-scope.ts':
+    '4493068e6d284b96e3f2368509709326cc570c03f05b3474caa2b2614e291ecd',
+  'test/core/session-host/process-capsule-package.test.ts':
+    '3ed5945c5b17b711c783534281c4288242ab9b680e498135db3f344528a759e1',
+  'test/core/session-host/process-capsule-posix-replacement.test.ts':
+    '894a5119e480f4f904f6a5265adb82c48e83f2a31bc79f1b27b14f2f0e64e047',
+});
+
+function sha256(relativePath: string): string {
+  const bytes = fs.readFileSync(path.resolve(relativePath));
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+describe('Linux process-authority implementation boundary guards', () => {
+  it('consumes the accepted common spec and shared conformance suite byte-for-byte', () => {
+    expect(Object.fromEntries(
+      Object.keys(FROZEN_COMMON_INPUTS).map((file) => [file, sha256(file)])
+    )).toEqual(FROZEN_COMMON_INPUTS);
+  });
+
+  it('keeps the legacy ProcessCapsule protocol-v2 PGID implementation unchanged', () => {
+    expect(Object.fromEntries(
+      Object.keys(LEGACY_PROCESS_CAPSULE_INPUTS).map((file) => [file, sha256(file)])
+    )).toEqual(LEGACY_PROCESS_CAPSULE_INPUTS);
+
+    const resolver = fs.readFileSync(
+      path.resolve('src/core/session-host/process-capsule/resolver.ts'),
+      'utf8'
+    );
+    const helper = fs.readFileSync(path.resolve('native/process-capsule/src/main.rs'), 'utf8');
+    expect(resolver).toContain('PROCESS_CAPSULE_PROTOCOL_VERSION = 2');
+    expect(resolver).toContain("artifact.capabilities.includes('pidfd')");
+    expect(resolver).toContain("artifact.capabilities.includes('process-group')");
+    expect(helper).toContain('const PROTOCOL_VERSION: u16 = 2;');
+    expect(helper).toContain('process-group empty observation timed out');
+    expect(helper).not.toContain('rasen.linux.user-pidns');
+    expect(helper).not.toContain('rasen.linux.broker-pidns-cgroupv2');
+  });
+});

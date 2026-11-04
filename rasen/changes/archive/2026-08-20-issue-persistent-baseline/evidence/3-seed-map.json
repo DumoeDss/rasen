@@ -1,0 +1,23 @@
+{
+  "planningScopeId": "ps_5e57bf1a510520c23b0a68cafd51d6f9096bb0f0fccdce2137b098220f954e93",
+  "storeUid": "f76edc31-229a-42bc-a5c7-848021eeb2da",
+  "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+  "targetLineId": "line-0.2",
+  "instances": [
+    {
+      "changeId": "2026-08-20-issue-plan-publication",
+      "instanceSeed": "23f3719a4a7d4ed3fc6bba88914501d9",
+      "instanceId": "ci_d94c1e6a7563e9d815f100867eb717cba9a8ebddf332ff6257f2c41c128dda03"
+    },
+    {
+      "changeId": "2026-08-20-issue-node-lifecycle",
+      "instanceSeed": "71096d6565f60685dfd8fa7ebb426eb1",
+      "instanceId": "ci_8740087b798d080a086d4e18ee283efe44bd4de1205e8cb5247a70cabcb36d7e"
+    },
+    {
+      "changeId": "issue-persistent-baseline",
+      "instanceSeed": "54c4bbee450a5180f636adeb9ca6b7cc",
+      "instanceId": "ci_31ac4af911fefd06c65efd8a8d4da5ec4193b3795133a7d41a0fc87544bd9e7d"
+    }
+  ]
+}

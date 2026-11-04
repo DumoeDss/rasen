@@ -185,7 +185,10 @@ export class ValidateCommand {
     if (choice === 'pipelines') return this.runBulkValidation(root, { changes: false, specs: false, pipelines: true }, opts);
 
     // one
-    const [changes, specs] = await Promise.all([this.listChangeIds(root), getSpecIds(root.path)]);
+    const [changes, specs] = await Promise.all([
+      this.listChangeIds(root),
+      getSpecIds(root.path, root.specsDir),
+    ]);
     const pipelines = listPipelines(root.path);
     const items: { name: string; value: { type: ItemType; id: string } }[] = [];
     items.push(...changes.map(id => ({ name: `change/${id}`, value: { type: 'change' as const, id } })));
@@ -217,7 +220,10 @@ export class ValidateCommand {
       return;
     }
 
-    const [changes, specs] = await Promise.all([this.listChangeIds(root), getSpecIds(root.path)]);
+    const [changes, specs] = await Promise.all([
+      this.listChangeIds(root),
+      getSpecIds(root.path, root.specsDir),
+    ]);
     const pipelines = listPipelines(root.path);
     const isChange = changes.includes(itemName);
     const isSpec = specs.includes(itemName);
@@ -293,7 +299,7 @@ export class ValidateCommand {
     if (type === 'change') {
       const changeDir = path.join(root.changesDir, id);
       const start = Date.now();
-      const report = await validator.validateChangeDeltaSpecs(changeDir);
+      const report = await validator.validateChangeDeltaSpecs(changeDir, root.specsDir);
       const durationMs = Date.now() - start;
       this.printReport('change', id, report, durationMs, opts.json, root);
       // Non-zero exit if invalid (keeps enriched output test semantics)
@@ -351,7 +357,7 @@ export class ValidateCommand {
     const spinner = !opts.json && !opts.noInteractive ? ora('Validating...').start() : undefined;
     const [changeIds, specIds] = await Promise.all([
       scope.changes ? this.listChangeIds(root) : Promise.resolve<string[]>([]),
-      scope.specs ? getSpecIds(root.path) : Promise.resolve<string[]>([]),
+      scope.specs ? getSpecIds(root.path, root.specsDir) : Promise.resolve<string[]>([]),
     ]);
     const pipelineIds = scope.pipelines ? listPipelines(root.path) : [];
 
@@ -365,7 +371,7 @@ export class ValidateCommand {
       queue.push(async () => {
         const start = Date.now();
         const changeDir = path.join(root.changesDir, id);
-        const report = await validator.validateChangeDeltaSpecs(changeDir);
+        const report = await validator.validateChangeDeltaSpecs(changeDir, root.specsDir);
         const durationMs = Date.now() - start;
         return { id, type: 'change' as const, valid: report.valid, issues: report.issues, durationMs };
       });

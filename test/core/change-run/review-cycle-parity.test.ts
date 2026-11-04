@@ -31,6 +31,7 @@ import {
 import type { ChangeRunView, ReviewCycleViewSection } from '../../../src/core/change-run/contracts.js';
 import type { CanonicalRunRecord } from '../../../src/core/change-run/internal/record.js';
 import type { RunId, Digest } from '../../../src/core/change-run/index.js';
+import { fixtureRuntimeLoop } from './bounded-loop-fixture.js';
 
 const branded = <T>(value: string): T => value as T;
 const digest = (char: string) => branded<Digest>(`sha256:${char.repeat(64)}`);
@@ -55,7 +56,7 @@ function reviewCyclePlanInput(maxIterations = 3): RuntimePlanInput {
         kind: 'bounded-loop',
         hierarchicalPath: 'root/review-cycle',
         requires: [],
-        maxIterations,
+        ...fixtureRuntimeLoop(maxIterations, maxIterations * 16, 'review_cycle_exhausted'),
         body: {
           kind: 'review-cycle',
           phases: [
@@ -165,8 +166,16 @@ describe('review-cycle section parity (8.5)', () => {
     expect(expectedRC!.round).toBe(1);
     expect(expectedRC!.phase).toBe('review');
 
-    // Sanity: the view has BOTH a root-dag section and a review-cycle section.
-    expect(projectedView.sections.length).toBe(2);
+    // Shared mechanics compose with the root and review-domain sections.
+    expect(projectedView.sections.length).toBe(3);
+    expect(projectedView.sections).toContainEqual(
+      expect.objectContaining({
+        kind: 'bounded-loop-lifecycle',
+        version: 1,
+        loopPath: 'root/review-cycle',
+        bodyKind: 'review-cycle',
+      })
+    );
 
     // --- (b) CLI status via PipelineCommand (test-injected runtime with plan) ---
     const store = createInMemoryRunStore();

@@ -1,0 +1,219 @@
+{
+  "issue": {
+    "issueId": "issue-autodecompose-uplift",
+    "record": {
+      "version": 1,
+      "id": "issue-autodecompose-uplift",
+      "title": "Issue layer Phase 4: auto-decompose uplift (reviewable decomposition dispatch)",
+      "state": "open",
+      "reason": null,
+      "createdAt": "2026-08-21T08:10:49.108Z"
+    },
+    "diagnostic": null,
+    "divergence": null,
+    "revisionIds": [
+      "0001",
+      "0002"
+    ],
+    "latestRevisionId": "0002",
+    "refs": [],
+    "uncommitted": true
+  },
+  "plan": {
+    "issueId": "issue-autodecompose-uplift",
+    "revisionId": "0002",
+    "revision": {
+      "version": 1,
+      "issueId": "issue-autodecompose-uplift",
+      "revisionId": "0002",
+      "supersedes": "0001",
+      "createdAt": "2026-08-21T08:12:29.350Z",
+      "contentSha256": "abf832d7583731413db1ed2b1312b42c936d497fc9168b7de9951b61d497b952",
+      "nodes": [
+        {
+          "nodeId": "issue-autodecompose-graph",
+          "kind": "intent",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "summary": "Land the decomposition-graph child (truthful boundary verdict, the from-decomposition channel, node guidance fields, the playbook stop-short branch)",
+          "suggestedPipeline": "small-feature",
+          "rationale": "the carrier exists from Phase 1-3; this child connects the decomposer's output to it and resolves the auto-decompose fail-close by the uplift, so every later revision rides a truthful boundary",
+          "dependsOn": []
+        },
+        {
+          "nodeId": "issue-autodecompose-review-flow",
+          "kind": "intent",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "summary": "Human review, revision, and confirm-to-start flow over decomposition revisions",
+          "suggestedPipeline": "small-feature",
+          "uncertainty": "whether store issue start should adopt a node's recorded suggestedPipeline as the launch contract's pipeline when no --pipeline is given is still this child's planner question",
+          "dependsOn": [
+            "issue-autodecompose-graph"
+          ]
+        }
+      ]
+    },
+    "diagnostic": null,
+    "readiness": {
+      "nodes": [
+        {
+          "node": {
+            "nodeId": "issue-autodecompose-graph",
+            "kind": "intent",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "summary": "Land the decomposition-graph child (truthful boundary verdict, the from-decomposition channel, node guidance fields, the playbook stop-short branch)",
+            "suggestedPipeline": "small-feature",
+            "rationale": "the carrier exists from Phase 1-3; this child connects the decomposer's output to it and resolves the auto-decompose fail-close by the uplift, so every later revision rides a truthful boundary",
+            "dependsOn": []
+          },
+          "resolution": {
+            "status": "not-created",
+            "claimants": [],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": false
+          },
+          "readiness": "not-started",
+          "blockedBy": []
+        },
+        {
+          "node": {
+            "nodeId": "issue-autodecompose-review-flow",
+            "kind": "intent",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "summary": "Human review, revision, and confirm-to-start flow over decomposition revisions",
+            "suggestedPipeline": "small-feature",
+            "uncertainty": "whether store issue start should adopt a node's recorded suggestedPipeline as the launch contract's pipeline when no --pipeline is given is still this child's planner question",
+            "dependsOn": [
+              "issue-autodecompose-graph"
+            ]
+          },
+          "resolution": {
+            "status": "not-created",
+            "claimants": [],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": false
+          },
+          "readiness": "blocked",
+          "blockedBy": [
+            "issue-autodecompose-graph"
+          ]
+        }
+      ],
+      "readyToResolve": false
+    },
+    "unsearchedRefs": [],
+    "problems": [],
+    "complete": true
+  },
+  "status": {
+    "phase": "planning",
+    "health": "healthy",
+    "progress": {
+      "completed": 0,
+      "total": 0
+    },
+    "nodes": [
+      {
+        "nodeId": "issue-autodecompose-graph",
+        "kind": "intent",
+        "alias": null,
+        "observation": "not-started",
+        "diagnostic": null,
+        "runStatePath": null,
+        "locatedBy": null,
+        "attribution": {
+          "pipeline": null,
+          "sessions": [],
+          "evidenceLocator": null
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": null,
+        "reason": null,
+        "suggestedPipeline": "small-feature",
+        "rationale": "the carrier exists from Phase 1-3; this child connects the decomposer's output to it and resolves the auto-decompose fail-close by the uplift, so every later revision rides a truthful boundary",
+        "uncertainty": null,
+        "blockedBy": []
+      },
+      {
+        "nodeId": "issue-autodecompose-review-flow",
+        "kind": "intent",
+        "alias": null,
+        "observation": "not-started",
+        "diagnostic": null,
+        "runStatePath": null,
+        "locatedBy": null,
+        "attribution": {
+          "pipeline": null,
+          "sessions": [],
+          "evidenceLocator": null
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": null,
+        "reason": null,
+        "suggestedPipeline": "small-feature",
+        "rationale": null,
+        "uncertainty": "whether store issue start should adopt a node's recorded suggestedPipeline as the launch contract's pipeline when no --pipeline is given is still this child's planner question",
+        "blockedBy": [
+          {
+            "nodeId": "issue-autodecompose-graph",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "observation": "not-started"
+          }
+        ]
+      }
+    ],
+    "projects": [
+      {
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "alias": "rasen",
+        "nodeIds": [
+          "issue-autodecompose-graph",
+          "issue-autodecompose-review-flow"
+        ],
+        "progress": {
+          "completed": 0,
+          "total": 0
+        }
+      }
+    ],
+    "problems": [],
+    "runStateVisibility": {
+      "kind": "execution-root",
+      "executionRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer"
+    },
+    "complete": true,
+    "acceptance": {
+      "conditions": {
+        "revision": null,
+        "revisionId": null,
+        "diagnostic": null,
+        "path": null
+      },
+      "gate": {
+        "eligible": false,
+        "refusalCode": "issue_accept_conditions_required",
+        "blockers": [],
+        "message": "the Issue has no readable acceptance conditions — no acceptance conditions revision exists for it.",
+        "exclusions": [],
+        "optionalNodes": []
+      },
+      "record": null
+    }
+  },
+  "complete": true,
+  "unsearchedRefs": [],
+  "problems": []
+}

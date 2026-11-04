@@ -110,6 +110,7 @@ describe('spaces listing: store members are the union of records and pointers', 
     );
 
     const store = storeSpace(await handleSpaces());
+    expect(store.uid).toBe(uid);
     expect(store.members.map((member) => member.projectId)).toEqual([PROJECT_A]);
   });
 

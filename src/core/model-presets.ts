@@ -45,9 +45,26 @@ export interface ModelPreset {
 export const MODEL_PRESETS: ModelPreset[] = [
   { match: ['haiku'], contextWindow: 200_000 },
   {
-    match: ['opus-4', 'sonnet-5', 'sonnet-4-6', 'fable', 'mythos'],
+    match: [
+      // Opus is split across two windows and the generations interleave
+      // lexically, so the 1M members are enumerated here and the shared
+      // `opus-4` prefix falls to the 200k entry below. First-match-wins makes
+      // the order load-bearing: a bare `opus-4` in THIS list would swallow
+      // 4.0/4.1/4.5 and report a 190k session as 19% full instead of 95%,
+      // so the handoff would never fire.
+      'opus-4-6',
+      'opus-4-7',
+      'opus-4-8',
+      'opus-5',
+      'sonnet-5',
+      'sonnet-4-6',
+      'fable',
+      'mythos',
+    ],
     contextWindow: 1_000_000,
   },
+  // Every remaining Opus 4 generation — 4.0, 4.1, 4.5 and their dated ids.
+  { match: ['opus-4'], contextWindow: 200_000 },
   {
     match: ['gpt-5'],
     contextWindow: 272_000,

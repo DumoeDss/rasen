@@ -10,6 +10,8 @@ import {
 } from '../../../src/core/change-run/internal/runtime-plan.js';
 import {
   agentAction,
+  awaitGate,
+  decideGate,
   evidenceFor,
   fixtureDigests,
   fixtureLimits,
@@ -201,6 +203,68 @@ describe('reconciler ECP-4: FanOut + Join passes', () => {
       )
     );
     expect(memberAdmits.length).toBe(2);
+  });
+
+  it('preserves an authored Gate before admitting an active FanOut member', () => {
+    const input = fanOutPlanInput({
+      cap: 1,
+      budget: 1,
+      members: [{ id: 'review', required: true, condition: 'always' }],
+    });
+    const plan = createRuntimePlan({
+      ...input,
+      nodes: input.nodes.map((node) =>
+        node.kind === 'atomic'
+          ? {
+              ...node,
+              gate: {
+                gateId: 'review-gate',
+                decisionIds: ['approve', 'reject'],
+                outcomes: { approve: 'proceed', reject: 'escalate' },
+              },
+            }
+          : node
+      ),
+    });
+    let record = startRecord(plan);
+    record = commitNode(plan, record, 'root:experts', {
+      activeMembers: ['root:experts/review'],
+      inactiveMembers: [],
+      rationale: {},
+    });
+
+    const pending = reconcile(plan, record);
+    expect(pending.ok).toBe(true);
+    if (!pending.ok) return;
+    expect(pending.actions).toContainEqual(
+      expect.objectContaining({
+        kind: 'await-gate',
+        nodeId: plan.nodes.find(
+          (node) => node.hierarchicalPath === 'root:experts/review'
+        )!.nodeId,
+        gateId: 'review-gate',
+      })
+    );
+    expect(pending.actions.some((action) => action.kind === 'admit')).toBe(false);
+
+    record = awaitGate(plan, record, 'root:experts/review');
+    const awaiting = reconcile(plan, record);
+    expect(awaiting.ok).toBe(true);
+    if (!awaiting.ok) return;
+    expect(awaiting.actions.some((action) => action.kind === 'admit')).toBe(false);
+
+    record = decideGate(plan, record, 'root:experts/review', 'approve');
+    const approved = reconcile(plan, record);
+    expect(approved.ok).toBe(true);
+    if (!approved.ok) return;
+    expect(approved.actions).toContainEqual(
+      expect.objectContaining({
+        kind: 'admit',
+        nodeId: plan.nodes.find(
+          (node) => node.hierarchicalPath === 'root:experts/review'
+        )!.nodeId,
+      })
+    );
   });
 
   it('does not re-admit completed members (idempotency)', () => {

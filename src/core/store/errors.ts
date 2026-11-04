@@ -6,6 +6,8 @@ export interface StoreDiagnostic {
   message: string;
   target?: string;
   fix?: string;
+  /** Optional machine-readable recovery facts. Never a filesystem locator. */
+  recovery?: unknown;
 }
 
 export class StoreError extends Error {
@@ -14,7 +16,7 @@ export class StoreError extends Error {
   constructor(
     message: string,
     code: string,
-    options: { target?: string; fix?: string } = {}
+    options: { target?: string; fix?: string; recovery?: unknown } = {}
   ) {
     super(message);
     this.name = 'StoreError';
@@ -31,7 +33,7 @@ export function makeStoreDiagnostic(
   severity: StoreDiagnosticSeverity,
   code: string,
   message: string,
-  options: { target?: string; fix?: string } = {}
+  options: { target?: string; fix?: string; recovery?: unknown } = {}
 ): StoreDiagnostic {
   return {
     severity,

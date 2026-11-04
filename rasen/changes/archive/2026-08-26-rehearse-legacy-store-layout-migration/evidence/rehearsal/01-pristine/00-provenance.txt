@@ -1,0 +1,59 @@
+# CLI PROVENANCE for this stage
+
+    Pinned build:   git archive HEAD  ->  <temp>/pinned  ->  node build.js
+    Commit:         9f9f68cf4a44d722f3a7d6eac2a7f2a07e22b4fc  (dev/0.2.0)
+    Contains:       the COMMITTED tree only. Not the repo working tree.
+    Excludes:       every uncommitted change in the repo, this change's own
+                    included, so this stage characterizes shipped dev/0.2.0.
+
+Why this matters more than hygiene: the repo working tree is shared with
+in-flight sibling changes, `pnpm build` deletes `dist/` before compiling, and
+`src/commands/store.ts` imports `src/core/store/identity.ts` -- a file a sibling
+was editing while this rehearsal ran. A shared `dist/` would have put a
+sibling's uncommitted work inside the behavior these refusal texts are evidence
+OF. The pin is a correctness property of this evidence, not an implementation
+detail.
+
+Repo working-tree state under src/ at capture time (present on disk, absent from
+the pinned build):
+
+$ git status --porcelain -- src/
+ M src/commands/store-migrate-layout.ts
+ M src/commands/store-migration.ts
+ M src/commands/workspace.ts
+ M src/core/completions/command-registry.ts
+ M src/core/store-planning/internal/dependencies.ts
+ M src/core/store-planning/internal/resolver.ts
+ M src/core/store-planning/testing.ts
+ M src/core/store/identity.ts
+ M src/core/store/layout-migration/index.ts
+ M src/core/store/layout-migration/plan.ts
+ M src/core/store/layout-migration/types.ts
+ M src/core/store/workspace/apply.ts
+ M src/core/store/workspace/dependencies.ts
+ M src/core/store/workspace/module.ts
+ M src/core/store/workspace/plan.ts
+ M src/locales/en.json
+ M src/locales/ja.json
+ M src/locales/zh-cn.json
+
+$ git diff --stat -- src/
+ src/commands/store-migrate-layout.ts             |  38 +++-
+ src/commands/store-migration.ts                  |  51 ++---
+ src/commands/workspace.ts                        |  46 +++-
+ src/core/completions/command-registry.ts         |   1 +
+ src/core/store-planning/internal/dependencies.ts |  44 ++++
+ src/core/store-planning/internal/resolver.ts     | 263 +++++++++++++++++++++--
+ src/core/store-planning/testing.ts               |   1 +
+ src/core/store/identity.ts                       | 206 ++++++++++++++++--
+ src/core/store/layout-migration/index.ts         |   3 +
+ src/core/store/layout-migration/plan.ts          | 152 +++++++++++--
+ src/core/store/layout-migration/types.ts         |  15 +-
+ src/core/store/workspace/apply.ts                |  63 +++++-
+ src/core/store/workspace/dependencies.ts         |  22 +-
+ src/core/store/workspace/module.ts               | 172 +++++++++++----
+ src/core/store/workspace/plan.ts                 | 217 +++++++++++++++++--
+ src/locales/en.json                              |   3 +
+ src/locales/ja.json                              |   3 +
+ src/locales/zh-cn.json                           |   3 +
+ 18 files changed, 1135 insertions(+), 168 deletions(-)

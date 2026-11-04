@@ -1,6 +1,6 @@
 ## Context
 
-`ecp-run-spine` (0.1.6, PR #92) introduced a complete ChangePipelineRuntime
+`ecp-run-spine` (0.2.0, PR #92) introduced a complete ChangePipelineRuntime
 kernel including an `association-registry.ts` that implements distinct-
 ChangeInstance-on-recreate. The kernel tests (`archive-recreate-journeys.test.ts`,
 `association-registry.test.ts`) pass — but production never calls the registry.

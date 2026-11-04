@@ -1,0 +1,521 @@
+REAL-CLI DOGFOOD (task 5.4) — the field sequence on a purpose-built disposable store.
+
+Isolation: XDG_DATA_HOME / XDG_CONFIG_HOME / GIT_CONFIG_GLOBAL / GIT_CONFIG_SYSTEM all
+redirected under the temp root; every repository, worktree, registry and lock created by
+this run lives there. No live store (elftia-store, E:/rasen-pairs, C:/Users/Sayo/.rasen)
+was read or written. CLI = node bin/rasen.js against the freshly built dist (0.2.0).
+
+Script: reproduced verbatim below the transcript.
+
+=================== TRANSCRIPT ===================
+
+################################################################
+# 0. environment (nothing here touches a live store)
+################################################################
+XDG_DATA_HOME=C:/Users/Sayo/AppData/Local/Temp/rasen-b-dogfood/data
+temp root=C:/Users/Sayo/AppData/Local/Temp/rasen-b-dogfood
+0.2.0
+
+################################################################
+# 1. create a layout-v2 store
+################################################################
+Store ready: dogfood-store
+Location: ~\AppData\Local\Temp\rasen-b-dogfood\store
+Rasen root: ready
+Registry: registered
+
+Next: run normal Rasen commands against this store, for example:
+  rasen new change <change-id> --store dogfood-store
+Share this store by committing and pushing it like any Git repo.
+
+################################################################
+# 2. create and register the project repository
+################################################################
+- Creating Rasen structure...
+▌ Rasen structure created
+
+Rasen Setup Complete
+
+Config: rasen/config.yaml (schema: spec-driven)
+Machine home: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\data\rasen\projects\proj-d67a4cc7
+
+Getting started:
+  Start your first change: run the rasen-propose skill with "your idea"
+
+Safety Hook (optional):
+  Add to .claude/settings.json to detect destructive commands:
+  "hooks": { "PreToolUse": [{ "type": "command", "command": "bash hooks/safety-check.sh" }] }
+
+Compact Recovery Hook (optional):
+  Add to .claude/settings.json to re-anchor on handoff distillates after a compaction:
+  "hooks": { "SessionStart": [{ "matcher": "compact", "hooks": [{ "type": "command", "command": "bash hooks/compact-recovery.sh" }] }] }
+
+Learn more: https://github.com/DumoeDss/rasen
+Feedback:   https://github.com/DumoeDss/rasen/issues
+
+Project: proj (project namespace)
+Location: ~\AppData\Local\Temp\rasen-b-dogfood\proj
+Registry: registered
+Added to store: dogfood-store
+References: added to ~\AppData\Local\Temp\rasen-b-dogfood\store\rasen\config.yaml
+
+Membership (roster and eligibility only; it does not decide where a change is implemented):
+  Project identity: ec747c31-07f2-4a41-9854-6617249bba52
+  Roles: planning=yes, knowledge=yes
+  Store repo wrote: ~\AppData\Local\Temp\rasen-b-dogfood\store\.rasen-store\projects\ec747c31-07f2-4a41-9854-6617249bba52.yaml
+  Project repo wrote: ~\AppData\Local\Temp\rasen-b-dogfood\proj\rasen\config.yaml
+  Suggested commit (Store repo: record the membership authority record.)
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store add .rasen-store\projects\ec747c31-07f2-4a41-9854-6617249bba52.yaml && git -C C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store commit -m "chore: record proj as a member"
+  Suggested commit (Project repo: record the membership locator hint.)
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj add rasen\config.yaml && git -C C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj commit -m "chore: record membership of store dogfood-store"
+  Neither command was run: rasen never stages, commits, pushes, fetches, or pulls.
+
+Planning store: changed to 'dogfood-store' (--set-primary).
+  This is separate from the membership above: it decides where this project plans.
+
+The project remains usable in-repo; it continues to resolve as its own local Rasen root.
+
+Store identity metadata was created at ~\AppData\Local\Temp\rasen-b-dogfood\proj\.rasen-store\store.yaml.
+Commit it so teammates can resolve this project as a store on their own checkouts, or gitignore it to keep it machine-local.
+This command does not edit .gitignore and does not create a commit.
+
+################################################################
+# 3. read back the minted project id
+################################################################
+projectId=ec747c31-07f2-4a41-9854-6617249bba52
+
+################################################################
+# 4. author the target line on release/0.2 in both repositories
+################################################################
+Target line line-0.2 (store dogfood-store)
+  store ref: refs/heads/release/0.2
+  ec747c31-07f2-4a41-9854-6617249bba52: refs/heads/release/0.2
+  catalog: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store\.rasen-store\target-lines\line-0.2.yaml
+
+  The target-line catalog is Git-tracked Store content. Rasen wrote the file and staged nothing.
+    git -C C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store add -- .rasen-store/target-lines/line-0.2.yaml && git -C C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store commit -m "chore(store): record target line line-0.2"
+Target line line-0.2 (store dogfood-store)
+  store ref: refs/heads/release/0.2
+  ec747c31-07f2-4a41-9854-6617249bba52: refs/heads/release/0.2
+  catalog: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store\.rasen-store\target-lines\line-0.2.yaml
+  resolved store ref: refs/heads/release/0.2@3564e463c939e2d4ebf7bff1c1b06a58345ae9e4
+
+################################################################
+# 5. FIELD STEP 1 — prepare the pair in ONE invocation (plan --apply)
+################################################################
+Workspace plan for Change repair-retention — project ec747c31-07f2-4a41-9854-6617249bba52 on target line line-0.2
+  plan id: f4f03ec5327428d5164cf9c55648923c403d038c982b0da9b7535fdc09e5c4a3
+  intent:  new-change
+  target line: refs/heads/release/0.2@3564e463c939e2d4ebf7bff1c1b06a58345ae9e4 / refs/heads/release/0.2@8d90950c4d61e0fb34f6b0cf58b4b241205c92d2
+
+  Actions
+    create-planning-worktree
+        destination: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention
+        ref:         refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention
+        from commit: 3564e463c939e2d4ebf7bff1c1b06a58345ae9e4
+        creates the branch
+        satisfied:   no
+    create-execution-worktree
+        destination: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention
+        ref:         refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention
+        from commit: 8d90950c4d61e0fb34f6b0cf58b4b241205c92d2
+        creates the branch
+        satisfied:   no
+    write-planning-marker
+        destination: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention\.rasen\planning-line.json
+        digest:      1a01244e7efbf5c8449fb29b67faeb65f5916f4058ee1ddd643e6f41231be273
+        satisfied:   no
+    write-execution-association
+        destination: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention\.rasen\planning-binding.json
+        digest:      0e348043090732b5ffe46be182082cad00a4bb6686a836377fb03573315088e5
+        satisfied:   no
+    record-index-entry
+        destination: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\data\rasen\planning-workspaces\index\ps_6beb45f098dbdeebfdc445daee9d818e1894709f986ea21d43962e8d64a43d9d.json
+        satisfied:   no
+
+  Preconditions
+    [ok] planning-destination-available
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention does not exist yet, so the worktree is created there.
+    [ok] planning-branch-available
+        refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention does not exist yet, so it is created at 3564e463c939e2d4ebf7bff1c1b06a58345ae9e4.
+    [ok] execution-destination-available
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention does not exist yet, so the worktree is created there.
+    [ok] execution-branch-available
+        refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention does not exist yet, so it is created at 8d90950c4d61e0fb34f6b0cf58b4b241205c92d2.
+    [ok] planning-created-from
+        The planning worktree will be created from refs/heads/release/0.2 @ 3564e463c939e2d4ebf7bff1c1b06a58345ae9e4, on the new branch refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention.
+    [ok] execution-created-from
+        The execution worktree will be created from refs/heads/release/0.2 @ 8d90950c4d61e0fb34f6b0cf58b4b241205c92d2, on the new branch refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention.
+    [ok] planning-marker-contained
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention\.rasen\planning-line.json is inside the planned planning worktree root C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention.
+    [ok] execution-marker-contained
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention\.rasen\planning-binding.json is inside the planned execution worktree root C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention.
+    [ok] planning-root-outside-repository
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention is outside the planning repository's checkout C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store.
+    [ok] execution-root-outside-repository
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention is outside the execution repository's checkout C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj.
+    [ok] pair-roots-disjoint
+        The planned planning and execution roots are distinct, and neither contains the other.
+    [ok] change-not-already-created
+        Change 'repair-retention' does not exist yet; creating it in the prepared planning worktree completes the binding.
+
+  Applying under the same lock hold.
+  Preparation adds worktrees. It never moves a ref, a HEAD, or a working tree.
+
+Workspace prepared for Change repair-retention — prepared
+  planning:  C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention
+  execution: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention
+  created:   C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention
+  created:   C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention
+  Nothing was staged or committed in either repository; the marker and the association are machine-local run state.
+planning worktree exists: yes
+execution worktree exists: yes
+
+################################################################
+# 6. FIELD STEP 2 — the pair is recorded
+################################################################
+Workspace — prepared
+  change:    repair-retention
+  planning:  C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention
+      instance: wt_35da5ec9a40ce549ff66b474d83d023096033f1c1c42cecfcf0e7ce684b435ac
+      ref:      refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention
+      head:     3564e463c939e2d4ebf7bff1c1b06a58345ae9e4
+  execution:  C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention
+      instance: wt_a079a1c344e85b23b7aa726a49d4c891e606a33db80cc7d27613dd729f620b19
+      ref:      refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention
+      head:     8d90950c4d61e0fb34f6b0cf58b4b241205c92d2
+
+################################################################
+# 7. FIELD STEP 3 — the planning worktree is torn down, entry left behind
+################################################################
+planning worktree exists: no
+pair branch still present:
+  change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention
+
+################################################################
+# 8. FIELD STEP 4 — the line advances mid-sequence (what the field session hit)
+################################################################
+438150889a59cec5e389b4504f7652c9bd15267b
+
+################################################################
+# 9. FIELD STEP 5 — re-prepare through the official flow, one invocation
+################################################################
+Workspace plan for Change repair-retention — project ec747c31-07f2-4a41-9854-6617249bba52 on target line line-0.2
+  plan id: 47893ce1a9bb6a1d6a12fb854af56df7aa372bcf42e375a9880c1226eda8859c
+  intent:  new-change
+  target line: refs/heads/release/0.2@438150889a59cec5e389b4504f7652c9bd15267b / refs/heads/release/0.2@8d90950c4d61e0fb34f6b0cf58b4b241205c92d2
+
+  Actions
+    create-planning-worktree
+        destination: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention
+        ref:         refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention
+        from commit: 3564e463c939e2d4ebf7bff1c1b06a58345ae9e4
+        satisfied:   no
+    reuse-execution-worktree
+        destination: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention
+        ref:         refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention
+        from commit: 8d90950c4d61e0fb34f6b0cf58b4b241205c92d2
+        satisfied:   yes
+    write-planning-marker
+        destination: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention\.rasen\planning-line.json
+        digest:      1a01244e7efbf5c8449fb29b67faeb65f5916f4058ee1ddd643e6f41231be273
+        satisfied:   no
+    write-execution-association
+        destination: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention\.rasen\planning-binding.json
+        digest:      0e348043090732b5ffe46be182082cad00a4bb6686a836377fb03573315088e5
+        satisfied:   yes
+    record-index-entry
+        destination: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\data\rasen\planning-workspaces\index\ps_6beb45f098dbdeebfdc445daee9d818e1894709f986ea21d43962e8d64a43d9d.json
+        satisfied:   no
+
+  Preconditions
+    [ok] planning-destination-available
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention does not exist yet, so the worktree is created there.
+    [ok] planning-branch-reattached
+        refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention already exists at 3564e463c939e2d4ebf7bff1c1b06a58345ae9e4, left by an earlier pair, so the worktree is created ON it at that commit rather than minting the branch again.
+    [ok] execution-ref-matches
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention is on refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention, which is the ref the pair records.
+    [ok] planning-recorded-pair-recreated
+        The machine index records a planning worktree for Change 'repair-retention' at C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention, and nothing is there any more, so the pair is re-created at that same recorded root.
+    [ok] planning-created-from
+        The planning worktree will be created on the existing branch refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention @ 3564e463c939e2d4ebf7bff1c1b06a58345ae9e4; the target line refs/heads/release/0.2 is at 438150889a59cec5e389b4504f7652c9bd15267b.
+    [ok] planning-marker-contained
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention\.rasen\planning-line.json is inside the planned planning worktree root C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention.
+    [ok] execution-marker-contained
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention\.rasen\planning-binding.json is inside the planned execution worktree root C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention.
+    [ok] planning-root-outside-repository
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention is outside the planning repository's checkout C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store.
+    [ok] execution-root-outside-repository
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention is outside the execution repository's checkout C:/Users/Sayo/AppData/Local/Temp/rasen-b-dogfood/proj.
+    [ok] pair-roots-disjoint
+        The planned planning and execution roots are distinct, and neither contains the other.
+    [ok] change-not-already-created
+        Change 'repair-retention' does not exist yet; creating it in the prepared planning worktree completes the binding.
+
+  Applying under the same lock hold.
+  Preparation adds worktrees. It never moves a ref, a HEAD, or a working tree.
+
+Workspace prepared for Change repair-retention — prepared
+  planning:  C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention
+  execution: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention
+  created:   C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention
+  reused:    C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention
+  Nothing was staged or committed in either repository; the marker and the association are machine-local run state.
+exit code: 0
+planning worktree exists: yes
+refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention
+3564e463c939e2d4ebf7bff1c1b06a58345ae9e4
+
+################################################################
+# 10. a SECOND pair at a fresh destination is refused, before anything is created
+################################################################
+Workspace plan for Change repair-retention — project ec747c31-07f2-4a41-9854-6617249bba52 on target line line-0.2
+  plan id: ae6fdefda8aa30b7f8978d702bbb4f24df54bf8440937aa9e50f73740703a081
+  intent:  new-change
+  target line: refs/heads/release/0.2@438150889a59cec5e389b4504f7652c9bd15267b / refs/heads/release/0.2@8d90950c4d61e0fb34f6b0cf58b4b241205c92d2
+
+  Actions
+    create-planning-worktree
+        destination: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-second
+        ref:         refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention
+        from commit: 3564e463c939e2d4ebf7bff1c1b06a58345ae9e4
+        satisfied:   no
+    reuse-execution-worktree
+        destination: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention
+        ref:         refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention
+        from commit: 8d90950c4d61e0fb34f6b0cf58b4b241205c92d2
+        satisfied:   yes
+    write-planning-marker
+        destination: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-second\.rasen\planning-line.json
+        digest:      1a01244e7efbf5c8449fb29b67faeb65f5916f4058ee1ddd643e6f41231be273
+        satisfied:   no
+    write-execution-association
+        destination: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention\.rasen\planning-binding.json
+        digest:      b5a6f8ccf055c26bd4cd6c46641f449733e68f2976667b1e24a43275b5adffbf
+        satisfied:   no
+    record-index-entry
+        destination: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\data\rasen\planning-workspaces\index\ps_6beb45f098dbdeebfdc445daee9d818e1894709f986ea21d43962e8d64a43d9d.json
+        satisfied:   no
+
+  Preconditions
+    [ok] planning-destination-available
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-second does not exist yet, so the worktree is created there.
+    [unsatisfied] planning-branch-usable
+        refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention is already checked out in C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention, and Git checks one branch out in one worktree at a time. Remove that worktree first — 'rasen store workspace cleanup --change repair-retention' when it is this Change's own pair — because preparation never moves another worktree's HEAD.
+        expected: refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention checked out nowhere  actual: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention
+        code: workspace_ref_mismatch
+    [ok] execution-ref-matches
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention is on refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention, which is the ref the pair records.
+    [unsatisfied] planning-recorded-pair-single
+        Change 'repair-retention' is already bound to a planning worktree at C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention, which still exists, and this plan would create a second one at C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-second. One Change instance belongs to exactly one pair. Remove the recorded pair with 'rasen store workspace cleanup --change repair-retention', or plan without naming a destination, which reuses the recorded root.
+        expected: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention  actual: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-second
+        code: workspace_already_bound
+    [ok] planning-created-from
+        The planning worktree will be created on the existing branch refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention @ 3564e463c939e2d4ebf7bff1c1b06a58345ae9e4; the target line refs/heads/release/0.2 is at 438150889a59cec5e389b4504f7652c9bd15267b.
+    [ok] planning-marker-contained
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-second\.rasen\planning-line.json is inside the planned planning worktree root C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-second.
+    [ok] execution-marker-contained
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention\.rasen\planning-binding.json is inside the planned execution worktree root C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention.
+    [ok] planning-root-outside-repository
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-second is outside the planning repository's checkout C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store.
+    [ok] execution-root-outside-repository
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention is outside the execution repository's checkout C:/Users/Sayo/AppData/Local/Temp/rasen-b-dogfood/proj.
+    [ok] pair-roots-disjoint
+        The planned planning and execution roots are distinct, and neither contains the other.
+    [ok] change-not-already-created
+        Change 'repair-retention' does not exist yet; creating it in the prepared planning worktree completes the binding.
+
+  Not applicable: 2 unsatisfied precondition(s). There is no --force; correct the disagreement or prepare a new pair.
+  Preparation adds worktrees. It never moves a ref, a HEAD, or a working tree.
+exit code: 1
+second destination exists: no
+
+################################################################
+# 11. the two-step path still works and still names the frozen tip
+################################################################
+Workspace plan for Change repair-retention — project ec747c31-07f2-4a41-9854-6617249bba52 on target line line-0.2
+  plan id: ea99890ac0dbfe067613840e8c091b22be25c0f9d2a22299c62dfeacaad2277f
+  intent:  new-change
+  target line: refs/heads/release/0.2@438150889a59cec5e389b4504f7652c9bd15267b / refs/heads/release/0.2@8d90950c4d61e0fb34f6b0cf58b4b241205c92d2
+
+  Actions
+    reuse-planning-worktree
+        destination: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention
+        ref:         refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention
+        from commit: 3564e463c939e2d4ebf7bff1c1b06a58345ae9e4
+        satisfied:   yes
+    reuse-execution-worktree
+        destination: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention
+        ref:         refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention
+        from commit: 8d90950c4d61e0fb34f6b0cf58b4b241205c92d2
+        satisfied:   yes
+    write-planning-marker
+        destination: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention\.rasen\planning-line.json
+        digest:      1a01244e7efbf5c8449fb29b67faeb65f5916f4058ee1ddd643e6f41231be273
+        satisfied:   yes
+    write-execution-association
+        destination: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention\.rasen\planning-binding.json
+        digest:      0e348043090732b5ffe46be182082cad00a4bb6686a836377fb03573315088e5
+        satisfied:   yes
+    record-index-entry
+        destination: C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\data\rasen\planning-workspaces\index\ps_6beb45f098dbdeebfdc445daee9d818e1894709f986ea21d43962e8d64a43d9d.json
+        satisfied:   no
+
+  Preconditions
+    [ok] planning-ref-matches
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention is on refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention, which is the ref the pair records.
+    [ok] execution-ref-matches
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention is on refs/heads/change/line-0.2/ec747c31-07f2-4a41-9854-6617249bba52/repair-retention, which is the ref the pair records.
+    [ok] planning-marker-contained
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention\.rasen\planning-line.json is inside the planned planning worktree root C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention.
+    [ok] execution-marker-contained
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention\.rasen\planning-binding.json is inside the planned execution worktree root C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention.
+    [ok] planning-root-outside-repository
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention is outside the planning repository's checkout C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store.
+    [ok] execution-root-outside-repository
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\proj-repair-retention is outside the execution repository's checkout C:/Users/Sayo/AppData/Local/Temp/rasen-b-dogfood/proj.
+    [ok] pair-roots-disjoint
+        The planned planning and execution roots are distinct, and neither contains the other.
+    [ok] planning-marker-agrees
+        C:\Users\Sayo\AppData\Local\Temp\rasen-b-dogfood\store-planning-repair-retention\.rasen\planning-line.json already declares this Store, project, and target line.
+    [ok] change-not-already-created
+        Change 'repair-retention' does not exist yet; creating it in the prepared planning worktree completes the binding.
+
+  Ready to apply. Run: rasen store workspace apply --apply-plan ea99890ac0dbfe067613840e8c091b22be25c0f9d2a22299c62dfeacaad2277f
+  Or prepare in one invocation: add --apply, which plans and applies under one lock hold, so the frozen tip cannot go stale in between.
+  Preparation adds worktrees. It never moves a ref, a HEAD, or a working tree.
+exit code: 0
+
+################################################################
+# 12. teardown check — every path used was under the temp root
+################################################################
+C:/Users/Sayo/AppData/Local/Temp/rasen-b-dogfood
+config
+data
+gitconfig
+proj
+proj-repair-retention
+projects.json
+store
+store-planning-repair-retention
+
+=================== SCRIPT ===================
+#!/usr/bin/env bash
+# Task 5.4 — the field sequence, through the real CLI, on a purpose-built
+# disposable store. The live planning stores are never touched: every path here
+# is under $T, and XDG_* plus GIT_CONFIG_GLOBAL redirect the machine home and
+# the git identity into it as well.
+set -uo pipefail
+
+REPO="E:/AI/ChatAI/Agents/VibeCodingProjects/workflow/Reference/OpenSpec-code"
+T="$(printf %s "${TEMP:-/tmp}" | tr '\\' /)/rasen-b-dogfood"
+rm -rf "$T" 2>/dev/null || true
+mkdir -p "$T"
+
+export XDG_DATA_HOME="$T/data"
+export XDG_CONFIG_HOME="$T/config"
+export GIT_CONFIG_GLOBAL="$T/gitconfig"
+export GIT_CONFIG_SYSTEM="$T/gitconfig-system"
+export OPEN_SPEC_INTERACTIVE=0
+export RASEN_TELEMETRY=0
+
+git config --global user.email 'dogfood@example.invalid'
+git config --global user.name 'Rasen Dogfood'
+git config --global init.defaultBranch main
+
+R() { node "$REPO/bin/rasen.js" "$@"; }
+
+step() {
+  echo
+  echo "################################################################"
+  echo "# $*"
+  echo "################################################################"
+}
+
+STORE_ID=dogfood-store
+CHANGE=repair-retention
+LINE=line-0.2
+PLANNING="$T/store-planning-$CHANGE"
+EXECUTION="$T/proj-$CHANGE"
+
+step "0. environment (nothing here touches a live store)"
+echo "XDG_DATA_HOME=$XDG_DATA_HOME"
+echo "temp root=$T"
+node "$REPO/bin/rasen.js" --version
+
+step "1. create a layout-v2 store"
+R store setup "$STORE_ID" --path "$T/store" --layout 2
+git -C "$T/store" branch release/0.2
+
+step "2. create and register the project repository"
+mkdir -p "$T/proj"
+git -C "$T/proj" init -q
+printf 'placeholder\n' > "$T/proj/README.md"
+git -C "$T/proj" add README.md
+git -C "$T/proj" commit -qm 'seed the project repository'
+git -C "$T/proj" branch release/0.2
+# `init` is what registers the checkout in the project namespace. `add-project`
+# records membership but writes no project-registry entry, so without this the
+# pair's execution repository cannot be resolved from the project id alone.
+(cd "$T/proj" && R init --tools none)
+git -C "$T/proj" add -A
+git -C "$T/proj" commit -qm 'rasen init'
+R store add-project "$T/proj" --to "$STORE_ID" --set-primary
+
+step "3. read back the minted project id"
+R store projects --store "$STORE_ID" --json > "$T/projects.json"
+PROJECT=$(python -c "import json,io; d=json.load(io.open(r'$T/projects.json',encoding='utf-8')); ps=d['projects'] if isinstance(d,dict) and 'projects' in d else d; p=ps[0]; print(p.get('projectId') or p.get('id'))")
+echo "projectId=$PROJECT"
+
+step "4. author the target line on release/0.2 in both repositories"
+R store target-line add "$LINE" --store "$STORE_ID" --store-ref refs/heads/release/0.2 \
+  --project "$PROJECT" --code-ref refs/heads/release/0.2
+R store target-line show "$LINE" --store "$STORE_ID"
+
+step "5. FIELD STEP 1 — prepare the pair in ONE invocation (plan --apply)"
+cd "$T/store"
+R store workspace plan --store "$STORE_ID" --project "$PROJECT" --target-line "$LINE" \
+  --change "$CHANGE" --planning-worktree "$PLANNING" --execution-worktree "$EXECUTION" --apply
+echo "planning worktree exists: $([ -d "$PLANNING" ] && echo yes || echo no)"
+echo "execution worktree exists: $([ -d "$EXECUTION" ] && echo yes || echo no)"
+
+step "6. FIELD STEP 2 — the pair is recorded"
+R store workspace show --store "$STORE_ID" --project "$PROJECT" --target-line "$LINE" --change "$CHANGE"
+
+step "7. FIELD STEP 3 — the planning worktree is torn down, entry left behind"
+git -C "$T/store" worktree remove --force "$PLANNING"
+git -C "$T/store" worktree prune
+echo "planning worktree exists: $([ -d "$PLANNING" ] && echo yes || echo no)"
+echo "pair branch still present:"
+git -C "$T/store" branch --list "change/$LINE/$PROJECT/$CHANGE"
+
+step "8. FIELD STEP 4 — the line advances mid-sequence (what the field session hit)"
+printf 'an archive merge landed\n' > "$T/store/advance.md"
+git -C "$T/store" add advance.md
+git -C "$T/store" commit -qm 'Merge archive (simulated retention activity)'
+git -C "$T/store" branch -f release/0.2 HEAD
+git -C "$T/store" rev-parse refs/heads/release/0.2
+
+step "9. FIELD STEP 5 — re-prepare through the official flow, one invocation"
+R store workspace plan --store "$STORE_ID" --project "$PROJECT" --target-line "$LINE" \
+  --change "$CHANGE" --planning-worktree "$PLANNING" --execution-worktree "$EXECUTION" --apply
+RC=$?
+echo "exit code: $RC"
+echo "planning worktree exists: $([ -d "$PLANNING" ] && echo yes || echo no)"
+git -C "$PLANNING" symbolic-ref --quiet HEAD 2>/dev/null || true
+git -C "$PLANNING" rev-parse HEAD 2>/dev/null || true
+
+step "10. a SECOND pair at a fresh destination is refused, before anything is created"
+R store workspace plan --store "$STORE_ID" --project "$PROJECT" --target-line "$LINE" \
+  --change "$CHANGE" --planning-worktree "$T/store-planning-second" --execution-worktree "$EXECUTION"
+echo "exit code: $?"
+echo "second destination exists: $([ -d "$T/store-planning-second" ] && echo yes || echo no)"
+
+step "11. the two-step path still works and still names the frozen tip"
+R store workspace plan --store "$STORE_ID" --project "$PROJECT" --target-line "$LINE" \
+  --change "$CHANGE" --planning-worktree "$PLANNING" --execution-worktree "$EXECUTION"
+echo "exit code: $?"
+
+step "12. teardown check — every path used was under the temp root"
+echo "$T"
+ls "$T"

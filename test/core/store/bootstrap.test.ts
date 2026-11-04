@@ -748,6 +748,50 @@ describe('bootstrap report', () => {
       expect(report.stores[0]?.sources).toContain('hint');
     });
 
+    it('keeps case-distinct identityless hint and planning aliases separate', async () => {
+      const project = makeProject('project');
+      await appendStoreMembershipHint(project, { id: 'acme' });
+      updateProjectConfigKey(project, 'store', 'Acme');
+      const upperPath = path.join(tempDir, 'upper-store');
+      const lowerPath = path.join(tempDir, 'lower-store');
+
+      const upperReport = await buildBootstrapReport({
+        cwd: project,
+        mode: 'preview',
+        globalDataDir,
+        paths: new Map([['Acme', upperPath]]),
+      });
+
+      expect(upperReport.stores.map((entry) => entry.id)).toEqual(['acme', 'Acme']);
+      expect(entryFor(upperReport, 'acme').sources).toEqual(['hint']);
+      expect(entryFor(upperReport, 'acme').location).toEqual({
+        kind: 'required',
+        because: 'no-location-supplied',
+      });
+      expect(entryFor(upperReport, 'Acme').sources).toEqual(['planning']);
+      expect(entryFor(upperReport, 'Acme').location).toEqual({
+        kind: 'usable',
+        path: path.resolve(upperPath),
+        source: 'supplied-path',
+      });
+
+      const lowerReport = await buildBootstrapReport({
+        cwd: project,
+        mode: 'preview',
+        globalDataDir,
+        paths: new Map([['acme', lowerPath]]),
+      });
+      expect(entryFor(lowerReport, 'acme').location).toEqual({
+        kind: 'usable',
+        path: path.resolve(lowerPath),
+        source: 'supplied-path',
+      });
+      expect(entryFor(lowerReport, 'Acme').location).toEqual({
+        kind: 'required',
+        because: 'no-location-supplied',
+      });
+    });
+
     it('reports an absent Store with a remote as obtainable, naming the remote', async () => {
       const project = makeProject('project');
       await appendStoreMembershipHint(project, {

@@ -1,10 +1,20 @@
 # 0.2.0 内核 Session 执行层设计（Plan B 重定位版）
 
 > 版本：v2（重定位）。v1（面向 0.1.6 playbook 编排的「混合 Worker 后端」）见本文件的 git 历史（`0ff25ad1`）。
+>
+> 路线状态（2026-08-01）：设计仍有效，但实现顺序调整为 ECP Roadmap 的
+> **ECP-7 Session Execution and Self-hosting**；先完成 ECP-6 的 v2 authoring 与
+> loop contract，再接入本执行层。Issue/Dispatch 固定为 0.3.0。
 > 依据：`docs/audits/session-audit-9e36259d-cache-rebuild-review.md`（§8–13）；0.2.0 `change-run` 契约实读。
 > 前置验证：`docs/experiments/session-cache-probe.md`（KC 探针，结果未回之前本设计的宿主选型是**假设**）。
 > 状态：设计稿，待 ECP-4 契约冻结 + 探针结果后修订并排期。
 > 日期：2026-07-29
+
+> **ECP-7 P1 实现校准（2026-08-04）**：持久 Session host、原子 registry、
+> Claude stream-json adapter、daemon-local Management API 与 `rasen session`
+> 已落地并通过本地主机的真实无网络常驻进程测试。本文后续 tier、touch、policy、
+> canonical completion 与 self-hosting 章节仍是后续子项，不能从 P1 的落地推断为已实现。
+> 具体运行契约见 [`docs/session-host.md`](session-host.md)。
 
 ---
 
@@ -35,7 +45,8 @@ worker sessions          大上下文，1 小时缓存档，空闲零成本，�
 - G2：**Session registry**：机器可读的 session 身份链与生命周期（active/idle/retired、lastRequestAt、cwd、id 链），单写者为 rasen CLI。
 - G3：**tier 决策**输入化：每个 agent action 按经济模型选择 5 分钟档（launcher 内 subagent）或 1 小时档（独立 session），默认值由 pipeline stage 配置承载。
 - G4：**`rasen agent audit --run`**：按 runId 聚合 launcher + 全部 worker session，输出后端对照与经济性证据。
-- G5：作为 ECP roadmap 的一个切片交付（建议位置：ECP-4 收口后、ECP-5 前或并入 ECP-5 的 dogfood 要求），以 ReviewCycle 真实闭环为退出证据。
+- G5：作为 ECP roadmap 的独立切片交付。2026-08-01 已校准为 **ECP-7**，在
+  ECP-6 v2 authoring/loop contract 之后，以真实 Change 自宿主为退出证据。
 
 ### 非目标
 
@@ -94,7 +105,7 @@ reconciler ──next action──▶ launcher / runtime
 
 支撑这一约束的正是本设计的状态归属：run 状态在内核持久层、worker 在独立 session、touch 在 daemon——**driver 可插拔可更换**。用户关闭 Claude Code 窗口后，新会话或裸终端 `rasen pipeline resume` 接着驱动，worker 不重启、缓存不掉（launcher 死亡只是换 driver，不是 run 中断）。SessionHost/registry 对调用方无 driver 类型假设（Q1 的另一半）。
 
-### 4.2 接线定案（初次对表 2026-07-29 @ `2fa693d8`；**2026-07-30 重新对表已合并的 `dev/0.2.0` @ `be124057`，ECP-1..5 全部交付并归档**）
+### 4.2 接线定案（初次对表 2026-07-29 @ `2fa693d8`；**2026-07-30 重新对表已合并的 `dev/0.2.0` @ `be124057`，ECP-1..5 implementation Changes 已交付归档；这不代表完整 Target State passed**）
 
 契约核对结果：**agent action 的 `session` 块、`ActorRef.sessionIdentityDigest`、`workspace.access` 与本设计依据的形态逐字段零变化**（`contracts.ts:196-208,122,185-190`）。执行现实核对结果：**"执行 agent action"目前没有任何代码实现**——内核经 `facade.ts:14` 的 `deliveryMode: 'grant'|'defer'` 显式外包（grant 把可执行 payload 交给调用者、内核不执行；defer 封印 HTTP 面永不携带可执行 payload），实际由 launcher 会话按 playbook 用自身 Task/SendMessage 完成。Session 执行层填的是**从未存在过的空位**，不替换任何 runner。
 
@@ -114,7 +125,13 @@ rasen pipeline complete <change> --run <id> --from <receipt.json>
 
 daemon 侧驱动遵循 ECP-5 确立的 `run-control.ts` 桥接约定：服务端绝不 in-process 改 Record——pre-spawn 校验后 spawn 本地 CLI 子命令、解析其 JSON receipt。
 
-**P1 模块落点修正**：不从零建 `src/core/session-host/`——`management-api/supervisor.ts` 已有 headless `claude` spawn、pid 管理、tree-kill、并发槽、Windows `.cmd` 转义（一次性 `-p`、stdin ignore）；`session-registry.ts` 是内存 registry 且注释预留了 daemon 独立构造。P1 = 给 supervisor 增加 stream-json stdin 多轮 + resume 宿主模式，并把 session registry 持久化（§7 schema），而非新起炉灶。
+**P1 实现落点校准（2026-08-04）**：早期“直接扩展
+`management-api/supervisor.ts`”的假设已被实现证据取代。旧 supervisor 的一次性
+launch、容量与 wire 兼容语义必须原样保留；常驻 transport、durable request phase、
+exact-resume 与 fail-closed registry 则需要更深的独立边界。因此实现落在
+`src/core/session-host/`，复用既有 `spawnAgentCli`、`killProcessTree`、daemon
+identity/readiness 与 file-state 原语，并由 Management router 作窄适配。两种 Session
+在 daemon 内并存，`GET /api/v1/sessions` 只增加 hosted view，不改变旧 launch 语义。
 
 #### P2 上游前置四条 —— ECP-5 交付后的实际处置（2026-07-30 逐条核实于 `be124057`）
 
@@ -308,7 +325,8 @@ rasen agent audit --run <runId>
 > 2. **原 kill 路由「转评估 Agent SDK 宿主」作废**——缓存是服务端按前缀键控、宿主无关的，SDK streaming 会继承同样的留存行为。真正的杠杆是 §6.1 daemon touch 的 cadence：从 55 分钟改为「实测 T_eff − 余量」（预计 ~15 分钟级）。
 > 3. 死的是"55 分钟免费空闲"参数，不是架构；§6 经济模型待二分/KC1c 收工后按 T_eff 重算，MISS 惩罚不对称（2×C vs 1.25×C）会把路由阈值整体推向 subagent。
 > 4. KC2 已定：跨 cwd resume 硬报错 → registry 必须记录并校验 cwd。KC4 已定：session_id 恒定不换 → `sessionIdChain` 简化为单 id + 防御性链。KC5 已定：并发 resume 双方计费但一方回合被静默丢弃 → 单飞锁必须在 CLI 之上自行实现（已在 §5 设计内）。
-> 5. **排期解耦**：ECP-5 不等本层；本层在经济学重算为正后，再于 direction 校准排为 ECP-5 后切片。
+> 5. **排期决策**：ECP-5 没有等待本层；2026-08-01 Direction 已将本层排为
+> ECP-7，在 ECP-6 contract closure 之后执行。
 > 6. **官方文档调研确认（同日）**：1h 档官方措辞即"尽力而为、可逐出、无存活保证"——KC1a 解读获背书；客户端保温行为文档零记载（机制仍未知）。新增待测假设：
 >    - **KC6（高价值）**：常驻 `claude -p --input-format stream-json` 进程空闲 30–40 分钟后经 stdin 发消息是否 HIT——若"存活进程 = 交互式级留存"成立，宿主换 `stream-json` 形态（§5.1），touch 可能全免；
 >    - **KC7（低优先）**：`claude --bg` 会话的留存行为（supervisor 或有未记载保温；无编程消息 API，暂不作宿主）。
@@ -322,7 +340,7 @@ rasen agent audit --run <runId>
 > **P0 第二轮（同日深夜收官，主会话直跑 + haiku subagent 操作员）**：上述三项全部关闭，结果见 §5.1 表——live 进程 55 分钟 HIT（含 repo 变化免疫实证）/65 分钟 MISS（1h TTL 上界）/重写后 5 分钟温链恢复；fork 无热继承（0/2，§6.3 已改写）；KC5 非确定性丢轮次复现。**touch 策略回归 §6.2 原始数字（~50 分钟 cadence、仅 >55 分钟空闲场景），P0 全部验证事项就此完结，P1 可开工（等 ECP 排期）。**
 > 运维教训（第二轮又复现两次）：subagent 后台闲等的完成通知会丢——数据须落盘、收割不依赖通知，正是本设计 registry/journal 的立论；探针脚本的日志写入（Add-Content）可能撞瞬时文件锁导致脚本早退，结果文件先于日志落盘的顺序救了数据，P1 实现里 registry 写入须 retry-on-lock。
 
-**P1 — SessionHost + registry + daemon touch scheduler（探针已通过；上游已清空，随时可开工）**
+**P1 — SessionHost + registry（2026-08-04：durable host 子项已实现；touch/policy 仍后续）**
 
 > **开工状态（2026-07-30 回写）**：**P1 的所有前期任务已完成，没有任何等待项。**
 > 1. 本分支已 rebase 到 `dev/0.2.0`（12 个 docs 提交，`origin/dev/0.2.0` 之上，0 落后）——
@@ -335,11 +353,13 @@ rasen agent audit --run <runId>
 > `execution_profile_unavailable` fail-closed（设计如此，portfolio 级活仍走 legacy），所以 P1 的
 > executor 验收只应覆盖 6 个受支持的内建 pipeline，不要把 decompose 路径当回归。
 
-模块落点见 §4.2「P1 模块落点修正」——**不新起 `src/core/session-host/`**，而是给
-`management-api/supervisor.ts` 增加 stream-json stdin 多轮 + resume 宿主模式，并把 session registry
-持久化（§7 schema）+ `rasen session exec|list|retire` CLI + daemon 内的 touch scheduler
-（§6.1 机械执行器）+ 单测。只读 `change-run/` 的契约类型，不改其实现。
-门槛：真实 create→wake×N→touch→retire 链全绿；并发 wake 拒绝；retired 拒绝唤醒；registry 与 transcript 事实一致；daemon 在真实 50 分钟窗口自动 touch 续命且 deadline 后停止（KC1c 的自动化复现）；daemon 关闭时全链路仍正确（仅多付 MISS）。
+实际落点见 §4.2「P1 实现落点校准」：`src/core/session-host/` 持有 deep host、
+registry 与 backend seam；Management server 在 readiness 前 reconcile，并在 shutdown 时同时
+drain 旧 supervisor 与 deep host；`rasen session exec|list|inspect|cancel|restart|retire`
+经 authenticated daemon-local API 驱动。真实 create→wake×2、driver 退出后复连、exact resume、
+并发 wake 拒绝、ambiguous 不重放、retired 终态、registry fault 与无网络真实进程链已有自动化证据。
+touch cadence、tier/policy 与 canonical Run completion 不属于 durable-host 子项，仍由后续 ECP-7
+children 承接；这里不得把它们标成 P1 已完成。
 
 **P2 — ReviewCycle dogfood 接线（接线已在 §4.2 定案；开工前有上游前置）**
 ReviewCycle 的 reviewer stage 以 `same-invocation` 复用真实跑一个 change。
@@ -355,7 +375,8 @@ ReviewCycle 的 reviewer stage 以 `same-invocation` 复用真实跑一个 chang
 **P3 — audit --run + 经济性 A/B**
 同规模 run 对照 9e36259d 基线。门槛：eligible 场景 TTL 重写 ↓≥70%；tier 全场净 input-eq 明确为正；`wakes[]` 与 usage 对账误差 0。
 
-**排期归属**：ECP 子 Direction 的 roadmap 决策（用户拍板）。建议在 ECP-4 收口的 direction 校准中排为下一切片；其退出证据同时喂给 ECP-5 的「canonical Run + dogfood」要求。
+**排期归属**：ECP 子 Direction 的 roadmap 决策。2026-08-01 已确定为 ECP-7，
+排在 ECP-6 之后；其自宿主证据进入 ECP-8 的最终 completion/release audit。
 
 ## 10. 风险与开放问题
 

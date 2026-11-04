@@ -104,28 +104,32 @@ describe('store foundation', () => {
   });
 
   describe('id validation', () => {
-    it('accepts kebab-case store ids', () => {
+    it('keeps legacy kebab-case Store names valid', () => {
       expect(validateStoreId('acme')).toBe('acme');
       expect(isValidStoreId('acme-context')).toBe(true);
       expect(isValidStoreId('context2')).toBe(true);
     });
 
-    it('rejects ids that are not safe kebab-case folder names', () => {
-      for (const invalidId of [
+    it('accepts readable display aliases instead of requiring a machine slug', () => {
+      expect(validateStoreId('Acme Store')).toBe('Acme Store');
+      expect(validateStoreId('研发计划')).toBe('研发计划');
+      expect(isValidStoreId('acme_context.v2')).toBe(true);
+    });
+
+    it('rejects names that cannot be one safe directory segment', () => {
+      for (const invalidName of [
         '',
+        ' ',
         '.',
         '..',
         'bad/name',
         'bad\\name',
-        'Acme',
-        'acme_context',
-        'acme.context',
-        'acme context',
-        '-acme',
-        'acme-',
-        'acme--context',
+        ' leading',
+        'trailing ',
+        'control\u0000character',
+        'line\nbreak',
       ]) {
-        expect(isValidStoreId(invalidId)).toBe(false);
+        expect(isValidStoreId(invalidName)).toBe(false);
       }
     });
   });
@@ -171,12 +175,12 @@ stores: {}
       expect(() =>
         parseStoreRegistryState(`version: 1
 stores:
-  Acme:
+  Bad/Id:
     backend:
       type: git
       local_path: /repos/acme
 `)
-      ).toThrow(/Invalid store id/u);
+      ).toThrow(/Invalid store name/u);
 
       expect(() =>
         parseStoreRegistryState(`version: 1
@@ -330,9 +334,9 @@ id: acme-context
     it('rejects invalid metadata state', () => {
       expect(() =>
         parseStoreMetadataState(`version: 1
-id: Acme
+id: Bad/Id
 `)
-      ).toThrow(/Store id must be kebab-case/u);
+      ).toThrow(/Store name must not contain path separators/u);
 
       expect(() =>
         parseStoreMetadataState(`version: 1

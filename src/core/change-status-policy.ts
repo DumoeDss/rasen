@@ -68,6 +68,12 @@ export interface ChangeNextStepsInput {
   storeId?: string;
   /** Namespace of storeId; absent/'store' renders --store, 'project' renders --project. */
   storeType?: 'store' | 'project';
+  /** Complete scope selector, preferred over the legacy one-dimensional fields. */
+  followupSelection?: {
+    store?: string;
+    project?: string;
+    targetLine?: string;
+  };
 }
 
 export interface ActionContextInput {
@@ -115,12 +121,40 @@ export function summarizePlanningHome(
  * Planning writes are narrowed to the planning directories rather than
  * granting a whole repository root (design D5): a session that may write
  * specs and changes has no business rewriting the repository around them.
+ *
+ * For standalone and legacy-flat layouts this is `<root>/rasen/specs` and
+ * `<root>/rasen/changes`, which is correct. For a Store v2 project scope,
+ * those root-level paths are exactly what layout v2 forbids — the project's
+ * planning content lives under `<root>/rasen/projects/<projectId>/`. The
+ * scope-derived form (`buildResolvedPlanningActionContext`, which receives
+ * `[root.specsDir, root.changesDir]` from the resolved scope) already does
+ * this correctly; this function is the straggler used by `buildActionContext`,
+ * which sees only the raw `RuntimePlanningRef`.
  */
 function planningDirectoriesOf(root: string): string[] {
   return [
     path.join(root, WORKSPACE_DIR_NAME, 'specs'),
     path.join(root, WORKSPACE_DIR_NAME, 'changes'),
   ];
+}
+
+/**
+ * The planning write grant for a session's resolved planning scope. For a
+ * Store v2 project scope (type `'store'` with a `projectId`), the grant is
+ * the project partition's own planning locations — `rasen/projects/<id>/specs`
+ * and `rasen/projects/<id>/changes` — not the root-level Store paths layout v2
+ * forbids. For every other shape (standalone, project-type, store-aggregate
+ * without a project), the legacy `planningDirectoriesOf` is correct.
+ */
+function planningWriteRootsForRef(ref: RuntimePlanningRef): string[] {
+  if (ref.type === 'store' && ref.projectId !== undefined) {
+    const projectBase = path.join(ref.root, WORKSPACE_DIR_NAME, 'projects', ref.projectId);
+    return [
+      path.join(projectBase, 'specs'),
+      path.join(projectBase, 'changes'),
+    ];
+  }
+  return planningDirectoriesOf(ref.root);
 }
 
 function normalizeRoot(root: string): string {
@@ -217,7 +251,11 @@ export function buildActionContext(input: ActionContextInput): ActionContext {
   const planningRoot = planningRootOf(input);
 
   const planningWriteRoots = withoutHomeDirectory(
-    dedupeRoots(planningDirectoriesOf(planningRoot))
+    dedupeRoots(
+      input.session
+        ? planningWriteRootsForRef(input.session.planning)
+        : planningDirectoriesOf(planningRoot)
+    )
   );
   // Exactly one checkout, always the session's own. Other member checkouts of
   // the same Store are never added here — that is the point of recording which
@@ -256,13 +294,60 @@ export function buildActionContext(input: ActionContextInput): ActionContext {
   };
 }
 
+export function buildResolvedPlanningActionContext(input: {
+  artifactIds: string[];
+  planningWriteRoots: string[];
+  planningReadRoot: string;
+  executionRoot?: string;
+  /** Present only when the old single-root contract is an honest projection. */
+  compatibilityRoot?: string;
+}): ActionContext {
+  const planningWriteRoots = withoutHomeDirectory(dedupeRoots(input.planningWriteRoots));
+  const codeWriteRoots = withoutHomeDirectory(
+    input.executionRoot === undefined ? [] : [input.executionRoot]
+  );
+  const readRoots = withoutHomeDirectory(
+    dedupeRoots([
+      input.planningReadRoot,
+      ...(input.executionRoot === undefined ? [] : [input.executionRoot]),
+    ])
+  );
+  const union = dedupeRoots([...planningWriteRoots, ...codeWriteRoots]);
+  const projectable = input.compatibilityRoot !== undefined &&
+    union.every((root) => isWithinRoot(root, input.compatibilityRoot as string));
+  return {
+    mode: 'repo-local',
+    sourceOfTruth: 'repo',
+    planningArtifacts: [...input.artifactIds],
+    linkedContext: [],
+    version: projectable ? 1 : 2,
+    planningWriteRoots,
+    codeWriteRoots,
+    readRoots,
+    ...(projectable ? { allowedEditRoots: minimizeRoots(union) } : {}),
+    requiresAffectedAreaSelection: false,
+    constraints: input.executionRoot === undefined
+      ? [PLANNING_ONLY_CONSTRAINT, VISIBILITY_CONSTRAINT]
+      : sameRoot(input.planningReadRoot, input.executionRoot)
+        ? [REPO_LOCAL_CONSTRAINT, VISIBILITY_CONSTRAINT]
+        : [SPLIT_ROOTS_CONSTRAINT, VISIBILITY_CONSTRAINT],
+  };
+}
+
 export function buildNextSteps(input: ChangeNextStepsInput): string[] {
   const readyArtifact = input.artifactStatuses.find((artifact) => artifact.status === 'ready');
   const steps: string[] = [];
 
   if (readyArtifact) {
-    const flagName = input.storeType === 'project' ? '--project' : '--store';
-    const storeFlag = input.storeId ? ` ${flagName} ${input.storeId}` : '';
+    const completeSelection = input.followupSelection;
+    const storeFlag = completeSelection
+      ? `${completeSelection.store === undefined ? '' : ` --store ${completeSelection.store}`}` +
+        `${completeSelection.project === undefined ? '' : ` --project ${completeSelection.project}`}` +
+        `${completeSelection.targetLine === undefined ? '' : ` --target-line ${completeSelection.targetLine}`}`
+      : (() => {
+          const flagName = input.storeType === 'project' ? '--project' : '--store';
+          return input.storeId ? ` ${flagName} ${input.storeId}` : '';
+        })();
     steps.push(
       `Run rasen instructions ${readyArtifact.id} --change "${input.changeName}"${storeFlag} --json before writing that artifact.`
     );

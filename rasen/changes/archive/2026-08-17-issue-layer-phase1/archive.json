@@ -1,0 +1,22 @@
+{
+  "change": "issue-layer-phase1",
+  "archivedAt": "2026-08-17T06:22:45.021Z",
+  "codeCommit": "57b1b1c17833553ced4f17302ee0c0e7b41240fc",
+  "planningBranch": "issue-layer-close",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "b6c4e14683a9061bf5b95562cf8272494d7a9fbc8dbf7460318da848e2c7ce39"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": [],
+  "ephemeraDiscarded": [
+    "auto-run.json",
+    "portfolio-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

@@ -8,10 +8,11 @@ import ora from 'ora';
 import chalk from 'chalk';
 import { getChangeDir } from '../../core/planning-home.js';
 import { resolveChangeWorkDir, legacyExternalArchiveDir } from '../../core/change-work.js';
-import { archiveBookkeepingDir } from '../../core/file-placement.js';
-import { readProjectConfig, resolveArchiveTiming } from '../../core/project-config.js';
+import { resolveArchiveTiming } from '../../core/project-config.js';
 import {
   resolveRootForCommand,
+  readResolvedProjectConfig,
+  resolvedExecutionProjectRoot,
   toPlanningHome,
   toRootOutput,
   withStoreFlag,
@@ -29,6 +30,7 @@ import {
   getStatusIndicator,
   getStatusColor,
   resolveChangeLandingDirs,
+  resolvePlanningActionContext,
   type ChangeLandingDirs,
 } from './shared.js';
 import { formatNextWorkflowHint } from '../../core/workflow-chain.js';
@@ -43,6 +45,7 @@ export interface StatusOptions {
   schema?: string;
   store?: string;
   project?: string;
+  targetLine?: string;
   storePath?: string;
   json?: boolean;
 }
@@ -54,7 +57,12 @@ export interface StatusOptions {
 export async function statusCommand(options: StatusOptions): Promise<void> {
   // The root resolves (and the store banner prints) before the spinner starts
   // so the two do not fight over stderr.
-  const root = await resolveRootForCommand(options, { json: options.json });
+  const root = await resolveRootForCommand(options, {
+    json: options.json,
+    ...(options.change === undefined
+      ? {}
+      : { changeSelector: { changeId: options.change } }),
+  });
   if (!root) {
     return;
   }
@@ -64,6 +72,8 @@ export async function statusCommand(options: StatusOptions): Promise<void> {
   try {
     const planningHome = toPlanningHome(root);
     const projectRoot = root.path;
+    const executionRoot = resolvedExecutionProjectRoot(root);
+    const projectConfig = readResolvedProjectConfig(root);
     const rootOutput = toRootOutput(root);
     const newChangeHint = withStoreFlag(root, 'rasen new change <name>');
 
@@ -102,24 +112,39 @@ export async function statusCommand(options: StatusOptions): Promise<void> {
 
     // Validate schema if explicitly provided
     if (options.schema) {
-      validateSchemaExists(options.schema, projectRoot);
+      validateSchemaExists(options.schema, projectRoot, root.schemasDir);
     }
 
     // loadChangeContext will auto-detect schema from metadata if not provided
     const context = loadChangeContext(projectRoot, changeName, options.schema, {
       changeDir: getChangeDir(planningHome, changeName),
       planningHome,
+      ...(root.schemasDir === undefined ? {} : { projectSchemasDir: root.schemasDir }),
+      projectConfig,
     });
     const status = formatChangeStatus(
       context,
-      isStoreSelectedRoot(root) ? { storeId: root.storeId, storeType: root.storeType } : {}
+      {
+        ...(isStoreSelectedRoot(root)
+          ? { storeId: root.storeId, storeType: root.storeType }
+          : {}),
+        ...(root.planningScope === undefined
+          ? {}
+          : { followupSelection: root.planningScope.followupSelection }),
+      }
+    );
+    status.actionContext = resolvePlanningActionContext(
+      root,
+      status.artifacts.map((artifact) => artifact.id)
     );
 
     // Probe-only (ensure:false): status is a read-only surface and must
     // never mint identity or write to the repo/registry (design D2). A
     // probe miss simply omits `workDir` from the payload — it is a
     // legacy-read location now, not a landing point.
-    const workDir = await resolveChangeWorkDir(projectRoot, changeName, { ensure: false });
+    const workDir = executionRoot === undefined
+      ? null
+      : await resolveChangeWorkDir(executionRoot, changeName, { ensure: false });
 
     // Per-class landing directories (`file-placement` capability): always
     // present — they derive from the planning and execution roots alone and
@@ -129,15 +154,17 @@ export async function statusCommand(options: StatusOptions): Promise<void> {
     // Resolved archive timing (design D2/cli-artifact-workflow spec): a
     // plain config read + resolver, synchronous, no git/gh calls, no
     // writes. Always present — the default always resolves.
-    const archiveTiming = resolveArchiveTiming(readProjectConfig(projectRoot));
+    const archiveTiming = resolveArchiveTiming(projectConfig);
 
     // Archive bookkeeping is always the in-repo location (`archive-
     // destination` capability): the destination axis is retired, so no
     // `destination` field is reported. `legacyArchiveDir` appears only when a
     // machine home resolves by read-only probe AND its archive area exists —
     // discovery for archives written by the retired `external` destination.
-    const archiveDir = archiveBookkeepingDir(projectRoot);
-    const legacyArchiveDir = await legacyExternalArchiveDir(projectRoot);
+    const archiveDir = root.archiveDir;
+    const legacyArchiveDir = executionRoot === undefined
+      ? null
+      : await legacyExternalArchiveDir(executionRoot);
 
     spinner?.stop();
 
@@ -190,7 +217,9 @@ export function printStatusText(
   if (landing) {
     console.log(`Evidence dir: ${landing.evidenceDir}`);
     console.log(`Handoff dir: ${landing.handoffDir}`);
-    console.log(`Ephemera dir: ${landing.ephemeraDir}`);
+    if (landing.ephemeraDir) {
+      console.log(`Ephemera dir: ${landing.ephemeraDir}`);
+    }
   }
   if (workDir) {
     console.log(`Work dir (legacy): ${workDir}`);

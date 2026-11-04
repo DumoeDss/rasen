@@ -72,13 +72,32 @@ if (process.env.FAKE_CODEX_CLOSE_STDIN_EARLY === '1') {
     case 'success':
       writeLast({
         status: 'DONE',
-        summary: JSON.stringify({ prompt, args, cwd: process.cwd(), eof: true }),
+        summary: JSON.stringify({
+          prompt,
+          args,
+          cwd: process.cwd(),
+          eof: true,
+          routeEnv: process.env.OMNICROSS_CODEX_ROUTE_TOKEN,
+          adminEnv: process.env.OMNICROSS_ADMIN_TOKEN,
+        }),
         handoffReason: null,
       });
       break;
     case 'evaluate':
       writeLast({ satisfied: false, gaps: ['fixture gap'], summary: 'checked' });
       break;
+    case 'evaluate-many': {
+      const secret = process.env.OMNICROSS_CODEX_ROUTE_TOKEN ?? 'missing-route-secret';
+      writeLast({
+        satisfied: false,
+        gaps: Array.from(
+          { length: 105 },
+          (_, index) => `gap-${index + 1}: nested route value ${secret}`
+        ),
+        summary: `checked nested route value ${secret}`,
+      });
+      break;
+    }
     case 'missing-thread':
       writeLast({ status: 'DONE' });
       break;

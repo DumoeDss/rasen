@@ -1,0 +1,19 @@
+{
+  "change": "harden-temp-teardown-and-surface-archive-blockers",
+  "archivedAt": "2026-08-27T16:11:13.931Z",
+  "codeCommit": "b7d6041c1c9b11997c9a34cd3f7d1d1bd7bf5f64",
+  "planningBranch": "chore/archive-teardown-hardening",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "12870259855386513a8914a930fff277b97a75f665dec0b243ba1c29054dcf4e"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [],
+  "missing": [
+    "verification-report"
+  ]
+}

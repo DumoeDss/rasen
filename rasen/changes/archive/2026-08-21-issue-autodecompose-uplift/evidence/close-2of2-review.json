@@ -1,0 +1,239 @@
+{
+  "issue": {
+    "issueId": "issue-autodecompose-uplift",
+    "record": {
+      "version": 1,
+      "id": "issue-autodecompose-uplift",
+      "title": "Issue layer Phase 4: auto-decompose uplift (reviewable decomposition dispatch)",
+      "state": "open",
+      "reason": null,
+      "createdAt": "2026-08-21T08:10:49.108Z"
+    },
+    "diagnostic": null,
+    "divergence": null,
+    "revisionIds": [
+      "0001",
+      "0002",
+      "0003",
+      "0004"
+    ],
+    "latestRevisionId": "0004",
+    "refs": [],
+    "uncommitted": true
+  },
+  "plan": {
+    "issueId": "issue-autodecompose-uplift",
+    "revisionId": "0004",
+    "revision": {
+      "version": 1,
+      "issueId": "issue-autodecompose-uplift",
+      "revisionId": "0004",
+      "supersedes": "0003",
+      "createdAt": "2026-08-21T20:49:56.788Z",
+      "contentSha256": "693b77aec5ab9538f896d12c6308571ef90e5140142a382acdd4dfbd97d47ac0",
+      "nodes": [
+        {
+          "nodeId": "issue-autodecompose-graph",
+          "kind": "change",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "changeInstanceId": "ci_96db06e16c62383fc2c4218874cb00e6e2a93a9b3c5415206bb8c568d267ab42",
+          "changeAlias": "issue-autodecompose-graph",
+          "suggestedPipeline": "small-feature",
+          "rationale": "promoted from intent to Change now that the child's committed Store instance exists (seeded archived evidence, repo archive 15b60a63); its work shipped and archived, so no dependent waits on it",
+          "dependsOn": []
+        },
+        {
+          "nodeId": "issue-autodecompose-review-flow",
+          "kind": "change",
+          "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+          "targetLineId": "line-0.2",
+          "changeInstanceId": "ci_7743ca6838b1cb8f3d94ca5b4b3267c26ef3a069505967520d261d845d5e5696",
+          "changeAlias": "issue-autodecompose-review-flow",
+          "suggestedPipeline": "small-feature",
+          "rationale": "promoted from intent to Change at portfolio close — the child shipped (80194e98) and archived (d78f3be1) via merged PR #173; seeded Store evidence carries its identity",
+          "dependsOn": []
+        }
+      ]
+    },
+    "diagnostic": null,
+    "readiness": {
+      "nodes": [
+        {
+          "node": {
+            "nodeId": "issue-autodecompose-graph",
+            "kind": "change",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "changeInstanceId": "ci_96db06e16c62383fc2c4218874cb00e6e2a93a9b3c5415206bb8c568d267ab42",
+            "changeAlias": "issue-autodecompose-graph",
+            "suggestedPipeline": "small-feature",
+            "rationale": "promoted from intent to Change now that the child's committed Store instance exists (seeded archived evidence, repo archive 15b60a63); its work shipped and archived, so no dependent waits on it",
+            "dependsOn": []
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "2026-08-21-issue-autodecompose-graph",
+                "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+                "targetLineId": "line-0.2",
+                "foundAtRef": "refs/heads/main",
+                "archived": true
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": true
+          },
+          "readiness": "in-progress",
+          "blockedBy": []
+        },
+        {
+          "node": {
+            "nodeId": "issue-autodecompose-review-flow",
+            "kind": "change",
+            "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+            "targetLineId": "line-0.2",
+            "changeInstanceId": "ci_7743ca6838b1cb8f3d94ca5b4b3267c26ef3a069505967520d261d845d5e5696",
+            "changeAlias": "issue-autodecompose-review-flow",
+            "suggestedPipeline": "small-feature",
+            "rationale": "promoted from intent to Change at portfolio close — the child shipped (80194e98) and archived (d78f3be1) via merged PR #173; seeded Store evidence carries its identity",
+            "dependsOn": []
+          },
+          "resolution": {
+            "status": "resolved",
+            "claimants": [
+              {
+                "changeId": "2026-08-21-issue-autodecompose-review-flow",
+                "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+                "targetLineId": "line-0.2",
+                "foundAtRef": "refs/heads/main",
+                "archived": true
+              }
+            ],
+            "searchedRefs": [
+              "refs/heads/main"
+            ],
+            "localLocator": null,
+            "outcome": null,
+            "archived": true
+          },
+          "readiness": "in-progress",
+          "blockedBy": []
+        }
+      ],
+      "readyToResolve": false
+    },
+    "unsearchedRefs": [],
+    "problems": [],
+    "complete": true
+  },
+  "status": {
+    "phase": "review",
+    "health": "waiting-human",
+    "progress": {
+      "completed": 2,
+      "total": 2
+    },
+    "nodes": [
+      {
+        "nodeId": "issue-autodecompose-graph",
+        "kind": "change",
+        "alias": "2026-08-21-issue-autodecompose-graph",
+        "observation": "run-terminal",
+        "diagnostic": null,
+        "runStatePath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\.rasen\\changes\\2026-08-21-issue-autodecompose-graph\\ephemera\\auto-run.json",
+        "locatedBy": "execution-root",
+        "attribution": {
+          "pipeline": "small-feature",
+          "sessions": [],
+          "evidenceLocator": null
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": "required",
+        "reason": null,
+        "suggestedPipeline": "small-feature",
+        "rationale": "promoted from intent to Change now that the child's committed Store instance exists (seeded archived evidence, repo archive 15b60a63); its work shipped and archived, so no dependent waits on it",
+        "uncertainty": null,
+        "blockedBy": []
+      },
+      {
+        "nodeId": "issue-autodecompose-review-flow",
+        "kind": "change",
+        "alias": "2026-08-21-issue-autodecompose-review-flow",
+        "observation": "run-terminal",
+        "diagnostic": null,
+        "runStatePath": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer\\.rasen\\changes\\2026-08-21-issue-autodecompose-review-flow\\ephemera\\auto-run.json",
+        "locatedBy": "execution-root",
+        "attribution": {
+          "pipeline": "small-feature",
+          "sessions": [],
+          "evidenceLocator": null
+        },
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "targetLineId": "line-0.2",
+        "lifecycle": "required",
+        "reason": null,
+        "suggestedPipeline": "small-feature",
+        "rationale": "promoted from intent to Change at portfolio close — the child shipped (80194e98) and archived (d78f3be1) via merged PR #173; seeded Store evidence carries its identity",
+        "uncertainty": null,
+        "blockedBy": []
+      }
+    ],
+    "delta": {
+      "revisionId": "0004",
+      "supersedes": "0003",
+      "added": [],
+      "removed": [],
+      "retargeted": [],
+      "edgeChanges": [],
+      "lifecycleChanges": [],
+      "suggestionChanges": []
+    },
+    "projects": [
+      {
+        "projectId": "e2ee72ed-04a1-4395-86aa-7e77d2b83ec7",
+        "alias": "rasen",
+        "nodeIds": [
+          "issue-autodecompose-graph",
+          "issue-autodecompose-review-flow"
+        ],
+        "progress": {
+          "completed": 2,
+          "total": 2
+        }
+      }
+    ],
+    "problems": [],
+    "runStateVisibility": {
+      "kind": "execution-root",
+      "executionRoot": "E:\\AI\\ChatAI\\Agents\\VibeCodingProjects\\workflow\\Reference\\OpenSpec-code\\.claude\\worktrees\\issue-layer"
+    },
+    "complete": true,
+    "acceptance": {
+      "conditions": {
+        "revision": null,
+        "revisionId": null,
+        "diagnostic": null,
+        "path": null
+      },
+      "gate": {
+        "eligible": false,
+        "refusalCode": "issue_accept_conditions_required",
+        "blockers": [],
+        "message": "the Issue has no readable acceptance conditions — no acceptance conditions revision exists for it.",
+        "exclusions": [],
+        "optionalNodes": []
+      },
+      "record": null
+    }
+  },
+  "complete": true,
+  "unsearchedRefs": [],
+  "problems": []
+}

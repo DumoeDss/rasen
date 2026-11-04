@@ -1,4 +1,12 @@
 import { z } from 'zod';
+import {
+  AgentContinuationGrantZodSchema,
+  decodeAgentContinuationGrant,
+  type AgentContinuationGrant,
+  type ConsultationContentLimits,
+} from './consultation-contracts.js';
+import { FrozenInferenceRouteSchema } from '../omnicross/contracts.js';
+import { WorkerContractZodSchema } from '../worker-contracts.js';
 
 export type Brand<T, Name extends string> = T & { readonly __brand: Name };
 export type Digest = Brand<string, 'Digest'>;
@@ -55,7 +63,10 @@ const EffectIdSchema = identity('effect');
 const ActionIdSchema = identity('action');
 const WaitIdSchema = identity('wait');
 const SafeIntegerSchema = z.number().int().nonnegative().safe();
-const JsonValueSchema = z.json();
+const UuidShape = z
+  .string()
+  .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+const JsonValueSchema = z.json().transform((value): JsonValue => value);
 
 const WorkspaceRevisionSchema = z.strictObject({
   format: z.literal('workspace-revision/1'),
@@ -76,7 +87,25 @@ const WorkspaceRevisionSchema = z.strictObject({
 
 export type WorkspaceRevision = Readonly<z.infer<typeof WorkspaceRevisionSchema>>;
 
-const EvidenceRefSchema = z.strictObject({
+const EvidenceProducerSchema = z.strictObject({
+  id: z.string().min(1).max(256),
+  version: z.string().min(1).max(128),
+  identityDigest: DigestSchema,
+});
+
+const EvidenceBindingSchema = z.strictObject({
+  planningSpaceId: PlanningSpaceIdSchema,
+  changeInstanceId: ChangeInstanceIdSchema,
+  projectId: z.string().min(1).max(256),
+  changeId: z.string().min(1).max(128),
+  runId: RunIdSchema,
+  actionId: ActionIdSchema,
+  effectId: EffectIdSchema.optional(),
+  treeDigest: DigestSchema.optional(),
+  schema: z.string().min(1).max(256),
+});
+
+const LegacyEvidenceRefV1Schema = z.strictObject({
   format: z.literal('change-run-evidence-ref/1'),
   store: z.literal('change-run'),
   evidenceDigest: DigestSchema,
@@ -84,25 +113,57 @@ const EvidenceRefSchema = z.strictObject({
   mediaType: z.string().min(1).max(256),
   size: SafeIntegerSchema,
   observationKind: z.string().min(1).max(256),
-  producer: z.strictObject({
-    id: z.string().min(1).max(256),
-    version: z.string().min(1).max(128),
-    identityDigest: DigestSchema,
-  }),
-  binding: z.strictObject({
-    planningSpaceId: PlanningSpaceIdSchema,
-    changeInstanceId: ChangeInstanceIdSchema,
-    projectId: z.string().min(1).max(256),
-    changeId: z.string().min(1).max(128),
-    runId: RunIdSchema,
-    actionId: ActionIdSchema,
-    effectId: EffectIdSchema.optional(),
-    treeDigest: DigestSchema.optional(),
-    schema: z.string().min(1).max(256),
+  producer: EvidenceProducerSchema,
+  binding: EvidenceBindingSchema,
+});
+
+const EvidenceProofV1Schema = z.strictObject({
+  format: z.literal('change-run-evidence-proof/1'),
+  authorityDigest: DigestSchema,
+  signature: z.string().min(1).max(256),
+});
+
+const AttestedEvidenceRefV2Schema = z.strictObject({
+  format: z.literal('change-run-evidence-ref/2'),
+  evidenceDigest: DigestSchema,
+  contentDigest: DigestSchema,
+  mediaType: z.string().min(1).max(256),
+  sizeBytes: SafeIntegerSchema,
+  observationKind: z.string().min(1).max(256),
+  producer: EvidenceProducerSchema,
+  binding: EvidenceBindingSchema,
+  proof: EvidenceProofV1Schema,
+});
+
+const EvidenceRefSchema = z.discriminatedUnion('format', [
+  LegacyEvidenceRefV1Schema,
+  AttestedEvidenceRefV2Schema,
+]);
+
+export type LegacyEvidenceRefV1 = Readonly<
+  z.infer<typeof LegacyEvidenceRefV1Schema>
+>;
+export type AttestedEvidenceRefV2 = Readonly<
+  z.infer<typeof AttestedEvidenceRefV2Schema>
+>;
+export type EvidenceRef = Readonly<z.infer<typeof EvidenceRefSchema>>;
+
+const AttestationAuthoritySchema = z.strictObject({
+  format: z.literal('change-run-attestation-authority/1'),
+  algorithm: z.literal('ed25519'),
+  keyId: z.string().min(1).max(256),
+  keyVersion: z.string().min(1).max(128),
+  publicKey: z.strictObject({
+    format: z.literal('spki-der'),
+    encoding: z.literal('base64'),
+    value: z.string().min(1).max(4096),
+    digest: DigestSchema,
   }),
 });
 
-export type EvidenceRef = Readonly<z.infer<typeof EvidenceRefSchema>>;
+export type AttestationAuthority = Readonly<
+  z.infer<typeof AttestationAuthoritySchema>
+>;
 
 const AdapterSchema = z.strictObject({
   id: z.string().min(1).max(256),
@@ -143,6 +204,38 @@ const ActorRefSchema = z.discriminatedUnion('kind', [
 
 export type ActorRef = Readonly<z.infer<typeof ActorRefSchema>>;
 
+const EvidenceUseAuthoritySchema = z.strictObject({
+  producer: EvidenceProducerSchema,
+  observationKind: z.string().min(1).max(256),
+  schema: z.string().min(1).max(256),
+  mediaType: z.string().min(1).max(256),
+});
+
+/**
+ * Immutable completion authority copied into every newly admitted Action.
+ * The field is optional only so pre-authority Records remain decodable and
+ * inspectable; every completion mutation fails closed when an old Action lacks it.
+ */
+const CompletionAuthoritySchema = z.strictObject({
+  format: z.literal('change-run-completion-authority/1'),
+  actor: ActorRefSchema,
+  actorAttestation: EvidenceUseAuthoritySchema,
+  observations: z.strictObject({
+    domainActionResult: EvidenceUseAuthoritySchema,
+    effectObservation: EvidenceUseAuthoritySchema,
+    infrastructureObservation: EvidenceUseAuthoritySchema,
+  }),
+  /**
+   * Additive for legacy decoding. Newly admitted executable Actions always
+   * carry this frozen public trust root; completion fails closed when absent.
+   */
+  attestationAuthority: AttestationAuthoritySchema.optional(),
+});
+
+export type CompletionAuthority = Readonly<
+  z.infer<typeof CompletionAuthoritySchema>
+>;
+
 const EffectDescriptorSchema = z.strictObject({
   slot: z.string().min(1).max(128),
   effectId: EffectIdSchema,
@@ -154,6 +247,64 @@ const EffectDescriptorSchema = z.strictObject({
     ownershipMarkerContract: z.string().min(1).max(256),
     conflictPolicy: z.enum(['fail', 'uncertain']),
   }),
+});
+
+/**
+ * Which trusted renderer produced the bound bytes.
+ *
+ * `rasen.driver-rendered-turn/1` is the source LEAD's complete base prompt,
+ * composed from role instructions, workflow/skill text, artifact paths,
+ * handoff clauses, and task context. The runtime cannot reproduce it, so it
+ * arrives through the quiescent candidate-preview → manifest → admit protocol.
+ *
+ * `rasen.runtime-derived-consultation-turn/1` is the canonical JSON of a
+ * frozen `teacher-consultation/invocation/1` envelope that the reconciler
+ * derives from committed Record facts alone. No driver authors it, so it is
+ * admitted directly by `consult()` rather than previewed; the consultation
+ * spec forbids a LEAD-authored relay on that data path. Its executable
+ * authority comes from `agent.input` being covered by complete canonical
+ * Action equality — the binding restates it so every newly admitted agent
+ * Action carries turn-input authority under one uniform invariant.
+ */
+const AgentTurnRenderingContractSchema = z.enum([
+  'rasen.driver-rendered-turn/1',
+  'rasen.runtime-derived-consultation-turn/1',
+]);
+
+export type AgentTurnRenderingContract = z.infer<
+  typeof AgentTurnRenderingContractSchema
+>;
+
+const FrozenAgentTurnInputSchema = z.strictObject({
+  format: z.literal('agent-turn-input/1'),
+  mediaType: z.literal('text/plain;charset=utf-8'),
+  renderingContract: AgentTurnRenderingContractSchema,
+  utf8ByteLength: SafeIntegerSchema,
+  contentDigest: DigestSchema,
+});
+
+export type FrozenAgentTurnInput = Readonly<
+  z.infer<typeof FrozenAgentTurnInputSchema>
+>;
+
+const AgentCandidateSessionSchema = z.strictObject({
+  reuse: z.enum(['never', 'same-invocation']),
+  sessionReuseAuthored: z
+    .enum(['none', 'stage', 'run-planner', 'review-thread'])
+    .optional(),
+  handoffTokenLimit: SafeIntegerSchema,
+  reuseRoundLimit: SafeIntegerSchema,
+});
+
+const AgentCandidateDispatchSchema = z.strictObject({
+  role: z.string().min(1).max(128),
+  model: z.string().min(1).max(256),
+  reasoningEffort: z.string().min(1).max(128),
+  runtime: z.string().min(1).max(128),
+  sandbox: z.string().min(1).max(128),
+  workerContract: WorkerContractZodSchema.optional(),
+  inference: FrozenInferenceRouteSchema.optional(),
+  session: AgentCandidateSessionSchema,
 });
 
 const CapabilityBindingSchema = z.strictObject({
@@ -181,6 +332,7 @@ const RunActionBaseShape = {
   capability: CapabilityBindingSchema,
   resultContractDigest: DigestSchema,
   evidenceContractDigest: DigestSchema,
+  completionAuthority: CompletionAuthoritySchema.optional(),
   policyDigest: DigestSchema,
   workspace: z.strictObject({
     access: z.enum(['none', 'read', 'write']),
@@ -193,13 +345,21 @@ const RunActionSchema = z.discriminatedUnion('kind', [
   z.strictObject({
     ...RunActionBaseShape,
     kind: z.literal('agent'),
-    agent: z.strictObject({
-      role: z.string().min(1).max(128),
-      model: z.string().min(1).max(256),
-      reasoningEffort: z.string().min(1).max(128),
-      runtime: z.string().min(1).max(128),
-      sandbox: z.string().min(1).max(128),
+    agent: AgentCandidateDispatchSchema.extend({
+      /**
+       * Exact driver-rendered base-turn authority. Optional only for historical
+       * decoding; every newly admitted canonical agent Action carries it.
+       */
+      turnInput: FrozenAgentTurnInputSchema.optional(),
       input: JsonValueSchema,
+      consultation: z
+        .strictObject({
+          eligible: z.literal(true),
+          sourceProfilePath: z.string().min(1).max(1024),
+          teacherProfilePath: z.string().min(1).max(1024),
+          bindingDigest: DigestSchema,
+        })
+        .optional(),
       session: z.strictObject({
         reuse: z.enum(['never', 'same-invocation']),
         /**
@@ -398,6 +558,23 @@ const WaitViewSchema = z.discriminatedUnion('kind', [
   }),
   z.strictObject({
     ...WaitBaseShape,
+    kind: z.literal('human-required'),
+    nodeId: NodeIdSchema,
+    invocationId: InvocationIdSchema,
+    occurrence: SafeIntegerSchema,
+    attemptId: AttemptIdSchema,
+    actionId: ActionIdSchema,
+    effectIds: z.array(EffectIdSchema).max(64),
+    loopPath: z.string().min(1).max(1024),
+    phase: z.string().min(1).max(256),
+    blockerFingerprint: DigestSchema,
+    reasonCode: z.string().min(1).max(256),
+    outcome: z.string().min(1).max(256),
+    evidence: z.array(EvidenceRefSchema).max(64),
+    decisionIds: z.tuple([z.literal('retry'), z.literal('escalate')]),
+  }),
+  z.strictObject({
+    ...WaitBaseShape,
     kind: z.literal('infrastructure'),
     nodeId: NodeIdSchema,
     invocationId: InvocationIdSchema,
@@ -498,13 +675,15 @@ const RunActionViewSchema = z.strictObject({
   invocationId: InvocationIdSchema,
   attemptId: AttemptIdSchema,
   nodeId: NodeIdSchema,
-  deliveryState: z.enum(['admitted_undelivered', 'granted', 'closed']),
+  deliveryState: z.enum(['admitted_undelivered', 'granted', 'paused', 'closed']),
   capability: z.strictObject({
     id: z.string().min(1).max(256),
     contractVersion: z.string().min(1).max(128),
     contractDigest: DigestSchema,
     artifactDigest: DigestSchema,
   }),
+  completionAuthority: CompletionAuthoritySchema.optional(),
+  expectedBeforeWorkspace: WorkspaceRevisionSchema.optional(),
   effects: z.array(EffectViewSchema).max(64),
 });
 
@@ -569,9 +748,163 @@ const ReviewCycleViewSectionSchema = z.strictObject({
 export type ReviewCycleViewSection = Readonly<
   z.infer<typeof ReviewCycleViewSectionSchema>
 >;
+
+const GoalViewSectionSchema = z.strictObject({
+  kind: z.literal('goal'),
+  version: z.literal(1),
+  loopPath: z.string().min(1).max(1024),
+  variant: z.enum(['measure', 'evaluate', 'research']),
+  round: SafeIntegerSchema,
+  phase: z.enum(['work', 'judge']),
+  outcome: z.enum(['satisfied', 'exhausted']).optional(),
+  lastScore: z.number().finite().optional(),
+  lastGaps: z.array(z.string().min(1).max(4096)).max(1024),
+  waitReason: z.string().min(1).max(256).optional(),
+});
+
+export type GoalViewSection = Readonly<z.infer<typeof GoalViewSectionSchema>>;
+
+const UsedMaxSchema = z.strictObject({
+  used: SafeIntegerSchema,
+  max: SafeIntegerSchema,
+});
+
+const BoundedLoopLifecycleViewSectionSchema = z.strictObject({
+  kind: z.literal('bounded-loop-lifecycle'),
+  version: z.literal(1),
+  loopPath: z.string().min(1).max(1024),
+  bodyKind: z.enum(['review-cycle', 'goal-cycle', 'composite']),
+  state: z.enum([
+    'running',
+    'waiting',
+    'strategizing',
+    'human-required',
+    'terminal',
+  ]),
+  iteration: SafeIntegerSchema,
+  phase: z.string().min(1).max(256),
+  limits: z.strictObject({
+    iterations: UsedMaxSchema,
+    actions: UsedMaxSchema,
+    budget: UsedMaxSchema,
+  }),
+  progressFingerprint: DigestSchema.optional(),
+  stallStreak: SafeIntegerSchema,
+  blockerFingerprint: DigestSchema.optional(),
+  blockedStreak: SafeIntegerSchema,
+  strategy: z.strictObject({
+    attempts: SafeIntegerSchema,
+    maxAttempts: SafeIntegerSchema,
+    active: SafeIntegerSchema.optional(),
+  }),
+  wait: z
+    .strictObject({
+      waitId: WaitIdSchema,
+      kind: z.string().min(1).max(256),
+      reasonCode: z.string().min(1).max(256).optional(),
+    })
+    .optional(),
+  outcome: z
+    .strictObject({
+      kind: z.enum([
+        'completed',
+        'iteration-limit',
+        'action-limit',
+        'budget-limit',
+        'stalled',
+        'blocked',
+        'strategy-exhausted',
+        'failed',
+        'cancelled',
+      ]),
+      disposition: z.enum(['exit', 'escalate', 'fail', 'cancel']),
+      value: z.string().min(1).max(256).optional(),
+    })
+    .optional(),
+});
+
+export type BoundedLoopLifecycleViewSection = Readonly<
+  z.infer<typeof BoundedLoopLifecycleViewSectionSchema>
+>;
+
+const ConsultationViewSectionSchema = z.strictObject({
+  kind: z.literal('consultation'),
+  version: z.literal(1),
+  entries: z.array(
+    z.strictObject({
+      consultationId: identity('consultation'),
+      ordinal: SafeIntegerSchema.min(1),
+      state: z.enum([
+        'requested',
+        'teacher-active',
+        'advice-committed',
+        'continuation-granted',
+        'continued',
+        'unavailable',
+        'continuation-outcome-unknown',
+        'closed',
+      ]),
+      source: z.strictObject({
+        actionId: ActionIdSchema,
+        invocationId: InvocationIdSchema,
+        attemptId: AttemptIdSchema,
+        occurrence: SafeIntegerSchema,
+        stableSessionId: UuidShape,
+        model: z.string().min(1).max(256),
+        runtime: z.string().min(1).max(128),
+        questionDigest: DigestSchema,
+        evidenceDigests: z.array(DigestSchema).max(64),
+      }),
+      teacher: z.strictObject({
+        actionId: ActionIdSchema.optional(),
+        invocationId: InvocationIdSchema.optional(),
+        attemptId: AttemptIdSchema.optional(),
+        model: z.string().min(1).max(256).optional(),
+        runtime: z.string().min(1).max(128).optional(),
+        adviceDecision: z.enum(['plan', 'correction', 'stop']).optional(),
+        adviceDigest: DigestSchema.optional(),
+        evidenceDigests: z.array(DigestSchema).max(64),
+      }),
+      counters: z.strictObject({
+        consultations: UsedMaxSchema,
+        teacherAttempts: UsedMaxSchema,
+      }),
+      limits: z.strictObject({
+        maxQuestionBytes: z.number().int().positive().safe(),
+        maxAdviceBytes: z.number().int().positive().safe(),
+        maxAttemptedApproaches: z.number().int().positive().safe(),
+        maxConstraints: z.number().int().positive().safe(),
+        maxEvidencePointers: z.number().int().positive().safe(),
+        maxAdviceSteps: z.number().int().positive().safe(),
+        maxCautions: z.number().int().positive().safe(),
+        maxEvidenceNotes: z.number().int().positive().safe(),
+      }),
+      continuation: z
+        .strictObject({
+          requestId: UuidShape,
+          inputDigest: DigestSchema,
+          state: z.enum(['granted', 'settled', 'ambiguous']),
+        })
+        .optional(),
+      failure: z
+        .strictObject({
+          code: z.string().min(1).max(256),
+          detail: z.string().min(1).max(4096).optional(),
+        })
+        .optional(),
+    })
+  ),
+});
+
+export type ConsultationViewSection = Readonly<
+  z.infer<typeof ConsultationViewSectionSchema>
+>;
 export type ChangeRunViewSection =
   | RootDagViewSection
   | ReviewCycleViewSection
+  | GoalViewSection
+  | BoundedLoopLifecycleViewSection
+  | ConsultationViewSection
   | Readonly<Record<string, unknown>>;
 
 const DriftStateSchema = z.enum(['unchanged', 'changed', 'unavailable']);
@@ -630,6 +963,21 @@ export interface ChangeRunView
   readonly sections: readonly ChangeRunViewSection[];
 }
 
+const AgentTurnInputCandidateSchema = z.strictObject({
+  format: z.literal('change-run-agent-candidate/1'),
+  candidateId: z.string().regex(/^candidate:[0-9a-f]{64}$/),
+  runId: RunIdSchema,
+  recordVersion: SafeIntegerSchema,
+  nodeId: NodeIdSchema,
+  occurrence: SafeIntegerSchema,
+  profilePath: z.string().min(1).max(1024).optional(),
+  input: JsonValueSchema.optional(),
+});
+
+export type AgentTurnInputCandidate = Readonly<
+  z.infer<typeof AgentTurnInputCandidateSchema>
+>;
+
 const ChangeRunReceiptCoreSchema = z.strictObject({
   format: z.literal('change-run-receipt/1'),
   disposition: z.enum([
@@ -642,12 +990,35 @@ const ChangeRunReceiptCoreSchema = z.strictObject({
   ]),
   view: z.unknown(),
   actions: z.array(RunActionSchema),
+  continuationGrants: z.array(z.unknown()).optional(),
+  candidates: z.array(AgentTurnInputCandidateSchema).optional(),
 });
 
 export interface ChangeRunReceipt
-  extends Omit<z.infer<typeof ChangeRunReceiptCoreSchema>, 'view' | 'actions'> {
+  extends Omit<
+    z.infer<typeof ChangeRunReceiptCoreSchema>,
+    'view' | 'actions' | 'continuationGrants' | 'candidates'
+  > {
   readonly view: ChangeRunView;
   readonly actions: readonly RunAction[];
+  readonly continuationGrants?: readonly AgentContinuationGrant[];
+  readonly candidates: readonly AgentTurnInputCandidate[];
+}
+
+/**
+ * Canonical authority required to decode continuation grants carried by a
+ * receipt. Receipt views and grants share one caller-controlled wire envelope,
+ * so neither may supply the frozen limits used to decode the other.
+ */
+export interface ChangeRunReceiptContinuationAuthority {
+  readonly source: 'canonical-record';
+  resolveContinuationLimits(query: Readonly<{
+    runId: RunId;
+    recordVersion: RecordVersion;
+    workspaceInstanceId: WorkspaceInstanceId;
+    consultationId: string;
+    sourceActionId: ActionId;
+  }>): ConsultationContentLimits | undefined;
 }
 
 export interface ReceiptDispositionFacts {
@@ -865,12 +1236,26 @@ export function decodeWorkspaceRevision(value: unknown): WorkspaceRevision {
 }
 
 export function decodeEvidenceRef(value: unknown): EvidenceRef {
-  assertMajor(
-    value,
-    'change-run-evidence-ref/1',
-    'unsupported_contract_version'
-  );
+  const format =
+    value !== null && typeof value === 'object'
+      ? (value as { format?: unknown }).format
+      : undefined;
+  if (
+    format !== 'change-run-evidence-ref/1' &&
+    format !== 'change-run-evidence-ref/2'
+  ) {
+    throw new ChangeRunContractError(
+      'unsupported_contract_version',
+      `Unsupported contract format ${JSON.stringify(format)}; expected change-run-evidence-ref/1 or change-run-evidence-ref/2.`
+    );
+  }
   return decode(EvidenceRefSchema, value);
+}
+
+export function decodeAttestationAuthority(
+  value: unknown
+): AttestationAuthority {
+  return decode(AttestationAuthoritySchema, value);
 }
 
 export function decodeActorRef(value: unknown): ActorRef {
@@ -923,6 +1308,36 @@ export function decodeChangeRunView(value: unknown): ChangeRunView {
     ) {
       return decode(ReviewCycleViewSectionSchema, section);
     }
+    if (
+      section !== null &&
+      typeof section === 'object' &&
+      'kind' in section &&
+      (section as { kind?: unknown }).kind === 'goal' &&
+      'version' in section &&
+      (section as { version?: unknown }).version === 1
+    ) {
+      return decode(GoalViewSectionSchema, section);
+    }
+    if (
+      section !== null &&
+      typeof section === 'object' &&
+      'kind' in section &&
+      (section as { kind?: unknown }).kind === 'bounded-loop-lifecycle' &&
+      'version' in section &&
+      (section as { version?: unknown }).version === 1
+    ) {
+      return decode(BoundedLoopLifecycleViewSectionSchema, section);
+    }
+    if (
+      section !== null &&
+      typeof section === 'object' &&
+      'kind' in section &&
+      (section as { kind?: unknown }).kind === 'consultation' &&
+      'version' in section &&
+      (section as { version?: unknown }).version === 1
+    ) {
+      return decode(ConsultationViewSectionSchema, section);
+    }
     const additive = z
       .object({
         kind: z.string().min(1),
@@ -947,7 +1362,26 @@ export function decodeChangeRunView(value: unknown): ChangeRunView {
   return deepFreeze({ ...core, sections });
 }
 
-export function decodeChangeRunReceipt(value: unknown): ChangeRunReceipt {
+function sameConsultationLimits(
+  left: ConsultationContentLimits,
+  right: ConsultationContentLimits
+): boolean {
+  return (
+    left.maxQuestionBytes === right.maxQuestionBytes &&
+    left.maxAdviceBytes === right.maxAdviceBytes &&
+    left.maxAttemptedApproaches === right.maxAttemptedApproaches &&
+    left.maxConstraints === right.maxConstraints &&
+    left.maxEvidencePointers === right.maxEvidencePointers &&
+    left.maxAdviceSteps === right.maxAdviceSteps &&
+    left.maxCautions === right.maxCautions &&
+    left.maxEvidenceNotes === right.maxEvidenceNotes
+  );
+}
+
+export function decodeChangeRunReceipt(
+  value: unknown,
+  continuationAuthority: ChangeRunReceiptContinuationAuthority
+): ChangeRunReceipt {
   assertMajor(
     value,
     'change-run-receipt/1',
@@ -983,6 +1417,25 @@ export function decodeChangeRunReceipt(value: unknown): ChangeRunReceipt {
       'Other-worktree receipts cannot carry execution grants.'
     );
   }
+  const candidateIds = new Set<string>();
+  for (const candidate of core.candidates ?? []) {
+    if (
+      candidate.runId !== view.runId ||
+      candidate.recordVersion !== view.recordVersion
+    ) {
+      throw new ChangeRunContractError(
+        'invalid_run_invariant',
+        'Every candidate preview must match the receipt Run and Record version.'
+      );
+    }
+    if (candidateIds.has(candidate.candidateId)) {
+      throw new ChangeRunContractError(
+        'invalid_run_invariant',
+        'A receipt cannot carry duplicate candidate preview identities.'
+      );
+    }
+    candidateIds.add(candidate.candidateId);
+  }
   const root = view.sections.find(
     (section): section is RootDagViewSection => section.kind === 'root-dag'
   )!;
@@ -999,5 +1452,75 @@ export function decodeChangeRunReceipt(value: unknown): ChangeRunReceipt {
       );
     }
   }
-  return deepFreeze({ ...core, view, actions });
+  const { continuationGrants: rawContinuationGrants, ...receiptCore } = core;
+  const consultationSection = view.sections.find(
+    (section): section is ConsultationViewSection =>
+      section.kind === 'consultation' && section.version === 1
+  );
+  const continuationGrants = rawContinuationGrants?.map((item) => {
+    const grantShape = decode(AgentContinuationGrantZodSchema, item);
+    const entry = consultationSection?.entries.find(
+      (candidate) => candidate.consultationId === grantShape.consultationId
+    );
+    if (entry === undefined) {
+      throw new ChangeRunContractError(
+        'invalid_run_invariant',
+        'Continuation receipt grant has no matching canonical consultation view.'
+      );
+    }
+    const limits = continuationAuthority.resolveContinuationLimits({
+      runId: view.runId as RunId,
+      recordVersion: view.recordVersion as RecordVersion,
+      workspaceInstanceId: view.workspace.instanceId as WorkspaceInstanceId,
+      consultationId: grantShape.consultationId,
+      sourceActionId: grantShape.sourceActionId as ActionId,
+    });
+    if (limits === undefined) {
+      throw new ChangeRunContractError(
+        'invalid_run_invariant',
+        'Continuation receipt grant has no independently verified canonical frozen-limit authority.'
+      );
+    }
+    if (!sameConsultationLimits(entry.limits, limits)) {
+      throw new ChangeRunContractError(
+        'invalid_run_invariant',
+        'Continuation receipt view limits do not match canonical frozen-limit authority.'
+      );
+    }
+    return decodeAgentContinuationGrant(item, limits);
+  });
+  for (const grant of continuationGrants ?? []) {
+    const entry = consultationSection?.entries.find(
+      (candidate) => candidate.consultationId === grant.consultationId
+    );
+    if (
+      grant.runId !== view.runId ||
+      grant.workspaceInstanceId !== view.workspace.instanceId ||
+      grant.expectedRecordVersion !== view.recordVersion ||
+      entry === undefined ||
+      entry.state !== 'continuation-granted' ||
+      entry.source.actionId !== grant.sourceActionId ||
+      entry.source.invocationId !== grant.sourceInvocationId ||
+      entry.source.attemptId !== grant.sourceAttemptId ||
+      entry.source.stableSessionId !== grant.stableSessionId ||
+      entry.continuation?.requestId !== grant.requestId ||
+      entry.continuation.inputDigest !== grant.inputDigest
+    ) {
+      throw new ChangeRunContractError(
+        'invalid_run_invariant',
+        'Continuation receipt grant does not match its canonical consultation view.'
+      );
+    }
+  }
+  return deepFreeze({
+    ...receiptCore,
+    view,
+    actions,
+    candidates: core.candidates ?? [],
+    ...(continuationGrants === undefined
+      ? {}
+      : {
+          continuationGrants,
+        }),
+  });
 }

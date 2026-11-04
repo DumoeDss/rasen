@@ -21,6 +21,7 @@ const KNOWN_SKILL = 'rasen-propose';
 const CLAUDE_HOST = { runtime: 'claude', source: 'claude-code' } as const;
 const CODEX_HOST = { runtime: 'codex', source: 'codex-thread-id' } as const;
 const UNKNOWN_HOST = { runtime: 'unknown', source: 'unknown' } as const;
+const OMP_HOST = { runtime: 'omp', source: 'omp-code' } as const;
 
 function pipeline(yaml: string) {
   return parsePipeline(yaml);
@@ -351,6 +352,71 @@ stages:
       kind: 'unknown-host-runtime',
       override: 'RASEN_AGENT_RUNTIME',
     });
+  });
+
+  it('names a recognized host with no dispatch adapter instead of calling it unidentified', async () => {
+    const p = pipeline(`
+name: omp-host
+stages:
+  - id: a
+    skill: ${KNOWN_SKILL}
+`);
+    const notices: unknown[] = [];
+    await validatePipelineForExecution(p, undefined, {
+      host: OMP_HOST,
+      reporter: (notice) => notices.push(notice),
+    });
+    expect(notices).toContainEqual({
+      kind: 'host-runtime-without-dispatch-adapter',
+      host: 'omp',
+      override: 'RASEN_AGENT_RUNTIME',
+    });
+    expect(notices).not.toContainEqual(
+      expect.objectContaining({ kind: 'unknown-host-runtime' })
+    );
+  });
+
+  it('fails execution preflight for an OmniCross-routed stage on an unknown host', async () => {
+    const p = pipeline(`
+name: unknown-host-routed
+stages:
+  - id: ship
+    skill: ${KNOWN_SKILL}
+    runtime: codex
+    model: deepseek-chat
+    inference:
+      broker: omnicross
+      upstream:
+        kind: provider
+        providerId: deepseek-api
+`);
+    await expect(validatePipelineForExecution(p, undefined, {
+      host: UNKNOWN_HOST,
+      reporter: false,
+    })).rejects.toMatchObject({ code: 'pipeline_runtime_route_unsupported' });
+  });
+
+  it('probes the process bridge for a same-host OmniCross-routed stage', async () => {
+    const p = pipeline(`
+name: codex-native-routed
+stages:
+  - id: ship
+    skill: ${KNOWN_SKILL}
+    runtime: codex
+    model: deepseek-chat
+    inference:
+      broker: omnicross
+      upstream:
+        kind: provider
+        providerId: deepseek-api
+`);
+    const probeCodex = vi.fn(() => true);
+    await validatePipelineForExecution(p, undefined, {
+      host: CODEX_HOST,
+      probeCodex,
+      probeClaude: vi.fn(() => false),
+    });
+    expect(probeCodex).toHaveBeenCalledTimes(1);
   });
 
   it('validates persisted per-role runtime instances instead of ignoring configuration', async () => {

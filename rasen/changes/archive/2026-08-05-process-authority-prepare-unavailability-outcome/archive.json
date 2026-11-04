@@ -1,0 +1,45 @@
+{
+  "change": "process-authority-prepare-unavailability-outcome",
+  "archivedAt": "2026-08-05T02:16:44.533Z",
+  "codeCommit": "dd239d7784d122bdd7adfdccf386ff437438d680",
+  "planningBranch": "wip/ecp-shared-bounded-loop-lifecycle-resume",
+  "planningTreeState": "dirty",
+  "evidence": [
+    {
+      "path": "evidence/implementation-baseline.md",
+      "sha256": "7e2af9b62e3efb9ded3ddb34a9b1fbf2d0a46976954bcedba8d8e8568f813eff"
+    },
+    {
+      "path": "evidence/implementation-report.md",
+      "sha256": "b909c60f495caa00ef3350734203fcb8fbc4ca585ea616b28a91b1cb240df046"
+    },
+    {
+      "path": "evidence/review-fix-round-1.md",
+      "sha256": "edfce9639e1f2ee3aa815b49a794ecc2904b8dd1d7587ad041e2232ad3b91086"
+    },
+    {
+      "path": "evidence/review-fix-round-2.md",
+      "sha256": "d68ff1dcd3617cc7abc418a2710acf27735593881259d09b3afed0967b0a6e0f"
+    },
+    {
+      "path": "evidence/review-report-round-1.md",
+      "sha256": "9713502463b1d4c62bcb3f09c7352f1a0e6f273d1e57d6be5691a4fd188da6af"
+    },
+    {
+      "path": "evidence/review-report-round-2.md",
+      "sha256": "012a067cc5f355e194b03654f293883ccd317c585b661b245f6a5608f1a45aa4"
+    },
+    {
+      "path": "evidence/ship-log.md",
+      "sha256": "008262b03c2b89290033e418dd9e2ad141b724c3d09e69f17a275e7b14c88c1c"
+    }
+  ],
+  "probes": [],
+  "handoffAbsorbed": null,
+  "ephemeraDiscarded": [
+    "auto-run.json"
+  ],
+  "missing": [
+    "verification-report"
+  ]
+}

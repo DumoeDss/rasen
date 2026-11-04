@@ -1,0 +1,176 @@
+### Teardown (tasks.md 2.7)
+
+Unregistering happens ONLY inside the redirected per-stage homes, each of
+which holds exactly one disposable copy (plus, for the enriched stage, the two
+disposable member projects). The pre-flight runs FIRST in every home and
+proves what that registry contains before anything is removed -- so an
+unregister can only ever reach a path inside the temp root. No unregister
+command was aimed at the real machine registry at any point in this change.
+
+--- home <temp>/rasen-home-pristine ---
+PREFLIGHT-OK: 1 registered entr(ies), all inside <temp>
+  rasen-store [uid f35acc7d-e088-4186-9ad6-b4b770649b0b] -> <temp>\copy-pristine
+$ rasen store unregister rasen-store
+Unregistered store: rasen-store
+Files kept at: ~\AppData\Local\Temp\rasen-g2\copy-pristine
+$ rasen store list --json   # after unregister
+{
+  "stores": [],
+  "status": []
+}
+
+--- home <temp>/rasen-home-enriched ---
+PREFLIGHT-OK: 3 registered entr(ies), all inside <temp>
+  project-beta [no uid recorded] -> <temp>\project-beta
+  project-gamma [no uid recorded] -> <temp>\project-gamma
+  rasen-store [uid f35acc7d-e088-4186-9ad6-b4b770649b0b] -> <temp>\copy-enriched
+$ rasen store unregister project-beta --project-namespace
+Unregistered project: project-beta
+Files kept at: ~\AppData\Local\Temp\rasen-g2\project-beta
+$ rasen store unregister project-gamma --project-namespace
+Unregistered project: project-gamma
+Files kept at: ~\AppData\Local\Temp\rasen-g2\project-gamma
+$ rasen store unregister rasen-store
+Unregistered store: rasen-store
+Files kept at: ~\AppData\Local\Temp\rasen-g2\copy-enriched
+$ rasen store list --json   # after unregister
+{
+  "stores": [],
+  "status": []
+}
+
+--- home <temp>/rasen-home-stale ---
+PREFLIGHT-OK: 1 registered entr(ies), all inside <temp>
+  rasen-store [uid f35acc7d-e088-4186-9ad6-b4b770649b0b] -> <temp>\copy-stale
+$ rasen store unregister rasen-store
+Unregistered store: rasen-store
+Files kept at: ~\AppData\Local\Temp\rasen-g2\copy-stale
+$ rasen store list --json   # after unregister
+{
+  "stores": [],
+  "status": []
+}
+
+--- home <temp>/rasen-home-clone ---
+PREFLIGHT-OK: 1 registered entr(ies), all inside <temp>
+  rasen-store [uid 7ec12a39-294f-4fcd-be0f-c68e05b19829] -> <temp>\copy-clone
+$ rasen store unregister rasen-store
+Unregistered store: rasen-store
+Files kept at: ~\AppData\Local\Temp\rasen-g2\copy-clone
+$ rasen store list --json   # after unregister
+{
+  "stores": [],
+  "status": []
+}
+
+--- home <temp>/rasen-home-clone2 ---
+PREFLIGHT-OK: 1 registered entr(ies), all inside <temp>
+  rasen-store [uid ff964a0f-cb5e-42d5-93ad-f1946182406c] -> <temp>\copy-clone-content
+$ rasen store unregister rasen-store
+Unregistered store: rasen-store
+Files kept at: ~\AppData\Local\Temp\rasen-g2\copy-clone-content
+$ rasen store list --json   # after unregister
+{
+  "stores": [],
+  "status": []
+}
+
+--- home <temp>/rasen-home-noactive ---
+PREFLIGHT-OK: 1 registered entr(ies), all inside <temp>
+  rasen-store [no uid recorded] -> <temp>\copy-clone-noactive
+$ rasen store unregister rasen-store
+Unregistered store: rasen-store
+Files kept at: ~\AppData\Local\Temp\rasen-g2\copy-clone-noactive
+$ rasen store list --json   # after unregister
+{
+  "stores": [],
+  "status": []
+}
+
+--- home <temp>/rasen-home-postfix ---
+PREFLIGHT-OK: 1 registered entr(ies), all inside <temp>
+  rasen-store [uid f35acc7d-e088-4186-9ad6-b4b770649b0b] -> <temp>\copy-postfix
+$ rasen store unregister rasen-store
+Unregistered store: rasen-store
+Files kept at: ~\AppData\Local\Temp\rasen-g2\copy-postfix
+$ rasen store list --json   # after unregister
+{
+  "stores": [],
+  "status": []
+}
+
+
+### THE REAL STORE, re-verified against the baseline recorded before step one
+
+$ git -C <real-store> status --porcelain
+ M .rasen-store/store.yaml
+ M rasen/config.yaml
+  baseline: exactly ' M .rasen-store/store.yaml' and ' M rasen/config.yaml'
+
+$ git -C <real-store> rev-parse HEAD
+254b265cb4750e2fd7e5fe6caa1e1ffb219a3e4a
+  baseline: 254b265cb4750e2fd7e5fe6caa1e1ffb219a3e4a
+
+$ git -C <real-store> log --oneline --all ; branch -a ; remote -v ; worktree list
+254b265 Initialize Rasen store rasen-store
+* master
+<real-store>  254b265 [master]
+
+$ sha256sum <real-store>/.rasen-store/store.yaml <real-store>/rasen/config.yaml
+3aab228b3b79484cc62324d7a633661de04f975e9a4fbcd6ea1346c96e1eac22 *<real-store>/.rasen-store/store.yaml
+88811da1daf8ba64f2a68ea9c173a85530599fa0a63e2c7f958b72c8fde829ca *<real-store>/rasen/config.yaml
+  baseline: 3aab228b3b79484cc62324d7a633661de04f975e9a4fbcd6ea1346c96e1eac22  store.yaml
+  baseline: 88811da1daf8ba64f2a68ea9c173a85530599fa0a63e2c7f958b72c8fde829ca  config.yaml
+
+$ find <real-store> -not -path '*/.git/*' -not -name .git
+<real-store>
+<real-store>/.rasen-store
+<real-store>/.rasen-store/store.yaml
+<real-store>/rasen
+<real-store>/rasen/changes
+<real-store>/rasen/changes/archive
+<real-store>/rasen/changes/archive/.gitkeep
+<real-store>/rasen/config.yaml
+<real-store>/rasen/specs
+<real-store>/rasen/specs/.gitkeep
+
+### THE REAL MACHINE REGISTRY, re-verified
+$ sha256sum ~/.rasen/stores/registry.yaml
+008b744250406c079a8702e8326490dfb631aa6edcf5018604da7aa0ccc8295e *C:/Users/Sayo/.rasen/stores/registry.yaml
+  baseline: 008b744250406c079a8702e8326490dfb631aa6edcf5018604da7aa0ccc8295e
+
+$ diff <baseline> <now>   # every file under ~/.rasen/store-layout-migration
+  IDENTICAL (7 files, unchanged) -- the rehearsal never wrote machine-local
+  migration state outside the temp root, even for previews.
+  Both pinned trees carried a node_modules JUNCTION to the repo's real
+  node_modules. Junctions were removed with 'cmd /c rmdir' FIRST -- that
+  unlinks the reparse point rather than its target -- and the repo's
+  node_modules was verified intact before and after, because an rm -rf that
+  followed a junction would have deleted the dependency tree all three
+  agents share.
+
+  Result: temp root deleted on the first attempt; no EBUSY residue.
+
+$ ls <temp>
+ls: cannot access '<temp>': No such file or directory
+
+### The real store, once more, AFTER teardown
+$ git -C <real-store> status --porcelain ; rev-parse HEAD
+ M .rasen-store/store.yaml
+ M rasen/config.yaml
+254b265cb4750e2fd7e5fe6caa1e1ffb219a3e4a
+$ sha256sum <real-store>/.rasen-store/store.yaml <real-store>/rasen/config.yaml
+3aab228b3b79484cc62324d7a633661de04f975e9a4fbcd6ea1346c96e1eac22 *<real-store>/.rasen-store/store.yaml
+88811da1daf8ba64f2a68ea9c173a85530599fa0a63e2c7f958b72c8fde829ca *<real-store>/rasen/config.yaml
+$ sha256sum ~/.rasen/stores/registry.yaml
+008b744250406c079a8702e8326490dfb631aa6edcf5018604da7aa0ccc8295e *C:/Users/Sayo/.rasen/stores/registry.yaml
+
+  All four values match the baselines above and at the head of this file.
+
+### Re-creating any of this
+
+  evidence/rehearsal/harness.sh reproduces the whole harness from scratch:
+    source harness.sh ; h_build_pinned ; h_bootstrap ; h_preflight
+  seed-enriched.py rebuilds the stage-2 content set byte-for-byte, and
+  preflight.js is the pre-flight guard itself. Nothing about the rehearsal
+  depends on the deleted temp root surviving.

@@ -21,12 +21,65 @@ const catalog = createCapabilityCatalogSnapshot([
   },
 ]);
 
+function fixtureLifecycle(outcome = 'loop_exhausted') {
+  return {
+    version: 1 as const,
+    thresholds: { stallIterations: 99, sameBlockerAttempts: 99 },
+    strategy: { maxAttempts: 0, requireMaterialChange: true as const },
+    exits: {
+      iterationLimit: { action: 'escalate' as const, outcome },
+      actionLimit: { action: 'escalate' as const, outcome: 'loop_action_limit' },
+      budgetLimit: { action: 'escalate' as const, outcome: 'loop_budget_limit' },
+      stalled: { action: 'escalate' as const, outcome: 'loop_stalled' },
+      blocked: { action: 'escalate' as const, outcome: 'loop_blocked' },
+      strategyExhausted: {
+        action: 'escalate' as const,
+        outcome: 'loop_strategy_exhausted',
+      },
+    },
+  };
+}
+
+function fixtureExecution() {
+  return {
+    version: 1 as const,
+    role: 'implementer' as const,
+    workspace: { access: 'write' as const },
+  };
+}
+
 function definitionWithNode(node: DefinitionSourceV2['root']['nodes'][number]): DefinitionSourceV2 {
+  const effectiveNode =
+    node.kind === 'Gate'
+      ? {
+          ...node,
+          target: node.target ?? 'gate-target',
+          dispositions:
+            node.dispositions ??
+            Object.fromEntries(
+              node.outcomes.map((outcome, index) => [
+                outcome,
+                index === 0 ? 'proceed' : 'escalate',
+              ])
+            ),
+        }
+      : node.kind === 'AtomicStage'
+      ? { ...node, execution: node.execution ?? fixtureExecution() }
+      : node.kind === 'BoundedLoop'
+      ? {
+          ...node,
+          limits: {
+            ...node.limits,
+            budget: node.limits.budget ?? node.limits.maxActions,
+          },
+          lifecycle: node.lifecycle ?? fixtureLifecycle(),
+        }
+      : node;
   const declarations: DefinitionSourceV2['declarations'] =
-    node.kind === 'CompositeRef'
+    effectiveNode.kind === 'CompositeRef'
       ? [
           {
-            id: node.declarationId,
+            id: effectiveNode.declarationId,
             kind: 'Composite',
             provenance: 'built-in',
             inputs: [],
@@ -38,10 +91,10 @@ function definitionWithNode(node: DefinitionSourceV2['root']['nodes'][number]): 
             },
           },
         ]
-      : node.kind === 'BoundedLoop'
+      : effectiveNode.kind === 'BoundedLoop'
         ? [
             {
-              id: node.body,
+              id: effectiveNode.body,
               kind: 'Composite',
               provenance: 'custom',
               inputs: [],
@@ -56,28 +109,44 @@ function definitionWithNode(node: DefinitionSourceV2['root']['nodes'][number]): 
         : [];
 
   const outcomes =
-    node.kind === 'Choice' || node.kind === 'Gate'
-      ? [...node.outcomes]
-      : node.kind === 'FanOut'
-        ? [...node.branches]
-        : node.kind === 'Finish'
-          ? [node.outcome]
-          : node.kind === 'BoundedLoop'
-            ? Object.values(node.exits)
+    effectiveNode.kind === 'Gate'
+      ? [...effectiveNode.outcomes, 'done']
+      : effectiveNode.kind === 'Choice'
+      ? [...effectiveNode.outcomes]
+      : effectiveNode.kind === 'FanOut'
+        ? [...effectiveNode.branches]
+        : effectiveNode.kind === 'Finish'
+          ? [effectiveNode.outcome]
+          : effectiveNode.kind === 'BoundedLoop'
+            ? Object.values(effectiveNode.exits)
                 .filter((exit) => exit.action === 'exit')
                 .map((exit) => exit.outcome)
             : ['done'];
 
   return {
     version: 2,
-    id: `definition-${node.kind.toLowerCase()}`,
+    id: `definition-${effectiveNode.kind.toLowerCase()}`,
     sourceId: 'fixture:closed-vocabulary',
-    name: `closed-${node.kind.toLowerCase()}`,
+    name: `closed-${effectiveNode.kind.toLowerCase()}`,
     inputs: [],
     artifacts: [],
     outcomes,
     declarations,
-    root: { nodes: [node], connections: [] },
+    root: {
+      nodes:
+        effectiveNode.kind === 'Gate'
+          ? [
+              effectiveNode,
+              {
+                id: effectiveNode.target,
+                kind: 'AtomicStage',
+                capability: { id: 'skill:implement', version: '1.0.0' },
+                execution: fixtureExecution(),
+              },
+            ]
+          : [effectiveNode],
+      connections: [],
+    },
   };
 }
 
@@ -94,23 +163,306 @@ describe('EcpDefinitionModule.prepare versioned definition contract', () => {
         id: 'loop',
         kind: 'BoundedLoop',
         body: 'iteration-body',
-        limits: { maxIterations: 3, maxActions: 8 },
+        limits: { maxIterations: 3, maxActions: 8, budget: 8 },
+        lifecycle: fixtureLifecycle(),
         exits: { done: { action: 'exit', outcome: 'done' } },
       },
       { id: 'choice', kind: 'Choice', outcomes: ['accepted', 'rejected'] },
-      { id: 'fanout', kind: 'FanOut', branches: ['a', 'b'] },
-      { id: 'join', kind: 'Join', inputs: ['a', 'b'] },
-      { id: 'gate', kind: 'Gate', outcomes: ['approved', 'rejected'] },
+      {
+        id: 'gate',
+        kind: 'Gate',
+        target: 'gate-target',
+        outcomes: ['approved', 'rejected'],
+        dispositions: { approved: 'proceed', rejected: 'escalate' },
+      },
       { id: 'finish', kind: 'Finish', outcome: 'done' },
     ];
 
     for (const node of nodes) {
       const result = EcpDefinitionModule.prepare(definitionWithNode(node), catalog);
-      expect(result.ok, node.kind).toBe(true);
+      expect(
+        result.ok,
+        result.ok ? node.kind : `${node.kind}: ${JSON.stringify(result.error.diagnostics)}`
+      ).toBe(true);
       if (result.ok) {
         expect(result.value.definition.root.nodes[0]?.kind).toBe(node.kind);
       }
     }
+  });
+
+  it('rejects a missing authored v2 lifecycle policy at its stable path', () => {
+    const source = definitionWithNode({
+      id: 'loop',
+      kind: 'BoundedLoop',
+      body: 'iteration-body',
+      limits: { maxIterations: 3, maxActions: 8, budget: 8 },
+      lifecycle: fixtureLifecycle(),
+      exits: { done: { action: 'exit', outcome: 'done' } },
+    });
+    delete (source.root.nodes[0] as { lifecycle?: unknown }).lifecycle;
+
+    const result = EcpDefinitionModule.prepare(source, catalog);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: 'MISSING_LIFECYCLE_POLICY',
+          path: '/root/nodes/0/lifecycle',
+        })
+      );
+    }
+  });
+
+  it('reports every missing field in a partial lifecycle policy', () => {
+    const source = definitionWithNode({
+      id: 'loop',
+      kind: 'BoundedLoop',
+      body: 'iteration-body',
+      limits: { maxIterations: 3, maxActions: 8, budget: 8 },
+      lifecycle: fixtureLifecycle(),
+      exits: { done: { action: 'exit', outcome: 'done' } },
+    });
+    (source.root.nodes[0] as { lifecycle: unknown }).lifecycle = { version: 1 };
+
+    const result = EcpDefinitionModule.prepare(source, catalog);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(
+        result.error.diagnostics.map(({ code, path }) => ({ code, path }))
+      ).toEqual([
+        {
+          code: 'INCOMPLETE_LIFECYCLE_EXITS',
+          path: '/root/nodes/0/lifecycle/exits',
+        },
+        {
+          code: 'INVALID_LIFECYCLE_POLICY',
+          path: '/root/nodes/0/lifecycle/strategy',
+        },
+        {
+          code: 'INVALID_LIFECYCLE_POLICY',
+          path: '/root/nodes/0/lifecycle/thresholds',
+        },
+      ]);
+    }
+  });
+
+  it('rejects contradictory strategy configuration with path-addressed diagnostics', () => {
+    const lifecycle = fixtureLifecycle();
+    const source = definitionWithNode({
+      id: 'loop',
+      kind: 'BoundedLoop',
+      body: 'iteration-body',
+      limits: { maxIterations: 3, maxActions: 8, budget: 8 },
+      lifecycle: {
+        ...lifecycle,
+        exits: {
+          ...lifecycle.exits,
+          stalled: { action: 'strategy' },
+        },
+      },
+      exits: { done: { action: 'exit', outcome: 'done' } },
+    });
+
+    const result = EcpDefinitionModule.prepare(source, catalog);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.diagnostics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'STRATEGY_CAPABILITY_REQUIRED',
+            path: '/root/nodes/0/lifecycle/strategy/capability',
+          }),
+          expect.objectContaining({
+            code: 'STRATEGY_CAPABILITY_REQUIRED',
+            path: '/root/nodes/0/lifecycle/strategy/maxAttempts',
+          }),
+        ])
+      );
+    }
+  });
+
+  it('orders independent lifecycle and limit errors deterministically', () => {
+    const lifecycle = fixtureLifecycle();
+    const source = definitionWithNode({
+      id: 'loop',
+      kind: 'BoundedLoop',
+      body: 'iteration-body',
+      limits: { maxIterations: 0, maxActions: 4, budget: 2 },
+      lifecycle: {
+        ...lifecycle,
+        thresholds: { stallIterations: 0, sameBlockerAttempts: 0 },
+        strategy: {
+          maxAttempts: -1,
+          requireMaterialChange: true,
+          capability: { id: 'skill:implement', version: '1.0.0' },
+        },
+      },
+      exits: { done: { action: 'exit', outcome: 'done' } },
+    });
+
+    const first = EcpDefinitionModule.prepare(source, catalog);
+    const replay = EcpDefinitionModule.prepare(structuredClone(source), catalog);
+    expect(first.ok).toBe(false);
+    expect(replay.ok).toBe(false);
+    if (!first.ok && !replay.ok) {
+      expect(replay.error.diagnostics).toEqual(first.error.diagnostics);
+      expect(
+        first.error.diagnostics.map(({ code, path }) => ({ code, path }))
+      ).toEqual([
+        {
+          code: 'STRATEGY_CAPABILITY_FORBIDDEN',
+          path: '/root/nodes/0/lifecycle/strategy/capability',
+        },
+        {
+          code: 'INVALID_LIMIT',
+          path: '/root/nodes/0/lifecycle/strategy/maxAttempts',
+        },
+        {
+          code: 'INVALID_LIMIT',
+          path: '/root/nodes/0/lifecycle/thresholds/sameBlockerAttempts',
+        },
+        {
+          code: 'INVALID_LIMIT',
+          path: '/root/nodes/0/lifecycle/thresholds/stallIterations',
+        },
+        {
+          code: 'INVALID_LIMIT',
+          path: '/root/nodes/0/limits/maxIterations',
+        },
+      ]);
+    }
+  });
+
+  it('treats targeted Gate metadata as the sole authored gate authority', () => {
+    const source = definitionWithNode({
+      id: 'approval',
+      kind: 'Gate',
+      target: 'gate-target',
+      outcomes: ['approved', 'rejected'],
+      dispositions: { approved: 'proceed', rejected: 'escalate' },
+    });
+    const atomic = source.root.nodes.find((node) => node.kind === 'AtomicStage')!;
+    (atomic.execution as Record<string, unknown>).gate = true;
+    const retiredField = EcpDefinitionModule.prepare(source, catalog);
+    expect(retiredField.ok).toBe(false);
+    if (!retiredField.ok) {
+      expect(retiredField.error.diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: 'INVALID_EXECUTION_DECLARATION',
+          path: '/root/nodes/1/execution/gate',
+        })
+      );
+    }
+
+    delete (atomic.execution as Record<string, unknown>).gate;
+    const gate = source.root.nodes[0];
+    if (gate?.kind !== 'Gate') throw new Error('missing Gate fixture');
+    delete (gate.dispositions as Record<string, unknown>).rejected;
+    const invalidDisposition = EcpDefinitionModule.prepare(source, catalog);
+    expect(invalidDisposition.ok).toBe(false);
+    if (!invalidDisposition.ok) {
+      expect(invalidDisposition.error.diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: 'INVALID_LOWERING_METADATA',
+          path: '/root/nodes/0/outcomes/1',
+        })
+      );
+    }
+
+    gate.dispositions.rejected = 'escalate';
+    gate.target = 'absent';
+    const invalidTarget = EcpDefinitionModule.prepare(source, catalog);
+    expect(invalidTarget.ok).toBe(false);
+    if (!invalidTarget.ok) {
+      expect(invalidTarget.error.diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: 'UNKNOWN_REFERENCE',
+          path: '/root/nodes/0/target',
+        })
+      );
+    }
+  });
+
+  it('rejects missing and partial authored AtomicStage execution declarations at stable pointers', () => {
+    const missing = definitionWithNode({
+      id: 'atomic',
+      kind: 'AtomicStage',
+      capability: { id: 'skill:implement', version: '1.0.0' },
+    });
+    delete (missing.root.nodes[0] as { execution?: unknown }).execution;
+    const missingResult = EcpDefinitionModule.prepare(missing, catalog);
+    expect(missingResult.ok).toBe(false);
+    if (!missingResult.ok) {
+      expect(missingResult.error.diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: 'INVALID_EXECUTION_DECLARATION',
+          path: '/root/nodes/0/execution',
+        })
+      );
+    }
+
+    const partial = definitionWithNode({
+      id: 'atomic',
+      kind: 'AtomicStage',
+      capability: { id: 'skill:implement', version: '1.0.0' },
+      execution: fixtureExecution(),
+    });
+    (partial.root.nodes[0] as { execution: unknown }).execution = {
+      version: 2,
+      role: 'unknown-role',
+      workspace: { access: 'owner', extra: true },
+      gate: 'yes',
+      leadReview: 'yes',
+      verifyPolicy: 'maximum',
+      runtime: 'remote',
+      model: '',
+      effort: '',
+      sandbox: 'networked',
+      sessionReuse: 'forever',
+      handoff: { threshold: 2, maxRelays: 0, roles: {} },
+      unknown: true,
+    };
+    const partialResult = EcpDefinitionModule.prepare(partial, catalog);
+    expect(partialResult.ok).toBe(false);
+    if (!partialResult.ok) {
+      expect(partialResult.error.diagnostics.map(({ path }) => path)).toEqual([
+        '/root/nodes/0/execution/effort',
+        '/root/nodes/0/execution/gate',
+        '/root/nodes/0/execution/handoff/maxRelays',
+        '/root/nodes/0/execution/handoff/roles',
+        '/root/nodes/0/execution/handoff/threshold',
+        '/root/nodes/0/execution/leadReview',
+        '/root/nodes/0/execution/model',
+        '/root/nodes/0/execution/role',
+        '/root/nodes/0/execution/runtime',
+        '/root/nodes/0/execution/sandbox',
+        '/root/nodes/0/execution/sessionReuse',
+        '/root/nodes/0/execution/unknown',
+        '/root/nodes/0/execution/verifyPolicy',
+        '/root/nodes/0/execution/version',
+        '/root/nodes/0/execution/workspace/access',
+        '/root/nodes/0/execution/workspace/extra',
+      ]);
+    }
+  });
+
+  it('accepts a loop budget below maxActions as an independent admission boundary', () => {
+    const source = definitionWithNode({
+      id: 'loop',
+      kind: 'BoundedLoop',
+      body: 'iteration-body',
+      limits: { maxIterations: 3, maxActions: 8, budget: 2 },
+      lifecycle: fixtureLifecycle(),
+      exits: { done: { action: 'exit', outcome: 'done' } },
+    });
+
+    const result = EcpDefinitionModule.prepare(source, catalog);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.definition.root.nodes[0]).toMatchObject({
+      kind: 'BoundedLoop',
+      limits: { maxIterations: 3, maxActions: 8, budget: 2 },
+    });
   });
 
   it('preserves the authored v1 parser value and never mutates stored source data', () => {
@@ -612,6 +964,351 @@ describe('trusted capability catalog admission', () => {
     }
   });
 
+  it('rejects invalid ReviewCycle/GoalLoop phase and variant metadata at stable paths', () => {
+    const phaseSource = definitionWithNode({
+      id: 'phase',
+      kind: 'AtomicStage',
+      capability: { id: 'skill:implement', version: '1.0.0' },
+      execution: fixtureExecution(),
+      reviewCyclePhase: 'approve',
+      goalCyclePhase: 'iterate',
+    });
+    const loopSource = definitionWithNode({
+      id: 'goal-loop',
+      kind: 'BoundedLoop',
+      body: 'goal-body',
+      limits: { maxIterations: 3, maxActions: 8, budget: 8 },
+      lifecycle: fixtureLifecycle(),
+      exits: { done: { action: 'exit', outcome: 'done' } },
+      goalCycleVariant: 'optimize',
+    });
+
+    for (const [source, expectedPaths] of [
+      [
+        phaseSource,
+        [
+          '/root/nodes/0/goalCyclePhase',
+          '/root/nodes/0/reviewCyclePhase',
+        ],
+      ],
+      [loopSource, ['/root/nodes/0/goalCycleVariant']],
+    ] as const) {
+      const result = EcpDefinitionModule.prepare(source, catalog);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(
+          result.error.diagnostics
+            .filter((item) => item.code === 'INVALID_LOWERING_METADATA')
+            .map((item) => item.path)
+        ).toEqual(expect.arrayContaining([...expectedPaths]));
+      }
+    }
+
+    const parallel: DefinitionSourceV2 = {
+      version: 2,
+      id: 'definition-parallel',
+      sourceId: 'fixture:closed-parallel',
+      name: 'closed-parallel',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['failed', 'succeeded'],
+      declarations: [],
+      root: {
+        nodes: [
+          {
+            id: 'fanout',
+            kind: 'FanOut',
+            branches: ['left', 'right'],
+            concurrencyCap: 2,
+            budget: 2,
+            joinNodeId: 'join',
+            members: [
+              { id: 'left', hierarchicalPath: 'left', required: true, condition: 'always' },
+              { id: 'right', hierarchicalPath: 'right', required: true, condition: 'always' },
+            ],
+          },
+          {
+            id: 'left',
+            kind: 'AtomicStage',
+            capability: { id: 'skill:implement', version: '1.0.0' },
+            execution: fixtureExecution(),
+          },
+          {
+            id: 'right',
+            kind: 'AtomicStage',
+            capability: { id: 'skill:implement', version: '1.0.0' },
+            execution: fixtureExecution(),
+          },
+          {
+            id: 'join',
+            kind: 'Join',
+            inputs: ['left', 'right'],
+            requiredMembers: ['left', 'right'],
+            optionalMembers: [],
+            outcomes: { proceed: 'proceed', failed: 'failed' },
+          },
+          { id: 'success', kind: 'Finish', outcome: 'succeeded' },
+          { id: 'failure', kind: 'Finish', outcome: 'failed' },
+        ],
+        connections: [
+          { id: 'fanout-left', from: { node: 'fanout', port: 'left' }, to: { node: 'left', port: 'start' } },
+          { id: 'fanout-right', from: { node: 'fanout', port: 'right' }, to: { node: 'right', port: 'start' } },
+          { id: 'left-join', from: { node: 'left', port: 'done' }, to: { node: 'join', port: 'left' } },
+          { id: 'right-join', from: { node: 'right', port: 'done' }, to: { node: 'join', port: 'right' } },
+          { id: 'join-success', from: { node: 'join', port: 'proceed' }, to: { node: 'success', port: 'start' } },
+          { id: 'join-failure', from: { node: 'join', port: 'failed' }, to: { node: 'failure', port: 'start' } },
+        ],
+      },
+    };
+    const parallelResult = EcpDefinitionModule.prepare(parallel, catalog);
+    expect(parallelResult.ok).toBe(true);
+    if (parallelResult.ok) {
+      expect(parallelResult.value.definition.root.nodes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: 'FanOut' }),
+          expect.objectContaining({ kind: 'Join' }),
+        ])
+      );
+    }
+  });
+
+  it('requires complete typed FanOut and Join lowering metadata', () => {
+    for (const [node, expectedPaths] of [
+      [
+        { id: 'fanout', kind: 'FanOut', branches: ['a'] },
+        [
+          '/root/nodes/0/budget',
+          '/root/nodes/0/concurrencyCap',
+          '/root/nodes/0/joinNodeId',
+          '/root/nodes/0/members',
+        ],
+      ],
+      [
+        { id: 'join', kind: 'Join', inputs: ['a'] },
+        [
+          '/root/nodes/0/optionalMembers',
+          '/root/nodes/0/outcomes',
+          '/root/nodes/0/requiredMembers',
+        ],
+      ],
+    ] as const) {
+      const result = EcpDefinitionModule.prepare(
+        definitionWithNode(node as DefinitionSourceV2['root']['nodes'][number]),
+        catalog
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(
+          result.error.diagnostics
+            .filter((item) => item.code === 'INVALID_LOWERING_METADATA')
+            .map((item) => item.path)
+        ).toEqual(expectedPaths);
+      }
+    }
+  });
+
+  it('rejects conflicting FanOut membership, budgets, join targets, and Join partitions', () => {
+    const source: DefinitionSourceV2 = {
+      version: 2,
+      id: 'typed-parallel-invalid',
+      sourceId: 'fixture:typed-parallel-invalid',
+      name: 'typed-parallel-invalid',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [],
+      root: {
+        nodes: [
+          {
+            id: 'fanout',
+            kind: 'FanOut',
+            branches: ['a', 'b'],
+            concurrencyCap: 3,
+            budget: 1,
+            joinNodeId: 'missing-join',
+            members: [
+              { id: 'a', hierarchicalPath: 'a', required: true, condition: 'always' },
+              { id: 'a', hierarchicalPath: 'b', required: true, condition: 'always' },
+            ],
+          },
+          {
+            id: 'join',
+            kind: 'Join',
+            inputs: ['a', 'b'],
+            requiredMembers: ['a', 'b'],
+            optionalMembers: ['b'],
+            outcomes: { proceed: 'done', failed: 'done' },
+          },
+        ],
+        connections: [],
+      },
+    };
+
+    const result = EcpDefinitionModule.prepare(source, catalog);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(
+        result.error.diagnostics
+          .filter((item) => item.code === 'INVALID_LOWERING_METADATA')
+          .map((item) => item.path)
+      ).toEqual(
+        expect.arrayContaining([
+          '/root/nodes/0/budget',
+          '/root/nodes/0/concurrencyCap',
+          '/root/nodes/0/joinNodeId',
+          '/root/nodes/0/members/1/id',
+          '/root/nodes/1/optionalMembers/0',
+          '/root/nodes/1/outcomes/failed',
+        ])
+      );
+    }
+  });
+
+  it.each([
+    {
+      name: 'missing',
+      descriptors: [],
+      version: '1.0.0',
+      code: 'CAPABILITY_MISSING',
+    },
+    {
+      name: 'disabled',
+      descriptors: [{ ...catalog.descriptors[0]!, availability: 'disabled' as const }],
+      version: '1.0.0',
+      code: 'CAPABILITY_DISABLED',
+    },
+    {
+      name: 'forbidden',
+      descriptors: [{ ...catalog.descriptors[0]!, availability: 'forbidden' as const }],
+      version: '1.0.0',
+      code: 'CAPABILITY_FORBIDDEN',
+    },
+    {
+      name: 'version changed',
+      descriptors: [{ ...catalog.descriptors[0]!, version: '2.0.0' }],
+      version: '1.0.0',
+      code: 'CAPABILITY_VERSION_MISMATCH',
+    },
+  ])('fails closed for $name capabilities at composite, loop-phase, and strategy paths', ({
+    descriptors,
+    version,
+    code,
+  }) => {
+    const atomic = {
+      id: 'work',
+      kind: 'AtomicStage' as const,
+      capability: { id: 'skill:implement', version },
+      execution: fixtureExecution(),
+    };
+    const composite: DefinitionSourceV2 = {
+      version: 2,
+      id: 'capability-composite-path',
+      sourceId: 'fixture:capability-composite-path',
+      name: 'capability-composite-path',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [
+        {
+          id: 'body',
+          kind: 'Composite',
+          provenance: 'custom',
+          inputs: [],
+          artifacts: [],
+          outcomes: ['done'],
+          graph: { nodes: [atomic], connections: [] },
+        },
+      ],
+      root: {
+        nodes: [{ id: 'call', kind: 'CompositeRef', declarationId: 'body' }],
+        connections: [],
+      },
+    };
+    const loopPhase: DefinitionSourceV2 = {
+      ...structuredClone(composite),
+      id: 'capability-loop-phase-path',
+      sourceId: 'fixture:capability-loop-phase-path',
+      name: 'capability-loop-phase-path',
+      root: {
+        nodes: [
+          {
+            id: 'loop',
+            kind: 'BoundedLoop',
+            body: 'body',
+            limits: { maxIterations: 2, maxActions: 4, budget: 4 },
+            lifecycle: fixtureLifecycle(),
+            exits: { done: { action: 'exit', outcome: 'done' } },
+          },
+        ],
+        connections: [],
+      },
+    };
+    const lifecycle = fixtureLifecycle();
+    const strategy: DefinitionSourceV2 = {
+      version: 2,
+      id: 'capability-strategy-path',
+      sourceId: 'fixture:capability-strategy-path',
+      name: 'capability-strategy-path',
+      inputs: [],
+      artifacts: [],
+      outcomes: ['done'],
+      declarations: [
+        {
+          id: 'body',
+          kind: 'Composite',
+          provenance: 'custom',
+          inputs: [],
+          artifacts: [],
+          outcomes: ['done'],
+          graph: {
+            nodes: [{ id: 'finish', kind: 'Finish', outcome: 'done' }],
+            connections: [],
+          },
+        },
+      ],
+      root: {
+        nodes: [
+          {
+            id: 'loop',
+            kind: 'BoundedLoop',
+            body: 'body',
+            limits: { maxIterations: 2, maxActions: 4, budget: 4 },
+            lifecycle: {
+              ...lifecycle,
+              strategy: {
+                maxAttempts: 1,
+                requireMaterialChange: true,
+                capability: { id: 'skill:implement', version },
+              },
+              exits: {
+                ...lifecycle.exits,
+                stalled: { action: 'strategy' },
+              },
+            },
+            exits: { done: { action: 'exit', outcome: 'done' } },
+          },
+        ],
+        connections: [],
+      },
+    };
+    const capabilityCatalog = createCapabilityCatalogSnapshot(descriptors);
+
+    for (const [source, expectedPath] of [
+      [composite, '/declarations/0/graph/nodes/0/capability'],
+      [loopPhase, '/declarations/0/graph/nodes/0/capability'],
+      [strategy, '/root/nodes/0/lifecycle/strategy/capability'],
+    ] as const) {
+      const result = EcpDefinitionModule.prepare(source, capabilityCatalog);
+      expect(result.ok, `${source.name}/${code}`).toBe(false);
+      if (!result.ok) {
+        expect(result.error.diagnostics).toContainEqual(
+          expect.objectContaining({ code, path: expectedPath })
+        );
+      }
+    }
+  });
+
   it('rejects duplicate capability identity/version pairs before preparation', () => {
     let thrown: unknown;
     try {
@@ -662,6 +1359,7 @@ describe('trusted capability catalog admission', () => {
       id,
       kind: 'AtomicStage' as const,
       capability: { id: 'skill:rasen-apply-change', version: 'sha256:abc' },
+      execution: fixtureExecution(),
     });
 
     // Every conventional control port name the kernel accepts — the Canvas
@@ -741,6 +1439,7 @@ describe('trusted capability catalog admission', () => {
       id,
       kind: 'AtomicStage' as const,
       capability: { id: 'skill:typed', version: '1.0.0' },
+      execution: fixtureExecution(),
     });
     const source: DefinitionSourceV2 = {
       version: 2,
@@ -788,11 +1487,13 @@ describe('trusted capability catalog admission', () => {
             id: 'produce',
             kind: 'AtomicStage',
             capability: { id: 'skill:produce', version: '1.0.0' },
+            execution: fixtureExecution(),
           },
           {
             id: 'consume',
             kind: 'AtomicStage',
             capability: { id: 'skill:consume', version: '1.0.0' },
+            execution: fixtureExecution(),
           },
         ],
         connections: [
@@ -857,11 +1558,23 @@ describe('trusted capability catalog admission', () => {
       kind: 'BoundedLoop',
       body: 'iteration-body',
       limits: { maxIterations: 2 },
+      lifecycle: fixtureLifecycle(),
       exits: { done: { action: 'exit', outcome: 'done' } },
     }],
     ['Choice', { id: 'subject', kind: 'Choice', outcomes: ['yes', 'no'] }],
-    ['FanOut', { id: 'subject', kind: 'FanOut', branches: ['left', 'right'] }],
-    ['Join', { id: 'subject', kind: 'Join', inputs: ['left', 'right'] }],
+    ['FanOut', {
+      id: 'subject', kind: 'FanOut', branches: ['left', 'right'],
+      concurrencyCap: 2, budget: 1, joinNodeId: 'missing-join',
+      members: [
+        { id: 'left', hierarchicalPath: 'subject', required: true, condition: 'always' },
+        { id: 'right', hierarchicalPath: 'consumer', required: false, condition: 'optional' },
+      ],
+    }],
+    ['Join', {
+      id: 'subject', kind: 'Join', inputs: ['left', 'right'],
+      requiredMembers: ['left'], optionalMembers: ['right'],
+      outcomes: { proceed: 'done', failed: 'failed' },
+    }],
     ['Gate', { id: 'subject', kind: 'Gate', outcomes: ['approved', 'rejected'] }],
     ['Finish', { id: 'subject', kind: 'Finish', outcome: 'done' }],
   ] as const)('rejects undeclared %s producer output ports', (_kind, node) => {
@@ -870,7 +1583,7 @@ describe('trusted capability catalog admission', () => {
     );
     source.root.nodes = [
       ...source.root.nodes,
-      { id: 'consumer', kind: 'Gate', outcomes: ['done'] },
+      { id: 'consumer', kind: 'Choice', outcomes: ['done'] },
     ];
     source.root.connections = [
       {
@@ -909,11 +1622,23 @@ describe('trusted capability catalog admission', () => {
       kind: 'BoundedLoop',
       body: 'iteration-body',
       limits: { maxIterations: 2 },
+      lifecycle: fixtureLifecycle(),
       exits: { done: { action: 'exit', outcome: 'done' } },
     }],
     ['Choice', { id: 'subject', kind: 'Choice', outcomes: ['yes', 'no'] }],
-    ['FanOut', { id: 'subject', kind: 'FanOut', branches: ['left', 'right'] }],
-    ['Join', { id: 'subject', kind: 'Join', inputs: ['left', 'right'] }],
+    ['FanOut', {
+      id: 'subject', kind: 'FanOut', branches: ['left', 'right'],
+      concurrencyCap: 2, budget: 1, joinNodeId: 'missing-join',
+      members: [
+        { id: 'left', hierarchicalPath: 'producer', required: true, condition: 'always' },
+        { id: 'right', hierarchicalPath: 'subject', required: false, condition: 'optional' },
+      ],
+    }],
+    ['Join', {
+      id: 'subject', kind: 'Join', inputs: ['left', 'right'],
+      requiredMembers: ['left'], optionalMembers: ['right'],
+      outcomes: { proceed: 'done', failed: 'failed' },
+    }],
     ['Gate', { id: 'subject', kind: 'Gate', outcomes: ['approved', 'rejected'] }],
     ['Finish', { id: 'subject', kind: 'Finish', outcome: 'done' }],
   ] as const)('rejects undeclared %s consumer input ports', (_kind, node) => {
@@ -921,7 +1646,7 @@ describe('trusted capability catalog admission', () => {
       structuredClone(node) as DefinitionSourceV2['root']['nodes'][number]
     );
     source.root.nodes = [
-      { id: 'producer', kind: 'Gate', outcomes: ['approved'] },
+      { id: 'producer', kind: 'Choice', outcomes: ['approved'] },
       ...source.root.nodes,
     ];
     source.root.connections = [
@@ -962,6 +1687,7 @@ describe('trusted capability catalog admission', () => {
         id: 'produce',
         kind: 'AtomicStage',
         capability: { id: 'skill:implement', version: '1.0.0' },
+        execution: fixtureExecution(),
       },
       ...source.root.nodes,
     ];
@@ -1069,9 +1795,9 @@ describe('semantic canonical digests', () => {
     if (left.ok && right.ok) {
       expect(left.value.digests).toEqual(right.value.digests);
       expect(left.value.digests).toEqual({
-        source: '1fa649b71e15f24e2ad8161dc661072fd6fc10b47779262269c0deb427076680',
+        source: '295d12cd6121826729cb7b143bf43a7e27dc65703ba62ab1dc3dd6392357c938',
         capability: '16f7bc68733102f33266a4976ab9467152ade2d78cf768f971cb812f0bad72e3',
-        plan: '10fc90ad8978e02ba42e67405439b1dd10f3ebf34c37b48790f1db703adc035f',
+        plan: 'a42d3a9b8559c58c7647a8a8bb21c8917e43d556252d3d322ef22936ea52a59e',
       });
       expect(JSON.stringify(left.value.plan)).toBe(JSON.stringify(right.value.plan));
     }
@@ -1132,7 +1858,8 @@ function loopDefinition(
           id: 'loop',
           kind: 'BoundedLoop',
           body: 'body',
-          limits: { maxIterations: 3, maxActions: 4 },
+          limits: { maxIterations: 3, maxActions: 4, budget: 4 },
+          lifecycle: fixtureLifecycle(),
           exits,
         },
       ],
@@ -1310,6 +2037,7 @@ describe('authored contract identity validation', () => {
             kind: 'BoundedLoop',
             body: 'body',
             limits: { maxIterations: 2 },
+            lifecycle: fixtureLifecycle(),
             exits: {
               accepted: { action: 'exit', outcome: 'done' },
               rejected: { action: 'exit', outcome: 'done' },
@@ -1376,7 +2104,7 @@ describe('authored contract identity validation', () => {
     source.outcomes = ['shared'];
     source.root.nodes = [
       { id: 'choice', kind: 'Choice', outcomes: ['shared'] },
-      { id: 'gate', kind: 'Gate', outcomes: ['shared'] },
+      { id: 'decision', kind: 'Choice', outcomes: ['shared'] },
     ];
 
     const result = EcpDefinitionModule.prepare(source, catalog);
@@ -1440,11 +2168,11 @@ describe('authored contract identity validation', () => {
       { name: 'payload', type: 'application/json' },
     ];
     source.root = {
-      nodes: [{ id: 'gate', kind: 'Gate', outcomes: ['done'] }],
+      nodes: [{ id: 'decision', kind: 'Choice', outcomes: ['done'] }],
       connections: [
         {
           id: 'dangling',
-          from: { node: 'gate', port: 'done' },
+          from: { node: 'decision', port: 'done' },
           to: { node: 'absent', port: 'input' },
         },
       ],
@@ -1495,13 +2223,13 @@ describe('whole-definition validation', () => {
       source: {
         ...definitionWithNode({
           id: 'a',
-          kind: 'Gate',
+          kind: 'Choice',
           outcomes: ['approved', 'rejected'],
         }),
         root: {
           nodes: [
-            { id: 'a', kind: 'Gate', outcomes: ['approved', 'rejected'] },
-            { id: 'b', kind: 'Gate', outcomes: ['approved', 'rejected'] },
+            { id: 'a', kind: 'Choice', outcomes: ['approved', 'rejected'] },
+            { id: 'b', kind: 'Choice', outcomes: ['approved', 'rejected'] },
           ],
           connections: [
             {
@@ -1546,7 +2274,8 @@ describe('whole-definition validation', () => {
               id: 'loop',
               kind: 'BoundedLoop',
               body: 'body',
-              limits: { maxIterations: 0, maxActions: 4 },
+              limits: { maxIterations: 0, maxActions: 4, budget: 4 },
+              lifecycle: fixtureLifecycle(),
               exits: { done: { action: 'exit', outcome: 'done' } },
             },
           ],
@@ -1597,7 +2326,8 @@ describe('whole-definition validation', () => {
         id: 'nested-loop',
         kind: 'BoundedLoop',
         body: 'body',
-        limits: { maxIterations: 2 },
+        limits: { maxIterations: 2, maxActions: 4, budget: 4 },
+        lifecycle: fixtureLifecycle(),
         exits: { done: { action: 'exit', outcome: 'done' } },
       },
     ];
@@ -1645,7 +2375,8 @@ describe('whole-definition validation', () => {
               id: 'nested-loop',
               kind: 'BoundedLoop',
               body: 'leaf',
-              limits: { maxIterations: 2 },
+              limits: { maxIterations: 2, maxActions: 4, budget: 4 },
+              lifecycle: fixtureLifecycle(),
               exits: { done: { action: 'exit', outcome: 'done' } },
             },
           ],
@@ -1816,12 +2547,26 @@ describe('whole-definition validation', () => {
           graph: {
             nodes: [
               {
+                id: 'judge',
+                kind: 'AtomicStage',
+                capability: { id: 'skill:implement', version: '1.0.0' },
+                execution: fixtureExecution(),
+              },
+              {
                 id: 'gate',
                 kind: 'Gate',
+                target: 'judge',
                 outcomes: ['approved', 'rejected'],
+                dispositions: { approved: 'proceed', rejected: 'escalate' },
               },
             ],
-            connections: [],
+            connections: [
+              {
+                id: 'judge-to-gate',
+                from: { node: 'judge', port: 'done' },
+                to: { node: 'gate', port: 'input' },
+              },
+            ],
           },
         },
         {
@@ -1921,6 +2666,7 @@ describe('whole-definition validation', () => {
               id: 'skill:text-consumer',
               version: '1.0.0',
             },
+            execution: fixtureExecution(),
           });
           to = { node: 'text-consumer', port: 'payload' };
         }
@@ -2141,14 +2887,27 @@ describe('whole-definition validation', () => {
       graph: {
         nodes: [
           {
+            id: 'judge',
+            kind: 'AtomicStage',
+            capability: { id: 'skill:implement', version: '1.0.0' },
+            execution: fixtureExecution(),
+          },
+          {
             id: 'decision',
             kind: 'Gate',
+            target: 'judge',
             outcomes: ['approved', 'rejected'],
+            dispositions: { approved: 'proceed', rejected: 'escalate' },
           },
           { id: 'success', kind: 'Finish', outcome: 'done' },
           { id: 'failure', kind: 'Finish', outcome: 'failed' },
         ],
         connections: [
+          {
+            id: 'judge-to-decision',
+            from: { node: 'judge', port: 'done' },
+            to: { node: 'decision', port: 'input' },
+          },
           {
             id: 'approved-to-success',
             from: { node: 'decision', port: 'approved' },
@@ -2178,13 +2937,26 @@ describe('whole-definition validation', () => {
       graph: {
         nodes: [
           {
+            id: 'judge',
+            kind: 'AtomicStage',
+            capability: { id: 'skill:implement', version: '1.0.0' },
+            execution: fixtureExecution(),
+          },
+          {
             id: 'decision',
             kind: 'Gate',
+            target: 'judge',
             outcomes: ['approved', 'rejected'],
+            dispositions: { approved: 'proceed', rejected: 'escalate' },
           },
           { id: 'success', kind: 'Finish', outcome: 'done' },
         ],
         connections: [
+          {
+            id: 'judge-to-decision',
+            from: { node: 'judge', port: 'done' },
+            to: { node: 'decision', port: 'input' },
+          },
           {
             id: 'approved-to-success',
             from: { node: 'decision', port: 'approved' },
@@ -2247,12 +3019,14 @@ describe('whole-definition validation', () => {
             id: 'unknown-capability',
             kind: 'AtomicStage',
             capability: { id: 'skill:not-present', version: '1.0.0' },
+            execution: fixtureExecution(),
           });
         } else if (invalidKind === 'version mismatch') {
           nodes.push({
             id: 'wrong-revision',
             kind: 'AtomicStage',
             capability: { id: 'skill:implement', version: '9.9.9' },
+            execution: fixtureExecution(),
           });
         } else {
           nodes.push({ id: 'finish', kind: 'Finish', outcome: 'finished' });
@@ -2274,6 +3048,7 @@ describe('whole-definition validation', () => {
                 id: 'skill:text-consumer',
                 version: '1.0.0',
               },
+              execution: fixtureExecution(),
             });
             to = { node: 'text-consumer', port: 'payload' };
           }
@@ -2331,7 +3106,8 @@ describe('whole-definition validation', () => {
                 id: 'loop',
                 kind: 'BoundedLoop',
                 body: 'body',
-                limits: { maxIterations: 3 },
+                limits: { maxIterations: 3, maxActions: 4, budget: 4 },
+                lifecycle: fixtureLifecycle(),
                 exits: {
                   ghost: { action: 'exit', outcome: 'done' },
                 },
@@ -2435,12 +3211,14 @@ describe('whole-definition validation', () => {
         id: 'atomic',
         kind: 'AtomicStage',
         capability: { id: 'skill:implement', version: '1.0.0' },
+        execution: fixtureExecution(),
       },
       {
         id: 'loop',
         kind: 'BoundedLoop',
         body: 'body',
-        limits: { maxIterations: 0 },
+        limits: { maxIterations: 0, maxActions: 4, budget: 4 },
+        lifecycle: fixtureLifecycle(),
         exits: {},
       },
     ];
@@ -2495,7 +3273,7 @@ describe('whole-definition validation', () => {
           code: 'LEGACY_NORMALIZED',
           path: '/version',
           message:
-            'Legacy Pipeline Definition v1 was normalized for planning; its authored source and prompt-owned execution remain unchanged.',
+            'Pipeline Definition v1 compatibility input was normalized for planning; its authored source and compatibility execution ownership remain unchanged.',
         },
       ]);
     }
@@ -2537,6 +3315,25 @@ describe('opaque ChangeRunPlan compilation', () => {
         const value = structuredClone(base);
         const loop = value.root.nodes[0]!;
         if (loop.kind === 'BoundedLoop') loop.limits.maxIterations = 4;
+        return value;
+      })(),
+      (() => {
+        const value = structuredClone(base);
+        const loop = value.root.nodes[0]!;
+        if (loop.kind === 'BoundedLoop') {
+          loop.lifecycle.thresholds.stallIterations = 4;
+        }
+        return value;
+      })(),
+      (() => {
+        const value = structuredClone(base);
+        const loop = value.root.nodes[0]!;
+        if (loop.kind === 'BoundedLoop') {
+          loop.lifecycle.exits.actionLimit = {
+            action: 'fail',
+            outcome: 'revised_action_limit',
+          };
+        }
         return value;
       })(),
       (() => {

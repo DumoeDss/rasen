@@ -352,10 +352,6 @@ describe('public reusable-session command surface', () => {
         ],
       },
       {
-        command: 'list',
-        args: ['session', 'list'],
-      },
-      {
         command: 'retire',
         args: ['session', 'retire', '--run', RUN_ID],
       },

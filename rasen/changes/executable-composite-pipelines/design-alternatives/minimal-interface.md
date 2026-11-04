@@ -394,7 +394,7 @@ Adapters consume `snapshot.actions`. Canvas consumes `normalized` from
    `receipt_conflict`.
 6. Root control flow, every Composite body, and the Composite call graph are
    DAGs. Only BoundedLoop can repeat work. Recursive Composite calls and nested
-   loops fail compilation in 0.1.6.
+   loops fail compilation in 0.2.0.
 7. All BoundedLoop limits are positive, within system safety limits, and every
    declared outcome has an explicit exit. Reaching a cap is an outcome, never
    implicit success.

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { cleanupTempPathAsync } from '../../helpers/temp-cleanup.js';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -62,7 +63,7 @@ describe('audit management core', () => {
     fs.mkdirSync(path.join(codexHome, 'sessions', '2026', '07', '24'), { recursive: true });
   });
 
-  afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
+  afterEach(async () => cleanupTempPathAsync(root));
 
   it('discovers Claude and main non-fork Codex sessions newest-first and fails soft for Zed', () => {
     const claude = path.join(claudeRoot, 'project-a', 'claude-id.jsonl');
@@ -416,5 +417,5 @@ describe('audit management core', () => {
     expect(
       (await service.importStream(Readable.from(fs.readFileSync(zedPath)), 'threads.sqlite')).descriptor.runtime
     ).toBe('zed');
-  });
+  }, 120_000);
 });

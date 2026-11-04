@@ -1,8 +1,12 @@
+import { createHash } from 'node:crypto';
+
 import {
   ChangeRunContractError,
   decodeRunAction,
   type ActionId,
+  type AgentTurnRenderingContract,
   type AttemptId,
+  type CompletionAuthority,
   type Digest,
   type EffectId,
   type InvocationId,
@@ -16,13 +20,21 @@ import {
 import type {
   RuntimeCapabilityBinding,
   EffectiveRunPolicy,
+  RuntimeConsultationBinding,
 } from '../../pipeline-registry/execution-plan-internal.js';
 import {
   deriveActionId,
   deriveAttemptId,
   deriveEffectId,
   deriveInvocationId,
+  domainDigest,
 } from './identity.js';
+import {
+  buildAgentActor,
+  buildCommandActor,
+  buildHostActor,
+  type TrustedAdapter,
+} from './actors.js';
 
 export type ActionBuildErrorCode =
   | 'action_kind_mismatch'
@@ -51,6 +63,7 @@ export interface ActionBuildContext {
   readonly stage: Extract<EffectiveRunPolicy['stages'][number], unknown>;
   readonly executionProfileDigest: Digest;
   readonly policyDigest: Digest;
+  readonly consultationBinding?: RuntimeConsultationBinding;
 }
 
 export interface ActionIdentity {
@@ -63,6 +76,59 @@ export interface ActionIdentity {
 
 export interface AgentActionInput {
   readonly input: JsonValue;
+  /** Exact complete base prompt produced by the trusted renderer before admission. */
+  readonly renderedTurnInput: string;
+  /**
+   * Which trusted renderer produced {@link renderedTurnInput}. Defaults to the
+   * source driver. The runtime passes the consultation contract when it renders
+   * a Teacher turn itself from committed Record facts.
+   */
+  readonly renderingContract?: AgentTurnRenderingContract;
+}
+
+export const MAX_CANONICAL_AGENT_TURN_INPUT_BYTES = 2 * 1024 * 1024;
+const AGENT_TURN_INPUT_DIGEST_DOMAIN = 'agent-turn-input/1';
+
+/**
+ * The digest domain and bytes are identical for every rendering contract; the
+ * contract labels the author, it does not change the preimage. A transported
+ * string therefore authenticates against either contract's binding by exact
+ * length and digest.
+ */
+export function deriveAgentTurnInputBinding(
+  renderedTurnInput: string,
+  renderingContract: AgentTurnRenderingContract = 'rasen.driver-rendered-turn/1'
+) {
+  const bytes = Buffer.from(renderedTurnInput, 'utf8');
+  const digest = createHash('sha256')
+    .update(AGENT_TURN_INPUT_DIGEST_DOMAIN, 'utf8')
+    .update(Buffer.from([0]))
+    .update(bytes)
+    .digest('hex');
+  return Object.freeze({
+    format: 'agent-turn-input/1' as const,
+    mediaType: 'text/plain;charset=utf-8' as const,
+    renderingContract,
+    utf8ByteLength: bytes.length,
+    contentDigest: `sha256:${digest}` as Digest,
+  });
+}
+
+export function bindAgentTurnInput(
+  renderedTurnInput: string,
+  renderingContract: AgentTurnRenderingContract = 'rasen.driver-rendered-turn/1'
+) {
+  const binding = deriveAgentTurnInputBinding(renderedTurnInput, renderingContract);
+  if (
+    binding.utf8ByteLength === 0 ||
+    binding.utf8ByteLength > MAX_CANONICAL_AGENT_TURN_INPUT_BYTES
+  ) {
+    throw new ActionBuildError(
+      'invalid_action_input',
+      `Rendered agent turn input must be non-empty and no larger than ${MAX_CANONICAL_AGENT_TURN_INPUT_BYTES} UTF-8 bytes.`
+    );
+  }
+  return binding;
 }
 
 export interface CommandActionInput {
@@ -161,13 +227,123 @@ function commonActionFields(
       contractId: ctx.capability.contract.id,
       contractVersion: ctx.capability.contract.version,
       contractDigest: ctx.capability.contract.digest,
-      artifact: ctx.capability.adapter,
+      artifact: {
+        id: ctx.capability.adapter.id,
+        version: ctx.capability.adapter.version,
+        contentDigest: ctx.capability.adapter.contentDigest,
+      },
     },
     resultContractDigest: ctx.capability.resultContract.digest,
     evidenceContractDigest: ctx.capability.evidenceContract.digest,
     policyDigest: ctx.policyDigest,
     workspace: ctx.capability.workspace,
     expectedBeforeWorkspace: identity.expectedBeforeWorkspace,
+  };
+}
+
+function actionAdapter(ctx: ActionBuildContext): TrustedAdapter {
+  return {
+    id: ctx.capability.adapter.id,
+    version: ctx.capability.adapter.version,
+    artifactDigest: ctx.capability.adapter.contentDigest as Digest,
+  };
+}
+
+function completionAuthority(
+  ctx: ActionBuildContext,
+  identity: ActionIdentity,
+  kind: 'agent' | 'command' | 'host',
+  commandExecutable?: CommandActionInput['executable']
+): CompletionAuthority {
+  if (ctx.capability.adapter.attestationAuthority === undefined) {
+    throw new ActionBuildError(
+      'invalid_action_input',
+      'Executable Action requires a host-frozen attestation authority.'
+    );
+  }
+  const adapter = actionAdapter(ctx);
+  const principalIdentityDigest = domainDigest(
+    'change-run-completion-principal/1',
+    {
+      kind,
+      capability: ctx.capability.authoredCapability,
+      contract: ctx.capability.contract,
+      adapter,
+    }
+  );
+  const sessionIdentityDigest = domainDigest(
+    'change-run-completion-session/1',
+    {
+      principalIdentityDigest,
+      runId: identity.runId,
+      nodeId: identity.nodeId,
+      occurrence: identity.occurrence,
+      attemptOrdinal: identity.attemptOrdinal,
+    }
+  );
+  const stage = ctx.stage as EffectiveRunPolicy['stages'][number];
+  const actor =
+    kind === 'agent'
+      ? buildAgentActor({
+          role: stage.role,
+          provider: stage.runtime,
+          runtime: stage.runtime,
+          principalIdentityDigest,
+          sessionIdentityDigest,
+          adapter,
+        })
+      : kind === 'command'
+        ? buildCommandActor({
+            adapter,
+            executable: {
+              id: commandExecutable?.identity ?? 'unavailable',
+              artifactDigest:
+                commandExecutable?.contentDigest ?? adapter.artifactDigest,
+            },
+          })
+        : buildHostActor({ adapter, principalIdentityDigest });
+  const attestationProducer = {
+    id: ctx.capability.adapter.id,
+    version: ctx.capability.adapter.version,
+    identityDigest: ctx.capability.adapter.contentDigest,
+  };
+  const evidenceProducer = {
+    id: ctx.capability.evidenceContract.id,
+    version: ctx.capability.evidenceContract.version,
+    identityDigest: ctx.capability.evidenceContract.digest,
+  };
+  const evidenceSchema = (suffix: string): string =>
+    `${ctx.capability.evidenceContract.id}/${suffix}/${ctx.capability.evidenceContract.version}`;
+  return {
+    format: 'change-run-completion-authority/1',
+    attestationAuthority: ctx.capability.adapter.attestationAuthority,
+    actor,
+    actorAttestation: {
+      producer: attestationProducer,
+      observationKind: 'actor-attestation',
+      schema: evidenceSchema('actor-attestation'),
+      mediaType: 'application/json',
+    },
+    observations: {
+      domainActionResult: {
+        producer: evidenceProducer,
+        observationKind: 'domain-action-result',
+        schema: evidenceSchema('domain-action-result'),
+        mediaType: 'application/json',
+      },
+      effectObservation: {
+        producer: evidenceProducer,
+        observationKind: 'effect-observation',
+        schema: evidenceSchema('effect-observation'),
+        mediaType: 'application/json',
+      },
+      infrastructureObservation: {
+        producer: evidenceProducer,
+        observationKind: 'infrastructure-observation',
+        schema: evidenceSchema('infrastructure-observation'),
+        mediaType: 'application/json',
+      },
+    },
   };
 }
 
@@ -195,13 +371,37 @@ export function buildAgentAction(
   const stage = ctx.stage as Extract<EffectiveRunPolicy['stages'][number], unknown>;
   return finish({
     ...commonActionFields(ctx, identity, 'agent'),
+    completionAuthority: completionAuthority(ctx, identity, 'agent'),
     agent: {
       role: stage.role,
       model: stage.model,
       reasoningEffort: stage.effort,
       runtime: stage.runtime,
       sandbox: stage.sandbox,
+      ...(stage.workerContract !== undefined
+        ? { workerContract: stage.workerContract }
+        : {}),
+      ...(stage.inference !== undefined ? { inference: stage.inference } : {}),
+      turnInput: bindAgentTurnInput(
+        input.renderedTurnInput,
+        input.renderingContract
+      ),
       input: input.input,
+      ...(ctx.consultationBinding === undefined
+        ? {}
+        : {
+            consultation: {
+              eligible: true as const,
+              sourceProfilePath:
+                ctx.consultationBinding.sourceProfilePath,
+              teacherProfilePath:
+                ctx.consultationBinding.teacherProfilePath,
+              bindingDigest: domainDigest(
+                'teacher-consultation/binding/1',
+                ctx.consultationBinding
+              ),
+            },
+          }),
       session: {
         reuse: stage.sessionReuse,
         // ECP-5 (D9): carry the authored scope through verbatim. Spread so an
@@ -281,8 +481,18 @@ export function buildCommandAction(
   }
   return finish({
     ...commonActionFields(ctx, identity, 'command'),
+    completionAuthority: completionAuthority(
+      ctx,
+      identity,
+      'command',
+      command.executable
+    ),
     command: {
-      artifact: ctx.capability.adapter,
+      artifact: {
+        id: ctx.capability.adapter.id,
+        version: ctx.capability.adapter.version,
+        contentDigest: ctx.capability.adapter.contentDigest,
+      },
       executable: command.executable,
       argv: [...command.argv],
       env: { ...command.env },
@@ -302,6 +512,7 @@ export function buildHostAction(
   assertKind(ctx.capability, 'host');
   return finish({
     ...commonActionFields(ctx, identity, 'host'),
+    completionAuthority: completionAuthority(ctx, identity, 'host'),
     host: {
       operation: host.operation,
       input: host.input,

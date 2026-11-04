@@ -1,0 +1,14 @@
+schema: spec-driven
+created: 2026-08-11
+goal: Allow each Rasen workflow stage to select Claude Code or Codex plus an
+  OmniCross upstream resource and model, with automatic ephemeral route lease
+  lifecycle.
+quality:
+  files:
+    - evidence/review-cycle-report.md
+    - evidence/review-report.md
+    - evidence/strategy-review.md
+  metrics:
+    evidence/review-cycle-report.md: 0
+    evidence/review-report.md: 0
+    evidence/strategy-review.md: 0

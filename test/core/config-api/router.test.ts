@@ -9,6 +9,7 @@ import type { ManagementApiContext } from '../../../src/core/management-api/rout
 import { getGlobalConfigPath } from '../../../src/core/global-config.js';
 import { registerProject } from '../../../src/core/project-registry.js';
 import { registerStore } from '../../../src/core/store/registry.js';
+import { writeStoreMetadataState } from '../../../src/core/store/foundation.js';
 import { getGlobalDataDir } from '../../../src/core/index.js';
 
 const TOKEN = 'test-token-abc123';
@@ -63,11 +64,14 @@ describe('config-api router (integration, via real http server)', () => {
   let storeRoots: string[] = [];
 
   /** Creates a registered store (planning root + config) in the machine data dir the server reads. */
-  async function makeStore(id: string, configContent: string): Promise<string> {
+  async function makeStore(id: string, configContent: string, uid?: string): Promise<string> {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), `rasen-config-api-store-${id}-`));
     fs.mkdirSync(path.join(root, 'rasen', 'specs'), { recursive: true });
     fs.mkdirSync(path.join(root, 'rasen', 'changes', 'archive'), { recursive: true });
     fs.writeFileSync(path.join(root, 'rasen', 'config.yaml'), configContent);
+    if (uid !== undefined) {
+      await writeStoreMetadataState(root, { version: 2, uid, id });
+    }
     await registerStore({ id, localPath: root, globalDataDir: getGlobalDataDir() });
     storeRoots.push(root);
     return root;
@@ -617,17 +621,19 @@ describe('config-api router (integration, via real http server)', () => {
 
   describe('store scope + space addressing (store-config-scope)', () => {
     it('lists a store space with store values and a store ref, no project layer', async () => {
-      await makeStore('team-store', 'schema: spec-driven\nhandoff:\n  threshold: 0.6\n');
+      const uid = '11111111-2222-4333-8444-555555555555';
+      await makeStore('Team Store', 'schema: spec-driven\nhandoff:\n  threshold: 0.6\n', uid);
       const h = await startServer();
       const res = await req(h.port, {
         method: 'GET',
-        path: '/api/v1/config?space=store:team-store',
+        path: `/api/v1/config?space=store:${uid}`,
         headers: authed(),
       });
       expect(res.status).toBe(200);
       const body = res.json() as any;
       expect(body.project).toBeNull();
-      expect(body.store.id).toBe('team-store');
+      expect(body.store.id).toBe('Team Store');
+      expect(body.store.uid).toBe(uid);
       expect(typeof body.store.root).toBe('string');
       const threshold = body.entries.find((e: any) => e.definition.key === 'handoff.threshold');
       expect(threshold.value).toBe(0.6);
@@ -637,7 +643,12 @@ describe('config-api router (integration, via real http server)', () => {
     });
 
     it('surfaces the inherited store layer to a plain ?project= read', async () => {
-      const storeRoot = await makeStore('team-store', 'schema: spec-driven\nmodels:\n  default: opus\n');
+      const uid = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+      const storeRoot = await makeStore(
+        'team-store',
+        'schema: spec-driven\nmodels:\n  default: opus\n',
+        uid
+      );
       const memberRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rasen-config-api-member-'));
       storeRoots.push(memberRoot);
       fs.mkdirSync(path.join(memberRoot, 'rasen', 'specs'), { recursive: true });
@@ -656,6 +667,7 @@ describe('config-api router (integration, via real http server)', () => {
       expect(res.status).toBe(200);
       const body = res.json() as any;
       expect(body.store.id).toBe('team-store');
+      expect(body.store.uid).toBe(uid);
       const model = body.entries.find((e: any) => e.definition.key === 'models.default');
       expect(model.scopeValues.store).toBe('opus');
       expect(model.value).toBe('opus');

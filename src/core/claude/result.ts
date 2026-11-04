@@ -15,6 +15,8 @@ export type ClaudeDispatchFailureKind =
   | 'session-busy'
   | 'resume-cwd-mismatch'
   | 'timeout'
+  | 'cancelled'
+  | 'route-lease-lost'
   | 'output-limit'
   | 'nonzero-exit'
   | 'invalid-json'
