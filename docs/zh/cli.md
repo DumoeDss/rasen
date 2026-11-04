@@ -675,8 +675,12 @@ rasen archive [change-name] [options]
 | 选项 | 说明 |
 |--------|-------------|
 | `-y, --yes` | 跳过确认提示 |
-| `--skip-specs` | 跳过规格说明更新（适用于基础设施/工具/纯文档变更） |
+| `--skip-specs` | 跳过规格说明写入，但保留校验 |
 | `--no-validate` | 跳过校验（需要确认） |
+
+对于规格说明已同步的独立变更，`--skip-specs` 仅在 ADDED 需求的完整解析块与主规格说明中的对应块一致时允许归档，包括标题、需求正文和场景。比较沿用解析器已有的换行符及块末尾空白规范化规则；主规格说明和归档后的增量文件均保留原始字节。同名但内容不同的需求、格式无效的增量以及其他校验错误仍会阻止归档。常规规格说明同步和 `rasen validate` 仍严格拒绝此类名称冲突。
+
+人工可读或 JSON 格式的预览及已保存计划会保留校验问题的代码、源文件路径和可用的能力/需求上下文。修复冲突或从生成了阻塞预览的旧版本升级后，请使用 `--skip-specs --dry-run --save-plan --json` 创建新计划；已保存的阻塞计划仍保持阻塞状态。
 
 **示例：**
 
@@ -698,7 +702,7 @@ rasen archive update-ci-config --skip-specs
 
 1. 校验该变更（除非 `--no-validate`）
 2. 提示确认（除非 `--yes`）
-3. 将增量 spec 合并进 `rasen/specs/`（standalone 模式；Store v2 项目作用域下为 `rasen/projects/<projectId>/specs/`）
+3. 将增量 spec 合并进 `rasen/specs/`，除非选择了 `--skip-specs`（standalone 模式；Store v2 项目作用域下为 `rasen/projects/<projectId>/specs/`）
 4. 把变更文件夹移动到 `rasen/changes/archive/YYYY-MM-DD-<name>/`（standalone 模式；Store v2 项目作用域下为 `rasen/projects/<projectId>/changes/archive/<targetLineId>/`）
 
 ---
