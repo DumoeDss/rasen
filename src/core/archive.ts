@@ -564,6 +564,11 @@ function validationIssueBlocker(
   };
 }
 
+function formatArchiveBlocker(item: ArchivePlan['blockers'][number]): string {
+  const code = item.code === undefined ? '' : ` [${item.code}]`;
+  return `${item.operation}${code} ${item.path}: ${item.message}`;
+}
+
 function finalizationFacts(
   result: FinalizationResult
 ): NonNullable<ArchiveResult['finalization']> {
@@ -1081,7 +1086,7 @@ export class ArchiveCommand {
         console.log(`Change '${result.change}' archived as '${path.basename(result.path)}'.`);
       } else {
         for (const item of result.blockers) {
-          console.log(`${item.operation}: ${item.message}`);
+          console.log(formatArchiveBlocker(item));
         }
         const disposition = formatArchiveDispositionLine(result);
         if (disposition !== null) console.log(disposition);
@@ -1514,20 +1519,22 @@ export class ArchiveCommand {
       applyOptions.assertions
     );
     if (!applyInspection.applicable) {
-      const message = applyInspection.blockers
-        .map(item => `${item.operation}: ${item.message}`)
-        .join('; ');
       if (!json) {
         const targetBlocker = applyInspection.blockers.find(
           item => item.operation === 'target-lstat' && item.code === 'EEXIST'
         );
         if (targetBlocker) {
+          for (const item of applyInspection.blockers) {
+            if (item !== targetBlocker) console.log(formatArchiveBlocker(item));
+          }
           throw new ArchiveBlockedError(
             'archive_target_exists',
             `Archive '${path.basename(plan.paths.final)}' already exists.`
           );
         }
-        return this.failHuman(message);
+        return this.failHuman(
+          applyInspection.blockers.map(formatArchiveBlocker).join('; ')
+        );
       }
       process.exitCode = 1;
       return {
@@ -2154,7 +2161,7 @@ export class ArchiveCommand {
       if (plan.blockers.length > 0) {
         console.log(chalk.red('Blocking conditions:'));
         for (const item of plan.blockers) {
-          console.log(chalk.red(`  - ${item.operation}: ${item.message}`));
+          console.log(chalk.red(`  - ${formatArchiveBlocker(item)}`));
         }
       }
       console.log(chalk.cyan('Authoritative serialized plan:'));

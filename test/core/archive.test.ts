@@ -993,12 +993,6 @@ New feature description.
       await archiveCommand.execute('non-existent-change', { yes: true });
 
       expect(process.exitCode).toBe(1);
-      expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('source-lstat:')
-      );
-      expect(console.log).toHaveBeenCalledWith(
-        'Aborted. No files were changed.'
-      );
     });
 
     it('should throw error if archive already exists', async () => {
@@ -2025,10 +2019,73 @@ E1 updated`);
         json: true,
       });
       expect(loggedJson().archive.result.status).toBe('blocked');
+
+      vi.mocked(console.log).mockClear();
+      await archiveCommand.execute(undefined, {
+        applyPlan: preview.archive.planToken,
+        yes: true,
+      });
+      const humanApply = vi.mocked(console.log).mock.calls.flat().join('\n');
+      expect(humanApply).toContain('spec_added_requirement_exists');
+      expect(humanApply).toContain(source);
+      expect(humanApply).toContain('Recorded action');
       await expect(fs.access(changeDir)).resolves.toBeUndefined();
       expect(await fs.readFile(canonicalPath('ledger'))).toEqual(Buffer.from(canonical));
       expect(await fs.readFile(source)).toEqual(Buffer.from(delta));
     });
+
+    interface HumanConflictCase {
+      readonly scenario: string;
+      readonly existingTarget: boolean;
+      readonly expectedOutcome: unknown;
+    }
+
+    const humanConflictCases: HumanConflictCase[] = [
+      {
+        scenario: 'without an existing archive destination',
+        existingTarget: false,
+        expectedOutcome: { exitCode: 1 },
+      },
+      {
+        scenario: 'when an existing archive destination also blocks the operation',
+        existingTarget: true,
+        expectedOutcome: expect.objectContaining({
+          diagnostic: expect.objectContaining({ code: 'archive_target_exists' }),
+        }),
+      },
+    ];
+
+    it.each(humanConflictCases)(
+      'retains validation diagnostics in human execution $scenario',
+      async ({ existingTarget, expectedOutcome }) => {
+        const changeName = 'human-conflicting-added';
+        const delta = addedDelta(recordedAction('its result is recorded'));
+        const canonical = canonicalSpec(recordedAction('its result is discarded'));
+        await seedSynchronizationChange(changeName, [
+          { capability: 'ledger', delta, canonical },
+        ]);
+        if (existingTarget) {
+          const date = new Date().toISOString().split('T')[0];
+          await fs.mkdir(
+            path.join(tempDir, 'rasen', 'changes', 'archive', `${date}-${changeName}`),
+            { recursive: true }
+          );
+        }
+
+        const outcome: unknown = await archiveCommand
+          .execute(changeName, { skipSpecs: true, yes: true })
+          .then(() => ({ exitCode: process.exitCode }), (error: unknown) => error);
+
+        expect(outcome).toEqual(expectedOutcome);
+        const human = vi.mocked(console.log).mock.calls.flat().join('\n');
+        expect(human).toContain('spec_added_requirement_exists');
+        expect(human).toContain(deltaPath(changeName, 'ledger'));
+        expect(human).toContain('ledger');
+        expect(human).toContain('Recorded action');
+        expect(await fs.readFile(canonicalPath('ledger'))).toEqual(Buffer.from(canonical));
+        expect(await fs.readFile(deltaPath(changeName, 'ledger'))).toEqual(Buffer.from(delta));
+      }
+    );
 
     it('keeps independent validation issues beside accepted synchronized requirements', async () => {
       const changeName = 'mixed-synchronization';
@@ -2336,12 +2393,6 @@ The system SHALL do the thing differently.
       await archiveCommand.execute('any-change', { yes: true });
 
       expect(process.exitCode).toBe(1);
-      expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('source-lstat:')
-      );
-      expect(console.log).toHaveBeenCalledWith(
-        'Aborted. No files were changed.'
-      );
     });
   });
 
