@@ -17,7 +17,7 @@
 
 - [x] 4.1 Run focused analyzer, validator, archive, and affected contract tests; run required type/lint checks. Build before CLI tests that execute `dist/`.
 - [x] 4.2 Build current sources and run an isolated real CLI preview with `--skip-specs --dry-run --save-plan --json`, then apply its saved plan with validation enabled. Verify successful publication, removal of the active fixture Change, byte-identical canonical specs, and archived delta bytes equal to the originals. Verify a conflicting fixture remains blocked with actionable diagnostics. Do not replay the reported live Change or edit its saved plan.
-- [ ] 4.3 Verify the focused tests in Windows CI as well as the local platform, using `path.join`/`path.resolve` fixtures and LF/CRLF cases. Record any unavailable platform evidence explicitly rather than treating local execution as Windows proof.
+- [x] 4.3 Verify the focused tests in Windows CI as well as the local platform, using `path.join`/`path.resolve` fixtures and LF/CRLF cases. Record any unavailable platform evidence explicitly rather than treating local execution as Windows proof.
 
 ## 5. Document the Supported Behavior
 
