@@ -61,7 +61,7 @@ jobs:
             label: macos-bash
             node: '20.19.0'
             vitest_workers: 4
-            timeout_minutes: 20
+            timeout_minutes: 30
             vitest_partition: ''
           - os: windows-latest
             shell: pwsh

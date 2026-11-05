@@ -29,6 +29,8 @@ import { Validator } from './validation/validator.js';
 // Types
 // -----------------------------------------------------------------------------
 
+export type SpecReconciliationMode = 'apply' | 'archive-skip-specs';
+
 export interface SpecUpdate {
   source: string;
   target: string;
@@ -243,7 +245,11 @@ export async function findSpecUpdates(
 async function buildUpdatedSpecCore(
   update: SpecUpdate,
   changeName: string,
-  options: { silent?: boolean; validateTarget?: boolean } = {}
+  options: {
+    silent?: boolean;
+    validateTarget?: boolean;
+    reconciliationMode?: SpecReconciliationMode;
+  } = {}
 ): Promise<Omit<BuiltSpecUpdate, 'update'>> {
   // Bind the prepared result to the exact delta bytes used for parsing. Validation
   // may supply its already-admitted snapshot so shape and reconciliation checks
@@ -679,6 +685,12 @@ async function buildUpdatedSpecCore(
     const key = normalizeRequirementName(add.name);
     if (skippedAdded.has(key)) continue;
     if (nameToBlock.has(key)) {
+      if (
+        options.reconciliationMode === 'archive-skip-specs' &&
+        canonicalBlocks.get(key)?.raw === add.raw
+      ) {
+        continue;
+      }
       operationIssues.push(
         reconciliationIssue(
           update,
@@ -805,7 +817,11 @@ function compareReconciliationIssues(
 export async function analyzeSpecUpdates(
   discovery: SpecUpdateDiscovery,
   changeName: string,
-  options: { silent?: boolean; validateTarget?: boolean } = {}
+  options: {
+    silent?: boolean;
+    validateTarget?: boolean;
+    reconciliationMode?: SpecReconciliationMode;
+  } = {}
 ): Promise<SpecReconciliationAnalysis> {
   const prepared: BuiltSpecUpdate[] = [];
   const issues: SpecReconciliationIssue[] = [...discovery.issues];

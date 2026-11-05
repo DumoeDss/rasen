@@ -1535,6 +1535,237 @@ The system MUST support mixed case delta headers.
         '- **THEN** it succeeds',
       ].join('\n');
 
+    async function writeAddedValidationFixture(
+      canonicalBlock: string,
+      delta = `## ADDED Requirements\n\n${canonicalBlock}\n`
+    ) {
+      const changeDir = path.join(testDir, 'synchronized-addition');
+      const canonicalSpecsDir = path.join(testDir, 'synchronized-addition-specs');
+      const source = path.join(changeDir, 'specs', 'inventory', 'spec.md');
+      const target = path.join(canonicalSpecsDir, 'inventory', 'spec.md');
+      const canonical = [
+        '# Inventory',
+        '',
+        '## Purpose',
+        'Define the inventory behavior used by stock consumers.',
+        '',
+        '## Requirements',
+        '',
+        canonicalBlock,
+        '',
+      ].join('\n');
+      await fs.mkdir(path.dirname(source), { recursive: true });
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.writeFile(source, delta);
+      await fs.writeFile(target, canonical);
+      return { changeDir, canonicalSpecsDir, source, target, canonical, delta };
+    }
+
+    it('accepts synchronized additions only in archive skip validation without writing', async () => {
+      const fixture = await writeAddedValidationFixture(
+        metadataRequirement('Inventory lookup')
+      );
+      const validator = new Validator(true);
+      const strict = await validator.validateChangeDeltaSpecs(
+        fixture.changeDir,
+        fixture.canonicalSpecsDir
+      );
+      expect(strict.valid).toBe(false);
+      expect(strict.issues).toContainEqual(
+        expect.objectContaining({
+          code: 'spec_added_requirement_exists',
+          source: fixture.source,
+          capability: 'inventory',
+          requirement: 'Inventory lookup',
+        })
+      );
+
+      const skipped = await validator.validateChangeDeltaSpecs(
+        fixture.changeDir,
+        fixture.canonicalSpecsDir,
+        undefined,
+        'archive-skip-specs'
+      );
+      expect(skipped.valid).toBe(true);
+      expect(skipped.summary.errors).toBe(0);
+      await expect(fs.readFile(fixture.source, 'utf8')).resolves.toBe(fixture.delta);
+      await expect(fs.readFile(fixture.target, 'utf8')).resolves.toBe(fixture.canonical);
+    });
+
+    interface InvalidSynchronizedAdditionCase {
+      scenario: string;
+      block: string;
+      expectedCode: string;
+    }
+    const invalidSynchronizedAdditions: InvalidSynchronizedAdditionCase[] = [
+      {
+        scenario: 'rejects an identical addition without normative requirement text',
+        block: metadataRequirement('Inventory lookup').replace('SHALL', 'can'),
+        expectedCode: 'spec_delta_requirement_keyword_missing',
+      },
+      {
+        scenario: 'rejects an identical addition with missing requirement text',
+        block: metadataRequirement('Inventory lookup').replace(
+          'The system SHALL implement Inventory lookup.',
+          ''
+        ),
+        expectedCode: 'spec_delta_requirement_text_missing',
+      },
+      {
+        scenario: 'rejects an identical addition without a scenario',
+        block: '### Requirement: Inventory lookup\nThe system SHALL return inventory.',
+        expectedCode: 'spec_delta_scenarios_missing',
+      },
+    ];
+    it.each(invalidSynchronizedAdditions)(
+      '$scenario',
+      async ({ block, expectedCode }) => {
+        const fixture = await writeAddedValidationFixture(block);
+        const report = await new Validator(true).validateChangeDeltaSpecs(
+          fixture.changeDir,
+          fixture.canonicalSpecsDir,
+          undefined,
+          'archive-skip-specs'
+        );
+
+        expect(report.valid).toBe(false);
+        expect(report.issues).toContainEqual(
+          expect.objectContaining({
+            code: expectedCode,
+            source: fixture.source,
+            capability: 'inventory',
+            requirement: 'Inventory lookup',
+          })
+        );
+        expect(report.issues.map(issue => issue.code)).not.toContain(
+          'spec_added_requirement_exists'
+        );
+      }
+    );
+
+    const matchingAddition = metadataRequirement('Inventory lookup');
+    interface AmbiguousSynchronizedAdditionCase {
+      scenario: string;
+      canonical: string;
+      delta: string;
+      expectedCode: string;
+    }
+    const ambiguousSynchronizedAdditions: AmbiguousSynchronizedAdditionCase[] = [
+      {
+        scenario: 'rejects duplicate synchronized additions',
+        canonical: matchingAddition,
+        delta: `## ADDED Requirements\n\n${matchingAddition}\n\n${matchingAddition}`,
+        expectedCode: 'spec_delta_duplicate_added',
+      },
+      {
+        scenario: 'rejects a synchronized addition also present in MODIFIED',
+        canonical: matchingAddition,
+        delta: `## ADDED Requirements\n\n${matchingAddition}\n\n## MODIFIED Requirements\n\n${matchingAddition}`,
+        expectedCode: 'spec_delta_cross_section_conflict',
+      },
+      {
+        scenario: 'rejects a synchronized addition also present in REMOVED',
+        canonical: matchingAddition,
+        delta: `## ADDED Requirements\n\n${matchingAddition}\n\n## REMOVED Requirements\n\n### Requirement: Inventory lookup`,
+        expectedCode: 'spec_delta_cross_section_conflict',
+      },
+      {
+        scenario: 'does not admit an addition introduced by RENAMED in the same delta',
+        canonical: matchingAddition.replace(
+          '### Requirement: Inventory lookup',
+          '### Requirement: Legacy inventory'
+        ),
+        delta: `## RENAMED Requirements\n\n- FROM: \`### Requirement: Legacy inventory\`\n- TO: \`### Requirement: Inventory lookup\`\n\n## ADDED Requirements\n\n${matchingAddition}`,
+        expectedCode: 'spec_renamed_target_conflicts_added',
+      },
+    ];
+    it.each(ambiguousSynchronizedAdditions)(
+      '$scenario',
+      async ({ canonical, delta, expectedCode }) => {
+        const fixture = await writeAddedValidationFixture(canonical, delta);
+        const report = await new Validator(true).validateChangeDeltaSpecs(
+          fixture.changeDir,
+          fixture.canonicalSpecsDir,
+          undefined,
+          'archive-skip-specs'
+        );
+
+        expect(report.valid).toBe(false);
+        expect(report.issues).toContainEqual(
+          expect.objectContaining({
+            code: expectedCode,
+            source: fixture.source,
+            capability: 'inventory',
+            requirement: 'Inventory lookup',
+          })
+        );
+      }
+    );
+
+    it('retains canonical validation beside an identical addition', async () => {
+      const fixture = await writeAddedValidationFixture(
+        `${matchingAddition}\n\n### Requirement: Broken baseline\nThe system SHALL preserve stock.`,
+        `## ADDED Requirements\n\n${matchingAddition}`
+      );
+      const report = await new Validator(true).validateChangeDeltaSpecs(
+        fixture.changeDir,
+        fixture.canonicalSpecsDir,
+        undefined,
+        'archive-skip-specs'
+      );
+
+      expect(report.valid).toBe(false);
+      expect(report.issues).toContainEqual(
+        expect.objectContaining({
+          code: 'spec_target_validation_failed',
+          source: fixture.source,
+          capability: 'inventory',
+          requirement: 'Broken baseline',
+        })
+      );
+    });
+
+    it('keeps an independent capability conflict beside synchronized and unapplied additions', async () => {
+      const fixture = await writeAddedValidationFixture(matchingAddition);
+      const conflictingSource = path.join(fixture.changeDir, 'specs', 'payments', 'spec.md');
+      const conflictingTarget = path.join(fixture.canonicalSpecsDir, 'payments', 'spec.md');
+      const freshSource = path.join(fixture.changeDir, 'specs', 'fresh', 'spec.md');
+      const freshTarget = path.join(fixture.canonicalSpecsDir, 'fresh', 'spec.md');
+      const conflictingCanonical = fixture.canonical.replace(
+        '- **THEN** it succeeds',
+        '- **THEN** it returns a different result'
+      );
+      await fs.mkdir(path.dirname(conflictingSource), { recursive: true });
+      await fs.mkdir(path.dirname(conflictingTarget), { recursive: true });
+      await fs.mkdir(path.dirname(freshSource), { recursive: true });
+      await fs.writeFile(conflictingSource, fixture.delta);
+      await fs.writeFile(conflictingTarget, conflictingCanonical);
+      await fs.writeFile(freshSource, fixture.delta);
+
+      const report = await new Validator(true).validateChangeDeltaSpecs(
+        fixture.changeDir,
+        fixture.canonicalSpecsDir,
+        undefined,
+        'archive-skip-specs'
+      );
+
+      expect(report.valid).toBe(false);
+      expect(report.issues.filter(issue => issue.level === 'ERROR')).toEqual([
+        expect.objectContaining({
+          code: 'spec_added_requirement_exists',
+          source: conflictingSource,
+          capability: 'payments',
+          requirement: 'Inventory lookup',
+        }),
+      ]);
+      await expect(fs.readFile(fixture.target, 'utf8')).resolves.toBe(fixture.canonical);
+      await expect(fs.readFile(conflictingTarget, 'utf8')).resolves.toBe(conflictingCanonical);
+      await expect(fs.readFile(fixture.source, 'utf8')).resolves.toBe(fixture.delta);
+      await expect(fs.readFile(conflictingSource, 'utf8')).resolves.toBe(fixture.delta);
+      await expect(fs.readFile(freshSource, 'utf8')).resolves.toBe(fixture.delta);
+      await expect(fs.stat(freshTarget)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
     const deltaIssueMetadataCases = [
       {
         name: 'no operations',

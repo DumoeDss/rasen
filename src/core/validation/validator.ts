@@ -22,6 +22,7 @@ import {
   discoverDeltaSpecFiles,
   findSpecUpdates,
   type DeltaSpecDiscovery,
+  type SpecReconciliationMode,
 } from '../specs-apply.js';
 
 export class Validator {
@@ -125,7 +126,8 @@ export class Validator {
   async validateChangeDeltaSpecs(
     changeDir: string,
     canonicalSpecsDir?: string,
-    discoveredDeltaSpecs?: DeltaSpecDiscovery
+    discoveredDeltaSpecs?: DeltaSpecDiscovery,
+    reconciliationMode: SpecReconciliationMode = 'apply'
   ): Promise<ValidationReport> {
     const issues: ValidationIssue[] = [];
     const specsDir = path.join(changeDir, 'specs');
@@ -584,7 +586,7 @@ export class Validator {
       const analysis = await analyzeSpecUpdates(
         analysisDiscovery,
         path.basename(changeDir),
-        { silent: true }
+        { silent: true, reconciliationMode }
       );
       for (const prepared of analysis.prepared) {
         analyzedTargets.set(

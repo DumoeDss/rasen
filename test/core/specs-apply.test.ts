@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   analyzeSpecUpdates,
   applySpecs,
+  buildUpdatedSpec,
   findSpecUpdates,
   SpecReconciliationError,
   type SpecUpdate,
@@ -65,6 +66,131 @@ describe('spec reconciliation analysis', () => {
 
   afterEach(async () => {
     await fs.rm(root, { recursive: true, force: true });
+  });
+
+  async function writeAddedFixture(canonical: string, delta: string) {
+    const changeName = 'synchronized-added';
+    const changeDir = path.join(root, 'rasen', 'changes', changeName);
+    const specsDir = path.join(root, 'rasen', 'specs');
+    const target = path.join(specsDir, 'inventory', 'spec.md');
+    const source = path.join(changeDir, 'specs', 'inventory', 'spec.md');
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.mkdir(path.dirname(source), { recursive: true });
+    await fs.writeFile(target, canonical);
+    await fs.writeFile(source, delta);
+    return {
+      changeName,
+      target,
+      source,
+      discovery: await findSpecUpdates(changeDir, specsDir),
+    };
+  }
+
+  const synchronizedRule = requirement('Inventory lookup', 'Inventory returned');
+  interface EqualAdditionCase {
+    scenario: string;
+    canonical: string;
+    delta: string;
+  }
+  const equalAdditionCases: EqualAdditionCase[] = [
+    {
+      scenario: 'accepts the complete matching ADDED block in archive skip mode',
+      canonical: mainSpec(synchronizedRule),
+      delta: addedDelta(synchronizedRule),
+    },
+    {
+      scenario: 'normalizes CRLF canonical blocks and trailing delta whitespace',
+      canonical: mainSpec(synchronizedRule).replace(/\n/g, '\r\n'),
+      delta: `${addedDelta(synchronizedRule)} \t\n\n`,
+    },
+    {
+      scenario: 'normalizes CRLF delta blocks against LF canonical blocks',
+      canonical: mainSpec(synchronizedRule),
+      delta: addedDelta(synchronizedRule).replace(/\n/g, '\r\n'),
+    },
+  ];
+  it.each(equalAdditionCases)('$scenario', async ({ canonical, delta }) => {
+    const fixture = await writeAddedFixture(canonical, delta);
+    const analysis = await analyzeSpecUpdates(
+      fixture.discovery,
+      fixture.changeName,
+      { silent: true, reconciliationMode: 'archive-skip-specs' }
+    );
+
+    expect(analysis.issues).toEqual([]);
+    expect(analysis.prepared).toHaveLength(1);
+    expect(analysis.prepared[0].rebuilt).toContain(synchronizedRule);
+    expect(analysis.prepared[0].rebuilt.match(/^### Requirement:/gm)).toHaveLength(1);
+    await expect(fs.readFile(fixture.target, 'utf8')).resolves.toBe(canonical);
+    await expect(fs.readFile(fixture.source, 'utf8')).resolves.toBe(delta);
+  });
+
+  const conflictingAdditions = [
+    {
+      scenario: 'rejects different requirement text in archive skip mode',
+      canonical: synchronizedRule.replace('SHALL implement', 'MUST support'),
+    },
+    {
+      scenario: 'rejects different scenario outcomes in archive skip mode',
+      canonical: synchronizedRule.replace('it succeeds', 'it returns no inventory'),
+    },
+    {
+      scenario: 'rejects an extra canonical scenario in archive skip mode',
+      canonical: `${synchronizedRule}\n\n#### Scenario: Empty inventory\n- **WHEN** no stock exists\n- **THEN** an empty result is returned`,
+    },
+    {
+      scenario: 'compares the full requirement header in archive skip mode',
+      canonical: synchronizedRule.replace('### Requirement:', '###  Requirement:'),
+    },
+  ];
+  it.each(conflictingAdditions)('$scenario', async ({ canonical }) => {
+    const fixture = await writeAddedFixture(
+      mainSpec(canonical),
+      addedDelta(synchronizedRule)
+    );
+    const analysis = await analyzeSpecUpdates(
+      fixture.discovery,
+      fixture.changeName,
+      { silent: true, reconciliationMode: 'archive-skip-specs' }
+    );
+
+    expect(analysis.prepared).toEqual([]);
+    expect(analysis.issues).toEqual([
+      expect.objectContaining({
+        code: 'spec_added_requirement_exists',
+        source: fixture.source,
+        capability: 'inventory',
+        requirement: 'Inventory lookup',
+      }),
+    ]);
+  });
+
+  it('keeps matching additions strict for ordinary analysis, rebuild and apply', async () => {
+    const canonical = mainSpec(synchronizedRule);
+    const delta = addedDelta(synchronizedRule);
+    const fixture = await writeAddedFixture(canonical, delta);
+    const analysis = await analyzeSpecUpdates(
+      fixture.discovery,
+      fixture.changeName,
+      { silent: true }
+    );
+    const collision = expect.objectContaining({
+      code: 'spec_added_requirement_exists',
+      requirement: 'Inventory lookup',
+    });
+
+    expect(analysis.prepared).toEqual([]);
+    expect(analysis.issues).toEqual([collision]);
+    await expect(
+      buildUpdatedSpec(fixture.discovery.updates[0], fixture.changeName, {
+        silent: true,
+      })
+    ).rejects.toMatchObject({ issues: [collision] });
+    await expect(
+      applySpecs(root, fixture.changeName, { silent: true })
+    ).rejects.toMatchObject({ issues: [collision] });
+    await expect(fs.readFile(fixture.target, 'utf8')).resolves.toBe(canonical);
+    await expect(fs.readFile(fixture.source, 'utf8')).resolves.toBe(delta);
   });
 
   it('rejects root-level and non-canonical recursive delta paths', async () => {

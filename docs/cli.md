@@ -1790,8 +1790,12 @@ rasen archive [change-name] [options]
 | Option | Description |
 |--------|-------------|
 | `-y, --yes` | Skip confirmation prompts |
-| `--skip-specs` | Skip spec updates (for infrastructure/tooling/doc-only changes) |
+| `--skip-specs` | Skip spec writes while retaining validation |
 | `--no-validate` | Skip validation (requires confirmation) |
+
+For a standalone Change whose specs are already synchronized, `--skip-specs` accepts an ADDED requirement only when its complete parsed block matches the canonical block, including its header, statement, and scenarios. Comparison uses the parser's existing line-ending and block-end whitespace normalization; canonical specs and archived deltas retain their original bytes. Differing same-name requirements, malformed deltas, and other validation errors still block archive. Ordinary spec synchronization and `rasen validate` remain strict.
+
+Validation blockers in human/JSON previews and saved plans retain issue codes, source paths, and available capability/requirement context. After repairing a conflict or upgrading from a blocked preview, create a fresh plan with `--skip-specs --dry-run --save-plan --json`; an already-blocked saved plan remains blocked.
 
 **Examples:**
 
@@ -1813,7 +1817,7 @@ rasen archive update-ci-config --skip-specs
 
 1. Validates the change (unless `--no-validate`)
 2. Prompts for confirmation (unless `--yes`)
-3. Merges delta specs into `rasen/specs/` (standalone; in a Store v2 project scope, into `rasen/projects/<projectId>/specs/`)
+3. Merges delta specs into `rasen/specs/` unless `--skip-specs` is selected (standalone; in a Store v2 project scope, into `rasen/projects/<projectId>/specs/`)
 4. Moves change folder to `rasen/changes/archive/YYYY-MM-DD-<name>/` (standalone; in a Store v2 project scope, into `rasen/projects/<projectId>/changes/archive/<targetLineId>/`)
 5. Captures a quality summary (scanned files + metric-line counts) into the archive's metadata
 
