@@ -480,8 +480,7 @@ async function atomicWorkspaceWriteText(
     ownedPath: string,
     expectedIdentity: AtomicWorkspaceIdentity,
     expectedContent: string | undefined,
-    detail: string,
-    stage?: string
+    detail: string
   ) => {
     const owned = await stableAtomicWorkspaceFile(ownedPath);
     if (
@@ -489,20 +488,7 @@ async function atomicWorkspaceWriteText(
       !sameAtomicWorkspaceIdentity(owned.identity, expectedIdentity) ||
       (expectedContent !== undefined && owned.content !== expectedContent)
     ) {
-      const error = new AtomicWorkspaceWriteConflictError(target, detail);
-      error.cause = new Error(
-        `[DEBUG-workspace-identity] ${JSON.stringify({
-          stage: stage ?? 'owned-carrier',
-          path: ownedPath,
-          expectedIdentity,
-          observedIdentity: owned?.identity ?? null,
-          contentMatches:
-            expectedContent === undefined ? null : owned?.content === expectedContent,
-          expectedContentLength: expectedContent?.length ?? null,
-          observedContentLength: owned?.content.length ?? null,
-        })}`
-      );
-      throw error;
+      throw new AtomicWorkspaceWriteConflictError(target, detail);
     }
     return owned;
   };
@@ -776,13 +762,12 @@ async function atomicWorkspaceWriteText(
       content,
       'the claimed durable intent identity or bytes changed'
     );
-  const requirePublished = (stage: string) =>
+  const requirePublished = () =>
     requireOwnedCarrier(
       target,
       claim.intentIdentity,
       content,
-      'the published carrier does not match the claimed intent identity',
-      stage
+      'the published carrier does not match the claimed intent identity'
     );
   const requireBackup = () => {
     if (claim.beforeIdentity === null || claim.beforeDigest === null) {
@@ -972,7 +957,7 @@ async function atomicWorkspaceWriteText(
     await syncDirectory();
   }
 
-  await requirePublished('before-cleanup');
+  await requirePublished();
   for (const [ownedPath, expectedIdentity, expectedContent] of [
     [intentPath, claim.intentIdentity, content],
     [backupPath, claim.beforeIdentity, undefined],
@@ -995,7 +980,7 @@ async function atomicWorkspaceWriteText(
     await requireDirectoryIdentity();
     await requireNoForeignCarriers();
     await requireClaim();
-    await requirePublished(ownedPath === intentPath ? 'cleanup-intent' : 'cleanup-backup');
+    await requirePublished();
     if (ownedPath === backupPath) {
       await requireBackup();
     } else {
@@ -1011,7 +996,7 @@ async function atomicWorkspaceWriteText(
   }
   await requireDirectoryIdentity();
   await requireNoForeignCarriers();
-  await requirePublished('cleanup-claim');
+  await requirePublished();
   await requireClaim();
   await fs.unlink(claimPath);
   await syncDirectory();
